@@ -177,7 +177,7 @@ test('disabling and re-enabling a workflow lane cannot authorize an old in-fligh
 
 test('the real workflow settings HTTP entry point persists YAML and rejects a stale global revision',async t=>{
   const {buildApp}=await import('../src/app.js'),directory=await mkdtemp(join(tmpdir(),'mote-workflow-api-')),token='generated-workflow-owner-token',headers={authorization:`Bearer ${token}`};
-  const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model access');},close:async()=>{}}});
+  const node=await buildApp({path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://generated.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model access');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   const read=await node.app.inject({url:'/api/processing',headers});assert.equal(read.statusCode,200);const baseline=read.json(),settings={...baseline.settings,semantic:{concurrency:3,enabled:false}};
   const saved=await node.app.inject({method:'PUT',url:'/api/processing/settings',headers,payload:{revision:baseline.revision,settings}});
@@ -188,7 +188,7 @@ test('the real workflow settings HTTP entry point persists YAML and rejects a st
 
 test('owner HTTP workflow saves use the typed domain reference, leave invalid input unchanged and survive restart',async t=>{
   const {buildApp}=await import('../src/app.js'),directory=await mkdtemp(join(tmpdir(),'mote-workflow-typed-')),token='generated-workflow-owner-token',headers={authorization:`Bearer ${token}`};
-  const config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://generated.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const dependencies={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model access');},close:async()=>{}}};
   let node=await buildApp(config,dependencies);
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});

@@ -8,7 +8,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import type {UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
@@ -76,11 +76,7 @@ const codePaths=['scripts/test-memory-ab-live.ts','apps/server/src/app.ts','apps
 // Read every pinned path before making any model call; a missing source is a preflight error.
 report.codeHashes=Object.fromEntries(await Promise.all(codePaths.map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 const token=randomBytes(32).toString('hex');
-function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,
- maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
- model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
- allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
- diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};}
+function config(vault:string):ConfigurationPlatformOptions{return {path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};}
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 async function open(vault:string){
  node=await buildApp(config(vault),{backgroundWorker:false});const settings=node.lifecycle.settings();

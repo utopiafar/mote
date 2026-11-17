@@ -6,12 +6,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {parseAnswer,type ContextReader} from '@mote/agent';
 
 test('an explicitly attached chat image is readable on demand and remains available to the dialogue',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-query-images-')),token='generated-image-owner-token';
-  const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const seen:string[][]=[];
   const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
     const ids=input.directImages?.map(image=>image.id)??[];seen.push(ids);
@@ -59,7 +59,7 @@ test('the Agent bridge grants only the listed direct image without a screenshot 
 
 test('direct metadata grants never survive file or source deletion before a region read',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-query-image-permission-')),token='generated-owner',bytes=await sharp({create:{width:4,height:4,channels:3,background:'#224466'}}).png().toBuffer(),hash=createHash('sha256').update(bytes).digest('hex');
- const config:Config={dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  let revoke=()=>{},blocked=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   const id=input.directImages![0].id,meta=await reader.readImage!({id,view:'metadata'});assert.equal(meta.imageView!.original.sha256,hash);revoke();

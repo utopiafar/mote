@@ -8,7 +8,7 @@ import {setTimeout} from 'node:timers/promises';
 import {parseAnswer,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {Store} from '../src/store.js';
@@ -40,7 +40,7 @@ async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
 
 async function fixture(t:TestContext,scenario:Scenario){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-memory-context-http-')),token='generated-memory-context-owner';
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:1};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const calls:Call[]=[],rejections:{code:string;feedback:string}[]=[],spyFailures:string[]=[];let otherId='',otherCaptureId='',otherMaterialRef='',materialRef='',corrected=false;
  let node:Awaited<ReturnType<typeof buildApp>>;
  node=await buildApp(config,{backgroundWorker:false,prepareImport:async({workspace,inputPaths})=>{

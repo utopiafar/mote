@@ -7,13 +7,13 @@ import {randomUUID} from 'node:crypto';
 import {OAuth2Client} from 'google-auth-library';
 import type {PluginBuildView} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {gmailScope} from '../src/connectors/gmail.js';
 
 test('Gmail can stop and restart independently without losing its credentials, archive or persisted off selection',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-bundled-gmail-')),owner='generated-owner-'+randomUUID();
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}};
-  const oauth=new OAuth2Client({clientId:'generated-client',redirectUri:config.connectors!.googleRedirectUri});
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'generated-client',googleClientSecret:'generated-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
+  const oauth=new OAuth2Client({clientId:'generated-client',redirectUri:config.initialDocument!.connectors!.googleRedirectUri});
   oauth.getToken=(async()=>({tokens:{refresh_token:'generated-refresh',access_token:'generated-access',scope:gmailScope}})) as typeof oauth.getToken;
   oauth.getAccessToken=(async()=>({token:'generated-access'})) as typeof oauth.getAccessToken;
   const requests:string[]=[];

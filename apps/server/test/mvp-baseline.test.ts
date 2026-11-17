@@ -10,10 +10,10 @@ import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {Store} from '../src/store.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {restoreProfile,repository} from '../../../scripts/profile-lib.mjs';
 
-const config=(dataDir:string):Config=>({dataDir,token:'generated-mvp-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-mvp-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
 const result=()=>({answer:'Generated current answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}});
 const inactive:QueryAgent={configured:false,close:async()=>{},query:async()=>{throw Error('No model call expected');}};
 async function until(read:()=>boolean){const deadline=Date.now()+15000;while(Date.now()<deadline){if(read())return;await new Promise(resolve=>setTimeout(resolve,20));}throw Error('Generated lifecycle did not settle');}

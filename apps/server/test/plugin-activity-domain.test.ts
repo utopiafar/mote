@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
@@ -19,11 +19,10 @@ import {ExecutionEngine,type ExecutionHandler} from '../src/execution-engine.js'
 
 function fixture(t:TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-activity-domain-')),nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
-  const config:Config={dataDir,token:'generated-activity-domain-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-    insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-activity-domain-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   t.after(async()=>{try{for(const node of nodes.reverse())await node.app.close();}finally{rmSync(dataDir,{recursive:true,force:true});}});
   const build=async(options:Parameters<typeof buildApp>[1]={})=>{const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('Unconfigured generated model');}},...options});nodes.push(node);return node;};
-  return {config,build,headers:{authorization:'Bearer '+config.token}};
+  return {config,build,headers:{authorization:'Bearer '+config.privateCredential!.token}};
 }
 
 test('unselected Activity installs no private projection, intake observer, model handler or poll while public domains remain usable',async t=>{

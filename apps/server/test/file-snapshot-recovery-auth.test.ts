@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {FILE_MAX_BYTES,FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {readAgentCredential} from './login-fixture.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
@@ -17,7 +17,7 @@ import {FileEvidence} from '../src/file-evidence.js';
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-snapshot-recovery-'));
  const token='generated-snapshot-recovery-owner';
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,contentEncryptionEnabled:true,dataKey:'75'.repeat(32)};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000,contentEncryptionEnabled:true,dataKey:'75'.repeat(32)},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected in transport fixture');},close:async()=>{}}});
  await node.app.ready();
  node.sources.register({id:'generated-source',name:'Generated snapshot source',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'snapshot'});

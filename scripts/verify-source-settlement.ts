@@ -18,7 +18,7 @@ const token='generated-source-settlement-token-000000000';
 const source:SourceDefinition={id:'generated-source',name:'Generated source',kind:'local-files',deviceId:'generated-mac',platform:'macos',retention:'reference',enabled:true};
 const file=(index:number):ScannedItem=>({externalId:'file-'+index,title:'Generated '+index+'.txt',text:'',kind:'file',layer:'reference',document:{fileIndex:{version:1,fileId:'file-'+index,contentVersion:sourceHash('fixture-'+index),mode:'catalog',coverage:'none',parser:'none',status:'ready',totalCharacters:0,offset:0,length:0,allowRead:false}},metadata:{version:1,file:{sizeBytes:100}}});
 const scan=(items:ScannedItem[])=>({items,seen:items.map(item=>item.externalId),complete:false,skipped:0});
-const node=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:20*1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'});
+const node=await buildApp({path:(join(directory,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'unused'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'central'),dataKey:undefined,maxExportBytes:20*1024*1024},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}});
 const originalRun=sourceWork.run.bind(sourceWork);
 try{
  await node.app.listen({host:'127.0.0.1',port:0});

@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../apps/server/src/app.js';
 import type {ContextReader} from '@mote/agent';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {noteCapture} from '@mote/shared';
 import {prepareAndroidDetailFixture} from './android-ui-detail-fixture.js';
 
@@ -14,10 +14,7 @@ const token='generated-native-central-owner-token-123456';
 const detailFixture=process.env.MOTE_ANDROID_UI_DETAIL_FIXTURE==='1';
 const firstDataFixture=process.env.MOTE_ANDROID_FIRST_DATA_FIXTURE==='1';
 const fixturePort=firstDataFixture?47889:detailFixture?47884:47883;
-const config:Config={dataDir,dataKey:undefined,token,tokenPath:join(dataDir,'owner-token'),host:'127.0.0.1',port:fixturePort,profile:'test',
- tokenFromEnvironment:true,maxExportBytes:16*1024*1024,insightIntervalHours:0,
- allowedOrigins:[],model:'generated-fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'generated-fixture-key',
- allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:16*1024*1024},server:{host:'127.0.0.1',port:fixturePort,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-fixture-model',baseUrl:'https://fixture.invalid',apiKey:'generated-fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};
 const relatedId=randomUUID();
 // A file-analysis factory receives its own scoped reader. Never share that reader
 // with the normal query agent or another concurrent generated operation.
@@ -43,9 +40,9 @@ if (process.env.MOTE_SETTINGS_UI_FIXTURE === '1') {
  value.executor.register({kind:'settings-ui-fixture',pool:'settings-ui-fixture',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{}});
  for(let i=0;i<36;i++)value.executor.enqueue('file:generated-ui-'+i,'settings-ui-fixture',{}, {initial:{state:'succeeded',attempts:0,availableAt:0}});
 }
-await value.app.listen({host:config.host,port:config.port});
+await value.app.listen({host:config.initialDocument!.server.host,port:config.initialDocument!.server.port});
 if (process.env.MOTE_SETTINGS_UI_FIXTURE === '1') {
- const origin=`http://127.0.0.1:${config.port}`;
+ const origin=`http://127.0.0.1:${config.initialDocument!.server.port}`;
  for(let i=0;i<5;i++) {
   const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'};
   const view=await (await fetch(origin+'/api/model-settings',{headers})).json() as {revision:number;profiles:{id:string}[]};
@@ -54,8 +51,8 @@ if (process.env.MOTE_SETTINGS_UI_FIXTURE === '1') {
   if(!response.ok)throw new Error('Generated provider fixture failed');
  }
 }
-await writeFile(join(dataDir,'fixture.json'),JSON.stringify({origin:`http://127.0.0.1:${config.port}`,token}));
-console.log(`Generated Android central fixture listening on port ${config.port}; isolated agent readers`);
+await writeFile(join(dataDir,'fixture.json'),JSON.stringify({origin:`http://127.0.0.1:${config.initialDocument!.server.port}`,token}));
+console.log(`Generated Android central fixture listening on port ${config.initialDocument!.server.port}; isolated agent readers`);
 let closing=false;
 async function close(){if(closing)return;closing=true;await value.app.close();await rm(dataDir,{recursive:true,force:true});}
 process.on('SIGINT',()=>{void close();});process.on('SIGTERM',()=>{void close();});

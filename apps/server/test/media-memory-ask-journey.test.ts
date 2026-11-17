@@ -12,7 +12,7 @@ import {zstdDecompressSync} from 'node:zlib';
 import {WebSocketServer} from 'ws';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import {configFromDocument} from '../src/config.js';
+import {} from '../src/config.js';
 import {createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
 import {MediaPreparation} from '../src/media-preparation.js';
@@ -26,7 +26,7 @@ import {startLocalImageFixtureWorker,type LocalImageFixture} from './fixtures/lo
 
 test('default Central exposes the existing optional image build without enabling or authorizing it',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-media-acceptance-'));
- const config=configFromDocument({version:1,revision:0,server:{port:0},storage:{dataDir:join(directory,'data')},diagnostics:{enabled:false,level:'silent'}},join(directory,'mote.yaml'),{token:'generated-media-acceptance-owner',tokenPath:join(directory,'token')});
+ const config={path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0,server:{port:0},storage:{dataDir:join(directory,'data')},diagnostics:{enabled:false,level:'silent'}},privateCredential:{token:'generated-media-acceptance-owner',tokenPath:join(directory,'token')}};
  const node=await buildApp(config,{backgroundWorker:false});
  t.after(async()=>{try{await node.app.close();}finally{await rm(directory,{recursive:true,force:true});}});
  const headers={authorization:'Bearer '+config.token},before=node.modelAuthorization.view();
@@ -155,7 +155,7 @@ test('generated audio and a 3 MiB image traverse default intake, independent Mem
    assert.ok(!JSON.stringify(result.trace).includes(imageBytes.toString('base64')),'traces never retain original image bytes');return result;
   }};
  };
- const config=configFromDocument({version:1,revision:0,server:{port:0},storage:{dataDir:join(directory,'data')},diagnostics:{enabled:false,level:'silent'},models:{deployment:{provider:'codex',protocol:'codex-app-server',model:'gpt-6.1-terra'}},media:{modelDirectory:join(directory,'models'),workerToken:vision.token,asrEndpoint:`http://127.0.0.1:${port}/transcribe`,asrPort:port,ocrEndpoint:`http://127.0.0.1:${(ocr.address() as {port:number}).port}/ocr`,ocrPort:(ocr.address() as {port:number}).port,localImageEndpoint:vision.url,localImagePort:Number(new URL(vision.url).port)}},join(directory,'mote.yaml'),{token:'generated-media-owner',tokenPath:join(directory,'owner-token')});
+ const config={path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0,server:{port:0},storage:{dataDir:join(directory,'data')},diagnostics:{enabled:false,level:'silent'},models:{deployment:{provider:'codex',protocol:'codex-app-server',model:'gpt-6.1-terra',reasoningEffort:'high'}},media:{modelDirectory:join(directory,'models'),workerToken:vision.token,asrEndpoint:`http://127.0.0.1:${port}/transcribe`,asrPort:port,ocrEndpoint:`http://127.0.0.1:${(ocr.address() as {port:number}).port}/ocr`,ocrPort:(ocr.address() as {port:number}).port,localImageEndpoint:vision.url,localImagePort:Number(new URL(vision.url).port)}},privateCredential:{token:'generated-media-owner',tokenPath:join(directory,'owner-token')}};
  const open=async()=>{node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});await node.app.listen({host:'127.0.0.1',port:0});};await open();
  const api=async(method:string,path:string,payload?:unknown)=>{const address=node!.app.server.address() as {port:number};const response=await fetch(`http://127.0.0.1:${address.port}`+path,{method,headers:{authorization:'Bearer '+config.token,...(payload instanceof Buffer?{'content-type':'application/octet-stream'}:payload===undefined?{}:{'content-type':'application/json'})},body:payload===undefined?undefined:payload instanceof Buffer?payload:JSON.stringify(payload)});const text=await response.text();assert.ok(response.ok,method+' '+path+': '+response.status+' '+text);return JSON.parse(text);};
  await node!.featureServices.mediaAssets.importBundle('dialogue',join(workerRoot,'bundle'));

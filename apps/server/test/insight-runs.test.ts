@@ -8,11 +8,11 @@ import {randomUUID} from 'node:crypto';
 import {AgentProviderError,type QueryInput} from '@mote/agent';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {InsightRuns} from '../src/insight-runs.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 const headers={authorization:'Bearer generated-insight-runs-owner-token'};
 async function fixture(t:TestContext,agent:QueryAgent){
   const dir=await mkdtemp(join(tmpdir(),'mote-insight-runs-'));
-  const config:Config={dataDir:dir,token:headers.authorization.slice(7),tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:headers.authorization.slice(7),tokenPath:join(dir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dir,dataKey:'31'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const value=await buildApp(config,{agent});t.after(async()=>{await agent.close();await value.app.close();await rm(dir,{recursive:true,force:true});});return value;
 }
 test('review launch acknowledges immediately, survives reconnect, reports real tools, and is idempotent',async t=>{

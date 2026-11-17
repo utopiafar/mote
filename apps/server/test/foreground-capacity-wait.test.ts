@@ -8,11 +8,11 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {hostRun} from './fixtures/host-run.js';
 
 const answer=(insight:boolean):QueryResult=>({answer:insight?JSON.stringify({title:'Generated review',markdown:'Generated review.',html:'<p>Generated review.</p>'}):'Generated answer.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
-const configuration=(dataDir:string):Config=>({dataDir,token:'generated-capacity-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-not-live',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const configuration=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-capacity-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-not-live',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 async function until<T>(read:()=>T,ready:(value:T)=>boolean){const deadline=Date.now()+4000;for(;;){const value=read();if(ready(value))return value;if(Date.now()>=deadline)assert.fail('Generated capacity fixture did not reach its expected state');await delay(10);}}
 
@@ -23,7 +23,7 @@ for(const feature of ['query','insight'] as const)for(const mode of ['worker-bus
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  if(mode==='host-cooldown')await assert.rejects(node.featureServices.providerAdmission.run(node.modelSettings.select(feature==='query'?'chat':'insight').settings,async()=>{throw new ProviderFailure({category:'transient',code:'provider_unavailable',retryAfterMs:1000,executionStarted:false});}),ProviderFailure);
  await node.app.listen({host:'127.0.0.1',port:0});
- const headers={authorization:'Bearer '+config.token,'content-type':'application/json'},path=feature==='query'?'/api/query':'/api/insights';let settled=false;
+ const headers={authorization:'Bearer '+config.privateCredential!.token,'content-type':'application/json'},path=feature==='query'?'/api/query':'/api/insights';let settled=false;
  const response=fetch(new URL(path,node.app.listeningOrigin),{method:'POST',headers,body:JSON.stringify(feature==='query'?{question:'Generated capacity question'}:{}),signal:AbortSignal.timeout(12000)}).then(value=>{settled=true;return value;});
  const waiting=await until(()=>feature==='query'?node.queryRuns.list()[0]:node.insightRuns.list()[0],run=>Boolean(run?.execution?.status==='retry_wait'));
  assert.ok(waiting);assert.equal(waiting.status,'running');assert.equal(waiting.error,undefined);assert.equal(waiting.execution!.attempts,0);assert.equal(settled,false);

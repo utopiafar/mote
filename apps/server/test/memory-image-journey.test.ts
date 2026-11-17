@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import {parseAnswer,type QueryInput} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {StoreError,sha256} from '../src/store.js';
 import {memoryImageGrants,uninspectedMemoryImageTargets} from '../src/memory-image-grants.js';
@@ -29,7 +29,7 @@ function reviewGate(){
 type Scenario={ocrOnly?:boolean;ocrBody?:string;incompleteImage?:boolean;skipOriginalPixels?:boolean;intake?:'local'|'configured'|'waiting';zeroMemory?:boolean;discardVisual?:boolean;holdReview?:ReturnType<typeof reviewGate>;historical?:boolean;authorizationOff?:boolean;deferJob?:boolean;revokeImagesDuringExtract?:boolean;rewriteReview?:'uncovered'|'covering';deletionReview?:boolean;integration?:boolean;pendingUnderstanding?:boolean;ocr:'text'|'empty'|'failed';automatic?:boolean;denied?:boolean;skipReviewPixels?:boolean;deleteDuringReview?:boolean;replaceDuringReview?:boolean;attributionDuringReview?:boolean;metadataOnly?:boolean;unreadEmpty?:boolean;failFirstReview?:boolean};
 async function fixture(t:import('node:test').TestContext,scenario:Scenario){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-image-journey-')),token='generated-memory-image-owner';
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-vision',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-vision',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  const receipts:{phase:string;ids:string[];views:string[];runId?:string}[]=[],inputs:QueryInput[]=[];let rawId='',mutated=false,failedReview=false;
  let node!:Awaited<ReturnType<typeof buildApp>>;
  const intake=scenario.intake?await memoryImageIntakeBoundary(directory,scenario.ocr==='text'?'text':'empty'):undefined;

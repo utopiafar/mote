@@ -7,7 +7,7 @@ import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import type {AgentImportHost,AgentImportHostDependencies} from '../agent-import-host.js';
 import type {ModelConnection,BackgroundModelAuthorization} from '../background-model-authorization.js';
-import type {Config} from '../config.js';
+import type {ImportPythonPackConfig} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerLifecycle} from '../assembly/lifecycle.js';
 import type {ExecutionEngine} from '../execution-engine.js';
@@ -45,7 +45,7 @@ export interface ImportServicesDependencies extends AgentImportHostDependencies 
   readonly executor:ExecutionEngine;
   readonly processing:Pick<FileProcessing,'runtime'>;
   readonly files:FileStore;
-  readonly config:Pick<Config,'importPythonPacks'>;
+  readonly importPythonPacks:readonly ImportPythonPackConfig[];
   readonly modelAuthorization:BackgroundModelAuthorization;
   readonly availableModelConnections:()=>ModelConnection[];
   readonly evidenceReader:Pick<EvidenceReader,'evidence'>;
@@ -65,7 +65,7 @@ const unavailable=()=>new StoreError('Import services are unavailable',503);
 const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
 export function createImportServices(dependencies:ImportServicesDependencies,importHost:AgentImportHost):ImportServices {
-  const {store,diagnostics,lifecycle,archivedFiles,sources,executor,processing,files,config,modelAuthorization,availableModelConnections,evidenceReader}=dependencies;
+  const {store,diagnostics,lifecycle,archivedFiles,sources,executor,processing,files,importPythonPacks,modelAuthorization,availableModelConnections,evidenceReader}=dependencies;
   const importTasks=new Map<string,Promise<unknown>>();
   const mounted=new WeakSet<FastifyInstance>();
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
@@ -98,7 +98,7 @@ export function createImportServices(dependencies:ImportServicesDependencies,imp
     launchOwnerImport,
     prepare(){
       if(phase!=='created')throw unavailable();
-      const sourcePacks=new Map((config.importPythonPacks??[]).map(spec=>{
+      const sourcePacks=new Map(importPythonPacks.map(spec=>{
         const executor=new PythonSourcePackExecutor<PythonImportOutput>({...spec,outputSchema:pythonImportOutputSchema});
         return [spec.id,{revision:sha256(JSON.stringify(spec)),prepare:pythonImportPreparation(executor)}] as const;
       }));
@@ -129,7 +129,7 @@ export function createImportServices(dependencies:ImportServicesDependencies,imp
       const inlineUploads=new UploadHttpProtection(Date.now,{perIdentity:1,total:2});inlineUploads.install(app);
       app.get('/api/import-capabilities',async()=>current.intake.list());
       app.get('/api/imports',async()=>({items:current.list()}));
-      app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
+      app.get('/api/import-source-packs',async()=>({items:importPythonPacks.map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
       app.post('/api/imports',{bodyLimit:360*1024*1024,onRequest:inlineUploads.receiveLargeJson},async(req,reply)=>{
         try{const job=await inlineUploads.produce(req,()=>current.create(req.body,()=>inlineUploads.admit(req)));if(job.status==='queued')launchOwnerImport(job.id,()=>current.prepare(job.id));return reply.code(202).send(current.get(job.id));}
         catch(error){if(error instanceof ImportInputError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});throw error;}

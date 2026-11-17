@@ -19,7 +19,7 @@ import {localImagePluginStateSchema,LOCAL_IMAGE_PROTOCOL,LOCAL_IMAGE_ERRORS,loca
 import {imageOutput} from '../src/evidence-image.js';
 import {requestLocalJson} from '../src/local-http.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {generatedLocalImages,startLocalImageFixtureWorker} from './fixtures/local-image.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
@@ -285,7 +285,7 @@ async function intake(t:TestContext,options:{installed?:boolean;authorize?:boole
     else configuredCalls++;
     return {answer:JSON.stringify(result),citations:[],trace:[],runId:randomUUID()};
   }});
-  const config:Config={dataDir:join(f.directory,'central'),token:'generated-intake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-configured-image',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.example.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(join(f.directory,'central'))+'/mote.yaml',privateCredential:{token:'generated-intake-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(f.directory,'central'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-configured-image',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.example.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
   node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node;
   f.defer(()=>central.app.close());
   const models=central.modelSettings.view();await central.modelSettings.updateDefaults({revision:models.revision,defaults:models.defaults,defaultModels:{file:'generated-configured-image',memory:'generated-memory-model',chat:'generated-chat-model'}});
@@ -297,7 +297,7 @@ async function intake(t:TestContext,options:{installed?:boolean;authorize?:boole
   const sourceId='generated-local-image-plugin';central.sources.register({id:sourceId,name:'Generated image plugin input',kind:'upload',deviceId:'generated-device',platform:'import',retention:'archive'});
   if(options.authorize!==false)await authorizeFixtureModels(central);
   return {...f,get worker(){return f.worker;},get runtime(){return f.runtime;},node:central,calls:()=>({configured:configuredCalls,local:localCalls,ocr:ocrCalls}),async upload(image=f.images[1]){
-    const headers={authorization:'Bearer '+config.token};
+    const headers={authorization:'Bearer '+config.privateCredential!.token};
     const begun=await central.app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:{sourceId,item:{externalId:randomUUID()+'.png',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',mimeType:image.mimeType,title:'Generated plugin image',text:'',document:{contentRole:'reference',timeBasis:'unknown'}},sha256:sha256(image.bytes),sizeBytes:image.bytes.length}});
     assert.equal(begun.statusCode,200,begun.body);const upload=begun.json();if(upload.ack)return String(upload.ack.id);
     const part=await central.app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${upload.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:image.bytes});assert.equal(part.statusCode,200,part.body);

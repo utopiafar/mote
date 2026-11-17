@@ -15,7 +15,7 @@ import {isOutboundExportCapability,outboundExportFromModule} from '../src/plugin
 import {OutboundExportHost} from '../src/plugins/outbound-export-host.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const repoRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
 const packageRoot=join(repoRoot,'official-plugins/markdown-export');
@@ -300,7 +300,7 @@ test('an unsafe configured target fails check instead of enabling a sandbox',asy
 
 test('owner HTTP status and explicit sync work while a collector credential cannot configure or start export',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-markdown-http-')),target=mkdtempSync(join(tmpdir(),'mote-markdown-http-vault-')),owner='generated-markdown-owner-'+randomUUID();
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model request belongs in this fixture');},async close(){}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});rmSync(target,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+owner},githubCalls:string[]=[];

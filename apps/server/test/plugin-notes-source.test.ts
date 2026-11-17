@@ -17,7 +17,7 @@ import {createAuthorizationPlatform} from '../src/plugins/authorization-platform
 import {createCaptureIntake} from '../src/plugins/capture-intake.js';
 import type {RequestAuthority} from '../src/plugins/central-contracts.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {MaterialNoteDeletion} from '../src/material-note-deletion.js';
 import {notesFeature} from '../src/features/notes.js';
 import {FeatureScope} from '../src/features/index.js';
@@ -25,7 +25,7 @@ import {createNotesSource,createNotesSourceFactory,notesSourceContribution,notes
 
 async function fixture(t:any){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-notes-source-'));
-  const config:Config={dataDir,token:'generated-notes-source-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-notes-source-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in notes-source fixture');},close:async()=>{}}});
   const source=createNotesSource({
     page:args=>node.store.list({...args,source:'note'}),
@@ -41,7 +41,7 @@ async function fixture(t:any){
   notesFeature({assertRequestActive:node.featureServices.assertRequestActive,connections:node.featureServices.connections,credential:node.featureServices.credential,diagnostics:node.featureServices.diagnostics,files:node.featureServices.files,ingress:node.featureServices.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:node.authorizationPlatform,route:{request:request=>pins.get(request)},intake:node.captureIntake.ports.captureIntake}}).mount(app,new FeatureScope());
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
-  return {node,source,app,assembly:source.assemblyForRoutes(),headers:{authorization:'Bearer '+config.token}};
+  return {node,source,app,assembly:source.assemblyForRoutes(),headers:{authorization:'Bearer '+config.privateCredential!.token}};
 }
 async function intakeFixture(t:any){
   const directory=mkdtempSync(join(tmpdir(),'mote-notes-intake-')),store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);

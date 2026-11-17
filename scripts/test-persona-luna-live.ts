@@ -6,16 +6,16 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomBytes} from 'node:crypto';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {personaFixture} from './fixtures/persona.js';
 
 const recoveryDirectory=process.env.MOTE_PERSONA_RECOVERY_VAULT;
 const retryJobId=process.env.MOTE_PERSONA_RETRY_JOB_ID,allowPartial=process.env.MOTE_PERSONA_ALLOW_PARTIAL==='1';
 const fixture=personaFixture(),directory=await mkdtemp(join(tmpdir(),'mote-persona-luna-')),token=randomBytes(32).toString('hex');
 const reportPath=process.env.MOTE_PERSONA_REPORT??join(tmpdir(),'mote-persona-luna-report.json');
-const config:Config={dataKey:undefined,dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-5.6-luna',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'info',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:3};
+const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:directory,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:3},models:{deployment:{model:'gpt-5.6-luna',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'info',enabled:true,traceEnabled:true}}};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
-const report:Record<string,unknown>={persona:fixture.persona,days:fixture.days,recordsPerDay:fixture.recordsPerDay,records:fixture.records.length,model:config.model,reasoningEffort:'max',personalDataUsed:false,physicalDevicesTested:false,liveExtractionScope:'All 45 authored journal records; 1,035 passive observations remain searchable originals, not passed through live extraction.',startedAt:new Date().toISOString()};
+const report:Record<string,unknown>={persona:fixture.persona,days:fixture.days,recordsPerDay:fixture.recordsPerDay,records:fixture.records.length,model:config.initialDocument!.models.deployment.model,reasoningEffort:'max',personalDataUsed:false,physicalDevicesTested:false,liveExtractionScope:'All 45 authored journal records; 1,035 passive observations remain searchable originals, not passed through live extraction.',startedAt:new Date().toISOString()};
 const save=()=>writeFile(reportPath,JSON.stringify(report,null,2)+'\n');
 try{
  if(recoveryDirectory){

@@ -264,11 +264,11 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
   async prepareModels(
     profiles:ModelProfile[],
     reader:ContextReader,
-    options:{defaultProfileId?:string;initialAgent?:QueryAgent;activate:()=>void;rollback?:()=>void},
+    options:{defaultProfileId?:string;initialAgent?:QueryAgent;activate?:()=>void;rollback?:()=>void},
   ):Promise<PreparedModelSettings>{
     this.assertOpen();
     const candidate=await this.createModelRegistry(profiles,reader,options.initialAgent,options.defaultProfileId??DEPLOYMENT_MODEL_PROFILE_ID);
-    try{return await super.prepare(candidate,options.activate,options.rollback);}
+    try{return await super.prepare(candidate,options.activate??(()=>{}),options.rollback);}
     catch(error){await candidate.close().catch(()=>{});throw error;}
   }
 

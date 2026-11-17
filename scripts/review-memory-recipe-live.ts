@@ -10,7 +10,7 @@ import {execFileSync} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 import type {UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {memoryStrategyRefSchema} from '../apps/server/src/memory-strategy-contract.js';
@@ -40,8 +40,8 @@ try{
   await backup(source,join(vault,'mote.sqlite'));
 }finally{source.close();}
 const token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
-const report:Record<string,any>={startedAt:new Date().toISOString(),status:'running',semanticQualityAccepted:false,heldOut:false,baselineDirectory,baselineReportSha256:sha256(baselineBytes),recipe,model:config.model,reasoningEffort:'max',personalDataUsed:baseline.personalDataUsed,extractionAllowed:false,unexpectedExtractionAttempts:0,maximumModelCalls:priorBatches.length,maximumDurationMs:priorBatches.length*300000+60000,browserTested:false,physicalDevicesTested:false,mediaProcessingTested:false,calls:[],jobIds:[],head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim()};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
+const report:Record<string,any>={startedAt:new Date().toISOString(),status:'running',semanticQualityAccepted:false,heldOut:false,baselineDirectory,baselineReportSha256:sha256(baselineBytes),recipe,model:config.initialDocument!.models.deployment.model,reasoningEffort:'max',personalDataUsed:baseline.personalDataUsed,extractionAllowed:false,unexpectedExtractionAttempts:0,maximumModelCalls:priorBatches.length,maximumDurationMs:priorBatches.length*300000+60000,browserTested:false,physicalDevicesTested:false,mediaProcessingTested:false,calls:[],jobIds:[],head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim()};
 report.codeHashes=Object.fromEntries(await Promise.all(['scripts/review-memory-recipe-live.ts','apps/server/src/memory-range-selection-policy.ts','apps/server/src/coding-memory-review-policy.ts','apps/server/src/memory-strategies.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-review.ts','packages/agent/dist/task-context.js','packages/agent/dist/instructions.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 async function save(){

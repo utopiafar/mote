@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import {defaultDistribution} from '../src/distribution/default.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import Fastify from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
 import {MOTE_PROTOCOL_RANGE} from '@mote/shared';
@@ -15,7 +15,7 @@ import {systemHealthPlugin,systemHealthContribution} from '../src/plugins/system
 
 const agent={configured:false,query:async()=>{throw Error('No model in generated System fixture');},close:async()=>{}};
 const token='generated-system-domain-owner-token';
-function config(dataDir:string):Config{return {dataDir,token,tokenPath:'generated-system-domain',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};}
+function config(dataDir:string):ConfigurationPlatformOptions{return {path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-system-domain'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};}
 
 test('a missing selected System plugin cannot borrow a legacy Host health route',{timeout:120000},async t=>{
  const root=await mkdtemp(join(tmpdir(),'mote-system-domain-'));let node:Awaited<ReturnType<typeof buildApp>>|undefined;

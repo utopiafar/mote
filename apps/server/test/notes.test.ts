@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { noteCapture, noteSchema } from '@mote/shared';
 import { buildApp } from '../src/app.js';
-import type { Config } from '../src/config.js';
+import type { ConfigurationPlatformOptions } from '../src/config.js';
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const dataDir = mkdtempSync(join(tmpdir(), 'mote-notes-test-'));
-  const config: Config = { dataDir, token: 'synthetic-notes-token-never-use-in-production', tokenPath: 'fixture-only', host: '127.0.0.1', port: 47832,  maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
+  const config: ConfigurationPlatformOptions = {path:(dataDir)+'/mote.yaml',privateCredential:{token:'synthetic-notes-token-never-use-in-production',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const result = await buildApp(config, { agent: { configured: false, query: async () => { throw Error('No model in protocol fixture'); }, close: async () => {} } });
   t.after(async () => { await result.app.close(); rmSync(dataDir, { recursive: true, force: true }); });
-  return { ...result, headers: { authorization: `Bearer ${config.token}` } };
+  return { ...result, headers: { authorization: `Bearer ${config.privateCredential!.token}` } };
 }
 const note = (changes: Record<string, unknown> = {}) => ({ id: randomUUID(), deviceId: 'synthetic-note-device', deviceName: '合成测试设备', platform: 'android', capturedAt: '2026-09-12T12:00:00.000Z', text: '  合成记录：\n想起一件杂事，原样保存。  ', ...changes });
 

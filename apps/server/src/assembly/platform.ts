@@ -1,14 +1,13 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
-import {dirname,join} from 'node:path';
+import {dirname,join,resolve} from 'node:path';
 import {AgentYieldError} from '@mote/agent';
 import type {QueryInput} from '@mote/agent';
 import type {FeatureInventory} from '@mote/shared';
 import {prepareFeatureInventory} from '../plugins/feature-inventory-domain.js';
-import type {Config} from '../config.js';
+import {serverConfigDomain,connectorsConfigDomain,diagnosticsConfigDomain,updatesConfigDomain} from '../config.js';
 import type {Connections} from '../connections.js';
 import type {Store} from '../store.js';
 import {moteText} from '../i18n.js';
-import {defaultLogMaxBytes} from '../log-retention-config.mjs';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ObservationIdentity,ObservationName} from '../execution-observability.js';
 import type {ServerResources} from '../server-resources.js';
@@ -30,7 +29,6 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 export interface PlatformAssemblyDependencies {
   readonly readFeatureInventory:()=>FeatureInventory;
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
-  readonly config:Config;
   readonly store:Store;
   readonly resources:ServerResources;
   readonly serverVersion:string;
@@ -44,9 +42,10 @@ export interface PlatformAssemblyDependencies {
 /** Authorization, observability and execution platform construction plus the
  * model admission/observation wiring that app.ts previously held inline. */
 export async function assemblePlatform(dependencies:PlatformAssemblyDependencies){
-  const {bootstrap,config,store,resources}=dependencies;
+  const {bootstrap,store,resources}=dependencies;
+  const facts=bootstrap.configurationBootstrap,service=bootstrap.configService,server=service.current(serverConfigDomain),logs=service.current(diagnosticsConfigDomain),updates=service.current(updatesConfigDomain);
   await prepareFeatureInventory(bootstrap,resources,dependencies.readFeatureInventory);
-  const authorizationPlatform=createAuthorizationPlatform({ownerToken:config.token,connectorConfiguration:()=>config.connectors,allowedOrigins:config.allowedOrigins},{
+  const authorizationPlatform=createAuthorizationPlatform({ownerToken:facts.owner.token,connectorConfiguration:()=>service.current(connectorsConfigDomain),allowedOrigins:server.allowedOrigins},{
     store,availableModelConnections:()=>dependencies.availableModelConnections(),...(dependencies.connections?{connections:dependencies.connections}:{}),
   });
   resources.defer(()=>authorizationPlatform.close());
@@ -54,9 +53,9 @@ export async function assemblePlatform(dependencies:PlatformAssemblyDependencies
   const modelAuthorization=authorizationPlatform.assembly.modelAuthorization;
   const runtimeSettings=bootstrap.configurationPlatform.runtimeSettings;
   const observability=await bootstrap.installObservabilityPlatform({
-    logDirectory:config.logDirectory??join(config.dataDir,'logs'),
-    diagnostics:{...runtimeSettings.diagnostics(),maxBytes:config.logMaxBytes??defaultLogMaxBytes(config.profile),maxTotalBytes:config.logMaxTotalBytes,retention:config.logRetention,maxEntries:config.logMaxEntries},
-    update:{currentVersion:dependencies.serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel},
+    logDirectory:logs.directory?resolve(facts.baseDir,logs.directory):join(facts.dataDir,'logs'),
+    diagnostics:{...runtimeSettings.diagnostics(),maxBytes:logs.maxBytes,maxTotalBytes:logs.maxTotalBytes,retention:logs.retention,maxEntries:logs.maxEntries},
+    update:{currentVersion:dependencies.serverVersion,profile:server.profile,runtime:server.runtime,profileHome:server.hostConfigFile?dirname(dirname(server.hostConfigFile)):undefined,repository:updates.repository,channel:updates.channel},
     eventLoopResolutionMs:20,
   });
   const observabilityPlatform=observability.platform,observabilityScope=observability.scope,observabilityAssembly=observabilityPlatform.forAssembly(observability.scope);

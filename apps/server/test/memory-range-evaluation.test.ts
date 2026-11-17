@@ -13,7 +13,7 @@ import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js
 import {reviewMemory} from '../src/memory-review.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {fixtureMemoryPlan} from './fixtures/memory-planning.js';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {materialId} from '../src/materials.js';
@@ -80,7 +80,7 @@ test('a wide saved range batch resumes only its independent review after restart
 
 test('the formal Memory job API coalesces 270 authorized paragraphs across Materials once under concurrent drains',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-wide-memory-http-')),calls:QueryInput[]=[];
- const config:Config={dataDir:directory,token:'generated-wide-memory-token',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-wide-memory-token',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  let node:Awaited<ReturnType<typeof buildApp>>,outsideId:string,selected:string[]=[];
  const failures:unknown[]=[];
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
@@ -100,11 +100,11 @@ test('the formal Memory job API coalesces 270 authorized paragraphs across Mater
   const material=node.materials.publish({id:materialId(sourceId,'generated-paragraphs'),kind:'mote.note',schemaVersion:1,title:'Generated paragraphs',origin:{sourceId,externalId:'generated-paragraphs',deviceId:'generated',firstAt:at,lastAt:at},members:[{id:original.id,kind:'capture',ref:'capture:'+original.id}],blocks:texts.map((text,line)=>({id:'line-'+line,kind:'text' as const,format:'plain',text,memberIds:[original.id]})),artifacts:[{key:'source-body',state:'ready',blockIds:texts.map((_,line)=>'line-'+line)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
   const ids=node.materials.input(material.ref,['source-body'])!.evidenceIds;if(index<2)selected.push(...ids);else outsideId=ids[0];
  }
- const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'5'}]}});assert.equal(created.statusCode,202,created.body);
+ const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.privateCredential!.token},payload:{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'5'}]}});assert.equal(created.statusCode,202,created.body);
  const drains=await Promise.all(Array.from({length:3},()=>node.memoryPipeline.run(created.json().id)));if(failures.length)throw failures[0];
  for(const done of drains){assert.equal(done.status,'completed',JSON.stringify({status:done.status,errorCode:done.errorCode,batches:done.batches.map(batch=>({status:batch.status,errorCode:batch.errorCode,validationFailures:batch.validationFailures})),calls:calls.map(input=>input.traceContext?.phase)}));assert.equal(done.batches.length,1);assert.equal(done.memoryCount,2);assert.equal(done.batches[0].coverage!.length,270);assert.deepEqual(new Set(done.batches[0].evidenceRanges.map(range=>range.id)),new Set(selected));}
  assert.deepEqual(calls.map(input=>input.traceContext?.phase),['extract','review']);assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,270);
- const read=await node.app.inject({url:'/api/memory-jobs/'+created.json().id,headers:{authorization:'Bearer '+config.token}});assert.equal(read.statusCode,200);assert.equal(read.json().completedBatches,1);
+ const read=await node.app.inject({url:'/api/memory-jobs/'+created.json().id,headers:{authorization:'Bearer '+config.privateCredential!.token}});assert.equal(read.statusCode,200);assert.equal(read.json().completedBatches,1);
 });
 
 test('model selection may retain one useful claim while independent review assesses every other target',async t=>{
@@ -133,7 +133,7 @@ test('explicit incomplete assessment remains unfinished until an owner retries i
 
 for(const disposition of ['no_candidates','needs_context','needs_owner_input'] as const)test(`attachment-link text gets bounded independent reassessment into ${disposition} without losing assessed siblings`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-link-text-')),calls:QueryInput[]=[],failures:unknown[]=[];
- const config:Config={dataDir:directory,token:'generated-link-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-link-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const texts=[...Array.from({length:6},(_,i)=>`Generated owner preference ${i}: I prefer option ${i}.`),'Generated neutral record.','![](attachments/generated-photo.png)'];
  let reviews=0,node:Awaited<ReturnType<typeof buildApp>>;
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
@@ -164,7 +164,7 @@ for(const disposition of ['no_candidates','needs_context','needs_owner_input'] a
  }})});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const lifecycle=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)lifecycle[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings:lifecycle});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  assert.equal(node.perception.settings().allowQueryImages,false);
  node.sources.register({id:'generated-links',name:'Generated linked notes',kind:'custom',deviceId:'generated',platform:'import'});
  const selected:string[]=[],originals:string[]=[];
@@ -296,12 +296,12 @@ test('actual oversized response fails once with no partial proposal or checkpoin
 
 for(const explicitRecipe of [false,true])test(`public source and Memory job API complete 40 selected results and retain the new frozen policy through app restart${explicitRecipe?' with personal-v5 selection':' with omitted recipes'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-range-evaluation-http-')),lines=facts(40),calls:QueryInput[]=[];
- const config:Config={dataDir:directory,token:'generated-range-evaluation-token',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-range-evaluation-token',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  let node:Awaited<ReturnType<typeof buildApp>>;
  const generate=async(input:QueryInput):Promise<QueryResult>=>{calls.push(input);const plan=await fixtureMemoryPlan(input);if(plan)return plan;assert.equal(work(input).workContract,contract);const member=work(input).members.find(member=>node.memories.readEvidence([member.id])[0].ocrText.includes(lines[0]));return result(input,member?lines.map((quote,index)=>({member,quote,index})):[]);};
  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})};
  const open=async()=>{node=await buildApp(config,dependencies);await node.app.ready();};await open();
- const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  assert.equal((await api('POST','/api/sources',{id:'generated-selection',name:'Generated selection',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
  const inserted=await api('PUT','/api/sources/generated-selection/items',{externalId:'choices',revision:'1',observedAt:at,kind:'message',layer:'original',text:lines.join('\n'),document:{contentRole:'authored',recordedAt:at,timeBasis:'recorded'}});assert.equal(inserted.statusCode,200,inserted.body);

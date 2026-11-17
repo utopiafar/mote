@@ -9,7 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {execFileSync} from 'node:child_process';
 import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {materialId} from '../apps/server/src/materials.js';
@@ -34,12 +34,7 @@ const report:Record<string,any>=previous??{status:'running',startedAt:new Date()
   upstreamBoundary:'Injected synthetic official CLI response transport; authentication and tenant API semantics are not live-verified',
   head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),cases:[],calls:[],semanticQualityAccepted:false};
 if(previous){report.resumes=[...(report.resumes??[]),{at:new Date().toISOString(),priorStatus:report.status,priorFailure:report.failure}];delete report.failure;delete report.finishedAt;report.status='running';upstream.advance();}
-const config:Config={dataDir:join(output,'vault'),token,tokenPath:join(output,'token'),host:'127.0.0.1',port:0,
-  maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',modelBaseUrl:'',apiKey:'',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:300000,
-  diagnosticsEnabled:true,agentTraceEnabled:true,logLevel:'warn',memoryConcurrency:2,
-  codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
+const config:ConfigurationPlatformOptions={path:(join(output,'vault'))+'/mote.yaml',privateCredential:{token:token,tokenPath:join(output,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:join(output,'vault'),maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:2},models:{deployment:{model:model,provider:'codex',protocol:'codex-app-server',reasoningEffort:'high',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{enabled:true,traceEnabled:true,level:'warn'}}};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const save=async()=>{
   if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);
@@ -92,7 +87,7 @@ async function sourcePaths(directory:string):Promise<string[]>{
 const codePaths=[...(await Promise.all(['apps/server/src','packages/shared/src','packages/agent/src'].map(sourcePaths))).flat(),'package-lock.json'].sort();
 try{
   progress('starting',{output,model});await save();
-  assert.ok((await codexModels(undefined,{executable:config.codexBin,home:config.codexHome})).items.some(item=>item.id===model&&item.reasoningEfforts?.includes('high')));
+  assert.ok((await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home})).items.some(item=>item.id===model&&item.reasoningEfforts?.includes('high')));
   const currentCode=Object.fromEntries(await Promise.all(codePaths.map(async path=>[path,sha256(await readFile(path))])));
   if(previous){
     const changes=codePaths.filter(path=>report.code[path]!==currentCode[path]);

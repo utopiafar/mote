@@ -15,7 +15,7 @@ import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {ContentStorageService} from '../src/content-storage.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const generatedImage=()=>sharp({create:{width:24,height:24,channels:3,background:'#445566'}}).png().toBuffer();
 const capture=(image:Buffer)=>({id:randomUUID(),deviceId:'fixture',deviceName:'Generated fixture',platform:'import',capturedAt:new Date().toISOString(),source:'screen',durationMs:0,ocrText:'Generated text',imageMime:'image/png',imageBase64:image.toString('base64')});
@@ -41,11 +41,11 @@ test('content encryption is off even with an environment key, and opt-in persist
 
 test('YAML owns the write-encryption toggle across restart and legacy SQLite flags never override it',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-content-yaml-'));
-  const config:Config={dataDir:dir,token:'generated-content-owner-token-12345',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',dataKey:undefined,logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:'generated-content-owner-token-12345',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1_000_000,dataKey:undefined},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const agent={configured:false,query:async()=>{throw Error('unused');},close:async()=>{}};
   let node=await buildApp(config,{agent});t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   node.store.db.prepare("INSERT OR REPLACE INTO settings VALUES('content-encryption-enabled','0')").run();
-  const headers={authorization:`Bearer ${config.token}`},before=node.configService.revision;
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`},before=node.configService.revision;
   const saved=await node.app.inject({method:'PUT',url:'/api/content-storage',headers,payload:{enabled:true,revision:before}});
   assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().enabled,true);
   assert.equal(node.configService.view().domains.find(domain=>domain.id==='storage')!.status,'applied');
@@ -175,10 +175,10 @@ test('retrying a part write after changing encryption policy removes obsolete re
 
 test('developer content controls require owner auth and return background progress without exposing keys',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-content-api-'));
-  const config:Config={dataDir:dir,token:'generated-content-owner-token-12345',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',dataKey:undefined,logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:'generated-content-owner-token-12345',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1_000_000,dataKey:undefined},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const {app,store,connections}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('unused');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   assert.equal((await app.inject('/api/content-storage')).statusCode,401);
   const {invitation}=connections.invite({serverUrl:'http://127.0.0.1:47832',label:'Generated collector',deviceId:'fixture'});
   const collector=await readAgentCredential(connections);

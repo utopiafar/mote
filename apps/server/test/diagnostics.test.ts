@@ -14,10 +14,10 @@ import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError,AgentProvi
 import { ServerDiagnostics,safeError,serializeDiagnosticEvent } from '../src/diagnostics.js';
 import { DiagnosticLogStore } from '../src/diagnostic-log-store.mjs';
 import { buildApp,type QueryAgent } from '../src/app.js';
-import type { Config } from '../src/config.js';
+import type { ConfigurationPlatformOptions } from '../src/config.js';
 
 const marker='SYNTHETIC_PRIVATE_BODY_TOKEN_URL_QUERY';
-const config=(dataDir:string):Config=>({dataDir,token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file'),host:'127.0.0.1',port:47832,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsDebug:true});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{debug:true}}});
 const inactive:QueryAgent={configured:false,query:async()=>{throw new Error('fixture must not run');},close:async()=>{}};
 
 const currentFiles=(directory:string)=>readdirSync(directory).filter(name=>/^central\.(error|warn|info|debug|trace)\./.test(name)).sort((a,b)=>Number(b.split('.')[3])-Number(a.split('.')[3])||b.localeCompare(a));
@@ -91,7 +91,7 @@ test('flush finishes its accepted prefix while generated diagnostic writes conti
 test('diagnostic settings and disk-backed reads complete while debug producers remain active',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-busy-api-')),cfg=config(directory);
  const {app,diagnostics}=await buildApp(cfg,{agent:inactive,backgroundWorker:false});await diagnostics.flush();
- const producer=continuousWrites(t,diagnostics),headers={authorization:'Bearer '+cfg.token};
+ const producer=continuousWrites(t,diagnostics),headers={authorization:'Bearer '+cfg.privateCredential!.token};
  t.after(async()=>{producer.stop();await app.close();await rm(directory,{recursive:true,force:true});});
  const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();
  diagnostics.record('source.completed',{count:0},'debug');
@@ -120,7 +120,7 @@ test('diagnostic status and live settings remain available with a finite 1000-re
   const at=now-index-1,event={seq:++seq,instanceId,at:new Date(at).toISOString(),event:'server.started',level:channel,stage:'system'};
   await writeFile(join(logDirectory,`${family}.${channel}.${at}.${at}.${randomUUID()}.ndjson`),JSON.stringify(event)+'\n',{mode:0o600});
  }
- const {app,diagnostics}=await buildApp(cfg,{agent:inactive,backgroundWorker:false}),headers={authorization:'Bearer '+cfg.token};
+ const {app,diagnostics}=await buildApp(cfg,{agent:inactive,backgroundWorker:false}),headers={authorization:'Bearer '+cfg.privateCredential!.token};
  const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();await diagnostics.flush();
  const written=Promise.withResolvers<void>(),release=Promise.withResolvers<void>(),append=DiagnosticLogStore.prototype.append;let first=true;
  t.mock.method(DiagnosticLogStore.prototype,'append',async function(this:DiagnosticLogStore,records:Parameters<typeof append>[0]) {
@@ -194,7 +194,7 @@ test('close persists a record accepted immediately after a completed flush',asyn
 
 test('an aborted diagnostic settings client can commit later, and its stale revision cannot overwrite that commit',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-aborted-save-')),cfg=config(directory);
- const {app,diagnostics,configService}=await buildApp(cfg,{agent:inactive,backgroundWorker:false}),headers={authorization:'Bearer '+cfg.token};
+ const {app,diagnostics,configService}=await buildApp(cfg,{agent:inactive,backgroundWorker:false}),headers={authorization:'Bearer '+cfg.privateCredential!.token};
  const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();await diagnostics.flush();
  const releasePreparation=Promise.withResolvers<void>(),preparing=Promise.withResolvers<void>(),committed=Promise.withResolvers<void>();
  const unsubscribe=configService.onChange(()=>{if(configService.revision>before.revision)committed.resolve();});
@@ -439,7 +439,7 @@ test('a second live logger cannot rotate another logger files and an old same-PI
 });
 
 test('authenticated support API correlates stages while excluding all fixture body, credentials and raw URL metadata',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-api-'));const cfg=config(directory);const {app,diagnostics}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.token}`,'x-request-id':marker};
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-api-'));const cfg=config(directory);const {app,diagnostics}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.privateCredential!.token}`,'x-request-id':marker};
   for(const url of ['/api/diagnostics','/api/diagnostics/events','/api/support-bundle'])assert.equal((await app.inject(url)).statusCode,401);
   const f={id:randomUUID(),deviceId:marker,deviceName:marker,platform:'import',capturedAt:'2020-01-02T12:00:00Z',text:marker,mood:marker};
   const saved=await app.inject({method:'POST',url:`/api/notes?raw=${marker}`,headers,payload:f});assert.equal(saved.statusCode,201);const id=saved.headers['x-request-id'];assert.match(String(id),/^[0-9a-f-]{36}$/);assert.notEqual(id,marker);
@@ -447,31 +447,31 @@ test('authenticated support API correlates stages while excluding all fixture bo
   const invalid=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker,[marker]:marker}});assert.equal(invalid.statusCode,503);assert.equal(invalid.json().requestId,invalid.headers['x-request-id']);assert.ok(!invalid.body.includes(marker));
   const bundle=await app.inject({url:'/api/support-bundle',headers});assert.equal(bundle.statusCode,200);assert.match(String(bundle.headers['content-disposition']),/attachment/);assert.match(String(bundle.headers['cache-control']),/no-store/);const body=bundle.json();
   assert.equal(body.snapshot.storage.captures,1);assert.equal(body.snapshot.queue.index.textReady,1);assert.ok(body.events.some((e:any)=>e.event==='ingest.completed'&&e.requestId===id&&e.operation==='note'));assert.ok(body.events.some((e:any)=>e.event==='source.completed'&&e.requestId===list.headers['x-request-id']));
-  for(const secret of [marker,cfg.token,cfg.apiKey,directory,'2020-01-02'])assert.ok(!bundle.body.includes(secret));
-  await diagnostics.flush();for(const name of await readdir(join(directory,'logs'))){const text=await readFile(join(directory,'logs',name),'utf8');for(const secret of [marker,cfg.token,cfg.apiKey,directory])assert.ok(!text.includes(secret));}
+  for(const secret of [marker,cfg.privateCredential!.token,cfg.initialDocument!.models.deployment.apiKey,directory,'2020-01-02'])assert.ok(!bundle.body.includes(secret));
+  await diagnostics.flush();for(const name of await readdir(join(directory,'logs'))){const text=await readFile(join(directory,'logs',name),'utf8');for(const secret of [marker,cfg.privateCredential!.token,cfg.initialDocument!.models.deployment.apiKey,directory])assert.ok(!text.includes(secret));}
 });
 
 test('collector credentials cannot read owner-level diagnostics and the safe snapshot omits secrets',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-collector-'));const cfg=config(directory);const {app}=await buildApp(cfg,{agent:inactive});
   t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${cfg.token}`};
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
   const invitation=await app.inject({method:'POST',url:'/api/connections/collector-invitations',headers,payload:{serverUrl:'https://synthetic.invalid',label:'Generated collector'}});
   assert.equal(invitation.statusCode,200,invitation.body);
   const redeemed=await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.json().invitation.code,deviceId:'generated-collector',deviceName:'Generated collector',platform:'android'}});
   assert.equal(redeemed.statusCode,200,redeemed.body);const collector=redeemed.json().token as string;
   for(const url of ['/api/diagnostics','/api/diagnostics/events','/api/support-bundle']){
     const denied=await app.inject({url,headers:{authorization:`Bearer ${collector}`}});
-    assert.equal(denied.statusCode,403,url);assert.ok(!denied.body.includes(collector));assert.ok(!denied.body.includes(cfg.token));
+    assert.equal(denied.statusCode,403,url);assert.ok(!denied.body.includes(collector));assert.ok(!denied.body.includes(cfg.privateCredential!.token));
   }
   const owner=await app.inject({url:'/api/diagnostics',headers});
   assert.equal(owner.statusCode,200,owner.body);
-  for(const secret of [cfg.token,cfg.apiKey,directory,collector])assert.ok(!owner.body.includes(secret),'diagnostic snapshot must not include '+(secret===collector?'collector token':'secret material'));
+  for(const secret of [cfg.privateCredential!.token,cfg.initialDocument!.models.deployment.apiKey,directory,collector])assert.ok(!owner.body.includes(secret),'diagnostic snapshot must not include '+(secret===collector?'collector token':'secret material'));
 });
 
 test('concurrent requests keep independent request IDs, and SDK failures cannot leak into responses or support exports',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-'));const cfg=config(directory);
   const agent:QueryAgent={configured:true,close:async()=>{},query:async args=>{await delay(args.question==='fixture slow'?15:1);if(args.question===marker)throw Object.assign(new Error(marker+' https://provider.invalid/?key='+marker),{name:marker,code:marker,statusCode:502});return {answer:args.question,citations:[],trace:[],runId:randomUUID()};}};
-  const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.token}`};
+  const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
   const responses=await Promise.all(['fixture slow','fixture fast'].map(question=>app.inject({method:'POST',url:'/api/query',headers,payload:{question}})));const ids=responses.map(r=>r.headers['x-request-id']);assert.notEqual(ids[0],ids[1]);for(const id of ids)assert.equal(diagnostics.events().items.filter(e=>e.requestId===id&&e.event==='agent.completed').length,1);
   const failed=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(failed.statusCode,502);assert.ok(!failed.body.includes(marker));assert.equal(failed.json().requestId,failed.headers['x-request-id']);
   for(const url of [`/api/${marker}?token=${marker}`,`/api/%zz?token=${marker}`]){const result=await app.inject({url,headers});assert.ok(result.statusCode>=400);assert.ok(!result.body.includes(marker));}
@@ -481,7 +481,7 @@ test('concurrent requests keep independent request IDs, and SDK failures cannot 
 test('enabled Agent trace is correlated with the request and is visible in ordinary diagnostics but not safe support export',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-trace-api-')),cfg={...config(directory),agentTraceEnabled:true};
   const agent:QueryAgent={configured:true,close:async()=>{},query:async args=>{args.onTrace?.({type:'fixture.model.completed',stage:'model',status:'succeeded',payload:{prompt:marker,context:'synthetic fixture'}});return {answer:'fixture',citations:[],trace:[],runId:randomUUID()};}};
-  const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.token}`};
+  const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
   const response=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'synthetic trace request'}});assert.equal(response.statusCode,200);await diagnostics.flush();
   const requestId=response.headers['x-request-id'],trace=diagnostics.events().items.find(event=>event.event==='agent.trace'&&event.requestId===requestId&&((event.trace as Record<string,unknown>)?.type==='fixture.model.completed'));
   assert.ok(trace);assert.equal(((trace!.trace as Record<string,unknown>).payload as Record<string,unknown>).prompt,marker);assert.equal(diagnostics.snapshot().agentTrace.enabled,true);
@@ -490,12 +490,12 @@ test('enabled Agent trace is correlated with the request and is visible in ordin
 
 test('disabled central diagnostics keeps the authenticated numeric status available without recording',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-off-api-'));const cfg={...config(directory),diagnosticsEnabled:false};const {app}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${cfg.token}`};await app.inject({url:'/api/status',headers});const bundle=(await app.inject({url:'/api/support-bundle',headers})).json();assert.equal(bundle.snapshot.enabled,false);assert.equal(bundle.snapshot.retainedEvents,0);assert.deepEqual(bundle.events,[]);await assert.rejects(stat(join(directory,'logs')),{code:'ENOENT'});
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};await app.inject({url:'/api/status',headers});const bundle=(await app.inject({url:'/api/support-bundle',headers})).json();assert.equal(bundle.snapshot.enabled,false);assert.equal(bundle.snapshot.retainedEvents,0);assert.deepEqual(bundle.events,[]);await assert.rejects(stat(join(directory,'logs')),{code:'ENOENT'});
 });
 
 test('request bursts keep model configuration errors correlated and safe',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-rate-'));const cfg=config(directory);const {app}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${cfg.token}`};let last;
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};let last;
   for(let i=0;i<11;i++)last=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
   assert.equal(last!.statusCode,503);assert.equal(last!.json().error,'model_not_configured');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
 });
@@ -510,13 +510,13 @@ test('request correlation survives the per-query local HTTP tool bridge boundary
     return {answer:'fixture',citations:[],trace:[],runId:randomUUID()};
   }};
   const built=await buildApp(cfg,{agent});diagnostics=built.diagnostics;t.after(async()=>{await built.app.close();await rm(directory,{recursive:true,force:true});});
-  const responses=await Promise.all([1,2].map(()=>built.app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${cfg.token}`},payload:{question:'synthetic bridge request'}})));
+  const responses=await Promise.all([1,2].map(()=>built.app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${cfg.privateCredential!.token}`},payload:{question:'synthetic bridge request'}})));
   for(const response of responses){assert.equal(response.statusCode,200);assert.equal(diagnostics.events().items.filter(e=>e.event==='source.completed'&&e.requestId===response.headers['x-request-id']).length,1);}
   assert.ok(!JSON.stringify(diagnostics.events()).includes(marker));
 });
 
 test('background indexing records timings, queue state and only a fixed failure marker',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-index-'));const cfg={...config(directory),embeddingModel:'synthetic-model',embeddingBaseUrl:'http://127.0.0.1:1'};
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-index-'));const cfg=((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),embedding:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["embedding"] as Record<string,unknown>),model:'synthetic-model',baseUrl:'http://127.0.0.1:1'}}}}))(config(directory));
   const node=await buildApp(cfg,{agent:inactive}),{app,indexer,store,diagnostics}=node;t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   await authorizeFixtureModels(node);
   let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error(marker);});
@@ -530,7 +530,7 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
   let failure:Error=new AgentTimeoutError(),modelCalls=0;
   const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{modelCalls++;throw failure;}};
   const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${cfg.token}`};
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
   const timed=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
   assert.equal(timed.statusCode,504);assert.equal(timed.json().error,'timeout');assert.equal(timed.json().requestId,timed.headers['x-request-id']);assert.match(timed.json().message,/超时/);
   const events=diagnostics.events(0,500).items.filter(e=>e.requestId===timed.headers['x-request-id']);
@@ -551,7 +551,7 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
     assert.equal(modelCalls,before+1,'shared cooldown must wait before invoking another model');
   }
   assert.equal((await app.inject({url:'/api/execution-settings',headers})).json().providers.coolingDown,1);
-  const bundle=await app.inject({url:'/api/support-bundle',headers});for(const privateValue of [marker,cfg.token,cfg.apiKey])assert.ok(!bundle.body.includes(privateValue));
+  const bundle=await app.inject({url:'/api/support-bundle',headers});for(const privateValue of [marker,cfg.privateCredential!.token,cfg.initialDocument!.models.deployment.apiKey])assert.ok(!bundle.body.includes(privateValue));
   for(const id of waitingIds)assert.equal((await app.inject({method:'POST',url:'/api/query-runs/'+id+'/cancel',headers})).json().status,'cancelled');
   assert.equal(modelCalls,before+1);
 });
@@ -636,7 +636,7 @@ test('tool rejections retain only approved error codes and budget metrics withou
 });
 
 test('owner cleanup previews the exact time range, rejects collector writes and preserves later records',async t=>{
- const directory=await mkdtemp(join(tmpdir(),'mote-log-cleanup-api-'));const cfg=config(directory);const {app,diagnostics,connections}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:'Bearer '+cfg.token};
+ const directory=await mkdtemp(join(tmpdir(),'mote-log-cleanup-api-'));const cfg=config(directory);const {app,diagnostics,connections}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:'Bearer '+cfg.privateCredential!.token};
  await diagnostics.configure({enabled:true,debug:false,traceEnabled:true,level:'info'});diagnostics.agentTrace({type:'fixture.private',payload:{prompt:marker}});await diagnostics.flush();
  const unauthorized=await app.inject({method:'POST',url:'/api/diagnostics/cleanup-preview',payload:{kind:'all'}});assert.equal(unauthorized.statusCode,401);
  const {readAgentCredential}=await import('./login-fixture.js');connections.invite({serverUrl:'http://127.0.0.1:1234',label:'Generated collector'});const collector=await readAgentCredential(connections);

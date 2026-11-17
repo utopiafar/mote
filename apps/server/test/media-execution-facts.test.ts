@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {MEDIA_CATALOG,MediaAssets} from '../src/media-assets.js';
 import {readMediaExecutionFact} from '../src/plugins/media-execution-facts.js';
 
@@ -76,19 +76,19 @@ def recognize_image(image, predict):
  })().catch(()=>res.destroy());});
  proxy.listen(0,'127.0.0.1');await once(proxy,'listening');const endpoint='http://127.0.0.1:'+(proxy.address() as {port:number}).port+'/ocr';
  cleanup.push(async()=>{proxy.closeAllConnections();await new Promise<void>(resolve=>proxy.close(()=>resolve()));});
- const config:Config={dataDir:join(root,'archive'),token:'generated-owner-'+randomUUID(),tokenPath:'generated-only',host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',media:{modelDirectory,python:'python3',ocrPort:Number(new URL(endpoint).port),asrPort:1,ocrEndpoint:endpoint,asrEndpoint:'http://127.0.0.1:1/transcribe',workerToken:secret}};
+ const config:ConfigurationPlatformOptions={path:(join(root,'archive'))+'/mote.yaml',privateCredential:{token:'generated-owner-'+randomUUID(),tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'archive'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'},media:{modelDirectory,python:'python3',ocrPort:Number(new URL(endpoint).port),asrPort:1,ocrEndpoint:endpoint,asrEndpoint:'http://127.0.0.1:1/transcribe',workerToken:secret}}};
  let node:Awaited<ReturnType<typeof buildApp>>|undefined,centralUrl='',initialOwnerApproval=true;
  const start=async()=>{node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model belongs in this media fixture');},close:async()=>{}}});assert.equal(node.featureServices.mediaAssets.ready('ocr'),true,'a fresh Central accepts the installed OCR receipt');centralUrl=await node.app.listen({host:'127.0.0.1',port:0});const settings=node.perception.settings();await node.perception.save({revision:node.configService.revision,settings:{...settings,enabled:true,understandingEnabled:false}});if(initialOwnerApproval){await authorizeFixtureModels(node);initialOwnerApproval=false;}return node;};
  const close=async()=>{await node?.app.close();node=undefined;};cleanup.push(close);
- const intake=async()=>{const id=randomUUID(),bytes=await sharp({create:{width:8,height:8,channels:3,background:'#aabbcc'}}).png().toBuffer();const response=await fetch(centralUrl+'/api/captures',{method:'POST',headers:{Authorization:'Bearer '+config.token,'Content-Type':'application/json','x-mote-ingress-version':'2'},body:JSON.stringify({id,deviceId:'generated-android',deviceName:'Generated phone',platform:'android',source:'screen',capturedAt:new Date().toISOString(),durationMs:0,appId:'generated',appName:'Generated',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')})});assert.equal(response.status,201,await response.text());return id;};
- return {root,config,posts,drop,start,close,intake,startWorker,stopWorker,probes:()=>probes,get node(){return node!;},release:()=>rm(join(root,'hold'),{force:true}),worker:()=>workerUrl,headers:{Authorization:'Bearer '+secret},request:(path:string,method:string)=>fetch(centralUrl+path,{method,headers:{Authorization:'Bearer '+config.token}})};
+ const intake=async()=>{const id=randomUUID(),bytes=await sharp({create:{width:8,height:8,channels:3,background:'#aabbcc'}}).png().toBuffer();const response=await fetch(centralUrl+'/api/captures',{method:'POST',headers:{Authorization:'Bearer '+config.privateCredential!.token,'Content-Type':'application/json','x-mote-ingress-version':'2'},body:JSON.stringify({id,deviceId:'generated-android',deviceName:'Generated phone',platform:'android',source:'screen',capturedAt:new Date().toISOString(),durationMs:0,appId:'generated',appName:'Generated',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')})});assert.equal(response.status,201,await response.text());return id;};
+ return {root,config,posts,drop,start,close,intake,startWorker,stopWorker,probes:()=>probes,get node(){return node!;},release:()=>rm(join(root,'hold'),{force:true}),worker:()=>workerUrl,headers:{Authorization:'Bearer '+secret},request:(path:string,method:string)=>fetch(centralUrl+path,{method,headers:{Authorization:'Bearer '+config.privateCredential!.token}})};
 }
 
 test('actual Central and copied Python worker recover a lost response and refunded attempt through restart, then succeed on the third call',async t=>{
  const f=await fixture(t),node=await f.start(),id=await f.intake();
  const running=node.perception.tick().catch(()=>{});await until(async()=>await readFile(join(f.root,'count'),'utf8').catch(()=>null)==='1','issued recognizer before shutdown');
  const call=node.processing.mediaCalls.pending()[0];assert.ok(call);assert.equal(node.executor.get(call.stepId)!.attempts,1);
- const transport={endpoint:f.config.media!.ocrEndpoint,apiKey:f.config.media!.workerToken,requestId:call.requestId,scope:call.scope,signal:new AbortController().signal};
+ const transport={endpoint:f.config.initialDocument!.media!.ocrEndpoint,apiKey:f.config.initialDocument!.media!.workerToken,requestId:call.requestId,scope:call.scope,signal:new AbortController().signal};
  assert.equal((await readMediaExecutionFact(transport))?.state,'running');assert.equal((await readMediaExecutionFact(transport))?.state,'running');
  assert.equal(node.executor.get(call.stepId)!.attempts,1,'status reads do not create attempts');
  await f.close();await running;await f.release();
@@ -119,8 +119,8 @@ test('successful worker facts cannot replace a lost body, and authenticated stat
  const pinned=node.processing.mediaCalls.get(call.requestId)!.fact!;
  assert.equal(node.processing.mediaCalls.observe(call.requestId,{...pinned,incarnation:randomUUID()}),false,'another physical incarnation cannot substitute its outcome');
  assert.equal(node.processing.mediaCalls.observe(call.requestId,{...pinned,stage:'diarize'}),false);
- const probes=f.probes();assert.equal(await readMediaExecutionFact({endpoint:f.config.media!.ocrEndpoint,apiKey:'',requestId:call.requestId,scope:call.scope,signal:new AbortController().signal}),undefined);assert.equal(f.probes(),probes,'missing credentials do not send a status request');
- const metadata=JSON.stringify(node.store.db.prepare('SELECT * FROM media_execution_calls').all());assert.ok(!metadata.includes(f.config.media!.workerToken));assert.ok(!metadata.includes('Generated retained OCR proof'));assert.ok(!metadata.includes(f.root));
+ const probes=f.probes();assert.equal(await readMediaExecutionFact({endpoint:f.config.initialDocument!.media!.ocrEndpoint,apiKey:'',requestId:call.requestId,scope:call.scope,signal:new AbortController().signal}),undefined);assert.equal(f.probes(),probes,'missing credentials do not send a status request');
+ const metadata=JSON.stringify(node.store.db.prepare('SELECT * FROM media_execution_calls').all());assert.ok(!metadata.includes(f.config.initialDocument!.media!.workerToken));assert.ok(!metadata.includes('Generated retained OCR proof'));assert.ok(!metadata.includes(f.root));
  for(let i=0;i<3;i++)await node.processing.tick();assert.equal(f.posts.length,1);assert.equal(node.store.db.prepare('SELECT count(*) n FROM image_products WHERE capture_id=?').get(id)!.n,0);
  await f.close();const restarted=await f.start();for(let i=0;i<3;i++)await restarted.processing.tick();assert.equal(f.posts.length,1,'success without body remains guarded through restart');
 });

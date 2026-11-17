@@ -15,7 +15,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
@@ -146,7 +146,7 @@ test('bulk Formal input validation preserves appended Coding prefixes and reject
 // 4097 context grants, exact coverage and single attempts remain unchanged.
 test('three actual Memory jobs prepare large context grants through the bridge without losing their execution lease',{timeout:240000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-large-bridge-'));
- const config:Config={dataDir:directory,token:'generated-large-memory-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:3};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-large-memory-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:3},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   calls.push(input);assert.ok(input.processingMaterialInputs?.length);assert.equal(Object.keys(input.processingEvidence!).length,4097);

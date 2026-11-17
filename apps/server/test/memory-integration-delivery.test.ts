@@ -8,7 +8,7 @@ import type {QueryInput,ContextReader} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {RecordingProvider} from '../src/connectors/recordings.js';
 import {feishuTranscript} from '../src/connectors/recording-formats.js';
 import {dingtalkTranscript} from '../src/connectors/dingtalk-recordings.js';
@@ -23,7 +23,7 @@ async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
  const original='Owner 00:00:00.000\nI prefer quiet mornings for focused work.\n';
  const provider:RecordingProvider={id:providerId,version:'generated@1',account:async()=>({id:'generated-owner',name:'Generated owner'}),discover:async()=>({ids:['generated-recording']}),
   metadata:async()=>({id:'generated-recording',title:'Generated recording',recordedAt:'2026-09-20T00:00:00Z',durationMs:5000}),transcript:async()=>providerId==='feishu'?{rawText:original,transcript:feishuTranscript(original,5000)}:dingtalkTranscript({taskUuid:'generated-recording',complete:true,paragraphList:[{nickName:'Owner',paragraph:'I prefer quiet mornings for focused work.',sentenceList:[{sentence:'I prefer quiet mornings for focused work.'}]}]},5000),media:async()=>({mimeType:'audio/wav',bytes:Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)])})};
- const cfg:Config={dataDir,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const cfg:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let node!:Awaited<ReturnType<typeof buildApp>>,rawId='';const calls:{skill?:string;phase?:string}[]=[],wire:{items:number;evidence:number;sourceEvidence:number}[]=[],seedDeliveries:number[]=[];let transportDenied=false;
  const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,connectorTesting:{recordings:[provider]},createModelAgent:async(_settings,reader,host)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{
   if(await planGeneratedMemory(input))return {answer:'Generated packages submitted.',citations:[],trace:[],runId:randomUUID()};
@@ -132,7 +132,7 @@ test('an explicitly retried window replaces its one receipt and deleting its lif
 
 test('actual app records native text handoff only after prepare succeeds, before independent review',async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'mote-native-integration-delivery-')),token='generated-native-delivery-owner';
- const config:Config={dataDir,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-native',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-native',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let release!:()=>void,entered!:()=>void,nativeCalls=0,reviewCalls=0;
  const preparing=new Promise<void>(resolve=>entered=resolve),accepted=new Promise<void>(resolve=>release=resolve);
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{

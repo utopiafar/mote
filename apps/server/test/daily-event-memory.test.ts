@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {MemoryStrategies} from '../src/memory-strategies.js';
 import {MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
@@ -38,7 +38,7 @@ test('capture defaults preserve explicit selections, only authorize future input
 
 test('generated screenshot and field HTTP intake runs daily extraction/review, supports local-day original-backed recall and preserves replay/delete fences',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-daily-journey-')),token='generated-daily-owner-token',headers={authorization:'Bearer '+token},data=await dailyEventFixtures();
-  const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const calls:QueryInput[]=[];
   const dependencies={backgroundWorker:false,createModelAgent:async(_settings:unknown,reader:ContextReader)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{
     const topic=fixtureTopicResult(input);if(topic)return topic;

@@ -5,7 +5,7 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import type {ModelFeature} from '@mote/shared/models';
 import type {z} from 'zod';
 import {ConfigService,ConfigServiceError,type ConfigDomainRegistration,type ConfigServiceOptions,type ConfigUpdatePaths} from '../config-service.js';
-import {registerBuiltinDomains,type Config} from '../config.js';
+import {registerBuiltinDomains,serverConfigDomain,validateResolvedConfigDocument} from '../config.js';
 import {ExecutionSettings,executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from '../execution-settings.js';
 import {ModelSettingsStore,ModelSettingsError,type ModelSettingsStoreOptions} from '../model-settings.js';
 import type {ConfigurationDomain} from './central-contracts.js';
@@ -25,7 +25,7 @@ export const configurationPlatformDeclaration={id:configurationPlatformContribut
 export const configurationPlatformReplacement='restart' as const;
 export interface ConfigurationPlatformOptions extends ConfigServiceOptions {
   /** Trusted bootstrap seed only. Owner-token checks and secret resolution remain in the existing registry. */
-  readonly config?:Config;
+  readonly privateCredential?:Readonly<{token:string;tokenPath:string}>;
 }
 type ModelDependencies=Omit<ModelSettingsStoreOptions,'configService'>;
 export type RegisteredConfigurationDomain<Input,Output>=Omit<ConfigurationDomain<Output>,'update'>&{
@@ -39,9 +39,17 @@ type DomainInput<S extends z.ZodTypeAny,R>=R extends z.AnyZodObject?z.input<R>:z
  * The raw assembly getters are trusted roots-only; none is published through ordinary services. */
 export function createConfigurationPlatform(options:ConfigurationPlatformOptions,deps:{configService?:ConfigService}={}) {
   const service=deps.configService??new ConfigService(options);
-  if(!deps.configService)registerBuiltinDomains(service,options.config);
+  if(!deps.configService)registerBuiltinDomains(service);
   let ready=false,closing=false,preparing:Promise<void>|undefined,starting:Promise<void>|undefined,closingTask:Promise<void>|undefined;
   let models:ModelSettingsStore|undefined,modelBinding:Promise<void>|undefined,modelsReady=false,quiescing=false;
+  // A supplied bootstrap service already pins the live owner validator.
+  if(!deps.configService&&options.privateCredential){
+    const fallback=options.privateCredential;
+    service.setValidator(document=>{
+      const server=ready?service.current(serverConfigDomain):document.server as {token:string};
+      validateResolvedConfigDocument(document,server.token.trim()||fallback.token);
+    });
+  }
   const subscriptions=new Set<()=>void>(),registrations=new Map<string,()=>Promise<void>>();
   const assertReady=()=>{if(!ready||closing)throw new ConfigServiceError('config_unavailable');};
   const assertAdmission=()=>{assertReady();if(quiescing)throw new ConfigServiceError('config_unavailable');};

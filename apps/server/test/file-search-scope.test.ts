@@ -8,13 +8,13 @@ import {randomUUID} from 'node:crypto';
 import {FILE_PART_BYTES,fileViewSchema,type FileRevision} from '@mote/shared';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {Indexer} from '../src/indexer.js';
 
 async function fixture(t:any,query?:QueryAgent['query']){
  const directory=mkdtempSync(join(tmpdir(),'mote-f9-search-')),token='generated-file-search-owner',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:Boolean(query),query:query??(async()=>{throw Error('No model expected');}),close:async()=>{}}});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const api=(method:'GET'|'POST'|'PUT'|'PATCH',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
@@ -208,7 +208,7 @@ test('a source withdrawn while the vector request is in flight cannot appear in 
  let entered!:()=>void,release!:()=>void,blocking=false;const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
  const provider=createServer(async(req,res)=>{for await(const _ of req){}if(blocking){entered();await gate;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{embedding:[1,0]}]}));});
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
- const indexer=new Indexer(node.store,{embeddingModel:'generated-vector',embeddingBaseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}`,embeddingApiKey:''},undefined,node.files);
+ const indexer=new Indexer(node.store,{model:'generated-vector',baseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}`,apiKey:''},undefined,node.files);
  try{
   const chunk=node.files.chunks(id)[0];node.files.indexed(chunk.id,[1,0],'generated-vector');
   const semantic=await indexer.search({query:'unmatched semantic phrase',source:'file'});assert.equal(semantic.retrieval.mode,'hybrid');assert.ok(semantic.some(record=>record.id===chunk.id),'the real vector channel returns an authorized file chunk');

@@ -1,4 +1,4 @@
-import { configFromFile,configFromDocument,registerBuiltinDomains,ConfigError } from './config.js';
+import { configurationFromFile,configurationBootstrap,serverConfigDomain,registerBuiltinDomains,ConfigError } from './config.js';
 import { buildApp } from './app.js';
 import {defaultDistribution} from './distribution/default.js';
 import { readFileSync,writeFileSync,unlinkSync,existsSync } from 'node:fs';
@@ -15,14 +15,14 @@ export interface ServerStartOptions {
 /** Reusable Central start path for trusted hosts. `index.ts` is the executable
  * entry; importing this module never starts a process by itself. */
 export async function startServer(options: ServerStartOptions = {}) {
-const selected=configFromFile(undefined,{initializeCredentials:false});
-const configService=new ConfigService({path:selected.configuration.configFile!});
+const selected=configurationFromFile();
+const configService=new ConfigService({path:selected.path});
 registerBuiltinDomains(configService);
 try{await configService.initialize();}catch(error){await configService.close();throw error;}
-const config=configFromDocument(configService.document(),configService.path);
-const configFile=config.configuration.configFile!,instanceId=randomUUID();
+const bootstrap=configurationBootstrap(configService),server=configService.current(serverConfigDomain);
+const configFile=bootstrap.configFile,instanceId=randomUUID();
 process.on('exit',()=>cleanupRuntimeListener(configFile,process.pid,instanceId));
-const pidPath=join(config.dataDir,'server.pid');
+const pidPath=join(bootstrap.dataDir,'server.pid');
 if(existsSync(pidPath)) {
   const pid=Number(readFileSync(pidPath,'utf8').trim());
   // We have not acquired this lock yet. A matching PID is an earlier process's
@@ -35,7 +35,7 @@ if(existsSync(pidPath)) {
 }
 writeFileSync(pidPath,String(process.pid),{mode:0o600,flag:'wx'});
 process.on('exit',()=>{try{if(existsSync(pidPath)&&readFileSync(pidPath,'utf8').trim()===String(process.pid))unlinkSync(pidPath);}catch{/* Never print a filesystem exception containing private paths. */}});
-const {app}=await buildApp(config,{...options.dependencies,backgroundWorker:true,configService,distribution:defaultDistribution});
+const {app}=await buildApp({...selected,privateCredential:bootstrap.owner},{...options.dependencies,backgroundWorker:true,configService,distribution:defaultDistribution});
 app.addHook('onSend',async(req,reply,payload)=>{if(req.routeOptions.url==='/api/health')reply.header('X-Mote-Runtime-Instance',instanceId);return payload;});
 let closing=false;
 const signals=['SIGTERM','SIGINT'] as const;
@@ -53,7 +53,7 @@ const shutdown=async()=>{
 // including on restart while old server.listening diagnostics remain on disk.
 for(const signal of signals)process.on(signal,shutdown);
 const starting=(async()=>{
-  await app.listen({host:config.host,port:config.port});
+  await app.listen({host:server.host,port:server.port});
   const address=app.server.address();
   if(!address||typeof address==='string')throw Error('Invalid server listener');
   await writeRuntimeListener(configFile,{version:1,pid:process.pid,port:address.port,address:address.address,instanceId});

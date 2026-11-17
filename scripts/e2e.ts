@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import sharp from 'sharp';
 import { buildApp } from '../apps/server/src/app.js';
 import {formatEvidenceRef} from '@mote/shared';
-import type { Config } from '../apps/server/src/config.js';
+import type { ConfigurationPlatformOptions } from '../apps/server/src/config.js';
 import {writeMessagesResponse} from './fixtures/messages-provider.js';
 
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
@@ -40,11 +40,11 @@ const fixtureModel=createServer(async(req,res)=>{
     text:JSON.stringify({answer:`这是合成测试：阅读了 orbital observatory 的资料。[${id}] 也主动记录了复盘笔记。[${noteId}]`,citationIds:[id,noteId]})});
 });
 await new Promise<void>(r=>fixtureModel.listen(0,'127.0.0.1',r));
-const config:Config={dataDir:dir,token:'synthetic-e2e-not-a-real-secret',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'3c'.repeat(32),maxExportBytes:10000000,insightIntervalHours:0,allowedOrigins:[],model:'synthetic-fixture',modelBaseUrl:`http://127.0.0.1:${(fixtureModel.address() as AddressInfo).port}/v1`,apiKey:'synthetic-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:'synthetic-e2e-not-a-real-secret',tokenPath:'unused'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,contentEncryptionEnabled:true,dataKey:'3c'.repeat(32),maxExportBytes:10000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'synthetic-fixture',baseUrl:`http://127.0.0.1:${(fixtureModel.address() as AddressInfo).port}/v1`,apiKey:'synthetic-fixture',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
 // This provider implements only the foreground query; continuous Memory timers
 // have their own real startup/automatic-processing journey.
 const {app,materialOrganizer}=await buildApp(config,{backgroundWorker:false});await app.listen({port:process.argv.includes('--serve')?47835:0,host:'127.0.0.1'});const base=`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
-const headers={Authorization:`Bearer ${config.token}`,'Content-Type':'application/json','Accept-Language':'en','X-Mote-Ingress-Version':'2'};
+const headers={Authorization:`Bearer ${config.privateCredential!.token}`,'Content-Type':'application/json','Accept-Language':'en','X-Mote-Ingress-Version':'2'};
 async function call(path:string,body?:unknown,method=body?'POST':'GET') {const res=await fetch(base+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});assert.ok(res.ok,`${path} returned ${res.status}: ${res.ok?'':await res.text()}`);return res.json();}
 try {
   const image=await sharp({create:{width:128,height:80,channels:3,background:'#365c4e'}}).webp().toBuffer();
@@ -62,5 +62,5 @@ try {
   const archive=await call('/api/export');assert.equal((await call('/api/import',archive)).duplicates,3);
   assert.equal((await call('/api/activity')).totalDurationMs,30000);
   console.info('PASS: synthetic Mac + Android screenshots + explicit mood note → encrypted deduplicated vault → real DeepSeek Harness tool loop + fixture model → evidence → image → portable archive round trip. No real device screenshot or live-model quality was tested.');
-  if(process.argv.includes('--serve')) {console.info(`Synthetic-only UI test node: ${base}; fixture token: ${config.token}; Ctrl+C stops and removes this disposable test vault.`);await new Promise<void>(r=>process.once('SIGINT',()=>r()));}
+  if(process.argv.includes('--serve')) {console.info(`Synthetic-only UI test node: ${base}; fixture token: ${config.privateCredential!.token}; Ctrl+C stops and removes this disposable test vault.`);await new Promise<void>(r=>process.once('SIGINT',()=>r()));}
 }finally{await app.close();fixtureModel.closeAllConnections();await new Promise<void>(r=>fixtureModel.close(()=>r()));await rm(dir,{recursive:true,force:true});}

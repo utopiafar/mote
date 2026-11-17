@@ -280,6 +280,54 @@ export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[]
   for(const proof of nonSqlProofs){
    if(receiver.getText(source)!==proof.receiver||method!==proof.method||location.name!==proof.scope)continue;
    const occurrence=(proofOccurrences.get(proof)??0)+1;proofOccurrences.set(proof,occurrence);
+   if(proof.kind==='local-resource-method'){
+    // Two named lifecycle calls use their own class or its direct local base.
+    // Bind the actual slot and arguments; never exempt the enclosing method.
+    if(proof.from!==file||proof.definitionFile!==file||method!=='prepare'||!['ModelDomain','QueryAgent'].includes(proof.parameterType))continue;
+    const owner=location.node.parent;
+    if(!owner||!ts.isClassDeclaration(owner)||owner.parent!==source||owner.name?.text!==proof.className||!['this','super'].includes(proof.receiver))continue;
+    const lexicalOwner=part=>{for(let parent=part.parent;parent;parent=parent.parent){if(ts.isFunctionLike(parent)&&!ts.isArrowFunction(parent))return ts.isClassDeclaration(parent.parent)?parent.parent:undefined;if(ts.isClassDeclaration(parent))return parent;}};
+    if(lexicalOwner(node)!==owner)continue;
+    const base=owner.heritageClauses?.find(clause=>clause.token===ts.SyntaxKind.ExtendsKeyword),target=proof.receiver==='this'?owner:source.statements.find(part=>ts.isClassDeclaration(part)&&part.name?.text===proof.entryType);
+    if(!target||target.name?.text!==proof.entryType)continue;
+    if(proof.receiver==='super'&&(base?.types.length!==1||!ts.isIdentifier(base.types[0].expression)||declarationFor(base.types[0].expression)!==target))continue;
+    const slots=target.members.filter(part=>part.name&&(ts.isIdentifier(part.name)||ts.isStringLiteral(part.name))&&part.name.text===method),implementation=slots[0];
+    if(slots.length!==1||!ts.isMethodDeclaration(implementation)||!implementation.body||implementation.parameters[0]?.type?.getText(source)!==proof.parameterType)continue;
+    const result=implementation.type;
+    if(!result||!ts.isTypeReferenceNode(result)||result.typeName.getText(source)!=='Promise'||result.typeArguments?.length!==1||result.typeArguments[0].getText(source)!=='PreparedModelSettings')continue;
+    let stable=true;
+    const references=part=>{
+     if(ts.isIdentifier(part)&&[owner,target].some(declaration=>declarationFor(part)===declaration)&&part!==owner.name&&part!==target.name){
+      const parent=part.parent;
+      if(!(ts.isNewExpression(parent)&&parent.expression===part||ts.isTypeReferenceNode(parent)||ts.isTypeQueryNode(parent)||ts.isExpressionWithTypeArguments(parent)))stable=false;
+     }
+     if(proof.receiver==='this'){
+      if(part.kind===ts.SyntaxKind.ThisKeyword&&lexicalOwner(part)===owner&&!(ts.isPropertyAccessExpression(part.parent)&&part.parent.expression===part))stable=false;
+      if(ts.isPropertyAccessExpression(part)&&part.expression.kind===ts.SyntaxKind.ThisKeyword&&lexicalOwner(part.expression)===owner&&part.name.text===method&&!(ts.isCallExpression(part.parent)&&part.parent.expression===part))stable=false;
+     }
+     ts.forEachChild(part,references);
+    };references(source);
+    if(!stable||target.members.some(part=>part.name&&ts.isComputedPropertyName(part.name))||target.members.some(part=>ts.isConstructorDeclaration(part)&&part.parameters.some(parameter=>parameter.name.getText(source)===method)))continue;
+    const bindings=new Map();
+    const argumentsVisit=part=>{
+     if(ts.isIdentifier(part)&&!(ts.isPropertyAccessExpression(part.parent)&&part.parent.name===part)){
+      const binding=declarationFor(part);
+      if(!binding||!(ts.isParameter(binding)||ts.isVariableDeclaration(binding)&&Boolean(binding.parent.flags&ts.NodeFlags.Const)))stable=false;
+      else bindings.set(part.text,binding.getText(source));
+     }
+     if(ts.isPropertyAccessExpression(part)&&part.expression.kind===ts.SyntaxKind.ThisKeyword){
+      const members=owner.members.flatMap(member=>ts.isConstructorDeclaration(member)?member.parameters.filter(parameter=>parameter.modifiers?.some(modifier=>[ts.SyntaxKind.PrivateKeyword,ts.SyntaxKind.ProtectedKeyword,ts.SyntaxKind.PublicKeyword,ts.SyntaxKind.ReadonlyKeyword].includes(modifier.kind))):[member]).filter(member=>member.name?.getText(source)===part.name.text);
+      if(members.length!==1||!ts.isParameter(members[0])&&!ts.isPropertyDeclaration(members[0]))stable=false;
+      else bindings.set('this.'+part.name.text,members[0].getText(source));
+     }
+     ts.forEachChild(part,argumentsVisit);
+    };node.arguments.forEach(argumentsVisit);
+    if(!stable)continue;
+    const header=declaration=>source.text.slice(declaration.getStart(source),declaration.members.pos);
+    const fingerprints={classHeaderFingerprint:hash(header(owner)),definitionClassHeaderFingerprint:hash(header(target)),definitionFingerprint:hash(implementation.getText(source)),callFingerprint:hash(node.getText(source)),argumentBindingsFingerprint:hash(JSON.stringify([...bindings]))};
+    if(occurrence!==proof.occurrence||Object.entries(fingerprints).some(([key,value])=>proof[key]!==value))continue;
+    nonSqlEvidence.push({...proof,...fingerprints});return true;
+   }
    if(proof.kind==='class-method'){
     const definitionText=sourceTexts.get(proof.definitionFile);if(definitionText===undefined)continue;
     const definition=ts.createSourceFile(proof.definitionFile,definitionText,ts.ScriptTarget.Latest,true),declaration=definition.statements.find(part=>ts.isClassDeclaration(part)&&part.name?.text===proof.className),implementation=declaration?.members.find(part=>ts.isMethodDeclaration(part)&&part.name.getText(definition)===method);

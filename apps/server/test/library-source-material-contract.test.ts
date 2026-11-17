@@ -4,14 +4,14 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 
 /** Real owner HTTP projection plus immutable source and Material reader contracts. */
 test('source revisions and Material revisions retain distinct identities and exact historical members',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-library-b1-contract-'));
   const token='generated-library-b1-contract-owner',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
-  const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model calls in B1 contract preparation');},close:async()=>{}}});
   node.materialOrganizer.tick=async()=>0;
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});

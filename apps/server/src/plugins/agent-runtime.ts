@@ -6,7 +6,8 @@ import type {AgentOptions} from '@mote/agent';
 import {z} from 'zod';
 import {AgentRuntimeRegistry,type AgentRuntimeRegistryDependencies} from '../agent-runtime-registry.js';
 import type {ConcurrencyGate} from '../concurrency.js';
-import type {Config} from '../config.js';
+import {modelsConfigDomain,type ConfigurationBootstrap} from '../config.js';
+import {resolve} from 'node:path';
 import type {ConfigService} from '../config-service.js';
 import {serverConfiguration} from '../configuration.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -58,7 +59,7 @@ export interface AgentRuntimeRouteDependencies {
 }
 
 export interface AgentRuntimeServicesDependencies {
-  readonly config:Config;
+  readonly bootstrap:ConfigurationBootstrap;
   readonly diagnostics:ServerDiagnostics;
   /** Registry inputs except codex and the two execution gates, which this
    * plugin also publishes on its own route surface. */
@@ -127,7 +128,8 @@ export function createAgentRuntimeServices(dependencies:AgentRuntimeServicesDepe
     get codex(){if(!codex)throw unavailable();return codex;},
     prepare(){
       if(phase!=='created')throw unavailable();
-      codex={executable:dependencies.config.codexBin,home:dependencies.config.codexHome};
+      const settings=dependencies.routes.configService.current(modelsConfigDomain).codex;
+      codex={executable:settings.executable,home:settings.home?resolve(dependencies.bootstrap.baseDir,settings.home):undefined};
       try{
         runtime=new AgentRuntimeRegistry({...dependencies.registry,codex,agentGate:dependencies.agentGate,interactiveGate:dependencies.interactiveGate},dependencies.onCloseError);
       }catch(error){codex=undefined;throw error;}
@@ -152,7 +154,7 @@ export function createAgentRuntimeServices(dependencies:AgentRuntimeServicesDepe
       if(mounted.has(app))throw new StoreError('Agent runtime routes are already installed',409);
       if(phase==='created'||phase==='stopped'||phase==='disposed')throw unavailable();
       mounted.add(app);
-      const {config,routes}=dependencies;
+      const {bootstrap,routes}=dependencies;
       const modelSettings=routes.modelSettings();
       app.register(async child=>{
         child.addHook('onRequest',async(request,reply)=>{
@@ -162,7 +164,7 @@ export function createAgentRuntimeServices(dependencies:AgentRuntimeServicesDepe
         registerModelSettingsRoutes(child,modelSettings,codex);
         registerAgentRuntimeSettingsRoutes(child,{agent:opened(),modelSettings,configService:routes.configService});
         if(routes.nativeDshModules)child.get('/api/agent-runtime/native-modules',async()=>({items:await routes.nativeDshModules!()}));
-        const configurationView=()=>{const d=routes.runtimeSettings.diagnostics(),view=serverConfiguration({...config,...routes.runtimeSettings.execution(),diagnosticsEnabled:d.enabled,diagnosticsDebug:d.debug,agentTraceEnabled:d.traceEnabled,logLevel:d.level},{modelSource:modelSettings.view().source,service:routes.configService.view()}),policy=routes.insightSettings(),field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;};
+        const configurationView=()=>serverConfiguration(bootstrap,routes.configService);
         child.get('/api/configuration',async()=>configurationView());
         child.put('/api/configuration/:id',{bodyLimit:1048576},async req=>{const {id}=z.object({id:z.string().min(1).max(128)}).parse(req.params),body=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),value:z.record(z.unknown()),allowCredentialReuse:z.boolean().optional()}).strict().parse(req.body);if(id==='models')checkModelCredentialReuse(routes.configService.saved<ModelDomain>('models'),body.value,body.allowCredentialReuse===true);if(id==='dsh'&&routes.validateNativeDshConfiguration)await routes.validateNativeDshConfiguration({...routes.configService.saved<object>('dsh'),...body.value});await routes.configService.update(id,body.value,body.revision);return configurationView();});
         registerExecutionSettingsRoutes(child,{runtimeSettings:routes.runtimeSettings,agentGate:dependencies.agentGate,llmGate:dependencies.llmGate,interactiveGate:dependencies.interactiveGate,interactiveModelGate:dependencies.interactiveModelGate,diagnostics:dependencies.diagnostics,providerAdmission:routes.providerAdmission,maintenanceSnapshot:routes.maintenanceSnapshot,delegatedSnapshot:routes.delegatedSnapshot,wakeMemory:routes.wakeMemory});

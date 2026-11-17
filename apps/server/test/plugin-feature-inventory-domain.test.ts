@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import {defaultDistribution} from '../src/distribution/default.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {featureInventoryPlugin} from '../src/plugins/feature-inventory-domain.js';
 import {plugins as inventoryPlugins,prepareFeatureInventory} from '../src/plugins/feature-inventory-domain.js';
@@ -20,7 +20,7 @@ const token='generated-inventory-domain-owner';
 const agent={configured:false,query:async()=>{throw Error('No model authorized for generated inventory');},close:async()=>{}};
 async function fixture(t:TestContext,distribution=defaultDistribution){
  const root=await mkdtemp(join(tmpdir(),'mote-inventory-domain-'));
- const config:Config={dataDir:root,token,tokenPath:'generated-inventory',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(root)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-inventory'},initialDocument:{version:1,revision:0,storage:{dataDir:root,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{agent,backgroundWorker:false,distribution});t.after(async()=>{await node.app.close();await rm(root,{recursive:true,force:true});});
  const origin=await node.app.listen({host:'127.0.0.1',port:0});
  const request=async(path:string,authorization:string|undefined=token,method='GET',body?:unknown)=>{const response=await fetch(origin+path,{method,headers:{...(authorization?{authorization:'Bearer '+authorization}:{}),...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});const text=await response.text();return {status:response.status,json:()=>JSON.parse(text),body:text};};
@@ -46,7 +46,7 @@ for(const omitted of ['feature','plugin','both'] as const)test('unselected inven
 });
 test('reselection and restart recreate only the selected inventory over the retained profile',async t=>{
  const {node}=await fixture(t);await node.app.close();
- const config=node.featureServices.config;
+ const facts=node.bootstrap.configurationBootstrap,config={path:facts.configFile,privateCredential:{token:facts.owner.token,tokenPath:facts.owner.tokenPath}};
  for(const selected of [false,true,true]){
   const current=await buildApp(config,{agent,backgroundWorker:false,distribution:{...defaultDistribution,features:selected?defaultDistribution.features:defaultDistribution.features.filter(id=>id!=='mote.features')}});
   try{const origin=await current.app.listen({host:'127.0.0.1',port:0}),response=await fetch(origin+'/api/features',{headers:{authorization:'Bearer '+token}});assert.equal(response.status,selected?200:404);assert.equal(current.bootstrap.snapshot().contributions.filter(c=>c.identity.contributionId==='feature-inventory').length,selected?1:0);}

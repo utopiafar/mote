@@ -27,7 +27,7 @@ async function upload(files:FileStore,bytes:Buffer,allowRead=false,mimeType='tex
 }
 test('late snapshot extraction updates the file view and directory and remains searchable without embeddings',async t=>{
  const {files,store,sources,cleanup}=fixture(t),text='Generated first paragraph.\n\nGenerated final searchable tail.',ack=await upload(files,Buffer.from(text),true);
- const processing=new FileProcessing(testScope(t),files),indexer=new Indexer(store,{embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
+ const processing=new FileProcessing(testScope(t),files),indexer=new Indexer(store,{model:'',baseUrl:'',apiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
  const before=fileViewSchema.parse(files.fileView(ack.id));assert.equal(before.coverage.extraction.status,'pending');
  assert.equal(browseSourceCatalog(store.db,'fixture',{parent:''}).items[0].coverage,'catalog');
  await processing.tick();
@@ -41,7 +41,7 @@ test('late snapshot extraction updates the file view and directory and remains s
 });
 test('embedding coverage counts current extracted chunks and identifies failures independently of extraction',async t=>{
  const {files,store,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated '.repeat(500)+'tail'),true),processing=new FileProcessing(testScope(t),files);
- const indexer=new Indexer(store,{embeddingModel:'generated-embedding',embeddingBaseUrl:'http://127.0.0.1:1',embeddingApiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
+ const indexer=new Indexer(store,{model:'generated-embedding',baseUrl:'http://127.0.0.1:1',apiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
  await processing.tick();const chunks=files.chunks(ack.id);assert.equal(chunks.length,2);
  assert.deepEqual(files.fileView(ack.id).coverage.embedding,{status:'pending',completed:0,total:2});
  files.indexed(chunks[0].id,[0.5,0.5],'generated-embedding');assert.equal(files.fileView(ack.id).coverage.embedding.status,'partial');assert.equal(files.fileView(ack.id).coverage.embedding.completed,1);assert.equal(files.fileView(ack.id).coverage.embedding.total,2);

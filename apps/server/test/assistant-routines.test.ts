@@ -10,7 +10,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {TaskRecords} from '../src/task-records.js';
 import {hostRun} from './fixtures/host-run.js';
 
@@ -36,9 +36,7 @@ const processScript=String.raw`
 
 async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResult>=async input=>answer(input),configured=true){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-routine-'));
- const config:Config={dataDir,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-routine-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-routine-owner',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  let clock=Date.parse('2026-11-01T08:00:00Z');
  const build=async()=>{
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured,query,close:async()=>{}}});

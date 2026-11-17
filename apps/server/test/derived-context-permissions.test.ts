@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Conversations} from '../src/conversations.js';
 import {sha256} from '../src/store.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
@@ -17,7 +17,7 @@ const token='generated-context-policy-token',headers={authorization:'Bearer '+to
 const reply=(answer='Generated reply'):QueryResult=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-derived-context-'));
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-remote',modelBaseUrl:'https://synthetic.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-remote',baseUrl:'https://synthetic.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let respond:(input:QueryInput)=>Promise<QueryResult>=async input=>reply(input.skill==='working-memory'?'Generated bounded summary':'Generated reply');
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);return respond(input);}})});

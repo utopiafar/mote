@@ -10,7 +10,7 @@ import {ImportUploads} from '../src/import-uploads.js';
 import {ImportStore} from '../src/imports.js';
 import {SourceStore} from '../src/sources.js';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 
 test('binary imports recover acknowledged parts, detect mismatched replay and import 480 archived originals',async t=>{
@@ -54,7 +54,7 @@ test('aged completed uploads keep durable archive receipts until import handoff,
 test('owner HTTP manual import preserves aged acknowledged parts through restart, new uploads, resume and durable archive replay',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-import-upload-age-')),file=join(directory,'mote.yaml'),token='generated-import-upload-owner-12345678';
  await writeFile(file,JSON.stringify({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:directory},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- const boot=()=>buildApp(configFromFile(file),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in generated upload lifecycle');},async close(){}}});
+ const boot=()=>buildApp(configurationFromFile(file),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in generated upload lifecycle');},async close(){}}});
  let node=await boot();t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token},id=randomUUID(),manifest={id,name:'generated-pending.bin',sizeBytes:4*1024*1024+23},begin=()=>node.app.inject({method:'POST',url:'/api/import-uploads',headers,payload:manifest});
  assert.equal((await node.app.inject({method:'POST',url:'/api/import-uploads',payload:manifest})).statusCode,401);
@@ -88,7 +88,7 @@ test('a failed upload checkpoint retains acknowledged bytes and replays the same
 for(const failure of ['sql','filesystem'] as const)test(`owner HTTP retries ${failure} part cleanup through the real Web receipt consumer without another original upload`,async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-import-cleanup-')),config=join(directory,'mote.yaml'),token='generated-cleanup-retry-owner-12345678';
  await writeFile(config,JSON.stringify({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:directory},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- const boot=()=>buildApp(configFromFile(config),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in generated cleanup lifecycle');},async close(){}}});
+ const boot=()=>buildApp(configurationFromFile(config),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in generated cleanup lifecycle');},async close(){}}});
  let node=await boot(),partDirectory='';t.after(async()=>{if(partDirectory)await chmod(partDirectory,0o700).catch(error=>{if(error.code!=='ENOENT')throw error;});await node.app.close();await rm(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token},bytes=Buffer.from('Generated retained archive after '+failure+' cleanup failure'),name='generated-cleanup.bin';
  const started=await node.app.inject({method:'POST',url:'/api/import-uploads',headers,payload:{name,sizeBytes:bytes.length}});assert.equal(started.statusCode,200,started.body);const id=started.json().id;partDirectory=join(directory,'import-uploads',id);

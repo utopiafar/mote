@@ -7,14 +7,14 @@ import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
 import type {SourceContextDeclaration} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Conversations} from '../src/conversations.js';
 import {SourceContextStore} from '../src/source-context.js';
 import {WorkingMemory} from '../src/working-memory.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
 
 const token='generated-source-context-conversation-token',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const answer=(text:string,pins:SourceContextDeclaration[]=[])=>({answer:text,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]},...(pins.length?{sourceContextDependencies:pins}:{})});
 const agent=(query:QueryAgent['query']):QueryAgent=>({configured:true,query,close:async()=>{}});
 

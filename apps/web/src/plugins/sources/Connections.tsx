@@ -126,7 +126,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         return ()=>{alive=false;controller.abort();clearInterval(timer);};
     },[api,mode]);
     useEffect(() => {
-        const configured = configuration.data?.groups.flatMap(group => group.fields).find(field => field.key === 'publicUrl')?.value;
+        const configured = (configuration.data?.domains.find(domain=>domain.id==='server')?.effective as {publicUrl?:unknown}|undefined)?.publicUrl;
         if (typeof configured === 'string' && configured) {
             try {
                 const url = connectionServerUrl(configured);

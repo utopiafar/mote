@@ -9,7 +9,7 @@ import {z} from 'zod';
 import type {UsageReceipt} from '@mote/shared';
 import type {Memory} from '../apps/server/src/memory.js';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
@@ -31,8 +31,8 @@ const report:Record<string,any>=resume?JSON.parse(await readFile(reportPath,'utf
 if(resume){assert.equal(report.fixtureSha256,frozenHash);assert.equal(report.status,'core-passed','Resume only a finished, structurally passed core run; diagnose failures separately');}
 else {await mkdir(directory,{mode:0o700});await writeFile(join(directory,'manifest.json'),manifestBytes,{mode:0o600,flag:'wx'});}
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex'),sourceId='generated-effective-memory';
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:fixture.limits.perCallTimeoutMs,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
-const invocation:Record<string,any>={startedAt:new Date().toISOString(),stages:full?'full':'core',node:process.version,platform:process.platform,architecture:process.arch,head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim(),diffStat:execFileSync('git',['diff','--stat'],{cwd:repositoryRoot,encoding:'utf8'}),codexVersion:execFileSync(config.codexBin??'codex',['--version'],{encoding:'utf8'}).trim()};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:fixture.limits.perCallTimeoutMs},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
+const invocation:Record<string,any>={startedAt:new Date().toISOString(),stages:full?'full':'core',node:process.version,platform:process.platform,architecture:process.arch,head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim(),diffStat:execFileSync('git',['diff','--stat'],{cwd:repositoryRoot,encoding:'utf8'}),codexVersion:execFileSync(config.initialDocument!.models.codex.executable??'codex',['--version'],{encoding:'utf8'}).trim()};
 const codePaths=['scripts/test-effective-memory-live.ts','apps/server/src/memory.ts','apps/server/src/memory-deletions.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-review.ts','apps/server/src/memory-extraction-drafts.ts','apps/server/src/memory-routes.ts','apps/server/src/plugins/agent-read-tools.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js'];
 invocation.codeHashes=Object.fromEntries(await Promise.all(codePaths.map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 invocation.command={executable:process.execPath,args:process.execArgv.concat(process.argv.slice(1)),environment:{MOTE_EFFECTIVE_MANIFEST:process.env.MOTE_EFFECTIVE_MANIFEST,MOTE_EFFECTIVE_OUTPUT:directory,MOTE_EFFECTIVE_RESUME:resume?'1':'0',MOTE_EFFECTIVE_STAGES:full?'full':'core',MOTE_EFFECTIVE_PREFLIGHT:preflight?'1':'0'}};
@@ -96,7 +96,7 @@ async function ask(questionId:string){
   finally{entry.durationMs=Date.now()-Date.parse(entry.startedAt);const items=receipts().filter(item=>!before.has(item.id));entry.usage={total:usageTotals(items),items};await save();}
 }
 async function run(){try{
-  report.status='running';await save();const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});report.catalog=catalog.items.find(item=>item.id==='gpt-6-sol');assert.ok(report.catalog?.reasoningEfforts?.includes('max'));
+  report.status='running';await save();const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});report.catalog=catalog.items.find(item=>item.id==='gpt-6-sol');assert.ok(report.catalog?.reasoningEfforts?.includes('max'));
   await open();
   if(!resume){
     await request('POST','/api/sources',{id:sourceId,name:'Generated effective Memory regression',kind:'custom',deviceId:sourceId,platform:'import',retention:'archive'});

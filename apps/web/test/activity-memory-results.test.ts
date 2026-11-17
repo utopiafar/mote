@@ -159,7 +159,7 @@ test('the manual refresh button rereads Memory results while the work receipt st
 test('a real Central receipt stays unchanged while the manual button rereads a deleted and retitled result',async t=>{
  const {buildApp}=await import('../../server/src/app.js'),{memoryEvidenceFingerprint}=await import('../../server/src/memory.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-activity-refresh-')),token='generated-refresh-contract';
- const node=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false});
+ const node=await buildApp({path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{backgroundWorker:false});
  t.after(async()=>{
   // Only the Web refresh clock is virtual; Host cleanup needs real timers.
   t.mock.timers.reset();await node.app.close();rmSync(directory,{recursive:true,force:true});

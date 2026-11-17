@@ -5,13 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {AssistantMatters} from '../src/assistant-matters.js';
 
 test('owner matter routes preserve revision conflicts, explicit empty scope and fresh evidence disclosure',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-u2-routes-')),token='generated-u2-owner',headers={authorization:'Bearer '+token};
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-  insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});await node.app.ready();
  const id=randomUUID(),created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-device',deviceName:'Generated',platform:'import',capturedAt:'2026-11-01T00:00:00Z',text:'Generated U2 original'}});
@@ -38,8 +37,7 @@ test('owner matter routes preserve revision conflicts, explicit empty scope and 
 
 test('owner matter routes paginate only objects visible in the current scope',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-u2-pages-')),headers={authorization:'Bearer generated-u2-pages'};
- const config:Config={dataDir,token:'generated-u2-pages',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-  insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-u2-pages',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});await node.app.ready();
  const hidden={kind:'selection',sourceIds:['generated-u2-hidden']},scope={kind:'selection',sourceIds:['generated-u2-visible']};

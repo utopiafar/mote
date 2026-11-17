@@ -2046,8 +2046,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTasks",
   "definitionFile": "apps/server/src/assistant-tasks.ts",
   "occurrence": 1,
-  "moduleFingerprint": "898c87b0bc11d27d4dd251fe183198f6205f43ec63b5ccfd641db1c5cfadd5b8",
-  "scopeFingerprint": "258295bb5073a8969d978ef8bf0328f82bcf6e604f04e7fe4f05f252a048cb4a",
+  "moduleFingerprint": "da1e92df79d8fd3fe80e82e83d53327f05ece4b034480ad836647be8682f8090",
+  "scopeFingerprint": "e7e07f44a70414d25f2d9e37e2a019fd96ab7e2892389866f506da8f9d5a9c1a",
   "callFingerprint": "9104236b78880379928fdb6b2d187dac91fbc78fef00cba42700d3204be1cb92",
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
@@ -2055,6 +2055,42 @@ export const nonSqlCalls=[
   "definitionModuleFingerprint": "1d531ba3da322e8bc5e76e5d386a781bcd4cebb80a51ddf0da2b490ded038c21",
   "definitionFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "reason": "Exact imported Task adapter prepares a QueryInput through its statically bound class method; the call is not a SQLite statement."
+ },
+ {
+   "kind": "local-resource-method",
+   "from": "apps/server/src/agent-runtime-registry.ts",
+   "scope": "AgentRuntimeRegistry.prepareModels",
+   "receiver": "super",
+   "method": "prepare",
+   "className": "AgentRuntimeRegistry",
+   "entryType": "ReloadableAgent",
+   "definitionFile": "apps/server/src/agent-runtime-registry.ts",
+   "parameterType": "QueryAgent",
+   "occurrence": 1,
+   "classHeaderFingerprint": "5a677d9189c951705fa439130d705e0c56b1bade1088242a06a294fce5a94665",
+   "definitionClassHeaderFingerprint": "d7665abb488a010289aaf150b03742143a8465bb11e2d06842b35d03bcce701c",
+   "definitionFingerprint": "38beea3354d0491f0d8608da64b52ccbf8094168558c5bd44b2a966cf5d5f698",
+   "callFingerprint": "68f98e9fbdd9be78073a97ec0648d7bd4df6b4dd425dda921362011fb30cd77b",
+   "argumentBindingsFingerprint": "afc76f13965c1b19dcf79b6d4520925b83403dd6ace97456243a29f4264346ea",
+   "reason": "Exact super.prepare resource lifecycle call, bound to its local class declaration, direct heritage where applicable, implementation and actual argument bindings; database calls inside the method remain scanned."
+ },
+ {
+   "kind": "local-resource-method",
+   "from": "apps/server/src/model-settings.ts",
+   "scope": "ModelSettingsStore.initialize",
+   "receiver": "this",
+   "method": "prepare",
+   "className": "ModelSettingsStore",
+   "entryType": "ModelSettingsStore",
+   "definitionFile": "apps/server/src/model-settings.ts",
+   "parameterType": "ModelDomain",
+   "occurrence": 1,
+   "classHeaderFingerprint": "f3e638dbc62adc62e601350f633f1e6ac8ed972c0f8b440c57af36dcc97737f0",
+   "definitionClassHeaderFingerprint": "f3e638dbc62adc62e601350f633f1e6ac8ed972c0f8b440c57af36dcc97737f0",
+   "definitionFingerprint": "57ba8eba1cc00f33b770a3eaaa9e84592648f0ae8f4034f0fd036dc3d22ec0e2",
+   "callFingerprint": "1ef836fd9a53701bbe4b3df3597e206ce9cc5b3813da953f321ea70b50391734",
+   "argumentBindingsFingerprint": "1da0e0d2cbc8d4fa35a80d55b718cceed9f02857fc8f8ebe3f59b74afbd198ff",
+   "reason": "Exact this.prepare resource lifecycle call, bound to its local class declaration, direct heritage where applicable, implementation and actual argument bindings; database calls inside the method remain scanned."
  }
 ];
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { serializeConfigDocument } from '@mote/shared/config-file';
 import { buildApp } from '../src/app.js';
-import type { Config } from '../src/config.js';
+import type { ConfigurationPlatformOptions } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 import { parseConfigDocument, readConfigDocument, registerBuiltinDomains } from '../src/config.js';
 import { MemoryLifecycle, storedMemoryLifecycleSettings, type LifecycleWindow } from '../src/memory-lifecycle.js';
@@ -58,9 +58,9 @@ test('external Memory budget edits affect the next admitted window while active 
 
 test('owner HTTP saves Memory through its typed configuration consumer and restart keeps the saved budget', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-memory-config-http-'));
-  const config: Config = { dataDir: directory, token: 'generated-memory-config-owner', tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0, allowedOrigins: [], model: 'generated-model', modelProvider: 'custom', modelProtocol: 'openai-completions', modelBaseUrl: 'https://generated.invalid/v1', apiKey: 'generated-unused', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false, logLevel: 'silent' };
+  const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-config-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
   const agent = { configured: false, close: async () => {}, query: async () => { throw Error('Generated Memory configuration must not invoke a model'); } };
-  const headers = { authorization: 'Bearer ' + config.token };
+  const headers = { authorization: 'Bearer ' + config.privateCredential!.token };
   let node = await buildApp(config, { backgroundWorker: false, agent }); await node.app.ready();
   t.after(async () => { await node.app.close().catch(() => {}); rmSync(directory, { recursive: true, force: true }); });
   const view = async () => { const response = await node.app.inject({ url: '/api/configuration', headers }); assert.equal(response.statusCode, 200, response.body); return response.json(); };

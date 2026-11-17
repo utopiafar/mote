@@ -5,13 +5,13 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {defaultDistribution} from '../src/distribution/default.js';
 import {connectionsRoutesPlugin,connectionsRouteInputContribution,connectionsRoutesContribution} from '../src/features/connections.js';
 
 const token='generated-connections-domain-owner-0123456789';
 const agent={configured:false,query:async()=>{throw Error('No model belongs to the Connections domain fixture');},close:async()=>{}};
-function config(directory:string):Config{return {dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,profile:'test',maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};}
+function config(directory:string):ConfigurationPlatformOptions{return {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};}
 async function fixture(t:import('node:test').TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-connections-domain-'));let node:Awaited<ReturnType<typeof buildApp>>|undefined;
  t.after(async()=>{try{await node?.app.close();}finally{await rm(directory,{recursive:true,force:true});}});

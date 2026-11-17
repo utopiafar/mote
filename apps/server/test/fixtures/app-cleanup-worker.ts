@@ -4,17 +4,14 @@ import {access,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {LightMyRequestResponse} from 'fastify';
 import {buildApp} from '../../src/app.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import type {ModelAgentFactory} from '../../src/model-agent.js';
 import {appCleanup} from './app-cleanup.js';
 
 const [directory,report]=process.argv.slice(2),closed:string[]=[];
 test('a generated assertion failure still closes the restarted app and its held query',async t=>{
   const cleanup=appCleanup(t,directory);
-  const config:Config={dataDir:directory,token:'generated-cleanup-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-    model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'generated-key',
-    allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-cleanup-owner',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://fixture.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};
   let release!:()=>void,started!:()=>void;
   const held=new Promise<void>(resolve=>{release=resolve;}),began=new Promise<void>(resolve=>{started=resolve;});
   const factory:ModelAgentFactory=async()=>({configured:true,close:async()=>{},query:async()=>{
@@ -37,7 +34,7 @@ test('a generated assertion failure still closes the restarted app and its held 
     assert.equal(response.json().answer,'Generated answer');
     closed.push('query-settled');await writeFile(report,JSON.stringify(closed));
   });
-  pending=restarted.app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${config.token}`},payload:{question:'Generated held query'}});
+  pending=restarted.app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${config.privateCredential!.token}`},payload:{question:'Generated held query'}});
   await began;
   assert.fail('Generated cleanup regression assertion');
 });

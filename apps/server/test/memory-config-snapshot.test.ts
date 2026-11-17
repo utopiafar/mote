@@ -8,7 +8,7 @@ import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 import {modelConfiguration} from '../src/model-configuration.js';
-import {modelSettingsFromConfig} from '../src/model-agent.js';
+import {deploymentModelSettingsSchema} from '../src/model-settings.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-config-run'});
 const snapshot=(fingerprint='one',revision=1)=>({owner:'models' as const,fingerprint,revision,profileId:'generated-profile',provider:'generated',model:'generated-model'});
@@ -40,7 +40,7 @@ test('Memory recovery preserves configuration and completed checkpoints until ex
 
 
 test('model receipts exclude credentials and ignore unrelated revisions and object key order',()=>{
- const settings=modelSettingsFromConfig({model:'generated-model',apiKey:'generated-secret',modelHeaders:{first:'one',second:'two'}} as Parameters<typeof modelSettingsFromConfig>[0]);
+ const settings=deploymentModelSettingsSchema.parse({model:'generated-model',apiKey:'generated-secret',headers:{first:'one',second:'two'}});
  const first=modelConfiguration('fixture',settings,1),same=modelConfiguration('fixture',{...settings,headers:{second:'two',first:'one'}},2);
  assert.equal(first.fingerprint,same.fingerprint);assert.notEqual(first.revision,same.revision);assert.ok(!JSON.stringify(first).includes('generated-secret'));
  assert.notEqual(first.fingerprint,modelConfiguration('fixture',{...settings,apiKey:'replacement'},1).fingerprint);

@@ -26,7 +26,7 @@ import {reviewMemory} from '../src/memory-review.js';
 import {fixtureMemoryPipeline,fixtureMemoryResult} from './fixtures/memory-result.js';
 import type {MemoryPipelineQuery} from '../src/memory-pipeline.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const all:QueryScope={kind:'all'},headers={authorization:'Bearer generated-onboarding-owner'};
 const at='2020-01-02T00:00:00Z';
@@ -224,7 +224,7 @@ test('an interrupted progress write rolls back assistant admission instead of le
 
 test('assembled server mounts owner-only onboarding commands without enabling automatic processing',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-onboarding-host-'));
- const config:Config={dataDir,token:'generated-onboarding-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-onboarding-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('An unconfigured production guard must not send');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const unauthorized=await node.app.inject({method:'POST',url:'/api/assistant/onboarding',payload:{}});assert.equal(unauthorized.statusCode,401);

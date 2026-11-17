@@ -8,14 +8,14 @@ import {join} from 'node:path';
 import {uiPageText,type UiPageV3} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import {Store} from '../src/store.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MaterialMemoryObservation} from '../src/material-memory-work.js';
 
 const at=(second:number)=>new Date(Date.parse('2026-10-10T00:00:00Z')+second*1000).toISOString();
 const token='generated-backfill-owner-token-000000';
 const headers={authorization:`Bearer ${token}`};
 const agent={configured:false,query:async()=>{throw Error('No live model in generated fixtures');},close:async()=>{}};
-function config(dataDir:string):Config{return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};}
+function config(dataDir:string):ConfigurationPlatformOptions{return {path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'32'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};}
 function record(source:'screen'|'ui_page',second:number){
   const page:UiPageV3={version:3,scope:'visible_window',adapterId:'generated.fields',adapterVersion:'1',appVersion:'1',activity:'fixture.ArticleActivity',status:'ok',truncated:false,
     observations:{firstAt:at(second),lastAt:at(second),count:1},objects:[structuredObject({kind:'article',title:'Generated article',body:[{text:'Generated retained paragraph'}],

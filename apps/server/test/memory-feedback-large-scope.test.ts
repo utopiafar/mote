@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 import {sha256} from '../src/store.js';
 import {validMemoryFeedbackGroup,validMemoryFeedbackPlan,type MemoryFeedbackRequest} from '../src/memory-feedback.js';
@@ -33,7 +33,7 @@ test('feedback keeps large exact target/context sets and partitions without a gr
 
 test('a large reviewed needs-context batch recovers through the real coordinator without clipping targets or grants',{timeout:30000},async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'mote-large-feedback-'));
- const config:Config={dataDir,token:'generated-feedback-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-feedback-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const calls:QueryInput[]=[],requests:MemoryFeedbackRequest[]=[];let targetIds:string[]=[],contextIds:string[]=[],node!:Awaited<ReturnType<typeof buildApp>>,fixtureMaterial:{id:string;ref:string}|undefined,checkedOrganizer=false;
  const settleOrganizer=async()=>{
   for(let turn=0;turn<20;turn++){await node.materialOrganizer.tick(200);const status=node.materialOrganizer.status();if(status.pendingChanges===0&&status.pendingSteps===0&&status.backfills.every(backfill=>backfill.complete))return status;await new Promise<void>(resolve=>setImmediate(resolve));}

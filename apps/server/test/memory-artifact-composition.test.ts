@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {parseAnswer,type QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {materialId} from '../src/materials.js';
 import {serveGeneratedFunasr} from './fixtures/funasr.js';
@@ -23,7 +23,7 @@ const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length
 
 async function fixture(t:import('node:test').TestContext,remote=false){
   const directory=mkdtempSync(join(tmpdir(),'mote-artifact-recipes-'));
-  const config:Config={dataDir:directory,token:'generated-artifact-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-artifact-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   if(remote)Object.assign(config,{modelBaseUrl:'https://generated.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false});
   let node:Awaited<ReturnType<typeof buildApp>>,asrCalls=0;
   const boundaryChecks:{phase:string|undefined;targetCount:number;seedCount:number;siblingSeeded:boolean;ungrantedIds:string[]}[]=[];
@@ -89,7 +89,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
   };
   await start();
   const settings=node.processing.view();await node.processing.save({revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false},policy:fixtureFilePolicy({...settings.settings,enabled:true,audioProcessor:'audio.http',endpoint:'http://127.0.0.1:1234/transcribe',summarize:false},node.processing.runtime.registry)});
-  const selected=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.token},payload:{recipes:[bodyRecipe,extractedPersonal,extractedCoding]}});assert.equal(selected.statusCode,200,selected.body);
+  const selected=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.privateCredential!.token},payload:{recipes:[bodyRecipe,extractedPersonal,extractedCoding]}});assert.equal(selected.statusCode,200,selected.body);
   await authorizeFixtureModels(node);
   const upload=async(mime='audio/wav',sourceId='generated-audio')=>{
     node.sources.register({id:sourceId,name:'Generated '+sourceId,kind:mime==='audio/wav'?'local-files':'upload',deviceId:'fixture',platform:'import',retention:'archive'});
@@ -101,7 +101,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
   const queue=async()=>{const p=node.memoryPipeline;await node.sourcePipelines.drainMemory({create:i=>p.create(i),state:id=>p.state(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   const run=async()=>{await queue();await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  return {get node(){return node;},control,calls,boundaryChecks,upload,organize,queue,run,request:(payload:Record<string,unknown>)=>node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload}),count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,asrCalls:()=>asrCalls,
+  return {get node(){return node;},control,calls,boundaryChecks,upload,organize,queue,run,request:(payload:Record<string,unknown>)=>node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.privateCredential!.token},payload}),count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,asrCalls:()=>asrCalls,
     nativeDialogue:()=>serveGeneratedFunasr(t,{audio:wave,durationMs:1000,segments:[{startMs:0,endMs:1000,text:control.transcript,speaker:0}],speakers:{mode:'exact',count:1}},()=>asrCalls++),
     async restart(){await node.app.close();await start();}};
 }

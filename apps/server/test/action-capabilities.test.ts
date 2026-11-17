@@ -6,14 +6,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store,StoreError,sha256} from '../src/store.js';
 import {calendarPluginCapabilitySchema} from '@mote/shared';
 
 const owner='generated-action-capability-owner',mcpReadToken='generated-static-read-mcp-token-123456789',headers=(token=owner)=>({authorization:'Bearer '+token});
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('Capability contracts do not call a model');},close:async()=>{}};
 async function fixture(t:TestContext){
- const directory=await mkdtemp(join(tmpdir(),'mote-action-capabilities-')),store=new Store(directory),config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken,mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const directory=await mkdtemp(join(tmpdir(),'mote-action-capabilities-')),store=new Store(directory),config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken,mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
  let node=await buildApp(config,{store,agent,backgroundWorker:false});
  const restart=async()=>{await node.app.close();node=await buildApp(config,{store,agent,backgroundWorker:false});return node;};
  t.after(async()=>{await node.app.close();store.close();await rm(directory,{recursive:true,force:true});});

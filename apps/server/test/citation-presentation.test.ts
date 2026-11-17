@@ -5,12 +5,12 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 
 test('only built-in source-item Material serialization receives citation display metadata; originals stay literal',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-citation-presentation-'));
-  const config:Config={dataDir:directory,token:'generated-citation-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-citation-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in this fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   node.sources.register({id:'generated-citation',name:'Generated citation source',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});

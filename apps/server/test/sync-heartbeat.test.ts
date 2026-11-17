@@ -4,15 +4,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildApp, type QueryAgent } from '../src/app.js';
-import type { Config } from '../src/config.js';
+import type { ConfigurationPlatformOptions } from '../src/config.js';
 
 const inactive: QueryAgent = { configured: false, query: async () => { throw new Error('No model calls in synthetic heartbeat fixtures'); }, close: async () => {} };
 async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'mote-sync-heartbeat-'));
-  const config: Config = { dataDir: directory, token: 'synthetic-owner-sync-heartbeat-token', tokenPath: 'fixture-only', host: '127.0.0.1', port: 0, profile: 'test',  maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '' };
+  const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:'synthetic-owner-sync-heartbeat-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   let value = await buildApp(config, { agent: inactive });
   t.after(async () => { await value.app.close(); await rm(directory, { recursive: true, force: true }); });
-  return { headers: { authorization: `Bearer ${config.token}` }, get app() { return value.app; }, restart: async () => { await value.app.close(); value = await buildApp(config, { agent: inactive }); } };
+  return { headers: { authorization: `Bearer ${config.privateCredential!.token}` }, get app() { return value.app; }, restart: async () => { await value.app.close(); value = await buildApp(config, { agent: inactive }); } };
 }
 const beat = { deviceId: 'synthetic-sync-device', deviceName: 'Synthetic Mac', platform: 'macos', status: 'capturing', queueDepth: 3, lastCaptureAt: '2026-09-14T12:00:00.000Z' };
 const snapshot = { mode: 'interval', state: 'waiting', intervalMinutes: 15, batchSize: 20, pendingRecords: 7, lastUploadAt: '2026-09-14T11:50:00.000Z', nextUploadAt: '2026-09-14T12:05:00.000Z' };

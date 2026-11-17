@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../../server/src/app.js';
-import {configFromFile} from '../../server/src/config.js';
+import {configurationFromFile} from '../../server/src/config.js';
 
 const root=fileURLToPath(new URL('../../../',import.meta.url)),directory=await mkdtemp(join(tmpdir(),'mote-native-file-transfer-')),token=randomBytes(32).toString('hex'),path=join(directory,'mote.yaml');
 let node:Awaited<ReturnType<typeof buildApp>>|undefined,child:ReturnType<typeof spawn>|undefined;
@@ -15,7 +15,7 @@ const stop=()=>{if(child?.pid&&child.exitCode===null&&child.signalCode===null)tr
 const interrupt=()=>stop();process.once('SIGINT',interrupt);process.once('SIGTERM',interrupt);
 try{
  await writeFile(path,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:join(directory,'data')},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- node=await buildApp(configFromFile(path),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in native file transfer fixture');},async close(){}}});
+ node=await buildApp(configurationFromFile(path),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in native file transfer fixture');},async close(){}}});
  let partZero=0;node.app.addHook('onRequest',async request=>{if(request.method==='PUT'&&request.url.endsWith('/parts/0'))partZero++;});const origin=await node.app.listen({host:'127.0.0.1',port:0}),output=join(directory,'native-output.json');
  child=spawn(join(root,'apps/android/gradlew'),['-p','apps/android','--no-daemon',':app:testDebugUnitTest','--rerun','--tests','dev.mote.collector.FileTransferCentralContractTest','--tests','dev.mote.collector.FileTransferTest','--tests','dev.mote.collector.LocalSourcesTest','--tests','dev.mote.collector.FileArchiveQueueTest','--tests','dev.mote.collector.RecordAttachmentIdentityTest','--tests','dev.mote.collector.meeting.MeetingRecordingTest'],{cwd:root,stdio:'inherit',detached:process.platform!=='win32',env:{...process.env,MOTE_FILE_TRANSFER_ORIGIN:origin,MOTE_FILE_TRANSFER_TOKEN:token,MOTE_FILE_TRANSFER_OUTPUT:output}});
  await new Promise<void>((done,failed)=>{let timeout:NodeJS.Timeout|undefined;const timer=setTimeout(()=>{stop();timeout=setTimeout(()=>{if(child?.pid)try{process.kill(process.platform==='win32'?child.pid:-child.pid,'SIGKILL');}catch{}},5000);},15*60_000);child!.once('error',failed);child!.once('close',code=>{clearTimeout(timer);clearTimeout(timeout);if(code===0)done();else failed(Error('Native transfer Gradle failed: '+code));});});

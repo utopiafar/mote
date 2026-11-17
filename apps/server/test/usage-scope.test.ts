@@ -11,7 +11,7 @@ import {UsageLedger} from '../src/usage.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createObservabilityPlatformFactory,type ObservabilityPlatform} from '../src/plugins/observability-platform.js';
 import {buildApp} from '../src/app.js';
-import {configFromDocument} from '../src/config.js';
+import {} from '../src/config.js';
 
 const tokens={requests:1,reportedRequests:1,inputTokens:1000000,outputTokens:100000,totalTokens:1100000,cacheReadTokens:500000,cacheWriteTokens:100000};
 const price={provider:'generated',model:'generated-model',currency:'USD',input:2,output:8,cacheRead:0.5,cacheWrite:3};
@@ -106,7 +106,7 @@ test('a consumer revoked during DTO copying cannot commit a late meter or price 
 
 test('bootstrap usage meter feeds actual owner HTTP totals and price snapshots; stopped cached meters cannot write',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-usage-http-')),token='generated-usage-owner-token-0123456789';
- const config=configFromDocument({version:1,revision:0,storage:{dataDir:directory}},join(directory,'mote.yaml'),{token,tokenPath:'generated'});
+ const config={path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0,storage:{dataDir:directory}},privateCredential:{token,tokenPath:'generated'}};
  const node=await buildApp(config,{backgroundWorker:false});t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
  const url=await node.app.listen({host:'127.0.0.1',port:0}),day=new Date().toISOString().slice(0,10),path='/api/usage?from='+day+'&to='+day+'&timeZone=UTC';
  const headers={authorization:'Bearer '+token,'content-type':'application/json'};

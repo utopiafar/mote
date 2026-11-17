@@ -7,13 +7,13 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout} from 'node:timers/promises';
 import {parseAnswer} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('HTTP-imported maximum notes remain readable through native Ask and current correction fences',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-query-import-context-')),token='generated-context-owner';
   const prefix='These generated diary narrators are mine; quoted visitors remain separate. ',instruction=prefix+'甲'.repeat(12000-prefix.length);
   assert.equal(instruction.length,12000);
-  const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   let node:Awaited<ReturnType<typeof buildApp>>,verified=0,phase:'original'|'during'|'current'='original',correctedId:string|undefined;
   node=await buildApp(config,{backgroundWorker:false,
     prepareImport:async({workspace,inputPaths})=>{
@@ -98,7 +98,7 @@ test('HTTP-imported maximum notes remain readable through native Ask and current
 
 test('metadata-only disclosure cannot publish after a Material owner correction and cannot grant original citations',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-generated-metadata-fence-')),token='generated-metadata-fence-token';let node:Awaited<ReturnType<typeof buildApp>>;
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
   const bridge=await startBridge(reader,input,24);try{

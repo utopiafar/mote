@@ -7,9 +7,9 @@ import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 const token='generated-query-fence-owner',headers={authorization:`Bearer ${token}`};
-const cfg=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const cfg=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const result=()=>({answer:'Generated result must not survive a revoked grant',citations:[],trace:[],runId:randomUUID()});
 for(const outcome of ['answer','failure','uncooperative'] as const)test(`a second writer cancels ${outcome} work without a late conversation write or stranded close`,async t=>{
  const root=mkdtempSync(join(tmpdir(),'mote-query-grant-'));let second!:ExecutionEngine,started!:()=>void,release!:()=>void,operationId='';

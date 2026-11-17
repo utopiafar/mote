@@ -5,7 +5,7 @@ import {join,resolve,relative,sep} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp,type QueryAgent} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {validateInlineCitations} from '@mote/agent';
 
 type Case={code:string;question:string;scope:{deviceId:string;after:string;before:string};evidenceIds:string[];manualRubric:string[]};
@@ -49,11 +49,11 @@ async function main(){
     apiKey=(await readFile(keyPath,'utf8')).trim();if(apiKey.length<20||apiKey.length>4096)fail('invalid_key_file');
   }
   const out=await privateOutput(opts.out),save=async(name:string,value:unknown)=>{const path=join(out,name);await writeFile(path,JSON.stringify(value,null,2),{mode:0o600,flag:'wx'});await chmod(path,0o600);};
-  const config:Config={dataDir:join(out,'data'),profile:'test',token:randomUUID()+randomUUID(),tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:opts.model,modelBaseUrl:'https://api.deepseek.com',apiKey,allowUnauthenticatedLocal:false,modelReasoningEffort:'high',modelMaxTokens:8192,modelRequestTimeoutMs:opts.timeoutMs,agentTimeoutMs:opts.timeoutMs,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+  const config:ConfigurationPlatformOptions={path:(join(out,'data'))+'/mote.yaml',privateCredential:{token:randomUUID()+randomUUID(),tokenPath:'unused'},initialDocument:{version:1,revision:0,storage:{dataDir:join(out,'data'),dataKey:undefined,maxExportBytes:10_000_000},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:opts.model,baseUrl:'https://api.deepseek.com',apiKey:apiKey,allowUnauthenticatedLocal:false,reasoningEffort:'high',maxTokens:8192,modelRequestTimeoutMs:opts.timeoutMs,agentTimeoutMs:opts.timeoutMs,protocol:'deepseek'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};
   const inactive:QueryAgent={configured:false,query:async()=>fail('prepare_only_model_call_refused'),close:async()=>{}};
   const {app,sources,store}=await buildApp(config,opts.prepareOnly?{agent:inactive}:undefined);
   try{
-    const effective=await app.inject({method:'GET',url:'/api/status',headers:{authorization:`Bearer ${config.token}`}});
+    const effective=await app.inject({method:'GET',url:'/api/status',headers:{authorization:`Bearer ${config.privateCredential!.token}`}});
     if(effective.statusCode!==200||effective.json().agent?.modelRequestTimeoutMs!==opts.timeoutMs||effective.json().agent?.agentTimeoutMs!==opts.timeoutMs)fail('configured_timeout_not_effective');
     const base=Math.floor(Date.now()/86400000)*86400000-86400000,t=(seconds:number)=>new Date(base+seconds*1000).toISOString();
     const scope=(deviceId:string)=>({deviceId,after:t(0),before:t(86400)}),ids:Record<string,string>={};
@@ -80,7 +80,7 @@ async function main(){
     await save('fixtures-private.json',{generatedFixturesOnly:true,images:'Generated solid-color fixture; OCR string is fixture input, not a device screenshot or OCR accuracy measurement.',records:store.exportArchive(10_000_000),cases,expectedMeasured:cases.map(c=>({code:c.code,activity:store.activity(c.scope)}))});
     const selected=cases.filter(c=>opts.selected.includes(c.code)),results:unknown[]=[];
     if(opts.prepareOnly){await save('summary.json',{generatedFixturesOnly:true,preparedOnly:true,cloudCalls:0,records:store.stats().captures,cases:selected.length});console.info(JSON.stringify({code:'fixtures_prepared',records:store.stats().captures,cases:selected.length,cloudCalls:0}));return;}
-    const headers={authorization:`Bearer ${config.token}`};let failed=0;
+    const headers={authorization:`Bearer ${config.privateCredential!.token}`};let failed=0;
     for(const test of selected){
       const started=Date.now();let status=0,body:unknown={},transportCode:string|undefined;
       try{const response=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:test.question,timeZone:'Asia/Shanghai',...test.scope}});status=response.statusCode;try{body=response.json();}catch{body={error:'non_json_response'};}}catch{transportCode='query_transport_failed';}

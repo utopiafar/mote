@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 import type {ImportJob} from '@mote/shared';
 
@@ -16,8 +16,7 @@ const headers={authorization:'Bearer '+token};
 const pythonExecutable=process.platform==='darwin'?'/Library/Developer/CommandLineTools/usr/bin/python3':'/usr/bin/python3';
 const pythonSandbox=process.platform==='darwin'?existsSync(pythonExecutable):['/usr/bin/bwrap','/bin/bwrap'].some(existsSync);
 
-const config=(dataDir:string,packRoot:string,scriptSha256:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,
-  importPythonPacks:[{id:'fixture.import-pack',version:'1',packRoot,script:'main.py',scriptSha256,pythonExecutable,maxInputFiles:16}]});
+const config=(dataDir:string,packRoot:string,scriptSha256:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false},plugins:{importPythonPacks:[{id:'fixture.import-pack',version:'1',packRoot,script:'main.py',scriptSha256,pythonExecutable,maxInputFiles:16}]}}});
 
 async function settle(node:Awaited<ReturnType<typeof buildApp>>,id:string){
   for(const deadline=Date.now()+30_000;Date.now()<deadline;){

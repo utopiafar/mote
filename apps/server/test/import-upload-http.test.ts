@@ -7,17 +7,17 @@ import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 
 test('HTTP binary import archives exact generated image without a model, enforcing owner access and part limits',{timeout:60_000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-http-'));
- const config:Config={dataDir:directory,token:'generated-import-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-import-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let modelCalls=0;
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{modelCalls++;throw Error('Generated fixture must not query a model');}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.ready();
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const missing=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{directory:join(directory,'missing-source')}});
  assert.equal(missing.statusCode,422);assert.equal(missing.json().error,'import_directory_missing');
  assert.ok(missing.json().requestId);assert.equal(missing.body.includes(directory),false,'Input guidance must not expose server paths');

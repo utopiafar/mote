@@ -99,7 +99,7 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
         archivedFiles=new ArchivedFileStore(store);
         // Content conversion walks only the two fixed managed object roots; the
         // vault owns the service, so no feature adapter constructs it later.
-        content=new ContentStorageService(store,{objects:join(store.directory,'files','objects'),uploads:join(store.directory,'files','uploads')},archivedFiles,dependencies.configService,enabled=>{maintenance?.configureContentEncryption(enabled);dependencies.onContentEncryptionApplied?.(enabled);});
+        content=new ContentStorageService(store,{objects:join(store.directory,'files','objects'),uploads:join(store.directory,'files','uploads')},archivedFiles,dependencies.configService,enabled=>{config.contentEncryptionEnabled=enabled;maintenance?.configureContentEncryption(enabled);dependencies.onContentEncryptionApplied?.(enabled);});
         phase='prepared';
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Vault assembly preparation and cleanup failed',{cause:error});}throw error;}
     },

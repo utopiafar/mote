@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {browseSourceContexts} from '../src/source-context-catalog.js';
@@ -27,7 +27,7 @@ test('source directory searches exact description text, preserves scope and fenc
 
 test('HTTP file intake uses source description in summaries; changing it retires old work without ASR or historical model calls, then explicit retry reads current context',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-source-summary-')),token='generated-summary-context-owner';
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://fixture.invalid',apiKey:'fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let transcriptions=0,summaryCalls=0,seen:string[]=[],holdNext=false,holdAsr=false,startHeld!:()=>void,releaseHeld!:()=>void,startAsr!:()=>void,releaseAsr!:()=>void;
  const heldStarted=new Promise<void>(resolve=>startHeld=resolve),heldGate=new Promise<void>(resolve=>releaseHeld=resolve),asrStarted=new Promise<void>(resolve=>startAsr=resolve),asrGate=new Promise<void>(resolve=>releaseAsr=resolve);
  const node=await buildApp(config,{backgroundWorker:false,transcriptionProvider:{transcribe:async()=>{transcriptions++;if(holdAsr){holdAsr=false;startAsr();await asrGate;}return {durationMs:10000,segments:Array.from({length:10},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated person planned a walk '+i,speaker:'SPEAKER_0'}))};}},createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{

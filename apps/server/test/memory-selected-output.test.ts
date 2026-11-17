@@ -7,12 +7,12 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
 test('owner-selected OCR and composed originals reach manual Memory without adopting automatic source defaults',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-selected-output-')),token='generated-selection-token';
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://generated.invalid',apiKey:'generated',embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',allowUnauthenticatedLocal:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',baseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async input=>{calls.push(input);return fixtureMemoryWorkResult(input,{answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()});}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});

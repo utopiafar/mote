@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {EvidenceDependencies,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {TaskRecords} from '../src/task-records.js';
 import {AssistantCards,type AssistantCardPublication} from '../src/assistant-cards.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
@@ -21,10 +21,10 @@ const conflict=(error:unknown)=>Boolean(error&&typeof error==='object'&&'statusC
 
 test('assistant cards retain scoped versions and feedback, resolve safely, and retire deleted evidence',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-cards-'));
- const config:Config={dataDir:directory,token:'generated-card-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-card-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token},cards=node.featureServices.assistantCards;
+ const headers={authorization:'Bearer '+config.privateCredential!.token},cards=node.featureServices.assistantCards;
  const publish=(input:AssistantCardPublication,expectedRevision:number|undefined,scope:QueryScope)=>cards.publish(input,expectedRevision,scope,ids=>{if(ids.some(id=>!node.featureServices.evidenceReader.memories.isCurrentEvidence(id)))throw new StoreError('Generated evidence is no longer current',409);});
  const capture=async(text:string,deviceId='generated-device')=>{const id=randomUUID();await node.store.ingest({id,deviceId,deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:text});return id;};
  const originalA=await capture('GENERATED_SECRET_A','device-a'),originalB=await capture('GENERATED_PUBLIC_B','device-b');
@@ -250,7 +250,7 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
 
 test('encrypted card bodies and feedback survive restart and maintenance deletion purges them',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-card-restart-'));
- const config:Config={dataDir:directory,token:'generated-card-restart-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',dataKey:'ab'.repeat(32),contentEncryptionEnabled:true};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-card-restart-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const options={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}};
  let node=await buildApp(config,options);let closed=false;
  t.after(async()=>{if(!closed)await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -263,7 +263,7 @@ test('encrypted card bodies and feedback survive restart and maintenance deletio
  await node.app.close();closed=true;node=await buildApp(config,options);closed=false;
  assert.equal(node.featureServices.assistantCards.get(id,all).body,'Generated private body');assert.equal(node.featureServices.assistantCards.get(id,all).feedback[0].note,'Generated private feedback');
  await node.app.close();closed=true;
- const maintenance=new (await import('../src/store.js')).Store(directory,{dataKey:config.dataKey,contentEncryptionEnabled:true,maintenance:true});
+ const maintenance=new (await import('../src/store.js')).Store(directory,{dataKey:config.initialDocument!.storage.dataKey,contentEncryptionEnabled:true,maintenance:true});
  try{
   maintenance.delete(original);
   assert.equal(maintenance.db.prepare('SELECT private_json FROM assistant_card_versions WHERE card_id=?').get(id)!.private_json,null);

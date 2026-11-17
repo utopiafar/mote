@@ -4,14 +4,14 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {requestLocale,moteText} from '../src/i18n.js';
 import {ModelSettingsError} from '../src/model-settings.js';
 
 test('concurrent requests localize presentation, retain protocol codes and leave stored evidence untouched',async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'mote-language-fixture-'));
  const token='synthetic-language-fixture-owner';
- const config:Config={dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No live model');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  const headers=(locale:string)=>({authorization:'Bearer '+token,'accept-language':locale});

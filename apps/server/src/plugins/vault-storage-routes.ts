@@ -4,7 +4,6 @@ import {z} from 'zod';
 import {StoreError} from '../store.js';
 import type {PluginResourceScope} from '@mote/plugin-host';
 import type {ArchivedFileStore} from '../archived-files.js';
-import type {Config} from '../config.js';
 import type {ContentStorageService} from '../content-storage.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {EvidenceReader} from '../evidence-reader.js';
@@ -28,7 +27,7 @@ export function registerContentStorage(app:FastifyInstance,service:ContentStorag
 
 export interface VaultStorageRouteDependencies {
   readonly archivedFiles:ArchivedFileStore;
-  readonly config:Config;
+  readonly config:Readonly<{dataDir:string;maxExportBytes:number}>;
   readonly diagnostics:ServerDiagnostics;
   readonly evidenceReader:EvidenceReader;
   readonly files:FileStore;

@@ -6,16 +6,13 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ModelSettings,ModelSettingsView} from '@mote/shared/models';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 
 const token='generated-agent-runtime-generation',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-  insightIntervalHours:0,allowedOrigins:[],model:'original-fixture',modelBaseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',
-  modelProvider:'custom',modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',
-  agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,agentConcurrency:1,llmConcurrency:1},models:{deployment:{model:'original-fixture',baseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',provider:'custom',protocol:'openai-completions',reasoningEffort:'auto',allowUnauthenticatedLocal:false,agentTimeoutMs:30000},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 type Node=Awaited<ReturnType<typeof buildApp>>;
 const settingsInput=(view:ModelSettingsView['settings']):Omit<ModelSettings,'apiKey'|'headers'|'extraBody'>=>{
   const {apiKeyConfigured:_key,headersConfigured:_headers,extraBodyConfigured:_body,...settings}=view;

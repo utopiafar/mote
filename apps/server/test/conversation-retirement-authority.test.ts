@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {Conversations} from '../src/conversations.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
@@ -14,7 +14,7 @@ import {materialId} from '../src/materials.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 
 const token='generated-retirement-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
 async function fixture(t:import('node:test').TestContext){
  const dir=await mkdtemp(join(tmpdir(),'mote-retired-authority-')),seen:QueryInput[]=[];let outputIds:string[]=[];
  const node=await buildApp(config(dir),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{seen.push(input);return {answer:'GENERATED SAVED ANSWER',citations:outputIds.map(id=>({id,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated source',excerpt:'GENERATED SAVED EXCERPT'})),trace:[{tool:'evidence',arguments:{ids:outputIds,offset:0,length:20,query:'GENERATED PRIVATE TOOL QUERY',ownerDescription:'GENERATED PRIVATE TOOL DECLARATION'},count:outputIds.length}],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:outputIds}};}}});

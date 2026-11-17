@@ -13,7 +13,7 @@ export * from './source-presentation.js';
 export * from './metadata.js';
 export * from './meeting-recording.js';
 export * from './imports.js';
-export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource, ConfigurationEffect, ConfigFieldMetadata, ConfigDomainView, ConfigServiceView } from './configuration.js';
+export type { ServerConfiguration, ConfigurationSource, ConfigurationEffect, ConfigFieldMetadata, ConfigDomainView, ConfigServiceView } from './configuration.js';
 
 export const sourceSchema = z.enum(['screen', 'ui_page', 'activity', 'media', 'notification', 'device_event', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
 // A mood is the author's own label, never inferred from note text or app identity.

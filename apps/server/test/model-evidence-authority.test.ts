@@ -6,14 +6,14 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {createModelEvidenceAuthority} from '../src/model-evidence-authority.js';
 import {resolveDependencies} from '../src/conversation-lineage.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {assertMemoryImageGrants} from '../src/memory-image-grants.js';
 import {SourceContextStore} from '../src/source-context.js';
 
-const cfg=(dataDir:string):Config=>({dataDir,token:'generated-model-authority-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const cfg=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-model-authority-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-authority-usecase-')),node=await buildApp(cfg(directory),{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});

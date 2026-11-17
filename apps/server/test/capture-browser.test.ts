@@ -9,16 +9,14 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 
 const owner='synthetic-owner-token-for-browser-tests';
 const auth=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'});
 async function fixture(t:TestContext){
   const dir=await mkdtemp(join(tmpdir(),'mote-capture-browser-'));
-  const config:Config={dataDir:dir,token:owner,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,
-    dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,
-    allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(dir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dir,dataKey:'31'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model calls in fixtures');},close:async()=>{}}});
   t.after(async()=>{await value.app.close();await rm(dir,{recursive:true,force:true});});
   const image=await sharp({create:{width:960,height:640,channels:3,background:'#4e8060'}}).jpeg().toBuffer();

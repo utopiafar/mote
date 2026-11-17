@@ -5,12 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parse,stringify} from 'yaml';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const token='synthetic-runtime-config-owner-token';
 const headers={authorization:`Bearer ${token}`};
 const inactive={configured:false,query:async()=>{throw Error('No model access in this fixture');},close:async()=>{}};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://fixture.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
 
 test('execution API and external YAML edits share admission limits, global conflicts and diagnostics application',async t=>{

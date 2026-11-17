@@ -15,7 +15,7 @@ import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing,type TranscriptionProvider} from '../src/file-processing.js';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 
 function fixture(t:any,key?:string){const dir=mkdtempSync(join(tmpdir(),'mote-files-'));const options={dataKey:key,contentEncryptionEnabled:Boolean(key),};const store=new Store(dir,options);const sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {dir,store,sources,files,options};}
@@ -59,7 +59,7 @@ test('an old incomplete upload survives sweep and a fresh Store before its compl
 test('real configuration and owner file intake default to archive, preserve source choices and retain old content across restart',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-central-retention-')),configFile=join(dir,'mote.yaml');
  writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-central-retention-owner'},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- const start=()=>buildApp(configFromFile(configFile),{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No generated-fixture model calls');},close:async()=>{}}});
+ const start=()=>buildApp(configurationFromFile(configFile),{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No generated-fixture model calls');},close:async()=>{}}});
  let node=await start();t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const headers={authorization:'Bearer generated-central-retention-owner'},source={id:'phone',name:'Generated default source',kind:'local-files',deviceId:'phone',platform:'android'};
  const created=await node.app.inject({method:'POST',url:'/api/sources',headers,payload:source});assert.equal(created.statusCode,200,created.body);assert.equal(created.json().retention,'archive');
@@ -76,7 +76,7 @@ test('real configuration and owner file intake default to archive, preserve sour
  const noteId=randomUUID(),note=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id:noteId,deviceId:'phone',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2000-01-01T00:00:00Z',durationMs:0,ocrText:'Generated old original note'}});assert.equal(note.statusCode,201,note.body);
  node.store.measurePhysicalStorage();const status=(await node.app.inject({url:'/api/status',headers})).json();
  assert.equal('retentionDays' in status,false);assert.equal('maxBytes' in status.storage,false);assert.ok(status.storage.logicalBytes>bytes.length);assert.ok(status.storage.bytes>0);assert.ok(status.storage.asOf);assert.equal(status.storage.physicalPending,false);
- const configuration=(await node.app.inject({url:'/api/configuration',headers})).json(),keys=configuration.groups.flatMap((group:any)=>group.fields.map((field:any)=>field.key));assert.ok(!keys.includes('maxStorageBytes'));assert.ok(!keys.includes('retentionDays'));assert.ok(keys.includes('maxExportBytes'));
+ const configuration=(await node.app.inject({url:'/api/configuration',headers})).json(),keys=Object.keys(configuration.domains.find((domain:any)=>domain.id==='storage').effective);assert.ok(!keys.includes('maxStorageBytes'));assert.ok(!keys.includes('retentionDays'));assert.ok(keys.includes('maxExportBytes'));
  await node.app.close();node=await start();node.files.sweep();
  assert.equal((await node.app.inject({url:`/api/files/${id}/content`,headers})).body,bytes.toString());
  assert.equal((await node.app.inject({url:`/api/captures/${noteId}`,headers})).json().ocrText,'Generated old original note');
@@ -142,7 +142,7 @@ test('processing settings never expose credentials or silently reuse them at ano
 test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated denial and full client access and explicit source filters',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-file-http-')),configFile=join(dir,'mote.yaml');
  writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-files-owner-token-1234567890'},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- const config=configFromFile(configFile);
+ const config=configurationFromFile(configFile);
  const {app,connections}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error();},close:async()=>{}}});t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
  const headers={authorization:`Bearer ${config.token}`};
  await app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'phone',name:'Generated',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'}});

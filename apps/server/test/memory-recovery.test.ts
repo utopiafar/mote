@@ -8,7 +8,7 @@ import {setTimeout as wait} from 'node:timers/promises';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 
@@ -17,7 +17,7 @@ import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-plann
 // generated; this suite does not exercise an external model or native device.
 async function fixture(t:import('node:test').TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-memory-recovery-'));
- const config:Config={dataDir:directory,token:'generated-recovery-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-recovery-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const calls:QueryInput[]=[],control:{hold?:(input:QueryInput)=>Promise<void>}={};
  let node:Awaited<ReturnType<typeof buildApp>>;
  const dependencies={backgroundWorker:false,agent:{configured:true,async close(){},async query(input:QueryInput):Promise<QueryResult>{
@@ -30,7 +30,7 @@ async function fixture(t:import('node:test').TestContext){
  }}};
  node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const view=async()=>{const response=await node.app.inject({url:'/api/memory-spaces/default/binding',headers});assert.equal(response.statusCode,200,response.body);return response.json();};
  const command=async(kind:'pause'|'resume'|'stop',payload?:{operationId:string;expectedRevision:number})=>{
   payload??={operationId:randomUUID(),expectedRevision:(await view()).revision};

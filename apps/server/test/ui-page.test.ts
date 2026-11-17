@@ -6,11 +6,11 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {uiRulesSchema,uiSnapshotSchema,extractUiPages,uiPageText} from '@mote/shared';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('UI pages ingest, retry, browse, index and export without an image or OCR job',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-ui-e2e-')),token='generated-ui-page-owner-token-000000';
- const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dir,dataKey:'31'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const {app,store}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No live models');},close:async()=>{}}});
  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
  const f=JSON.parse(readFileSync(new URL('../../../adapters/ui/fixtures/structured-conformance.json',import.meta.url),'utf8')).find((fixture:{name:string})=>fixture.name==='builtin-wechat-article-android-8.0.78-visible');

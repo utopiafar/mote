@@ -12,14 +12,14 @@ import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type {ContextReader} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {parseEvidenceRef} from '../src/evidence-reader.js';
 const token='generated-context-owner-token-123456789',readToken='generated-context-mcp-token-123456789';
 const headers={authorization:`Bearer ${token}`};
 
 async function fixture(t:any){
  const dir=mkdtempSync(join(tmpdir(),'mote-shared-reader-'));let agentReader!:ContextReader;
- const config:Config={dataDir:dir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(dir,'connectors'),mcpEnabled:true,mcpReadToken:readToken}};
+ const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},connectors:{directory:join(dir,'connectors'),mcpEnabled:true,mcpReadToken:readToken}}};
  const node=await buildApp(config,{createModelAgent:async(_settings,reader)=>{agentReader=reader;return {configured:true,query:async()=>({answer:'fixture',citations:[],trace:[],runId:randomUUID()}),close:async()=>{}};}});
  const client=new Client({name:'generated-reader-test',version:'1.0'});
  // Register cleanup before transport setup: a failed MCP handshake must not

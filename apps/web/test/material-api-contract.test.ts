@@ -8,7 +8,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale, getLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {materialId, type MaterialDraft} from '../../server/src/materials.js';
 import {ApiError, createApi, type Api} from '../src/api.js';
 import {MaterialDetail, type Material} from '../src/Materials.js';
@@ -32,7 +32,7 @@ async function fixture(t: TestContext) {
   await featuresReady;
   const directory = await mkdtemp(join(tmpdir(), 'mote-web-material-contract-'));
   const token = 'generated-material-contract-owner';
-  const config: Config = {dataDir: directory, token, tokenPath: 'fixture', host: '127.0.0.1', port: 0,  maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent'};
+  const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   let node: Awaited<ReturnType<typeof buildApp>> | undefined;
   let root: ReturnType<typeof createRoot> | undefined;
   let dom: JSDOM | undefined;

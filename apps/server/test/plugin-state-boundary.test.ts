@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {bootstrapCentral} from '../src/bootstrap.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform,pluginControlDeclaration} from '../src/plugin-center.js';
@@ -17,12 +17,12 @@ import {bindInstanceStateCommit} from '../src/plugin-instance-state-storage.js';
 
 async function fixture(t:{after(fn:()=>unknown):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-plugin-state-boundary-'));
-  const config:Config={dataDir,token:'generated-state-boundary-owner',tokenPath:'generated-only',host:'127.0.0.1',port:0,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,
-    embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
-  const boot=await bootstrapCentral({config,backgroundWorker:false});
+  const configuration:ConfigurationPlatformOptions={path:join(dataDir,'mote.yaml'),privateCredential:{token:'generated-state-boundary-owner',tokenPath:'generated-only'},
+    initialDocument:{version:1,revision:0,storage:{dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},
+      models:{deployment:{model:'',baseUrl:'',apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+  const boot=await bootstrapCentral({configuration,backgroundWorker:false});
   t.after(async()=>{await boot.close();rmSync(dataDir,{recursive:true,force:true});});
-  return {boot,config};
+  return {boot,dataDir};
 }
 
 test('real bootstrap StateStore cannot reveal the vault or rewrite a sibling namespace',async t=>{
@@ -40,8 +40,8 @@ test('real bootstrap StateStore cannot reveal the vault or rewrite a sibling nam
 });
 
 test('PluginCenter control capability cannot reveal raw storage or bypass its intent revision',async t=>{
-  const {boot,config}=await fixture(t),executor=new ExecutionEngine(boot.store);
-  const platform=createPluginControlPlatform({store:boot.store,executor,host:boot.host,releases:new GitHubPluginReleases(join(config.dataDir,'packages')),
+  const {boot,dataDir}=await fixture(t),executor=new ExecutionEngine(boot.store);
+  const platform=createPluginControlPlatform({store:boot.store,executor,host:boot.host,releases:new GitHubPluginReleases(join(dataDir,'packages')),
     controlForScope:scope=>boot.pluginStorage.controlForScope(scope)});
   const handle=await boot.host.install({identity:{host:boot.host.identity,packageId:'generated.control-boundary',installationId:'generated-control-install',instanceId:'control',activationId:randomUUID()},
     contributions:[pluginControlDeclaration],factory:platform.factory});

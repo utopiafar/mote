@@ -11,7 +11,7 @@ import {gunzipSync} from 'node:zlib';
 import {createServer,request as httpRequest,type Server} from 'node:http';
 import {transcriptSchema,fileEvidenceSchema,ProviderFailure} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import {configFromDocument} from '../src/config.js';
+import {} from '../src/config.js';
 import {MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
 import {materialId} from '../src/materials.js';
 import {sha256} from '../src/store.js';
@@ -95,9 +95,8 @@ async function fixture(t:TestContext,options:{cleanup?:boolean;authorize?:boolea
   });
   await new Promise<void>(resolve=>healthProxy!.listen(0,'127.0.0.1',resolve));centralPort=(healthProxy.address() as {port:number}).port;
  }
- const config=configFromDocument({version:1,revision:0,storage:{dataDir:join(directory,'data')},
-  media:{modelDirectory:join(directory,'models'),asrEndpoint:`http://127.0.0.1:${centralPort}/transcribe`,asrPort:centralPort,workerToken}},
-  join(directory,'mote.yaml'),{token:ownerToken,tokenPath:join(directory,'owner-token')});
+ const config={path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data')},
+  media:{modelDirectory:join(directory,'models'),asrEndpoint:`http://127.0.0.1:${centralPort}/transcribe`,asrPort:centralPort,workerToken}},privateCredential:{token:ownerToken,tokenPath:join(directory,'owner-token')}};
  config.diagnosticsEnabled=false;config.logLevel='silent';
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{

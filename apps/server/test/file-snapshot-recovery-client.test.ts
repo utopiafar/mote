@@ -7,7 +7,7 @@ import {LocalSourceManager} from '../../desktop/src/source-manager.js';
 import {defaultConfig} from '../../desktop/src/config.js';
 import {DEFAULT_SOURCE_OPTIONS,type SourceOptions} from '../../desktop/src/source-types.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 
 // Real Desktop manual discovery/outbox/upload and Central routes/pipeline.
@@ -20,7 +20,7 @@ const originalFetch=globalThis.fetch;
 const snapshotOptions:SourceOptions={...DEFAULT_SOURCE_OPTIONS,retention:'snapshot'};
 beforeEach(async()=>{
  root=await realpath(await mkdtemp(join(tmpdir(),'mote-cross-end-recovery-')));selected=join(root,'authorized');await mkdir(selected);await writeFile(join(selected,'generated.txt'),'Generated current snapshot');managers=[];paths=[];loseCommitAck=false;
- const config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(join(root,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'central'),dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model is authorized for generated recovery fixtures');},close:async()=>{}}});await node.app.ready();
  globalThis.fetch=async(url:RequestInfo|URL,init?:RequestInit)=>{
   const path=new URL(String(url)).pathname+new URL(String(url)).search;paths.push(path);

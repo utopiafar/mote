@@ -5,14 +5,14 @@ import {randomBytes} from 'node:crypto';
 import {createServer} from 'node:net';
 import {once} from 'node:events';
 import {buildApp} from '../apps/server/dist/app.js';
-import {configFromDocument} from '../apps/server/dist/config.js';
+import {} from '../apps/server/dist/config.js';
 import {centralServices} from '../apps/server/dist/plugins/central-contracts.js';
 async function port(){const s=createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 const output=process.argv[2],modelDirectory=process.argv[3];if(!output||!modelDirectory)throw Error('Generated connection output and prepared test model directory required');
 const directory=await mkdtemp(join(tmpdir(),'mote-media-ui-')),token=randomBytes(32).toString('hex'),ocrPort=await port(),asrPort=await port();
 const document={version:1,revision:1,server:{profile:'test',runtime:'native',host:'127.0.0.1',port:0,token},storage:{dataDir:directory},media:{modelDirectory:resolve(modelDirectory),workerToken:randomBytes(32).toString('hex'),ocrPort,asrPort,ocrEndpoint:`http://127.0.0.1:${ocrPort}/ocr`,asrEndpoint:`http://127.0.0.1:${asrPort}/transcribe`}};
 const configPath=join(directory,'mote.yaml');await writeFile(configPath,JSON.stringify(document),{mode:0o600});
-const node=await buildApp(configFromDocument(document,configPath),{backgroundWorker:false,createModelAgent:async()=>({configured:false,query:async()=>{throw Error('No model in media UI test');},close:async()=>{}})});
+const node=await buildApp({path:configPath,initialDocument:document},{backgroundWorker:false,createModelAgent:async()=>({configured:false,query:async()=>{throw Error('No model in media UI test');},close:async()=>{}})});
 const contribution=node.bootstrap.snapshot().contributions.find(value=>value.identity.contributionId==='ocr-asr-readiness');
 if(!contribution)throw Error('OCR/ASR readiness contribution is unavailable');
 const readinessLease=await node.bootstrap.host.acquire(centralServices.mediaReadiness,{service:{id:centralServices.mediaReadiness.id,apiVersion:'1'},provider:contribution.identity,revision:0});

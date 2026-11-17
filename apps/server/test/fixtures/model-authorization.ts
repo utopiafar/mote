@@ -4,14 +4,14 @@ import {randomUUID} from 'node:crypto';
 import type {buildApp} from '../../src/app.js';
 import type {ModelConnection} from '../../src/background-model-authorization.js';
 
-type Node=Pick<Awaited<ReturnType<typeof buildApp>>,'app'|'featureServices'|'modelAuthorizationHost'>;
+type Node=Pick<Awaited<ReturnType<typeof buildApp>>,'app'|'featureServices'|'bootstrap'|'modelAuthorizationHost'>;
 /** Explicit test-owner consent through the production HTTP boundary. Turn the
  * background model switch on once, after configuring fixture connections and
  * before original intake; sources in `excludedSourceIds` then stay out until a
  * later exclude command re-includes them. To observe the closed switch, do not
  * call this helper. */
 export async function authorizeFixtureModels(node:Node,options:{excludedSourceIds?:string[]}={}){
- const headers={authorization:'Bearer '+node.featureServices.config.token};
+ const headers={authorization:'Bearer '+node.bootstrap.configurationBootstrap.owner.token};
  const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();
  const command=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action:'on'}});
  assert.equal(command.statusCode,200,command.body);

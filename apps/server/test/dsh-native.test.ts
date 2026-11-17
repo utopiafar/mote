@@ -8,7 +8,7 @@ import {type RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {PluginHost} from '@mote/plugin-host';
 import {serviceContract, type ServiceBinding} from '@mote/plugin-api/contracts';
 import {ConfigService} from '../src/config-service.js';
-import {configFromDocument, registerBuiltinDomains} from '../src/config.js';
+import {dshConfigDomain,registerBuiltinDomains} from '../src/config.js';
 import {dshConfigurationSchema} from '../src/dsh-configuration.js';
 import {dshSelectionBoundary, nativeDshSource, type InstalledDshAuthority} from '../src/dsh-native.js';
 import {activateInstalledDsh, installedDshModule, nativeDshCatalog, projectInstalledDshModules} from '../src/dsh-installed-modules.js';
@@ -36,7 +36,7 @@ test('native selections use the authoritative config file and become effective o
   t.after(() => restarted.close());
   await restarted.initialize();
   assert.deepEqual(restarted.current('dsh'), {profiles: [selected()]});
-  assert.deepEqual(configFromDocument(restarted.document(), path, undefined, {initializeCredentials: false}).dsh, {profiles: [selected()]});
+  assert.deepEqual(restarted.current(dshConfigDomain), {profiles: [selected()]});
   assert.equal((await readFile(path, 'utf8')).includes('packageRoot'), false);
   await assert.rejects(service.update('dsh', {profiles: [{...selected(), modelProfileId: 'missing-profile'}]}, 1), {code: 'config_invalid'});
   const codex = {provider: 'codex', protocol: 'codex-app-server', baseUrl: '', model: 'generated-codex', apiKey: '', reasoningEffort: 'high', maxTokens: 8192, modelRequestTimeoutMs: null, agentTimeoutMs: null, serviceTier: 'default', allowUnauthenticatedLocal: false, headers: {}, extraBody: {}};

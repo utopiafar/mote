@@ -8,7 +8,7 @@ import {join, dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const record = {
   id: '3c6f0d4e-7b72-4a0a-9c2e-5a1d8f2b7e64',
@@ -89,13 +89,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  }
 });
 `, {mode: 0o700});
-  const config: Config = {
-    dataDir: directory, token: 'generated-codex-http-owner', tokenPath: 'generated', host: '127.0.0.1', port: 0,
-     maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [],
-    model: 'generated-codex-model', modelProvider: 'codex', modelProtocol: 'codex-app-server', modelBaseUrl: '', apiKey: '',
-    allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false,
-    logLevel: 'silent', agentTimeoutMs: 20_000, codexBin: executable, codexHome: directory,
-  };
+  const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:'generated-codex-http-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-codex-model',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:20_000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:executable,home:directory}},diagnostics:{enabled:false,level:'silent'}}};
   const node = await buildApp(config, {backgroundWorker: false});
   await node.app.ready();
   await authorizeFixtureModels(node);
@@ -104,7 +98,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     await node.app.close();
     rmSync(directory, {recursive: true, force: true});
   });
-  const headers = {authorization: 'Bearer ' + config.token};
+  const headers = {authorization: 'Bearer ' + config.privateCredential!.token};
   const events = () => { try { return readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
   const setMode = (mode: string) => writeFileSync(modePath, mode);
   const post = (url: string, payload: unknown) => node.app.inject({method: 'POST', url, headers, payload});

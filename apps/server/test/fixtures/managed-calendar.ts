@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {zipSync,strToU8} from 'fflate';
 import {buildApp,type QueryAgent} from '../../src/app.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import {sha256} from '../../src/store.js';
 import {GitHubPluginReleases} from '../../src/plugin-release.js';
 import {CalendarActions,type CalendarActionIO} from '../../../desktop/src/calendar-actions.js';
@@ -19,7 +19,7 @@ export async function fixture(t:Pick<TestContext,'after'>,options:{skipDeviceCon
  const directory=await mkdtemp(join(tmpdir(),'mote-managed-calendar-'));
  let proposal:{kind:'calendar.create'|'calendar.update'|'calendar.cancel'|'calendar.complete';event:typeof event;sameAs:string|null}={kind:'calendar.create',event,sameAs:null};
  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{const id=input.evidenceIds![0],evidence=[{id,quote:text}],answer=input.skill==='calendar-extraction'?{actions:[{...proposal,uncertainty:'',evidence}]}:{summary:'Generated appointment',evidence,events:[],memoryCandidates:[],actionCues:[{kind:proposal.kind,event:proposal.event,uncertainty:'',evidence}]};return {runId:randomUUID(),answer:JSON.stringify(answer),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:text}],trace:[]};}};
- const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),profile:'test',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  let node=await buildApp(config,{agent,backgroundWorker:false});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  options.beforeListen?.(node);

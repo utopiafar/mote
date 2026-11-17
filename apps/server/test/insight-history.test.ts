@@ -5,17 +5,17 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 async function fixture(t:TestContext){
  const dataDir=await mkdtemp(join(tmpdir(),'mote-insight-history-'));
- const config:Config={dataDir,token:'generated-discovery-history-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-discovery-history-owner',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const value=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Read-only history cannot call a model');},close:async()=>{}}});
  t.after(async()=>{await value.app.close();await rm(dataDir,{recursive:true,force:true});});
  const ids=Array.from({length:67},()=>randomUUID());
  for(const [index,id] of ids.entries())value.store.saveInsight({runId:id,answer:'Generated saved finding '+index,citations:[],trace:[]},id);
  value.store.db.prepare('UPDATE insights SET created_at=?').run('2026-10-01T00:00:00.000Z');
- return {...value,ids,headers:{authorization:'Bearer '+config.token}};
+ return {...value,ids,headers:{authorization:'Bearer '+config.privateCredential!.token}};
 }
 
 test('saved discovery history visits every same-time result exactly once and reads an old result directly',async t=>{

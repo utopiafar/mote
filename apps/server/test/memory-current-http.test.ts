@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildContextEnvelope,parseAnswer,type QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {TaskRecords} from '../src/task-records.js';
 import {readCurrentMemoryPage} from '../src/current-memory.js';
@@ -15,9 +15,9 @@ import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {RANGE_SELECTION_PERSONAL_RECIPE,SINGLE_PASS_PERSONAL_RECIPE} from '../src/memory-range-selection-policy.js';
 
 const headers={authorization:'Bearer generated-current-memory-owner'};
-async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<any>=async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}}),overrides:Partial<Config>={}){
+async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<any>=async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}})){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-current-memory-'));
- const config:Config={dataDir,token:'generated-current-memory-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-current-memory-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query,close:async()=>{}}});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const add=async(text:string,deviceId='generated-work')=>{

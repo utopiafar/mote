@@ -10,7 +10,7 @@ import {uiPageText,type UiPageV3} from '@mote/shared';
 import {DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {ModelSettings} from '@mote/shared/models';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {testModelConnection} from '../src/model-agent.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../src/automatic-topics.js';
@@ -18,11 +18,8 @@ import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../src/automatic-topics.js';
 const token='generated-official-consumers-owner',headers={authorization:`Bearer ${token}`};
 const probeId='7a8f56d1-45de-47b7-90bb-5e84d411c3d6';
 
-function config(dataDir:string,baseUrl:string):Config {
-  return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-    insightIntervalHours:0,allowedOrigins:[],model:'generated-official-model',modelProvider:'custom',
-    modelProtocol:'openai-completions',modelBaseUrl:baseUrl,apiKey:'generated-official-key',allowUnauthenticatedLocal:false,
-    embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:20_000};
+function config(dataDir:string,baseUrl:string):ConfigurationPlatformOptions {
+  return {path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-official-model',provider:'custom',protocol:'openai-completions',baseUrl:baseUrl,apiKey:'generated-official-key',allowUnauthenticatedLocal:false,agentTimeoutMs:20_000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
 }
 
 function settingsFor(baseUrl:string):ModelSettings {

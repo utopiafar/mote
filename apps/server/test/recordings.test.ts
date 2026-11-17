@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {createHash,randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {RecordingProvider} from '../src/connectors/recordings.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import {feishuTranscript} from '../src/connectors/recording-formats.js';
@@ -34,7 +34,7 @@ async function fixture(t:import('node:test').TestContext,createProvider?:(direct
   media:async()=>{calls.push({phase:'media'});if(state.mediaFails)throw new ExecutionFailure('blocked','generated_media_permission');return {mimeType:'audio/wav',bytes:wav};},
  };
  const activeProvider=createProvider?.(directory)??provider;
- const config:Config={dataDir:directory,token:'generated-recording-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-recording-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};
  let node:Awaited<ReturnType<typeof buildApp>>;
  const deps={backgroundWorker:false,connectorTesting:{recordings:[activeProvider]},agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
@@ -43,7 +43,7 @@ async function fixture(t:import('node:test').TestContext,createProvider?:(direct
   return {answer:generatedMemoryOutput(input,[{domain:'personal',title:'Generated pride',statement:`Felt proud of a generated prototype [${id}]`,uncertainty:'Generated evidence only; speaker label unverified.',admission:{layer:'memory',reason:'Generated personal experience',scope:'Generated diary',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:evidence.ocrText.trim()}]}]),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
  }}};
  node=await buildApp(config,deps);await node.app.ready();await authorizeFixtureModels(node);
- const request=async(method:'GET'|'POST'|'PUT'|'DELETE',suffix='',payload?:unknown)=>{const res=await node.app.inject({method,url:'/api/connectors/'+activeProvider.id+'-recordings'+suffix,headers:{authorization:'Bearer '+config.token},...(payload?{payload}:{})});assert.equal(res.statusCode,200,res.body);return res.json();};
+ const request=async(method:'GET'|'POST'|'PUT'|'DELETE',suffix='',payload?:unknown)=>{const res=await node.app.inject({method,url:'/api/connectors/'+activeProvider.id+'-recordings'+suffix,headers:{authorization:'Bearer '+config.privateCredential!.token},...(payload?{payload}:{})});assert.equal(res.statusCode,200,res.body);return res.json();};
  const flush=async()=>{for(let n=0;n<30;n++){const steps=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE ? AND state IN ('waiting','running') AND available_at<=? LIMIT 100").all('recording.'+activeProvider.id+'.%',Date.now()) as {id:string}[];if(!steps.length)break;await node.executor.drain(steps.map(s=>s.id));}await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);};
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  return {get node(){return node;},config,directory,state,calls,models,request,flush,async connect(){await request('POST','/connect');return request('PUT','/selection',selection);},async restart(){await node.app.close();node=await buildApp(config,deps);await node.app.ready();},async memory(){await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));}};
@@ -72,7 +72,7 @@ test('stopping and re-enabling the recording instance preserves cursor and bindi
  const firstCursor=cursor();assert.ok(firstCursor);assert.equal(strategies().length,1);
  f.node.featureServices.connectors.configureSyncInterval(1000);
  await f.node.featureServices.connectors.stop('feishu-recordings');
- assert.equal((await f.node.app.inject({method:'GET',url:'/api/connectors/feishu-recordings',headers:{authorization:'Bearer '+f.config.token}})).statusCode,404);
+ assert.equal((await f.node.app.inject({method:'GET',url:'/api/connectors/feishu-recordings',headers:{authorization:'Bearer '+f.config.privateCredential!.token}})).statusCode,404);
  assert.equal(await readFile(bindingPath,'utf8'),binding);assert.deepEqual(cursor(),firstCursor);
  await f.node.featureServices.connectors.restart('feishu-recordings');
  const revived=await f.request('GET');assert.equal(revived.connected,true);assert.equal(revived.sourceId,sourceId);assert.deepEqual(revived.selection,initial.selection);
@@ -117,7 +117,7 @@ test('metadata rate limits wait across restart, recover without owner retry and 
  // Advance only this generated receipt's eligibility after verifying the durable delay.
  f.node.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE id=?').run(waiting.id);await f.flush();
  assert.equal(row().state,'succeeded');assert.equal(row().attempts,2);assert.equal((await f.request('GET')).counts.transcripts,1);assert.equal((await f.request('GET')).counts.audio,1);assert.equal(f.models.length,0);
- const completed=await f.node.app.inject({method:'GET',url:'/api/operations/'+waiting.operation_id,headers:{authorization:'Bearer '+f.config.token}});assert.equal(completed.statusCode,200);assert.equal(completed.json().operation.state,'succeeded');
+ const completed=await f.node.app.inject({method:'GET',url:'/api/operations/'+waiting.operation_id,headers:{authorization:'Bearer '+f.config.privateCredential!.token}});assert.equal(completed.statusCode,200);assert.equal(completed.json().operation.state,'succeeded');
  remaining=10;await f.request('POST','/sync');await f.flush();const repeated=row();assert.equal(repeated.state,'waiting');assert.equal(repeated.attempts,1);
  for(let attempt=2;attempt<=3;attempt++){f.node.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE id=?').run(repeated.id);await f.flush();assert.equal(row().attempts,attempt);assert.equal(row().state,attempt===3?'failed':'waiting');assert.equal(row().error,'recording_rate_limited');}
  const calls=metadataCalls;await f.flush();assert.equal(metadataCalls,calls,'exhausted acquisition does not retry forever');assert.equal((await f.request('GET')).counts.failed,1);assert.equal((await f.request('GET')).counts.transcripts,1);assert.equal((await f.request('GET')).counts.audio,1);
@@ -136,7 +136,7 @@ test('recording intake produces complete material and Memory, bypasses ASR, pres
  f.state.ids=[];await f.request('POST','/sync');await f.flush();assert.equal(f.node.sources.getItem(source.id,'r1')!.deleted,false);
  const audio=new ArchivedFileStore(f.node.store).listForCapture(head.captureId)[0];
  assert.equal(new ArchivedFileStore(f.node.store).read(audio.id).equals(wav),true);
- const playable=await f.node.app.inject({method:'GET',url:`/api/archived-files/${audio.id}/content`,headers:{authorization:'Bearer '+f.config.token}});assert.equal(playable.statusCode,200);assert.equal(playable.rawPayload.equals(wav),true);
+ const playable=await f.node.app.inject({method:'GET',url:`/api/archived-files/${audio.id}/content`,headers:{authorization:'Bearer '+f.config.privateCredential!.token}});assert.equal(playable.statusCode,200);assert.equal(playable.rawPayload.equals(wav),true);
  const denied=await f.node.app.inject({method:'GET',url:`/api/archived-files/${audio.id}/content`});assert.equal(denied.statusCode,401);
  await f.restart();await f.flush();await f.memory();assert.equal(f.models.length,modelCount);assert.equal((await f.request('GET')).counts.transcripts,1);
  const forbidden=await f.node.app.inject({method:'POST',url:'/api/connectors/feishu-recordings/sync'});assert.equal(forbidden.statusCode,401);
@@ -146,7 +146,7 @@ test('recording intake produces complete material and Memory, bypasses ASR, pres
 test('recording v3 carries scoped owner prose and full-range selection through formal intake and independent review',async t=>{
  const f=await fixture(t);await f.connect();const status=await f.request('GET'),sourceId=status.sourceId;
  const description='Generated recordings are my spoken diary; quoted people and navigation announcements are not my own experiences.';
- const updated=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+sourceId+'/context',headers:{authorization:'Bearer '+f.config.token},payload:{expectedVersion:0,description}});assert.equal(updated.statusCode,200,updated.body);
+ const updated=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+sourceId+'/context',headers:{authorization:'Bearer '+f.config.privateCredential!.token},payload:{expectedVersion:0,description}});assert.equal(updated.statusCode,200,updated.body);
  assert.equal(recordingMemoryRecipe.version,'3');assert.equal(f.node.memoryStrategies.resolve(recordingMemoryRecipe).binding.workContract,'range-evaluation@1');assert.throws(()=>f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'1'}),/not installed/);assert.throws(()=>f.node.memoryStrategies.resolve({id:recordingMemoryRecipe.id,version:'2'}),/not installed/);
  await f.flush();await f.memory();const jobs=f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id));
  assert.ok(jobs.length>0);assert.ok(jobs.every(j=>j.status==='completed'&&j.recipes?.every(r=>r.id===recordingMemoryRecipe.id&&r.version==='3')));

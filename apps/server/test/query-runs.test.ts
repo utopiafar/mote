@@ -6,10 +6,10 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {ProviderFailure} from '@mote/shared';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {hostRun,hostTerminal,hostUsage} from './fixtures/host-run.js';
 const token='generated-query-owner-token',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 test('background admission survives client departure, deduplicates and persists progress, result and usage',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-query-runs-'));let complete!:()=>void,entered!:()=>void,calls=0,heldRun='';const started=new Promise<void>(resolve=>{entered=resolve;});
   const agent:QueryAgent={configured:true,close:async()=>{},query:async(input,lease)=>{

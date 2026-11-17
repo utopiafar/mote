@@ -8,11 +8,11 @@ import {pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {materialId} from '../src/materials.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 
-const config=(dataDir:string):Config=>({dataDir,token:'generated-receipt-grant-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-receipt-grant-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}});
 const original=(id:string,revision='1')=>({externalId:id,revision,observedAt:'2020-01-01T00:00:00Z',text:`Generated original ${id} revision ${revision}`,kind:'message',layer:'original'});
 const coding=(id:string)=>({...original(id),document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'fixture',sessionId:'session',eventId:id,role:'user',attribution:'human',part:0,parts:1}}});
 const empty=(input:QueryInput,node:Awaited<ReturnType<typeof buildApp>>)=>{
@@ -55,7 +55,7 @@ test('denied receipts survive restart and duplicate ACK while new ordinary and C
   assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true,10),0);
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE authorized=1').get()!.n,0);
   for(const material of oldMaterials){
-    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
+    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.privateCredential!.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
     assert.equal(response.statusCode,202,response.body);
     const completed=await node.memoryPipeline.run(response.json().id);assert.equal(completed.status,'completed',JSON.stringify(completed.batches.map(batch=>({status:batch.status,error:batch.errorCode}))));
   }

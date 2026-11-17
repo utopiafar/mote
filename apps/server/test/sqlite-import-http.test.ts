@@ -5,11 +5,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('HTTP import survives FTS cleanup, records parser failure, retries, confirms and restarts',{timeout:30_000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-sqlite-import-http-'));
- const config:Config={dataDir:directory,token:'generated-sqlite-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-sqlite-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let calls=0;
  const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('Fixture must not call a model');}},prepareImport:async(input:import('../src/imports.js').ImportPreparation)=>{
   if(++calls===1){
@@ -23,7 +23,7 @@ test('HTTP import survives FTS cleanup, records parser failure, retries, confirm
  }};
  let node=await buildApp(config,dependencies);await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const wait=async(id:string,status:string)=>{
   for(const deadline=Date.now()+10_000;Date.now()<deadline;){
    const response=await node.app.inject({url:`/api/imports/${id}`,headers});assert.equal(response.statusCode,200,response.body);

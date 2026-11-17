@@ -7,14 +7,14 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {larkDocumentJourneys,larkJourneyOwnerContext} from './fixtures/lark-document-journeys.js';
 import {larkJourneyRunner} from './fixtures/lark-journey-runner.js';
 import {fixtureMemoryPlan,generatedMemoryOutput} from './fixtures/memory-planning.js';
 
 test('all nine generated document journeys use owner HTTP intake, automatic reviewed Memory, revision and restart without replay',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-lark-http-')),token='generated-lark-http-owner-token',headers={authorization:'Bearer '+token},upstream=larkJourneyRunner();
-  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const calls:QueryInput[]=[];
   // This provider is an explicit fixture: it verifies lifecycle and proof wiring,
   // not semantic interpretation or real Feishu coverage. Live quality is separate.

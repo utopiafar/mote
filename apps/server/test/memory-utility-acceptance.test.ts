@@ -6,12 +6,12 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {seedUtilityOracle} from './fixtures/utility-oracle.js';
 
 test('owner integration creates a reviewed actionable replacement, applies its relation atomically, and invalidates it after original deletion',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-utility-acceptance-')),token='generated-owner-utility-token',headers={authorization:'Bearer '+token};
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-fixture-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let seed:Awaited<ReturnType<typeof seedUtilityOracle>>;
  const calls:QueryInput[]=[];
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{

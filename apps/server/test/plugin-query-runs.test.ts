@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {AgentYieldError,originalEvidenceReceipt,parseAnswer} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {Store} from '../src/store.js';
@@ -15,8 +15,8 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {createQueryRunsPlatform,type QueryRunDependencies} from '../src/plugins/query-runs.js';
 
 const token='generated-query-runs-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
-const modelConfig=(dataDir:string):Config=>({...config(dataDir),model:'original-fixture',modelBaseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',modelProvider:'custom',modelProtocol:'openai-completions',modelReasoningEffort:'auto'});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,agentConcurrency:1,llmConcurrency:1},models:{deployment:{model:'generated-fixture',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:30000,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
+const modelConfig=(dataDir:string):ConfigurationPlatformOptions=>(((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),model:'original-fixture',baseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',provider:'custom',protocol:'openai-completions',reasoningEffort:'auto'}}}}))(config(dataDir)));
 const plain=(model='Generated answer'):QueryResult=>({answer:model,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
 const original={id:'00000000-0000-4000-8000-000000000201',deviceId:'generated-query-run-device',deviceName:'Generated fixture',platform:'import',source:'note' as const,capturedAt:'2026-09-20T01:00:00Z',durationMs:0,ocrText:'Generated original: the sample project selected a durable receipt.'};
 async function until<T>(read:()=>T|undefined,describe?:()=>unknown):Promise<T>{for(let attempt=0;attempt<240;attempt++){const value=read();if(value!==undefined)return value;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Generated fixture did not settle'+(describe?': '+JSON.stringify(describe()):''));}
@@ -109,7 +109,7 @@ test('an accepted run keeps its original model while later runs use the saved mo
   // the accepted run resumes under its original model while later runs use the saved one.
   const view=(await node.app.inject({url:'/api/model-settings',headers})).json() as {revision:number;settings:Record<string,unknown>};
   const {apiKeyConfigured:_key,headersConfigured:_headers,extraBodyConfigured:_body,...settings}=view.settings;
-  const saved=await node.app.inject({method:'PUT',url:'/api/model-settings',headers,payload:{revision:view.revision,settings:{...settings,model:'next-fixture'}}});
+  const saved=await node.app.inject({method:'PUT',url:'/api/model-settings',headers,payload:{revision:view.revision,settings:((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),model:'next-fixture'}}}}))(settings)}});
   assert.equal(saved.statusCode,200,saved.body);
   assert.equal(node.modelSettings.select('chat').settings.model,'next-fixture');
   assert.equal(node.queryRunServices.delegation,runtime,'an ordinary model switch does not replace the accepted run runtime');

@@ -6,17 +6,17 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {observeFormatWorkers} from './fixtures/format-worker-lifecycle.js';
 
 async function stoppedFormatImport(t:TestContext,shutdown:boolean){
  const lifecycle=observeFormatWorkers(t),directory=mkdtempSync(join(tmpdir(),'mote-import-format-stop-'));
- const config:Config={dataDir:directory,token:'generated-format-stop-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-format-stop-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model belongs in this generated decoder fixture');}}};
  let node:Awaited<ReturnType<typeof buildApp>>|undefined;
  t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
  node=await buildApp(config,dependencies);await node.app.ready();
- const headers={authorization:'Bearer '+config.token},original='Generated original survives a stopped decoder';
+ const headers={authorization:'Bearer '+config.privateCredential!.token},original='Generated original survives a stopped decoder';
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{processing:'automatic',files:[{name:'generated.txt',dataBase64:Buffer.from(original).toString('base64')}]}});
  assert.equal(created.statusCode,202,created.body);const id=created.json().id;
  const worker=await lifecycle.first,task=node.importServices.importTasks.get(id);assert.ok(task);
@@ -54,7 +54,7 @@ test('application shutdown interrupts an actual format worker without recording 
 
 test('owner cancellation aborts import parsing, fences late results, survives restart and resumes only explicitly',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-cancel-'));
- const config:Config={dataDir:directory,token:'generated-import-cancel-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-import-cancel-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let calls=0,release!:()=>void,entered!:()=>void,signal:AbortSignal|undefined;
  const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
  const dependencies={backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No real model');}},prepareImport:async(input:import('../src/imports.js').ImportPreparation)=>{
@@ -65,7 +65,7 @@ test('owner cancellation aborts import parsing, fences late results, survives re
  }};
  let node=await buildApp(config,dependencies);await node.app.ready();
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const get=async(id:string)=>(await node.app.inject({method:'GET',url:'/api/imports/'+id,headers})).json();
  const wait=async(id:string,status:string)=>{await node.importServices.importTasks.get(id);const job=await get(id);assert.equal(job.status,status,'Import task settled before its HTTP state is inspected');return job;};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{processing:'automatic',files:[{name:'generated.custom',dataBase64:Buffer.from('Generated original').toString('base64')}]}});assert.equal(created.statusCode,202);
@@ -91,7 +91,7 @@ test('owner cancellation aborts import parsing, fences late results, survives re
 
 for(const changed of [false,true])test(`confirm during settled preview cleanup ${changed?'rejects a changed preview':'is bounded and idempotent'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-confirm-tail-'));
- const config:Config={dataDir:directory,token:'generated-confirm-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-confirm-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let release!:()=>void,entered!:()=>void;
  const gate=new Promise<void>(r=>release=r),atCleanup=new Promise<void>(r=>entered=r);
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model');}},prepareImport:async input=>{
@@ -101,7 +101,7 @@ for(const changed of [false,true])test(`confirm during settled preview cleanup $
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const executor=node.featureServices.executor,drain=executor.drain.bind(executor);let held=false;
  executor.drain=async ids=>{await drain(ids);if(!held&&ids.some(id=>executor.get(id)?.kind==='imports.prepare')){held=true;entered();await gate;}};
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from('Generated confirmation boundary').toString('base64')}]}});
  assert.equal(created.statusCode,202);const id=created.json().id;await atCleanup;
  assert.equal(node.imports.get(id).status,'awaiting_confirmation');assert.equal(node.imports.hasActiveWorker(id),false);

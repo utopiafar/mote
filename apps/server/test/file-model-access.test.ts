@@ -11,7 +11,7 @@ import {fileURLToPath} from 'node:url';
 import type {ContextReader} from '@mote/agent';
 import {formatArtifactRef} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {materialId} from '../src/materials.js';
 import {TURN_GROUP_PROMPT,readDialogueCleanup} from '../src/file-dialogue.js';
@@ -22,7 +22,7 @@ import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
 test('local file outputs are available to remote and local models across every evidence representation',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-file-content-policy-'));
- const config:Config={dataDir:directory,token:'generated-content-policy-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-remote',modelBaseUrl:'https://synthetic.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-content-policy-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-remote',baseUrl:'https://synthetic.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let inspect:(reader:ContextReader)=>Promise<Record<string,unknown>>=async()=>({});
  const calls:{model:string;views:Record<string,unknown>}[]=[];
  const node=await buildApp(config,{createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
@@ -68,7 +68,7 @@ test('local file outputs are available to remote and local models across every e
   const job=await withFixtureOwnerModelWork(node,async()=>node.memoryPipeline.create({evidenceIds:anchors,modelProfileId}));assert.ok(job.totalBatches>0);node.memoryPipeline.cancel(job.id);
  }
  await withFixtureOwnerModelWork(node,()=>node.agent.query({question:'Generated fixed evidence',evidenceIds:[record.id]}));assert.ok(Number(calls.at(-1)!.views.materialEvidence)>0);
- const owner=await node.app.inject({url:'/api/captures/'+chunk,headers:{authorization:'Bearer '+config.token}});assert.equal(owner.statusCode,200);assert.equal(owner.json().ocrText,text);
+ const owner=await node.app.inject({url:'/api/captures/'+chunk,headers:{authorization:'Bearer '+config.privateCredential!.token}});assert.equal(owner.statusCode,200);assert.equal(owner.json().ocrText,text);
  let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),held=new Promise<void>(resolve=>release=resolve);
  inspect=async()=>{enter();await held;return {};};
  const {inFlight,running}=await withFixtureOwnerModelWork(node,async()=>{const inFlight=node.memoryPipeline.create({evidenceIds:anchors});return {inFlight,running:node.memoryPipeline.run(inFlight.id)};});await entered;
@@ -121,7 +121,7 @@ print(c.serialize({'identity':identity,'recognition':recognition,'diarization':d
  let closeNode=async()=>{};
  t.after(async()=>{try{await closeNode();}finally{worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});}assert.deepEqual(workerErrors,[],'native worker boundary assertions must surface');});
  await new Promise<void>(resolve=>worker.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token:'generated-native-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-deployment-fallback',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-native-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-deployment-fallback',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const modelCalls:{model:string;protocol:string;question:string;evidence:string[]}[]=[];
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   const timeline=await reader.timeline({}),records=Array.isArray(timeline)?timeline:timeline.items;
@@ -165,7 +165,7 @@ for(const stage of ['summary','semantic grouping'] as const)test(`file ${stage} 
   res.writeHead(200,{'Content-Type':'text/event-stream'});res.write(`data: ${JSON.stringify({choices:[{index:0,delta,finish_reason:null}]})}\n\n`);res.end(`data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:first?'tool_calls':'stop'}]})}\n\ndata: [DONE]\n\n`);
  });
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token:'generated-summary-repair-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-summary',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}/v1`,apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:20000};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-summary-repair-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-summary',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}/v1`,apiKey:'generated',allowUnauthenticatedLocal:false,agentTimeoutMs:20000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
  t.after(async()=>{await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  if(stage==='semantic grouping'){

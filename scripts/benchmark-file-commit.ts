@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {FILE_PART_BYTES} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 const directory=await mkdtemp(join(tmpdir(),'mote-commit-benchmark-')),token=randomBytes(32).toString('hex');
-const config={dataDir:directory,dataKey:undefined,token,tokenPath:'fixture',profile:'test',host:'127.0.0.1',port:0,maxExportBytes:16*1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent' as const};
+const config={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:16*1024*1024},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent' as const}}};
 const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('Fixture must not invoke model');},close:async()=>{}}});
 const results:unknown[]=[];
 try{

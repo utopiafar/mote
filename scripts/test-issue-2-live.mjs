@@ -9,10 +9,7 @@ import {buildApp} from '../apps/server/dist/app.js';
 const root=await mkdtemp(join(tmpdir(),'mote-issue-2-live-'));
 const token=randomUUID();let node;
 try {
-  node=await buildApp({dataDir:root,token,tokenPath:join(root,'token'),host:'127.0.0.1',port:0,
-    maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],
-    codexBin:process.env.MOTE_CODEX_BIN??'/Applications/ChatGPT.app/Contents/Resources/codex',modelProvider:'codex',modelProtocol:'codex-app-server',model:'gpt-5.6-luna',modelReasoningEffort:'max',modelRequestTimeoutMs:null,agentTimeoutMs:300000,
-    modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+  node=await buildApp({path:(root)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(root,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:root,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{codex:{executable:process.env.MOTE_CODEX_BIN??'/Applications/ChatGPT.app/Contents/Resources/codex'},deployment:{provider:'codex',protocol:'codex-app-server',model:'gpt-5.6-luna',reasoningEffort:'max',modelRequestTimeoutMs:null,agentTimeoutMs:300000,apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
   const headers={authorization:'Bearer '+token},id=randomUUID();
   const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-live-fixture',deviceName:'Generated fixture',platform:'import',capturedAt:new Date().toISOString(),text:'完全虚构的验收资料：纸风车项目的发布检查码是 LUNA-5729，演示地点是蓝色观测室。'}});
   assert.equal(note.statusCode,201,note.body);

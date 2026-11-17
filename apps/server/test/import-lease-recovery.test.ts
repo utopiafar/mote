@@ -4,12 +4,12 @@ import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {SourceStore} from '../src/sources.js';
 
 for(const expireAfter of [1,3])test(`an authorized import resumes an expired commit lease after original ${expireAfter} without another confirmation`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-lease-'));
- const config:Config={dataDir:directory,token:'generated-import-lease-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-import-lease-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let release!:()=>void,entered!:()=>void,parses=0,expired=false,importId='';const gate=new Promise<void>(resolve=>release=resolve),preparing=new Promise<void>(resolve=>entered=resolve),written:string[]=[];
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model is authorized by this fixture');}},prepareImport:async input=>{
   parses++;entered();await gate;writeFileSync(join(input.workspace,'records.jsonl'),Array.from({length:3},(_,index)=>JSON.stringify({item:{externalId:'generated-'+(index+1),revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated lease recovery evidence '+(index+1)},evidencePaths:input.inputPaths})).join('\n')+'\n');return {summary:'Three generated originals'};
@@ -26,7 +26,7 @@ for(const expireAfter of [1,3])test(`an authorized import resumes an expired com
   }
   return result;
  });
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from('Generated archived bytes').toString('base64')}]}});assert.equal(created.statusCode,202,created.body);importId=created.json().id;await preparing;
  const early=await node.app.inject({method:'POST',url:`/api/imports/${importId}/confirm`,headers});assert.equal(early.statusCode,409,'an unreviewed import still requires a preview');
  const parseTask=node.importServices.importTasks.get(importId);release();await parseTask;assert.equal(node.imports.get(importId).status,'awaiting_confirmation');assert.equal(node.store.list().items.length,0);

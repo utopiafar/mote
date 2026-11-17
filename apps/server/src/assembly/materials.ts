@@ -3,7 +3,7 @@ import type {AsyncLocalStorage} from 'node:async_hooks';
 import type {Context} from '@deepseek-ai/cordis';
 import type {QueryInput} from '@mote/agent';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
-import type {Config} from '../config.js';
+import type {ModelDomain} from '../model-settings.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import type {Store} from '../store.js';
@@ -77,7 +77,7 @@ export async function prepareMaterials(dependencies:MaterialInputDependencies){
 
 export interface MaterialsAssemblyDependencies {
   readonly store:Store;
-  readonly config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>;
+  readonly embedding:Readonly<ModelDomain['embedding']>;
   readonly diagnostics:ServerDiagnostics;
   readonly executor:ExecutionEngine;
   readonly usageLedger:UsageLedger;
@@ -102,8 +102,8 @@ export interface MaterialsAssemblyDependencies {
  * hooks. The retrieval-index domain plugin owns the Indexer, the bound
  * material index runtime and the shared engine's embedding/index timer. */
 export function assembleMaterials(dependencies:MaterialsAssemblyDependencies){
-  const {store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence}=dependencies;
-  const retrievalIndex=createMaterialRetrievalIndex({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,files,materials});
+  const {store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence}=dependencies;
+  const retrievalIndex=createMaterialRetrievalIndex({store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,files,materials});
   resources.defer(()=>retrievalIndex.close());
   retrievalIndex.prepare();retrievalIndex.start();
   const indexer=retrievalIndex.retrievalIndex;

@@ -10,11 +10,11 @@ import sharp from 'sharp';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import {TaskRecords} from '../src/task-records.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
 const token='generated-conversation-queue-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
 const result=(answer:string,ids:string[]=[])=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids}});
 const signal=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
 async function until<T>(read:()=>T|Promise<T>,description:string):Promise<NonNullable<T>>{
@@ -55,7 +55,7 @@ test('the production query adapter sends two queued turns in order to a controll
     send({id:'generated-provider-'+index,choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
   });
   await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-  const cfg:Config={...config(dir),modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512};
+  const cfg:ConfigurationPlatformOptions=((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512}}}}))(config(dir));
   const node=await buildApp(cfg,{backgroundWorker:false});
   t.after(async()=>{release.release();lateRelease.release();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(dir,{recursive:true,force:true});});
   const id=await main(node),invitation=(await node.app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://generated.invalid',label:'Generated provider phone'}})).json();
@@ -83,7 +83,7 @@ test('a controlled loopback provider resumes the original turn after both admiss
     send({id:'generated-restart-'+index,choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
   });
   await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-  const cfg:Config={...config(dir),modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512};
+  const cfg:ConfigurationPlatformOptions=((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512}}}}))(config(dir));
   let node=await buildApp(cfg,{backgroundWorker:false});
   t.after(async()=>{startGate.release();providerGate.release();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(dir,{recursive:true,force:true});});
   const original=node.modelAuthorization.run.bind(node.modelAuthorization);
@@ -190,7 +190,7 @@ test('a source with 31 originals reaches the production provider without seeding
     res.end('data: '+JSON.stringify({id:'generated-source-provider',choices:[{index:0,delta:{role:'assistant',content:JSON.stringify({answer:'Generated source answer',citationIds:[]})},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}})+'\n\ndata: [DONE]\n\n');
   });
   await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-  const node=await buildApp({...config(dir),modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512},{backgroundWorker:false});
+  const node=await buildApp(((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512}}}}))(config(dir)),{backgroundWorker:false});
   t.after(async()=>{await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(dir,{recursive:true,force:true});});
   node.sources.register({id:'generated-bulk-source',name:'Generated bulk source',kind:'custom',deviceId:'generated-device',platform:'import'});
   // 31 is the smallest source that would fail a mistaken conversion to the

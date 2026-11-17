@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {defaultDistribution,storageProvider} from '../src/distribution/default.js';
 import type {CentralDomainPlugin} from '../src/domain-activation.js';
 import type {CentralDistribution} from '../src/bootstrap.js';
@@ -26,9 +26,7 @@ async function bounded<T>(promise:Promise<T>,label:string):Promise<T>{
 test('failed consumer startup fences its old Actions response, preserves both failures and lets authorized work recover under a new owner and grant',async t=>{
   const dataDir=await mkdtemp(join(tmpdir(),'mote-gov-actions-independent-'));
   const token='generated-actions-independent-owner',headers={authorization:'Bearer '+token};
-  const config:Config={dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'79'.repeat(32),contentEncryptionEnabled:true,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-unused',
-    allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'79'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const text='Generated appointment is scheduled on 18 September 2099.';
   const event={title:'Generated appointment',start:'2099-09-18T15:00:00Z',end:'2099-09-18T16:00:00Z',timeZone:'UTC',allDay:false,location:'Generated room',description:''};
   const startupFailure=Error('Generated later declared plugin start failure'),cleanupFailure=Error('Generated later declared plugin cleanup failure');

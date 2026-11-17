@@ -10,7 +10,7 @@ import {randomUUID} from 'node:crypto';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import type {InsightSnapshot} from '@mote/shared';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {createApi,dateTime,type Api,type Answer} from '../src/api.js';
 import {modelView} from './fixtures/model-settings.js';
 import {Insights} from '../src/plugins/discovery/Insights.js';
@@ -31,12 +31,12 @@ function fake(read:(path:string,init?:RequestInit)=>unknown):Api{return {request
 
 test('the real owner response keeps the report snapshot asOf, exact scope and citations visible',async t=>{
  const {root,d,until}=await fixture(t),dataDir=await mkdtemp(join(tmpdir(),'mote-discovery-contract-'));
- const config:Config={dataDir,token:'generated-discovery-contract-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-discovery-contract-owner',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Reading a stored report must not call a model');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  await node.app.listen({host:'127.0.0.1',port:0});const address=node.app.server.address();assert.ok(address&&typeof address!=='string');const origin='http://127.0.0.1:'+address.port;
  const nativeFetch=globalThis.fetch;globalThis.fetch=(input,init)=>nativeFetch(typeof input==='string'?new URL(input,origin):input,init);t.after(()=>{globalThis.fetch=nativeFetch;});
- const api=createApi({token:config.token}),runId=randomUUID(),citation={id:randomUUID(),appName:'Generated contract original',capturedAt:when,contentAt:when,excerpt:'Generated contract citation excerpt'};
+ const api=createApi({token:config.privateCredential!.token}),runId=randomUUID(),citation={id:randomUUID(),appName:'Generated contract original',capturedAt:when,contentAt:when,excerpt:'Generated contract citation excerpt'};
  const snapshot:InsightSnapshot={schemaVersion:1,id:randomUUID(),seriesId:randomUUID(),version:3,previousRunId:randomUUID(),asOf:when,scope:{after:'2026-09-01T00:00:00.000Z',before:when,timeZone:'Asia/Shanghai'},watermark:7,scopeFingerprint:'generated-contract',coverage:{records:5,materialRecords:2,referenceOnlyRecords:0,pendingProcessing:0,sourceStates:[],measured:{observedDurationMs:0,deviceDurationMs:0,overlapDurationMs:0,unobservedDurationMs:null,accounting:'union_across_devices',coverage:'observed_intervals_only'},limitations:[]}};
  node.store.saveInsight({runId,answer:'Generated contract report ['+citation.id+']',citations:[citation],trace:[],createdAt:when,snapshot,artifact:{id:randomUUID(),title:'Generated contract report',html:'<h1>Generated contract report</h1><p>Generated body ['+citation.id+']</p>',createdAt:when,skillId:'generated-contract-skill',skillVersion:'1'}},runId);
  const answer=await api.request<Answer>('/api/insights/'+runId);

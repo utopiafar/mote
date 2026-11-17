@@ -1,34 +1,12 @@
 import { createAgent, AgentNotConfiguredError, AgentTimeoutError, AgentResponseError, type ContextReader, type AgentOptions } from '@mote/agent';
-import { modelProvider, type ModelSettings, type ModelTestResult } from '@mote/shared/models';
-import type { Config } from './config.js';
+import { type ModelSettings, type ModelTestResult } from '@mote/shared/models';
 import type { QueryAgent } from './query-agent.js';
-import {deploymentModelSettingsSchema} from './model-settings.js';
 
 /** Trusted adapters must retain the host's admission and fresh transport fence. */
 export type ModelAgentHostHooks=Readonly<Pick<AgentOptions,'runModel'|'authorizeModelRequest'|'nativeDsh'>>;
 export type ModelAgentIdentity={kind:'profile'|'file-service'|'probe';id:string};
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader,host?:ModelAgentHostHooks,identity?:ModelAgentIdentity) => Promise<QueryAgent>;
 export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],authorizeModelRequest?:AgentOptions['authorizeModelRequest'],nativeDsh?:AgentOptions['nativeDsh']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, authorizeModelRequest, nativeDsh, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
-
-export function modelSettingsFromConfig(config: Config): ModelSettings {
-  const protocol=config.modelProtocol??modelProvider(config.modelProvider??'deepseek')?.protocol;
-  const value={
-    provider:config.modelProvider,protocol,baseUrl:config.modelBaseUrl||modelProvider(config.modelProvider??'deepseek')?.baseUrl||'',model:config.model,
-    apiKey:config.apiKey,headers:config.modelHeaders,extraBody:config.modelExtraBody,reasoningEffort:config.modelReasoningEffort,
-    maxTokens:config.modelMaxTokens,modelRequestTimeoutMs:config.modelRequestTimeoutMs,agentTimeoutMs:config.agentTimeoutMs,
-    serviceTier:protocol==='codex-app-server'?'default':undefined,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,
-  };
-  return deploymentModelSettingsSchema.parse(Object.fromEntries(Object.entries(value).filter(([,field])=>field!==undefined)));
-}
-
-export function applyModelSettings(config: Config, settings: ModelSettings): void {
-  config.modelProvider = settings.provider; config.modelProtocol = settings.protocol;
-  config.modelBaseUrl = settings.baseUrl; config.model = settings.model; config.apiKey = settings.apiKey;
-  config.modelHeaders = structuredClone(settings.headers); config.modelExtraBody = structuredClone(settings.extraBody);
-  config.modelReasoningEffort = settings.reasoningEffort; config.modelMaxTokens = settings.maxTokens;
-  config.modelRequestTimeoutMs = settings.modelRequestTimeoutMs; config.agentTimeoutMs = settings.agentTimeoutMs;
-  config.allowUnauthenticatedLocal = settings.allowUnauthenticatedLocal;
-}
 
 /** This reader is intentionally independent from the archive, source store and indexer. */
 export async function testModelConnection(settings: ModelSettings, factory: ModelAgentFactory = (settings,reader)=>createModelAgent(settings,reader)): Promise<ModelTestResult> {

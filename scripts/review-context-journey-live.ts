@@ -4,7 +4,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
 import {join,relative,resolve} from 'node:path';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {contextJudgmentQuestion} from './context-journey-judgment.js';
@@ -16,13 +16,13 @@ const bytes=await readFile(path),prior=JSON.parse(bytes.toString('utf8'));
 assert.ok(prior.finishedAt&&prior.status==='failed'&&prior.model==='gpt-6-sol'&&prior.reasoningEffort==='max');
 const selected=prior.cases.filter((c:any)=>c.status==='failed'&&c.job?.status==='completed'&&c.answer&&c.memories&&c.originals);
 assert.ok(selected.length);await mkdir(directory,{mode:0o700});const vault=join(directory,'vault'),token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
-const report:any={status:'running',startedAt:new Date().toISOString(),reviewOnlyFrom:path,sourceReportHash:sha256(bytes),personalDataUsed:prior.personalDataUsed,model:config.model,reasoningEffort:'max',extractionRepeated:false,answerRepeated:false,cases:[]};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
+const report:any={status:'running',startedAt:new Date().toISOString(),reviewOnlyFrom:path,sourceReportHash:sha256(bytes),personalDataUsed:prior.personalDataUsed,model:config.initialDocument!.models.deployment.model,reasoningEffort:'max',extractionRepeated:false,answerRepeated:false,cases:[]};
 report.reviewerHash=sha256(await readFile(new URL('./context-journey-judgment.ts',import.meta.url)));
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 try{
- const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});assert.ok(catalog.items.find(m=>m.id===config.model)?.reasoningEfforts?.includes('max'));
+ const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});assert.ok(catalog.items.find(m=>m.id===config.initialDocument!.models.deployment.model)?.reasoningEfforts?.includes('max'));
  node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
  for(const item of selected){
   const entry:any={id:item.id,status:'running'};report.cases.push(entry);await save();

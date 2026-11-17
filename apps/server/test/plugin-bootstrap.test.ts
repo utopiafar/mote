@@ -9,16 +9,14 @@ import {bootstrapCentral,type CentralDistribution,type FoundationProvider} from 
 import {defaultDistribution,configurationProvider,storageProvider} from '../src/distribution/default.js';
 import {Store} from '../src/store.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {executionSettingsSchema} from '../src/execution-settings.js';
 
 function fixture(t:{after(fn:()=>void):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-bootstrap-fixture-'));
   t.after(()=>rmSync(dataDir,{recursive:true,force:true}));
-  const config:Config={dataDir,token:'generated-bootstrap-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-    model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
-  return {config,headers:{authorization:`Bearer ${config.token}`}};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-bootstrap-owner-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+  return {config,headers:{authorization:`Bearer ${config.privateCredential!.token}`}};
 }
 function note(){return {id:randomUUID(),deviceId:'generated-bootstrap-device',deviceName:'Generated bootstrap fixture',platform:'android',capturedAt:'2026-11-01T12:00:00.000Z',text:'Generated original note for the native loader.'};}
 const agent={configured:false,query:async()=>{throw Error('No model in bootstrap fixture');},close:async()=>{}};
@@ -102,7 +100,7 @@ test('observability startup failure rolls back the bootstrap vault for a clean r
   ServerDiagnostics.prototype.init=async function(){throw failure;};
   try{await assert.rejects(buildApp(config,{agent,backgroundWorker:false}),error=>error===failure||(error as AggregateError).errors?.includes?.(failure)||(error as {cause?:unknown}).cause===failure);}
   finally{ServerDiagnostics.prototype.init=init;}
-  const reopened=new Store(config.dataDir);try{assert.equal(reopened.stats().captures,0);}finally{reopened.close();}
+  const reopened=new Store(config.initialDocument!.storage.dataDir);try{assert.equal(reopened.stats().captures,0);}finally{reopened.close();}
 });
 
 test('missing or duplicate foundation providers reject before any factory or HTTP app is created',async t=>{
@@ -126,7 +124,7 @@ test('failure after storage preparation rolls back the owned vault and publishes
   await assert.rejects(buildApp(config,{distribution}),error=>error===primary);
   assert.ok(prepared);assert.throws(()=>prepared!.stats());
   // Actual same-profile reopen proves rollback released the SQLite resource.
-  const reopened=new Store(config.dataDir);reopened.close();
+  const reopened=new Store(config.initialDocument!.storage.dataDir);reopened.close();
 });
 
 test('restart replacement sends real HTTP writes to the newly selected provider and retains the same-profile original',async t=>{
@@ -152,7 +150,7 @@ test('restart replacement sends real HTTP writes to the newly selected provider 
 });
 
 test('a borrowed vault remains owned by its caller after bootstrap closes',async t=>{
-  const {config}=fixture(t),store=new Store(config.dataDir);t.after(()=>store.close());
+  const {config}=fixture(t),store=new Store(config.initialDocument!.storage.dataDir);t.after(()=>store.close());
   const boot=await bootstrapCentral({config,store});
   await boot.close();assert.equal(store.stats().captures,0);
 });

@@ -5,7 +5,7 @@ import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/c
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {QueryInput} from '@mote/agent';
 import type {TokenUsage} from '@mote/shared';
-import type {Config} from '../config.js';
+import type {ModelDomain} from '../model-settings.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import {sha256,StoreError} from '../store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
@@ -39,7 +39,7 @@ export interface MaterialRetrievalIndexBindings {
  * subprocess detail and need no separate owner. */
 export interface MaterialRetrievalIndexDependencies {
   readonly store:MaterialStore['store'];
-  readonly config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>;
+  readonly embedding:Readonly<ModelDomain['embedding']>;
   readonly diagnostics?:ServerDiagnostics;
   readonly executor:ExecutionEngine;
   readonly usageLedger?:UsageLedger;
@@ -64,7 +64,7 @@ const localInterval:Interval=(ms,work)=>{
  * domain objects — this owner decides when they exist. */
 export function createMaterialRetrievalIndex(dependencies:MaterialRetrievalIndexDependencies){
   if(!dependencies.store||!dependencies.executor||!dependencies.materials)throw unavailable();
-  const {store,config,executor,materials}=dependencies;
+  const {store,embedding,executor,materials}=dependencies;
   let phase:'created'|'prepared'|'active'|'quiescing'|'disposed'='created';
   let indexer:Indexer|undefined,boundIndex:MaterialIndexRuntime|undefined,closing:Promise<void>|undefined,stopTimer:(()=>void)|undefined;
   const ready=()=>{if(!indexer||phase==='created'||phase==='disposed')throw unavailable();return indexer;};
@@ -91,14 +91,14 @@ export function createMaterialRetrievalIndex(dependencies:MaterialRetrievalIndex
       if(phase!=='created')throw unavailable();
       try{
         const {diagnostics,files,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost}=dependencies;
-        indexer=new Indexer(store,config,diagnostics,files,
+        indexer=new Indexer(store,embedding,diagnostics,files,
           usageLedger?input=>{
-            const operationId=input.operationId??modelContext?.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=config.embeddingModel;
+            const operationId=input.operationId??modelContext?.getStore()?.traceContext?.operationId??'embedding:'+randomUUID(),provider='embedding',model=embedding.model;
             const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
             return {finish:(usage:TokenUsage|undefined,failed?:boolean)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');}};
           }:undefined,
           {executor,operationId:()=>modelContext?.getStore()?.traceContext?.operationId,
-            assertModel:modelAuthorization?()=>modelAuthorization.assertCurrent(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey})):undefined,
+            assertModel:modelAuthorization?()=>modelAuthorization.assertCurrent(modelConnection('embedding:central',{model:embedding.model,baseUrl:embedding.baseUrl,apiKey:embedding.apiKey})):undefined,
             authorize:modelAuthorizationHost?(id,signal,task)=>{
               const roots=modelAuthorizationHost.evidenceTriggers([id]),work='automatic-embedding:'+sha256(JSON.stringify(roots));
               return modelAuthorizationHost.automatic(work,'embedding',roots,authorizedSignal=>{modelAuthorizationHost.assertEvidence([id]);return task(authorizedSignal);},signal);

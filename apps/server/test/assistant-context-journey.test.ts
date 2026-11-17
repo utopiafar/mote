@@ -30,9 +30,7 @@ test('file deletion retires frozen work and privacy forget erases answers reache
  let providerFailure:unknown;
  const result=(input:QueryInput,answer:string,extra:Partial<QueryResult>={}):QueryResult=>({answer,citations:[],trace:[],runId:hostRun(input),
   evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]},...extra});
- node=await buildApp({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,
-  insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,
-  embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
+ node=await buildApp({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',maxTokens:512,baseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}},
  {backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   try{
    if(input.skill==='working-memory')return result(input,'Generated summary: reverify the release owner in the original file.');

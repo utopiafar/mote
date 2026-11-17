@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
@@ -15,7 +15,7 @@ const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
 
 for(const entry of ['ask','insight'] as const)test(`the real Central ${entry} entry waits beyond its model budget for a model slot`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-central-model-wait-')),token='generated-queue-budget-token';let calls=0;
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000,llmConcurrency:1,interactiveConcurrency:1};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,llmConcurrency:1,interactiveConcurrency:1},models:{deployment:{model:'generated-fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1/v1',apiKey:'generated',allowUnauthenticatedLocal:false,agentTimeoutMs:5000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  // Use the actual host model callback and its lane gate. Only the final model
  // answer is synthetic: no private input, network service or provider is used.
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,_reader,host)=>({configured:true,close:async()=>{},query:input=>host!.runModel!(async()=>{calls++;return {answer:input.skill==='personal-insight'?JSON.stringify({title:'Generated review',markdown:'Generated review',html:'<p>Generated review</p>'}):'Generated answer',citations:[],trace:[],runId:randomUUID()};},input.signal)})});
@@ -35,7 +35,7 @@ for(const entry of ['ask','insight'] as const)test(`the real Central ${entry} en
 
 for(const stage of ['semantic grouping','summary'] as const)test(`the real Central file ${stage} waits beyond the file transport timeout for a model slot`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-file-model-wait-'));let calls=0,asrCalls=0,diarizeCalls=0;
- const config:Config={dataDir:directory,token:'generated-file-queue-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000,llmConcurrency:1};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-file-queue-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,llmConcurrency:1},models:{deployment:{model:'generated-fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1/v1',apiKey:'generated',allowUnauthenticatedLocal:false,agentTimeoutMs:5000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader,host)=>({configured:true,close:async()=>{},query:input=>host!.runModel!(async()=>{
    calls++;const {items}=await reader.timeline({limit:20});
    return {answer:stage==='semantic grouping'?JSON.stringify({groups:[[0]]}):'Generated file summary',citations:items.map(record=>({id:record.id,capturedAt:'2026-01-01T00:00:00.000Z',appName:'Generated file',excerpt:'Generated audio evidence'})),trace:[],runId:randomUUID()};

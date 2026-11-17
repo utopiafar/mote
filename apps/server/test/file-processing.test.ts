@@ -43,7 +43,7 @@ import {fileURLToPath} from 'node:url';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {buildApp} from '../src/app.js';
 import type {HostDependencies} from '../src/host.js';
-import {configFromDocument} from '../src/config.js';
+import {} from '../src/config.js';
 import {MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
 import {FUNASR_PINS,FUNASR_PROTOCOL,parseFunasrRequest,parseFunasrResponse,parseFunasrArchive,funasrDialogueOutput,type FunasrRequest} from '../src/funasr-contract.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
@@ -1087,7 +1087,7 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
   writeFileSync(python,`#!${process.execPath}\nconst http=require('node:http');http.createServer((req,res)=>{const outgoing=http.request({hostname:'127.0.0.1',port:${upstreamPort},path:req.url,method:req.method,headers:req.headers},incoming=>{res.writeHead(incoming.statusCode,incoming.headers);incoming.pipe(res);});outgoing.on('error',()=>{res.writeHead(503);res.end('{}');});req.pipe(outgoing);}).listen(Number(process.argv.at(-1)),'127.0.0.1');\n`,{mode:0o700});
  }
  const endpoint=`http://127.0.0.1:${port}/transcribe`;
- const configuration=configFromDocument({version:1,revision:0,...(options.managed?{server:{runtime:'native'}}:{}),storage:{dataDir:join(directory,'data')},media:{modelDirectory:join(directory,'models'),asrEndpoint:endpoint,asrPort:port,workerToken:token}},join(directory,'mote.yaml'),{token:'generated-funasr-owner',tokenPath:join(directory,'owner-token')});
+ const configuration={path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0,...(options.managed?{server:{runtime:'native'}}:{}),storage:{dataDir:join(directory,'data')},media:{modelDirectory:join(directory,'models'),asrEndpoint:endpoint,asrPort:port,workerToken:token}},privateCredential:{token:'generated-funasr-owner',tokenPath:join(directory,'owner-token')}};
  const factory:import('../src/model-agent.js').ModelAgentFactory=async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   modelCalls.push({model:settings.model,question:input.question});const records=(await reader.timeline({limit:100})).items;
   return {answer:input.question===importedTurnPrompt?JSON.stringify({groups:records.map((_,i)=>[i])}):'Generated chosen-model summary',citations:records.slice(0,1).map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText})),trace:[],runId:randomUUID()};

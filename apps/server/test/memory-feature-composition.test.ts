@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {parseAnswer,type AgentAnswer,type ContextReader,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {fixtureMemoryPlan} from './fixtures/memory-planning.js';
 
@@ -23,7 +23,7 @@ assert.equal(original.length,4096);
 
 test('HTTP composed personal policy reads context, reviews over 32 selected candidates, then reports source invalidation across restart',{timeout:30000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-composition-'));
- const config:Config={dataDir:directory,token:'generated-composition-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-composition-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  type Call={jobId?:string;phase?:string;target:MemoryWorkMember[];contextRead:boolean};
  const calls:Call[]=[],spyFailures:string[]=[];
  let node:Awaited<ReturnType<typeof buildApp>>;
@@ -51,7 +51,7 @@ test('HTTP composed personal policy reads context, reviews over 32 selected cand
  const dependencies={backgroundWorker:false,createModelAgent:async(_settings:unknown,reader:ContextReader)=>({configured:true,close:async()=>{},query:(input:QueryInput)=>observedGenerate(input,reader)})};
  const open=async()=>{node=await buildApp(config,dependencies);await node.app.ready();};await open();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  const view=(await api('GET','/api/memory-settings')).json(),settings=view.settings;
  const configured=await api('PUT','/api/memory-settings',{revision:view.revision,settings:{...settings,batchCharacters:2048}});assert.equal(configured.statusCode,200,configured.body);
  const created=await api('POST','/api/sources',{id:'generated-composition',name:'Generated composition',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});assert.equal(created.statusCode,200,created.body);

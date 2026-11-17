@@ -12,7 +12,7 @@ import {createEvidenceDeletion} from '../src/plugins/evidence-deletion.js';
 
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-note-delete-identity-')),token='generated-note-delete-identity-token';let modelCalls=0;
- const node=await buildApp({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in deletion fixture');},close:async()=>{}}});
+ const node=await buildApp({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in deletion fixture');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});assert.equal(modelCalls,0);});
  const headers={authorization:'Bearer '+token},get=(url:string)=>node.app.inject({url,headers}),remove=(id:string)=>node.app.inject({method:'DELETE',url:'/api/captures/'+id,headers});
  async function note(metadata?:unknown){

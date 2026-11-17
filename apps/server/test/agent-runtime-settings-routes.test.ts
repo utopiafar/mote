@@ -5,18 +5,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {ModelSettingsInput,ModelSettingsView} from '@mote/shared/models';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import type {AgentRuntimeSettingsView} from '../src/plugins/agent-runtime-settings-routes.js';
 
 const owner='synthetic-agent-runtime-owner';
 const headers={authorization:`Bearer ${owner}`};
 const answer=(model:string)=>({answer:model,citations:[],trace:[],runId:'synthetic-runtime-run'});
-const config=(dataDir:string):Config=>({dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:47832,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:'original-fixture',modelBaseUrl:'https://fixture.invalid/v1',apiKey:'synthetic-original-key',modelProvider:'custom',
-  modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,embeddingModel:'',
-  embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:owner,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'original-fixture',baseUrl:'https://fixture.invalid/v1',apiKey:'synthetic-original-key',provider:'custom',protocol:'openai-completions',reasoningEffort:'auto',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}});
 function input(view:ModelSettingsView):ModelSettingsInput {
   const {apiKeyConfigured:_key,headersConfigured:_headers,extraBodyConfigured:_body,...settings}=view.settings;
   return settings;

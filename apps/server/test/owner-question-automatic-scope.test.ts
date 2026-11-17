@@ -7,7 +7,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
@@ -38,7 +38,7 @@ test('withdrawn assistant question evidence cannot be restored by a fresh owner 
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-auto-owner-scope-'));
- const config:Config={dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,token:'generated-auto-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-auto-question-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:'ab'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const control:{beforeDeclared?:(input:QueryInput)=>Promise<void>}={};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
@@ -52,7 +52,7 @@ async function fixture(t:import('node:test').TestContext){
  };
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})});await node.app.ready();await authorizeFixtureModels(node);
  const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
- const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const originals:string[]=[];
  for(const externalId of ['one','two']){

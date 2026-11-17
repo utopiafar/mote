@@ -65,9 +65,9 @@ test('forgetting all file revisions rolls back its tombstone, descendants and ou
 
 test('capture deletion HTTP delegates file chunks and captures without changing repeat or missing-file responses',async t=>{
  const f=await fixture(t),{buildApp}=await import('../src/app.js');
- const config={dataDir:f.directory,token:'generated-deletion-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config={path:(f.directory)+'/mote.yaml',privateCredential:{token:'generated-deletion-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:f.directory,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{store:f.store,backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in generated fixture');},close:async()=>{}}});f.beforeClose(()=>node.app.close());
- const headers={authorization:'Bearer '+config.token},artifactId=randomUUID(),chunkId=randomUUID();
+ const headers={authorization:'Bearer '+config.privateCredential!.token},artifactId=randomUUID(),chunkId=randomUUID();
  f.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,f.first.id,'text','2026-10-01T00:00:00Z','generated',JSON.stringify({complete:true}));
  f.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,text,metadata) VALUES(?,?,?,?,?)').run(chunkId,artifactId,f.first.id,'Generated unavailable-platform transcript fixture','{}');
  assert.equal((await node.app.inject({method:'DELETE',url:'/api/captures/'+chunkId})).statusCode,401);

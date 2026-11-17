@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {MemoryStore} from '../src/memory.js';
 import {SourceStore} from '../src/sources.js';
@@ -14,11 +14,11 @@ import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-archive-admission-'));
- const config:Config={dataDir:directory,token:'generated-archive-admission-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-archive-admission-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('Generated archive fixtures must not invoke a live model');}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.listen({host:'127.0.0.1',port:0});
- const request=async(path:string,body?:unknown)=>fetch(new URL(path,node.app.listeningOrigin),{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer '+config.token,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+ const request=async(path:string,body?:unknown)=>fetch(new URL(path,node.app.listeningOrigin),{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer '+config.privateCredential!.token,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
  return {...node,request};
 }
 

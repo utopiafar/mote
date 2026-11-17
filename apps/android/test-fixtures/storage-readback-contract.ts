@@ -19,7 +19,7 @@ const faults={hold:'',started:false,corrupt:'',offline:'',wrongRevision:'',paths
 const terminate=()=>{if(child?.pid&&child.exitCode===null&&child.signalCode===null)try{process.kill(-child.pid,'SIGTERM');}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}};
 const interrupt=()=>{release();terminate();};process.once('SIGINT',interrupt);process.once('SIGTERM',interrupt);
 try {
- central=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
+ central=await buildApp({path:(join(directory,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'central'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}},
   {backgroundWorker:false,agent:{configured:false,async query(){modelCalls++;throw Error('Models are forbidden in the readback contract');},async close(){}}});
  central.app.addHook('onRequest',async(req,reply)=>{const path=req.url.split('?')[0]!;if(!path.startsWith('/api/generated-readback'))faults.paths.push(req.method+' '+path);if(faults.offline===path)reply.raw.destroy();});
  central.app.addHook('onSend',async(req,_reply,payload)=>{

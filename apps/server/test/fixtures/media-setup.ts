@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildApp} from '../../src/app.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import {MEDIA_CATALOG} from '../../src/media-assets.js';
 import {LOCAL_IMAGE_MODEL,LOCAL_IMAGE_PROMPT_VERSION} from '../../src/local-image-contract.js';
 import {prepareNativeMediaRuntime,mediaRoleSupported} from '../../src/media-native-runtime.mjs';
@@ -75,9 +75,9 @@ ThreadingHTTPServer(('127.0.0.1',int(sys.argv[sys.argv.index('--port')+1])),Hand
   }});
  };
  const token='generated-image-setup-owner',workerToken=workerFixture?.token??'generated-image-setup-worker';
- const config:Config={dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',configuration:{runtime},media:{modelDirectory,python:'python3',workerToken,ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',localImagePort:port,localImageEndpoint:`http://127.0.0.1:${port}/v1/interpret`}};
+ const config:ConfigurationPlatformOptions={path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[],runtime:runtime},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},media:{modelDirectory,python:'python3',workerToken,ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',localImagePort:port,localImageEndpoint:`http://127.0.0.1:${port}/v1/interpret`}}};
  node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare,...(createModelAgent?{createModelAgent}:{})});
- return {directory,bytes,counts,token,workerToken,config,pidPath,endpoint:config.media!.localImageEndpoint!,supported:runtime==='native'&&mediaRoleSupported('local-image'),get node(){return node!;},installed:join(modelDirectory,'local-image',modelName),
+ return {directory,bytes,counts,token,workerToken,config,pidPath,endpoint:config.initialDocument!.media!.localImageEndpoint!,supported:runtime==='native'&&mediaRoleSupported('local-image'),get node(){return node!;},installed:join(modelDirectory,'local-image',modelName),
   holdDependencies(){held=gate();holds.push(held);return {entered:entered.promise,release:held.release};},
   async restart(){await node!.app.close();node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare,...(createModelAgent?{createModelAgent}:{})});},
   async until(check:()=>boolean|Promise<boolean>,label:string){const deadline=Date.now()+10000;while(!await check()){assert.ok(Date.now()<deadline,label);await new Promise(resolve=>setTimeout(resolve,5));}},

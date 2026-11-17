@@ -11,7 +11,7 @@ import {createHash} from 'node:crypto';
 import {mediaModelsViewSchema} from '@mote/shared';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {MEDIA_CATALOG} from '../src/media-assets.js';
 import {FUNASR_PROTOCOL,parseFunasrRequest} from '../src/funasr-contract.js';
 
@@ -30,7 +30,7 @@ test('the assembled media API uses the same loaded identity and lifecycle status
  // Docker here selects the sidecar HEALTH boundary only. No Docker command or
  // container is created; the unavailable model boundary is loopback fixture HTTP.
  await writeFile(file,serializeConfigDocument({version:1,revision:0,server:{runtime:'docker',port:0,token:'generated-shared-wiring-owner-token'},storage:{dataDir:join(directory,'data')},diagnostics:{enabled:false,level:'silent'},media:{modelDirectory:join(directory,'models'),workerToken:'generated-shared-worker',asrEndpoint:`http://127.0.0.1:${port}/transcribe`}}));
- node=await buildApp(configFromFile(file),{backgroundWorker:false});const central=node,headers={authorization:'Bearer '+central.featureServices.config.token};await central.app.ready();
+ node=await buildApp(configurationFromFile(file),{backgroundWorker:false});const central=node,headers={authorization:'Bearer '+central.bootstrap.configurationBootstrap.owner.token};await central.app.ready();
  const steps=()=>central.store.db.prepare('SELECT COUNT(*) n FROM execution_steps').get()!.n,beforeSteps=steps();
  await mkdir(join(bundle,'asr'),{recursive:true});await writeFile(join(bundle,'asr/model.bin'),bytes);await central.featureServices.mediaAssets.importBundle('dialogue',bundle);
  const authority=central.modelAuthorization.view(),perception=central.perception.settings(),processing=central.processing.currentSettings();

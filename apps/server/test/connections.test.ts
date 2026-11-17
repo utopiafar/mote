@@ -9,7 +9,7 @@ import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {parseConnectionInvitation,MOTE_PROTOCOL_RANGE,noteCapture} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Connections,ConnectionError,type ConnectionFile} from '../src/connections.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
@@ -17,10 +17,10 @@ import {SourceStore} from '../src/sources.js';
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model calls belong in connection tests');},close:async()=>{}};
 const owner='synthetic-owner-for-connection-tests';
 const headers=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'});
-function config(directory:string):Config{return {dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:4*1024*1024,insightIntervalHours:0,allowedOrigins:['https://synthetic.invalid'],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};}
+function config(directory:string):ConfigurationPlatformOptions{return {path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:4*1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:['https://synthetic.invalid']},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};}
 async function fixture(t:TestContext,options:{clock?:()=>number;mcp?:boolean;mcpWriteEnabled?:boolean}={}){
   const directory=await mkdtemp(join(tmpdir(),'mote-connections-')),cfg=config(directory),storageOptions={},store=new Store(directory,storageOptions),sources=new SourceStore(store);
-  if(options.mcp)cfg.connectors={directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'synthetic-static-read-mcp-token-123456789',mcpWriteEnabled:options.mcpWriteEnabled??true,mcpWriteToken:'synthetic-static-write-mcp-token-123456789',mcpWriteSourceIds:['allowed']};
+  if(options.mcp)cfg.initialDocument!.connectors={directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'synthetic-static-read-mcp-token-123456789',mcpWriteEnabled:options.mcpWriteEnabled??true,mcpWriteToken:'synthetic-static-write-mcp-token-123456789',mcpWriteSourceIds:['allowed']};
   const connections=new Connections(store,sources,{clock:options.clock});
   let value=await buildApp(cfg,{store,agent:inactive,connections});
   const restart=async()=>{await value.app.close();value=await buildApp(cfg,{store,agent:inactive,connections:new Connections(store,sources,{clock:options.clock})});return value;};

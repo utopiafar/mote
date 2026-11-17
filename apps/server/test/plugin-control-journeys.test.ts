@@ -28,7 +28,7 @@ import {SourceStore} from '../src/sources.js';
 import {memoryProviderKey} from '../src/memory-provider-contract.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 // Generated executable release, not a substitute for any named provider or a
 // capability claim. It exercises the real download/integrity/worker/persistence
@@ -492,12 +492,12 @@ test('an explicitly retried failed install of the same reviewed artifact schedul
 
 test('actual HTTP plugin controls authorize owner sessions, reject MCP credentials, and enforce revision plus scope before mutation', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-plugin-http-generated-')), owner = 'generated-plugin-owner-' + randomUUID();
-  const config: Config = {dataDir: directory, token: owner, tokenPath: join(directory, 'owner-token'), host: '127.0.0.1', port: 0, profile: 'test', tokenFromEnvironment: true,  maxExportBytes: 1024 * 1024,  insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: 'https://api.deepseek.com', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent', connectors: {directory: join(directory, 'connectors'), mcpEnabled: true, mcpReadToken: 'generated-static-read-mcp-token-fixture', mcpWriteEnabled: true, mcpWriteToken: 'generated-static-write-mcp-token-fixture', mcpWriteSourceIds: ['generated']}};
+  const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory, 'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024 * 1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory: join(directory, 'connectors'), mcpEnabled: true, mcpReadToken: 'generated-static-read-mcp-token-fixture', mcpWriteEnabled: true, mcpWriteToken: 'generated-static-write-mcp-token-fixture', mcpWriteSourceIds: ['generated']}}};
   const node = await buildApp(config, {backgroundWorker: false, agent: {configured: false, async query() {throw Error('No model request belongs in this HTTP authorization fixture');}, async close() {}}});
   t.after(async () => {await node.app.close(); rmSync(directory, {recursive: true, force: true});});
   const headers = (token: string) => ({authorization: 'Bearer ' + token});
   const session = await node.connections.session('http://127.0.0.1:47832', 'Generated paired owner', {deviceId: 'generated-owner-phone', deviceName: 'Generated owner phone', platform: 'android'});
-  const mcp = await node.connections.mintMcp({serverUrl: 'http://127.0.0.1:47832', label: 'Generated read-only context credential', access: 'read'}, config.connectors);
+  const mcp = await node.connections.mintMcp({serverUrl: 'http://127.0.0.1:47832', label: 'Generated read-only context credential', access: 'read'}, config.initialDocument!.connectors);
   const readToken = mcp.config.mcpServers.mote.headers.Authorization.slice(7);
   const routes: Array<{method: 'GET' | 'POST' | 'PATCH'; url: string}> = [
     {method: 'GET', url: '/api/plugins'}, {method: 'GET', url: '/api/plugins/host-capabilities'}, {method: 'GET', url: '/api/memory-spaces/default/binding'},

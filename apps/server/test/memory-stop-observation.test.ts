@@ -5,13 +5,13 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('owner stop remains stopping and retains the cutover tail until the cancelled automatic transport actually exits',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-memory-stop-generated-')),owner='generated-owner-'+randomUUID();
   let release!:()=>void,entered!:()=>void;
   const ready=new Promise<void>(resolve=>entered=resolve),transport=new Promise<void>(resolve=>release=resolve);
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpWriteEnabled:false}};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpWriteEnabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,async query(){throw Error('No model belongs in this generated transport fixture');},async close(){}},memoryExtensions:[{id:'extraction',version:'generated-slow-transport',stream:'evidence',async run(_window,_checkpoint,execution){assert.ok(execution);entered();await transport;execution.signal.throwIfAborted();}}]});
   let running:Promise<void>|undefined;
   t.after(async()=>{release();await running?.catch(()=>{});await node.app.close();await rm(directory,{recursive:true,force:true});});
@@ -34,7 +34,7 @@ for(const localCleanup of [true,false])test(`automatic stop rolls back a tail SQ
   const {authorizeFixtureModels}=await import('./fixtures/model-authorization.js');
   const {fixtureMemoryWorkResult}=await import('./fixtures/memory-planning.js');
   const directory=await mkdtemp(join(tmpdir(),'mote-memory-stop-atomic-')),owner='generated-owner-'+randomUUID();
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpWriteEnabled:false}};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpWriteEnabled:false}}};
   let release!:()=>void,entered!:()=>void,reviewSignal!:AbortSignal,calls=0;
   const ready=new Promise<void>(resolve=>entered=resolve),transport=new Promise<void>(resolve=>release=resolve);
   const abortTransactions:boolean[]=[];

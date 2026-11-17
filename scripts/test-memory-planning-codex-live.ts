@@ -18,7 +18,7 @@ import {DelegationRuntime} from '../apps/server/src/delegation-runtime.js';
 import {SourcePipelineRuntime} from '../apps/server/src/source-pipelines.js';
 import {registerMemoryDelegation} from '../apps/server/src/memory-delegation.js';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {createTestScope} from '../apps/server/test/fixtures/plugin-scope.js';
 
 assert.equal(process.env.MOTE_PLANNING_CODEX_LIVE,'1','Opt in with MOTE_PLANNING_CODEX_LIVE=1');
@@ -38,7 +38,7 @@ const adapter=registerMemoryDelegation({runtime,pipeline,work,sourcePipelines,qu
 }});
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:join(directory,'http'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',agentTimeoutMs:300000,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:2};
+const config:ConfigurationPlatformOptions={path:(join(directory,'http'))+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:join(directory,'http'),maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:2},models:{deployment:{model:model,provider:'codex',protocol:'codex-app-server',reasoningEffort:'high',agentTimeoutMs:300000,apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'silent',enabled:false}}};
 let url='';
 async function openHttp(){
  node=await buildApp(config,{backgroundWorker:false});

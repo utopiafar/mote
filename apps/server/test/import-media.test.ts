@@ -10,7 +10,7 @@ import {zipSync} from 'fflate';
 import sharp from 'sharp';
 import type {ImportJob} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store,StoreError,sha256} from '../src/store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {SourceStore} from '../src/sources.js';
@@ -32,7 +32,7 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
   let node:Awaited<ReturnType<typeof buildApp>>;
   t.after(async()=>{try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
   await seed?.(directory);
-  const config:Config={dataDir:directory,token:'generated-media-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'http://127.0.0.1:19300/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-media-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',baseUrl:'http://127.0.0.1:19300/v1',apiKey:'',allowUnauthenticatedLocal:true,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const processingPlugins=await Promise.all(modules.map(async module=>((await import(pathToFileURL(module).href)).default)));
   const calls:string[]=[],modelCalls:string[]=[],failed=new Set<string>();
   const start=async()=>{
@@ -48,7 +48,7 @@ async function fixture(t:import('node:test').TestContext,modules:string[]=[],see
   };
   await start();await node.processing.save({revision:node.processing.view().revision,settings:{...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},policy:fixtureFilePolicy({...node.processing.view().settings,enabled:true,audioProcessor:'audio.http',summarize:false},node.processing.runtime.registry)});
   if(!configureImage)await authorizeFixtureModels(node);
-  const headers={authorization:'Bearer '+config.token};
+  const headers={authorization:'Bearer '+config.privateCredential!.token};
   const create=async(files:{name:string;dataBase64:string}[],processing:'automatic'|'preview'='automatic',instruction='')=>{
     const result=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files,processing,instruction}});assert.equal(result.statusCode,202,result.body);let job=result.json<ImportJob>();
     for(let attempt=0;attempt<500&&['queued','preparing','importing'].includes(job.status);attempt++){await new Promise(r=>setTimeout(r,10));job=node.imports.get(job.id);}

@@ -154,7 +154,7 @@ test('real production inventory and generated map stay in sync with explicit par
  assert.equal(result.owners.filter(item=>item.owner==='delegation').length,2,'one logical journal owner retains two installation phases');
  assert.equal(result.tables.processing_jobs.owner,'processing-runtime');assert.equal(result.tables.processing_dependencies.owner,'processing-runtime');
  assert.ok(result.uncoveredFiles.includes('apps/server/src/processing-runtime.ts'),'the dynamic Processing view stays pending');
- assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,4);
+ assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,nonSqlCalls.length);
  assert.equal(result.tables.assistant_task_runtime.owner,'assistant-task-runtime');assert.equal(result.owners.filter(owner=>owner.construction).length,4);
  assert.deepEqual(result.pendingRawWrites.map(({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})=>({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})),originalPendingWrites);
  assert.ok(result.pendingRawWrites.every(issue=>issue.rule==='sql-unproved-relation'&&issue.kind==='write'&&issue.completeSql===false),'known raw targets do not authorize these unproved writes');

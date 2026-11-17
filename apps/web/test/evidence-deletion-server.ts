@@ -4,7 +4,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {buildApp} from '../../server/src/app.js';
 const [directory,webRoot]=process.argv.slice(2);if(!directory||!webRoot)throw Error('Private profile and isolated Web build required');
 const token=randomBytes(32).toString('hex'),headers={authorization:'Bearer '+token};let modelCalls=0;
-const node=await buildApp({dataDir:join(directory,'data'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{webRoot:resolve(webRoot),backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in original deletion fixture');},close:async()=>{}}});
+const node=await buildApp({path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{webRoot:resolve(webRoot),backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in original deletion fixture');},close:async()=>{}}});
 const control={mode:'normal',writes:0};
 node.app.get('/fixture/deletion-control',async()=>({...control,modelCalls}));
 node.app.post('/fixture/deletion-control',async req=>{control.mode=String((req.body as {mode:string}).mode);return control;});

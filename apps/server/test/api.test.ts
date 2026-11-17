@@ -5,15 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildApp } from '../src/app.js';
-import type { Config } from '../src/config.js';
+import type { ConfigurationPlatformOptions } from '../src/config.js';
 
-export const testConfig=(dataDir:string):Config=>({dataDir,token:'fixture-token-never-use-in-production',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+export const testConfig=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'fixture-token-never-use-in-production',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 test('source pack catalog lists public metadata without exposing pinned code locations',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-pack-catalog-test-'));const config={...testConfig(dir),importPythonPacks:[{id:'fixture.pack',version:'1',description:'Fixture parser',packRoot:'/trusted/fixture',script:'parse.py',scriptSha256:'a'.repeat(64),pythonExecutable:'/usr/bin/python3'}]};
   const {app}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('should not run');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   assert.equal((await app.inject('/api/import-source-packs')).statusCode,401);
-  const response=await app.inject({url:'/api/import-source-packs',headers:{authorization:`Bearer ${config.token}`}});
+  const response=await app.inject({url:'/api/import-source-packs',headers:{authorization:`Bearer ${config.privateCredential!.token}`}});
   assert.equal(response.statusCode,200);
   assert.deepEqual(response.json(),{items:[{id:'fixture.pack',version:'1',description:'Fixture parser'}]});
   assert.doesNotMatch(response.body,/trusted|parse\.py|aaaaaa/);
@@ -22,7 +22,7 @@ test('authenticated ingestion, source history, export/import and unavailable AI 
   const dir=mkdtempSync(join(tmpdir(),'mote-api-test-'));const config=testConfig(dir);
   const {app}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('should not run');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   assert.equal((await app.inject('/api/health')).statusCode,200);
   assert.equal((await app.inject('/api/captures')).statusCode,401);
   assert.equal((await app.inject('/api/software-update')).statusCode,401);
@@ -46,7 +46,7 @@ test('arbitrary user questions pass unmodified to the agent, no keyword routing'
   const dir=mkdtempSync(join(tmpdir(),'mote-agent-api-test-'));const config=testConfig(dir);const questions:string[]=[];
   const {app}=await buildApp(config,{agent:{configured:true,query:async args=>{questions.push(args.question);return {answer:'synthetic agent fixture',citations:[],trace:[],runId:randomUUID()};},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   for(const question of ['检索待办','What changed about my plan?','昨天我在想什么，依据在哪'])assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question}})).statusCode,200);
   assert.deepEqual(questions,['检索待办','What changed about my plan?','昨天我在想什么，依据在哪']);
 });
@@ -56,7 +56,7 @@ test('deleting evidence during an insight run cannot recreate a saved private in
   const begun=new Promise<void>(r=>{started=r;});
   const {app}=await buildApp(config,{agent:{configured:true,query:async()=>{started();return new Promise(r=>{resolveAnswer=r;});},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};const id=randomUUID();
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};const id=randomUUID();
   const record={id,deviceId:'test',deviceName:'Synthetic',platform:'import',capturedAt:'2026-09-12T12:00:00Z',durationMs:0,ocrText:'synthetic private fact',source:'note'};
   await app.inject({method:'POST',url:'/api/captures',headers,payload:record});
   const running=app.inject({method:'POST',url:'/api/insights',headers,payload:{}}).then(r=>r);await begun;
@@ -70,7 +70,7 @@ test('queries and insights validate and preserve device and display time zone sc
   const dir=mkdtempSync(join(tmpdir(),'mote-query-scope-'));const config=testConfig(dir);const seen:any[]=[];
   const {app}=await buildApp(config,{agent:{configured:true,query:async args=>{seen.push(args);return {answer:args.skill==='personal-insight'?JSON.stringify({title:'Generated scope report',markdown:'synthetic scope',html:'<p>synthetic scope</p>'}):'synthetic scope',citations:[],trace:[],runId:randomUUID()};},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   for(const url of ['/api/query','/api/insights']){
     const payload={...(url==='/api/query'?{question:'arbitrary input'}:{}),deviceId:'synthetic-device',timeZone:'Asia/Shanghai',after:'2026-06-01T00:00:00+08:00',before:'2026-06-12T00:00:00+08:00'};
     assert.equal((await app.inject({method:'POST',url,headers,payload})).statusCode,200);

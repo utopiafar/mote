@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {createApi,type Api} from '../src/api.js';
 import {SourceCatalog} from '../src/plugins/sources/SourceCatalog.js';
 import {Sources} from '../src/plugins/sources/Sources.js';
@@ -72,7 +72,7 @@ function Flow({api}:{api:Api}){
 }
 async function fixture(t:TestContext,kind:OfficialProvider='notion'){
  const definition=definitions[kind],directory=await mkdtemp(join(tmpdir(),'mote-official-flow-')),owner='generated-owner-'+randomUUID(),secret='GENERATED_OFFICIAL_'+randomUUID().replaceAll('-','_'),provider=fakeOfficial(kind);process.env[secret]='generated-private-client-secret';
- const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
  const node=await buildApp(config,{backgroundWorker:false,connectorTesting:{fetch:provider.transport,lark:provider.runner},agent:{configured:false,async query(){throw Error('No model in the official connector flow');},async close(){}}});
  const origin=await node.app.listen({host:'127.0.0.1',port:0}),nativeFetch=globalThis.fetch,prior=new Map<string,PropertyDescriptor|undefined>(),locale=getLocale();configureLocale(()=> 'zh-CN');
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:origin+'/#/connections/add',pretendToBeVisual:true});

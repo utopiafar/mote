@@ -5,14 +5,14 @@ import {tmpdir} from 'node:os';
 import {join,isAbsolute} from 'node:path';
 import {setTimeout as pause} from 'node:timers/promises';
 import {buildApp} from '../../src/app.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 
 /** Host half of the actual Android fixture journey. The Android test uploads
  * its own Queue payload over HTTP; no TypeScript-generated capture is inserted. */
 const [readyPath,resultPath]=process.argv.slice(2);
 if(!readyPath||!resultPath||!isAbsolute(readyPath)||!isAbsolute(resultPath))throw Error('Expected absolute ready/result JSON paths');
 const directory=mkdtempSync(join(tmpdir(),'mote-android-central-')),token=randomBytes(32).toString('hex');
-const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model calls in actual Android deterministic journey');},close:async()=>{}}});
 let succeeded=false;
 try{

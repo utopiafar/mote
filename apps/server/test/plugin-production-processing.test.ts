@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {strToU8,zipSync} from 'fflate';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import type {PluginManifest,PluginReleaseTransport} from '../src/plugin-release.js';
 
@@ -42,13 +42,13 @@ async function fixture(t:TestContext,entry=source){
   if(url===base+'mote-plugin.json')return {bytes:strToU8(JSON.stringify(manifest))};
   if(url===base+'processing.zip')return {bytes:archive};throw Error('Unexpected generated release URL');
  };
- const config:Config={dataDir:join(directory,'data'),token:'generated-processing-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:'generated-processing-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const start=async()=>{const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async close(){},async query(){throw Error('No model call in processing fixture');}}});Object.defineProperty(node.pluginCenter.releases,'transport',{value:transport});return node;};
- let node=await start();const headers={authorization:'Bearer '+config.token};
+ let node=await start();const headers={authorization:'Bearer '+config.privateCredential!.token};
  t.after(async()=>{await writeFile(controlFile,'{}');await node.app.close();await rm(directory,{recursive:true,force:true});});
  const request=async(method:'GET'|'POST'|'PUT'|'PATCH',url:string,payload?:unknown)=>{const response=await node.app.inject({method,url,headers,...(payload===undefined?{}:{payload:payload as object})});assert.ok(response.statusCode<400,response.body);return response.json();};
  const preview=await request('POST','/api/plugins/resolve',{repository,tag});await request('POST','/api/plugins/install',{...command(node.pluginCenter.revision()),previewId:preview.id});await until(()=>node.pluginCenter.view().packages[0]?.state==='installed','the generated service archive installs');
- const pkg=node.pluginCenter.view().packages[0]!;assert.equal(sha256(await readFile(join(config.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);
+ const pkg=node.pluginCenter.view().packages[0]!;assert.equal(sha256(await readFile(join(config.initialDocument!.storage.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);
  const configure=async(id?:string,processorId='generated.installed',mode='normal',label='first')=>request(id?'PATCH':'POST','/api/plugin-instances'+(id?'/'+id:''),{...command(id?node.pluginCenter.instanceView(id).revision:node.pluginCenter.revision()),...(id?{}:{packageId:pkg.id}),name:processorId,scope:'default',configuration:{processorId,mode,label,controlFile}});
  const action=async(id:string,kind:'check'|'enable'|'disable')=>request('POST','/api/plugin-instances/'+id+'/'+kind,command(node.pluginCenter.instanceView(id).revision));
  const check=async(id:string)=>{await action(id,'check');await until(()=>node.pluginCenter.instanceView(id).observed!=='checking','check settles');const result=node.pluginCenter.instanceView(id);if(result.observed==='blocked')t.diagnostic(JSON.stringify(result.issues));return result;};

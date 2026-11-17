@@ -25,7 +25,7 @@ const runner:LarkRunner=async command=>{
   default:return '{}';
  }
 };
-const runtime=await buildApp({dataDir:join(directory,'data'),dataKey:undefined,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{connectorTesting:{lark:runner},agent:{configured:false,query:async()=>{throw Error('No model calls allowed in browser fixture');},close:async()=>{}}});
+const runtime=await buildApp({path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),dataKey:undefined,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{connectorTesting:{lark:runner},agent:{configured:false,query:async()=>{throw Error('No model calls allowed in browser fixture');},close:async()=>{}}});
 runtime.app.get('/generated/lark-metrics',async request=>{
  if(request.headers.authorization!=='Bearer '+token)throw Error('Generated owner credential required');
  return {generatedOnly:true,bodyReads:calls.filter(command=>command.kind==='document').length,searches:calls.filter(command=>command.kind==='documents-search').length,modelCalls:0};

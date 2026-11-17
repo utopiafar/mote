@@ -5,16 +5,16 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp, type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model call permitted');},close:async()=>{}};
 async function fixture(t:TestContext, agent=inactive){
   const dataDir=await mkdtemp(join(tmpdir(),'mote-request-admission-'));
-  const config:Config={dataDir,token:'generated-request-admission-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-request-admission-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
-  return {...node,config,headers:{authorization:`Bearer ${config.token}`}};
+  return {...node,config,headers:{authorization:`Bearer ${config.privateCredential!.token}`}};
 }
 
 test('real HTTP capture bursts and foreground reads have no request quota; authorization remains enforced',async t=>{

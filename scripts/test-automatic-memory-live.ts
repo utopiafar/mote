@@ -9,7 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {z} from 'zod';
 import {documentSchema,type UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
@@ -25,7 +25,7 @@ const directory=outside(process.env.MOTE_AUTO_OUTPUT);await mkdir(directory,{mod
 await writeFile(join(directory,'manifest.json'),manifestBytes,{mode:0o600,flag:'wx'});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex'),sourceId='private-automatic-authored';
 const recipes=[{id:'mote.personal-memory',version:'5'},{id:'mote.coding-memory',version:'3'}];
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
 const report:Record<string,any>={status:'running',startedAt:new Date().toISOString(),purpose:'targeted automatic-source composition',semanticQualityAccepted:false,heldOut:false,personalDataUsed:manifest.personalDataUsed,selectionMethod:manifest.selectionMethod,manifestSha256:sha256(manifestBytes),recipes,model:'gpt-6-sol',reasoningEffort:'max',batchCharacters:4000,maximumModelCalls:manifest.records.length*3,maximumDurationMs:20*60*1000,browserTested:false,physicalDevicesTested:false,mediaProcessingTested:false,calls:[],records:[],foregroundReads:[],unexpectedReplayAttempts:0,head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim()};
 report.codeHashes=Object.fromEntries(await Promise.all(['scripts/test-automatic-memory-live.ts','apps/server/src/memory-extraction-drafts.ts','apps/server/src/evidence-store.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-lifecycle.ts','apps/server/src/memory-recipe-settings.ts','apps/server/src/material-memory-work.ts','apps/server/src/memory-input-authorization.ts','apps/server/src/materials.ts','apps/server/src/material-organizers.ts','apps/server/src/material-readiness.ts','apps/server/src/evidence-reader.ts','apps/server/src/source-pipelines.ts','apps/server/src/memory-strategies.ts','apps/server/src/memory-strategy-contract.ts','apps/server/src/app.ts','apps/server/src/memory-range-selection-policy.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 let node:Awaited<ReturnType<typeof buildApp>>|undefined,noModel=false,writes=Promise.resolve();
@@ -56,7 +56,7 @@ async function start(){
 async function close(){if(node){await save();await node.app.close();node=undefined;}}
 const payload=(r:typeof manifest.records[number])=>({externalId:sha256(r.key),revision:sha256(JSON.stringify([r.textSha256,r.origin.documentTime])),observedAt:report.startedAt,kind:'message',layer:'original',text:r.text,document:r.origin.documentTime});
 try{
-  await save();const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});report.catalog=catalog.items.find(m=>m.id==='gpt-6-sol');assert.ok(report.catalog?.reasoningEfforts?.includes('max'));
+  await save();const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});report.catalog=catalog.items.find(m=>m.id==='gpt-6-sol');assert.ok(report.catalog?.reasoningEfforts?.includes('max'));
   await start();await request('PUT','/api/memory-recipe-settings',{recipes});
   await request('POST','/api/sources',{id:sourceId,name:'Private automatic authored replay',kind:'custom',deviceId:sourceId,platform:'import',retention:'archive'});
   for(const original of manifest.records){

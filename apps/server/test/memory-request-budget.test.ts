@@ -8,7 +8,7 @@ import {assembleHostContext,estimateSerializedTokens,type QueryInput} from '@mot
 import {ProviderFailure} from '@mote/shared';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {memoryWorkInstruction} from '../src/memory-work-contract.js';
@@ -126,7 +126,7 @@ test('owner retry reopens a timed-out review against its saved bounded scope bef
 
 test('808 generated recording segments retain every exact range and bounded read grant across independent review and restart',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-request-budget-'));
- const config:Config={dataDir:directory,token:'generated-budget-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6.1-terra',modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'auto',modelMaxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-budget-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'gpt-6.1-terra',provider:'codex',protocol:'codex-app-server',reasoningEffort:'auto',maxTokens:65536,modelRequestTimeoutMs:null,agentTimeoutMs:null,apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const calls:{phase:string;targets:string[];readIds:string[];tokens:number}[]=[];
  const failures:unknown[]=[];
  let holdReview=true,enteredReview!:()=>void;
@@ -162,7 +162,7 @@ test('808 generated recording segments retain every exact range and bounded read
  const material=node.materials.publish({id:materialId(sourceId,'generated-segments'),kind:'mote.note',schemaVersion:1,title:'Generated segmented recording',origin:{sourceId,externalId:'generated-segments',deviceId:'generated',firstAt:at,lastAt:at},members:[{id:original.id,kind:'capture',ref:'capture:'+original.id}],blocks:texts.map((text,index)=>{const recordedAt=new Date(Date.parse(at)+index*1000).toISOString();return {id:'segment-'+index,kind:'text' as const,format:'plain',text,memberIds:[original.id],evidenceContext:{observedAt:recordedAt,document:{contentRole:'transcript' as const,recordedAt,timeBasis:'recorded' as const}}};}),artifacts:[{key:'transcript',state:'ready',blockIds:texts.map((_,index)=>'segment-'+index)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
  const selected=node.materials.input(material.ref,['transcript'])!.evidenceIds;
  assert.equal(selected.length,808);
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const accepted=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:selected,recipes:[{id:'mote.personal-memory',version:'5'}]}});
  assert.equal(accepted.statusCode,202,accepted.body);
  assert.equal(accepted.json().inputPlans.total,1,'the original Material retains one real input plan across transport partitions');

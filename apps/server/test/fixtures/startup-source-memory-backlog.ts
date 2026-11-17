@@ -4,7 +4,7 @@ import {mkdir,readdir,readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../../src/app.js';
-import {configFromFile} from '../../src/config.js';
+import {configurationFromFile} from '../../src/config.js';
 import {startServer} from '../../src/start-server.js';
 import {MaterialMemoryWork} from '../../src/material-memory-work.js';
 import {MemoryPipeline} from '../../src/memory-pipeline.js';
@@ -33,7 +33,7 @@ if(mode==='seed'){
   await writeFile(join(webRoot,'build-info.json'),await readFile(new URL('../../package.json',import.meta.url),'utf8'));
   for(let index=0;index<175;index++)await writeFile(join(webRoot,'assets',`generated-${index}.js`),'/* Generated static source startup asset */'.repeat(100));
  }
- const node=await buildApp(configFromFile(configFile),{backgroundWorker:false,webRoot,agent});
+ const node=await buildApp(configurationFromFile(configFile),{backgroundWorker:false,webRoot,agent});
  try{
   await node.app.ready();await authorizeFixtureModels(node);
   const {ids,receipts,text,sourceId}=await seedSourceMemoryBacklog(node);

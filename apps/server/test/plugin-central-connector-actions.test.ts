@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {hostRun} from './fixtures/host-run.js';
 
@@ -17,7 +17,7 @@ const command=(expectedRevision:number)=>({operationId:randomUUID(),expectedRevi
 const until=async(check:()=>boolean,message:string)=>{const end=Date.now()+8000;while(!check()){assert.ok(Date.now()<end,message);await new Promise(resolve=>setTimeout(resolve,25));}};
 
 test('the official fixture appears as a Central connector target; message.send stays manual and a calendar write executes through the host with a receipt',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-central-connector-actions-')),config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const directory=mkdtempSync(join(tmpdir(),'mote-central-connector-actions-')),config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
  const text='Generated appointment is scheduled on 18 September 2099.';
  let node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,async close(){},async query(input){
   hostRun(input);const id=input.evidenceIds![0],evidence=[{id,quote:text}];

@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
 import {materialId} from '../src/materials.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 for(const mutation of ['lease-renewal','delete-during-validation','delete-during-provider'] as const)test(`a large existing conversation completes actual HTTP continuation with ${mutation} and exact private dependencies`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-large-query-lineage-')),token='generated-large-query-owner',headers={authorization:'Bearer '+token};
@@ -23,7 +23,7 @@ for(const mutation of ['lease-renewal','delete-during-validation','delete-during
   send({id:'generated-large-'+providerStarts,choices:[{index:0,delta:{role:'assistant',content:JSON.stringify({answer:'Generated supported continuation.',citationIds:[]})},finish_reason:null}]});
   send({id:'generated-large-'+providerStarts,choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
  });await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-fixture-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-provider',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-fixture-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
  t.after(async()=>{await node.app.close();endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  const dependencies:string[]=[];
