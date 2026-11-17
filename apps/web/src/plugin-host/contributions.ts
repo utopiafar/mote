@@ -2,8 +2,8 @@
  * contributions, resources, disposers and mount outcome; one failed plugin
  * rolls back without touching siblings. Loader dispatch separates trusted
  * same-bundle React entries from external code, which may only mount through
- * an explicit isolated loader (U08) — an unisolated component is never a
- * mount. Mount lifecycle reuses the U02 ViewLifetime, never a second one. */
+ * an explicit isolated external loader — an unisolated component is never a
+ * mount. Mount lifecycle reuses the shared ViewLifetime, never a second one. */
 import { ViewLifetime } from '@mote/shared/plugin-view-lifetime';
 import { contributionDescriptor, type WebContribution, type WebFeatureHost } from '../features/host';
 import { customPageContributions, type CustomPageDeclaration, type CustomPageInstallation } from './custom-page-navigation';
