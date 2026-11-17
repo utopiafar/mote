@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle,ServiceBinding} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {Conversations} from '../conversations.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
@@ -24,14 +24,17 @@ const unavailable=()=>new StoreError('Conversations are unavailable',503);
 /** Owns conversation storage and its retained-evidence authority. Consumers use
  * the lifecycle-gated port rather than constructing Conversations themselves. */
 export function createConversations(store:Store,authorization:Pick<ModelAuthorizationHost,'conversation'>){
-  let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'='created';
-  let current:Conversations|undefined,closing:Promise<void>|undefined;
+  // PluginHost orders lifecycle calls. Reads require the constructed resource;
+  // this one-way write-admission latch stays closed before start and after
+  // quiesce. Undefined means never started; a withdrawn owner needs a fresh
+  // activation. The borrowed Store is not owned here and is never closed.
+  let current:Conversations|undefined,writeOpen:boolean|undefined,closing:Promise<void>|undefined;
   const read=()=>{
-    if(!current||!['prepared','active','quiescing'].includes(phase))throw unavailable();
+    if(!current)throw unavailable();
     return current;
   };
   const write=()=>{
-    if(!current||phase!=='active')throw unavailable();
+    if(!current||writeOpen!==true)throw unavailable();
     return current;
   };
   const conversations:ConversationRepository=Object.freeze({
@@ -67,29 +70,34 @@ export function createConversations(store:Store,authorization:Pick<ModelAuthoriz
     historyOriginalDependencies:(snapshot:Parameters<Conversations['historyOriginalDependencies']>[0])=>read().historyOriginalDependencies(snapshot),
     retiredSelection:(snapshot:Parameters<Conversations['retiredSelection']>[0],ids:readonly string[])=>read().retiredSelection(snapshot,ids),
   });
-  const close=()=>closing??=(async()=>{phase='stopped';current=undefined;})();
+  const close=()=>{
+    writeOpen=false;
+    current=undefined;
+    return closing??=Promise.resolve();
+  };
   return Object.freeze({
     async prepare(){
-      if(phase!=='created')throw unavailable();
+      if(current||closing)throw unavailable();
       try{
         current=new Conversations(store);
         current.onTurnReceived=turnId=>authorization.conversation(turnId);
-        phase='prepared';
       }catch(error){
-        try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Conversation preparation and disposal failed',{cause:error});}
+        // No resource was acquired: withdrawing the port makes the failed
+        // initialization terminal without closing the borrowed Store.
+        close();
         throw error;
       }
     },
-    start(){if(phase!=='prepared')throw unavailable();phase='active';},
-    quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},
-    stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
+    start(){if(!current||closing||writeOpen!==undefined)throw unavailable();writeOpen=true;},
+    quiesce(){if(writeOpen)writeOpen=false;},
+    close,
     conversations,
   });
 }
 export type ConversationsPlatform=ReturnType<typeof createConversations>;
 
-/** Stable pre-H14 route table. A new activation replaces the port without
- * installing another copy of the conversation routes. */
+/** Stable route table. A new activation replaces the port without installing
+ * another copy of the conversation routes. */
 export function createConversationRoutes(multipleConversations:()=>boolean=()=>false){
   let current:ConversationRepository|undefined;
   const mounted=new WeakSet<FastifyInstance>();
@@ -109,7 +117,7 @@ export type ConversationRoutes=ReturnType<typeof createConversationRoutes>;
 
 export function createConversationsFactory(platform:ConversationsPlatform,onStarted?:(bindings:ConversationsBindings)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{
-    context.scope.defer(()=>platform.close());
+    context.scope.defer(platform.close);
     return {
       prepare:platform.prepare,
       start(){
@@ -117,7 +125,7 @@ export function createConversationsFactory(platform:ConversationsPlatform,onStar
         const conversations=context.provide(conversationsContribution.id,centralServices.conversations,platform.conversations);
         onStarted?.({conversations});
       },
-      quiesce:(reason?:StopReason)=>platform.quiesce(reason),stop:(reason?:StopReason)=>platform.stop(reason),dispose:platform.dispose,
+      quiesce:platform.quiesce,stop:platform.close,dispose:platform.close,
     };
   };
 }

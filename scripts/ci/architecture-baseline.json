@@ -54,14 +54,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/conversations.ts",
-    "to": "H14",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/plugins/devices-source.ts",
     "to": "C01",
     "kind": "comment",
