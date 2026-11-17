@@ -108,6 +108,7 @@ export interface HostRunSession {
   readonly dependencies: HostRunDependencies;
   readonly port: HostRunPort;
   readonly handle: RuntimeHandle;
+  readonly control: HostRunControl;
   /** Host getter/snapshot; never exposed on the provider's port. */
   readonly evidence: HostEvidenceSnapshot;
   /** Number of model-authored corrections already requested, between zero and repairLimit. */
@@ -121,4 +122,18 @@ export interface HostRunSession {
   /** Await setup, model/tool queue, runtime/bridge/transport cleanup and lease release.
    * Keep the primary failure; report secondary cleanup failures without hiding either. */
   close(): Promise<void>;
+}
+
+/** A local Host capability, not a query DTO or a model-supplied authority. */
+export interface HostSteeringTarget {
+  readonly identity:RuntimeRunIdentity;
+  readonly attemptId:string;
+  readonly turnId:string;
+}
+export interface HostRunControl {
+  readonly supported:boolean;
+  current():HostSteeringTarget|undefined;
+  /** The Host persists the actual ACK before allowing the affected candidate
+   * to pass output validation. A failed write cannot become a false success. */
+  steer(target:HostSteeringTarget,text:string,acknowledge:(receipt:HostSteeringTarget)=>void):Promise<HostSteeringTarget>;
 }

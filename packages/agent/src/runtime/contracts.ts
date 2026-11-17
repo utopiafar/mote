@@ -144,11 +144,20 @@ export type RuntimeOutcome =
 export interface RuntimeHandle {
   run(request: RuntimeRunRequest): Promise<RuntimeOutcome>;
   repair(request: RuntimeRepairRequest): Promise<RuntimeOutcome>;
+  /** Optional real native-turn input. Absence is unsupported, never an
+   * instruction to start a second prompt and call that steering. */
+  readonly steering?: {
+    target(): {readonly turnId:string}|undefined;
+    send(request:{readonly attempt:RuntimeAttempt;readonly turnId:string;readonly text:string}):Promise<{readonly turnId:string}>;
+  };
   /** Stop this handle's work; the pending run/repair settles with a typed cancelled terminal. */
   cancel(cause: Cancellation): Promise<void>;
   /** Idempotent; await pending setup, tool delivery, process exit and private resource removal.
    * Release this handle's resources, not another run's model lease or siblings. */
   close(): Promise<void>;
+}
+export class RuntimeSteeringUnavailable extends Error {
+  constructor(readonly reason:'unsupported'|'stale'){super('Runtime steering '+reason);this.name='RuntimeSteeringUnavailable';}
 }
 export interface RuntimeProvider<Configuration = unknown, Adapter = unknown> {
   readonly capabilities: RuntimeCapabilities;
