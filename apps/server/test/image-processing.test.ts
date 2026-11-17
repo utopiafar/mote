@@ -33,6 +33,7 @@ import {DEFAULT_IMAGE_RECIPE,ImageInterpretationError,ImagePixelsNotInspectedErr
 import {generatedAppleDouble} from './fixtures/appledouble.js';
 import {isAppleDouble} from '../src/appledouble.js';
 import {Operations} from '../src/operations.js';
+import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {MEDIA_CATALOG,MediaAssets} from '../src/media-assets.js';
 import {DEFAULT_MEDIA_OCR_ENDPOINT} from '../src/media-configuration.js';
 import {perceptionSchema} from '../src/perception-schema.js';
@@ -138,11 +139,11 @@ test('references report missing originals and deletion fences a late visual resu
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM image_products WHERE capture_id=?').get(id)!.n,0);
 });
 
-test('expired snapshot images request transport recovery and release recovered pixels after OCR and vision',async t=>{
+test('released snapshot images request transport recovery and release recovered pixels after OCR and vision',async t=>{
  const f=await fixture(t);f.sources.register({id:'generated-snapshot',name:'Generated snapshot',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});
  const hash=sha256(f.bytes),begun=f.files.begin({sourceId:'generated-snapshot',previousRevision:null,relativePath:'generated.png',sha256:hash,sizeBytes:f.bytes.length,item:{externalId:'generated-snapshot-image',revision:hash,observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'snapshot',mimeType:'image/png',text:'',document:{fileIndex:{version:1,fileId:'generated-snapshot-image',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:true}}}},()=>{});
  f.files.part(begun.uploadId,0,f.bytes,()=>{});const ack=await f.files.commit(begun.uploadId,()=>{});
- f.store.db.prepare('UPDATE file_snapshot_inputs SET expires=0 WHERE capture_id=?').run(ack.id);f.files.sweepSnapshotInputs();await f.images.tick();
+ f.files.releaseSnapshotInput(ack.id);await f.images.tick();
  assert.deepEqual(f.calls(),{ocr:0,visual:0});assert.equal(f.files.detail(ack.id).job.error,'snapshot_input_expired');
  assert.equal(f.files.snapshotRecovery('generated-snapshot').items[0].captureId,ack.id);
  const recovery=f.files.beginSnapshotRecovery(ack.id,()=>{});f.files.part(recovery.uploadId,0,f.bytes,()=>{});const restored=await f.files.commit(recovery.uploadId,()=>{});assert.equal(restored.id,ack.id);assert.equal(f.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE operation_id=? AND kind='files.pipeline'").get('file:'+ack.id)!.n,0,'image resupply remains owned by the image pipeline');assert.equal(f.store.db.prepare('SELECT count(*) n FROM file_versions WHERE source_id=?').get('generated-snapshot')!.n,1);
@@ -508,18 +509,28 @@ test('production image intake enters the existing automatic Memory pipeline once
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   if(input.directImages?.length){visual++;await reader.readImage!({id:input.directImages[0].id});return {answer:JSON.stringify({text:'Generated chart from a third-party reference; owner authorship is unknown.',regions:[]}),citations:[],trace:[],runId:randomUUID()};}
   if(await planGeneratedMemory(input))return {answer:'Generated packages submitted.',citations:[],trace:[],runId:randomUUID()};
-  if(input.traceContext?.phase!=='review')extractions++;return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:randomUUID()};
+  if(input.traceContext?.phase!=='review')extractions++;
+  const bridge=await startBridge(reader,input);
+  try{
+   for(const image of input.processingImages??[]){
+    const response=await fetch(bridge.url+'/read_image',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({id:image.id,expectedImageSha256:image.originalSha256})});
+    assert.equal(response.status,200);const pixels=await response.json();assert.ok(pixels.image.data);bridge.imageDelivery(pixels.imageDelivery,true);
+   }
+   return {answer:generatedMemoryOutput(input),citations:[],trace:bridge.trace,runId:randomUUID(),imageReadReceipts:bridge.imageReadReceipts,evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
+  }finally{await bridge.close();}
  }})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  // This regression isolates the existing zero-outcome personal strategy. Daily
  // event behavior has a separate screenshot+field intake journey.
  node.memoryRecipeSettings.configure({scope:'capture',recipes:[{id:'mote.personal-memory',version:'5'}]});
- // A deliberate zero selection is valid after inspecting sufficient OCR. Pure
- // image targets without OCR require their own pixel assessment in the visual
- // Memory journey regression, rather than accepting interpretation text.
+ // Deliberate zero selection still inspects every original-image target through
+ // the real bridge; OCR and interpretation text do not certify unseen pixels.
  await node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated neutral chart without a personal fact.'}]});
  const settings=node.lifecycle.settings();settings.extraction.enabled=true;await node.lifecycle.save({revision:node.configService.revision,settings});
  await authorizeFixtureModels(node);
+ // This generated owner selects original-image disclosure for the automatic
+ // image Memory path; background model consent alone does not grant pixels.
+ await node.perception.save({revision:node.configService.revision,settings:{...node.perception.settings(),allowQueryImages:true}});
  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#ddeeff'}}).png().toBuffer(),id=randomUUID();
  await node.store.ingest({id,deviceId:'generated-screen',deviceName:'Generated screen',platform:'android',source:'screen',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:bytes.toString('base64')});
  await node.perception.tick();for(let i=0;i<20;i++)if(await node.materialOrganizer.tick(100)===0)break;
