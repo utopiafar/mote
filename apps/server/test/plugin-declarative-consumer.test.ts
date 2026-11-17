@@ -32,7 +32,7 @@ async function waitFor(check: () => boolean, what: string) {
   while (!check()) {assert.ok(Date.now() < until, what); await delay(5);}
 }
 
-// T3: a real PluginCenter pipeline emits the actual PluginCenterView, which
+// Producer integration: a real PluginCenter pipeline emits the actual PluginCenterView, which
 // the web declarative adapter and invoker consume — not a hand-shaped view
 // model. Only the GitHub release transport and the worker probe are
 // generated stubs; the view, revision and allowedActions are producer code.

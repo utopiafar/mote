@@ -53,10 +53,10 @@ import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 
 /** Declared build-time domain plugins the memory assembly wires; the
  * distribution concatenates each domain's list into one selected table.
- * Includes C21A strategy settings, memoryRecordRepository,
- * C21C automation admission, C21D binding control, C22A
- * phase/review/cache, C22B lifecycle/extensions/working,
- * C23 provider adapters and C24 publication. */
+ * The list covers strategy settings, the memory record repository,
+ * automation admission, the topics host, binding control, the
+ * phase/review pipeline, lifecycle and working extensions, provider
+ * adapters and publication. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:memoryStrategySettingsContribution,declaration:memoryStrategySettingsDeclaration,replacement:memoryStrategySettingsReplacement},
   {contribution:memoryRecordRepositoryContribution,declaration:memoryRecordRepositoryDeclaration,replacement:memoryRecordRepositoryReplacement},
@@ -81,7 +81,7 @@ export interface MemoryInputStageDependencies {
 }
 
 /** Execution/model hooks owned by the app shell but consumed only inside the
- * C22B lifecycle activation. */
+ * Memory lifecycle service. */
 export interface MemoryLifecycleRuntimeDependencies {
   readonly automatic:boolean;
   readonly whenReady?:(task:()=>void)=>void;
@@ -102,12 +102,12 @@ export interface MemoryLifecycleRuntimeDependencies {
 export function memoryInputs(dependencies:MemoryInputStageDependencies){
   const {store,configService}=dependencies;
   projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
-  // C21A constructs the catalog and both selections only inside its plugin
-  // module; the borrowed Store has no independent disposal here.
+  // The strategy-settings plugin constructs the catalog and both selections
+  // only inside its module; the borrowed Store has no independent disposal here.
   const memoryStrategySettings=createMemoryStrategySettings({store});
   memoryStrategySettings.prepare();
   const memoryStrategies=memoryStrategySettings.strategies,memoryRecipeSettings=memoryStrategySettings.recipes,memoryIntegrationSettings=memoryStrategySettings.integration;
-  // MemoryAutomation is only constructed inside the C21C plugin factory.
+  // The automation-admission plugin is the only construction path for MemoryAutomation.
   const automationAdmission=createMemoryAutomationAdmission(store);
   automationAdmission.prepare();automationAdmission.start();
   const memoryAutomation=automationAdmission.automationForAssembly;
@@ -151,7 +151,7 @@ export interface MemoryRuntimeDependencies {
   readonly runModelFor:(settings:ModelSettings,connection?:ModelConnection)=>NonNullable<AgentOptions['runModel']>;
   readonly memoryConfiguration:NonNullable<MemoryModelSelection['configuration']>;
   readonly semanticContextTime?:()=>string;
-  /** Extension inputs and optional test replacements registered by C22B. */
+  /** Extension inputs and optional test replacements registered with the lifecycle service. */
   readonly lifecycle:MemoryLifecycleRuntimeDependencies;
   /** Binding control minted by the inputs stage; this stage prepares and starts it. */
   readonly memoryBindingControl:MemoryBindingControlPlatform;

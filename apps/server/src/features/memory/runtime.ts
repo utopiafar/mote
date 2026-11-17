@@ -35,7 +35,7 @@ export interface MemoryRuntimeRouteDependencies {
 
 const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
-/** C22's settings, durable jobs and owner integration windows. Every handler
+/** Memory runtime settings, durable jobs and owner integration windows. Every handler
  * resolves the current pipeline/lifecycle activation; a stopped owner answers
  * 503 without installing another route table. */
 export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:MemoryRuntimeRouteDependencies){

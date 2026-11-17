@@ -8,7 +8,7 @@ export interface ProcessingJobRouteDependencies {
   readonly semanticFingerprint:()=>string;
 }
 
-/** C17 job submission and receipts. The contribution resolves the current
+/** Processing job submission and receipts. The contribution resolves the current
  * plugin activation per request, so a stopped owner answers 503 without
  * installing a second route table. */
 export function registerProcessingJobRoutes(app:FastifyInstance,{store,processing,semanticFingerprint}:ProcessingJobRouteDependencies){
