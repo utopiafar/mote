@@ -9,6 +9,8 @@ import {z} from 'zod';
 import {validateInlineCitations,SOURCE_TIME_INSTRUCTIONS,skillCatalog} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,noteCapture,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {memorySearchSchemaInstallation} from './memory-search-schema.js';
 import {CODING_MEMORY_CONTRACT,codingMemorySchema,memorySchema,memoryAdmissionSchema,memoryRelationSchema,memoryReviewReceiptSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
 import {memoryImageReadReceipts,memoryImageSelectorSchema} from './memory-image-proof.js';
 import {memoryImageInterpretation,memoryImageLocator} from './memory-image-grants.js';
@@ -46,47 +48,23 @@ function reference(record:MemoryRecord,span?:{offset?:number;length?:number;quot
 }
 export type PreparedMemoryExtraction={at:string;resultHash:string;items:Memory[];changed:Memory[];expected:Record<string,string|null>;deletionSnapshot:string};
 export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:PreparedMemoryExtraction;at?:string;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
-const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
   // Retain compiled handles only. Each guard still reads the current transaction.
   private materialEvidenceTableStatement?:StatementSync;
   private materialEvidenceStatement?:StatementSync;
-  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.deletions=openMemoryDeletions(store,{records:{read:ids=>this.readEvidence([...ids])}});if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
+  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){
+    let deletions:MemoryDeletions|undefined;
+    installSchemaPlan(store.db,[{...memorySearchSchemaInstallation,install:db=>{
+      // Keep C24's existing activation and trigger creation order, while the
+      // common plan checks external facts before either collaborator writes.
+      deletions=openMemoryDeletions(store,{records:{read:ids=>this.readEvidence([...ids])}});
+      memorySearchSchemaInstallation.install(db);
+    }}]);
+    this.deletions=deletions!;
+  }
   /** Native card inventory, including stale cards retained in the owner archive. */
   count(){return Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n);}
-  private ensureIndex(){
-    this.store.db.exec(`CREATE INDEX IF NOT EXISTS memories_context_priority ON memories(json_extract(json,'$.contextPriority')) WHERE json_extract(json,'$.contextPriority') IS NOT NULL;
-      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id UNINDEXED,text,tokenize='trigram');
-      CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
-      CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN DELETE FROM memories_fts WHERE id=old.id; END;
-      CREATE TRIGGER IF NOT EXISTS memory_original_release_card_removed AFTER DELETE ON memories BEGIN
-        UPDATE memory_provider_evidence_revocations SET json=json_remove(json,'$.releasedOriginal.memoryFingerprints.'||old.id)
-        WHERE json_extract(json,'$.releasedOriginal.memoryFingerprints.'||old.id) IS NOT NULL;
-      END;
-      CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN DELETE FROM memories_fts WHERE id=old.id; INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
-`);
-  }
-  /** Metadata-only read model; maintained in the same transaction as every memory write. */
-  private ensureCatalog(){
-    const db=this.store.db;
-    const projection=(v:string)=>`json_object('id',${v}.id,'title',json_extract(${v}.json,'$.title'),'admission',json_extract(${v}.json,'$.admission'),'reviewRunId',json_extract(${v}.json,'$.reviewRunId'),'domain',json_extract(${v}.json,'$.domain'),'coding',json_extract(${v}.json,'$.coding'),'scopeRefs',json_extract(${v}.json,'$.scopeRefs'),'tier',json_extract(${v}.json,'$.tier'),'kind',json_extract(${v}.json,'$.kind'),'status',json_extract(${v}.json,'$.status'),'createdAt',${v}.created_at,'revision',json_extract(${v}.json,'$.fingerprint'),'version',json_extract(${v}.json,'$.version'),'relations',json_extract(${v}.json,'$.relations'),'supersededBy',json_extract(${v}.json,'$.supersededBy'),'supersededAt',json_extract(${v}.json,'$.supersededAt'),'validFrom',json_extract(${v}.json,'$.validFrom'),'validUntil',json_extract(${v}.json,'$.validUntil'),'correction',json_extract(${v}.json,'$.correction'),'evidenceCount',json_array_length(${v}.json,'$.evidenceIds'))`;
-    const insert=(v:string)=>`INSERT OR REPLACE INTO memory_catalog SELECT ${v}.id,${v}.created_at,json_extract(${v}.json,'$.status'),json_extract(${v}.json,'$.tier'),json_extract(${v}.json,'$.kind'),json_extract(${v}.json,'$.admission.layer'),${projection(v)};`;
-    const scope=(v:string)=>`INSERT INTO memory_scopes SELECT ${v}.id,json_extract(e.value,'$.id'),coalesce(json_extract(e.value,'$.deviceId'),''),CASE json_extract(e.value,'$.timeBasis') WHEN 'occurred' THEN coalesce(json_extract(e.value,'$.occurredAt'),json_extract(e.value,'$.recordedAt'),json_extract(e.value,'$.capturedAt')) ELSE coalesce(json_extract(e.value,'$.recordedAt'),json_extract(e.value,'$.capturedAt')) END FROM json_each(${v}.json,'$.evidence') e;`;
-    db.exec(`CREATE TABLE IF NOT EXISTS memory_catalog(id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,created_at TEXT NOT NULL,status TEXT NOT NULL,tier TEXT NOT NULL,kind TEXT NOT NULL,layer TEXT NOT NULL,json TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS memory_catalog_page ON memory_catalog(status,created_at DESC,id DESC);
-      CREATE TABLE IF NOT EXISTS memory_scopes(memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,device_id TEXT NOT NULL,at TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS memory_scope_parent ON memory_scopes(memory_id,device_id,at);
-      CREATE TRIGGER IF NOT EXISTS memory_catalog_insert AFTER INSERT ON memories BEGIN ${insert('new')} ${scope('new')} END;
-      CREATE TRIGGER IF NOT EXISTS memory_catalog_update AFTER UPDATE OF json ON memories BEGIN ${insert('new')} DELETE FROM memory_scopes WHERE memory_id=new.id; ${scope('new')} END;
-      CREATE TRIGGER IF NOT EXISTS memory_evidence_edited AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN
-        UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed') WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=new.id);
-      END;
-      DROP TRIGGER IF EXISTS memory_evidence_removed;
-      CREATE TRIGGER memory_evidence_removed BEFORE DELETE ON captures BEGIN DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=old.id)
-        AND NOT EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r,json_each(r.json,'$.releasedOriginal.memoryFingerprints') kept WHERE r.id=old.id AND kept.key=memories.id AND kept.value=json_extract(memories.json,'$.fingerprint')); END;`);
-
-  }
   isCurrentEvidence(id:string):boolean {
     const record=this.readEvidence([id])[0];
     return Boolean(record&&this.recordIsCurrent(record));
