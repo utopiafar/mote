@@ -1,6 +1,6 @@
 import {retainConversationRoots,retainedConversationResult} from './conversation-retention.js';
 import {captureSessionMembersSql} from './capture-session-members.js';
-import {installVaultSchema} from './vault-schema-installation.js';
+import {installVaultSchema,vaultStorageLedgerInstallations} from './vault-schema-installation.js';
 import {centralOcrState} from './plugins/central-ocr-state.js';
 import {CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
 import {AssetStore} from './assets.js';
@@ -97,7 +97,7 @@ export class EvidenceStore {
     this.contentEncryption=new ContentEncryption(directory,this.db,options);
     this.assets=new AssetStore(this);
     this.archive=new EvidenceArchive(this);
-    this.ledger=new StorageLedger(this.db,['blobs','file_blobs','file_objects']);
+    this.ledger=new StorageLedger(this.db,['blobs','file_blobs','file_objects'],vaultStorageLedgerInstallations);
     this.ledger.registerAll(vaultStorageMeters);
     installTaskRecords(this);
     installAssistantCards(this);

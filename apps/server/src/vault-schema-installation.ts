@@ -11,6 +11,7 @@ import {insightSchemaInstallation} from './insight-schema.js';
 import {todoSchemaInstallation} from './todo-schema.js';
 import {captureReadModelsSchemaInstallation} from './read-models.js';
 import {sourceCatalogSchemaInstallation} from './source-catalog.js';
+import {storageLedgerSchemaInstallation} from './storage-ledger.js';
 
 /** The current vault's fixed startup inventory, not optional feature installation.
  * Definitions stay with their domain owners. Dependencies describe table/trigger
@@ -31,6 +32,11 @@ export const vaultSchemaInstallations:readonly SchemaInstallation[]=[
  captureReadModelsSchemaInstallation,
  sourceCatalogSchemaInstallation,
 ];
+
+/** Second Vault stage, invoked by the existing StorageLedger construction
+ * point after the core EvidenceStore schema is installed. Keep it out of the
+ * core array so the original constructor/lazy read ordering is unchanged. */
+export const vaultStorageLedgerInstallations:readonly SchemaInstallation[]=Object.freeze([storageLedgerSchemaInstallation]);
 
 /** EvidenceStore registers the SQL functions and enables foreign keys first.
  * All core constraints/projections are installed before the store escapes its
