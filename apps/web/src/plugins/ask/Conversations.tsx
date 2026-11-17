@@ -179,7 +179,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   };
   const currentScopeChoice=scopeChoice?.owner===api&&scopeChoice.id===conversation?.id?scopeChoice.value:undefined;
   const scopeOverridden=currentScopeChoice!==undefined;
-  const messageScope=admissionScope(conversation?.scope,currentScopeChoice,Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const messageScope=admissionScope(conversation?.scope??reference.scope,currentScopeChoice,Intl.DateTimeFormat().resolvedOptions().timeZone);
   function changeSourceScope(value:SourceScopeChoice){
     if(!conversation)return;
     queryRecovery.contextChanged(api);setScopeChoice({owner:api,id:conversation.id,value});reference.clear();

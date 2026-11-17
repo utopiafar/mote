@@ -12,7 +12,7 @@ import {resources} from '../../resource-cache';
 import {assistantDiscoveryTarget,assistantEntrypoints} from '../../assistant-entrypoints';
 import type {AssistantTaskResultItem} from '../ask/AssistantTaskResults';
 import {matterLabel} from '../assistant/common';
-import {onboardingCapabilities,parseOnboarding,readStoredOnboardingRun} from '../sources/onboarding';
+import {parseOnboarding,readStoredOnboardingRun} from '../sources/onboarding';
 import {ownerQuestionRoute} from '../../owner-question-route';
 import {WorkStateBadge} from '../work/WorkProgress';
 import type {HomeRead,HomeSnapshot} from './controller';
@@ -55,7 +55,7 @@ export function AssistantEntry({state}:{state:HomeSnapshot}){
   <div className="home-assistant-conversation"><p>{moteText('在主对话交代工作，核对草稿后开始。')}</p><DiscoveryLink className="button primary" target={{pageId:'ask',href:'#/ask',requires:['http:GET:/api/conversations']}}><MessageCircle size={16}/>{moteText('主对话')}<ArrowRight size={15}/></DiscoveryLink></div>
   <div className="home-assistant-overview">
    <section className="home-assistant-destination" aria-label={moteText('初次认识')} data-onboarding-summary={read.error!==undefined||parsed instanceof Error?'error':run?.state??(stored?'loading':'unselected')}>
-    <DiscoveryLink className="home-assistant-destination-link" disabledAs="div" target={{pageId:'sources',href:'#/connections',requires:[...onboardingCapabilities]}}><strong>{moteText('初次认识')}</strong><ArrowRight size={15}/></DiscoveryLink>
+    <DiscoveryLink className="home-assistant-destination-link" disabledAs="div" target={{pageId:'archive',href:'#/library?view=materials',requires:['http:GET:/api/materials','http:POST:/api/conversations/messages']}}><strong>{moteText('初次认识')}</strong><ArrowRight size={15}/></DiscoveryLink>
     {canOnboarding&&<>
      {!stored?<p>{moteText('此浏览器还没有可恢复的初次认识记录。')}</p>:<><ReadState read={read}/>{parsed instanceof Error&&<FirstDataFailure error={parsed}/>}</>}
      {run&&<div role="status"><strong>{moteText(run.state==='pending'?(ownerQuestions.length?'需要你补充':'处理中'):run.state==='failed'?'处理失败':run.state==='cancelled'?'已取消':run.state==='empty'?'所选资料当前不可读取，请检查来源授权后重新选择。':'本次选择的资料已完成；其他资料未包含。')}</strong><p>{moteText('正文提取')} {run.coverage.extraction.completed} / {run.coverage.extraction.total}<br/>{moteText('语义理解')} {run.coverage.semantic.completed} / {run.coverage.semantic.total}</p>

@@ -73,7 +73,12 @@ export class ConversationQueue {
     }
     if(this.closed)throw new StoreError('Conversation query admission is unavailable',503);
     const scope={...input.scope,...(input.anchorEvidenceIds?{anchorEvidenceIds:input.anchorEvidenceIds}:{}),...(input.anchorMaterialRef?{anchorMaterialRef:input.anchorMaterialRef}:{})};
-    if(input.anchorMaterialRef&&(input.scope.kind==='selection'||input.scope.evidenceIds!==undefined))throw new StoreError('A material reference cannot yet be combined with a restricted selection',400);
+    if(input.anchorMaterialRef&&input.scope.kind==='selection'){
+      // A single pinned Material is an explicit selection, not permission to
+      // research the rest of its source. Preparation keeps only its readers.
+      if(input.scope.evidenceIds!==undefined||input.scope.sourceIds?.length!==1||input.attachmentIds?.length)throw new StoreError('Choose one Material and its source',400);
+      this.dependencies.modelEvidenceAuthority.selectedQueryMaterial({...input.scope,sourceIds:this.dependencies.modelEvidenceAuthority.selectedQuerySources(input.scope.sourceIds),anchorMaterialRef:input.anchorMaterialRef},true);
+    }else if(input.anchorMaterialRef&&input.scope.evidenceIds!==undefined)throw new StoreError('A material reference cannot be combined with an evidence selection',400);
     const attachments=(input.attachmentIds??[]).map(id=>{
       const record=scopeRecord(store,id);
       if(!record||!evidenceReader.contextDependenciesAllowed([id])||!withinEvidenceScope(record,input.scope)||input.scope.evidenceIds!==undefined&&!input.scope.evidenceIds.includes(id)||input.scope.kind==='selection'&&input.scope.sourceIds!==undefined&&!input.scope.sourceIds.includes(record.provenance?.sourceId??''))throw new StoreError('Attachment is outside the selected scope',409);

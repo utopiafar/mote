@@ -8,7 +8,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {nonSqlCalls,importedHelpers,storageConstructions} from './sql-ownership-policy.mjs';
 import * as policy from './sql-ownership-policy.mjs';
 import {spawnSync,execFileSync} from 'node:child_process';
-import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership,issueKey} from './sql-ownership.mjs';
+import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership,issueKey,workingMemoryPrepareProof} from './sql-ownership.mjs';
 
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const cli=fileURLToPath(new URL('./sql-ownership.mjs',import.meta.url));
@@ -155,6 +155,9 @@ test('real production inventory and generated map stay in sync with explicit par
  assert.equal(result.tables.processing_jobs.owner,'processing-runtime');assert.equal(result.tables.processing_dependencies.owner,'processing-runtime');
  assert.ok(result.uncoveredFiles.includes('apps/server/src/processing-runtime.ts'),'the dynamic Processing view stays pending');
  assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,nonSqlCalls.length);
+ for(const declared of nonSqlCalls)assert.ok(result.nonSqlCalls.some(proof=>proof.from===declared.from&&proof.scope===declared.scope&&proof.callFingerprint===declared.callFingerprint&&proof.scopeFingerprint===declared.scopeFingerprint),'each declared non-SQL identity must still be proved');
+ const workingProofs=result.nonSqlCalls.filter(proof=>proof.from==='apps/server/src/plugins/query-preparation.ts');
+ assert.deepEqual(workingProofs.map(({kind,scope,receiver,method,entryType,callFingerprint})=>({kind,scope,receiver,method,entryType,callFingerprint})),[{kind:'working-memory-port',scope:'prepare',receiver:'working',method:'prepare',entryType:'WorkingMemory',callFingerprint:'a15f54de6ed5c2de279f62007d8cdc008819b82814105588ad9ce4fffbefc438'}]);
  assert.equal(result.tables.assistant_task_runtime.owner,'assistant-task-runtime');assert.equal(result.owners.filter(owner=>owner.construction).length,4);
  assert.deepEqual(result.pendingRawWrites.map(({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})=>({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})),originalPendingWrites);
  assert.ok(result.pendingRawWrites.every(issue=>issue.rule==='sql-unproved-relation'&&issue.kind==='write'&&issue.completeSql===false),'known raw targets do not authorize these unproved writes');
@@ -281,6 +284,43 @@ test('Task prepare adapters require their imported class binding and exact imple
   sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:changedSources});assert.equal(rejected.length,0);
  }
  const db=new DatabaseSync(':memory:');try{db.exec("CREATE TABLE settings(value TEXT);INSERT INTO settings VALUES('generated-task-receiver')");const assistantTasks=db;assert.equal(assistantTasks.prepare('SELECT value FROM settings').get().value,'generated-task-receiver');}finally{db.close();}
+});
+
+const workingPortSources=()=>new Map(['plugins/query-preparation.ts','plugins/query-runs.ts','assembly/query.ts','host.ts','assembly/memory.ts','plugins/memory-lifecycle-service.ts','working-memory.ts'].map(file=>{const path='apps/server/src/'+file;return [path,readFileSync(resolve(repository,path),'utf8')];}));
+
+test('WorkingMemory port proof preserves actual storage SQL and accepts unrelated producer edits',()=>{
+ const proof=nonSqlCalls.find(proof=>proof.kind==='working-memory-port');assert.ok(proof);
+ const sources=workingPortSources(),source=sources.get(proof.from),evidence=[],original=sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:evidence,sourceTexts:sources});assert.equal(evidence.length,1);
+ const unproved=sqlStatements(proof.from,source),actualSql=statements=>statements.filter(statement=>statement.scope==='prepare'&&!statement.values.some(sql=>sql.includes('__dynamic__')));
+ assert.equal(actualSql(original).length,5);assert.deepEqual(actualSql(original),actualSql(unproved),'the five actual SQL sinks remain byte-for-byte classified as before');assert.equal(unproved.length-original.length,1);
+ const definition='apps/server/src/working-memory.ts',internal=sources.get(definition);
+ assert.deepEqual(sqlStatements(definition,internal,{nonSqlProofs:[proof],sourceTexts:sources}),sqlStatements(definition,internal),'the WorkingMemory storage SQL receives no exemption');
+ const unrelated=new Map([...sources].map(([file,text])=>[file,text+'\nconst generatedUnrelatedToWorkingMemory=true;']));
+ assert.deepEqual(workingMemoryPrepareProof(unrelated)?.fingerprints,workingMemoryPrepareProof(sources)?.fingerprints,'no producer module is pinned wholesale');
+ const withOtherCall=source+'\nfunction generatedDatabaseReceiver(db,sql){return db.prepare(sql);}';
+ const checked=sqlStatements(proof.from,withOtherCall,{nonSqlProofs:[proof],sourceTexts:sources});assert.ok(checked.some(statement=>statement.scope==='generatedDatabaseReceiver'&&statement.values.includes('__dynamic__')),'other prepare calls remain SQL sinks');
+});
+
+test('WorkingMemory port proof rejects replaced callee, receiver, interface and injected origins',async t=>{
+ const proof=nonSqlCalls.find(proof=>proof.kind==='working-memory-port'),sources=workingPortSources();assert.ok(proof);
+ const changes=[
+  ['callee implementation','apps/server/src/working-memory.ts','const available=Math.max',"this.store.db.prepare('SELECT 1');const available=Math.max"],
+  ['shadowed receiver',proof.from,'const conversation=!previous?.turns.length?',"const working=store.db;const conversation=!previous?.turns.length?"],
+  ['consumer dependency replacement',proof.from,'const {store,files,conversations,delegation,','dependencies.working=dependencies.store.db as any;const {store,files,conversations,delegation,'],
+  ['Object.assign consumer input',proof.from,'  const {store,files,conversations,delegation,executor,modelSettings,working,','  Object.assign(dependencies,{working:dependencies.store.db});\n  const {store,files,conversations,delegation,executor,modelSettings,working,'],
+  ['Object.assign callback input','apps/server/src/plugins/query-runs.ts','  const {store,files,conversations,executor,modelSettings,working,','  Object.assign(dependencies,{working:dependencies.store.db});\n  const {store,files,conversations,executor,modelSettings,working,'],
+  ['consumer interface',proof.from,"working:Pick<WorkingMemory,'prepare'>;","working:Pick<DatabaseSync,'prepare'>;"],
+  ['Host injection','apps/server/src/host.ts','working:queryWorking','working:store.db'],
+  ['actual constructor','apps/server/src/plugins/memory-lifecycle-service.ts','new WorkingMemory(dependencies.store,dependencies.conversations)',"new DatabaseSync(':memory:')"],
+  ['assembly override','apps/server/src/assembly/query.ts','createQueryRunsPlatform({...dependencies,taskSteering:','createQueryRunsPlatform({...dependencies,working:database,taskSteering:'],
+  ['prototype replacement','apps/server/src/working-memory.ts',null,'\nWorkingMemory.prototype.prepare=(function(this:any,sql:string){return this.store.db.prepare(sql);}) as any;'],
+ ];
+ for(const [label,file,before,after] of changes)await t.test(label,()=>{
+  const original=sources.get(file);if(before!==null)assert.equal(original.split(before).length,2,'mutation must replace one actual production expression');
+  const changed=new Map(sources),mutation=before===null?original+after:original.replace(before,after);assert.notEqual(mutation,original);changed.set(file,mutation);const evidence=[];
+  const statements=sqlStatements(proof.from,changed.get(proof.from),{nonSqlProofs:[proof],nonSqlEvidence:evidence,sourceTexts:changed});
+  assert.equal(evidence.length,0,'a changed path cannot reuse the non-SQL recognition');assert.ok(statements.some(statement=>statement.values.includes('__dynamic__')),'the actual prepare call returns to the unresolved SQL sink checks');
+ });
 });
 
 test('the imported retirement helper proves only its exact literal constructor call and rejects alias, definition and argument changes',()=>{

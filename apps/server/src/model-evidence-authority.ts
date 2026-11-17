@@ -74,7 +74,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     if(records.length!==ids.length||input.processingEvidence&&records.some(record=>input.processingEvidence![record.id]!==memoryEvidenceFingerprint(record)))throw contextFailure('context_evidence_restricted');
     return records;
   };
-  const selectedQueryMaterial=(input:Pick<QueryInput,'anchorMaterialRef'|'after'|'before'|'deviceId'>,scoped=false)=>{
+  const selectedQueryMaterial=(input:Pick<QueryScope,'anchorMaterialRef'|'after'|'before'|'deviceId'|'sourceIds'>,scoped=false)=>{
     // Admission/preparation check the whole selected range. A delegated child
     // can narrow that range; its actual reads still enforce the narrower scope,
     // while every model boundary keeps checking the selected version/exposure.
