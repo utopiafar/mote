@@ -231,3 +231,53 @@ test('a second Activity owner on the same connection cannot replace the live sub
   assert.equal(f.store.db.prepare("SELECT count(*) n FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*'").get()!.n,13,'late disposal of the previous owner leaves its successor intact');
   await f.store.ingest(screen());await second.tick();assert.equal(calls.length,2);assert.deepEqual(f.counts,{registrations:2,releases:1});
 });
+
+test('concurrent and reentrant stops share the real drain before restart, and the next activation owns a fresh stop',{timeout:15000},async t=>{
+  const gates=Array.from({length:2},()=>{let enter!:()=>void,release!:()=>void;return {entered:new Promise<void>(resolve=>enter=resolve),held:new Promise<void>(resolve=>release=resolve),enter:()=>enter(),release:()=>release()};});
+  let service:ReturnType<typeof services>|undefined;
+  const work:Promise<unknown>[]=[],reentered:Promise<void>[]=[],calls:QueryInput[]=[];
+  const f=fixture(t,async()=>{gates.forEach(gate=>gate.release());await Promise.allSettled(work);await service?.close();});
+  service=services(f,calls,{during:async()=>{const gate=gates[calls.length-1];if(gate){gate.enter();await gate.held;}}});
+  service.prepare();service.start();
+  const automatic=service.automaticActivity,stop=automatic.stop.bind(automatic),close=automatic.close.bind(automatic);let closes=0;
+  automatic.stop=()=>{reentered.push(service!.stop('disabled') as Promise<void>);stop();};
+  automatic.close=()=>{closes++;return close();};
+  const subscriptions=()=>Number(f.store.db.prepare("SELECT count(*) n FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*'").get()!.n);
+  await f.store.ingest(screen());const firstTick=service.tick();work.push(firstTick);await gates[0].entered;
+  const first=service.stop('disabled') as Promise<void>,second=service.stop('disabled') as Promise<void>;work.push(first,second);
+  assert.equal(first,second,'every caller joins the published physical drain');
+  assert.ok(reentered.length>0);assert.ok(reentered.every(operation=>operation===first),'synchronous cleanup reentry observes the same already-published barrier');
+  assert.equal(calls[0].signal?.aborted,true);assert.throws(()=>service!.start(),{statusCode:503});
+  assert.equal(await Promise.race([second.then(()=>'stopped'),new Promise<string>(resolve=>setImmediate(()=>resolve('draining')))]),'draining','stop cannot finish while its actual old model is held');
+  gates[0].release();await Promise.all([firstTick,first,second]);
+  assert.equal(closes,1);assert.equal(f.materials.list({kind:'mote.activity'}).items.length,0,'the late old model cannot publish');
+  assert.deepEqual(f.counts,{registrations:1,releases:1});
+  service.start();assert.equal(subscriptions(),13);assert.ok(service.activity);
+  await f.store.ingest(screen());const secondTick=service.tick();work.push(secondTick);await gates[1].entered;
+  const third=service.stop('disabled') as Promise<void>,fourth=service.stop('disabled') as Promise<void>;work.push(third,fourth);
+  assert.notEqual(third,first,'a restarted activation has a fresh physical stop operation');assert.equal(third,fourth);
+  assert.equal(await Promise.race([fourth.then(()=>'stopped'),new Promise<string>(resolve=>setImmediate(()=>resolve('draining')))]),'draining','the fresh stop does not reuse the prior resolved promise');
+  gates[1].release();await Promise.all([secondTick,third,fourth]);
+  assert.equal(f.materials.list({kind:'mote.activity'}).items.length,0);assert.deepEqual(f.counts,{registrations:2,releases:2});
+  service.start();assert.equal(subscriptions(),13);assert.ok(service.activity,'the explicit successor remains current after both older drains');
+});
+
+test('close is published before synchronous cleanup reentry and retains the actual cleanup failure once',{timeout:15000},async t=>{
+  const failure=Error('Generated Activity unregister failure'),calls:QueryInput[]=[],reentered:Promise<void>[]=[],reenteredStops:Promise<void>[]=[];
+  const contains=(error:unknown):boolean=>error===failure||error instanceof AggregateError&&error.errors.some(contains);
+  let service:ReturnType<typeof services>|undefined;let observed=false;
+  const f=fixture(t,async()=>{if(service&&!observed)await service.close().catch(()=>{});});service=services(f,calls);service.prepare();service.start();
+  const automatic=service.automaticActivity,close=automatic.close.bind(automatic);let closes=0;
+  automatic.close=()=>{
+    closes++;reentered.push(service!.close());reenteredStops.push(service!.stop('disabled') as Promise<void>);
+    return close().then(()=>{throw failure;});
+  };
+  const first=service.close(),second=service.close(),disposed=service.dispose() as Promise<void>;
+  assert.equal(second,first);assert.equal(disposed,first);assert.equal(reentered[0],first,'a synchronous disposer sees the cached close before it can reenter');
+  assert.equal(reenteredStops.length,1);
+  await assert.rejects(first,contains);await assert.rejects(second,contains);await assert.rejects(disposed,contains);await assert.rejects(reenteredStops[0],contains);
+  assert.equal(service.close(),first);await assert.rejects(service.stop('disabled') as Promise<void>,contains);observed=true;
+  assert.equal(closes,1,'the failing physical cleanup never runs twice');assert.deepEqual(f.counts,{registrations:1,releases:1});
+  assert.equal(f.store.db.prepare("SELECT count(*) n FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*'").get()!.n,0);
+  assert.throws(()=>service!.activity,{statusCode:503});assert.throws(()=>service!.start(),{statusCode:503});
+});

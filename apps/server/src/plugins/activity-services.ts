@@ -62,7 +62,7 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
   if(!Number.isFinite(pollIntervalMs)||pollIntervalMs<=0)throw new RangeError('Invalid activity poll interval');
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let projection:ActivityProjection|undefined,automatic:AutomaticActivity|undefined,poll:ReturnType<typeof setInterval>|undefined,runningPoll=false;
-  let closing:Promise<void>|undefined,ownsConnection=false;
+  let closing:Promise<void>|undefined,stopping:Promise<void>|undefined,ownsConnection=false,generation=0;
   const claim=()=>{if(activityOwners.has(dependencies.store))throw new StoreError('Activity already has an active owner',409);activityOwners.add(dependencies.store);ownsConnection=true;};
   const release=()=>{if(ownsConnection){activityOwners.delete(dependencies.store);ownsConnection=false;}};
   const mounted=new WeakSet<FastifyInstance>();
@@ -75,8 +75,8 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
     if(poll)return;
     poll=setInterval(()=>{
       if(phase!=='active'||runningPoll)return;
-      runningPoll=true;
-      void automatic!.tick().catch(()=>{}).finally(()=>{runningPoll=false;});
+      const owned=automatic!,pin=generation;runningPoll=true;
+      void owned.tick().catch(()=>{}).finally(()=>{if(generation===pin)runningPoll=false;});
     },pollIntervalMs);
     const timer=poll as unknown as {unref?:()=>unknown};
     timer.unref?.();
@@ -85,11 +85,6 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
     if(automatic)throw unavailable();
     return automatic=new AutomaticActivity(dependencies.store,dependencies.materials,dependencies.executor,dependencies.config,dependencies.options);
   };
-  const closeAutomatic=async(errors:unknown[])=>{
-    const owned=automatic;
-    automatic=undefined;
-    if(owned)try{await owned.close();}catch(error){errors.push(error);}
-  };
   const quiesce=(_reason:StopReason)=>{
     if(phase!=='active')return;
     phase='quiescing';
@@ -97,29 +92,44 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
     // Stop prospective intake and fence late model results before accepted work drains.
     automatic?.stop();projection?.close();
   };
-  const stop=async()=>{
-    if(phase==='stopped'||phase==='disposed')return;
-    if(phase==='active'||phase==='prepared')phase='quiescing';
-    stopPoll();
-    const errors:unknown[]=[];
-    try{automatic?.stop();}catch(error){errors.push(error);}
-    await closeAutomatic(errors);
-    projection?.close();release();
-    phase='stopped';
-    if(errors.length)throw new AggregateError(errors,'Activity service stop failed');
+  const stop=()=>{
+    if(stopping)return stopping;
+    if(phase==='disposed')return Promise.resolve();
+    // Publish the actual drain barrier before any synchronous disposer can
+    // reenter stop/close. Keep its outcome until a new activation is opened.
+    let resolve!:()=>void,reject!:(error:unknown)=>void;
+    const operation=new Promise<void>((done,failed)=>{resolve=done;reject=failed;});stopping=operation;
+    const ownedAutomatic=automatic,ownedProjection=projection,pin=generation;
+    phase='quiescing';automatic=undefined;
+    void (async()=>{
+      const errors:unknown[]=[];
+      try{stopPoll();}catch(error){errors.push(error);}
+      try{ownedAutomatic?.stop();}catch(error){errors.push(error);}
+      try{await ownedAutomatic?.close();}catch(error){errors.push(error);}
+      try{ownedProjection?.close();}catch(error){errors.push(error);}
+      if(generation===pin){release();phase='stopped';}
+      if(errors.length)throw new AggregateError(errors,'Activity service stop failed');
+    })().then(resolve,reject);
+    return operation;
   };
-  const close=()=>closing??=(async()=>{
-    const errors:unknown[]=[];
-    try{await stop();}catch(error){errors.push(error);}
-    projection=undefined;phase='disposed';
-    if(errors.length)throw new AggregateError(errors,'Activity service disposal failed');
-  })();
+  const close=()=>{
+    if(closing)return closing;
+    let resolve!:()=>void,reject!:(error:unknown)=>void;
+    const operation=new Promise<void>((done,failed)=>{resolve=done;reject=failed;});closing=operation;
+    void (async()=>{
+      const errors:unknown[]=[];
+      try{await stop();}catch(error){errors.push(error);}
+      projection=undefined;phase='disposed';
+      if(errors.length)throw new AggregateError(errors,'Activity service disposal failed');
+    })().then(resolve,reject);
+    return operation;
+  };
   return Object.freeze({
     get activity(){return prepared().projection;},
     get automaticActivity(){return prepared().automatic;},
     prepare(){
       if(phase!=='created')throw unavailable();
-      claim();
+      claim();generation++;
       try{projection=new ActivityProjection(dependencies.store,dependencies.operations,{get delegation(){return dependencies.delegation;}});openAutomatic();}catch(error){
         const owned=automatic;automatic=undefined;
         if(owned)void owned.close();
@@ -129,20 +139,21 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
       phase='prepared';
     },
     start(){
+      if(closing)throw unavailable();
       if(phase==='active')return;
       if(phase==='prepared'){phase='active';startPoll();return;}
       if(phase==='stopped'){
         // Re-read the current configuration and reopen over the same durable
         // grants, batches and execution receipts.
-        claim();
+        claim();generation++;
         try{projection=new ActivityProjection(dependencies.store,dependencies.operations,{get delegation(){return dependencies.delegation;}});openAutomatic();}
         catch(error){projection?.close();release();throw error;}
-        phase='active';startPoll();return;
+        stopping=undefined;runningPoll=false;phase='active';startPoll();return;
       }
       throw unavailable();
     },
     quiesce,
-    stop:async(_reason?:StopReason)=>{await stop();},
+    stop:(_reason?:StopReason)=>stop(),
     dispose:close,
     close,
     tick(){
