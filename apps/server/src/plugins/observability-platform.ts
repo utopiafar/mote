@@ -3,9 +3,8 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
-import type {HostPluginContext,HostScope} from '@mote/plugin-host';
+import {currentServiceAccess,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import type {TokenUsage,UsageAttribution,UsageReceipt} from '@mote/shared';
-import type {Store} from '../store.js';
 import {ServerDiagnostics,diagnosticStageFilters,type ServerDiagnosticsOptions} from '../diagnostics.js';
 import {ExecutionObservability,type ObservationClock} from '../execution-observability.js';
 import {scopeFields} from '../query-scope.js';
@@ -24,8 +23,8 @@ export interface ObservabilityPlatformOptions {
   readonly observerClock?:()=>ObservationClock|undefined;
 }
 export interface ObservabilityPlatformDependencies {
-  /** C02-owned SQLite. The platform creates the ledger but never owns or closes the store. */
-  readonly store:Store;
+  /** Vault opens the usage domain for this activation, without handing out SQLite. */
+  usageForScope(scope:PluginScope):UsageLedger;
 }
 
 /** Value returned by a producer that has only been queued. Creating this handle
@@ -149,26 +148,28 @@ export interface ObservabilityPlatform extends PluginLifecycle {
   close():Promise<void>;
 }
 
-export function createObservabilityPlatform(options:ObservabilityPlatformOptions,dependencies:ObservabilityPlatformDependencies):ObservabilityPlatform {
+export function createObservabilityPlatform(options:ObservabilityPlatformOptions,dependencies:ObservabilityPlatformDependencies,owner:PluginScope):ObservabilityPlatform {
   const config={...options};
   if(!config.logDirectory)throw unavailable();
   if(!Number.isSafeInteger(config.eventLoopResolutionMs??20)||(config.eventLoopResolutionMs??20)<1)throw unavailable();
   let diagnostics:ServerDiagnostics|undefined,observer:ExecutionObservability|undefined;
-  let ledger:UsageLedger|undefined,admitted:AdmittedUsageFactory|undefined;
+  let ledger:UsageLedger|undefined;
   let eventLoop:IntervalHistogram|undefined,softwareUpdate:ReturnType<typeof createUpdateService>|undefined;
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopping'|'stopped'|'disposed'='created';
   let closing:Promise<void>|undefined,mounted=false;
-  const current=()=>{if(phase!=='active'&&phase!=='quiescing')throw unavailable();};
-  /** The host guards a service call, not methods on the object it returns. A
-   * retained meter must therefore recheck this platform on every write: accepted
-   * work may drain while quiescing, but a stopped/disposed platform rejects. */
-  const guardedMeter=(meter:ReturnType<UsageLedger['start']>)=>Object.freeze({
-    update:(tokens:TokenUsage)=>{current();meter.update(tokens);},
-    finish:(status:'completed'|'failed')=>{current();return meter.finish(status);},
-    discard:()=>{current();meter.discard();},
-  });
+  const ownerCurrent=()=>{
+    try{owner.assertCurrent();owner.signal.throwIfAborted();}catch{throw unavailable();}
+  };
+  const current=()=>{if(phase!=='active'&&phase!=='quiescing')throw unavailable();ownerCurrent();};
   const usagePort:UsageRecording=Object.freeze({
-    start:(...args)=>{current();if(!ledger)throw unavailable();return guardedMeter(ledger.start(...args));},
+    start:(...args)=>{
+      current();if(!ledger)throw unavailable();
+      // Preserve the invoking consumer's actual lease through the existing
+      // ledger write barriers, including DTO copying. Accepted pins may drain
+      // during quiesce; release or consumer/provider stop invalidates the meter.
+      const access=currentServiceAccess(),check=()=>{current();access?.assertCurrent();};
+      return Object.freeze(new UsageLedger(ledger,check).start(...args));
+    },
     operation:(operationId:string,createdAt?:string,finishedAt?:string):OperationUsage=>{current();if(!ledger)throw unavailable();return ledger.operation(operationId,createdAt,finishedAt);},
   });
   const view=(check:()=>void):ObservabilityRead=>Object.freeze({
@@ -188,11 +189,12 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
     const check=()=>{if(released)throw unavailable();current();scope.assertCurrent();scope.signal.throwIfAborted();};
     const release=()=>{released=true;};
     scope.defer(release);
+    const usage=new UsageLedger(ledger!,check),admitted=createAdmittedUsage(usage,check);
     return Object.freeze({
       get diagnostics(){check();return diagnostics!;},
       get observer(){check();return observer!;},
-      get usage(){check();return ledger!;},
-      get admittedUsage(){check();return admitted!;},
+      get usage(){check();return usage;},
+      get admittedUsage(){check();return admitted;},
       get eventLoop(){check();return eventLoop!;},
       get softwareUpdate(){check();return softwareUpdate!;},
       read:()=>{check();return view(check);},
@@ -273,12 +275,12 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
     async prepare(){
       if(phase!=='created')throw unavailable();
       try{
+        ownerCurrent();
         diagnostics=new ServerDiagnostics({...config.diagnostics,directory:config.logDirectory});
         await diagnostics.init();
         if(phase!=='created'){await diagnostics.close();throw unavailable();}
         observer=new ExecutionObservability(diagnostics,config.observerClock);
-        ledger=new UsageLedger(dependencies.store);
-        admitted=createAdmittedUsage(ledger,current);
+        ledger=dependencies.usageForScope(owner);
         eventLoop=monitorEventLoopDelay({resolution:config.eventLoopResolutionMs??20});
         softwareUpdate=createUpdateService(config.update,config.updateDependencies);
         phase='prepared';
@@ -289,6 +291,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
     },
     start(){
       if(phase!=='prepared')throw unavailable();
+      ownerCurrent();
       eventLoop!.enable();
       phase='active';
     },
@@ -309,7 +312,7 @@ export function createObservabilityPlatform(options:ObservabilityPlatformOptions
  * not published as a service or manifest capability. */
 export function createObservabilityPlatformFactory(options:ObservabilityPlatformOptions,dependencies:ObservabilityPlatformDependencies,onStarted?:(platform:ObservabilityPlatform,scope:HostScope)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{
-    const platform=createObservabilityPlatform(options,dependencies);
+    const platform=createObservabilityPlatform(options,dependencies,context.scope);
     context.scope.defer(()=>platform.close());
     return {...platform,start:async()=>{
       platform.start();

@@ -25,7 +25,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   const reviews=new FileReviews(files,processing);
   const attachments=new FileAttachments(files);
   const thumbnails=createFileThumbnails();
-  // C11's files-source plugin owns the grant scope. The local registry is only
+  // The files-source plugin owns the grant scope. The local registry is only
   // for current callers that have not migrated to the plugin assembly yet.
   const grants:FilePlaybackGrants=playback??new PlaybackGrants();
   const ownsGrants=playback===undefined;

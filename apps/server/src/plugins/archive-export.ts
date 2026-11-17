@@ -8,7 +8,7 @@ import {exportTar} from '../file-export.js';
 import type {MemoryBackup} from './memory-backup.js';
 
 /** Portable data export, deliberately excluding credentials, private settings and raw database pages.
- * C24's backup contribution owns the Memory bodies; the storage feature mounts
+ * The Memory backup contribution owns the Memory bodies; the storage feature mounts
  * this transport with its current vault readers. */
 export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number,backup?:MemoryBackup){
   app.get('/api/export-bundle',async(req,reply)=>{

@@ -33,12 +33,12 @@ export interface C10SourceRouteBindings {
 interface C10BoundSourceRoutes extends Omit<C10SourceRouteBindings,'memories'> {
   readonly layers:LayersReadModel;
 }
-/** No ordinary sources service: C01's repository still includes an unguarded
+/** No ordinary sources service: the shared source repository still includes an unguarded
  * register method. Requests use the existing owner/collector route policy. */
 export const c10IntegrationContribution={id:'source-integration',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'},{kind:'host',id:'mote.owner-authorization',version:'1.0.0'},{kind:'service',id:centralServices.sourceIntake.id,version:'1.0.0'}],provides:[]} as const satisfies ManifestContribution;
 export const c10IntegrationDeclaration={id:c10IntegrationContribution.id,apiVersion:'1'} as const;
-// C04 and file/capture owners retain this exact repository; replacement restarts
+// The authorization, file and capture owners retain this exact repository; replacement restarts
 // the trusted assembly rather than leaving those owners on a detached instance.
 export const c10IntegrationReplacement='restart' as const;
 const unavailable=()=>new StoreError('Source integration is unavailable',503);
@@ -58,7 +58,7 @@ interface C10RouteActivation {
 const routeActivations=new WeakMap<C10Integration,C10RouteActivation>();
 
 /** Owns source routes over one shared repository. Capture, Notes, Devices,
- * runtime, MemoryWork, C04 and the vault retain their independent owners. */
+ * runtime, MemoryWork, authorization and the vault retain their independent owners. */
 export function createC10Integration(dependencies:C10IntegrationDependencies){
   const {store,runtime,memoryWork}=dependencies;
   if(runtime.store!==store||runtime.memoryWork!==memoryWork)throw new StoreError('Source integration repository mismatch',503);
@@ -99,7 +99,7 @@ export function createC10Integration(dependencies:C10IntegrationDependencies){
     sourceBatch(request,id,inputs){const {pin}=writable(request),fixed=activation.bindings;if(!sources.getSource(id).enabled)throw new StoreError('Source is paused',409);return track(fixed.authorization.withSource(pin,id,inputs,()=>fixed.capture.ports.sourceIntake.sourceBatch(id,inputs,fixed.authorization.commits.capture())));},
   };
   const platform=Object.freeze({
-    /** The sole private root bridge for C10A/C04/C11/C12. Not a service value. */
+    /** The sole private root bridge for source integration, authorization, files and connectors. Not a service value. */
     get sourcesForAssembly(){if(phase!=='created')throw unavailable();return sources;},
     bindRoutes(value:C10SourceRouteBindings){
       if(bindings||phase!=='created'&&phase!=='prepared')throw unavailable();

@@ -67,7 +67,7 @@ test('Web Memory settings, recipes, integrations and job pages keep their real H
 });
 
 /** [M] Publication is one owner. Disabling its activation fences the owner
- * writes while the C21/C22 read owners keep serving the same mounted routes. */
+ * writes while the separate Memory read owners keep serving the same mounted routes. */
 test('disabling the publication plugin returns 503 for write routes while Memory reads remain available',async t=>{
   const {node,request}=await open(t);
   const at='2026-10-12T00:00:00Z',evidenceId=randomUUID();

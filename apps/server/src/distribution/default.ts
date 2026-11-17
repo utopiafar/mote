@@ -5,6 +5,7 @@ import {configDocumentDomains,configFromDocument,documentFromConfig,validateReso
 import {createConfigurationPlatform} from '../plugins/configuration-platform.js';
 import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
 import {plugins as platformPlugins} from '../assembly/platform.js';
+import {plugins as inventoryPlugins} from '../plugins/feature-inventory-domain.js';
 import {plugins as systemPlugins} from '../plugins/system-domain.js';
 import {plugins as sourcePlugins} from '../assembly/sources.js';
 import {plugins as materialPlugins} from '../assembly/materials.js';
@@ -62,6 +63,7 @@ export const authorizationProvider:FoundationProvider<'authorization'>=Object.fr
 export const defaultPlugins:readonly CentralDomainPlugin[]=Object.freeze([
   ...platformPlugins,
   ...systemPlugins,
+  ...inventoryPlugins,
   ...sourcePlugins,
   ...materialPlugins,
   ...processingPlugins,

@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {getEventListeners} from 'node:events';
 import {Context} from '@deepseek-ai/cordis';
 import {serviceContract, pluginSnapshotSchema} from '@mote/plugin-api/contracts';
-import {PluginHost, PluginResourceScope} from '@mote/plugin-host';
+import {PluginHost, PluginResourceScope, currentServiceAccess} from '@mote/plugin-host';
 
 const hostId = {kind: 'central', id: 'generated-host-1'};
 const identity = name => ({host: hostId, packageId: 'fixture.plugin', installationId: 'fixture-install', instanceId: name, activationId: name + '-activation'});
@@ -151,6 +151,35 @@ test('quiesce rejects new acquisitions while an accepted fixed lease can drain, 
   const releasing = first.release(); assert.equal(first.release(), releasing); await releasing;
   assert.throws(() => cached(), {code: 'stale_scope'}); assert.equal(second.value.read(), 2); assert.equal(closes, 0);
   await second.release(); await provider.close(); assert.equal(closes, 1);
+});
+
+test('providers capture the invoking lease without leaking access across nested calls, failures or awaits', async t => {
+  const host = new PluginHost(hostId), failure = new Error('generated nested failure'); let binding;
+  t.after(() => host.close());
+  assert.equal(currentServiceAccess(), undefined);
+  const provider = await host.install({identity: identity('access-provider'), contributions: [reader], factory: context => {
+    binding = context.provide(reader.id, reader, {
+      capture(nested) {
+        const access = currentServiceAccess();
+        assert.ok(access); assert.ok(Object.isFrozen(access));
+        nested?.(); assert.equal(currentServiceAccess(), access);
+        return access;
+      },
+      fail() { assert.ok(currentServiceAccess()); throw failure; },
+      async delayed() { const access = currentServiceAccess(); await Promise.resolve(); assert.equal(currentServiceAccess(), undefined); return access; },
+    });
+    return lifecycle();
+  }});
+  const a = await host.acquire(reader, binding), b = await host.acquire(reader, binding);
+  let inner;
+  const outer = a.value.capture(() => { inner = b.value.capture(); assert.throws(() => b.value.fail(), error => error === failure); });
+  assert.equal(outer.signal, a.signal); assert.equal(inner.signal, b.signal);
+  assert.notEqual(outer, inner); assert.equal((await b.value.delayed()).signal, b.signal);
+  assert.throws(() => a.value.fail(), error => error === failure); assert.equal(currentServiceAccess(), undefined);
+  await provider.quiesce(); outer.assertCurrent(); inner.assertCurrent();
+  await a.release(); assert.throws(() => outer.assertCurrent(), {code: 'stale_scope'}); inner.assertCurrent();
+  assert.equal(outer.signal.aborted, true); assert.equal(inner.signal.aborted, false);
+  await provider.close(); assert.throws(() => inner.assertCurrent()); assert.equal(currentServiceAccess(), undefined);
 });
 
 test('exact API and provider revision are checked and undeclared dependencies cannot be acquired', async t => {

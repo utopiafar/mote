@@ -1,6 +1,7 @@
 /** Only production installers already registered on main belong here. Add an
  * installer after its domain registration lands, then remove its uncovered debt. */
 export const installations={
+ 'admission-schema.ts':['processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'],
  'vault-schema.ts':['vaultSchemaInstallation'],
  'capture-schema.ts':['captureSchemaInstallation','captureProjectionSchemaInstallation'],
  'perception-schema.ts':['perceptionSchemaInstallation'],
@@ -25,13 +26,14 @@ export const installations={
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
+ 'memory-input-plans-schema.ts':['memoryInputPlansSchemaInstallation'],
  'source-state-schema.ts':['sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation'],
  'memory-input-authorization.ts':['memoryInputAuthorizationSchemaInstallation'],
  'memory-extraction-drafts.ts':['memoryExtractionDraftsSchemaInstallation'],
  'memory-phase-outputs.ts':['memoryPhaseOutputsSchemaInstallation'],
  'plugins/plugin-control-store.ts':['pluginControlSchemaInstallation'],
  'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
- 'admission-schema.ts':['processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'],
+ 'actions-schema.ts':['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -84,6 +86,20 @@ export const consumers={
 /** These Task adapter methods belong to the formal runtime marker owner. The
  * older Task schema and other consumers in the same file remain pending. */
 export const consumerScopes={
+ 'processor-admission.ts':{
+  'ProcessorAdmission.check':'processor-admission',
+  'ProcessorAdmission.run':'processor-admission',
+ },
+ 'provider-admission.ts':{
+  'ProviderAdmission.check':'provider-admission',
+  'ProviderAdmission.run':'provider-admission',
+  'ProviderAdmission.snapshot':'provider-admission',
+ },
+ 'memory-input-plans.ts':{
+  'MemoryInputPlans.list':'memory-input-plans',
+  'MemoryInputPlans.get':'memory-input-plans',
+  'MemoryInputPlans.put':'memory-input-plans',
+ },
  'source-context.ts':{
   'SourceContextStore.constructor':'source-context',
   'SourceContextStore.source':'source',
@@ -124,15 +140,6 @@ export const consumerScopes={
  'assistant-tasks.ts':{
   'AssistantTasks.currentBatch':'assistant-task-runtime',
   'AssistantTasks.continueSteering':'assistant-task-runtime',
- },
- 'processor-admission.ts':{
-  'ProcessorAdmission.check':'processor-admission',
-  'ProcessorAdmission.run':'processor-admission',
- },
- 'provider-admission.ts':{
-  'ProviderAdmission.check':'provider-admission',
-  'ProviderAdmission.run':'provider-admission',
-  'ProviderAdmission.snapshot':'provider-admission',
  },
 };
 
@@ -426,7 +433,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",
@@ -1143,6 +1150,137 @@ export const schemaMaintenance=[
    "task_records"
   ],
   "reason": "Retire dependent Task revision and erase input/result bodies when its original conversation turn is deleted."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "captures",
+  "kind": "observe",
+  "symbol": "1eef015b456b4d2e9a36dd0d2a526fc45a8e369184676e02f709201dde0f31c7",
+  "statementFingerprint": "a927bba01aa5c097a66f443d5d0cc0d4e629b6ddbb1e172090ead1330d20c53b",
+  "installer": "actionsRetirementSchemaInstallation",
+  "callPath": [
+   "actionsRetirementSchemaInstallation",
+   "actionsRetirementSchema"
+  ],
+  "sourceRelations": [
+   "captures"
+  ],
+  "reason": "Observe original deletion to erase Action quotations and related pending snapshots in the same deletion transaction."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "captures",
+  "kind": "observe",
+  "symbol": "3be741035a5a00a1a0b806caf0a4c76d968101b6993ae964cc405efcbb5e3e56",
+  "statementFingerprint": "fe627c3e3a2894cf68519e57035780a48c604a7e454758cfd49c457502e04277",
+  "installer": "actionsRetirementSchemaInstallation",
+  "callPath": [
+   "actionsRetirementSchemaInstallation",
+   "actionsRetirementSchema"
+  ],
+  "sourceRelations": [
+   "captures"
+  ],
+  "reason": "Observe original deletion to erase Action quotations and related pending snapshots in the same deletion transaction."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "execution_steps",
+  "kind": "observe",
+  "symbol": "964f03614342d3c0dc7d93342ae37e60b51c23960ef778c478085dc27c39ca52",
+  "statementFingerprint": "de83fcf9e19234be907f7121ff03c07fe617e42bef6c5413e8676647b1b74816",
+  "installer": "actionsExecutionSchemaInstallation",
+  "callPath": [
+   "actionsExecutionSchemaInstallation",
+   "actionsExecutionSchemaInstallation.install"
+  ],
+  "sourceRelations": [
+   "execution_steps"
+  ],
+  "reason": "Observe actions.extract transitions of the existing Engine to project only Action job status and attempt counts."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "file_artifacts",
+  "kind": "observe",
+  "symbol": "694a4074dd91cab0509d431dd00f480b0b8bf75a5c221d832c04c586a9436512",
+  "statementFingerprint": "e3a33ec70c81f2f9df7db8dfdec434589cbecfa16405fc145f489e35635710cd",
+  "installer": "actionsSchemaInstallation",
+  "callPath": [
+   "actionsSchemaInstallation",
+   "actionsSchema"
+  ],
+  "sourceRelations": [
+   "file_artifacts",
+   "file_chunks"
+  ],
+  "reason": "Observe canonical file artifact selection changes to enqueue only affected Action input IDs."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "file_chunks",
+  "kind": "observe",
+  "symbol": "265004b22b5f78c46dd74c4a98f9b013f2fe9012a2d1800f06b8ae373385bb94",
+  "statementFingerprint": "a927bba01aa5c097a66f443d5d0cc0d4e629b6ddbb1e172090ead1330d20c53b",
+  "installer": "actionsRetirementSchemaInstallation",
+  "callPath": [
+   "actionsRetirementSchemaInstallation",
+   "actionsRetirementSchema"
+  ],
+  "sourceRelations": [
+   "file_chunks"
+  ],
+  "reason": "Observe chunk deletion to erase Action quotations and related pending snapshots in the same deletion transaction."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "file_chunks",
+  "kind": "observe",
+  "symbol": "694a4074dd91cab0509d431dd00f480b0b8bf75a5c221d832c04c586a9436512",
+  "statementFingerprint": "e3a33ec70c81f2f9df7db8dfdec434589cbecfa16405fc145f489e35635710cd",
+  "installer": "actionsSchemaInstallation",
+  "callPath": [
+   "actionsSchemaInstallation",
+   "actionsSchema"
+  ],
+  "sourceRelations": [
+   "file_artifacts",
+   "file_chunks"
+  ],
+  "reason": "Observe installed file-chunk changes to update only the Actions dirty-input queue."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "file_chunks",
+  "kind": "observe",
+  "symbol": "9b131c584ee83eb7480965bdf7d77e9b395c7ffbf89338a82c4195cb45455100",
+  "statementFingerprint": "fe627c3e3a2894cf68519e57035780a48c604a7e454758cfd49c457502e04277",
+  "installer": "actionsRetirementSchemaInstallation",
+  "callPath": [
+   "actionsRetirementSchemaInstallation",
+   "actionsRetirementSchema"
+  ],
+  "sourceRelations": [
+   "file_chunks"
+  ],
+  "reason": "Observe chunk deletion to erase Action quotations and related pending snapshots in the same deletion transaction."
+ },
+ {
+  "from": "apps/server/src/actions-schema.ts",
+  "to": "file_chunks",
+  "kind": "read",
+  "symbol": "694a4074dd91cab0509d431dd00f480b0b8bf75a5c221d832c04c586a9436512",
+  "statementFingerprint": "e3a33ec70c81f2f9df7db8dfdec434589cbecfa16405fc145f489e35635710cd",
+  "installer": "actionsSchemaInstallation",
+  "callPath": [
+   "actionsSchemaInstallation",
+   "actionsSchema"
+  ],
+  "sourceRelations": [
+   "file_artifacts",
+   "file_chunks"
+  ],
+  "reason": "Read only chunk IDs of the changed artifact into the Actions-owned dirty-input queue."
  }
 ];
 
@@ -1707,8 +1845,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTasks",
   "definitionFile": "apps/server/src/assistant-tasks.ts",
   "occurrence": 1,
-  "moduleFingerprint": "0d6486c7656cc26d90a03526715700f08d4bfc4c476a3e22aa6aedc93dc9a373",
-  "scopeFingerprint": "5fad8e46b082e6311efcc7a0ee5acd178f3be9a570587ae8e3862878f793917e",
+  "moduleFingerprint": "29afe943e1794b176626b6f0d0552767aaaa5aa770a858194b98196782b1e213",
+  "scopeFingerprint": "cfbafa2a0c7adb2fb741bb0bb418298a560591b3d199024f0ecd39dccc507118",
   "callFingerprint": "9104236b78880379928fdb6b2d187dac91fbc78fef00cba42700d3204be1cb92",
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
@@ -1781,7 +1919,7 @@ export const storageConstructions=[
    {
     "from": "apps/server/src/host.ts",
     "scope": "buildHost",
-    "scopeFingerprint": "5fad8e46b082e6311efcc7a0ee5acd178f3be9a570587ae8e3862878f793917e",
+    "scopeFingerprint": "cfbafa2a0c7adb2fb741bb0bb418298a560591b3d199024f0ecd39dccc507118",
     "callFingerprint": "3104364775643689599971ecfdccf278aa2c597fd6bed3e7756bef6ea52d3ac1",
     "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05"
    }

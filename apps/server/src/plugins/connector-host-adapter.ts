@@ -6,7 +6,7 @@ import {ConnectorRegistry,connectorCleanupFailure,isConnectorCleanupFailure,type
 import type {DynamicHttpDispatcher} from './dynamic-http-dispatcher.js';
 import type {HostContributionDescriptor} from '../feature-inventory.js';
 
-/** H05-owned per-install scope. The factory is trusted assembly input, never a
+/** Per-install scope owned by the install topology. The factory is trusted assembly input, never a
  * consumer-selectable registration API. */
 export interface ConnectorInstanceScope {
   readonly scope:HostScope;
@@ -27,7 +27,7 @@ export interface ConnectorHostAdapterOptions {
   /** Private trusted assembly context for existing built-in connectors. */
   readonly context:ConnectorContext;
   readonly dispatcher:DynamicHttpDispatcher;
-  /** H05 fixes this to the actual installed instance scope. */
+  /** The install topology fixes this to the actual installed instance scope. */
   readonly scopeFor:ConnectorScopeFactory;
   /** Trusted persistent state binding for each installed instance scope. */
   readonly stateFor?:(scope:HostScope,sourceKinds:readonly string[])=>StateStore;
@@ -49,7 +49,7 @@ export interface ConnectorHostAdapter {
   known(id:string):boolean;
   /** True when the host supplies a trusted binding for this account key. */
   supportsBinding(key:string):boolean;
-  /** Hot-restart a known stopped manifest with a fresh H04 scope. */
+  /** Hot-restart a known stopped manifest with a fresh plugin-host scope. */
   restart(id:string,activation?:ConnectorActivation):Promise<void>;
   /** Hot-stop one installed instance; sibling instances keep running. */
   stop(id:string):Promise<void>;
@@ -61,8 +61,8 @@ export interface ConnectorHostAdapter {
   close():Promise<void>;
 }
 
-/** Adapts the existing deployment-scoped ConnectorRegistry to the shared H05
- * dispatcher and H04 scopes. It is a trusted assembly bridge: it creates no
+/** Adapts the existing deployment-scoped ConnectorRegistry to the shared dynamic HTTP
+ * dispatcher and plugin-host scopes. It is a trusted assembly bridge: it creates no
  * second host/registry and publishes no raw SourceStore/engine/materials API. */
 const descriptorKey=(descriptor:SourceCapabilityDescriptor)=>JSON.stringify([descriptor.lifecycle,descriptor.discovery,descriptor.listening,descriptor.readOriginal,descriptor.synchronization,descriptor.externalWrite]);
 export function createConnectorHostAdapter(options:ConnectorHostAdapterOptions):ConnectorHostAdapter {

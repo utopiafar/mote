@@ -10,7 +10,7 @@ const documentPath = resolve(root, 'docs/plugin-surfaces.md');
 const document = readFileSync(documentPath, 'utf8');
 
 // Public methods of ExtensionHost in packages/plugin-host/src/extensions.ts.
-// The card requires the author reference to cover all six.
+// The author reference must cover all six.
 const extensionMethods = ['define', 'provide', 'members', 'single', 'collection', 'chain'];
 const sectionParts = ['**What it does.**', '**Manifest fields.**', '**Minimal example.**', '**Lifecycle.**', '**Common errors.**'];
 const sectionKey = (kind, name) => `${kind.toLowerCase()}:${name}`;
@@ -31,7 +31,7 @@ function sections(text) {
   return found;
 }
 
-/** One checker used by the normal run and the reverse self-check in T3-04. */
+/** One checker used by the normal run and the reverse self-check below. */
 function checkDocument(text) {
   const found = sections(text);
   const missing = [];

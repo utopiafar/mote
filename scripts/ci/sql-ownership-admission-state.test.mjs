@@ -33,7 +33,7 @@ test('production entry rejects admission foreign effects, copied reads and raw i
  cpSync(resolve(repository,'apps/server/src'),resolve(root,'apps/server/src'),{recursive:true});
  cpSync(resolve(repository,'scripts/ci'),resolve(root,'scripts/ci'),{recursive:true});
  const run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8'});
- let result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/SQL ownership: 36 schema owners/);
+ let result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/SQL ownership: 40 schema owners/);
  const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baseline=readFileSync(baselinePath,'utf8');
  const originals=new Map([processor,provider,schema].map(file=>[file,readFileSync(resolve(root,file),'utf8')]));
  const cases=[

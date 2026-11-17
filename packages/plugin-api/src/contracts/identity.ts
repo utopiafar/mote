@@ -6,7 +6,7 @@ export type HostKind = typeof hostKinds[number];
 export interface HostIdentity { readonly kind: HostKind; readonly id: string }
 /** IDs are host-issued opaque values. Reinstall changes installationId; instances never share state identity. */
 export interface InstanceIdentity {
-  /** Stable canonical Manifest ID; artifact version/digest/address belong to H03's package descriptor. */
+  /** Stable canonical Manifest ID; release address and artifact digest identity live in the package resolver's verified metadata, outside this Manifest. */
   readonly packageId: string;
   /** Installed deployment identity, including host-registered bundled builds. Never an activation ID. */
   readonly installationId: string;
@@ -18,7 +18,7 @@ export interface ScopeIdentity extends InstanceIdentity {
   readonly host: HostIdentity;
   readonly activationId: string;
 }
-/** Opaque canonical contribution ID, never parsed as a surface:id prefix. Kind/entry live in H03. */
+/** Opaque canonical contribution ID, never parsed as a surface:id prefix. Kind/entry live in the package manifest. */
 export interface ContributionIdentity { readonly scope: ScopeIdentity; readonly contributionId: string }
 
 export const parseHostIdentity: Parser<HostIdentity> = (input, field) => object(input, field, {kind: oneOf(hostKinds), id: token});

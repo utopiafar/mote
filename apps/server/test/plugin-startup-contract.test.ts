@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createPrivateProcess } from '../../../test-fixtures/native-plugins/process.mjs';
 import { generatedNote } from '../../../test-fixtures/native-plugins/runs.mjs';
 
-// G1 shortest server journey through the real startup entry (src/index.ts in a
+// Shortest server journey through the real startup entry (src/index.ts in a
 // private generated profile): no hand-assembled buildApp internals.
 test('plugin architecture startup: owner auth, note original and restart reread', { timeout: 90000 }, async t => {
   const run = await createPrivateProcess();

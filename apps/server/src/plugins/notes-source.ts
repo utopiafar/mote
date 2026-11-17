@@ -6,10 +6,10 @@ import {StoreError,type Range,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialNoteDeletion} from '../material-note-deletion.js';
 
-/** C10B's first, independently completable slice. The write receipt stays on
- * the existing feature ingress until C10A freezes its intake port. These
+/** The notes-source plugin's first, independently completable slice. The write receipt stays on
+ * the existing feature ingress until the intake port is frozen. These
  * dependencies are trusted-assembly functions from current production, never
- * a published Store, generic writer or synthetic C19D/C24 contract. */
+ * a published Store, generic writer or synthetic cross-domain contract. */
 export interface NotesSourceDependencies {
   /** Note-only page using the existing Store.list cursor and total semantics. */
   readonly page:(args:Range)=>ReturnType<Store['list']>;
@@ -25,7 +25,7 @@ export type NoteListPage=Omit<ReturnType<Store['list']>,'items'> & {items:(Captu
 export type NoteDeleteResult=ReturnType<Store['delete']>;
 export type MaterialNoteAlias=ReturnType<MaterialNoteDeletion['resolve']>;
 
-/** H03 owns the package Manifest. C10A's frozen intake adds the exact host
+/** The plugin platform owns the package Manifest. The frozen notes intake adds the exact host
  * requirement; this first slice publishes no ordinary service. */
 export const notesSourceContribution={
   id:'notes-source',version:'1.0.0',surface:'data',runtime:'host',provides:[],
@@ -84,7 +84,7 @@ export function createNotesSource(dependencies:NotesSourceDependencies):NotesSou
   });
 }
 
-/** Trusted H04/C10 wiring; no service, Store or writer leaves this factory. */
+/** Trusted host/notes wiring; no service, Store or writer leaves this factory. */
 export function createNotesSourceFactory(dependencies:NotesSourceDependencies){
   return (context:HostPluginContext):PluginLifecycle=>{
     const source=createNotesSource(dependencies);

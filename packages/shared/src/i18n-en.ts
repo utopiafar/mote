@@ -10828,5 +10828,9 @@ export const english: Readonly<Record<string, string>> = {
   "原中央与当前连接不一致，未发送读取请求。": "The original Central differs from the current connection. No read request was sent.",
   "从中央另存原件": "Save original from Central",
   "采集阶段仍有待处理输入，暂不能清理本机副本。": "Capture stages still hold pending input. This local copy cannot be cleared yet.",
-  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "The local copy has not been fully cleared. Retry; any remaining input will not be uploaded again."
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "The local copy has not been fully cleared. Retry; any remaining input will not be uploaded again.",
+  "采集范围与隐私": "Capture scope and privacy",
+  "选择后自动填写": "Filled in automatically after selection",
+  "本机设置": "Local settings",
+  "压缩前图片": "Image before compression"
 };

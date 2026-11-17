@@ -1,6 +1,18 @@
 {
  "owners": [
   {
+   "declaration": "processorAdmissionSchemaInstallation",
+   "owner": "processor-admission",
+   "fn": "processorAdmissionSchema",
+   "file": "apps/server/src/admission-schema.ts"
+  },
+  {
+   "declaration": "providerAdmissionSchemaInstallation",
+   "owner": "provider-admission",
+   "fn": "providerAdmissionSchema",
+   "file": "apps/server/src/admission-schema.ts"
+  },
+  {
    "declaration": "vaultSchemaInstallation",
    "owner": "vault",
    "fn": "vaultSchema",
@@ -191,6 +203,13 @@
    "file": "apps/server/src/assistant-task-runtime-schema.ts"
   },
   {
+   "declaration": "memoryInputPlansSchemaInstallation",
+   "owner": "memory-input-plans",
+   "fn": "memoryInputPlansSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/memory-input-plans-schema.ts"
+  },
+  {
    "declaration": "sourceArchiveSchemaInstallation",
    "owner": "source-archive",
    "fn": "sourceArchiveSchema",
@@ -239,16 +258,23 @@
    "file": "apps/server/src/plugins/instance-state.ts"
   },
   {
-   "declaration": "processorAdmissionSchemaInstallation",
-   "owner": "processor-admission",
-   "fn": "processorAdmissionSchema",
-   "file": "apps/server/src/admission-schema.ts"
+   "declaration": "actionsSchemaInstallation",
+   "owner": "actions",
+   "fn": "actionsSchema",
+   "file": "apps/server/src/actions-schema.ts"
   },
   {
-   "declaration": "providerAdmissionSchemaInstallation",
-   "owner": "provider-admission",
-   "fn": "providerAdmissionSchema",
-   "file": "apps/server/src/admission-schema.ts"
+   "declaration": "actionsExecutionSchemaInstallation",
+   "owner": "actions",
+   "fn": "actionsExecutionSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/actions-schema.ts"
+  },
+  {
+   "declaration": "actionsRetirementSchemaInstallation",
+   "owner": "actions",
+   "fn": "actionsRetirementSchema",
+   "file": "apps/server/src/actions-schema.ts"
   },
   {
    "owner": "activity-memory-projection",
@@ -446,6 +472,36 @@
   }
  ],
  "tables": {
+  "action_chunk_changes": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_jobs": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_meta": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_proposals": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_semantic_checkpoints": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
+  "action_targets": {
+   "owner": "actions",
+   "file": "apps/server/src/actions-schema.ts",
+   "installer": "actionsSchemaInstallation"
+  },
   "activity_memory_batches": {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
@@ -865,6 +921,11 @@
    "owner": "memory-input-authorization",
    "file": "apps/server/src/memory-input-authorization.ts",
    "installer": "memoryInputAuthorizationSchemaInstallation"
+  },
+  "memory_input_plans": {
+   "owner": "memory-input-plans",
+   "file": "apps/server/src/memory-input-plans-schema.ts",
+   "installer": "memoryInputPlansSchemaInstallation"
   },
   "memory_jobs": {
    "owner": "memory",
