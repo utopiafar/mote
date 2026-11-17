@@ -1690,7 +1690,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "conversation-turn-storage",
-  "constructionFingerprint": "e1262fd857067f2c2d6d688dc9c757ca08d0aff0995c24ddcbb16e869a07c04d"
+  "constructionFingerprint": "ac34f4953f68f881df1ed1eea533cccd0fd609dfe664b5f622694da4d920b361"
  },
  {
   "rule": "sql-unproved-relation",
@@ -1704,7 +1704,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "conversation-turn-storage",
-  "constructionFingerprint": "e1262fd857067f2c2d6d688dc9c757ca08d0aff0995c24ddcbb16e869a07c04d"
+  "constructionFingerprint": "ac34f4953f68f881df1ed1eea533cccd0fd609dfe664b5f622694da4d920b361"
  },
  {
   "rule": "sql-unproved-relation",
@@ -1718,7 +1718,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "conversation-turn-storage",
-  "constructionFingerprint": "e1262fd857067f2c2d6d688dc9c757ca08d0aff0995c24ddcbb16e869a07c04d"
+  "constructionFingerprint": "ac34f4953f68f881df1ed1eea533cccd0fd609dfe664b5f622694da4d920b361"
  },
  {
   "rule": "sql-unproved-relation",
@@ -1925,7 +1925,7 @@ export const storageConstructions=[
    {
     "from": "apps/server/src/plugins/conversations.ts",
     "scope": "createConversations",
-    "scopeFingerprint": "9a66331b6f8c05c2efdc9f38c604b04b35c3ea137cddd68aa7c1c18179d056c5",
+    "scopeFingerprint": "39c02c254bf1b3942cbef7fd751c5fc1bcc96d392a9a2254f328fc70bec2fb6b",
     "callFingerprint": "33f6346366823a218e13462722baab5f2ccecd3ff832d0ac6eb8b0d60a280f0c",
     "importFingerprint": "06e1d623b7647c3fe48de03bfa7612f491182f035c20b75bdeee7def250b2e30"
    }
