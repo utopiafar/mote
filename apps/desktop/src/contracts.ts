@@ -156,6 +156,8 @@ export interface DesktopApi {
   centralContent(cursor?:string,query?:string): Promise<import('./contracts/content').CentralContentPage>;
   centralContentDetail(id:string,offset?:number,image?:boolean): Promise<import('./contracts/content').SyncContent>;
   localContent(offset?:number,query?:string,pendingOnly?:boolean): Promise<import('./contracts/content').LocalContentPage>;
+  releaseLocalContent(key:string):Promise<void>;
+  saveLocalContentOriginal(key:string):Promise<void>;
   localContentDetail(key:string, image?:boolean): Promise<import('./contracts/content').ContentDetail|import('./contracts/content').SyncContent>;
   chooseSourceFiles(mode: 'files' | 'directory', options: import('./contracts/sources').SourceOptions): Promise<{ canceled: boolean }>;
   connectActionCalendar(): Promise<{deviceId:string}>;

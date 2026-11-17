@@ -15,7 +15,7 @@ import { NativeProviderRegistry } from './plugin-host/native-registry';
 import { deviceSettingsChannels, hostChannels, pushChannels } from './desktop-ipc-channels';
 import { registerBuiltinDesktopPlugins } from './plugins';
 import { createNotesPlugin, notesReadCapability, notesWriteCapability } from './plugins/notes';
-import { createLibraryWorkspacePlugin, libraryReadCapability, memoryReadCapability } from './plugins/library-workspace';
+import { createLibraryWorkspacePlugin, libraryReadCapability,libraryWriteCapability, memoryReadCapability } from './plugins/library-workspace';
 import { createChromePlugin, chromeManageCapability, chromeReadCapability, type ChromePlugin } from './plugins/chrome';
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
 import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
@@ -407,11 +407,16 @@ else {
       queue,
       sources: () => localSources!,
       syncHistory,
+      meetings:sourcesPlugin!.meetings,
+      generation:()=>[collector.status().authorizationGeneration,localSources?.connectionGeneration].join(':'),
+      changed:()=>updateUi(clientStatus()),
+      selectOriginalDestination:async(name)=>{const selected=await dialog.showSaveDialog(window!,{title:moteText('保存原件'),defaultPath:name});return selected.canceled?undefined:selected.filePath;},
       guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
     });
     const workHistory = createWorkHistoryWorkspacePlugin({
       settings: () => settings,
       history: syncHistory,
+      generation:()=>[collector.status().authorizationGeneration,localSources?.connectionGeneration].join(':'),
       queue,
       sources: () => localSources!,
       guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
@@ -433,7 +438,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [hostCapability, notesReadCapability, notesWriteCapability, libraryReadCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
+    host.registerWindow(mainSenderId, 'main', [hostCapability, notesReadCapability, notesWriteCapability, libraryReadCapability,libraryWriteCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {

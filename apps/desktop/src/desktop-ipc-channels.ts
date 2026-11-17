@@ -14,6 +14,8 @@ export const libraryWorkspaceChannels = {
   contentCentralDetail: 'mote:content-central-detail',
   contentLocal: 'mote:content-local',
   contentLocalDetail: 'mote:content-local-detail',
+  contentRelease:'mote:content-release',
+  contentSaveOriginal:'mote:content-save-original',
   capturesBrowse: 'mote:captures-browse',
   capturesDetail: 'mote:captures-detail',
   capturesImage: 'mote:captures-image',
