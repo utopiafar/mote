@@ -1,3 +1,4 @@
+import {connectorsConfigDomain} from '../src/config.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm,lstat} from 'node:fs/promises';
@@ -223,18 +224,18 @@ test('minted MCP credentials use the real SDK with independent read/write, fixed
   assert.deepEqual((await writer.listTools()).tools.map(t=>t.name),['mote_put_item']);
   assert.equal((await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:item()}})).isError,undefined);
   await configService.update('connectors',{mcpWriteSourceIds:['allowed','later']},configService.revision);
-  assert.deepEqual(configService.current<{mcpWriteSourceIds:string[]}>('connectors').mcpWriteSourceIds,['allowed'],'saved authorization configuration takes effect after restart');
+  assert.deepEqual(configService.current(connectorsConfigDomain).mcpWriteSourceIds,['allowed'],'saved authorization configuration takes effect after restart');
   const port=new URL(app.listeningOrigin).port;({app,configService}=await restart());await app.listen({host:'127.0.0.1',port:Number(port)});
-  assert.deepEqual(configService.current<{mcpWriteSourceIds:string[]}>('connectors').mcpWriteSourceIds,['allowed','later']);
+  assert.deepEqual(configService.current(connectorsConfigDomain).mcpWriteSourceIds,['allowed','later']);
   assert.equal((await writer.callTool({name:'mote_put_item',arguments:{sourceId:'later',item:item()}})).isError,true,'A broader later config must not widen the issued credential');
   assert.equal((await app.inject({url:'/api/configuration',headers:write.config.mcpServers.mote.headers})).statusCode,403);
   assert.equal((await app.inject({method:'POST',url:'/mcp',headers:headers(),payload:{}})).statusCode,401);
   await app.inject({method:'DELETE',url:`/api/connections/${read.credential.id}`,headers:headers()});
   await assert.rejects(reader.listTools());
   await configService.update('connectors',{mcpWriteEnabled:false},configService.revision);
-  assert.equal(configService.current<{mcpWriteEnabled:boolean}>('connectors').mcpWriteEnabled,true);
+  assert.equal(configService.current(connectorsConfigDomain).mcpWriteEnabled,true);
   ({app,configService}=await restart());await app.listen({host:'127.0.0.1',port:Number(port)});
-  assert.equal(configService.current<{mcpWriteEnabled:boolean}>('connectors').mcpWriteEnabled,false);await assert.rejects(writer.listTools());
+  assert.equal(configService.current(connectorsConfigDomain).mcpWriteEnabled,false);await assert.rejects(writer.listTools());
 });
 
 test('disabled MCP minting fails with actionable fixed codes and accurate safe diagnostics',async t=>{

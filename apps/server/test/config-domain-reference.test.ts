@@ -17,6 +17,10 @@ async function fixture(t:TestContext){
 
 // Checked with the Server's existing compiler options; this function is not executed.
 function inferredTypes(service:ConfigService){
+  // @ts-expect-error A registered id alone is not a schema reference.
+  service.current('activity');
+  // @ts-expect-error Handler registration also requires the registered schema reference.
+  service.setHandler('activity',()=>({apply(){}}));
   const value=service.current(activityConfigDomain);
   const enabled:boolean=value.enabled,profile:string|null=value.modelProfileId;
   // @ts-expect-error The registered schema owns the output type.
@@ -34,6 +38,24 @@ function inferredTypes(service:ConfigService){
   void enabled;void profile;void wrong;
 }
 void inferredTypes;
+
+test('untyped string reads and handlers reject before resolver, handler or disk effects',async t=>{
+  const service=await fixture(t),effects={resolve:0,parse:0,prepare:0,publish:0,untypedPrepare:0};
+  const schema=z.object({limit:z.number()}).strict().transform(value=>{effects.parse++;return value;});
+  const reference={id:'generated',schema};
+  service.register({...reference,defaultValue:{limit:2},resolve:raw=>{effects.resolve++;return raw;}});
+  await service.initialize();
+  service.setHandler(reference,()=>{effects.prepare++;return {apply(){},publish(){effects.publish++;}};});
+  const before={...effects},disk=await readFile(service.path,'utf8');
+  assert.throws(()=>Reflect.apply(service.current,service,['generated']),{code:'config_invalid'});
+  assert.throws(()=>Reflect.apply(service.setHandler,service,['generated',()=>{effects.untypedPrepare++;return {apply(){}};}]),{code:'config_invalid'});
+  assert.deepEqual(effects,before);
+  assert.equal(service.revision,0);assert.equal(await readFile(service.path,'utf8'),disk);
+  assert.deepEqual(service.current(reference),{limit:2});
+  await service.update('generated',{limit:3},0);
+  assert.equal(effects.prepare,1);assert.equal(effects.publish,1);assert.equal(effects.untypedPrepare,0);
+  assert.deepEqual(service.current(reference),{limit:3});
+});
 
 test('registered references read detached schema output without reparsing and reject forged reads or handlers',async t=>{
   const service=await fixture(t);let parses=0,published=2;

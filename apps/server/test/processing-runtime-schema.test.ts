@@ -1,3 +1,4 @@
+import {workflowConfigDomain} from '../src/config.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync,constants} from 'node:sqlite';
@@ -50,7 +51,7 @@ for(const nested of [false,true])test(`failed Processing constructor publishes n
   await owner.close();await service.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});
  });
  service.register({id:'workflows',schema:workflowConfigurationSchema,defaultValue:defaultWorkflowConfiguration()});await service.initialize();
- service.setHandler<WorkflowConfiguration>('workflows',()=>({apply(){},publish(){oldHandler++;}}));
+ service.setHandler(workflowConfigDomain,()=>({apply(){},publish(){oldHandler++;}}));
  owner.scope.defer(()=>{siblingReleased++;});
  const releaseSibling=engine.register({kind:'generated.processing-sibling',pool:'generated.processing-sibling',concurrency:()=>1,validate:()=>true,execute:async()=>{siblingRuns++;return {};},commit(){}});
  const scope:HostScope={...owner.scope,defer(dispose){deferred++;owner.scope.defer(dispose);}};
@@ -60,7 +61,7 @@ for(const nested of [false,true])test(`failed Processing constructor publishes n
  db.setAuthorizer((code,name)=>code===constants.SQLITE_CREATE_TABLE&&name==='processing_dependencies'?constants.SQLITE_DENY:constants.SQLITE_OK);
  assert.throws(()=>new ProcessingRuntime(store,[],{},Date.now,engine,undefined,scope,service),/not authorized/);db.setAuthorizer(null);
  assert.deepEqual(catalog(db),before);assert.equal(db.isTransaction,nested);assert.equal(deferred,0);assert.equal(plugins,0);assert.equal(engine.closed,false);assert.equal(scope.signal.aborted,false);assert.equal(siblingReleased,0);
- const prior=service.current<WorkflowConfiguration>('workflows'),next={...prior,extract:{...prior.extract,concurrency:prior.extract.concurrency===1?2:1}};
+ const prior=service.current(workflowConfigDomain),next={...prior,extract:{...prior.extract,concurrency:prior.extract.concurrency===1?2:1}};
  await service.replace('workflows',next,service.revision);assert.equal(oldHandler,1,'a failed constructor did not replace the existing configuration owner');
  runtime=new ProcessingRuntime(store,[],{},Date.now,engine,undefined,scope,service);await runtime.ready;assert.equal(runtime.settings().extract.concurrency,next.extract.concurrency);assert.equal(deferred,1);assert.equal(plugins,1);
  const changed={...next,extract:{...next.extract,concurrency:next.extract.concurrency===1?2:1}};

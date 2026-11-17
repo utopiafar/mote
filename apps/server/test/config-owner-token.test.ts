@@ -7,7 +7,7 @@ import { serializeConfigDocument } from '@mote/shared/config-file';
 import { buildApp } from '../src/app.js';
 import {createConfigurationPlatform} from '../src/plugins/configuration-platform.js';
 import { ConfigService } from '../src/config-service.js';
-import { configurationFromFile, configurationBootstrap, readConfigDocument, registerBuiltinDomains } from '../src/config.js';
+import { configurationFromFile, configurationBootstrap, readConfigDocument, registerBuiltinDomains,modelsConfigDomain,connectorsConfigDomain,serverConfigDomain } from '../src/config.js';
 
 test('canonical source drives the actual owner HTTP consumer and keeps restart settings separate', async t => {
   const directory=mkdtempSync(join(tmpdir(),'mote-canonical-source-')),file=join(directory,'mote.yaml'),owner='generated-canonical-owner-credential-for-tests';
@@ -17,15 +17,15 @@ test('canonical source drives the actual owner HTTP consumer and keeps restart s
   const headers={authorization:'Bearer '+owner},get=()=>node!.app.inject({url:'/api/configuration',headers});
   const before=await get();assert.equal(before.statusCode,200,before.body);
   assert.equal(Object.hasOwn(before.json(),'envFile'),false);assert.equal(Object.hasOwn(before.json(),'groups'),false);assert.equal(before.body.includes(owner),false);
-  const unchanged=node.configService.current('models');
+  const unchanged=node.configService.current(modelsConfigDomain);
   const saved=await node.app.inject({method:'PUT',url:'/api/configuration/connectors',headers,payload:{revision:0,value:{syncIntervalMs:90000,directory:'./next-connectors'}}});
   assert.equal(saved.statusCode,200,saved.body);
-  assert.equal(node.configService.current<{syncIntervalMs:number}>('connectors').syncIntervalMs,90000);
-  assert.equal(node.configService.current<{directory:string}>('connectors').directory,'');
+  assert.equal(node.configService.current(connectorsConfigDomain).syncIntervalMs,90000);
+  assert.equal(node.configService.current(connectorsConfigDomain).directory,'');
   assert.equal(node.configService.saved<{directory:string}>('connectors').directory,'./next-connectors');
-  assert.deepEqual(node.configService.current('models'),unchanged);
+  assert.deepEqual(node.configService.current(modelsConfigDomain),unchanged);
   await node.app.close();node=await buildApp({path:file,watch:false});
-  assert.equal((await get()).statusCode,200);assert.equal(node.configService.current<{directory:string}>('connectors').directory,'./next-connectors');
+  assert.equal((await get()).statusCode,200);assert.equal(node.configService.current(connectorsConfigDomain).directory,'./next-connectors');
 });
 
 async function fixture(t: TestContext) {
@@ -48,7 +48,7 @@ test('a pure bootstrap binds subsequent generic saves and external reloads to it
   const candidate = readConfigDocument(f.file); candidate.connectors = { ...f.service.saved<object>('connectors'), mcpEnabled: true, mcpReadToken: f.ownerToken };
   writeFileSync(f.file, serializeConfigDocument(candidate));
   await assert.rejects(f.service.reload(), (error: { code?: string }) => error.code === 'config_invalid');
-  assert.equal(f.service.current<{ mcpEnabled: boolean }>('connectors').mcpEnabled, false); assert.equal(f.service.revision, 0);
+  assert.equal(f.service.current(connectorsConfigDomain).mcpEnabled, false); assert.equal(f.service.revision, 0);
   assert.equal(JSON.stringify(f.service.view()).includes(f.ownerToken), false);
 });
 
@@ -56,7 +56,7 @@ test('a pending replacement owner token cannot permit MCP to reuse the still-eff
   const f = await fixture(t), replacementOwner = 'generated-pending-owner-token-for-collision-fixtures';
   const saved = await f.node.app.inject({ method: 'PUT', url: '/api/configuration/server', headers: f.headers, payload: { revision: 0, value: { token: replacementOwner } } });
   assert.equal(saved.statusCode, 200, saved.body); assert.equal(f.service.revision, 1);
-  assert.equal(f.service.current<{ token: string }>('server').token, ''); assert.equal(f.service.saved<{ token: string }>('server').token, replacementOwner);
+  assert.equal(f.service.current(serverConfigDomain).token, ''); assert.equal(f.service.saved<{ token: string }>('server').token, replacementOwner);
   const original = readFileSync(f.file, 'utf8');
   for (const token of [f.ownerToken, replacementOwner]) {
     const response = await f.node.app.inject({ method: 'PUT', url: '/api/configuration/connectors', headers: f.headers, payload: { revision: f.service.revision, value: { mcpEnabled: true, mcpReadToken: token } } });
@@ -65,7 +65,7 @@ test('a pending replacement owner token cannot permit MCP to reuse the still-eff
   }
   const candidate = readConfigDocument(f.file); candidate.connectors = { ...f.service.saved<object>('connectors'), mcpEnabled: true, mcpReadToken: f.ownerToken };
   writeFileSync(f.file, serializeConfigDocument(candidate)); await assert.rejects(f.service.reload(), { code: 'config_invalid' });
-  assert.equal(f.service.current<{ mcpEnabled: boolean }>('connectors').mcpEnabled, false);
+  assert.equal(f.service.current(connectorsConfigDomain).mcpEnabled, false);
   assert.equal((await f.node.app.inject({ url: '/api/configuration', headers: f.headers })).statusCode, 200, 'the original owner remains the effective authority until restart');
 });
 
@@ -143,5 +143,5 @@ test('a supplied bootstrap service retains its pinned owner validator before pla
   const platform=createConfigurationPlatform({...source,privateCredential:pinned.owner},{configService:service});
   t.after(async()=>{await platform.close();rmSync(directory,{recursive:true,force:true});});
   await assert.rejects(service.update('connectors',{mcpEnabled:true,mcpReadToken:owner},revision),{code:'config_invalid'});
-  assert.equal(service.revision,revision);assert.equal(readFileSync(file,'utf8'),before);assert.equal(service.current<{mcpEnabled:boolean}>('connectors').mcpEnabled,false);
+  assert.equal(service.revision,revision);assert.equal(readFileSync(file,'utf8'),before);assert.equal(service.current(connectorsConfigDomain).mcpEnabled,false);
 });

@@ -28,14 +28,14 @@ test('native selections use the authoritative config file and become effective o
   t.after(async () => {await service.close(); await rm(root, {recursive: true, force: true});});
   await service.initialize();
   await service.update('dsh', {profiles: [selected()]}, 0);
-  assert.deepEqual(service.current('dsh'), {profiles: []});
+  assert.deepEqual(service.current(dshConfigDomain), {profiles: []});
   const view = service.view().domains.find(domain => domain.id === 'dsh')!;
   assert.equal(view.status, 'restart-required');
   assert.deepEqual(view.saved, {profiles: [selected()]});
   const restarted = new ConfigService({path, watch: false}); registerBuiltinDomains(restarted);
   t.after(() => restarted.close());
   await restarted.initialize();
-  assert.deepEqual(restarted.current('dsh'), {profiles: [selected()]});
+  assert.deepEqual(restarted.current(dshConfigDomain), {profiles: [selected()]});
   assert.deepEqual(restarted.current(dshConfigDomain), {profiles: [selected()]});
   assert.equal((await readFile(path, 'utf8')).includes('packageRoot'), false);
   await assert.rejects(service.update('dsh', {profiles: [{...selected(), modelProfileId: 'missing-profile'}]}, 1), {code: 'config_invalid'});

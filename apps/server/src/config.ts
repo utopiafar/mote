@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { conversationSettingsSchema } from '@mote/shared';
 import { parseConfigDocument as parseYaml, readConfigDocument as readYaml, isConfigSecretPath, serializeConfigDocument } from '@mote/shared/config-file';
 import { modelDomainSchema, modelsConfigDomain } from './model-settings.js';
-import { executionSettingsSchema, diagnosticsSettingsSchema } from './execution-settings.js';
+import { executionConfigSchema, diagnosticsConfigSchema, executionConfigDomain, diagnosticsConfigDomain } from './execution-settings.js';
+export { executionConfigSchema, diagnosticsConfigSchema, executionConfigDomain, diagnosticsConfigDomain } from './execution-settings.js';
 import { DEFAULT_MEDIA_OCR_ENDPOINT, DEFAULT_MEDIA_ASR_ENDPOINT, DEFAULT_MEDIA_LOCAL_IMAGE_ENDPOINT, type MediaConfiguration } from './media-configuration.js';
 import { processingConfigurationSchema, defaultProcessingConfiguration } from './processing-configuration.js';
 import { perceptionConfigurationSchema } from './perception-configuration.js';
@@ -68,13 +69,6 @@ export const storageConfigSchema = z.object({
   dataKey: line().refine(value => !value || /^[0-9a-f]{64}$/i.test(value)).default(''), contentEncryptionEnabled: z.boolean().default(false),
   kind: z.enum(['local-directory', 'docker-volume', 'bind-mount', 'unknown']).default('unknown'), source: line().default(''), mount: line().default(''),
 }).strict();
-export const executionConfigSchema = executionSettingsSchema.extend({ insightIntervalHours: z.number().min(0).max(168).default(0) }).strict();
-export const diagnosticsConfigSchema = diagnosticsSettingsSchema.extend({
-  directory: line().default(''), maxBytes: z.number().min(Math.floor(0.1 * MiB)).max(MAX_LOG_FILE_BYTES).default(defaultLogMaxBytes()),
-  maxTotalBytes:z.number().int().min(1024).max(16*1024*MiB).default(2048*MiB),
-  retention:z.object(Object.fromEntries(Object.entries(DEFAULT_LOG_RETENTION).map(([key,value])=>[key,z.object({days:z.number().min(1/24).max(3650).default(value.days),maxBytes:z.number().int().min(1024).max(8*1024*MiB).default(value.maxBytes)}).strict().default(value)])) as unknown as Record<keyof LogRetention,z.ZodType<{days:number;maxBytes:number}>>).strict().default(DEFAULT_LOG_RETENTION),
-  maxEntries: z.number().int().min(100).max(5000).default(2000),
-}).strict();
 export const connectorsConfigSchema = z.object({
   directory: line().default(''),
   mcpEnabled: z.boolean().default(false), mcpReadToken: line(8192).default(''), mcpWriteEnabled: z.boolean().default(false), mcpWriteToken: line(8192).default(''),
@@ -118,8 +112,6 @@ export interface ConfigurationBootstrap {
 /** Registered schema identities shared with typed domain consumers. */
 export const serverConfigDomain = Object.freeze({id:'server',schema:serverConfigSchema}) satisfies ConfigDomainReference<typeof serverConfigSchema>;
 export const storageConfigDomain = Object.freeze({id:'storage',schema:storageConfigSchema}) satisfies ConfigDomainReference<typeof storageConfigSchema>;
-export const executionConfigDomain = Object.freeze({id:'execution',schema:executionConfigSchema}) satisfies ConfigDomainReference<typeof executionConfigSchema>;
-export const diagnosticsConfigDomain = Object.freeze({id:'diagnostics',schema:diagnosticsConfigSchema}) satisfies ConfigDomainReference<typeof diagnosticsConfigSchema>;
 export {modelsConfigDomain} from './model-settings.js';
 export const dshConfigDomain = Object.freeze({id:'dsh',schema:dshConfigurationSchema}) satisfies ConfigDomainReference<typeof dshConfigurationSchema>;
 export const connectorsConfigDomain = Object.freeze({id:'connectors',schema:connectorsConfigSchema}) satisfies ConfigDomainReference<typeof connectorsConfigSchema>;

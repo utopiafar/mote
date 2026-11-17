@@ -7,7 +7,7 @@ import type {z} from 'zod';
 import type {ModelDomain} from '../src/model-settings.js';
 import { spawnSync } from 'node:child_process';
 import { serializeConfigDocument } from '@mote/shared/config-file';
-import { configurationFromFile, configurationBootstrap, serverConfigDomain, storageConfigDomain, diagnosticsConfigDomain, modelsConfigDomain, connectorsConfigDomain, pluginsConfigDomain, processingConfigDomain, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, storageConfigSchema, serverConfigSchema, diagnosticsConfigSchema, executionConfigSchema, ConfigError } from '../src/config.js';
+import { configurationFromFile, configurationBootstrap, serverConfigDomain, storageConfigDomain, diagnosticsConfigDomain, modelsConfigDomain, connectorsConfigDomain, pluginsConfigDomain, processingConfigDomain, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, storageConfigSchema, serverConfigSchema, diagnosticsConfigSchema, executionConfigSchema, ConfigError,perceptionConfigDomain,mediaConfigDomain } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 
 type EffectiveDocument={server:z.output<typeof serverConfigSchema>;storage:z.output<typeof storageConfigSchema>;diagnostics:z.output<typeof diagnosticsConfigSchema>;media:z.output<typeof mediaConfigSchema>;execution:z.output<typeof executionConfigSchema>;models:ModelDomain;connectors:z.output<typeof connectorsConfigDomain.schema>;plugins:z.output<typeof pluginsConfigDomain.schema>;processing:z.output<typeof processingConfigDomain.schema>;version:1;revision:number};
@@ -18,7 +18,7 @@ const readEffective=(file:string):EffectiveDocument=>{
 const moduleUrl = new URL('../src/config.ts', import.meta.url).href;
 function readConfig(env: Record<string, string>, cwd?: string) {
   return spawnSync(process.execPath, ['--import', new URL('../../../node_modules/tsx/dist/loader.mjs', import.meta.url).pathname, '--input-type=module', '-e',
-    `import {configurationFromFile,configurationBootstrap,configDocumentDomains,registerBuiltinDomains} from ${JSON.stringify(moduleUrl)}; import {ConfigService} from ${JSON.stringify(new URL('../src/config-service.ts',import.meta.url).href)}; const service=new ConfigService({...configurationFromFile(),watch:false});registerBuiltinDomains(service);await service.initialize();console.log(JSON.stringify({bootstrap:configurationBootstrap(service),view:service.view(),domains:Object.fromEntries(configDocumentDomains().map(({id})=>[id,service.current(id)]))}));await service.close();`], {
+    `import {configurationFromFile,configurationBootstrap,configDocumentDomains,registerBuiltinDomains} from ${JSON.stringify(moduleUrl)}; import {ConfigService} from ${JSON.stringify(new URL('../src/config-service.ts',import.meta.url).href)}; const service=new ConfigService({...configurationFromFile(),watch:false});registerBuiltinDomains(service);await service.initialize();console.log(JSON.stringify({bootstrap:configurationBootstrap(service),view:service.view(),domains:Object.fromEntries(configDocumentDomains().map(domain=>[domain.id,service.current(domain)]))}));await service.close();`], {
     env: { PATH: process.env.PATH, ...env }, encoding: 'utf8', timeout: 15000, cwd,
   });
 }
@@ -51,10 +51,10 @@ test('local image startup settings round-trip through the same YAML schema and r
   const media=configDocumentDomains().find(domain=>domain.id==='media')!;
   for(const path of ['localImageEndpoint','localImagePort'])assert.equal(media.fields!.find(field=>field.path===path)?.effect,'restart');
   const service=new ConfigService({path:file,watch:false});registerBuiltinDomains(service);await service.initialize();t.after(()=>service.close());
-  const processing=structuredClone(service.current('processing')),perception=structuredClone(service.current('perception')),models=structuredClone(service.current('models'));
-  await service.update('media',{...service.current<Record<string,unknown>>('media'),localImagePort:19104,localImageEndpoint:'http://127.0.0.1:19104/v1/interpret'},service.revision);
+  const processing=structuredClone(service.current(processingConfigDomain)),perception=structuredClone(service.current(perceptionConfigDomain)),models=structuredClone(service.current(modelsConfigDomain));
+  await service.update('media',{...service.current(mediaConfigDomain),localImagePort:19104,localImageEndpoint:'http://127.0.0.1:19104/v1/interpret'},service.revision);
   const saved=readEffective(file);assert.equal(saved.media.localImagePort,19104);assert.equal(saved.media.localImageEndpoint,'http://127.0.0.1:19104/v1/interpret');
-  assert.deepEqual(service.current('processing'),processing);assert.deepEqual(service.current('perception'),perception);assert.deepEqual(service.current('models'),models);
+  assert.deepEqual(service.current(processingConfigDomain),processing);assert.deepEqual(service.current(perceptionConfigDomain),perception);assert.deepEqual(service.current(modelsConfigDomain),models);
   for(const localImageEndpoint of ['', 'not-a-url','https://example.invalid/v1/interpret','http://user:secret@127.0.0.1:9011/v1/interpret','http://127.0.0.1:9011/v1/interpret?token=secret'])assert.equal(mediaConfigSchema.safeParse({localImageEndpoint}).success,false);
   for(const localImagePort of [0,65536,1.5])assert.equal(mediaConfigSchema.safeParse({localImagePort}).success,false);
 });
@@ -64,10 +64,10 @@ test('Docker media resource selection round-trips without inferring enablement o
   write({server:{runtime:'docker'},media:{modelDirectory:'/models',workerToken:'generated-worker-token',ocrPort:19010,asrPort:19009}});
   let loaded=readEffective(file);assert.deepEqual(loaded.media.dockerWorkers,[]);
   const service=new ConfigService({path:file,watch:false});registerBuiltinDomains(service);await service.initialize();t.after(()=>service.close());
-  const processing=structuredClone(service.current('processing')),plugins=structuredClone(service.current('plugins')),models=structuredClone(service.current('models'));
-  await service.update('media',{...service.current<Record<string,unknown>>('media'),dockerWorkers:['asr']},service.revision);
+  const processing=structuredClone(service.current(processingConfigDomain)),plugins=structuredClone(service.current(pluginsConfigDomain)),models=structuredClone(service.current(modelsConfigDomain));
+  await service.update('media',{...service.current(mediaConfigDomain),dockerWorkers:['asr']},service.revision);
   loaded=readEffective(file);assert.deepEqual(loaded.media.dockerWorkers,['asr']);assert.deepEqual((loaded.media as Record<string,unknown>).dockerWorkers,['asr']);
-  assert.deepEqual(service.current('processing'),processing);assert.deepEqual(service.current('plugins'),plugins);assert.deepEqual(service.current('models'),models);
+  assert.deepEqual(service.current(processingConfigDomain),processing);assert.deepEqual(service.current(pluginsConfigDomain),plugins);assert.deepEqual(service.current(modelsConfigDomain),models);
   const fields=configDocumentDomains().find(domain=>domain.id==='media')!.fields!;assert.equal(fields.find(field=>field.path==='dockerWorkers')?.effect,'restart');
   for(const dockerWorkers of [['ocr','ocr'],['local-image'],['asr','unknown'],null,'ocr'])assert.equal(mediaConfigSchema.safeParse({dockerWorkers}).success,false);
 });
@@ -108,7 +108,7 @@ test('profile diagnostic defaults preserve explicit opt-outs and survive unrelat
   const service = new ConfigService({ path: file, watch: false });
   registerBuiltinDomains(service); t.after(() => service.close()); await service.initialize();
   await service.update('execution', { agentConcurrency: 9 }, service.revision);
-  assert.equal(service.current<{ debug: boolean }>('diagnostics').debug,false);
+  assert.equal(service.current(diagnosticsConfigDomain).debug,false);
   assert.equal(Object.hasOwn(readConfigDocument(file).diagnostics as object, 'debug'), false);
   await service.update('diagnostics', { debug: false }, service.revision);
   await service.update('execution', { agentConcurrency: 10 }, service.revision);
@@ -142,7 +142,7 @@ test('retention saves validate profile capacity together and expose restart meta
   const config = readEffective(file);
   const service = new ConfigService({ path: file, watch: false });
   registerBuiltinDomains(service); t.after(() => service.close()); await service.initialize();
-  assert.equal(service.current<{ maxBytes: number }>('diagnostics').maxBytes,16*1024*1024);
+  assert.equal(service.current(diagnosticsConfigDomain).maxBytes,16*1024*1024);
   const revision = service.revision;
   await assert.rejects(service.update('diagnostics', { maxBytes: 101 * 1024 * 1024 }, revision));
   assert.equal(service.revision, revision);
@@ -163,7 +163,7 @@ for (const setting of [undefined, 2 * 1024 * 1024, 100 * 1024 * 1024]) {
         if (setting !== undefined) assert.equal((document.diagnostics as { maxBytes: number }).maxBytes, setting);
       }
       assert.equal(service.saved<{ maxBytes: number }>('diagnostics').maxBytes, capacity);
-      assert.equal(service.current<{ maxBytes: number }>('diagnostics').maxBytes, capacity);
+      assert.equal(service.current(diagnosticsConfigDomain).maxBytes, capacity);
     };
     await service.update('execution', { agentConcurrency: 9 }, service.revision); assertProvenance();
     await service.update('diagnostics', { debug: true }, service.revision); assertProvenance();
@@ -173,7 +173,7 @@ for (const setting of [undefined, 2 * 1024 * 1024, 100 * 1024 * 1024]) {
     if (setting === undefined) {
       await service.update('server', { profile: 'test' }, service.revision);
       assert.equal(service.saved<{ maxBytes: number }>('diagnostics').maxBytes,16*1024*1024);
-      assert.equal(service.current<{ maxBytes: number }>('diagnostics').maxBytes, capacity, 'profile and capacity changes remain pending restart');
+      assert.equal(service.current(diagnosticsConfigDomain).maxBytes, capacity, 'profile and capacity changes remain pending restart');
       assert.equal(readEffective(file).diagnostics.maxBytes,16*1024*1024);
       assert.equal(Object.hasOwn(service.document().diagnostics as object, 'maxBytes'), false);
     } else if (setting === 100 * 1024 * 1024) {
@@ -231,9 +231,9 @@ test('bootstrap normalization derives profile and managed media defaults from th
   registerBuiltinDomains(service); t.after(() => service.close());
   write({ server: { profile: 'test' }, storage: { dataDir: './selected-vault' }, media: { ocrEndpoint: 'http://127.0.0.1:19102/ocr' } });
   await service.initialize();
-  assert.equal(service.current<{ profile: string }>('server').profile, 'test');
-  assert.equal(service.current<{ traceEnabled: boolean }>('diagnostics').traceEnabled, false);
-  assert.equal(service.current<{ policy: { services: { id: string; endpoint: string }[] } }>('processing').policy.services.find(item => item.id === 'central-image-ocr')?.endpoint, 'http://127.0.0.1:19102/ocr');
+  assert.equal(service.current(serverConfigDomain).profile, 'test');
+  assert.equal(service.current(diagnosticsConfigDomain).traceEnabled, false);
+  assert.equal(service.current(processingConfigDomain).policy.services.find(item => item.id === 'central-image-ocr')?.endpoint, 'http://127.0.0.1:19102/ocr');
   const selectedDataDir=resolve(dirname(file),service.current(storageConfigDomain).dataDir);
   assert.equal(selectedDataDir,join(vault,'..','selected-vault'));assert.equal(service.current(diagnosticsConfigDomain).traceEnabled,false);
   assert.equal(existsSync(vault),false);assert.equal(existsSync(selectedDataDir),false);

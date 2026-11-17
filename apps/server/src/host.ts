@@ -58,7 +58,7 @@ import { existsSync,readFileSync } from 'node:fs';
 import { join,relative,sep } from 'node:path';
 import { z } from 'zod';
 import {installAgentReadTools} from './plugins/agent-read-tools.js';
-import { repositoryRoot,serverConfigDomain,modelsConfigDomain,pluginsConfigDomain,dshConfigDomain,connectorsConfigDomain } from './config.js';
+import { repositoryRoot,serverConfigDomain,modelsConfigDomain,pluginsConfigDomain,dshConfigDomain,connectorsConfigDomain,processingConfigDomain,executionConfigDomain,diagnosticsConfigDomain,notificationsConfigDomain,conversationsConfigDomain } from './config.js';
 import {contributeDomainRoutes,collectSelectedFeatureRoutes} from './plugins/domain-routes.js';
 import type {ConfigurationPlatformOptions} from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
@@ -371,7 +371,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
   const {perception}=assemblePerception({store,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
-  additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
+  additionalModelConnections=()=>[...processing.modelConnections(),...configService.current(processingConfigDomain).policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return query.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
@@ -598,16 +598,16 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
   const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
-  configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
-  configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
+  configService.setHandler(executionConfigDomain,(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
+  configService.setHandler(diagnosticsConfigDomain,next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
   configService.setHandler(connectorsConfigDomain,(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
-  const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current<NotificationSettings>('notifications'));
+  const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current(notificationsConfigDomain));
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
   },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port,()=>{
     const settings=modelSettings.select('chat').settings;if(settings.protocol!=='codex-app-server')return;
-    const budget=queryModelBudget(settings.maxTokens,configService.current<ConversationSettings>('conversations').context);
+    const budget=queryModelBudget(settings.maxTokens,configService.current(conversationsConfigDomain).context);
     const capacity=codexContextCapacity(settings.model,budget.contextWindowSource==='configured'?budget.contextWindow:undefined);
     return capacity?{...capacity,draftTokens:settings.maxTokens,language:requestLocale.getStore()??'zh-CN'}:undefined;
   });

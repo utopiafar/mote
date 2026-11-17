@@ -7,16 +7,21 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { ConfigService, ConfigServiceError, type ConfigDocument, type ConfigServiceOptions } from '../src/config-service.js';
-import { registerBuiltinDomains } from '../src/config.js';
+import { registerBuiltinDomains, serverConfigDomain } from '../src/config.js';
+
+const fixtureExecutionDomain={id:'execution',schema:z.object({ limit: z.number().int().min(1).max(10) }).strict()};
+const fixtureServerDomain={id:'server',schema:z.object({ port: z.number().int().min(1).max(65535) }).strict()};
+const fixtureSecretDomain={id:'secret',schema:z.object({ key: z.string(), label: z.string() }).strict()};
+const fixturePluginsDomain={id:'plugins',schema:z.object({ configuration: z.record(z.unknown()).default({}) }).strict()};
 
 async function fixture(t: { after(fn: () => Promise<void>): void }, options: Partial<ConfigServiceOptions> = {}) {
   const directory = await fs.mkdtemp(join(tmpdir(), 'mote-unified-config-'));
   const service = new ConfigService({ path: join(directory, 'mote.yaml'), initialDocument: { version: 1, revision: 0 }, ...options });
-  service.register({ id: 'execution', schema: z.object({ limit: z.number().int().min(1).max(10) }).strict(), defaultValue: { limit: 3 }, fields: [{ path: 'limit', effect: 'next-admission' }] });
-  service.register({ id: 'server', schema: z.object({ port: z.number().int().min(1).max(65535) }).strict(), defaultValue: { port: 47832 }, fields: [{ path: 'port', effect: 'restart' }] });
-  service.register({ id: 'secret', schema: z.object({ key: z.string(), label: z.string() }).strict(), defaultValue: { key: '${FIXTURE_KEY}', label: 'fixture' }, resolve: raw => ({ ...raw as object, key: (raw as { key: string }).key === '${FIXTURE_KEY}' ? 'synthetic-private-key' : (raw as { key: string }).key }), fields: [{ path: 'key', sensitive: true }] });
+  service.register({ ...fixtureExecutionDomain, defaultValue: { limit: 3 }, fields: [{ path: 'limit', effect: 'next-admission' }] });
+  service.register({ ...fixtureServerDomain, defaultValue: { port: 47832 }, fields: [{ path: 'port', effect: 'restart' }] });
+  service.register({ ...fixtureSecretDomain, defaultValue: { key: '${FIXTURE_KEY}', label: 'fixture' }, resolve: raw => ({ ...raw as object, key: (raw as { key: string }).key === '${FIXTURE_KEY}' ? 'synthetic-private-key' : (raw as { key: string }).key }), fields: [{ path: 'key', sensitive: true }] });
   // The reserved namespace is opaque until each plugin declares its own credentials.
-  service.register({ id: 'plugins', schema: z.object({ configuration: z.record(z.unknown()).default({}) }).strict(), defaultValue: { configuration: {} }, resolve: raw => raw, fields: [{ path: 'configuration', sensitive: true }] });
+  service.register({ ...fixturePluginsDomain, defaultValue: { configuration: {} }, resolve: raw => raw, fields: [{ path: 'configuration', sensitive: true }] });
   t.after(async () => { await service.close(); await fs.rm(directory, { recursive: true, force: true }); });
   await service.initialize();
   return { service, directory, file: service.path };
@@ -27,7 +32,7 @@ async function until(check: () => boolean) { for (let count = 0; count < 100; co
 test('API and external edits share one revision, preserve secrets, and restart reads the same authoritative file', async t => {
   const { service, file } = await fixture(t);
   let applied = 0;
-  service.setHandler<{ limit: number }>('execution', next => ({ apply: () => { applied = next.limit; } }));
+  service.setHandler(fixtureExecutionDomain, next => ({ apply: () => { applied = next.limit; } }));
   await service.update('execution', { limit: 4 }, 0);
   assert.equal(applied, 4); assert.equal(service.revision, 1);
   await service.update('secret', { label: 'changed' }, 1);
@@ -40,7 +45,7 @@ test('API and external edits share one revision, preserve secrets, and restart r
   assert.equal((parse(await fs.readFile(file, 'utf8')) as ConfigDocument).revision, 3);
   await service.close();
   const restarted = await fixture(t, { path: file });
-  assert.deepEqual(restarted.service.current('execution'), { limit: 5 }); assert.equal(restarted.service.revision, 3);
+  assert.deepEqual(restarted.service.current(fixtureExecutionDomain), { limit: 5 }); assert.equal(restarted.service.revision, 3);
 });
 test('invalid file, partial YAML, duplicate keys and symlink input keep the last valid runtime without echoing values', async t => {
   const { service, file } = await fixture(t);
@@ -48,7 +53,7 @@ test('invalid file, partial YAML, duplicate keys and symlink input keep the last
   for (const invalid of ['secret: synthetic-private-key\n', valid + 'execution: {limit: 4}\n', valid.replace('limit: 3', 'limit: synthetic-private-key'), 'version: 1\nrevision: 0\nexecution: [']) {
     await fs.writeFile(file, invalid);
     await assert.rejects(service.reload(), (error: unknown) => error instanceof ConfigServiceError && error.code === 'config_invalid' && !error.message.includes('synthetic-private-key'));
-    assert.deepEqual(service.current('execution'), { limit: 3 }); assert.equal(service.revision, 0);
+    assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 3 }); assert.equal(service.revision, 0);
   }
   await fs.writeFile(file, valid); await service.reload(); assert.equal(service.view().lastError, null);
   await fs.rename(file, file + '.real'); await fs.symlink(file + '.real', file);
@@ -56,7 +61,7 @@ test('invalid file, partial YAML, duplicate keys and symlink input keep the last
 });
 test('semantic no-op edits, object key ordering and self writes do not reapply or increment revision', async t => {
   const { service, file } = await fixture(t);
-  let applications = 0; service.setHandler('execution', () => ({ apply: () => { applications++; } }));
+  let applications = 0; service.setHandler(fixtureExecutionDomain, () => ({ apply: () => { applications++; } }));
   await service.startWatching();
   await service.update('execution', { limit: 4 }, 0); await delay(300);
   assert.equal(applications, 1); assert.equal(service.revision, 1);
@@ -70,7 +75,7 @@ test('pending external edits and two concurrent API editors conflict instead of 
   const { service, file } = await fixture(t);
   await edit(file, document => { document.execution = { limit: 7 }; });
   await assert.rejects(service.update('execution', { limit: 2 }, 0), { code: 'config_conflict' });
-  assert.deepEqual(service.current('execution'), { limit: 7 }); assert.equal(service.revision, 1);
+  assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 7 }); assert.equal(service.revision, 1);
   const results = await Promise.allSettled([service.update('execution', { limit: 4 }, 1), service.update('execution', { limit: 5 }, 1)]);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal((results.find(result => result.status === 'rejected') as PromiseRejectedResult).reason.code, 'config_conflict');
@@ -83,31 +88,31 @@ test('pending external edits and two concurrent API editors conflict instead of 
 test('restart-required values are saved with their old effective value until another process initializes', async t => {
   const { service, file } = await fixture(t);
   await service.update('server', { port: 49000 }, 0);
-  assert.deepEqual(service.current('server'), { port: 47832 }); assert.deepEqual(service.saved('server'), { port: 49000 });
+  assert.deepEqual(service.current(fixtureServerDomain), { port: 47832 }); assert.deepEqual(service.saved('server'), { port: 49000 });
   assert.equal(service.view().domains.find(domain => domain.id === 'server')!.status, 'restart-required');
   assert.equal((parse(await fs.readFile(file, 'utf8')).server as { port: number }).port, 49000);
   await service.close(); const restarted = await fixture(t, { path: file });
-  assert.deepEqual(restarted.service.current('server'), { port: 49000 });
+  assert.deepEqual(restarted.service.current(fixtureServerDomain), { port: 49000 });
 });
 test('prepare failure disposes candidates and leaves both file and all effective domains unchanged', async t => {
   const { service, file } = await fixture(t); let disposed = 0, applied = 0;
-  service.setHandler('execution', () => ({ apply: () => { applied++; }, dispose: () => { disposed++; } }));
-  service.setHandler('secret', () => { throw new Error('synthetic-private-key'); });
+  service.setHandler(fixtureExecutionDomain, () => ({ apply: () => { applied++; }, dispose: () => { disposed++; } }));
+  service.setHandler(fixtureSecretDomain, () => { throw new Error('synthetic-private-key'); });
   const bytes = await fs.readFile(file, 'utf8');
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.secret = { key: '${FIXTURE_KEY}', label: 'new' }; });
   const external = await fs.readFile(file, 'utf8');
   await assert.rejects(service.reload(), { code: 'config_prepare_failed' });
   assert.equal(disposed, 1); assert.equal(applied, 0); assert.equal(service.revision, 0);
-  assert.deepEqual(service.current('execution'), { limit: 3 }); assert.equal(await fs.readFile(file, 'utf8'), external);
+  assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 3 }); assert.equal(await fs.readFile(file, 'utf8'), external);
   await fs.writeFile(file, bytes);
 });
 test('apply failure rolls back prior domains and exposes the saved candidate without claiming it is effective', async t => {
   const { service, file } = await fixture(t); let live = 3;
-  service.setHandler<{ limit: number }>('execution', (next, previous) => ({ apply: () => { live = next.limit; }, rollback: () => { live = previous.limit; } }));
-  service.setHandler('secret', () => ({ apply: () => { throw Error('synthetic-private-key'); }, rollback: () => {} }));
+  service.setHandler(fixtureExecutionDomain, (next, previous) => ({ apply: () => { live = next.limit; }, rollback: () => { live = previous.limit; } }));
+  service.setHandler(fixtureSecretDomain, () => ({ apply: () => { throw Error('synthetic-private-key'); }, rollback: () => {} }));
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.secret = { key: '${FIXTURE_KEY}', label: 'new' }; });
   await assert.rejects(service.reload(), { code: 'config_apply_failed' });
-  assert.equal(live, 3); assert.deepEqual(service.current('execution'), { limit: 3 });
+  assert.equal(live, 3); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 3 });
   assert.deepEqual(service.saved('execution'), { limit: 8 }); assert.equal(service.view().lastError?.code, 'config_apply_failed');
 });
 test('watcher reloads stable writes and atomic replacements and close removes the watcher', async t => {
@@ -115,10 +120,10 @@ test('watcher reloads stable writes and atomic replacements and close removes th
   const original = parse(await fs.readFile(file, 'utf8')) as ConfigDocument; original.execution = { limit: 6 };
   const bytes = stringify(original), half = Math.floor(bytes.length / 2);
   await fs.writeFile(file, bytes.slice(0, half)); await delay(40); await fs.appendFile(file, bytes.slice(half));
-  await until(() => service.revision === 1); assert.deepEqual(service.current('execution'), { limit: 6 });
+  await until(() => service.revision === 1); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 6 });
   const replacement = parse(await fs.readFile(file, 'utf8')) as ConfigDocument; replacement.execution = { limit: 9 };
   await fs.writeFile(file + '.tmp', stringify(replacement)); await fs.rename(file + '.tmp', file);
-  await until(() => service.revision === 2); assert.deepEqual(service.current('execution'), { limit: 9 });
+  await until(() => service.revision === 2); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 9 });
   await service.close(); await fs.writeFile(file, 'invalid');
   await assert.rejects(service.reload(), { code: 'config_unavailable' });
 });
@@ -139,7 +144,7 @@ test('registering a plugin retains pending restart fields and only publishes its
   service.register({ id: 'plugins', schema: z.object({ deployments: z.array(z.string()), configuration: z.record(z.unknown()) }), defaultValue: { deployments: [], configuration: {} }, restartRequired: true, fields: [{ path: 'deployments', effect: 'restart' }], resolve: raw => raw });
   await service.initialize(); await service.update('plugins', { deployments: ['pending-deployment'] }, 0);
   await service.registerPlugin({ id:'added',updatePaths:['interval'], schema: z.object({ interval: z.number().default(3) }), defaultValue: {} });
-  assert.deepEqual(service.current('plugins'), { deployments: [], configuration: { added: { interval: 3 } } });
+  assert.deepEqual(service.current(fixturePluginsDomain), { deployments: [], configuration: { added: { interval: 3 } } });
   assert.deepEqual(service.saved('plugins'), { deployments: ['pending-deployment'], configuration: { added: { interval: 3 } } });
   assert.equal(service.view().domains.find(domain => domain.id === 'plugins')?.status, 'restart-required');
   await service.update('plugin.added', { interval: 3 }, 1); assert.equal(service.revision, 1);
@@ -154,15 +159,15 @@ test('failed plugin activation cannot leave an uncertain runtime accepting new c
 
 test('runtime publication waits for every async resource install and rolls snapshots back without yielding', async t => {
   const {service,file}=await fixture(t); let live=3,entered=false,release!:()=>void;
-  service.setHandler<{limit:number}>('execution',(next,previous)=>({apply:()=>{},publish:()=>{live=next.limit;},rollback:()=>{live=previous.limit;}}));
+  service.setHandler(fixtureExecutionDomain,(next,previous)=>({apply:()=>{},publish:()=>{live=next.limit;},rollback:()=>{live=previous.limit;}}));
   const hold=new Promise<void>(resolve=>{release=resolve;});
   await service.registerPlugin({id:'fault',updatePaths:['n'],schema:z.object({n:z.number()}),defaultValue:{n:0},prepare:next=>({apply:async()=>{if(next.n===1){entered=true;await hold;throw Error('synthetic-private-install-fault');}},rollback:()=>{}})});
   await edit(file,doc=>{doc.execution={limit:8};(doc.plugins as {configuration:Record<string,unknown>}).configuration.fault={n:1};});
   const failed=service.reload(); await until(()=>entered);
-  assert.equal(live,3); assert.deepEqual(service.current('execution'),{limit:3});
+  assert.equal(live,3); assert.deepEqual(service.current(fixtureExecutionDomain),{limit:3});
   release(); await assert.rejects(failed,{code:'config_apply_failed'}); assert.equal(live,3);
   let observedAfterFailure=-1;
-  service.setHandler('secret',()=>({apply:()=>{},publish:()=>{queueMicrotask(()=>{observedAfterFailure=live;});throw Error('synthetic-private-publish-fault');},rollback:()=>{}}));
+  service.setHandler(fixtureSecretDomain,()=>({apply:()=>{},publish:()=>{queueMicrotask(()=>{observedAfterFailure=live;});throw Error('synthetic-private-publish-fault');},rollback:()=>{}}));
   await edit(file,doc=>{doc.execution={limit:9};doc.secret={key:'${FIXTURE_KEY}',label:'new'};(doc.plugins as {configuration:Record<string,unknown>}).configuration.fault={n:0};});
   await assert.rejects(service.reload(),{code:'config_apply_failed'});
   assert.equal(live,3); assert.equal(observedAfterFailure,3);
@@ -171,8 +176,8 @@ test('runtime publication waits for every async resource install and rolls snaps
 test('async publication protocol violations report uncertainty and consume private promise rejections', async t => {
   for(const asynchronousPublish of [false,true]) {
     const {service}=await fixture(t);
-    service.setHandler('execution',()=>({apply:()=>{},publish:asynchronousPublish?async()=>{throw Error('synthetic-private-publish-fault');}:()=>{},rollback:async()=>{throw Error('synthetic-private-rollback-fault');}}));
-    service.setHandler('secret',()=>({apply:()=>{},publish:()=>{throw Error('synthetic-private-later-fault');},rollback:()=>{}}));
+    service.setHandler(fixtureExecutionDomain,()=>({apply:()=>{},publish:asynchronousPublish?async()=>{throw Error('synthetic-private-publish-fault');}:()=>{},rollback:async()=>{throw Error('synthetic-private-rollback-fault');}}));
+    service.setHandler(fixtureSecretDomain,()=>({apply:()=>{},publish:()=>{throw Error('synthetic-private-later-fault');},rollback:()=>{}}));
     await assert.rejects(service.updateMany({execution:{limit:5},secret:{label:'new'}},0),{code:'config_commit_uncertain'});
     await assert.rejects(service.update('execution',{limit:7},0),{code:'config_unavailable'});
   }
@@ -180,7 +185,7 @@ test('async publication protocol violations report uncertainty and consume priva
 
 test('a concurrent file replacement during resource preparation aborts the API write and disposes its candidate', async t => {
   const { service, file } = await fixture(t); let disposed = 0, live = 3;
-  service.setHandler<{ limit: number }>('execution', async next => {
+  service.setHandler(fixtureExecutionDomain, async next => {
     await edit(file, doc => { doc.execution = { limit: 8 }; });
     return { apply: () => { live = next.limit; }, dispose: () => { disposed++; } };
   });
@@ -193,32 +198,32 @@ test('rename acknowledgement failure reads back the committed file and advances 
   const { service, file } = await fixture(t, { fileSystem: { rename: async (source, destination) => { await fs.rename(source, destination); if (fail) throw Error('synthetic-private-key'); } } });
   fail = true;
   await assert.rejects(service.update('execution', { limit: 5 }, 0), { code: 'config_commit_uncertain' });
-  assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 5 });
+  assert.equal(service.revision, 1); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 5 });
   assert.equal(parse(await fs.readFile(file, 'utf8')).revision, 1);
   assert.ok(!JSON.stringify(service.view()).includes('synthetic-private-key'));
   await edit(file, document => { document.revision++; });
   await assert.rejects(service.reload(), { code: 'config_commit_uncertain' });
-  assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 5 });
+  assert.equal(service.revision, 1); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 5 });
   assert.equal(parse(await fs.readFile(file, 'utf8')).revision, 1);
 });
 test('failed atomic replacement keeps the previous file, effective settings, and revision', async t => {
   let fail = false, disposed = 0;
   const { service, file } = await fixture(t, { fileSystem: { rename: async (source, destination) => { if (fail) throw Error('synthetic-private-key'); await fs.rename(source, destination); } } });
-  service.setHandler('execution', () => ({ apply: () => { assert.fail('A failed save must not activate'); }, dispose: () => { disposed++; } }));
+  service.setHandler(fixtureExecutionDomain, () => ({ apply: () => { assert.fail('A failed save must not activate'); }, dispose: () => { disposed++; } }));
   const original = await fs.readFile(file, 'utf8'); fail = true;
   await assert.rejects(service.update('execution', { limit: 5 }, 0), { code: 'config_save_failed' });
-  assert.equal(service.revision, 0); assert.deepEqual(service.current('execution'), { limit: 3 });
+  assert.equal(service.revision, 0); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 3 });
   assert.equal(await fs.readFile(file, 'utf8'), original); assert.equal(disposed, 1);
 });
 test('CLI revision successors reload and subsequent API edits continue from the same version', async t => {
   const { service, file } = await fixture(t);
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.revision++; });
-  await service.reload(); assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 8 });
+  await service.reload(); assert.equal(service.revision, 1); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 8 });
   await service.update('execution', { limit: 5 }, 1); assert.equal(service.revision, 2);
   await edit(file, doc => { doc.revision++; }); await service.reload();
   assert.equal(service.revision, 2); assert.equal(parse(await fs.readFile(file, 'utf8')).revision, 2);
   await edit(file, doc => { doc.revision += 2; doc.execution = { limit: 7 }; });
-  await assert.rejects(service.reload(), { code: 'config_conflict' }); assert.deepEqual(service.current('execution'), { limit: 5 });
+  await assert.rejects(service.reload(), { code: 'config_conflict' }); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 5 });
 });
 test('credential templates survive an unchanged prefixed value and deletion or reordering of identified profiles', async t => {
   const { service, file } = await fixture(t);
@@ -239,52 +244,58 @@ test('real profile CLI changes are observed by the watcher and allow subsequent 
   await setPublicUrl(profile, 'https://synthetic-node.example.invalid');
   await until(() => service.revision === 1);
   assert.equal((service.saved('server') as { publicUrl: string }).publicUrl, 'https://synthetic-node.example.invalid');
-  assert.equal((service.current('server') as { publicUrl: string }).publicUrl, '');
+  assert.equal(service.current(serverConfigDomain).publicUrl, '');
   await service.update('execution', { agentConcurrency: 4 }, 1); assert.equal(service.revision, 2);
 });
 test('complete domain replacements preserve intentional object deletions, including credentials', async t => {
   const { service } = await fixture(t);
-  await service.registerPlugin({ id:'objects',updatePaths:['headers.*','extraBody.*'], schema: z.object({ headers: z.record(z.string()), extraBody: z.record(z.unknown()) }), defaultValue: { headers: { Authorization: 'synthetic-key', removed: 'old' }, extraBody: { secret: 'synthetic-key' } }, fields: [{ path: 'headers', sensitive: true }, { path: 'extraBody', sensitive: true }] });
+  const objectsSchema=z.object({ headers: z.record(z.string()), extraBody: z.record(z.unknown()) });
+  await service.registerPlugin({ id:'objects',updatePaths:['headers.*','extraBody.*'], schema: objectsSchema, defaultValue: { headers: { Authorization: 'synthetic-key', removed: 'old' }, extraBody: { secret: 'synthetic-key' } }, fields: [{ path: 'headers', sensitive: true }, { path: 'extraBody', sensitive: true }] });
   await service.replace('plugin.objects', { headers: { Authorization: 'new' }, extraBody: {} }, 0);
-  assert.deepEqual(service.current('plugin.objects'), { headers: { Authorization: 'new' }, extraBody: {} });
+  assert.deepEqual(service.current({id:'plugin.objects',schema:objectsSchema}), { headers: { Authorization: 'new' }, extraBody: {} });
   await service.replace('plugin.objects', { headers: {}, extraBody: {} }, 1);
-  assert.deepEqual(service.current('plugin.objects'), { headers: {}, extraBody: {} });
+  assert.deepEqual(service.current({id:'plugin.objects',schema:objectsSchema}), { headers: {}, extraBody: {} });
 });
 test('optional hot additions and restart-only deletions obey the declared effect without inventing empty parents', async t => {
   const { service } = await fixture(t);
   let active = '';
-  await service.registerPlugin({ id:'hot',updatePaths:['label'], schema: z.object({ label: z.string().optional() }), defaultValue: {}, restartRequired: true, fields: [{ path: 'label', effect: 'immediate' }], prepare: next => ({ apply: () => { active = next.label ?? ''; } }) });
-  await service.update('plugin.hot', { label: 'added' }, 0); assert.equal(active, 'added'); assert.deepEqual(service.current('plugin.hot'), { label: 'added' });
-  await service.registerPlugin({ id:'cold',updatePaths:['nested.frozen','hot'], schema: z.object({ nested: z.object({ frozen: z.string().optional() }).optional(), hot: z.number().default(0) }), defaultValue: {}, fields: [{ path: 'nested.frozen', effect: 'restart' }] });
-  await service.update('plugin.cold', {}, 1); assert.equal(service.revision, 1); assert.deepEqual(service.current('plugin.cold'), { hot: 0 });
-  await service.update('plugin.cold', { nested: { frozen: 'pending' } }, 1); assert.deepEqual(service.current('plugin.cold'), { hot: 0 });
+  const hotSchema=z.object({ label: z.string().optional() });
+  await service.registerPlugin({ id:'hot',updatePaths:['label'], schema: hotSchema, defaultValue: {}, restartRequired: true, fields: [{ path: 'label', effect: 'immediate' }], prepare: next => ({ apply: () => { active = next.label ?? ''; } }) });
+  await service.update('plugin.hot', { label: 'added' }, 0); assert.equal(active, 'added'); assert.deepEqual(service.current({id:'plugin.hot',schema:hotSchema}), { label: 'added' });
+  const coldSchema=z.object({ nested: z.object({ frozen: z.string().optional() }).optional(), hot: z.number().default(0) });
+  await service.registerPlugin({ id:'cold',updatePaths:['nested.frozen','hot'], schema: coldSchema, defaultValue: {}, fields: [{ path: 'nested.frozen', effect: 'restart' }] });
+  await service.update('plugin.cold', {}, 1); assert.equal(service.revision, 1); assert.deepEqual(service.current({id:'plugin.cold',schema:coldSchema}), { hot: 0 });
+  await service.update('plugin.cold', { nested: { frozen: 'pending' } }, 1); assert.deepEqual(service.current({id:'plugin.cold',schema:coldSchema}), { hot: 0 });
 });
 test('watcher readiness reconciles bootstrap edits and plugin credential registration works without a custom resolver', async t => {
   const { service, file } = await fixture(t);
   await edit(file, document => { document.execution = { limit: 8 }; }); await service.startWatching();
-  assert.equal(service.revision, 1); assert.deepEqual(service.current('execution'), { limit: 8 });
+  assert.equal(service.revision, 1); assert.deepEqual(service.current(fixtureExecutionDomain), { limit: 8 });
   const before = process.env.MOTE_SYNTHETIC_PLUGIN_KEY; process.env.MOTE_SYNTHETIC_PLUGIN_KEY = 'generated-plugin-key';
   t.after(() => { if (before === undefined) delete process.env.MOTE_SYNTHETIC_PLUGIN_KEY; else process.env.MOTE_SYNTHETIC_PLUGIN_KEY = before; });
-  await service.registerPlugin({ id:'credentials',updatePaths:['token'], schema: z.object({ token: z.string() }), defaultValue: { token: 'Bearer ${MOTE_SYNTHETIC_PLUGIN_KEY}' }, fields: [{ path: 'token', sensitive: true }] });
-  assert.deepEqual(service.current('plugin.credentials'), { token: 'Bearer generated-plugin-key' });
+  const credentialsSchema=z.object({ token: z.string() });
+  await service.registerPlugin({ id:'credentials',updatePaths:['token'], schema: credentialsSchema, defaultValue: { token: 'Bearer ${MOTE_SYNTHETIC_PLUGIN_KEY}' }, fields: [{ path: 'token', sensitive: true }] });
+  assert.deepEqual(service.current({id:'plugin.credentials',schema:credentialsSchema}), { token: 'Bearer generated-plugin-key' });
   await assert.rejects(service.registerPlugin({ id:'missing',updatePaths:['token'], schema: z.object({ token: z.string() }), defaultValue: { token: '${MOTE_SYNTHETIC_UNSET_KEY}' }, fields: [{ path: 'token', sensitive: true }] }), { code: 'config_invalid' });
 });
 test('synchronous disposal errors leave the original safe error and continue cleaning every candidate', async t => {
   const { service, file } = await fixture(t); let disposed = 0;
-  service.setHandler('execution', () => ({ apply: () => {}, dispose: () => { disposed++; throw Error('generated-private-cleanup-error'); } }));
-  service.setHandler('secret', () => ({ apply: () => {}, dispose: () => { disposed++; } }));
-  await service.registerPlugin({ id:'failing',updatePaths:['n'], schema: z.object({ n: z.number() }), defaultValue: { n: 0 } });
-  service.setHandler('plugin.failing', () => { throw Error('generated-private-prepare-error'); });
+  service.setHandler(fixtureExecutionDomain, () => ({ apply: () => {}, dispose: () => { disposed++; throw Error('generated-private-cleanup-error'); } }));
+  service.setHandler(fixtureSecretDomain, () => ({ apply: () => {}, dispose: () => { disposed++; } }));
+  const failingSchema=z.object({ n: z.number() });
+  await service.registerPlugin({ id:'failing',updatePaths:['n'], schema: failingSchema, defaultValue: { n: 0 } });
+  service.setHandler({id:'plugin.failing',schema:failingSchema}, () => { throw Error('generated-private-prepare-error'); });
   await edit(file, doc => { doc.execution = { limit: 8 }; doc.secret = { key: '${FIXTURE_KEY}', label: 'new' }; (doc.plugins as { configuration: Record<string, unknown> }).configuration.failing = { n: 1 }; });
   await assert.rejects(service.reload(), { code: 'config_prepare_failed' }); assert.equal(disposed, 2); assert.equal(service.revision, 0);
 });
 
 test('quiesce fences raw file admissions and drains an accepted transaction while reads remain available',async t=>{
   const {service,file}=await fixture(t);await service.startWatching();
-  const unregister=await service.registerPlugin({id:'quiesceOwned',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}});
+  const quiesceSchema=z.object({enabled:z.boolean()});
+  const unregister=await service.registerPlugin({id:'quiesceOwned',updatePaths:['enabled'],schema:quiesceSchema,defaultValue:{enabled:true}});
   let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(done=>enter=done),held=new Promise<void>(done=>finish=done);
   let applied=3,quiesced=false;
-  service.setHandler<{limit:number}>('execution',async(next,previous)=>{enter();await held;return {apply(){},publish(){applied=next.limit;},rollback(){applied=previous.limit;}};});
+  service.setHandler(fixtureExecutionDomain,async(next,previous)=>{enter();await held;return {apply(){},publish(){applied=next.limit;},rollback(){applied=previous.limit;}};});
   const first=service.update('execution',{limit:5},0),observed=first.then(value=>({value}),error=>({error}));
   let draining:Promise<void>|undefined;
   try{
@@ -293,10 +304,10 @@ test('quiesce fences raw file admissions and drains an accepted transaction whil
       service.update('execution',{limit:6},0),service.updateMany({execution:{limit:6}},0),service.replace('execution',{limit:6},0),
       service.registerPlugin({id:'tooLate',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:true}}),service.reload(),service.startWatching(),
     ].map(pending=>assert.rejects(pending,{code:'config_unavailable'})));
-    assert.equal(quiesced,false);assert.deepEqual(service.current('execution'),{limit:3});assert.equal(service.view().revision,0);
-    finish();await first;await draining;assert.equal(applied,5);assert.deepEqual(service.current('execution'),{limit:5});assert.equal(service.view().revision,1);
+    assert.equal(quiesced,false);assert.deepEqual(service.current(fixtureExecutionDomain),{limit:3});assert.equal(service.view().revision,0);
+    finish();await first;await draining;assert.equal(applied,5);assert.deepEqual(service.current(fixtureExecutionDomain),{limit:5});assert.equal(service.view().revision,1);
     assert.equal((parse(await fs.readFile(file,'utf8')) as ConfigDocument).revision,1);
     await unregister();await service.quiesce();
-    assert.throws(()=>service.current('plugin.quiesceOwned'),{code:'config_invalid'});
+    assert.throws(()=>service.current({id:'plugin.quiesceOwned',schema:quiesceSchema}),{code:'config_invalid'});
   }finally{finish();await observed;if(draining)await draining;}
 });

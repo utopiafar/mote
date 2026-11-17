@@ -1,3 +1,4 @@
+import {actionsConfigDomain,memoryConfigDomain} from '../src/config.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -15,6 +16,8 @@ import { Store } from '../src/store.js';
 import { SourceStore } from '../src/sources.js';
 import { FileStore } from '../src/files.js';
 
+const generatedResourceDomain={id:'generated-resource',schema:z.object({ generation: z.number().int() }).strict()};
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>(done => { resolve = done; });
@@ -30,7 +33,7 @@ async function fixture(t: TestContext, release: () => void) {
   // applied when the transaction pauses before its publication barrier.
   service.register({ id: 'actions', schema: actionsRuntimeSettingsSchema, defaultValue: { enabled: false, timeZone: 'UTC' } });
   service.register({ id: 'memory', schema: lifecycleSettingsSchema, defaultValue: { batchCharacters: 1000 } });
-  service.register({ id: 'generated-resource', schema: z.object({ generation: z.number().int() }).strict(), defaultValue: { generation: 0 } });
+  service.register({ ...generatedResourceDomain, defaultValue: { generation: 0 } });
   await service.initialize();
   store.db.exec('CREATE TABLE action_meta(key TEXT PRIMARY KEY,json TEXT NOT NULL)');
   store.db.prepare("INSERT INTO action_meta VALUES('review-devices',?)").run(JSON.stringify({ revision: 7, reviewDeviceIds: ['generated-review-device'] }));
@@ -54,8 +57,8 @@ async function fixture(t: TestContext, release: () => void) {
     // The real Memory pipeline reads its admission budget through this SQL
     // projection, before a lifecycle runtime necessarily exists.
     projectedMemory: storedMemoryLifecycleSettings(store),
-    effectiveActions: service.current('actions'),
-    effectiveMemory: service.current('memory'),
+    effectiveActions: service.current(actionsConfigDomain),
+    effectiveMemory: service.current(memoryConfigDomain),
   });
   return { actions, memory, service, read, modelCalls: () => modelCalls };
 }
@@ -66,7 +69,7 @@ for (const outcome of ['success', 'apply-failure', 'publish-failure'] as const) 
     const before = f.read(), observations: ReturnType<typeof f.read>[] = [];
     const nextActions = { enabled: true, timeZone: 'Europe/Paris' };
     const nextMemory = { ...before.memory, batchCharacters: 256, contextCharacters: 16000, summaryCharacters: 4000 };
-    f.service.setHandler('generated-resource', () => ({
+    f.service.setHandler(generatedResourceDomain, () => ({
       async apply() {
         observations.push(f.read()); entered.resolve();
         await release.promise;

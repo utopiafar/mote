@@ -6,6 +6,7 @@ import {Store,StoreError,sha256} from './store.js';
 import type {ArchivedFileStore} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {ConfigService,type PreparedConfigChange} from './config-service.js';
+import {storageConfigDomain} from './config.js';
 
 const hashName=/^[a-f0-9]{64}$/;
 const uuidName='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
@@ -19,7 +20,7 @@ export class ContentStorageService {
   private stopped=false;
   private work?:Promise<void>;
   constructor(private store:Store,private files:{readonly objects:string;readonly uploads:string},private archived:ArchivedFileStore,private configService?:ConfigService,private onEncryptionApplied?:(enabled:boolean)=>void){
-    configService?.setHandler<{contentEncryptionEnabled:boolean}>('storage',(next,previous)=>this.prepare(next.contentEncryptionEnabled,previous.contentEncryptionEnabled));
+    configService?.setHandler(storageConfigDomain,(next,previous)=>this.prepare(next.contentEncryptionEnabled,previous.contentEncryptionEnabled));
   }
   snapshot(){return {enabled:this.store.contentEncryption.enabled,keyConfigured:Boolean(this.store.key),job:{...this.progress},...(this.configService?{revision:this.configService.revision}:{})};}
   prepare(enabled:boolean,previous:boolean):PreparedConfigChange {

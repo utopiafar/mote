@@ -15,7 +15,7 @@ import type {AssistantRoutines} from '../assistant-routines.js';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {ServerResources} from '../server-resources.js';
-import type {ConversationSettings} from '@mote/shared';
+import {conversationsConfigDomain} from '../config.js';
 
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:conversationsContribution,declaration:conversationsDeclaration,replacement:conversationsReplacement},
@@ -34,7 +34,7 @@ export interface ConversationInputDependencies {
 /** Install the conversation owner and lend its gated repository to the remaining
  * query, Memory and evidence-authority consumers through one host lease. */
 export async function prepareConversations(dependencies:ConversationInputDependencies){
-  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes(()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations').multipleConversations);
+  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes(()=>dependencies.bootstrap.configService.current(conversationsConfigDomain).multipleConversations);
   let bindings:ConversationsBindings|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.conversations',installationId:'build:conversations@1.0.0',instanceId:'query',activationId:randomUUID()},
@@ -55,7 +55,7 @@ export interface QueryRuntimeAssemblyDependencies extends Omit<QueryRuntimeDepen
 /** Install the admitted query runtime and lend its lifecycle-gated facade to
  * the remaining assembly and the Ask routes. */
 export async function prepareQueryRuntime(dependencies:QueryRuntimeAssemblyDependencies){
-  const platform=createQueryRuntimePlatform({...dependencies,conversationSettings:()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations')});
+  const platform=createQueryRuntimePlatform({...dependencies,conversationSettings:()=>dependencies.bootstrap.configService.current(conversationsConfigDomain)});
   let started:QueryRuntimeStarted|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.query-runtime',installationId:'build:query-runtime@1.0.0',instanceId:'query',activationId:randomUUID()},
@@ -83,7 +83,7 @@ export interface QueryRunsAssemblyDependencies extends Omit<QueryRunDependencies
  * execution slots and model profile of an accepted run are owned inside the
  * plugin scope; a stopped activation fences late commits. */
 export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencies){
-  const platform=createQueryRunsPlatform({...dependencies,taskSteering:dependencies.assistantTasks.steering,acceptCurrentInstruction:(id,model)=>dependencies.assistantTasks.acceptCurrentInstruction(id,model),conversationSettings:()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations')});
+  const platform=createQueryRunsPlatform({...dependencies,taskSteering:dependencies.assistantTasks.steering,acceptCurrentInstruction:(id,model)=>dependencies.assistantTasks.acceptCurrentInstruction(id,model),conversationSettings:()=>dependencies.bootstrap.configService.current(conversationsConfigDomain)});
   let started:QueryRunsStarted|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.query-runs',installationId:'build:query-runs@1.0.0',instanceId:'query',activationId:randomUUID()},

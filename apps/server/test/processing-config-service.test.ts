@@ -1,3 +1,4 @@
+import {processingConfigDomain,workflowConfigDomain,perceptionConfigDomain} from '../src/config.js';
 import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,7 +85,7 @@ test('masked processing saves preserve credentials, while explicit clearing repl
   assert.equal(f.processing.configurationSnapshot().policy.services[0].apiKey,'generated-private-service-key');
   const current=f.processing.view(),cleared=structuredClone(current.policy) as any;cleared.services[0].apiKey=null;
   await f.processing.save({revision:current.revision,settings:{...current.settings,apiKey:null,localWorkerApiKey:''},policy:cleared});
-  const effective=f.service.current<any>('processing');assert.equal(effective.settings.apiKey,undefined);assert.equal(effective.settings.localWorkerApiKey,undefined);assert.equal(effective.policy.services[0].apiKey,undefined);
+  const effective=f.service.current(processingConfigDomain);assert.equal(effective.settings.apiKey,undefined);assert.equal(effective.settings.localWorkerApiKey,undefined);assert.equal(effective.policy.services[0].apiKey,undefined);
   assert.deepEqual(f.processing.configurationSnapshot(),effective);
 });
 
@@ -94,7 +95,7 @@ test('private YAML credential deletion does not inherit an old secret or add reg
   const document=parse(await readFile(f.path,'utf8'));delete document.processing.policy.services[0].apiKey;
   for(const profile of document.processing.policy.profiles)profile.parameters={};
   await writeFile(f.path,stringify(document));await f.service.reload();
-  const effective=f.service.current<any>('processing');assert.equal(f.processing.imageConfiguration('', 'image/png').settings.apiKey,undefined);
+  const effective=f.service.current(processingConfigDomain);assert.equal(f.processing.imageConfiguration('', 'image/png').settings.apiKey,undefined);
   assert.deepEqual(f.processing.configurationSnapshot(),effective);assert.ok(effective.policy.profiles.every((profile:any)=>Object.keys(profile.parameters).length===0));
 });
 
@@ -118,7 +119,7 @@ test('failed cross-domain apply rolls image permission back without cancelling a
   const image=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer(),id=randomUUID();
   await f.store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'macos',capturedAt:'2026-10-14T00:00:00Z',durationMs:0,source:'screen',appId:'generated',appName:'Generated',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:image.toString('base64')});
   const running=f.images.tick();await begun;
-  f.service.setHandler('workflows',()=>({apply(){throw Error('generated later apply failure');},rollback(){}}));
+  f.service.setHandler(workflowConfigDomain,()=>({apply(){throw Error('generated later apply failure');},rollback(){}}));
   await assert.rejects(f.service.updateMany({perception:{enabled:false},workflows:{extract:{concurrency:2}}},f.service.revision),{code:'config_apply_failed'});
   assert.equal(f.images.settings().enabled,true);assert.equal(f.store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(id)!.state,'running');
   release({durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated authorized result'}]});await running;
@@ -142,10 +143,10 @@ test('async failing plugin application cannot expose speculative file, image or 
   const pending=f.service.updateMany({processing:{settings:{enabled:true}},perception:{allowExternalProcessing:true},workflows:{extract:{enabled:true}},'plugin.fault':{n:1}},f.service.revision);
   const rejected=assert.rejects(pending,{code:'config_apply_failed'});await entered;
   try{
-    assert.equal(f.service.current<any>('processing').settings.enabled,false);assert.equal(f.processing.currentSettings().enabled,false);
-    assert.equal(f.service.current<any>('perception').allowExternalProcessing,false);assert.equal(f.images.settings().allowExternalProcessing,false);
+    assert.equal(f.service.current(processingConfigDomain).settings.enabled,false);assert.equal(f.processing.currentSettings().enabled,false);
+    assert.equal(f.service.current(perceptionConfigDomain).allowExternalProcessing,false);assert.equal(f.images.settings().allowExternalProcessing,false);
     assert.equal(JSON.parse(String(f.store.db.prepare("SELECT value FROM settings WHERE key='perception-effective'").get()!.value)).allowExternalProcessing,false);
-    assert.equal(f.service.current<any>('workflows').extract.enabled,false);assert.equal(f.workflows.settings().extract.enabled,false);
+    assert.equal(f.service.current(workflowConfigDomain).extract.enabled,false);assert.equal(f.workflows.settings().extract.enabled,false);
     await f.images.tick();await f.workflows.tick();
   }finally{finish();}
   await rejected;assert.equal(imageCalls,0);assert.equal(workflowCalls,0);

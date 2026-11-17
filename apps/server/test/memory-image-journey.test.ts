@@ -1,3 +1,4 @@
+import {perceptionConfigDomain} from '../src/config.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -308,7 +309,7 @@ test('an old incomplete image job retries to permission waiting across restart w
   await f.restart();assert.equal(f.node.memoryPipeline.get(f.jobId).status,'waiting_for_input');
  }
  await f.node.perception.save({revision:f.node.configService.revision,settings:{...f.node.perception.settings(),allowQueryImages:true}});scenario.incompleteImage=false;
- assert.equal(f.node.perception.settings().allowQueryImages,true);assert.equal(f.node.configService.current<{allowQueryImages:boolean}>('perception').allowQueryImages,true);
+ assert.equal(f.node.perception.settings().allowQueryImages,true);assert.equal(f.node.configService.current(perceptionConfigDomain).allowQueryImages,true);
  const response=await f.node.app.inject({method:'POST',url:`/api/memory-jobs/${f.jobId}/retry`,headers});assert.equal(response.statusCode,202,response.body);
  const done=await f.node.memoryPipeline.run(f.jobId);assert.equal(done.status,'completed',JSON.stringify(done));assert.equal(done.memoryIds.length,1);
  assert.deepEqual(done.batches.flatMap(batch=>batch.evidenceRanges),frozen);assert.ok(f.receipts.at(-1)!.ids.includes(f.grants[0].id),'independent review receives original pixels after explicit enablement');
