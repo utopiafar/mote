@@ -33,6 +33,7 @@ export const installations={
  'plugins/plugin-control-store.ts':['pluginControlSchemaInstallation'],
  'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
  'actions-schema.ts':['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation'],
+ 'processing-runtime-schema.ts':['processingRuntimeSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -130,6 +131,14 @@ export const consumerScopes={
  'assistant-tasks.ts':{
   'AssistantTasks.currentBatch':'assistant-task-runtime',
   'AssistantTasks.continueSteering':'assistant-task-runtime',
+ },
+ 'processing-runtime.ts':{
+  "ProcessingRuntime.enqueue": "processing-runtime",
+  "ProcessingRuntime.completePolicy": "processing-runtime",
+  "ProcessingRuntime.job": "processing-runtime",
+  "ProcessingRuntime.project": "processing-runtime",
+  "ProcessingRuntime.tick": "processing-runtime",
+  "ProcessingRuntime.commit": "processing-runtime"
  },
 };
 
@@ -397,6 +406,22 @@ export const sharedReads=[
   "scope": "InstanceState.write",
   "scopeFingerprint": "50cd8ec210a04e376136ad146c42d2244486a73ad5d8d2627f23862c9ba83b65",
   "reason": "Fence the existing conditional instance-state CAS against its exact enabled Source connection, permitted source kind and sync scope version in the same write transaction."
+ },
+ {
+  "from": "apps/server/src/processing-runtime.ts",
+  "to": "execution_steps",
+  "symbol": "fb446ea0f8c28fa81827000b98fc125b46a42ee90cbd3f8efd45ef906e2c1318",
+  "scope": "ProcessingRuntime.completePolicy",
+  "scopeFingerprint": "69f157a709dec4a604dc9226561c86ab0db39893239cd63974a66a1757111027",
+  "reason": "Read only blocked Processing step IDs and owned lane metadata before retrying re-enabled work through ExecutionEngine."
+ },
+ {
+  "from": "apps/server/src/processing-runtime.ts",
+  "to": "execution_steps",
+  "symbol": "515703e003d897109e42addb2a958ca7b6b9250abfaa211d3bc906f49c7439ce",
+  "scope": "ProcessingRuntime.tick",
+  "scopeFingerprint": "4fe9dfe57084647a10a9117cbd3a69539952bf902ea7ce1312331632db58e585",
+  "reason": "Read at most 1000 ready or expired-lease Processing step IDs before draining those IDs through ExecutionEngine."
  }
 ];
 
@@ -423,7 +448,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",

@@ -38,6 +38,79 @@ function catalogFor(root,dir){
 
 function kotlinLiteral(value){try{return JSON.parse(value.replaceAll('\\$','$').replaceAll("\\'","'"))}catch{return undefined;}}
 
+/** ui-bootstrap translates these attribute values in place; the marker itself has no key. */
+const htmlAttributeKeys={
+ 'data-i18n-placeholder':'placeholder',
+ 'data-i18n-title':'title',
+ 'data-i18n-aria-label':'aria-label',
+ 'data-i18n-alt':'alt',
+};
+const htmlEntities={amp:'&',apos:"'",gt:'>',lt:'<',nbsp:'\u00a0',quot:'"'};
+
+function decodeHtmlAttribute(value){
+ return value.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z][a-z0-9]*));/gi,(match,decimal,hex,named)=>{
+  if(decimal!==undefined||hex!==undefined){
+   const code=decimal!==undefined?Number.parseInt(decimal,10):Number.parseInt(hex,16);
+   return Number.isInteger(code)&&code>=0&&code<=0x10ffff?String.fromCodePoint(code):match;
+  }
+  return htmlEntities[named.toLowerCase()]??match;
+ });
+}
+
+/** HTML parses these elements' contents as text, not as child elements. */
+const htmlRawTextElements=new Set(['script','style','textarea','title','xmp','iframe','noembed','noframes','noscript']);
+const htmlPlainTextElements=new Set(['plaintext']);
+
+function htmlEndTag(html,name,from){
+ const lower=html.toLowerCase(),needle=`</${name}`;
+ for(let at=lower.indexOf(needle,from);at>=0;at=lower.indexOf(needle,at+needle.length)){
+  const next=html[at+needle.length];
+  if(next===undefined||next==='>'||next==='/'||/\s/.test(next))return at;
+ }
+ return -1;
+}
+
+/** Minimal tag scanner: quoted `>` stays inside an attribute value, and raw-text/RCDATA
+ *  contents (plus comments) are skipped instead of being reinterpreted as markup. */
+function htmlStartTags(html){
+ const tags=[];
+ for(let cursor=0;cursor<html.length;){
+  const open=html.indexOf('<',cursor);
+  if(open<0)break;
+  if(html.startsWith('<!--',open)){
+   const close=html.indexOf('-->',open+4);cursor=close<0?html.length:close+3;continue;
+  }
+  if(!/[A-Za-z]/.test(html[open+1]??'')){cursor=open+1;continue;}
+  let end=open+1,quote;
+  for(;end<html.length;end++){
+   const char=html[end];
+   if(quote){if(char===quote)quote=undefined;continue;}
+   if(char==='"'||char==="'"){quote=char;continue;}
+   if(char==='>')break;
+  }
+  if(end>=html.length)break;
+  const tag=html.slice(open,end+1),name=/^<\s*([^\s/>]+)/.exec(tag)?.[1].toLowerCase();
+  tags.push({tag,end});
+  cursor=end+1;
+  if(name&&htmlPlainTextElements.has(name)){cursor=html.length;break;}
+  if(name&&htmlRawTextElements.has(name)){
+   const close=htmlEndTag(html,name,cursor);
+   cursor=close<0?html.length:close;
+  }
+ }
+ return tags;
+}
+
+function htmlAttributes(tag){
+ const name=/^<\s*[^\s/>]+/.exec(tag);
+ const body=tag.slice(name?name[0].length:1).replace(/\/?>$/,'');
+ const attributes=new Map();
+ for(const match of body.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)){
+  attributes.set(match[1].toLowerCase(),decodeHtmlAttribute(match[2]??match[3]??match[4]??''));
+ }
+ return attributes;
+}
+
 /** Scans authored call sites, catalogs and generated report data for one root.
  *  `sourceDirs` are relative to `root` so fixture tests can point at a temp tree. */
 export function scanI18n({
@@ -76,8 +149,19 @@ export function scanI18n({
  }
 
  const html=readFileSync(join(root,htmlFile),'utf8');
- for(const m of html.matchAll(/<[^>]*data-i18n(?:\s|>)[^<]*|<[^>]*data-i18n>/g)){
-  const key=m[0].slice(m[0].indexOf('>')+1);if(!key)continue;check(key,'desktop HTML');referenced.add(key);
+ // Only actual start tags count; comments and raw-text/RCDATA contents are not elements.
+ for(const {tag,end} of htmlStartTags(html)){
+  const attributes=htmlAttributes(tag);
+  if(attributes.has('data-i18n')){
+   const next=html.indexOf('<',end+1);
+   const key=html.slice(end+1,next<0?html.length:next);
+   if(key){check(key,'desktop HTML');referenced.add(key);}
+  }
+  for(const [marker,attribute] of Object.entries(htmlAttributeKeys)){
+   if(!attributes.has(marker))continue;
+   const key=attributes.get(attribute);
+   if(!key)continue;check(key,'desktop HTML');referenced.add(key);
+  }
  }
 
  // A key counts as used when its exact authored text appears as a source literal.
