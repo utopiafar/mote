@@ -13,10 +13,10 @@ try{
   let parsed;
   try{parsed=parseMoteArguments(args);}catch{throw Error('Invalid arguments; use --help. Credentials are never accepted as argument values');}
   const {values,positionals}=parsed,command=positionals[0]??'help';
-  const commands=new Set(['help','init','start','stop','status','config','token','backup','restore','upgrade','rollback','compose','migrate-storage-owner','log-retention','tls']);
-  if(!commands.has(command))throw Error('Docker entry supports help, init, start, stop, status, config, token, backup, restore, upgrade, rollback, compose, migrate-storage-owner, log-retention and tls');
+  const commands=new Set(['help','init','start','stop','status','config','token','backup','restore','backup-schedule','upgrade','rollback','compose','migrate-storage-owner','log-retention','tls']);
+  if(!commands.has(command))throw Error('Docker entry supports help, init, start, stop, status, config, token, backup, restore, backup-schedule, upgrade, rollback, compose, migrate-storage-owner, log-retention and tls');
   if(values.runtime&&values.runtime!=='docker'||values.release)throw Error('Docker entry requires Docker profiles and prebuilt local images; use the native Node entry for native deployments');
-  if(positionals.length>1)throw Error('Unexpected arguments; use -- before compose arguments');
+  if(positionals.length>(command==='backup-schedule'?2:1))throw Error('Unexpected arguments; use -- before compose arguments');
   for(const name of ['out','from'])if(values[name]){
     const path=resolve(process.env.MOTE_DEPLOY_WORKING_DIRECTORY,values[name]),delta=relative(home,path);
     if(delta==='..'||delta.startsWith('../')||isAbsolute(delta))throw Error(`--${name} must be inside the mounted profile home`);
@@ -29,7 +29,7 @@ try{
   args=[...head,'--home',home,...tail];
   const paths=profilePaths(values.profile,home);
   if(values.help||command==='help'){
-    console.info('Mote Docker profiles (host: POSIX shell + local Docker; no host Node/npm)\n  scripts/mote-docker init --profile prod --home /srv/mote/profiles --image LOCAL_IMAGE\n  scripts/mote-docker start|stop|status|config|token|backup|restore|upgrade|rollback [--profile NAME] [--home PATH]\nUse --image for upgrade, --restore-data for rollback, --out/--from inside the mounted home for backups.\nImages must be built or pulled with the host Docker CLI first. Native/source update commands use node scripts/mote.mjs.');
+    console.info('Mote Docker profiles (host: POSIX shell + local Docker; no host Node/npm)\n  scripts/mote-docker init --profile prod --home /srv/mote/profiles --image LOCAL_IMAGE\n  scripts/mote-docker start|stop|status|config|token|backup|restore|upgrade|rollback [--profile NAME] [--home PATH]\n  scripts/mote-docker backup-schedule configure|status|run-due|watch|restore-check [--profile NAME] [--home PATH]\nUse --image for upgrade, --restore-data for rollback, --out/--from inside the mounted home for backups. Scheduling defaults to disabled; configure installs no service.\nImages must be built or pulled with the host Docker CLI first. Native/source update commands use node scripts/mote.mjs.');
   }else if(command==='init'){
     const version=JSON.parse(await readFile(new URL('../apps/server/package.json',import.meta.url),'utf8')).version;
     const image=values.image??`mote-central:${version}-${values['image-variant']??'core'}`;

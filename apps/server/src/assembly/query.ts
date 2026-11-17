@@ -73,7 +73,7 @@ export interface QueryRunsAssemblyDependencies extends Omit<QueryRunDependencies
   readonly resources:ServerResources;
   readonly availableModelConnections:()=>ModelConnection[];
   readonly assistantDrafts:Pick<AssistantDrafts,'command'>;
-  readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'get'|'acceptSuggestion'|'acceptCurrentInstruction'>;
+  readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'get'|'acceptSuggestion'|'acceptCurrentInstruction'|'steering'>;
   readonly assistantRoutines:Pick<AssistantRoutines,'create'|'update'|'get'>;
   readonly assistantOwner:(request:FastifyRequest)=>void;
 }
@@ -83,7 +83,7 @@ export interface QueryRunsAssemblyDependencies extends Omit<QueryRunDependencies
  * execution slots and model profile of an accepted run are owned inside the
  * plugin scope; a stopped activation fences late commits. */
 export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencies){
-  const platform=createQueryRunsPlatform({...dependencies,acceptCurrentInstruction:(id,model)=>dependencies.assistantTasks.acceptCurrentInstruction(id,model),conversationSettings:()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations')});
+  const platform=createQueryRunsPlatform({...dependencies,taskSteering:dependencies.assistantTasks.steering,acceptCurrentInstruction:(id,model)=>dependencies.assistantTasks.acceptCurrentInstruction(id,model),conversationSettings:()=>dependencies.bootstrap.configService.current<ConversationSettings>('conversations')});
   let started:QueryRunsStarted|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.query-runs',installationId:'build:query-runs@1.0.0',instanceId:'query',activationId:randomUUID()},

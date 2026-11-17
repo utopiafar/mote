@@ -55,7 +55,9 @@ npm run dev
 
 Server现有 `ConfigurationPlatform.registerDomain` 和 `ConfigService.registerPlugin` 要求用 `updatePaths` 显式声明插件配置的原始输入路径。可用点路径、现有 `*` 通配符，或按原始候选分支选择路径的纯函数；这是Server Host登记合同，不是新的公共SDK导出。值与完整候选继续由现有schema和事务验证，不再遍历Zod `_def` 推断输入成员。
 
-未知路径在resolve、raw验证和preprocess之前拒绝，文件重载同样受检。可选 `rawInputSchema` 保留独立输入验证与类型作用，它的变换／默认值结果被丢弃，只保存插件原始输入。通配开放范围、分支替换和当前显式声明要求见[配置参考](server-configuration.md#宿主登记的插件领域输入)。领域typed config以及剩余扁平Config／YAML双向投影的收敛仍为后续工作。
+未知路径在resolve、raw验证和preprocess之前拒绝，文件重载同样受检。可选 `rawInputSchema` 保留独立输入验证与类型作用，它的变换／默认值结果被丢弃，只保存插件原始输入。通配开放范围、分支替换和当前显式声明要求见[配置参考](server-configuration.md#宿主登记的插件领域输入)。
+
+Server可信领域代码可将登记时的 `{id, schema}` 引用传给 `ConfigService.current(reference)` 和 `setHandler(reference, prepare)`。两者都核对已登记id和同一个schema实例，TypeScript从该schema推导已验证输出和handler参数。读取返回独立副本的effective值，不重新解析输入或展开凭据。Activity已通过此合同读取前瞻接纳策略。引用本身不授予配置访问权，普通插件仍使用原有的领域配置端口；其他字符串消费者与剩余扁平Config／YAML双向投影仍待收敛。
 
 ## 环境与资料
 

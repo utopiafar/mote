@@ -41,6 +41,7 @@ import type {ModelConnection} from '../background-model-authorization.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {conversationInputIdentity} from '../conversations.js';
 import {acceptedConversationAmendments,createConversationSteering} from '../conversation-steering.js';
+import type {AssistantTaskSteering} from '../assistant-task-steering.js';
 
 /** C27 owns the durable delegation journal and the replayable Ask receipts
  * that the admitted query runtime prepares and commits. */
@@ -80,6 +81,7 @@ export interface QueryRunDependencies {
   readonly availableModelConnections:()=>ModelConnection[];
   /** Synchronous Host handoff in the accepted query's actual commit transaction. */
   readonly acceptCurrentInstruction?:(messageId:string,model:CurrentInstructionModel)=>unknown;
+  readonly taskSteering?:Pick<AssistantTaskSteering,'candidates'|'apply'|'cancel'>;
 }
 
 interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns;readonly queue:ConversationQueue}

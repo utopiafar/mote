@@ -49,6 +49,7 @@ export function createConversations(store:Store,authorization:Pick<ModelAuthoriz
     pendingHeads:(options?:Parameters<Conversations['pendingHeads']>[0])=>read().pendingHeads(options),
     disposition:(id:string,value:Parameters<Conversations['disposition']>[1])=>write().disposition(id,value),
     recordSteering:(id:string,value:Parameters<Conversations['recordSteering']>[1])=>write().recordSteering(id,value),
+    recordTaskSteering:(id:string,value:Parameters<Conversations['recordTaskSteering']>[1])=>write().recordTaskSteering(id,value),
     assertSteeringSettled:(id:string)=>read().assertSteeringSettled(id),
     queue:(id:string,options:Parameters<Conversations['queue']>[1])=>write().queue(id,options),
     attachRun:(id:string,runId:string,options:Parameters<Conversations['attachRun']>[2])=>write().attachRun(id,runId,options),
