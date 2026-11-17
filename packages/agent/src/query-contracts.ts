@@ -6,7 +6,7 @@ export interface QueryRequest {
   language?: import('@mote/shared/i18n').Locale;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;ownerInstruction?:{messageId:string;question:string};untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction'|'other';
   /** Host-selected procedure, never selected from captured text. */
   skill?: string;
@@ -22,6 +22,8 @@ export interface QueryRequest {
   /** Host-only permission for one optional goal-only draft in the final
    * answer. Model output never chooses the draft identity, scope or capability. */
   assistantDraft?: true;
+  /** Host-bound live owner message, never inferred from captured content. */
+  assistantCurrentInstruction?: true;
   after?: string;
   before?: string;
   deviceId?: string;

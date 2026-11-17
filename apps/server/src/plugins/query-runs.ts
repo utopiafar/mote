@@ -24,7 +24,8 @@ import type {createModelEvidenceAuthority} from '../model-evidence-authority.js'
 import {contextFailure} from '../model-evidence-authority.js';
 import type {ModelSettingsStore} from '../model-settings.js';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
-import type {ModelAuthorizationHost} from '../model-authorization-host.js';
+import {agentModelConnection,type ModelAuthorizationHost} from '../model-authorization-host.js';
+import type {CurrentInstructionModel} from '../assistant-current-instruction.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import {modelConfiguration} from '../model-configuration.js';
 import {createQueryPreparation,type SavedQuery} from './query-preparation.js';
@@ -75,8 +76,10 @@ export interface QueryRunDependencies {
   readonly queryRuntime:()=>QueryRuntime;
   readonly semanticContextTime?:()=>string;
   readonly usageLedger:UsageLedger;
-  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'|'manual'|'run'>};
+  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'|'manual'|'run'|'assertCurrent'>};
   readonly availableModelConnections:()=>ModelConnection[];
+  /** Synchronous Host handoff in the accepted query's actual commit transaction. */
+  readonly acceptCurrentInstruction?:(messageId:string,model:CurrentInstructionModel)=>unknown;
 }
 
 interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns;readonly queue:ConversationQueue}
@@ -200,6 +203,14 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
             ...(message.scope.after?{after:message.scope.after}:{}),...(message.scope.before?{before:message.scope.before}:{}),
             ...(message.scope.deviceId?{deviceId:message.scope.deviceId}:{}),...(message.scope.timeZone?{timeZone:message.scope.timeZone}:{})}}}:{})}:result;
         conversations.complete(message.id,stored,{expectedVersion:message.version});
+        if(stored.draft?.input==='current-instruction'){
+          if(!dependencies.acceptCurrentInstruction||!prepared.modelProfileId||!prepared.modelOverride||!stored.configuration)throw new StoreError('Current instruction handoff is unavailable',409);
+          const profile=modelSettings.select('chat',prepared.modelProfileId),settings={...profile.settings,model:prepared.modelOverride};
+          if(modelConfiguration(profile.id,settings,modelSettings.view().revision).fingerprint!==stored.configuration.fingerprint||stored.configuration.fingerprint!==saved.configurationFingerprint)throw new StoreError('Current instruction model selection changed',409);
+          const connection=agentModelConnection({kind:'profile',id:profile.id},settings);modelAuthorizationHost.control.assertCurrent(connection);
+          const accepted=dependencies.acceptCurrentInstruction(message.id,{modelProfileId:profile.id,modelOverride:settings.model,connection});
+          if(accepted&&typeof (accepted as Promise<unknown>).then==='function'){void Promise.resolve(accepted).catch(()=>{});throw new StoreError('Current instruction handoff must be synchronous',409);}
+        }
         return {conversationId:message.conversationId,turnId:message.id};
       }
       if(store.db.prepare("SELECT json_extract(json,'$.turnId') turnId FROM query_runs WHERE id=?").get(work.id.slice('query:'.length))?.turnId)throw new StoreError('Conversation message is no longer available',409);

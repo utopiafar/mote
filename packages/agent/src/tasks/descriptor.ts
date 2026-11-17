@@ -24,7 +24,7 @@ export const ASSISTANT_DRAFT_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = 
   properties: {
     answer: {type: 'string'},
     citationIds: {type: 'array', items: {type: 'string'}},
-    draft: {type: ['object', 'null'], properties: {goal: {type: 'string'}}, required: ['goal'], additionalProperties: false},
+    draft: {type: ['object', 'null'], properties: {goal: {type: 'string'}, input: {type:'string',enum:['current-instruction']}}, required: ['goal'], additionalProperties: false},
   },
   required: ['answer', 'citationIds', 'draft'],
   additionalProperties: false,
