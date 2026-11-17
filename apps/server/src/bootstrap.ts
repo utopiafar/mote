@@ -89,7 +89,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     ...selected.map(provider=>({...provider.contribution,featureVersion:provider.version})),
     ...plugins.map(plugin=>({...plugin.contribution,featureVersion:plugin.contribution.version})),
   ]);
-  let stateStore:Store|undefined;
+  let stateStore:Store|undefined,storageOwner:HostScope|undefined;
   const host=new PluginHost({kind:'central',id:randomUUID()},undefined,undefined,{
     // The vault store is created by the storage foundation. State is bound
     // lazily on first plugin access, after that foundation has started.
@@ -107,7 +107,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     let binding:ServiceBinding|undefined;
     await host.install({identity:{host:host.identity,packageId:provider.id,installationId:`build:${provider.id}@${provider.version}`,instanceId:kind,activationId:randomUUID()},
       contributions:[{id:provider.contribution.id,apiVersion:contract.apiVersion}],requires:kind==='configuration'?[]:[bindings[0]!],restartRequired:true,
-      factory:async context=>{const value=await provider.create(context,current);binding=context.provide(provider.contribution.id,contract,value);return lifecycle;}});
+      factory:async context=>{const value=await provider.create(context,current);if(kind==='storage')storageOwner=context.scope;binding=context.provide(provider.contribution.id,contract,value);return lifecycle;}});
     const lease=await host.acquire(contract,binding!);
     leases.push(lease);bindings.push(binding!);
     // Only installed, usable providers become host-dependency facts. Config and
@@ -138,7 +138,10 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
         let platform:ObservabilityPlatform|undefined,scope:HostScope|undefined;
         await host.install({identity:{host:host.identity,packageId:'mote.observability-platform',installationId:'build:observability-platform@1.0.0',instanceId:'observability',activationId:randomUUID()},
           contributions:[observabilityPlatformDeclaration],requires:[storage.binding],restartRequired:true,
-          factory:createObservabilityPlatformFactory(options,{store:storage.value.store},(value,valueScope)=>{platform=value;scope=valueScope;})});
+          factory:createObservabilityPlatformFactory(options,{usageForScope:consumer=>{
+            if(!storageOwner)throw Error('Vault usage owner is unavailable');
+            return storage.value.assembly.usageForAssembly(storageOwner,consumer);
+          }},(value,valueScope)=>{platform=value;scope=valueScope;})});
         if(!platform||!scope)throw Error('Observability platform did not hand off its trusted assembly');
         facts.push(Object.freeze({id:'observability-platform',version:'1.0.0'}));observability={platform,scope};return observability;
       },
