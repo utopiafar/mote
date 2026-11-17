@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {evidenceMaterialLineageSchemaInstallation} from './asset-evidence-schema.js';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {z} from 'zod';
@@ -74,22 +76,7 @@ export class EvidenceArchive {
   revision(id:string){return this.store.db.prepare('SELECT revision FROM context_artifacts WHERE id=?').get(id)?.revision;}
   /** Installed after MaterialStore creates its tables. Revision changes invalidate
    * derived artifacts and their descendants through the existing archive graph. */
-  enableMaterialLineage(){this.store.db.exec(`
-    CREATE TABLE IF NOT EXISTS artifact_material_inputs(
-      artifact_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,
-      material_id TEXT NOT NULL REFERENCES material_heads(id) ON DELETE CASCADE,
-      revision TEXT NOT NULL,PRIMARY KEY(artifact_id,material_id));
-    CREATE INDEX IF NOT EXISTS artifact_material_parent ON artifact_material_inputs(material_id);
-    CREATE TRIGGER IF NOT EXISTS artifact_material_revision_change AFTER UPDATE OF revision,retired ON material_heads
-      WHEN new.revision!=old.revision OR new.retired!=old.retired BEGIN
-      DELETE FROM context_artifacts WHERE id IN
-        (SELECT artifact_id FROM artifact_material_inputs WHERE material_id=new.id AND revision!=new.revision);
-    END;
-    CREATE TRIGGER IF NOT EXISTS artifact_material_removed BEFORE DELETE ON material_heads BEGIN
-      DELETE FROM context_artifacts WHERE id IN
-        (SELECT artifact_id FROM artifact_material_inputs WHERE material_id=old.id);
-    END;
-  `);}
+  enableMaterialLineage(){installSchemaPlan(this.store.db,[evidenceMaterialLineageSchemaInstallation]);}
   fingerprint(id:string){const row=this.store.db.prepare("SELECT fingerprint,json_extract(json,'$.source') source FROM captures WHERE id=?").get(id);if(!row||!this.store.isCurrentEvidence(id))return null;return hash([row.fingerprint,...(row.source==='notification'?['notification-fields-v1']:[]),this.store.db.prepare("SELECT kind,json_extract(json,'$.text') AS text FROM perception_results WHERE capture_id=? AND current=1 ORDER BY kind").all(id)]);}
   /** Incremental, deterministic exact-text reduction. No semantic inference or model calls. */
   aggregate(limit=32,settledBefore?:number){

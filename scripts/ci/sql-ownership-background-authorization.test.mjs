@@ -25,7 +25,7 @@ test('background authorization owns six tables while complete routine consumers 
   ['sql-uncovered-consumer','BackgroundModelAuthorization.receiveRoutineOccurrence','24505e29c9b9867a055a2ec818ae718579fbd86233dbeaa231ed10f587c1b82e'],
  ].sort());
  for(const entries of [sharedReads,schemaMaintenance,retainedClassificationScopes])assert.ok(!entries.some(item=>[schema,consumer].includes(item.from)));
- assert.equal(result.dynamicStatements,233);assert.equal(result.pendingRawWrites.length,4);
+ assert.equal(result.dynamicStatements,231);assert.equal(result.pendingRawWrites.length,4);
 });
 
 test('production entry rejects background foreign effects, moved scopes, changed pending SQL and installer escape',t=>{

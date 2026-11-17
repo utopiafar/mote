@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {assetSchemaInstallation,assetReferenceSchemaInstallations} from './asset-evidence-schema.js';
 import {createHash,createDecipheriv,randomUUID} from 'node:crypto';
 import {existsSync,readFileSync,renameSync,rmSync,readdirSync,statSync,openSync,closeSync,fsyncSync,unlinkSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
@@ -19,34 +21,15 @@ export class AssetStore {
  private uploads=new Map<string,Promise<unknown>>();
  constructor(private store:Store){
   const root=join(store.directory,'files');privateDirectory(root);this.directory=join(root,'objects');privateDirectory(this.directory);
-  store.db.exec(`CREATE TABLE IF NOT EXISTS assets(hash TEXT PRIMARY KEY,bytes INTEGER NOT NULL,parts INTEGER NOT NULL,format TEXT NOT NULL);
-   CREATE TABLE IF NOT EXISTS asset_parts(hash TEXT NOT NULL REFERENCES assets(hash) ON DELETE CASCADE,part INTEGER NOT NULL,checksum TEXT NOT NULL,PRIMARY KEY(hash,part));
-   CREATE TABLE IF NOT EXISTS asset_references(owner TEXT PRIMARY KEY,hash TEXT NOT NULL);
-   CREATE INDEX IF NOT EXISTS asset_references_hash ON asset_references(hash);
-   CREATE TABLE IF NOT EXISTS asset_pins(id TEXT PRIMARY KEY,hash TEXT NOT NULL,expires INTEGER NOT NULL);
-   CREATE INDEX IF NOT EXISTS asset_pins_hash ON asset_pins(hash,expires);`);
+  installSchemaPlan(store.db,[assetSchemaInstallation]);
   this.connect();
  }
  /** Install fixed domain reference projections once, in the same transaction as domain writes. */
  connect(){
   const db=this.store.db;
-  for(const [table,id,hash] of [
-   ['file_snapshot_inputs',"'snapshot-input:'||capture_id",'object_hash'],
-   ['file_snapshot_text',"'snapshot-text:'||capture_id",'object_hash'],
-   ['file_versions',"'file:'||capture_id",'object_hash','chunks','0'],
-   ['file_assets',"'artifact:'||artifact_id||':'||name",'object_hash','chunks','0'],
-   ['captures',"'capture:'||id",'blob_hash'],
-   ['archived_files',"'archive:'||id",'hash'],
-  ]){
+  for(const {table,installation} of assetReferenceSchemaInstallations){
    if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table))continue;
-   const qualify=(prefix:string)=>id.replace(/\b(capture_id|artifact_id|name|id)\b/g,`${prefix}.$1`);
-   const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-   try{
-    db.exec(`CREATE TRIGGER IF NOT EXISTS asset_${table}_insert AFTER INSERT ON ${table} WHEN new.${hash} IS NOT NULL BEGIN INSERT OR REPLACE INTO asset_references VALUES(${qualify('new')},new.${hash}); END;
-     CREATE TRIGGER IF NOT EXISTS asset_${table}_delete AFTER DELETE ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; END;
-     CREATE TRIGGER IF NOT EXISTS asset_${table}_update AFTER UPDATE OF ${hash} ON ${table} BEGIN DELETE FROM asset_references WHERE owner=${qualify('old')}; INSERT OR REPLACE INTO asset_references SELECT ${qualify('new')},new.${hash} WHERE new.${hash} IS NOT NULL; END;`);
-    if(own)db.exec('COMMIT');
-   }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
+   installSchemaPlan(db,[installation]);
   }
 
  }

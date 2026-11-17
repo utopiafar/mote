@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {archivedFilesSchemaInstallation} from './asset-evidence-schema.js';
 import {randomUUID} from 'node:crypto';
 import {readdirSync,unlinkSync} from 'node:fs';
 import {Readable} from 'node:stream';
@@ -23,9 +25,7 @@ export class ArchivedFileStore {
   readonly directory:string;
   constructor(public store:Store){
     this.directory=join(store.directory,'files');privateDirectory(this.directory);
-    store.db.exec(`CREATE TABLE IF NOT EXISTS file_blobs(hash TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS archived_files(id TEXT PRIMARY KEY,hash TEXT NOT NULL REFERENCES file_blobs(hash),json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS capture_files(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,file_id TEXT NOT NULL REFERENCES archived_files(id),PRIMARY KEY(capture_id,file_id));`);
+    installSchemaPlan(store.db,[archivedFilesSchemaInstallation]);
     store.assets.connect();
   }
   put(input:{name:string;mimeType?:string;bytes:Buffer;relativePath?:string}):ArchivedFile {
