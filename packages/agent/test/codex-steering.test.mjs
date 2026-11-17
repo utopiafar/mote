@@ -81,3 +81,76 @@ for(const fail of [false,true])test(`Host output waits for its local steering re
     assert.equal(control,undefined,'cleanup withdraws the old local port');
   }finally{await agent.close();}
 });
+
+test('real Host repair must not accept an old native item and terminal before the next turn/start ACK',{timeout:15000},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'mote-steer-start-fence-')),binary=join(root,'generated-codex'),log=join(root,'rpc.ndjson');
+ await writeFile(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-private-fence-key'}),{mode:0o600});
+ await writeFile(binary,`#!${process.execPath}
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
+import readline from 'node:readline';import {appendFileSync} from 'node:fs';
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');let turn=0;
+const item=(id,text)=>({method:'item/completed',params:{threadId:'generated-thread',turnId:id,item:{id:'message-'+id,type:'agentMessage',text}}});
+const terminal=id=>({method:'turn/completed',params:{threadId:'generated-thread',turn:{id,status:'completed'}}});
+readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread'},model:m.params.model,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='turn/start'){
+  turn++;const id='generated-turn-'+turn;
+  if(turn===1){send({id:m.id,result:{turn:{id}}});send(item(id,'Generated invalid initial response requiring the existing bounded repair'));send(terminal(id));}
+  else {
+   // Delayed transport frames from the settled first native turn arrive while
+   // the new turn/start request still awaits its own native ACK.
+   send(item('generated-turn-1',JSON.stringify({answer:'STALE_PRE_ACK_OLD_TURN_RESULT',citationIds:[]})));
+   send(terminal('generated-turn-1'));
+   send({id:m.id,result:{turn:{id}}});
+   send(item(id,JSON.stringify({answer:'CURRENT_NATIVE_REPAIR_RESULT',citationIds:[]})));send(terminal(id));
+  }
+ }
+});
+`,{mode:0o700});
+ const reader={search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],devices:async()=>[],activity:async()=>({})};
+ const agent=createAgent({provider:'codex',protocol:'codex-app-server',model:'generated-fence-model',codex:{executable:binary,home:root},reader,agentTimeoutMs:5000});
+ t.after(async()=>{await agent.close();await rm(root,{recursive:true,force:true});});
+ const answer=await agent.query({question:'Generated owner request; use the current repair candidate'});
+ const rpc=(await readFile(log,'utf8')).trim().split('\n').map(JSON.parse),starts=rpc.filter(row=>row.method==='turn/start');
+ console.log('INDEPENDENT_PRE_ACK_NATIVE_MEASURED',JSON.stringify({answer:answer.answer,turnStarts:starts.length,pids:[...new Set(starts.map(row=>row.pid))],toolCalls:answer.trace.length}));
+ assert.equal(starts.length,2,'the actual existing Host repair must run, without an extra prompt or relaxed repair budget');
+ assert.equal(answer.answer,'CURRENT_NATIVE_REPAIR_RESULT','an explicitly old native terminal cannot complete the new Host attempt before its start ACK');
+});
+
+for(const early of ['tool','terminal'])test(`the next native start ACK admits its early current ${early} frames and rejects old tools`,{timeout:15000},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'mote-start-current-')),binary=join(root,'generated-codex'),log=join(root,'rpc.ndjson');
+ await writeFile(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-start-key'}),{mode:0o600});
+ await writeFile(binary,`#!${process.execPath}
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
+import readline from 'node:readline';import {appendFileSync} from 'node:fs';
+const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');let turn=0;
+const item=(id,text)=>({method:'item/completed',params:{threadId:'generated-thread',turnId:id,item:{id:'message-'+id,type:'agentMessage',text}}});
+const terminal=id=>({method:'turn/completed',params:{threadId:'generated-thread',turn:{id,status:'completed'}}});
+readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);appendFileSync(${JSON.stringify(log)},JSON.stringify({...m,pid:process.pid})+'\\n');
+ if(m.method==='initialize')send({id:m.id,result:{}});
+ else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
+ else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread'},model:m.params.model,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
+ else if(m.method==='turn/start'){
+  turn++;const id='generated-turn-'+turn;
+  if(turn===1){send({id:m.id,result:{turn:{id}}});send(item(id,'Generated first result'));send(terminal(id));}
+  else {
+   send({id:9007,method:'item/tool/call',params:{threadId:'generated-thread',turnId:'generated-turn-1',tool:'generated_read',arguments:{generation:'old'}}});send(item('generated-turn-1','Generated old result'));send(terminal('generated-turn-1'));
+   if(${JSON.stringify(early)}==='tool')send({id:9008,method:'item/tool/call',params:{threadId:'generated-thread',turnId:id,tool:'generated_read',arguments:{generation:'current'}}});
+   send(item(id,'Generated current result'));
+   if(${JSON.stringify(early)}==='terminal')send(terminal(id));
+   send({id:m.id,result:{turn:{id}}});
+  }
+ }else if(m.id===9008){if(m.result?.success!==true)process.exit(4);send(terminal('generated-turn-2'));}
+});
+`,{mode:0o700});
+ const calls=[],session=new CodexSession({model:'generated-start-model',agentTimeoutMs:5000,codex:{executable:binary,home:root}},async(name,args,callId)=>{calls.push({name,args,callId});return{generated:true};});
+ t.after(async()=>{await session.close();await rm(root,{recursive:true,force:true});});
+ await session.start('Generated Host policy',[{type:'function',name:'generated_read',description:'Generated read-only tool',inputSchema:{type:'object'}}]);
+ assert.equal(await session.run('Generated first request'),'Generated first result');assert.equal(await session.run('Generated next request'),'Generated current result');
+ const rpc=await until(async()=>{const entries=(await readFile(log,'utf8')).trim().split('\n').map(JSON.parse);return entries.some(row=>row.id===9007)&&(!(early==='tool')||entries.some(row=>row.id===9008))?entries:undefined;});
+ assert.equal(rpc.find(row=>row.id===9007).error.code,-32600,'an old tool never reaches the tool callback');
+ assert.deepEqual(calls,early==='tool'?[{name:'generated_read',args:{generation:'current'},callId:'9008'}]:[]);
+ assert.equal(rpc.filter(row=>row.method==='turn/start').length,2);assert.equal(new Set(rpc.map(row=>row.pid)).size,1);
+});
