@@ -7,6 +7,7 @@ import {createVaultPlatformAssembly} from '../plugins/vault-platform.js';
 import {plugins as platformPlugins} from '../assembly/platform.js';
 import {plugins as inventoryPlugins} from '../plugins/feature-inventory-domain.js';
 import {plugins as systemPlugins} from '../plugins/system-domain.js';
+import {plugins as connectionsPlugins} from '../features/connections.js';
 import {plugins as sourcePlugins} from '../assembly/sources.js';
 import {plugins as materialPlugins} from '../assembly/materials.js';
 import {plugins as processingPlugins} from '../assembly/processing.js';
@@ -64,6 +65,7 @@ export const defaultPlugins:readonly CentralDomainPlugin[]=Object.freeze([
   ...platformPlugins,
   ...systemPlugins,
   ...inventoryPlugins,
+  ...connectionsPlugins,
   ...sourcePlugins,
   ...materialPlugins,
   ...processingPlugins,

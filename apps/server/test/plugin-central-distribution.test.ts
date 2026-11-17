@@ -9,6 +9,7 @@ import {defaultDistribution,defaultFeatures,defaultPlugins,storageProvider} from
 import {plugins as platformPlugins} from '../src/assembly/platform.js';
 import {plugins as inventoryPlugins} from '../src/plugins/feature-inventory-domain.js';
 import {plugins as systemPlugins} from '../src/plugins/system-domain.js';
+import {plugins as connectionsPlugins} from '../src/features/connections.js';
 import {plugins as sourcePlugins} from '../src/assembly/sources.js';
 import {plugins as materialPlugins} from '../src/assembly/materials.js';
 import {plugins as processingPlugins} from '../src/assembly/processing.js';
@@ -34,7 +35,7 @@ function fixture(t:{after(fn:()=>void):void}){
 function note(){return {id:randomUUID(),deviceId:'generated-central-distribution-device',deviceName:'Generated central distribution fixture',platform:'android',capturedAt:'2026-11-02T12:00:00.000Z',text:'Generated original note retained across a reduced default composition.'};}
 const agent={configured:false,query:async()=>{throw Error('No model in central distribution fixture');},close:async()=>{}};
 
-const assemblyPlugins=[...platformPlugins,...systemPlugins,...inventoryPlugins,...sourcePlugins,...materialPlugins,...processingPlugins,...activityPlugins,...memoryPlugins,...queryPlugins,...agentPlugins,...workPlugins,...importPlugins];
+const assemblyPlugins=[...platformPlugins,...systemPlugins,...inventoryPlugins,...connectionsPlugins,...sourcePlugins,...materialPlugins,...processingPlugins,...activityPlugins,...memoryPlugins,...queryPlugins,...agentPlugins,...workPlugins,...importPlugins];
 
 test('default distribution is the exact, duplicate-free selection built from every domain-owned plugin list',()=>{
   assert.deepEqual(defaultDistribution.foundations.map(provider=>provider.kind).sort(),['authorization','configuration','storage']);
