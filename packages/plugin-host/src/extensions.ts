@@ -64,7 +64,7 @@ function publication(kind:ExtensionKind,input:ExtensionPublication<ExtensionKind
 
 /** One host's extension metadata adapter, not another DI/value container or
  * authorization registry. All values stay in Cordis; all scopes, exact leases,
- * required-dependent teardown and late-result fences remain H04's authority.
+ * required-dependent teardown and late-result fences remain the plugin host lifecycle's responsibility.
  * Domain services must still revalidate their actual grants at sensitive calls
  * and commits. Selecting an implementation never creates such a grant. */
 export class ExtensionHost {
@@ -113,7 +113,7 @@ export class ExtensionHost {
       const namespace=Object.freeze({scope:context.scope.identity,contributionId}),identity=memberKey({namespace,name:details.name});
       if(record.members.has(identity))fail('duplicate_member');
       const result=await factory(context),owned=result.lifecycle;
-      // H04 must adopt cleanup before checking cancellation. Publication can
+      // The plugin host lifecycle must adopt cleanup before checking cancellation. Publication can
       // fail, so do it in the adopted prepare phase, never after a factory has
       // returned a lifecycle but before that lifecycle reaches the host.
       const adopted:PluginLifecycle={
@@ -132,7 +132,7 @@ export class ExtensionHost {
     member.scope.assertCurrent();member.active=true;
     return Object.freeze({member:member.info,handle});
   }
-  /** Registered metadata only. Acquiring/installing still checks actual H04
+  /** Registered metadata only. Acquiring/installing still checks actual host
    * availability. A projection is never proof of an open resource or grant. */
   members<T,K extends ExtensionKind>(point:ExtensionPoint<T,K>){
     return Object.freeze([...this.point(point).members.values()].filter(member=>member.active&&!member.scope.signal.aborted).map(member=>member.info)
