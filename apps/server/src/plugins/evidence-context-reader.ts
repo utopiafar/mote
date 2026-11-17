@@ -21,7 +21,7 @@ import {EvidenceReader,type EvidenceReaderAgentOptions} from '../evidence-reader
 import type {CaptureRead,CaptureContextRead,MaterialRead,MemoryRead,MemoryReadSnapshot,MemoryReadSnapshots,MemoryInputSelection} from '../evidence-read-ports.js';
 import {centralServices,type ContextNavigationRead,type ContextTreesRead} from './central-contracts.js';
 
-/** H03 owns the package Manifest; this is the actual data-contribution fragment.
+/** The package Manifest is host-owned; this is the actual data-contribution fragment.
  * The factory provides the single Evidence/context read aggregation; it never
  * publishes a Store, source writer, indexer or permission table. */
 export const evidenceContextReaderContribution={
@@ -37,7 +37,7 @@ export const evidenceContextReaderContribution={
 export const evidenceContextReaderDeclaration={id:evidenceContextReaderContribution.id,apiVersion:'1'} as const;
 export const evidenceContextReaderReplacement='hot' as const;
 
-/** Borrowed trusted repositories. The root/C19A passes the one actual MaterialStore;
+/** Borrowed trusted repositories. The trusted root or materials owner passes the one actual MaterialStore;
  * this factory never constructs a second Store, source repository, indexer or reader. */
 export interface EvidenceContextReaderDependencies {
   readonly store:Store;
@@ -52,7 +52,7 @@ export interface EvidenceContextReaderDependencies {
   /** Canonical SourceContextStore; defaults to the one owned by SourceStore. */
   readonly sourceContexts?:SourceContextStore;
   readonly contextTrees?:ContextTreeRegistry;
-  /** C21-owned retained-reader source; assigned to the single reader, not owned here. */
+  /** The memory control owner's retained-reader source; assigned to the single reader, not owned here. */
   readonly memoryBindings?:MemoryBindings;
 }
 
@@ -69,7 +69,7 @@ export interface EvidenceContextReaderPorts {
 
 export interface EvidenceContextReader {
   readonly ports:EvidenceContextReaderPorts;
-  /** C27 Host business compatibility bridge only: never given to Agent, never a
+  /** Host business compatibility bridge only: never given to Agent, never a
    * service value, and never a reason to construct another EvidenceReader. */
   readonly assembly:{readonly reader:EvidenceReader;readonly contextTrees:ContextTreeRegistry};
   agent(options:EvidenceReaderAgentOptions):ContextReader;

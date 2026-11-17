@@ -1,4 +1,4 @@
-/** Generated native H01 history only. The agent is deterministic; storage, HTTP,
+/** Generated native history only. The agent is deterministic; storage, HTTP,
  * source revisions, owner deletion, privacy erasure and permission checks are real. */
 import {createServer} from 'node:http';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';

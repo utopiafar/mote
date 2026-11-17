@@ -28,7 +28,7 @@ export const runtimeProviderReferenceSchema = z.object({
 }).strict().readonly();
 
 /** Reference to an installed contribution's public export, not a filesystem/URL module specifier.
- * H03/A07 resolve the artifact from this identity; parsing alone neither installs nor grants it. */
+ * The package manifest and Agent runtime resolve the artifact from this identity; parsing alone neither installs nor grants it. */
 export const runtimeModuleReferenceSchema = z.object({
   contribution: runtimeContributionReferenceSchema, revision, artifactDigest: digest,
   exportName: z.string().regex(/^[A-Za-z_$][A-Za-z0-9_$]{0,127}$/),

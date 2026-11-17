@@ -6,7 +6,7 @@ import {larkContext} from '../connectors/lark-context.js';
 
 export type {LarkRunner};
 
-/** C14's Lark connector. This module owns connectors/lark.ts, lark-cli.ts,
+/** The Lark connector. This module owns connectors/lark.ts, lark-cli.ts,
  * lark-context.ts, lark-documents.ts and lark-state.ts: the producer, its
  * private lark-cli profile, document/calendar selection and per-scope sync
  * ledgers live and die with the instance. It runs as one instance under the
