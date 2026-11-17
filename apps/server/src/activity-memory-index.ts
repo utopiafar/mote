@@ -9,8 +9,8 @@ const batchValues=(ref:string)=>`${ref}.id,${ref}.job_id,CASE WHEN coalesce(json
 // Expand each saved array once. Re-parsing a material pin's complete evidence
 // array for every target made large manual selections quadratic. Ordinals keep
 // the first matching work input/pin identity used by the original LIMIT 1.
-const itemsSql=(ref:string)=>`WITH
- job AS MATERIALIZED (SELECT ${ref}.id id,${ref}.json json),
+const itemsSql=(ref:string,from='')=>`WITH
+ job AS MATERIALIZED (SELECT ${ref}.id id,${ref}.json json ${from}),
  evidence AS MATERIALIZED (SELECT j.id job_id,CAST(e.value AS TEXT) ref,CAST(e.key AS INTEGER) ordinal FROM job j,json_each(j.json,'$.evidenceIds') e),
  pins AS MATERIALIZED (SELECT j.id job_id,CAST(p.key AS INTEGER) ordinal,json_extract(p.value,'$.materialId') material_id,
   json_extract(p.value,'$.materialId')||':'||json_extract(p.value,'$.fingerprint') item_key,json_extract(p.value,'$.evidenceIds') evidence_ids
@@ -38,14 +38,28 @@ const refreshOutputs=(jobId:string)=>`DELETE FROM activity_memory_outputs WHERE 
  INSERT OR IGNORE INTO activity_memory_outputs SELECT ${jobId},value FROM memory_jobs j,json_each(j.json,'$.memoryIds') WHERE j.id=${jobId};
  INSERT OR IGNORE INTO activity_memory_outputs SELECT b.job_id,value FROM memory_batches b,json_each(b.json,'$.memoryIds') WHERE b.job_id=${jobId} AND EXISTS(SELECT 1 FROM activity_memory_jobs current WHERE current.id=b.job_id);`;
 
+const subscriptions=["activity_memory_source_insert", "activity_memory_source_delete", "activity_memory_job_insert", "activity_memory_job_update", "activity_memory_items_update", "activity_memory_outputs_update", "activity_memory_job_sources_update", "activity_memory_job_delete", "activity_memory_continuation_update", "activity_memory_batch_insert", "activity_memory_batch_update", "activity_memory_batch_outputs_update", "activity_memory_batch_delete"] as const;
+
+/** Withdraw only this owner's known SQL subscriptions. The main schema is
+ * retired when an older, normally closed or interrupted profile is opened;
+ * active subscriptions belong to this connection's selected Activity owner. */
+export function retireActivityMemorySubscriptions(store:Store,schema:'main'|'temp'){
+ const db=store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+ try{
+  for(const name of subscriptions)db.exec(`DROP TRIGGER IF EXISTS ${schema}.${name}`);
+  if(own)db.exec('COMMIT');
+ }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+}
+
 /** Small relational metadata is maintained when products change. Activity pages
  * never parse complete historic job or batch payloads to find the newest goals. */
 export class ActivityMemoryIndex {
  constructor(private store:Store){
-  const db=store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+  const db=store.db,rebuild=!db.prepare("SELECT 1 FROM sqlite_temp_master WHERE type='trigger' AND name='activity_memory_job_insert'").get(),own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
   try{
-  // Refresh coverage triggers when the public state contract changes.
-  db.exec('DROP TRIGGER IF EXISTS activity_memory_batch_insert; DROP TRIGGER IF EXISTS activity_memory_batch_update; DROP TRIGGER IF EXISTS activity_memory_batch_delete; DROP TRIGGER IF EXISTS activity_memory_outputs_update; DROP TRIGGER IF EXISTS activity_memory_job_update; DROP TRIGGER IF EXISTS activity_memory_continuation_update; DROP TRIGGER IF EXISTS activity_memory_job_insert; DROP TRIGGER IF EXISTS activity_memory_items_update; DROP TRIGGER IF EXISTS activity_memory_batch_outputs_update;');
+  // Connection-owned subscriptions disappear even after an interrupted host.
+  // Replace the owned trigger definitions in the same installation transaction.
+  retireActivityMemorySubscriptions(store,'main');retireActivityMemorySubscriptions(store,'temp');
   db.exec(`CREATE TABLE IF NOT EXISTS activity_memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,status TEXT NOT NULL,import_id TEXT);
    CREATE TABLE IF NOT EXISTS activity_memory_continuations(job_id TEXT PRIMARY KEY REFERENCES activity_memory_jobs(id) ON DELETE CASCADE,parent_id TEXT NOT NULL,root_id TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS activity_memory_continuation_roots ON activity_memory_continuations(root_id,job_id);
@@ -62,45 +76,45 @@ export class ActivityMemoryIndex {
    CREATE TABLE IF NOT EXISTS activity_memory_coverage(batch_id TEXT NOT NULL REFERENCES activity_memory_batches(id) ON DELETE CASCADE,job_id TEXT NOT NULL,idx INTEGER NOT NULL,ref TEXT NOT NULL,state TEXT NOT NULL,PRIMARY KEY(batch_id,idx));
    CREATE INDEX IF NOT EXISTS activity_memory_coverage_refs ON activity_memory_coverage(job_id,ref,state);
    CREATE TABLE IF NOT EXISTS activity_memory_outputs(job_id TEXT NOT NULL REFERENCES activity_memory_jobs(id) ON DELETE CASCADE,memory_id TEXT NOT NULL,PRIMARY KEY(job_id,memory_id));
-   CREATE TRIGGER IF NOT EXISTS activity_memory_source_insert AFTER INSERT ON activity_memory_sources BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_source_insert AFTER INSERT ON activity_memory_sources BEGIN
     INSERT INTO activity_memory_source_nodes VALUES(new.source_id,1) ON CONFLICT(source_id) DO UPDATE SET refs=refs+1;
     INSERT INTO activity_memory_source_links SELECT min(new.source_id,source_id),max(new.source_id,source_id),1 FROM activity_memory_sources WHERE job_id=new.job_id AND source_id!=new.source_id
       ON CONFLICT(first_source,second_source) DO UPDATE SET refs=refs+1;
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_source_delete AFTER DELETE ON activity_memory_sources BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_source_delete AFTER DELETE ON activity_memory_sources BEGIN
     UPDATE activity_memory_source_nodes SET refs=refs-1 WHERE source_id=old.source_id;
     DELETE FROM activity_memory_source_nodes WHERE refs<=0;
     UPDATE activity_memory_source_links SET refs=refs-1 WHERE (first_source=old.source_id AND second_source IN (SELECT source_id FROM activity_memory_sources WHERE job_id=old.job_id)) OR (second_source=old.source_id AND first_source IN (SELECT source_id FROM activity_memory_sources WHERE job_id=old.job_id));
     DELETE FROM activity_memory_source_links WHERE refs<=0;
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_job_insert AFTER INSERT ON memory_jobs BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_job_insert AFTER INSERT ON memory_jobs BEGIN
     INSERT INTO activity_memory_jobs VALUES(${jobValues('new')});
     INSERT OR IGNORE INTO activity_memory_sources SELECT new.id,json_extract(value,'$.sourceId') FROM json_each(${grantArray('new')}) WHERE json_extract(value,'$.sourceId') IS NOT NULL;
     INSERT OR IGNORE INTO activity_memory_items ${itemsSql('new')};
     INSERT OR IGNORE INTO activity_memory_outputs SELECT new.id,value FROM json_each(new.json,'$.memoryIds');
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_job_update AFTER UPDATE OF json ON memory_jobs BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_job_update AFTER UPDATE OF json ON memory_jobs BEGIN
     UPDATE activity_memory_jobs SET updated_at=coalesce(json_extract(new.json,'$.updatedAt'),new.created_at),status=coalesce(json_extract(new.json,'$.status'),'queued'),import_id=coalesce(json_extract(new.json,'$.importJobId'),(SELECT import_id FROM activity_memory_jobs WHERE id=json_extract(new.json,'$.continuationOf'))) WHERE id=new.id;
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_items_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.evidenceIds'),'')!=coalesce(json_extract(old.json,'$.evidenceIds'),'') OR coalesce(json_extract(new.json,'$.materialInputs'),'')!=coalesce(json_extract(old.json,'$.materialInputs'),'') OR coalesce(json_extract(new.json,'$.materialRefs'),'')!=coalesce(json_extract(old.json,'$.materialRefs'),'') OR coalesce(json_extract(new.json,'$.workPackage.inputs'),'')!=coalesce(json_extract(old.json,'$.workPackage.inputs'),'') OR coalesce(json_extract(new.json,'$.automaticGrants'),'')!=coalesce(json_extract(old.json,'$.automaticGrants'),'') OR coalesce(json_extract(new.json,'$.automaticGrant'),'')!=coalesce(json_extract(old.json,'$.automaticGrant'),'') BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_items_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.evidenceIds'),'')!=coalesce(json_extract(old.json,'$.evidenceIds'),'') OR coalesce(json_extract(new.json,'$.materialInputs'),'')!=coalesce(json_extract(old.json,'$.materialInputs'),'') OR coalesce(json_extract(new.json,'$.materialRefs'),'')!=coalesce(json_extract(old.json,'$.materialRefs'),'') OR coalesce(json_extract(new.json,'$.workPackage.inputs'),'')!=coalesce(json_extract(old.json,'$.workPackage.inputs'),'') OR coalesce(json_extract(new.json,'$.automaticGrants'),'')!=coalesce(json_extract(old.json,'$.automaticGrants'),'') OR coalesce(json_extract(new.json,'$.automaticGrant'),'')!=coalesce(json_extract(old.json,'$.automaticGrant'),'') BEGIN
     DELETE FROM activity_memory_items WHERE job_id=new.id;INSERT OR IGNORE INTO activity_memory_items ${itemsSql('new')};
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_outputs_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.memoryIds'),'')!=coalesce(json_extract(old.json,'$.memoryIds'),'') BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_outputs_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.memoryIds'),'')!=coalesce(json_extract(old.json,'$.memoryIds'),'') BEGIN
     ${refreshOutputs('new.id')}
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_job_sources_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.automaticGrants'),'')!=coalesce(json_extract(old.json,'$.automaticGrants'),'') OR coalesce(json_extract(new.json,'$.automaticGrant'),'')!=coalesce(json_extract(old.json,'$.automaticGrant'),'') BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_job_sources_update AFTER UPDATE OF json ON memory_jobs WHEN coalesce(json_extract(new.json,'$.automaticGrants'),'')!=coalesce(json_extract(old.json,'$.automaticGrants'),'') OR coalesce(json_extract(new.json,'$.automaticGrant'),'')!=coalesce(json_extract(old.json,'$.automaticGrant'),'') BEGIN
     DELETE FROM activity_memory_sources WHERE job_id=new.id;
     INSERT OR IGNORE INTO activity_memory_sources SELECT new.id,json_extract(value,'$.sourceId') FROM json_each(${grantArray('new')}) WHERE json_extract(value,'$.sourceId') IS NOT NULL;
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_job_delete AFTER DELETE ON memory_jobs BEGIN DELETE FROM activity_memory_jobs WHERE id=old.id; END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_continuation_update AFTER UPDATE OF json ON memory_jobs WHEN json_extract(new.json,'$.continuationOf') IS NOT NULL BEGIN
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_job_delete AFTER DELETE ON memory_jobs BEGIN DELETE FROM activity_memory_jobs WHERE id=old.id; END;
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_continuation_update AFTER UPDATE OF json ON memory_jobs WHEN json_extract(new.json,'$.continuationOf') IS NOT NULL BEGIN
     INSERT OR REPLACE INTO activity_memory_continuations SELECT new.id,json_extract(new.json,'$.continuationOf'),coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=json_extract(new.json,'$.continuationOf')),json_extract(new.json,'$.continuationOf'));
     UPDATE activity_memory_jobs SET import_id=coalesce(import_id,(SELECT import_id FROM activity_memory_jobs WHERE id=json_extract(new.json,'$.continuationOf'))) WHERE id=new.id;
     INSERT OR IGNORE INTO activity_memory_sources SELECT new.id,source_id FROM activity_memory_sources WHERE job_id=json_extract(new.json,'$.continuationOf');
     UPDATE activity_memory_items SET item_key=coalesce((SELECT prior.item_key FROM activity_memory_items prior JOIN memory_jobs p ON p.id=prior.job_id,json_each(p.json,'$.materialInputs') pin WHERE prior.job_id=json_extract(new.json,'$.continuationOf') AND prior.ref IN (SELECT value FROM json_each(pin.value,'$.evidenceIds')) AND json_extract(pin.value,'$.materialId') IN (SELECT json_extract(child.value,'$.materialId') FROM json_each(new.json,'$.materialInputs') child WHERE activity_memory_items.ref IN (SELECT value FROM json_each(child.value,'$.evidenceIds'))) LIMIT 1),item_key) WHERE job_id=new.id;
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_insert AFTER INSERT ON memory_batches BEGIN INSERT INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')};${refreshOutputs('new.job_id')} END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_update AFTER UPDATE OF json,job_id ON memory_batches
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_batch_insert AFTER INSERT ON memory_batches BEGIN INSERT INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')};${refreshOutputs('new.job_id')} END;
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_batch_update AFTER UPDATE OF json,job_id ON memory_batches
     WHEN old.job_id IS NOT new.job_id OR NOT EXISTS(SELECT 1 FROM activity_memory_batches WHERE id=new.id)
      OR json_extract(old.json,'$.status') IS NOT json_extract(new.json,'$.status')
      OR json_extract(old.json,'$.coverage') IS NOT json_extract(new.json,'$.coverage')
@@ -108,11 +122,33 @@ export class ActivityMemoryIndex {
      OR json_extract(old.json,'$.supersededBy') IS NOT json_extract(new.json,'$.supersededBy')
      OR json_extract(old.json,'$.contextFeedbackChildId') IS NOT json_extract(new.json,'$.contextFeedbackChildId')
     BEGIN INSERT OR REPLACE INTO activity_memory_batches VALUES(${batchValues('new')});INSERT INTO activity_memory_coverage ${coverageSql('new')}; END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_outputs_update AFTER UPDATE OF json,job_id ON memory_batches
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_batch_outputs_update AFTER UPDATE OF json,job_id ON memory_batches
     WHEN old.job_id IS NOT new.job_id OR json_extract(old.json,'$.memoryIds') IS NOT json_extract(new.json,'$.memoryIds') BEGIN
      ${refreshOutputs('old.job_id')}${refreshOutputs('new.job_id')}
    END;
-   CREATE TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id;${refreshOutputs('old.job_id')} END;`);
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id;${refreshOutputs('old.job_id')} END;`);
+  // A deselected/closed Activity owns no subscriptions. Rebuild its disposable
+  // metadata from canonical products when selected again, without mutating a
+  // Memory job, replaying model work or granting new input authority.
+  if(rebuild){
+   db.exec(`DELETE FROM activity_memory_jobs;DELETE FROM activity_memory_source_nodes;DELETE FROM activity_memory_source_links;
+    INSERT INTO activity_memory_jobs SELECT ${jobValues('j')} FROM memory_jobs j;
+    INSERT OR IGNORE INTO activity_memory_sources SELECT j.id,json_extract(g.value,'$.sourceId') FROM memory_jobs j,json_each(${grantArray('j')}) g WHERE json_extract(g.value,'$.sourceId') IS NOT NULL;
+    INSERT OR IGNORE INTO activity_memory_outputs SELECT j.id,value FROM memory_jobs j,json_each(j.json,'$.memoryIds');
+    INSERT INTO activity_memory_batches SELECT ${batchValues('b')} FROM memory_batches b;
+    INSERT INTO activity_memory_coverage ${coverageSql('b','memory_batches b,')};`);
+   const items=db.prepare(`INSERT OR IGNORE INTO activity_memory_items ${itemsSql('j','FROM memory_jobs j WHERE j.id=?')}`);
+   for(const row of db.prepare('SELECT id FROM memory_jobs').iterate())items.run(row.id);
+  }
+  for(const row of db.prepare("SELECT id,json_extract(json,'$.continuationOf') parent_id FROM memory_jobs WHERE json_extract(json,'$.continuationOf') IS NOT NULL ORDER BY created_at,id").all()){
+    const id=String(row.id),parent=String(row.parent_id);
+    db.prepare('INSERT OR REPLACE INTO activity_memory_continuations SELECT ?,?,coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=?),?)').run(id,parent,parent,parent);
+    db.prepare('UPDATE activity_memory_jobs SET import_id=coalesce(import_id,(SELECT import_id FROM activity_memory_jobs WHERE id=?)) WHERE id=?').run(parent,id);
+    db.prepare('INSERT OR IGNORE INTO activity_memory_sources SELECT ?,source_id FROM activity_memory_sources WHERE job_id=?').run(id,parent);
+    db.prepare(`UPDATE activity_memory_items SET item_key=coalesce((SELECT prior.item_key FROM activity_memory_items prior JOIN memory_jobs p ON p.id=prior.job_id,json_each(p.json,'$.materialInputs') pin
+      WHERE prior.job_id=? AND prior.ref IN (SELECT value FROM json_each(pin.value,'$.evidenceIds')) AND json_extract(pin.value,'$.materialId') IN
+      (SELECT json_extract(child.value,'$.materialId') FROM memory_jobs j,json_each(j.json,'$.materialInputs') child WHERE j.id=? AND activity_memory_items.ref IN (SELECT value FROM json_each(child.value,'$.evidenceIds'))) LIMIT 1),item_key) WHERE job_id=?`).run(parent,id,id);
+  }
   // Repair persisted projections made by the previous coverage contract.
   db.exec(`UPDATE activity_memory_coverage SET state='needs_input' WHERE state='needs_owner_input';
    UPDATE activity_memory_batches SET rank=5 WHERE rank<5 AND leaf=1 AND id IN (SELECT batch_id FROM activity_memory_coverage WHERE state='needs_input') AND EXISTS(SELECT 1 FROM memory_batches b,json_each(b.json,'$.coverage') c WHERE b.id=activity_memory_batches.id AND json_extract(b.json,'$.status')!='invalidated' AND json_extract(c.value,'$.state')='needs_owner_input');`);
@@ -127,11 +163,13 @@ export class ActivityMemoryIndex {
    db.prepare("INSERT OR IGNORE INTO activity_memory_outputs SELECT j.id,value FROM memory_jobs j,json_each(j.json,'$.memoryIds') WHERE j.id=?").run(row.job_id);
    db.prepare("INSERT OR IGNORE INTO activity_memory_outputs SELECT b.job_id,value FROM memory_batches b,json_each(b.json,'$.memoryIds') WHERE b.job_id=? AND EXISTS(SELECT 1 FROM activity_memory_jobs current WHERE current.id=b.job_id)").run(row.job_id);
   }
-  for(const row of db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.continuationOf') IS NOT NULL ORDER BY created_at,id").all())db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(row.json,row.id);
   db.exec("INSERT OR IGNORE INTO activity_memory_outputs SELECT b.job_id,value FROM memory_batches b,json_each(b.json,'$.memoryIds') WHERE EXISTS(SELECT 1 FROM activity_memory_jobs j WHERE j.id=b.job_id)");
   if(own)db.exec('COMMIT');
   }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
  }
+ private closed=false;
+ close(){if(this.closed)return;retireActivityMemorySubscriptions(this.store,'temp');this.closed=true;}
+
  groups(){
   const parent=new Map<string,string>(),root=(source:string):string=>{const next=parent.get(source);if(!next){parent.set(source,source);return source;}return next===source?source:root(next);};
   for(const row of this.store.db.prepare('SELECT source_id FROM activity_memory_source_nodes').all())root(String(row.source_id));
