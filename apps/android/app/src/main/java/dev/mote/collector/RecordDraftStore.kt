@@ -118,6 +118,13 @@ internal class RecordDraftStore(private val directory: File, private val cipher:
     fun pendingSubmission(reachedQueue: (String) -> Boolean): Boolean =
         state().getJSONObject("draft").optJSONObject("prepared")?.optString("id")?.takeIf { it.isNotBlank() }?.let { !reachedQueue(it) } == true
     @Synchronized fun record(id: String): JSONObject? = state().getJSONObject("records").optJSONObject(id)?.let { JSONObject(it.toString()) }
+    /** Prepared drafts, attachments and quote presentations remain held by their existing journal. */
+    @Synchronized fun requireReleasable(id: String) {
+        val value = state()
+        check(value.getJSONObject("draft").optJSONObject("prepared")?.optString("id") != id) { MoteI18n.text("采集处理尚未结束") }
+        check((value.getJSONObject("records").optJSONObject(id)?.optJSONArray("attachments")?.length() ?: 0) == 0) { MoteI18n.text("采集处理尚未结束") }
+        check(value.getJSONObject("records").optJSONObject(id)?.optJSONObject("originPresentation") == null) { MoteI18n.text("采集阶段仍有待处理输入，暂不能清理本机副本。") }
+    }
     @Synchronized fun acknowledge(id: String, attachment: String, captureId: String) {
         UUID.fromString(captureId); val state = state(); val record = state.getJSONObject("records").getJSONObject(id)
         record.getJSONObject("acks").put(attachment, captureId); write(state)

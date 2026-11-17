@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -21,7 +22,7 @@ const otherEvent=(id:string)=>({externalId:id,revision:'1',observedAt:'2026-11-0
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-coding-source-'));
   const open=async()=>{
-    const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials);await runtime.ready;
+    const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,undefined,testScope(t));await runtime.ready;
     const sources=new SourceStore(store,runtime),host=new PluginHost({kind:'central',id:'generated-coding-host'}),routes=createCodingSourceRoutes(runtime);
     const app=Fastify(),root=new Context(),featureRoutes=new FeatureRoutes(root,app);
     await installFeatureRoutes(featureRoutes,[{id:'mote.coding',mount:app=>routes.mount(app)}]);await app.ready();

@@ -44,7 +44,7 @@ export type ProcessingServicesPort=ProcessingJobPort&{readonly phase:ProcessingS
 
 export interface ProcessingServicesDependencies {
   readonly store:ConstructorParameters<typeof ProcessingRuntime>[0];
-  readonly files:ConstructorParameters<typeof FileProcessing>[0];
+  readonly files:ConstructorParameters<typeof FileProcessing>[1];
   readonly configService:ConfigService;
   readonly diagnostics:ServerDiagnostics;
   readonly executor:ExecutionEngine;
@@ -71,7 +71,7 @@ export interface ProcessingServices {
   readonly port:ProcessingServicesPort;
   readonly workflows:ProcessingRuntime;
   readonly processing:FileProcessing;
-  prepare(scope?:HostScope):Promise<void>;
+  prepare(scope:HostScope):Promise<void>;
   start():void;
   quiesce(reason?:StopReason):void;
   stop(reason?:StopReason):Promise<void>;
@@ -186,21 +186,21 @@ export function createProcessingServices(dependencies:ProcessingServicesDependen
     /** Construct this activation's domain objects and install its file
      * capabilities. A mid-prepare failure closes both partially constructed
      * owners and rolls back the contribution set. */
-    async prepare(scope?:HostScope){
+    async prepare(scope:HostScope){
       if(phase!=='created')throw unavailable();
       try{
         workflows=new ProcessingRuntime(dependencies.store,[],{},Date.now,dependencies.executor,dependencies.materials,scope,dependencies.configService);
         dependencies.sourcePipelines.setProductConsumer(workflows);
         workflows.consumerAllowed=(sourceId,bindingId)=>dependencies.sourcePipelines.options(sourceId).consumers.includes(bindingId);
-        processing=new FileProcessing(dependencies.files,dependencies.transcriptionProvider,undefined,{
+        processing=new FileProcessing(scope,dependencies.files,dependencies.transcriptionProvider,undefined,{
           modelAuthority:dependencies.modelAuthority,configService:dependencies.configService,executor:dependencies.executor,
           ...(dependencies.plugins?.length?{plugins:[...dependencies.plugins]}:{}),builtinContributions:false,analyze:dependencies.analyze,analysisSnapshot:dependencies.analysisSnapshot,
           analysisRevision:dependencies.analysisRevision,diagnostics:dependencies.diagnostics,contextProcessors:workflows.registry,
-          pluginScope:scope,mediaAssets:dependencies.mediaAssets,mediaPreparation:dependencies.mediaPreparation,media:dependencies.media,
+          mediaAssets:dependencies.mediaAssets,mediaPreparation:dependencies.mediaPreparation,media:dependencies.media,
           contextForEvidence:record=>dependencies.materials.contextForEvidence(record),
         });
         installContributions();
-        scope?.defer(removeContributions);
+        scope.defer(removeContributions);
         previousSourceContextChanged=dependencies.materials.onSourceContextChanged;
         dependencies.materials.onSourceContextChanged=relay;
         await workflows.ready;

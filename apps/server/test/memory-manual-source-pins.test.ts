@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryPipeline,fixtureMemoryResult} from './fixtures/memory-result.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ import {MemoryStrategies} from '../src/memory-strategies.js';
 import {reviewMemory} from '../src/memory-review.js';
 
 for(const phase of ['queued','running'] as const)test(`manual archive selection rejects a new original before organization while ${phase}`,{timeout:10000},async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-manual-source-pin-')),store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);
+ const directory=mkdtempSync(join(tmpdir(),'mote-manual-source-pin-')),store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));
  let pipeline:MemoryPipeline|undefined,release!:()=>void,entered!:()=>void;
  const held=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
  t.after(async()=>{release();await pipeline?.close();await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});

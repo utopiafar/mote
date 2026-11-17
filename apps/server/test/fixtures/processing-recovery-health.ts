@@ -1,3 +1,4 @@
+import {createTestScope} from './plugin-scope.js';
 import assert from 'node:assert/strict';
 import {Store} from '../../src/store.js';
 import {SourceStore} from '../../src/sources.js';
@@ -8,7 +9,8 @@ import {buildApp} from '../../src/app.js';
 // Only the parent-created temporary profile is used. No models or devices.
 const directory=process.argv[2],sourceId='generated-recovery',total=64;
 const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
-const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);
+const owner=createTestScope();
+const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,owner.scope);
 const ids:string[]=[],jobs:string[]=[];
 const material=materialId(sourceId,'generated-group');
 try{
@@ -23,7 +25,7 @@ try{
   // Persist a not-yet-due backlog so the parent can first verify the real HTTP
   // listener, then make it due at a controlled recovery boundary after reopen.
   store.db.prepare("UPDATE execution_steps SET available_at=? WHERE kind='context-dag.semantic'").run(Date.now()+60000);
-}finally{await runtime.close();store.close();}
+}finally{await runtime.close();await owner.close();store.close();}
 
 const config={dataDir:directory,token:'synthetic-recovery-owner-token-only',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1e6,insightIntervalHours:0,allowedOrigins:[],model:'',modelProvider:'custom',modelProtocol:'openai-completions' as const,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
 const node=await buildApp(config,{backgroundWorker:false});

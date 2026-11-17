@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
@@ -106,7 +107,7 @@ test('four real gates consume configuration and durable provider cooldowns survi
 });
 
 test('the actual SourcePipeline serializes work into the owned engine and publishes retained Coding material',async t=>{
-  const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],undefined,f.platform.assembly.executor);await runtime.ready;
+  const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t),f.platform.assembly.executor);await runtime.ready;
   f.beforeClose(async()=>{await runtime.close();await materials.index?.close();});
   const sources=new SourceStore(f.store,runtime);sources.register({id:'generated-coding',name:'Generated coding',kind:'coding-agent',deviceId:'generated-device',platform:'macos'});
   const event={externalId:'generated-event',revision:'1',observedAt:'2026-11-03T01:00:00Z',kind:'message',layer:'snapshot',text:'Generated durable source requirement and result.',document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'generated-session',projectKey:'generated-project',eventId:'000001',role:'user',attribution:'human',part:0,parts:1}}};
@@ -208,7 +209,7 @@ test('actual text FileProcessing preserves its successful artifact and summary p
   const f=await fixture(t),engine=f.platform.assembly.executor,started=deferred(),release=deferred(),sources=new SourceStore(f.store),files=new FileStore(f.store,sources);
   const register=engine.register.bind(engine);let processing:FileProcessing;
   engine.register=handler=>register({...handler,execute:async(step,signal,grant)=>{const result=await handler.execute(step,signal,grant);if(handler.kind==='files.pipeline'){started.resolve();await release.promise;}return result;}});
-  try{processing=new FileProcessing(files,undefined,undefined,{executor:engine});}finally{engine.register=register;}
+  try{processing=new FileProcessing(testScope(t),files,undefined,undefined,{executor:engine});}finally{engine.register=register;}
   f.beforeClose(async()=>{release.resolve();await processing.close();await files.close();});
   await processing.runtime.ready;const settings={...processing.view().settings,enabled:true,summarize:false};processing.update({revision:processing.view().revision,settings,policy:fixtureFilePolicy(settings,processing.runtime.registry)});
   sources.register({id:'generated-processing',name:'Generated processing',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'archive'});

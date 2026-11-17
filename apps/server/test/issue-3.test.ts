@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -29,7 +30,7 @@ test('same state has one row, precise disjoint durations, monotonic retry and co
  store.delete(first.id);await assert.rejects(store.ingest(third),{statusCode:410});
 });
 test('central text ranges require no original and remain source-, version-, and range-bound',async t=>{
- const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources),processing=new FileProcessing(files);t.after(()=>processing.close());
+ const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources),processing=new FileProcessing(testScope(t),files);t.after(()=>processing.close());
  sources.register({id:'generated-source',deviceId:'generated-device',name:'Generated files',kind:'local-files',platform:'macos',retention:'snapshot'});
  const text='Generated exact text and range evidence',ack=await snapshot(files,text);await processing.tick();assert.equal(files.detail(ack.id).hasOriginal,false);
  const result=await reads.read(ack.id,10,10);assert.equal(result.status,'ready');assert.equal(result.record!.ocrText,text.slice(10,20));assert.equal(result.record!.provenance!.document!.fileIndex!.offset,10);
@@ -57,7 +58,7 @@ test('central retained text and immutable excerpts survive restart and reject pe
  const directory=mkdtempSync(join(tmpdir(),'mote-read-restart-'));let store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources);
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
  sources.register({id:'restart-source',deviceId:'synthetic',name:'Generated',kind:'local-files',platform:'macos',retention:'snapshot'});
- const text='Generated restart text range',ack=await snapshot(files,text),processing=new FileProcessing(files);try{await processing.tick();}finally{await processing.close();}
+ const text='Generated restart text range',ack=await snapshot(files,text),processing=new FileProcessing(testScope(t),files);try{await processing.tick();}finally{await processing.close();}
  const first=await reads.read(ack.id,10,12);assert.equal(first.record!.ocrText,text.slice(10,22));
  store.close();store=new Store(directory);sources=new SourceStore(store);files=new FileStore(store,sources);reads=new FileEvidence(sources);
  const restored=await reads.read(ack.id,10,12);assert.equal(restored.record!.id,first.record!.id);assert.equal(restored.record!.ocrText,text.slice(10,22));
@@ -68,7 +69,7 @@ test('central retained text and immutable excerpts survive restart and reject pe
 
 test('revocation or deletion during an asynchronous range write cannot publish late evidence',async t=>{
  for(const revoke of ['pause','delete'] as const)await t.test(revoke,async t=>{
-  const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources),processing=new FileProcessing(files);t.after(()=>processing.close());
+  const store=setup(t),sources=new SourceStore(store),files=new FileStore(store,sources),reads=new FileEvidence(sources),processing=new FileProcessing(testScope(t),files);t.after(()=>processing.close());
   sources.register({id:'range-race',deviceId:'generated',name:'Generated',kind:'local-files',platform:'macos',retention:'snapshot'});
   const ack=await snapshot(files,'Generated asynchronous range evidence');await processing.tick();
   const pending=reads.read(ack.id,0,9);

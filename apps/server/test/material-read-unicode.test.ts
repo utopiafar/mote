@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -43,7 +44,7 @@ async function unicodeBlocks(t:TestContext,texts:string[],selected=texts.map((_,
  }
  const material=materials.publish({id:materialId(source,'generated-blocks'),kind:'mote.note',schemaVersion:1,title:'Generated Unicode blocks',origin:{sourceId:source,externalId:'generated-blocks',deviceId:'generated',firstAt:at,lastAt:at},blocks,members,coverage:{state:'complete'},artifacts:[{key:'selected-body',state:'ready',blockIds:selected.map(index=>'block-'+index)}],fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
  const consumer=new EvidenceReader(store,new SourceStore(store),undefined,undefined,undefined,materials).agent({diagnostics});
- return {store,materials,material,consumer,texts,expected:texts.join(''),processing(){return runtime??=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);}};
+ return {store,materials,material,consumer,texts,expected:texts.join(''),processing(){return runtime??=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));}};
 }
 
 function mappedUnicodePage(f:Awaited<ReturnType<typeof unicodeBlocks>>,page:MaterialReadPage){
