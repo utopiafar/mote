@@ -1,6 +1,7 @@
 import {historyEvidenceDependencies} from '../conversation-lineage.js';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type StopReason,type ServiceBinding} from '@mote/plugin-api/contracts';
+import type {ActivityDelegationReader} from '../activity.js';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {ConversationSettings,QueryResult} from '@mote/shared';
@@ -45,7 +46,7 @@ import {acceptedConversationAmendments,createConversationSteering} from '../conv
 export const queryRunsContribution={
   id:'query-runs',version:'1.0.0',surface:'data',runtime:'host',
   requires:[{kind:'host',id:'mote.vault-platform',version:'1.0.0'},{kind:'host',id:'mote.owner-authorization',version:'1.0.0'}],
-  provides:[],
+  provides:[{kind:'service',id:'mote.central.query-work-metadata',apiVersion:'1',cardinality:'single'}],
 } as const satisfies ManifestContribution;
 export const queryRunsDeclaration={id:queryRunsContribution.id,apiVersion:'1'} as const;
 /** Accepted query receipts and delegated work survive a stopped activation. */
@@ -299,14 +300,28 @@ export function createQueryRunsPlatform(dependencies:QueryRunDependencies):Query
     close,
   });
 }
-export interface QueryRunsStarted {readonly delegation:DelegationRuntime;readonly queryRuns:DelegatedQueryRuns}
+export const queryWorkMetadataContract=serviceContract<ActivityDelegationReader>('mote.central.query-work-metadata','1');
+export interface QueryRunsStarted {readonly delegation:DelegationRuntime;readonly queryRuns:DelegatedQueryRuns;readonly metadata:ServiceBinding}
 
 export function createQueryRunsFactory(platform:QueryRunsPlatform,onStarted?:(value:QueryRunsStarted)=>void){
   return (context:HostPluginContext):PluginLifecycle=>{
     context.scope.defer(()=>platform.close());
+    const metadata=context.provide(queryRunsContribution.id,queryWorkMetadataContract,{
+      list:()=>platform.delegation.list().map(({id})=>({id})),
+      get:id=>{
+        const {id:workId,operationId,goal,status,createdAt,updatedAt,units,events}=platform.delegation.get(id);
+        return {id:workId,operationId,goal,status,createdAt,updatedAt,
+          units:units.map(({id,title,status,artifactId,stepId,error})=>({id,title,status,artifactId,stepId,error})),
+          events:events.map(({id,type,at,message,unitId})=>({id,type,at,message,unitId}))};
+      },
+      artifactMetadata:id=>platform.delegation.artifactMetadata(id).map(({id,unitId})=>({id,unitId})),
+    });
     return {
       prepare:platform.prepare,
-      async start(){await platform.start();onStarted?.({delegation:platform.delegation,queryRuns:platform.queryRuns});},
+      async start(){
+        await platform.start();
+        onStarted?.({delegation:platform.delegation,queryRuns:platform.queryRuns,metadata});
+      },
       quiesce:(reason:StopReason)=>platform.quiesce(reason),stop:(reason:StopReason)=>platform.stop(reason),dispose:platform.dispose,
     };
   };

@@ -7,7 +7,6 @@ import type {ExecutionPlatform} from '../plugins/execution-platform.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
-import type {ActivityServices} from '../plugins/activity-services.js';
 import type {MemoryPublication} from '../plugins/memory-publication.js';
 import type {MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
 
@@ -32,7 +31,6 @@ export interface ServerLifecycleHookDependencies {
   readonly executor:ExecutionEngine;
   readonly eventLoop:IntervalHistogram;
   readonly queryRuns:DelegatedQueryRuns;
-  readonly activityServices:ActivityServices;
   readonly memoryPublication:MemoryPublication;
   readonly memoryPhasePipeline:Pick<MemoryPhasePipelinePlatform,'quiesce'>;
   readonly resources:ServerResources;
@@ -43,7 +41,7 @@ export interface ServerLifecycleHookDependencies {
  * quiesce platforms, interrupt polling and transports while handlers and
  * stores are still live, then release every registered resource. */
 export function installServerLifecycleHooks(app:FastifyInstance,dependencies:ServerLifecycleHookDependencies){
-  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,memoryPhasePipeline,resources,diagnostics}=dependencies;
+  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,memoryPublication,memoryPhasePipeline,resources,diagnostics}=dependencies;
   app.addHook('preClose',async()=>{
     lifecycle.markClosing();
     // Withdraw reply admission before source/model dependencies drain. An
@@ -60,7 +58,7 @@ export function installServerLifecycleHooks(app:FastifyInstance,dependencies:Ser
     sourcePipelines.quiesce();
     executionPlatform.quiesce('shutdown');
     executor.bindObserver(undefined);eventLoop.disable();queryRuns.interrupt();
-    activityServices.quiesce('shutdown');memoryPublication.stop();
+    memoryPublication.stop();
     // Interrupt transports while handlers, checkpoints and storage remain live.
     await resources.stop();
     }finally{if(configDrainFailure)try{diagnostics.record('config.shutdown_drain_failed',{category:'internal'},'error');}catch{/* cleanup continues */}}

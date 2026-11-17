@@ -1,12 +1,20 @@
 import type {Store} from './store.js';
+import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const operationProjectionSchemaInstallation={
+ owner:'operation-projection',requires:['execution'],
+ prerequisites:[{owner:'memory',objects:[{type:'table',name:'memories'}]}],
+ install:operationProjectionSchema,
+} as const satisfies SchemaInstallation;
+
 const states=['waiting','running','blocked','succeeded','failed','cancelled','stale'] as const;
 export function publishOperationChange(store:Store,operationId:string){
  if(store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='operation_changes'").get())store.db.prepare('INSERT INTO operation_changes(operation_id) VALUES(?)').run(operationId);
 }
 export type OperationMembership={generation?:{slot:string;version:string};optional?:boolean};
 /** Fresh current-definition projections. Step state and historical links remain durable. */
-export function installOperationProjection(store:Store){
- const db=store.db;
+function operationProjectionSchema(db:DatabaseSync){
  const scheduledSkip=(step:string)=>`(${step}.state='blocked' AND coalesce(${step}.error IN ('summary_disabled','archive_only','appledouble_metadata'),0))`;
  const excluded=(state:string,optional:string)=>`(${optional} AND ${state} IN ('blocked','failed','cancelled','stale'))`;
  const applyLink=(alias:'old'|'new',sign:'+'|'-')=>`UPDATE operation_progress SET total=total${sign}${alias}.active,not_scheduled=not_scheduled${sign}(${alias}.active AND ${alias}.optional AND (SELECT ${scheduledSkip('e')} FROM execution_steps e WHERE e.id=${alias}.step_id)),${states.map(state=>`${state}=${state}${sign}(${alias}.active AND NOT ${excluded(`(SELECT state FROM execution_steps WHERE id=${alias}.step_id)`,`${alias}.optional`)} AND (SELECT state FROM execution_steps WHERE id=${alias}.step_id)='${state}')`).join(',')},updated_at=max(updated_at,coalesce((SELECT updated_at FROM execution_steps WHERE id=${alias}.step_id),updated_at)) WHERE id=${alias}.operation_id;`;
@@ -30,7 +38,7 @@ export function installOperationProjection(store:Store){
    CREATE TRIGGER IF NOT EXISTS operation_created AFTER INSERT ON operation_progress BEGIN INSERT INTO operation_changes(operation_id) VALUES(new.id); END;
    CREATE TRIGGER IF NOT EXISTS operation_memory_changed AFTER UPDATE ON memories BEGIN INSERT INTO operation_changes(operation_id) VALUES('memory:'||new.id); END;
    CREATE TRIGGER IF NOT EXISTS operation_memory_removed AFTER DELETE ON memories BEGIN INSERT INTO operation_changes(operation_id) VALUES('memory:'||old.id); END;`);
- installOperationHierarchy(store);
+ installOperationHierarchy(db);
 }
 export function linkOperation(store:Store,operationId:string,stepId:string,membership:OperationMembership={}){
  const db=store.db,slot=membership.generation?.slot??'',version=membership.generation?.version??'';
@@ -46,8 +54,7 @@ export function linkOperation(store:Store,operationId:string,stepId:string,membe
 
 /** Durable parent attribution copies membership, never execution state. Later
  * child admission, generation changes and deletion reach the parent atomically. */
-function installOperationHierarchy(store:Store){
- const db=store.db;
+function installOperationHierarchy(db:DatabaseSync){
  db.exec(`CREATE TABLE IF NOT EXISTS operation_parents(parent_id TEXT NOT NULL,child_id TEXT NOT NULL,PRIMARY KEY(parent_id,child_id));
  CREATE INDEX IF NOT EXISTS operation_parent_children ON operation_parents(child_id,parent_id);
  CREATE TRIGGER IF NOT EXISTS operation_child_added AFTER INSERT ON execution_operation_steps BEGIN
