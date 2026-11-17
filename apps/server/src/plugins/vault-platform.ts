@@ -1,6 +1,6 @@
 import type {PluginLifecycle,PluginScope} from '@mote/plugin-api/contracts';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {HostPluginContext} from '@mote/plugin-host';
+import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import {join} from 'node:path';
 import {Store,StoreError} from '../store.js';
 import {SourceStore} from '../sources.js';
@@ -10,6 +10,7 @@ import {ArchivedFileStore} from '../archived-files.js';
 import {ContentStorageService} from '../content-storage.js';
 import type {ConfigService} from '../config-service.js';
 import {MaintenanceWorker} from '../maintenance.js';
+import {UsageLedger} from '../usage.js';
 import {centralServices,type CommitAuthority,type CommitAuthorization,type VaultTransactions,type MaterialRepositoryRead,type MaterialPublication,type ArchivedContentRead} from './central-contracts.js';
 
 /** Private host configuration, never a Manifest configuration value or a wire DTO. */
@@ -63,6 +64,7 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
   const config={...options},borrowed=dependencies.store;
   if(!config.dataDir)throw new StoreError('Invalid vault configuration');
   let store:Store|undefined,archivedFiles:ArchivedFileStore|undefined,content:ContentStorageService|undefined,maintenance:MaintenanceWorker|undefined;
+  let usage:UsageLedger|undefined,usageOwner:HostScope|undefined;
   let phase:'created'|'prepared'|'closing'|'closed'='created',closing:Promise<void>|undefined,accessorsClosing:Promise<void>|undefined;
   const assertPrepared=()=>{if(phase!=='prepared')throw new StoreError('Vault assembly is unavailable',503);};
   const stopAccessors=()=>accessorsClosing??=(async()=>{
@@ -92,6 +94,26 @@ export function createVaultPlatformAssembly(options:VaultPlatformOptions,depende
     get store(){assertPrepared();return store!;},
     get archivedFiles(){assertPrepared();return archivedFiles!;},
     get contentStorage(){assertPrepared();return content!;},
+    /** The real storage activation owns recovery and the backend. Consumer
+     * views only share it; none can retrieve or close the borrowed Store. */
+    usageForAssembly(owner:HostScope,consumer:PluginScope):UsageLedger{
+      assertPrepared();
+      if(usageOwner&&usageOwner!==owner)throw new StoreError('Vault usage owner changed',503);
+      const ownerCurrent=()=>{
+        assertPrepared();
+        try{owner.assertCurrent();owner.signal.throwIfAborted();}
+        catch{throw new StoreError('Vault usage owner is unavailable',503);}
+      };
+      let released=false;
+      const current=()=>{
+        ownerCurrent();if(released)throw new StoreError('Vault usage access is unavailable',503);
+        try{consumer.assertCurrent();consumer.signal.throwIfAborted();}
+        catch{throw new StoreError('Vault usage consumer is unavailable',503);}
+      };
+      current();consumer.defer(()=>{released=true;});
+      usageOwner=owner;usage??=new UsageLedger(store!,ownerCurrent);
+      return new UsageLedger(usage,current);
+    },
     startMaintenance(){
       assertPrepared();if(accessorsClosing)throw new StoreError('Vault assembly is stopping',503);
       if(config.maintenance&&!maintenance)maintenance=new MaintenanceWorker({...config});return maintenance;

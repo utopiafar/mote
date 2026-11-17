@@ -807,14 +807,6 @@
   {
     "rule": "comment-card-number",
     "from": "apps/server/src/plugins/observability-platform.ts",
-    "to": "C02",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/observability-platform.ts",
     "to": "C06",
     "kind": "comment",
     "symbol": "count:1",
@@ -1515,14 +1507,6 @@
     "kind": "runtime",
     "symbol": "Store",
     "reason": "Existing Vault boundary debt: the notes source still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/observability-platform.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "type",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the observability platform still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
   },
   {
     "rule": "server-plugins-no-store",
