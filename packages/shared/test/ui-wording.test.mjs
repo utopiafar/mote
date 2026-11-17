@@ -8,7 +8,7 @@ import {english} from '../dist/i18n-en.js';
 const repo=resolve(fileURLToPath(new URL('../../..',import.meta.url)));
 const catalog=Object.keys(english);
 
-// K07/D26: terms retired by the UI wording migration stay out of every authored Chinese message and client source.
+// Terms retired by the UI wording migration stay out of every authored Chinese message and client source.
 const retired=['随手记','中央节点','中央端','中央服务器','Mote 中心','中央档案','中央资料库'];
 const sourceDirectories=[
   'apps/web/src',
@@ -31,7 +31,7 @@ function walk(directory){
   });
 }
 
-// G02: prompts reworded by this migration state the condition only; none of them uses 请.
+// Prompts reworded by this migration state the condition only; none of them uses 请.
 const changedPrompts=[
   '当前网页地址未获中央允许。公开地址或反向代理配置不匹配。',
   '网页或客户端与中央的协议版本不匹配。',
