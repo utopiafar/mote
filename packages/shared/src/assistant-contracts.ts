@@ -34,6 +34,7 @@ export const conversationMessageInputSchema=z.object(conversationMessageFields).
 export type ConversationMessageInput=z.infer<typeof conversationMessageInputSchema>;
 export const conversationMessageStateSchema=z.enum(['accepted','queued','running','completed','failed','cancelled']);
 export const conversationSteeringSchema=z.object({targetMessageId:uuid,targetRunId:z.string().min(1).max(200),state:z.enum(['pending','accepted','continuation','unknown','cancelled'])}).strict();
+export const conversationTaskSteeringSchema=z.object({targetTaskId:uuid,targetOperationId:z.string().min(1).max(512),targetRevision:revision,scope:queryScopeSchema,origin:z.object({conversationId:uuid,turnId:uuid}).strict().optional(),state:conversationSteeringSchema.shape.state}).strict();
 /** Result bodies and recovery are outside this admission contract. */
 export const conversationMessageSchema=z.object({
   ...conversationMessageFields,id:uuid,seq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -41,6 +42,7 @@ export const conversationMessageSchema=z.object({
   evidenceDeleted:z.boolean().optional(),evidenceStale:z.boolean().optional(),evidenceUnavailable:z.boolean().optional(),
   historyEvidenceDependencies:evidenceDependenciesSchema.optional(),
   steering:conversationSteeringSchema.optional(),amendedBy:z.array(uuid).optional(),supersededBy:z.array(uuid).optional(),
+  taskSteering:conversationTaskSteeringSchema.optional(),
 }).strict().refine(singleAnchor,{message:'Choose one anchor'});
 export type ConversationMessage=z.infer<typeof conversationMessageSchema>;
 

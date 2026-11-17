@@ -334,3 +334,30 @@ test('the composer admits a later message while native work is active and stops 
  assert.equal(d.querySelector(`#conversation-turn-${parent}`)!.getAttribute('data-state'),'cancelled');assert.equal(d.querySelector(`#conversation-turn-${amendment}`)!.getAttribute('data-state'),'cancelled');
  assert.equal(d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!.value,'Generated still unsent draft');
 });
+
+
+test('a real owner Task amendment displays its exact scoped Task state and cancels only that message from the conversation',{timeout:30000},async t=>{
+ const {taskSteeringFixture,until}=await import('../../server/test/fixtures/assistant-task-steering.js');const f=await taskSteeringFixture(t);f.setMode('hold-terminal');const original=await f.start(),amendment=await f.post('GENERATED-FORMAL-TASK-CORRECTION');assert.equal((await f.settle(amendment.message.id)).taskSteering?.state,'accepted');
+ const {root,d}=await fixture(t),reads:string[]=[],writes:string[]=[];
+ const owner={request:async(path:string,init?:RequestInit)=>{
+  if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});if(init?.signal?.aborted)throw new DOMException('Aborted','AbortError');
+  (init?.method?writes:reads).push(path);const response=await f.node.app.inject({url:path,method:(init?.method??'GET') as 'GET'|'POST',headers:f.headers,...(init?.body?{payload:JSON.parse(String(init.body))}:{})});
+  if(response.statusCode>=400)throw new ApiError('Generated owner HTTP failure',response.statusCode);return response.json();
+ }} as Api;
+ await view(root,owner);const row=()=>d.querySelector(`#conversation-turn-${amendment.message.id}`)!,status=()=>row()?.querySelector('.conversation-task-amendment');
+ await act(async()=>{await until(()=>status()?.textContent?.includes('正在进行')?true:undefined,'real Task status in the DOM');});
+ const taskPath=reads.find(path=>path.startsWith('/api/assistant/tasks/'+original.taskId+'?'))!;assert.ok(taskPath);assert.deepEqual(JSON.parse(new URLSearchParams(taskPath.split('?')[1]).get('scope')!),original.draft.scope,'the Task read uses its Host-recorded scope, never Home all');
+ assert.equal(status()!.querySelector<HTMLAnchorElement>('a')!.hash,'#/ask?'+new URLSearchParams({conversation:f.id,turn:original.turn.id}));assert.equal(row().getAttribute('data-state'),'completed');
+ await field(d,'textarea[aria-label="向 Mote 提问"]','Generated unsent owner text beside a running Task');await click(d,'停止这条回答',status()!);
+ assert.equal(writes.filter(path=>path.endsWith('/cancel')).length,1);assert.equal(writes.at(-1),`/api/conversations/${f.id}/messages/${amendment.message.id}/cancel`);assert.equal(f.node.conversations.message(amendment.message.id).status,'cancelled');assert.notEqual(f.task(original.taskId).state,'cancelled');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea[aria-label="向 Mote 提问"]')!.value,'Generated unsent owner text beside a running Task');
+ await act(async()=>{f.release();await until(()=>f.task(original.taskId).state==='succeeded'?true:undefined,'same Task completing after DOM amendment cancellation');});assert.match(f.node.assistantTasks.get(original.taskId,original.draft.scope).result!.answer,/original task/);await act(async()=>root.render(null));
+});
+
+test('Task amendment state never uses a cached Task after a current scoped read is denied',async t=>{
+ const {root,d}=await fixture(t),taskId='99999999-9999-4999-8999-999999999999',scope={kind:'selection',evidenceIds:[cite]};let denied=false;
+ const turn={...conversation.turns[0],version:1,taskSteering:{targetTaskId:taskId,targetOperationId:'generated-formal-operation',targetRevision:2,state:'accepted',scope}},base=api(),owner={...base,request:async(path:string,init?:RequestInit)=>{
+  if(path==='/api/conversations/'+id)return {...conversation,turns:[turn]};if(path.startsWith('/api/assistant/tasks/'+taskId+'?')){if(denied)throw new ApiError('Generated scope was withdrawn',403);return{task:{id:taskId,state:'running'}};}return base.request(path,init);
+ }} as Api;
+ await view(root,owner);assert.match(d.querySelector('.conversation-task-amendment')!.textContent!,/正在进行/);assert.ok(d.querySelector('.conversation-task-amendment button'));denied=true;const {resources}=await import('../src/resource-cache');await act(async()=>resources(owner).invalidate(path=>path.startsWith('/api/assistant/tasks/')));
+ assert.match(d.querySelector('.conversation-task-amendment [role=alert]')!.textContent!,/读取任务状态失败/);assert.equal(d.querySelector('.conversation-task-amendment button'),null);assert.doesNotMatch(d.querySelector('.conversation-task-amendment')!.textContent!,/正在进行/);
+});
