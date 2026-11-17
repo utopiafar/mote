@@ -622,22 +622,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/material-context.ts",
-    "to": "C19",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/material-context.ts",
-    "to": "H14",
-    "kind": "comment",
-    "symbol": "count:2",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/plugins/material-memory-intake.ts",
     "to": "K04",
     "kind": "comment",
@@ -678,96 +662,8 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-automation-admission.ts",
-    "to": "H04",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-automation-admission.ts",
-    "to": "K04",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-backup.ts",
-    "to": "C24",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-deletions.ts",
-    "to": "C24",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/plugins/memory-provider-adapters.ts",
     "to": "C23",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-publication.ts",
-    "to": "C23",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-publication.ts",
-    "to": "C24",
-    "kind": "comment",
-    "symbol": "count:5",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/memory-record-repository.ts",
-    "to": "K04",
-    "kind": "comment",
-    "symbol": "count:2",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/notes-source.ts",
-    "to": "C10",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/notes-source.ts",
-    "to": "C24",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/notes-source.ts",
-    "to": "H03",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/notes-source.ts",
-    "to": "H04",
     "kind": "comment",
     "symbol": "count:1",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
@@ -810,14 +706,6 @@
     "to": "H05",
     "kind": "comment",
     "symbol": "count:2",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/owner-question-services.ts",
-    "to": "H14",
-    "kind": "comment",
-    "symbol": "count:1",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
   },
   {
