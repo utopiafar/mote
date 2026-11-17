@@ -271,11 +271,15 @@ export class FileStore {
     const row=this.session(id,authorize);if(row.ack)return JSON.parse(row.ack);
     const input=JSON.parse(row.manifest) as FileRevision,count=Number(this.store.db.prepare('SELECT count(*) n FROM file_parts WHERE upload_id=?').get(id)!.n);
     if(count!==Math.ceil(input.sizeBytes/FILE_PART_BYTES))throw new StoreError('Upload is incomplete',409);
+    const scopeVersion=this.sources.getSource(input.sourceId).syncScopeVersion??0;
+    // Forgetting may remove the session while preparation is running. Recheck
+    // its admitted identity under current authority before reporting its result.
+    const validate=()=>{cancellation.throwIfAborted();authorize(input.sourceId);this.sources.assertSyncScope(input.sourceId,scopeVersion);this.allowed(input);this.session(id,authorize);};
     const parts=this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').iterate(id) as Iterable<{part:number;hash:string;bytes:number}>;
     const hash=input.sha256!;
-    const {release}=await this.store.assets.putUpload(join(this.uploads,id),parts,input.sizeBytes,hash,cancellation);
+    const {release}=await this.store.assets.putUpload(join(this.uploads,id),parts,input.sizeBytes,hash,cancellation).catch(error=>{validate();throw error;});
     try{
-    this.session(id,authorize);cancellation.throwIfAborted();
+    validate();
     const ack=await this.revisionAdmitted(input,sourceId=>{cancellation.throwIfAborted();authorize(sourceId);},(captureId)=>{
       const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
       this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
