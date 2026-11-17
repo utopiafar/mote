@@ -85,7 +85,9 @@ try{
     }));await save();
   }
   const ocr=hasImage?await worker('ocr-server.py',['--model-root',values['ocr-model-root']!],'ocr'):undefined;
-  const asr=hasAudio?await worker('transcription-server.py',['--model',values['asr-model-root']!,'--segmentation-model',join(values['asr-model-root']!,'segmentation.onnx'),'--speaker-model',join(values['asr-model-root']!,'speaker.onnx')],'asr'):undefined;
+  const asrTemporaryRoot=hasAudio?join(directory,'worker-tmp'):undefined;
+  if(asrTemporaryRoot)await mkdir(asrTemporaryRoot,{recursive:true,mode:0o700});
+  const asr=hasAudio?await worker('transcription-server.py',['--model-root',values['asr-model-root']!,'--timeout','3600','--load-timeout','300','--temporary-root',asrTemporaryRoot!],'asr'):undefined;
   node=await buildApp(config,processorPlugin?{processingPlugins:[processorPlugin]}:undefined);const lifecycle=node.lifecycle.settings();
   for(const key of ['consolidation','insights','working'] as const)lifecycle[key].enabled=false;
   await node.lifecycle.save({revision:node.configService.revision,settings:lifecycle});await node.app.ready();
