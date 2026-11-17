@@ -9,7 +9,6 @@ class RetentionWorker(context: Context, parameters: WorkerParameters) : Worker(c
         ConnectionGuard.sync {
             val historyAvailable = runCatching { UploadHistoryRetention.prune(applicationContext, UploadHistoryRetention.read(applicationContext)) }
                 .onFailure { UploadHistoryRecovery.report(applicationContext) }.isSuccess
-            applicationContext.queue().pruneUploaded()
             applicationContext.recordDraftStore().prune { applicationContext.queue().capture(it) != null }
             historyAvailable
         }?.let { if (it) Result.success() else Result.retry() } ?: Result.retry()

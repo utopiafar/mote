@@ -486,7 +486,7 @@ class HomeForbiddenJourneyInstrumentedTest {
             context.queue().enqueue(JSONObject().put("id", id).put("deviceId", settings.deviceId)
                 .put("capturedAt", java.time.Instant.now().toString()).put("platform", "android").put("source", "note")
                 .put("durationMs", 0).put("ocrText", "生成的离线首页记录")
-                .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")), null, 1_000_000)
+                .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none")), null)
             Fixture().use { fixture ->
                 fixture.feedItems.put(JSONObject().put("id", id).put("capturedAt", java.time.Instant.now().toString())
                     .put("source", "note").put("deviceId", settings.deviceId).put("hasImage", false)

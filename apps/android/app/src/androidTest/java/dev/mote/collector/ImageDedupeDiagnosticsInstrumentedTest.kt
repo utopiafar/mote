@@ -166,7 +166,7 @@ class ImageDedupeDiagnosticsInstrumentedTest {
             }
             val cleanupIds = (ids + remaining).distinct()
             cleanupIds.forEach { id ->
-                context.queue().capture(id)?.let { context.queue().acknowledge(id)
+                context.queue().capture(id)?.let { context.queue().removeGeneratedRecord(id)
                 }
             }
             shell("dumpsys battery reset")

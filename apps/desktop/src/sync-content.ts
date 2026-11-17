@@ -23,13 +23,15 @@ function recordText(source: SyncContent['item']['source'], record: Record<string
   if(source==='note')return noteBody(typeof record.ocrText==='string'?record.ocrText:'',record.metadata);
   return text(record.ocrText);
 }
-async function request(config: Config, path: string): Promise<Response> {
+async function request(config: Config, path: string,authorize:()=>void=()=>{}): Promise<Response> {
+  authorize();
   const response = await fetch(`${validateServerUrl(config.serverUrl)}${path}`, { headers: { 'Accept-Language': getLocale(), Authorization: `Bearer ${requireConnectionToken(config)}` }, credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(20000) });
+  try{authorize();}catch(error){await response.body?.cancel().catch(()=>{});throw error;}
   if (!response.ok) { await response.body?.cancel(); if (response.status === 404 || response.status === 410) throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。')); if (response.status === 401 || response.status === 403) {const error=Error(moteText('无法访问采集记录，请检查中央连接权限'));error.name='ArchiveAuthorizationError';throw error;} throw Error(moteText('中央返回 HTTP {0}。稍后重试', response.status)); }
   return response;
 }
-async function json(config: Config, path: string): Promise<Record<string, unknown>> { const value: unknown = JSON.parse(await readResponseText(await request(config, path), 4 * 1024 * 1024)); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid archive response'); return value as Record<string, unknown>; }
-export async function syncContent(history: SyncHistory, queue: DurableQueue, sources: LocalSourceManager, config: Config, runId: string, key: string, chunkOffset = 0, includeImage = true): Promise<SyncContent> {
+async function json(config: Config, path: string,authorize:()=>void=()=>{}): Promise<Record<string, unknown>> { const value: unknown = JSON.parse(await readResponseText(await request(config, path,authorize), 4 * 1024 * 1024,authorize));authorize(); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid archive response'); return value as Record<string, unknown>; }
+export async function syncContent(history: SyncHistory, queue: DurableQueue, sources: LocalSourceManager, config: Config, runId: string, key: string, chunkOffset = 0, includeImage = true,authorize:()=>void=()=>{}): Promise<SyncContent> {
   if (!Number.isSafeInteger(chunkOffset) || chunkOffset < 0 || chunkOffset > 1000000) throw Error(moteText('分页参数无效'));
   const item = history.item(config, runId, key);
   if (item.outcome !== 'received') {
@@ -45,17 +47,18 @@ export async function syncContent(history: SyncHistory, queue: DurableQueue, sou
       }
     } else if (item.captureId) {
       const record = queue.recordForHistory(item.captureId);
-      if (record) { const bytes = includeImage ? await queue.imageForBrowser(item.captureId) : undefined; return { item, location: 'local',description:record.event.metadata?.ownerDescription, hasImage:Boolean(record.blobHash), truncated:recordText(item.source,record.event as unknown as Record<string,unknown>).length>100000,text:recordText(item.source,record.event as unknown as Record<string,unknown>).slice(0,100000), ...(bytes && includeImage ? { image: await previewWork.run<string>({ kind: 'preview', bytes, thumbnail: false }) } : {}), metadata: JSON.stringify(record.event.metadata ?? {}, null, 2) }; }
+      if(record?.localContentRelease){if(!record.archiveAcknowledgment||record.archiveAcknowledgment.origin!==validateServerUrl(config.serverUrl))throw Error(moteText('原中央与当前连接不一致，未发送读取请求。'));return readCentralContent(config,item,chunkOffset,includeImage,authorize);}
+      if (record) { const current=()=>{authorize();if(queue.recordForHistory(record.event.id)?.localContentRelease)throw Error('Local original changed');}; const bytes = includeImage ? await queue.imageForBrowser(item.captureId) : undefined; const value:SyncContent={ item, location: 'local',description:record.event.metadata?.ownerDescription, hasImage:Boolean(record.blobHash), truncated:recordText(item.source,record.event as unknown as Record<string,unknown>).length>100000,text:recordText(item.source,record.event as unknown as Record<string,unknown>).slice(0,100000), ...(bytes && includeImage ? { image: await previewWork.run<string>({ kind: 'preview', bytes, thumbnail: false }) } : {}), metadata: JSON.stringify(record.event.metadata ?? {}, null, 2) };current();return value; }
     }
     // A later retry can have cleared the local copy. Resolve only a receipt from this same node/device.
     const receipt = history.receivedCapture(config, item.key);
     item.captureId = receipt;
   }
-  return readCentralContent(config,item,chunkOffset,includeImage);
+  return readCentralContent(config,item,chunkOffset,includeImage,authorize);
 }
-export async function readCentralContent(config:Config,item:SyncContent['item'],chunkOffset=0,includeImage=false):Promise<SyncContent>{
+export async function readCentralContent(config:Config,item:SyncContent['item'],chunkOffset=0,includeImage=false,authorize:()=>void=()=>{}):Promise<SyncContent>{
   if (!item.captureId || !uuid.test(item.captureId)) throw Error(moteText('本机副本已变化；尚无可读取的中央接收凭据。'));
-  const record = await json(config, `/api/capture-browser/${item.captureId}`);
+  const record = await json(config, `/api/capture-browser/${item.captureId}`,authorize);
   if (record.id !== item.captureId || record.deviceId !== config.deviceId) throw Error(moteText('记录不属于当前设备'));
   if(record.source!==undefined)item.source=record.source==='message'?'coding':sourceSchema.parse(record.source);
   item.title=typeof record.windowTitle==='string'?record.windowTitle:typeof record.appName==='string'?record.appName:item.title;
@@ -69,34 +72,48 @@ export async function readCentralContent(config:Config,item:SyncContent['item'],
   result.processing = ocr?.status === 'pending';
   result.hasImage=Boolean(record.imageMime && item.source==='screen'); if(record.imageMime)result.retainsOriginal=true;
   if(record.fileArchive&&item.source==='file'){
-    try { const file=await json(config,`/api/files/${item.captureId}`);if(typeof file.hasOriginal==='boolean')result.retainsOriginal=file.hasOriginal;const manifestItem=file.item as {layer?:string}|undefined;result.metadataOnly=manifestItem?.layer==='reference'||result.metadataOnly; }
-    catch(error){if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error;}
+    try { const file=await json(config,`/api/files/${item.captureId}`,authorize);if(typeof file.hasOriginal==='boolean')result.retainsOriginal=file.hasOriginal;const manifestItem=file.item as {layer?:string}|undefined;result.metadataOnly=manifestItem?.layer==='reference'||result.metadataOnly; }
+    catch(error){authorize();if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error;}
   }
   result.readiness=result.metadataOnly?'metadata':'unknown';
   const materialRef=record.memoryMaterialRef;
   if(typeof materialRef==='string'&&/^material:[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+$/.test(materialRef)){
-    try { const id=materialRef.slice(9).split('@')[0],material=await json(config,`/api/materials/${encodeURIComponent(id)}`),coverage=material.coverage as {state?:string}|undefined,indexing=material.indexing as {state?:string;revision?:string}|undefined;
+    try { const id=materialRef.slice(9).split('@')[0],material=await json(config,`/api/materials/${encodeURIComponent(id)}`,authorize),coverage=material.coverage as {state?:string}|undefined,indexing=material.indexing as {state?:string;revision?:string}|undefined;
       if(material.ref===materialRef) result.readiness=coverage?.state==='complete'&&indexing?.state==='indexed'&&indexing.revision===material.revision?'ready':indexing?.state==='failed'?'failed':coverage?.state==='pending'||coverage?.state==='partial'||indexing?.state==='pending'||indexing?.state==='running'?'pending':'unknown';
-    } catch(error) { if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error; /* Content stays readable while readiness cannot be confirmed. */ }
+    } catch(error) { authorize();if(error instanceof Error&&error.name==='ArchiveAuthorizationError')throw error; /* Content stays readable while readiness cannot be confirmed. */ }
   }
   if(result.readiness==='unknown'&&ocr?.status==='pending')result.readiness='pending';
   if(result.readiness==='unknown'&&ocr?.status==='failed')result.readiness='failed';
   if (includeImage && record.imageMime && item.source === 'screen') {
-    const response = await request(config, `/api/capture-browser/${item.captureId}/image`);
+    const response = await request(config, `/api/capture-browser/${item.captureId}/image`,authorize);
     if (Number(response.headers.get('content-length')) > MAX_IMAGE_BYTES) { await response.body?.cancel(); throw Error(moteText('图片超过大小限制')); }
     if (!response.body) throw Error(moteText('图片为空'));
     const reader = response.body.getReader(), chunks: Uint8Array[] = []; let length = 0;
-    try { while (true) { const part = await reader.read(); if (part.done) break; length += part.value.length; if (length > MAX_IMAGE_BYTES) throw Error(moteText('图片超过大小限制')); chunks.push(part.value); } }
+    try { while (true) { authorize();const part = await reader.read();authorize(); if (part.done) break; length += part.value.length; if (length > MAX_IMAGE_BYTES) throw Error(moteText('图片超过大小限制')); chunks.push(part.value); } }
     finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     result.image = await previewWork.run<string>({ kind: 'preview', bytes: Buffer.concat(chunks), thumbnail: false });
   }
   if (record.fileArchive && item.source === 'file' && !result.metadataOnly) {
-    const page = await json(config, `/api/files/${item.captureId}/chunks?offset=${chunkOffset}`);
+    const page = await json(config, `/api/files/${item.captureId}/chunks?offset=${chunkOffset}`,authorize);
     if (!Array.isArray(page.items) || page.items.length > 100) throw Error('Invalid file content page');
     const body=page.items.map(value=>(value as {ocrText?:unknown}).ocrText).filter((value):value is string=>typeof value==='string').join('\n\n');result.truncated=body.length>100000;result.text=body.slice(0,100000);
     if (Number.isSafeInteger(page.nextOffset) && Number(page.nextOffset) > chunkOffset) result.nextChunkOffset = Number(page.nextOffset);
     const document = provenance?.document as { fileIndex?: { status?: string } } | undefined;
     result.processing = !result.text && document?.fileIndex?.status === 'pending';
   }
-  return result;
+  authorize();return result;
+}
+
+/** Original bytes remain streamed and inside the current owner read lease. */
+export async function readArchivedFile(config:Config,expected:{captureId:string;externalId:string;deviceId:string;sourceId:string;revision:string;sha256:string;sizeBytes:number},authorize:()=>void):Promise<{bytes:AsyncIterable<Uint8Array>;sizeBytes:number;sha256?:string;close:()=>Promise<void>}>{
+  if(!uuid.test(expected.captureId)||!/^[a-f0-9]{64}$/.test(expected.sha256)||!Number.isSafeInteger(expected.sizeBytes)||expected.sizeBytes<1)throw Error('Invalid archive identity');
+  const record=await json(config,`/api/capture-browser/${expected.captureId}`,authorize),provenance=record.provenance as {externalId?:string;revision?:string;sourceId?:string}|undefined;
+  if(record.id!==expected.captureId||record.deviceId!==expected.deviceId||provenance?.externalId!==expected.externalId||provenance?.sourceId!==expected.sourceId||provenance?.revision!==expected.revision)throw Error(moteText('记录不属于当前设备'));
+  const file=await json(config,`/api/files/${expected.captureId}`,authorize);
+  if(file.captureId!==expected.captureId||!file.hasOriginal||!Number.isSafeInteger(file.sizeBytes)||Number(file.sizeBytes)<1||file.sizeBytes!==expected.sizeBytes)throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。'));
+  const response=await request(config,`/api/files/${expected.captureId}/content`,authorize);
+  if(!response.body||Number(response.headers.get('content-length'))!==file.sizeBytes){await response.body?.cancel();throw Error('Invalid original length');}
+  const reader=response.body.getReader();let closed=false;
+  const close=async()=>{if(closed)return;closed=true;try{await reader.cancel().catch(()=>{});}finally{reader.releaseLock();}};
+  return {sizeBytes:Number(file.sizeBytes),sha256:expected.sha256,close,bytes:(async function*(){try{for(;;){authorize();const part=await reader.read();authorize();if(part.done)break;yield part.value;}}finally{await close();}})()};
 }

@@ -217,8 +217,29 @@ export class PluginHost implements ServiceResolver {
       assertCurrent();
       const value = Reflect.apply(callback, receiver, args);
       if (value && typeof value.then === 'function') {
-        const pending = Promise.resolve(value).then(result => { assertCurrent(); return result === actual ? guarded : result; });
-        port.owner.resources.join(pending); consumer?.resources.join(pending);
+        const work = Promise.resolve(value);
+        const pending = new Promise<unknown>((resolve, reject) => {
+          let listening = false;
+          const remove = () => { if (listening) { leaseSignal.removeEventListener('abort', cancelled); listening = false; } };
+          const cancelled = () => {
+            remove();
+            try { assertCurrent(); reject(new PluginHostError('cancelled')); } catch (error) { reject(error); }
+          };
+          work.then(result => {
+            remove();
+            try { assertCurrent(); resolve(result === actual ? guarded : result); } catch (error) { reject(error); }
+          }, error => { remove(); reject(error); });
+          if (leaseSignal.aborted) cancelled();
+          else { listening = true; leaseSignal.addEventListener('abort', cancelled, {once: true}); }
+        });
+        // A withdrawn caller stops waiting without discarding provider-owned
+        // work. Keep both outcomes observed until the actual operation settles;
+        // a late execution failure takes precedence over caller cancellation.
+        const owned = Promise.allSettled([work, pending]).then(([execution, observation]) => {
+          if (execution.status === 'rejected') throw execution.reason;
+          if (observation.status === 'rejected') throw observation.reason;
+        });
+        port.owner.resources.join(owned); consumer?.resources.join(pending);
         return pending;
       }
       return value === actual ? guarded : value;

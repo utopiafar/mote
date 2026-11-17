@@ -268,7 +268,7 @@ class SecondaryScreensInstrumentedTest {
         fun note(label:String)=org.json.JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("deviceId",settings.deviceId).put("deviceName","Generated recovery phone").put("platform","android").put("source","note").put("capturedAt",java.time.Instant.now().toString()).put("durationMs",0).put("ocrText",label).put("privacy",org.json.JSONObject().put("excluded",false))
         val present=note("Generated recovery already present");val missing=note("Generated recovery missing");val deleted=note("Generated recovery owner deleted");val conflict=note("Generated recovery local conflict")
         api.post("/api/captures",present);api.post("/api/captures",deleted);api.delete("/api/captures/"+deleted.getString("id"));api.post("/api/captures",org.json.JSONObject(conflict.toString()).put("ocrText","Generated retained Central conflict original"))
-        listOf(present,missing,deleted,conflict).forEach { context.queue().enqueue(it,null,1_000_000) }
+        listOf(present,missing,deleted,conflict).forEach { context.queue().enqueue(it,null) }
         val manager=androidx.work.WorkManager.getInstance(context)
         try {
             ActivityScenario.launch(SyncQueueActivity::class.java).use { scenario ->

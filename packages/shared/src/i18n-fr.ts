@@ -1,5 +1,8 @@
 /* Authored interface messages only; never translate captured content. */
 export const french: Readonly<Record<string, string>> = {
+  "本机采集内容长期保留，上传确认后不自动删除。": "Le contenu capturé localement est conservé à long terme et n’est pas supprimé automatiquement après confirmation de l’envoi.",
+  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "Le périmètre de la source locale a changé. Les anciennes versions en attente sont isolées et leurs données d’origine sont conservées.",
+  "ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。": "Les sauvegardes ZIP contiennent les enregistrements capturés localement, leur état d’envoi et les images associées. Cet état est conservé à la restauration. Les fichiers sources, pièces jointes et enregistrements de réunion doivent être sauvegardés séparément.",
   "单文件上限（MiB，0 为不限）": "Limite par fichier (Mio, 0 = sans limite supplémentaire)",
   "中央资料持续保留，不设置资料总量配额，也不按天自动删除。": "Les contenus centraux sont conservés indéfiniment, sans quota global de stockage ni suppression automatique selon leur ancienneté.",
   "文件原件默认归档；已有来源的保存方式保持原设置，可在来源中调整。": "Les fichiers originaux sont archivés par défaut. Les sources existantes conservent leurs paramètres de rétention, modifiables dans Sources.",
@@ -10814,7 +10817,13 @@ export const french: Readonly<Record<string, string>> = {
   "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Supprimer cet enregistrement original et les images qui ne sont plus référencées. Les souvenirs encore valides sont conservés ; l’original ne pourra plus être consulté ni cité.",
   "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Supprimer le fichier original et le texte analysé dans Central. Les souvenirs encore valides sont conservés ; l’original ne pourra plus être consulté ni cité. Le fichier original sur l’appareil source est conservé.",
   "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "L’original a été libéré et ne peut plus être consulté ni cité. Ce souvenir reste utilisable dans son périmètre de validité.",
-  "本机采集内容长期保留，上传确认后不自动删除。": "Le contenu capturé localement est conservé à long terme et n’est pas supprimé automatiquement après confirmation de l’envoi.",
-  "当前本机来源范围已变更，旧待传版本已隔离，原输入保留。": "Le périmètre de la source locale a changé. Les anciennes versions en attente sont isolées et leurs données d’origine sont conservées.",
-  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Les sauvegardes JSON incluent les enregistrements capturés localement, leur état d’envoi et les images associées. La restauration conserve cet état. Les fichiers sources et les enregistrements de réunion doivent être sauvegardés séparément."
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "Les sauvegardes JSON incluent les enregistrements capturés localement, leur état d’envoi et les images associées. La restauration conserve cet état. Les fichiers sources et les enregistrements de réunion doivent être sauvegardés séparément.",
+  "清理本机副本": "Supprimer la copie locale",
+  "本机副本已清理": "Copie locale supprimée",
+  "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Supprimer uniquement une copie locale dont le téléversement a été confirmé. La date, la source et le reçu sont conservés ; les archives Central et vos fichiers source restent inchangés.",
+  "本机原件不在此设备，连接原中央后可按当前权限读取。": "L’original n’est pas sur cet appareil. Connectez-vous au Central d’origine pour le lire avec vos autorisations actuelles.",
+  "原中央与当前连接不一致，未发送读取请求。": "Le Central d’origine ne correspond pas à la connexion actuelle. Aucune demande de lecture n’a été envoyée.",
+  "从中央另存原件": "Enregistrer l’original depuis Central",
+  "采集阶段仍有待处理输入，暂不能清理本机副本。": "Des entrées restent en attente dans les étapes de capture. Cette copie locale ne peut pas encore être supprimée.",
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "La copie locale n’a pas été entièrement supprimée. Réessayez ; les entrées restantes ne seront pas téléversées à nouveau."
 };

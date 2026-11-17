@@ -5,16 +5,16 @@ import type { SyncSource, SyncHistoryItem } from './sync-history';
 export type CaptureLocation = 'local' | 'central';
 export interface BrowseRequest { source?: 'screen'|'ui_page'; location: CaptureLocation; day: string; cursor?: string; grouping?: 'sessions' | 'records'; sessionId?: string }
 export interface BrowserCapture {
-  source?: 'screen'|'ui_page'; id: string; capturedAt: string; appName: string; appId: string;
+  localContentRelease?:{at:string;pending?:true};source?: 'screen'|'ui_page'; id: string; capturedAt: string; appName: string; appId: string;
   ocr: { status: 'pending' | 'completed' | 'disabled' | 'failed' | 'unknown'; reason?: 'charging' };
   textPreview: string; sizeBytes?: number; hasImage: boolean; syncError?: string;
 }
 export interface BrowserPage { items: BrowserCapture[]; totalCount: number; nextCursor?: string; sessions?: CaptureSession[]; sessionCount?: number }
 export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
 export type ContentSource = SyncSource | import('@mote/shared').CaptureRecord['source'];
-export interface ContentItem { archiveAcknowledgment?:{at:string;origin:string};key:string;source:ContentSource;title:string;observedAt:string;preview:string;sourceName?:string;error?:string; }
+export interface ContentItem {localContentRelease?:{at:string;pending?:true}; archiveAcknowledgment?:{at:string;origin:string};key:string;source:ContentSource;title:string;observedAt:string;preview:string;sourceName?:string;error?:string; }
 export interface LocalContentPage {items:ContentItem[];total:number;nextOffset?:number;}
-export interface ContentDetail {sizeBytes?:number;text:string;description?:string;sourceName:string;metadata:string;hasImage?:boolean;image?:string;metadataOnly?:boolean;retainsOriginal?:boolean;truncated?:boolean;}
+export interface ContentDetail {localContentRelease?:{at:string;pending?:true};canRelease?:boolean;canSaveOriginal?:boolean;sizeBytes?:number;text:string;description?:string;sourceName:string;metadata:string;hasImage?:boolean;image?:string;metadataOnly?:boolean;retainsOriginal?:boolean;truncated?:boolean;}
 export interface CentralContentPage {items:ContentItem[];total?:number;nextCursor?:string;authorizationDenied?:true;}
 export interface SyncContent {
   item: Omit<SyncHistoryItem, 'source'> & {source: ContentSource}; location: 'local' | 'central'; text: string; description?:string; image?: string;

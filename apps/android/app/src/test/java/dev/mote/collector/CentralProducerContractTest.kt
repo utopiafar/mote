@@ -10,6 +10,9 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import dev.mote.collector.plugins.WorkspaceDecode
 import dev.mote.collector.plugins.WorkspaceTemplate
+import dev.mote.collector.meeting.MeetingArchiveTransfer
+import dev.mote.collector.meeting.MeetingRecordingStore
+import dev.mote.collector.meeting.MeetingWaveWriter
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -68,6 +71,43 @@ class CentralProducerContractTest {
     private fun upload(client: CentralClient, file: java.io.File, scope: String, deviceId: String = device, progress: (Int, Int) -> Unit = { _, _ -> }) =
         CentralAttachments.upload(client, file, "Generated original.txt", "text/plain", deviceId, { time }, identityScope = scope, progress = progress)
     private fun begins() = exchanges.filter { it.path == "/api/file-sync/v1/uploads" }
+
+    @Test fun realMeetingAckWriteFailureKeepsAudioAndRestartUsesExactBeginAckWithoutRepeatingPartsOrCommit() {
+        val root = folder.newFolder(); val state = File(root, "state.enc"); val preserved = File(root, "generated-before-failure.enc")
+        var failAckWrite = false
+        val cipher = object : ByteCipher {
+            override fun open(bytes: ByteArray) = bytes
+            override fun seal(bytes: ByteArray): ByteArray {
+                if (failAckWrite && JSONObject(String(bytes)).getJSONArray("sessions").optJSONObject(0)?.optString("state") == "uploaded") {
+                    check(state.renameTo(preserved)); check(state.mkdir())
+                }
+                return bytes
+            }
+        }
+        val store = MeetingRecordingStore(root, cipher); val at = java.time.Instant.ofEpochMilli(time)
+        val notice = store.acknowledgeNotice(at.minusSeconds(60)); val sessionId = UUID.randomUUID().toString()
+        store.begin(sessionId, at, notice, origin)
+        val audio = File(root, "meeting-$sessionId.wav")
+        MeetingWaveWriter(audio, 16000, 1).apply { write(ShortArray(8000) { (it % 100).toShort() }, 8000); finish() }
+        store.complete(sessionId, at.plusSeconds(1), 1000, true, false, audio.name, emptyList())
+        val original = audio.readBytes(); val before = state.readBytes()
+        fun transfer(records: MeetingRecordingStore) = MeetingArchiveTransfer(records, root, device, origin, client(collector), {}, { it() })
+        failAckWrite = true
+        try { assertThrows(IllegalStateException::class.java) { transfer(store).flush() } }
+        finally { check(state.delete()); check(preserved.renameTo(state)); failAckWrite = false }
+        assertArrayEquals(before, state.readBytes()); assertEquals("completed", store.sessions().single().state)
+        assertNull(store.sessions().single().captureId); assertTrue(store.hasPendingConnectionWork()); assertArrayEquals(original, audio.readBytes())
+        val committed = exchanges.single { it.path.endsWith("/commit") }.response!!
+        assertTrue(transfer(MeetingRecordingStore(root, cipher)).flush())
+        assertEquals(2, begins().size); assertEquals(1, exchanges.count { it.path.endsWith("/parts/0") }); assertEquals(1, exchanges.count { it.path.endsWith("/commit") })
+        val manifest = begins().first().request!!
+        assertEquals(manifest.toString(), begins().last().request!!.toString())
+        assertEquals(committed.getString("id"), FileUploadConfirmation.canonicalId(manifest.getString("sourceId"), manifest, begins().last().response!!.getJSONObject("ack")))
+        val saved = store.sessions().single()
+        assertEquals("uploaded", saved.state); assertEquals(origin, saved.origin); assertEquals(committed.getString("id"), saved.captureId)
+        assertEquals(hash(original), saved.archiveSha256); assertEquals(original.size.toLong(), saved.archiveSizeBytes); assertArrayEquals(original, audio.readBytes())
+        val count = exchanges.size; assertTrue(transfer(MeetingRecordingStore(root, cipher)).flush()); assertEquals(count, exchanges.size)
+    }
 
     @Test fun persistentCardsFeedTheNativeNotificationReaderWithoutLosingSuppressedCards() {
         val id = System.getenv("MOTE_KOTLIN_CONTRACT_NOTIFICATION").orEmpty()

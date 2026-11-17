@@ -269,7 +269,7 @@ byId<HTMLInputElement>('records-day').value = `${recordsDate.getFullYear()}-${St
 const ocrNames = { get pending() { return moteText("等待 OCR"); }, get completed() { return moteText("OCR 已完成"); }, get disabled() { return moteText("OCR 已关闭"); }, get failed() { return moteText("OCR 待重试"); }, get unknown() { return moteText("OCR 状态未知"); } };
 function ocrLabel(value: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation = 'central'): string {
   if(value.source==='ui_page')return moteText("页面内容采集");
-  if(location==='local')return moteText("本机截图 · 完整内容由中央识别");
+  if(location==='local')return value.localContentRelease?moteText(value.localContentRelease.pending?'本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。':'本机副本已清理'):moteText("本机截图 · 完整内容由中央识别");
   return value.ocr.status === 'pending' && value.ocr.reason === 'charging' ? moteText("待接通电源后 OCR") : ocrNames[value.ocr.status];
 }
 function resetRecords(): void { selectedSession = undefined; recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
@@ -378,6 +378,8 @@ function closeRecordDetail(): void {
   selectedRecordButton?.classList.remove('selected'); selectedRecordButton?.setAttribute('aria-pressed', 'false'); selectedRecordButton?.focus();
 }
 byId('record-detail-close').addEventListener('click', closeRecordDetail);
+// A cleanup also withdraws already-rendered local thumbnails and pending reads.
+window.addEventListener('mote-local-content-released',()=>{recordsRevision++;closeRecordDetail();byId('record-detail-text').textContent='';byId('records-grid').replaceChildren();if(currentPage==='records')void loadRecords();});
 function readInput(id: string): string { return byId<HTMLInputElement>(id).value; }
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
@@ -970,10 +972,11 @@ function renderMeeting(value: import('./contracts/sources').MeetingRecordingStat
     : moteText('开始一场会议录音');
   byId('source-meeting-state').textContent = value.recording ? moteText('录音中') : moteText('已停止');
   byId('source-meeting-state').dataset.state = value.recording ? 'syncing' : 'paused';
+  byId('meeting-open').hidden=!session||session.state==='recording';
   byId('meeting-last').textContent = !session ? moteText('尚无会议录音。') : [
     meetingTime(session.startedAt),
     session.durationMs ? moteText('{0} 分钟', String(Math.max(1, Math.round(session.durationMs / 60000)))) : '',
-    session.state === 'uploaded' ? receivedHere?moteText('中心已接收'):moteText('原件已保留') : session.state === 'completed' ? moteText('保存在本机，等待上传') : session.state === 'failed' ? moteText('未完成') : moteText('正在录音'),
+    session.localContentRelease?(session.localContentRelease.pending?moteText('需要处理'):moteText('本机副本已清理')):session.state === 'uploaded' ? receivedHere?moteText('中心已接收'):moteText('原件已保留') : session.state === 'completed' ? moteText('保存在本机，等待上传') : session.state === 'failed' ? moteText('未完成') : moteText('正在录音'),
     !session.microphone && session.state !== 'recording' ? moteText('仅系统音频') : !session.systemAudio && session.state !== 'recording' ? moteText('仅麦克风') : '',
     session.error ?? '',
   ].filter(Boolean).join(' · ');
@@ -990,6 +993,7 @@ async function startMeeting(): Promise<void> {
   catch (error) { byId('meeting-message').textContent = error instanceof Error ? error.message : moteText('会议录音没有开始。'); }
   finally { meetingBusy = false; await refreshMeeting(); }
 }
+byId('meeting-open').addEventListener('click',()=>{const session=meetingStatus?.lastSession;if(session)libraryUi.open({key:'meeting:'+session.id,source:'file',title:moteText('本机会议录音'),observedAt:session.startedAt,preview:'',sourceName:moteText('本机会议录音'),localContentRelease:session.localContentRelease,...(session.uploadedAt&&session.uploadOrigin?{archiveAcknowledgment:{at:session.uploadedAt,origin:session.uploadOrigin}}:{})});});
 byId('meeting-start').addEventListener('click', () => {
   if (meetingStatus?.recording) return;
   if (!meetingStatus?.noticeAcknowledged) byId<HTMLDialogElement>('meeting-notice-dialog').showModal();

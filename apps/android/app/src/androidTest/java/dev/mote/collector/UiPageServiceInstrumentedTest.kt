@@ -56,7 +56,7 @@ class UiPageServiceInstrumentedTest {
         }
         // A transport batch intentionally separates metadata windows from image records.
         fun rows(): List<JSONObject> = context.queue().syncIds(limit=100).mapNotNull {context.queue().capture(it)}
-        fun clear() { while(context.queue().depth()>0) { val batch=rows();check(batch.isNotEmpty());batch.forEach { context.queue().acknowledge(it.getString("id")) } } }
+        fun clear() { context.queue().dedupeIds().forEach { context.queue().removeGeneratedRecord(it) } }
         fun values(objectValue:JSONObject,name:String):List<String> {
             val fields=objectValue.getJSONArray("fields")
             val field=(0 until fields.length()).map(fields::getJSONObject).singleOrNull {it.getString("name")==name}?:return emptyList()

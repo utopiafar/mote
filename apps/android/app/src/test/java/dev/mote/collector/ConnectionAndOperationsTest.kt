@@ -80,12 +80,12 @@ class ConnectionAndOperationsTest {
             val id = UUID.randomUUID().toString()
             val note = JSONObject().put("id", id).put("source", "note").put("capturedAt", now.toString()).put("ocrText", "GENERATED_PRIVATE_BODY")
                 .put("privacy", JSONObject().put("excluded", false))
-            queue.enqueue(note, null, 1024 * 1024); queue.enqueue(note, null, 1024 * 1024)
+            queue.enqueue(note, null); queue.enqueue(note, null)
             val pending = queue.summary(); assertEquals(1, pending.getInt("notes")); assertFalse(pending.toString().contains("GENERATED_PRIVATE_BODY"))
             ledger.record(OperationKind.UPLOAD_RETRY, OperationReason.NETWORK, recordId = id)
             queue.acknowledge(id, 123); queue.acknowledge(id, 123)
             val state = ledger.read(); assertEquals(1, state.getJSONObject("counts").getInt("NOTE_QUEUED")); assertEquals(1, state.getJSONObject("counts").getInt("NOTE_ACK"))
-            assertEquals(123, state.getLong("confirmedUploadBytes")); assertEquals(0, queue.depth())
+            assertEquals(123, state.getLong("confirmedUploadBytes")); assertEquals(1, queue.depth()); assertEquals(0, queue.pendingSync().count)
             assertEquals(id, state.getJSONArray("events").getJSONObject(2).getString("recordId")); assertFalse(state.toString().contains("GENERATED_PRIVATE_BODY"))
         } finally { directory.deleteRecursively() }
     }

@@ -12,7 +12,7 @@ import java.util.UUID
 
 data class LocalSource(
     val id: String = "android-${UUID.randomUUID()}", val name: String, val kind: String,
-    val retention: String = "snapshot", val enabled: Boolean = true,
+    val retention: String = if (kind == "local-files") "archive" else "snapshot", val enabled: Boolean = true,
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
     val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 0, val allowRead: Boolean = false,
@@ -118,11 +118,12 @@ class SourceLease internal constructor(internal val hostKey: String, val source:
 internal object SourceRuntime {
     val lock = Any()
     val revisions = mutableMapOf<String, Long>()
+    val archiveDirectories = mutableMapOf<String, File>()
 }
 internal class SourceLeaseRevoked : IllegalStateException("Source configuration changed or was disabled")
 
 /** Local snapshots plus immutable pending revisions. State changes are atomic and ACKs target-specific. */
-class LocalSourceStore(private val directory: File, private val cipher: ByteCipher) {
+class LocalSourceStore(private val directory: File, private val cipher: ByteCipher, private val archiveDirectory: File? = null) {
     internal var onMutation: (() -> Unit)? = null
     init { directory.mkdirs() }
     fun sources(): List<LocalSource> = synchronized(lock) {
@@ -130,6 +131,11 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         (0 until array.length()).map { LocalSource.from(array.getJSONObject(it)) }
     }
     private fun runtimeKey(id: String) = directory.absolutePath + ":" + id
+    internal fun attachArchiveDirectory(value: File) { SourceRuntime.archiveDirectories[directory.absolutePath] = value }
+    private fun reconcileArchives(id: String, source: LocalSource?) {
+        val path = archiveDirectory ?: SourceRuntime.archiveDirectories[directory.absolutePath] ?: return
+        if (path.isDirectory) FileArchiveQueue(path, cipher).reconcileScope(id, source)
+    }
     internal fun lease(source: LocalSource): SourceLease? = synchronized(lock) {
         if (!source.enabled || sources().none { it == source }) null
         else SourceLease(runtimeKey(source.id), source, SourceRuntime.revisions[runtimeKey(source.id)] ?: 0L)
@@ -144,10 +150,10 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     fun save(source: LocalSource) = synchronized(lock) {
         source.validate(); val all = sources().toMutableList(); val old = all.find { it.id == source.id }
         if (old != source) invalidate(source.id)
-        // Explicit selection/filter/retention edits discard old unsent material before the new scan.
-        if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name, initialSync = source.initialSync, syncContinuously = source.syncContinuously,
-                description = source.description, contextVersion = source.contextVersion, contextDirty = source.contextDirty, contextTarget = source.contextTarget).json().toString() != source.json().toString()) file(source.id).delete()
-        if (old == null || old.name != source.name || old.initialSync != source.initialSync) {
+        if (old != source) reconcileArchives(source.id, source)
+        val retained = state(source.id)
+        if (SourceAdmission.reconcile(retained, source)) write(file(source.id), retained)
+        if (old == null || old.name != source.name || old.initialSync != source.initialSync || old.retention != source.retention) {
             val state = state(source.id); state.put("registered", false)
             if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
             write(file(source.id), state)
@@ -175,8 +181,10 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     }
     fun remove(id: String) = synchronized(lock) {
         invalidate(id)
+        reconcileArchives(id, null)
         write(File(directory, "config.enc"), JSONObject().put("sources", JSONArray(sources().filterNot { it.id == id }.map { it.json() })))
-        file(id).delete()
+        val retained = state(id)
+        if (SourceAdmission.reconcile(retained, null)) write(file(id), retained)
     }
     fun state(id: String): JSONObject = synchronized(lock) { read(file(id)) }
     fun status(id: String, code: String, at: String = Instant.now().toString(), lease: SourceLease? = null) = synchronized(lock) {
@@ -188,44 +196,53 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         var count = 0; var updates = 0; var oldest: Long? = null
         sources().forEach { source ->
             val state = state(source.id)
-            val size = state.optJSONArray("pending")?.length() ?: 0
+            val size = (state.optJSONArray("pending")?.length() ?: 0) + (state.optJSONArray("quarantine")?.length() ?: 0)
             val metadata = source.enabled && (!state.optBoolean("registered") || source.contextDirty)
             if (size > 0 || metadata) { count += size; if (metadata) updates++; val at = state.optLong("pendingSince", file(source.id).lastModified().takeIf { it > 0 } ?: File(directory, "config.enc").lastModified()); oldest = oldest?.let { minOf(it, at) } ?: at }
-        }; PendingSync(count, oldest, updates)
+        }
+        val known = sources().map { it.id }.toSet()
+        directory.listFiles()?.filter { it.name.startsWith("source-") && it.extension == "enc" && it.name.removePrefix("source-").removeSuffix(".enc") !in known }?.forEach {
+            val state = read(it); val size = (state.optJSONArray("pending")?.length() ?: 0) + (state.optJSONArray("quarantine")?.length() ?: 0)
+            count += size; if (size > 0) oldest = minOf(oldest ?: Long.MAX_VALUE, it.lastModified())
+        }
+        PendingSync(count, oldest, updates)
     }
     /** Explicit full replay of retained versions; paused sources and their privacy choices stay untouched. */
-    fun requeueRetained(maxBytes: Long = 64L * 1024 * 1024): Int = synchronized(lock) {
+    fun requeueRetained(origin: String): Int = synchronized(lock) {
+        require(origin.isNotBlank())
         var count = 0
         for (source in sources().filter { it.enabled }) {
             val state = state(source.id)
             val pending = state.optJSONArray("pending") ?: JSONArray()
             val keys = (0 until pending.length()).map { identity(pending.getJSONObject(it)) }.toMutableSet()
+            val proofs = state.optJSONObject("pendingScopes") ?: JSONObject()
+            val held = state.optJSONArray("quarantine") ?: JSONArray()
+            val heldKeys = (0 until held.length()).map { SourceAdmission.key(held.getJSONObject(it).getJSONObject("item")) }.toMutableSet()
             val current = state.optJSONObject("current") ?: JSONObject()
             for (key in current.keys()) {
-                val body = current.getJSONObject(key).getJSONObject("body")
-                if (keys.add(identity(body))) pending.put(body)
+                val row = current.getJSONObject(key); val body = row.getJSONObject("body"); val identity = identity(body)
+                if (identity in keys || identity in heldKeys) continue
+                val acknowledgment = state.optJSONObject("archiveAcknowledgments")?.optJSONObject(identity)
+                if (acknowledgment?.optString("origin")?.let { it != origin.trim().trimEnd('/') } == true) continue
+                val proof = row.optJSONObject("sourceScope")
+                if (acknowledgment == null || !SourceAdmission.permits(source, body, proof)) {
+                    held.put(JSONObject().put("item", body).put("sourceScope", proof ?: JSONObject.NULL).put("policy", SourceAdmission.quarantine())); heldKeys.add(identity)
+                } else {
+                    pending.put(body); keys.add(identity); proofs.put(identity, proof)
+                }
             }
-            check(pending.length() <= 4096) { MoteI18n.text("来源队列已满，请先同步后重试全量上传") }
-            state.put("pending", pending).put("registered", false)
+            state.put("pending", pending).put("pendingScopes", proofs).put("quarantine", held).put("registered", false)
             if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
             val bytes = cipher.seal(state.toString().toByteArray(Charsets.UTF_8))
-            val other = directory.listFiles()?.filter { it != file(source.id) }?.sumOf { it.length() } ?: 0L
-            check(bytes.size + other <= maxBytes) { MoteI18n.text("来源补传缓存达到上限，请先同步待发版本后重试") }
             writeBytes(file(source.id), bytes); count += pending.length()
         }; count
-    }
-    fun resetSyncedSnapshots() = synchronized(lock) {
-        val all = sources(); check(all.all { (state(it.id).optJSONArray("pending")?.length() ?: 0) == 0 })
-        all.forEach { if (file(it.id).exists()) { check(file(it.id).delete()); onMutation?.invoke() } }
     }
     fun selectTarget(id: String, target: String) = synchronized(lock) {
         if (sources().none { it.id == id && it.enabled }) return@synchronized
         val state = state(id)
         if (state.optString("target") != target) {
             state.put("target", target).put("registered", false).remove("lastAcknowledgedAt")
-            val pending = state.optJSONArray("pending") ?: JSONArray(); val current = state.optJSONObject("current") ?: JSONObject()
-            val keys = (0 until pending.length()).map { identity(pending.getJSONObject(it)) }.toMutableSet()
-            for (key in current.keys()) { val body = current.getJSONObject(key).getJSONObject("body"); if (keys.add(identity(body))) pending.put(body) }
+            val pending = state.optJSONArray("pending") ?: JSONArray()
             if (pending.length() > 0 && !state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
             state.put("pending", pending); write(file(id), state)
         }
@@ -236,7 +253,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         if ((state.optJSONArray("pending")?.length() ?: 0) == 0) state.remove("pendingSince")
         write(file(id), state)
     }
-    fun scan(source: LocalSource, result: SourceScan, maxBytes: Long = 64L * 1024 * 1024, lease: SourceLease? = lease(source)) = synchronized(lock) {
+    fun scan(source: LocalSource, result: SourceScan, lease: SourceLease? = lease(source)) = synchronized(lock) {
         if (lease == null || lease.source != source || !current(lease)) return@synchronized
         result.items.forEach { SourcePrivacyGate.validate(source, it) }
         val state = state(source.id); val current = state.optJSONObject("current") ?: JSONObject(); val pending = state.optJSONArray("pending") ?: JSONArray()
@@ -245,7 +262,6 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             val ids = (0 until baseline.length()).map { baseline.getString(it) }.toMutableSet()
             result.items.forEach { ids.add(it.getString("externalId")) }
             state.put("baseline", JSONArray(ids.toList())).put("initialized", result.complete).put("scanComplete", result.complete).put("lastScan", result.observedAt)
-            check(state.toString().toByteArray().size <= maxBytes) { MoteI18n.text("首次同步清单达到缓存上限") }
             write(file(source.id), state); return@synchronized
         }
         val ignored = if (source.initialSync == "new_only") (0 until baseline.length()).map { baseline.getString(it) }.toSet() else emptySet()
@@ -256,10 +272,15 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         fun accept(input: JSONObject) {
             val body = JSONObject(input.toString()); val external = body.getString("externalId"); require(external.length <= 1000)
             val hash = SourceRules.contentHash(body); val previous = current.optJSONObject(external)
-            if (previous?.optString("hash") == hash) return
+            val held = state.optJSONArray("quarantine") ?: JSONArray()
+            val quarantined = (0 until held.length()).any { held.getJSONObject(it).getJSONObject("item").optString("revision") == previous?.optJSONObject("body")?.optString("revision") }
+            if (previous?.optString("hash") == hash && !quarantined) return
             // The predecessor distinguishes deletion/restoration with identical original content.
             body.put("revision", SourceRules.hash(hash + ":" + (previous?.getJSONObject("body")?.optString("revision") ?: "")))
-            pending.put(body); current.put(external, JSONObject().put("hash", hash).put("body", body))
+            val proof = SourceAdmission.capture(source, result.observedAt)
+            pending.put(body); current.put(external, JSONObject().put("hash", hash).put("body", body).put("sourceScope", proof))
+            val proofs = state.optJSONObject("pendingScopes") ?: JSONObject()
+            proofs.put(SourceAdmission.key(body), proof); state.put("pendingScopes", proofs)
         }
         result.items.forEach { body -> seen.add(body.getString("externalId")); if (body.getString("externalId") !in ignored) accept(body) }
         if (result.complete) for (external in current.keys().asSequence().toList()) {
@@ -276,35 +297,50 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
                 accept(deleted)
             }
         }
-        check(pending.length() <= 4096) { MoteI18n.text("来源队列已满，请先同步") }
         if (pending.length() > 0 && !state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
         state.put("current", current).put("pending", pending).put("lastScan", result.observedAt).put("status", if (result.complete) "scanned" else "partial").put("skipped", result.skipped).put("scanComplete", result.complete)
         val bytes = cipher.seal(state.toString().toByteArray(Charsets.UTF_8))
-        val other = directory.listFiles()?.filter { it != file(source.id) }?.sumOf { it.length() } ?: 0L
-        check(bytes.size + other <= maxBytes) { MoteI18n.text("来源缓存达到上限，请先同步或减少选择") }
         writeBytes(file(source.id), bytes)
     }
     fun next(id: String, target: String): JSONObject? = synchronized(lock) {
-        val state = state(id); if (state.optString("target") != target) return@synchronized null
+        val state = state(id); if (SourceAdmission.reconcile(state, sources().find { it.id == id })) write(file(id), state)
+        if (state.optString("target") != target) return@synchronized null
         state.optJSONArray("pending")?.takeIf { it.length() > 0 }?.getJSONObject(0)
     }
-    fun acknowledge(id: String, target: String, externalId: String, revision: String) = synchronized(lock) {
+    fun acknowledge(id: String, target: String, externalId: String, revision: String, origin: String? = null, captureId: String? = null) = synchronized(lock) {
         val state = state(id); if (state.optString("target") != target) return@synchronized
         val old = state.optJSONArray("pending") ?: JSONArray(); val next = JSONArray()
         for (i in 0 until old.length()) { val value = old.getJSONObject(i); if (value.getString("externalId") != externalId || value.getString("revision") != revision) next.put(value) }
         if (next.length() == 0) state.remove("pendingSince")
-        if (next.length() < old.length()) state.put("lastAcknowledgedAt", java.time.Instant.now().toString())
+        if (next.length() < old.length()) {
+            val at = Instant.now().toString()
+            state.put("lastAcknowledgedAt", at)
+            state.optJSONObject("pendingScopes")?.remove(externalId + "\u0000" + revision)
+            if (origin != null && captureId != null) {
+                val acknowledgments = state.optJSONObject("archiveAcknowledgments") ?: JSONObject()
+                acknowledgments.put(externalId + "\u0000" + revision, JSONObject().put("sourceId", id).put("externalId", externalId)
+                    .put("revision", revision).put("captureId", captureId).put("origin", origin).put("at", at))
+                state.put("archiveAcknowledgments", acknowledgments)
+            }
+        }
         state.put("pending", next); write(file(id), state)
     }
-    internal fun acknowledgeExact(identity: ItemUploadIdentity): Boolean = synchronized(lock) {
+    internal fun acknowledgeExact(identity: ItemUploadIdentity, captureId: String): Boolean = synchronized(lock) {
+        UUID.fromString(captureId)
         if (sources().none { it.id==identity.sourceId && it.enabled }) return@synchronized false
         val state = state(identity.sourceId)
+        if (SourceAdmission.reconcile(state, sources().find { it.id == identity.sourceId })) write(file(identity.sourceId), state)
         if (state.optString("target") != identity.target) return@synchronized false
+        val held = state.optJSONArray("quarantine") ?: JSONArray()
+        if ((0 until held.length()).any { SourceAdmission.key(held.getJSONObject(it).getJSONObject("item")) == identity.externalId + "\u0000" + identity.revision }) return@synchronized false
         val pending = state.optJSONArray("pending") ?: JSONArray()
         val matching = (0 until pending.length()).map { pending.getJSONObject(it) }.filter { it.optString("externalId")==identity.externalId && it.optString("revision")==identity.revision }
         if (matching.any { SourceRules.hash(SourceRules.canonical(it)) != identity.fingerprint }) return@synchronized false
-        // Absence proves no such pending revision remains at this exact target; newer revisions stay untouched.
-        if (matching.isNotEmpty()) acknowledge(identity.sourceId,identity.target,identity.externalId,identity.revision)
+        if (matching.isEmpty()) {
+            val saved = state.optJSONObject("archiveAcknowledgments")?.optJSONObject(identity.externalId + "\u0000" + identity.revision)
+            return@synchronized saved?.optString("captureId") == captureId && saved.optString("origin") == identity.origin
+        }
+        acknowledge(identity.sourceId,identity.target,identity.externalId,identity.revision,identity.origin,captureId)
         true
     }
     private fun identity(value: JSONObject) = value.getString("externalId") + "\u0000" + value.getString("revision")

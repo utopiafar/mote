@@ -41,14 +41,14 @@ class LocalContentCipherTest {
         val event = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "screen")
             .put("capturedAt", "2026-10-04T00:00:00Z").put("imageMime", "image/png")
             .put("privacy", JSONObject().put("excluded", false)).put("ocr", JSONObject().put("status", "pending"))
-        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1), 1000000) }
+        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1)) }
         event.getJSONObject("ocr").put("status", "disabled"); event.put("_ocrResult", JSONObject())
-        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1), 1000000) }
+        assertThrows(IllegalArgumentException::class.java) { queue.enqueue(event, byteArrayOf(1)) }
         assertEquals(0, queue.depth())
-        event.remove("_ocrResult"); val id = queue.enqueue(event, byteArrayOf(1), 1000000)
+        event.remove("_ocrResult"); val id = queue.enqueue(event, byteArrayOf(1))
         queue.acknowledge(id, retentionDays = 1, now = 1000)
         assertEquals(0, queue.pendingSync().count); assertArrayEquals(byteArrayOf(1), queue.image(id))
-        assertEquals(1, queue.pruneUploaded(1000 + 86400000L)); assertNull(queue.image(id))
+        assertEquals(0, queue.pruneUploaded(1000 + 86400000L)); assertArrayEquals(byteArrayOf(1), queue.image(id)); assertTrue(queue.capture(id)!!.getBoolean("uploaded"))
     }
     @Test fun retiredPortableArchivesCannotBecomeCurrentQueues() {
         for (version in listOf(1, 2, 3)) {
@@ -60,7 +60,7 @@ class LocalContentCipherTest {
                 }
             }.toByteArray()
             val directory = File(folder.root, "retired-archive-$version")
-            assertThrows(IllegalArgumentException::class.java) { QueueArchive.prepare(bytes.inputStream(), directory, 1000000) }
+            assertThrows(IllegalArgumentException::class.java) { QueueArchive.prepare(bytes.inputStream(), directory) }
             assertFalse(directory.exists())
         }
     }

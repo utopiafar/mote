@@ -123,7 +123,7 @@ class FinalSelectedRiskInstrumentedTest {
     @Test fun generatedBulkDeleteSucceedsAndRealUnreadableRecordIsReportedRetained()=fixture{
         val queue=context.queue();val store=BulkDedupeStore(context);val report=store.read("report");val plan=store.read("plan");val manager=WorkManager.getInstance(context);require(manager.getWorkInfosForUniqueWork(BulkDedupeWorker.NAME).get().all{it.state.isFinished});val ids=List(3){UUID.randomUUID().toString()};val folder=File(QueueStorage(context).current().path);var blocked:File?=null;var blockedMode=384
         Settings(context).save(Settings(context).read().copy(imageDedupeMode="exact"))
-        fun enqueue(id:String,second:Boolean){queue.enqueue(JSONObject().put("id",id).put("source","screen").put("capturedAt",if(second)"2026-10-30T00:00:01Z"else"2026-10-30T00:00:00Z").put("appId","generated.final.bulk").put("appName","Generated final bulk").put("privacy",JSONObject().put("excluded",false)).put("ocr",JSONObject().put("status","disabled")),png(),64L*1024*1024)}
+        fun enqueue(id:String,second:Boolean){queue.enqueue(JSONObject().put("id",id).put("source","screen").put("capturedAt",if(second)"2026-10-30T00:00:01Z"else"2026-10-30T00:00:00Z").put("appId","generated.final.bulk").put("appName","Generated final bulk").put("privacy",JSONObject().put("excluded",false)).put("ocr",JSONObject().put("status","disabled")),png())}
         fun finish(message:String){until(message){manager.getWorkInfosForUniqueWork(BulkDedupeWorker.NAME).get().all{it.state.isFinished}&&has(message)}}
         try{enqueue(ids[0],false);enqueue(ids[1],true)
             ActivityScenario.launch(BulkDedupeActivity::class.java).use{
@@ -183,7 +183,7 @@ class FinalSelectedRiskInstrumentedTest {
             queue=context.queue()
             try{
                 val body=JSONObject().put("id",id).put("deviceId",settings.deviceId).put("source","note").put("capturedAt",Instant.now().toString()).put("durationMs",0).put("ocrText","Generated local original physically removed before recovery").put("privacy",JSONObject().put("excluded",false))
-                queue.enqueue(body,null,64L*1024*1024);val version=CaptureUploadVersion.of(requireNotNull(queue.archiveRecord(id)).first);assertNotNull(queue.capture(id));check(eventFile.renameTo(held));assertTrue(held.isFile);assertNull(queue.capture(id));assertFalse(eventFile.exists())
+                queue.enqueue(body,null);val version=CaptureUploadVersion.of(requireNotNull(queue.archiveRecord(id)).first);assertNotNull(queue.capture(id));check(eventFile.renameTo(held));assertTrue(held.isFile);assertNull(queue.capture(id));assertFalse(eventFile.exists())
                 ActivityScenario.launch<CaptureRecordsActivity>(Intent(context,CaptureRecordsActivity::class.java).putExtra("recordId",id).putExtra("historyOriginalVersion",version)).use{
                     until("Exact history reader reports local original unavailable"){has("历史版本不可用：本机原件已更新或清理")};assertFalse(has("中央不可用 / 已删除"));picture("recovery-missing-local-exact-reader")
                 }
@@ -235,7 +235,7 @@ class FinalSelectedRiskInstrumentedTest {
         val directory=File(context.cacheDir,"record-camera/generated-support-$id").apply{mkdirs()};val output=File(directory,"safe-support.json")
         val monitor=object:Instrumentation.ActivityMonitor(){override fun onStartActivity(intent:Intent):Instrumentation.ActivityResult?=if(intent.action==Intent.ACTION_CREATE_DOCUMENT)Instrumentation.ActivityResult(Activity.RESULT_OK,Intent().setData(FileProvider.getUriForFile(context,"${context.packageName}.record-files",output)))else null}
         try{
-            context.queue().enqueue(event,bytes,64L*1024*1024);assertTrue(context.queue().capture(id)!!.getString("ocrText").contains(marker));assertArrayEquals(bytes,context.queue().image(id))
+            context.queue().enqueue(event,bytes);assertTrue(context.queue().capture(id)!!.getString("ocrText").contains(marker));assertArrayEquals(bytes,context.queue().image(id))
             SupportEvents.failure(context,EventStage.SUPPORT,java.io.IOException(marker+" "+knownToken+" "+imageMarker));SupportEvents.record(context,EventStage.SUPPORT,EventCode.OK,errorName=knownToken,sourceId=marker)
             instrumentation.addMonitor(monitor)
             ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).putExtra("page","DIAGNOSTICS")).awaitMainUi().use{

@@ -1,4 +1,5 @@
 package dev.mote.collector.meeting
+import dev.mote.collector.Settings
 
 import android.Manifest
 import android.app.AlertDialog
@@ -64,7 +65,8 @@ class MeetingRecordingActivity : MoteActivity() {
         val latest = store.sessions().maxByOrNull { it.startedAt }
         last.text = when {
             latest == null -> MoteI18n.text("尚无会议录音。")
-            latest.state == "uploaded" -> MoteI18n.text("最近一场 {0} 已进入中央转写。", latest.startedAt.take(16).replace('T', ' '))
+            latest.quarantined -> MoteI18n.text("当前本机来源范围已变更，旧待传版本已隔离，原输入保留。")
+            latest.state == "uploaded" -> MoteI18n.text("已收到上传确认") + " · " + latest.startedAt.take(16).replace('T', ' ') + "\n" + MoteI18n.text("本机采集内容长期保留，上传确认后不自动删除。")
             latest.state == "completed" -> MoteI18n.text("最近一场 {0} 保存在本机，连接中央后上传。", latest.startedAt.take(16).replace('T', ' '))
             latest.state == "failed" -> MoteI18n.text("最近一场未完成：{0}", latest.error ?: MoteI18n.text("请重试"))
             else -> MoteI18n.text("最近一场 {0} 正在进行。", latest.startedAt.take(16).replace('T', ' '))
@@ -106,7 +108,7 @@ class MeetingRecordingActivity : MoteActivity() {
         val notice = meetingRecordings().noticeAcknowledgedAt() ?: return notice()
         val id = UUID.randomUUID().toString()
         try {
-            meetingRecordings().begin(id, Instant.now(), notice)
+            meetingRecordings().begin(id, Instant.now(), notice, Settings(this).dataOrigin())
             MeetingRecordingService.start(this, id, resultCode, data)
             render()
         } catch (error: Exception) {

@@ -12,6 +12,7 @@ import {safePluginBackupPath} from './plugin-memory-backup.mjs';
 import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 import { logRetentionFromDocument, MiB } from '../apps/server/src/log-retention-config.mjs';
 import {dockerImageVariant,parseDockerMediaWorkers,dockerMediaSelection,assertDockerMediaSelection,assertDockerMediaRuntime,dockerMediaRoles} from './docker-media.mjs';
+import {DEPLOYMENT_CONTRACT_VERSION,validateDeploymentContract} from './deployment-contract.mjs';
 
 export const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 export const ports = { dev: 47842, test: 47852, prod: 47832 };
@@ -170,25 +171,25 @@ export function effectiveLogRetention(p) {
   const limits = logRetentionFromDocument(p.document);
   return { logMaxMiB: limits.maxBytes / MiB, logMaxTotalMiB:limits.maxTotalBytes/MiB,retention:limits.retention, logMaxEntries: limits.maxEntries, logMaxMiBSource: limits.source };
 }
-export async function assertLogRetentionCompatible(p, { execute: run = execute } = {}) {
-  const limits = logRetentionFromDocument(p.document);
-  // The selected target must implement the current YAML and tiered log store.
-  const markers=['config-service.js','log-retention-config.mjs','diagnostic-log-store.mjs'];
-  const message = 'The selected release/image could not be verified to support YAML configuration or this log capacity. Use a release/image with tiered diagnostic retention; no fallback was applied';
+export async function assertDeploymentCompatible(p, { execute: run = execute } = {}) {
+  let contract,imageId;
   try {
     if (p.meta.runtime === 'native') {
-      for (const marker of markers) if (!(await lstat(join(resolve(p.meta.release), 'apps/server/dist', marker))).isFile()) throw Error('Capability marker missing');
+      contract=JSON.parse(await readFile(join(resolve(p.meta.release),'apps/server/dist/deployment-contract.json'),'utf8'));
     } else {
-      const probe = `import {accessSync} from 'node:fs'; for (const marker of ${JSON.stringify(markers)}) accessSync('/app/apps/server/dist/'+marker);`;
-      await run('docker', ['run', '--rm', '--pull', 'never', '--network', 'none', '--entrypoint', 'node', p.meta.image, '--input-type=module', '-e', probe], { capture: true, timeoutMs: 15000 });
+      imageId=await run('docker',['image','inspect','--format','{{.Id}}',p.meta.image],{capture:true,timeoutMs:15000});
+      if(!/^sha256:[a-f0-9]{64}$/.test(imageId))throw Error('Invalid image identity');
+      const probe="import{readFileSync}from'node:fs';process.stdout.write(readFileSync('/app/apps/server/dist/deployment-contract.json','utf8'));";
+      contract=JSON.parse(await run('docker',['run','--rm','--name',`${p.project??'mote-deployment'}-contract-${randomUUID()}`,'--pull','never','--network','none','--entrypoint','node',imageId,'--input-type=module','-e',probe],{capture:true,timeoutMs:15000}));
     }
-  } catch { throw Error(message); }
+  } catch { throw Error(`Deployment contract could not be verified: expected mote.deployment version ${DEPLOYMENT_CONTRACT_VERSION}; build/select a current release/image. No service or data was changed`); }
+  return {contract:validateDeploymentContract(contract),...(imageId?{imageId}:{})};
 }
 export async function setDevLogRetentionDefaults(p) {
   if (p.profile !== 'dev') throw Error('log-retention --defaults is only available for the dev profile');
   const before = effectiveLogRetention(p), document = structuredClone(p.document);
   delete document.diagnostics.maxBytes;
-  await assertLogRetentionCompatible({ ...p, document });
+  await assertDeploymentCompatible({ ...p, document });
   const changed = Object.hasOwn(p.savedDocument.diagnostics ?? {}, 'maxBytes');
   if (changed) await updateProfileConfiguration(p, next => { delete next.diagnostics.maxBytes; });
   const after = effectiveLogRetention(p);
@@ -232,23 +233,55 @@ export function execute(command, args, { env, cwd = repository, capture = false,
   });
 }
 export async function withProfileLock(p, operation) {
-  const path = join(p.directory, 'lifecycle.lock');
-  let fd;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { fd = await open(path, 'wx', 0o600); break; }
-    catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const owner = Number(await readFile(path, 'utf8'));
-      if (!Number.isSafeInteger(owner) || owner < 1) throw Error('Invalid lifecycle lock; inspect it before removing it');
-      try { process.kill(owner, 0); throw Error('Another profile command is running'); }
-      catch (probe) { if (probe.code !== 'ESRCH') throw probe; }
-      await unlink(path);
+  const path = join(p.directory, 'lifecycle.lock'),recoveryPath=path+'.recovery';
+  // A CLI container has its own PID namespace. Its immutable Docker identity,
+  // rather than PID 1, determines whether another command still owns the lock.
+  const container=process.env.MOTE_DEPLOY_DOCKER_CLI==='1'
+    ? await execute('docker',['inspect','--format','{{.Id}}',process.env.HOSTNAME],{capture:true}):undefined;
+  if(container&&!/^[a-f0-9]{64}$/.test(container))throw Error('Cannot identify deployment CLI container');
+  const recoveryMessage='Lifecycle recovery is active or interrupted; inspect lifecycle.lock.recovery before retrying';
+  try{await lstat(recoveryPath);throw Error(recoveryMessage);}catch(error){if(error.code!=='ENOENT')throw error;}
+  const identity=container?JSON.stringify({container}):String(process.pid);
+  let fd,recovery;
+  const releaseRecovery=async()=>{if(recovery){await recovery.close();await unlink(recoveryPath);recovery=undefined;}};
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { fd = await open(path, 'wx', 0o600); break; }
+      catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        const saved=await readFile(path,'utf8'),owner=Number(saved);
+        if(Number.isSafeInteger(owner)&&owner>0){
+          if(container)throw Error('A native CLI lifecycle lock exists; inspect its host process before removing it');
+          try { process.kill(owner, 0); throw Error('Another profile command is running'); }
+          catch (probe) { if (probe.code !== 'ESRCH') throw probe; }
+        }else{
+          let record;try{record=JSON.parse(saved);}catch{throw Error('Invalid lifecycle lock; inspect it before removing it');}
+          if(!record||Object.keys(record).length!==1||!/^([a-f0-9]{64})$/.test(record.container))throw Error('Invalid lifecycle lock; inspect it before removing it');
+          const present=await execute('docker',['ps','--all','--quiet','--no-trunc','--filter','id='+record.container],{capture:true});
+          if(present&&(await execute('docker',['inspect','--format','{{.State.Running}}',record.container],{capture:true}))==='true')throw Error('Another profile command is running');
+        }
+        // Only one process may remove a stale lock. Hold this claim until the
+        // replacement lock is written, then re-read under the claim so a delayed
+        // contender can never unlink a new owner's lock. Interrupted recovery
+        // fails closed and requires inspection of this small private claim.
+        if(!recovery){
+          try{recovery=await open(recoveryPath,'wx',0o600);await recovery.writeFile(identity);}
+          catch(probe){if(probe.code==='EEXIST')throw Error(recoveryMessage);throw probe;}
+        }
+        if(await readFile(path,'utf8')!==saved)throw Error('Another profile command changed the lifecycle lock; retry');
+        await unlink(path);
+      }
     }
+    if (!fd) throw Error('Could not acquire profile lock');
+    await fd.writeFile(identity);
+    await releaseRecovery();
+    return await operation();
+  } finally {
+    try{if(fd){await fd.close();await unlink(path);}}
+    finally{await releaseRecovery();}
   }
-  if (!fd) throw Error('Could not acquire profile lock');
-  try { await fd.writeFile(String(process.pid)); return await operation(); }
-  finally { await fd.close(); await unlink(path); }
 }
+
 export async function nativeIdentity(p) {
   const record = await readJson(p.processFile, null);
   if (!record) return { running: false, managed: false };
@@ -273,8 +306,18 @@ export async function nativeIdentity(p) {
 }
 const HEALTH_PROBE_TIMEOUT_MS = 5000;
 export async function health(p, timeoutMs = HEALTH_PROBE_TIMEOUT_MS) {
-  try { const response = await fetch(p.url + '/api/status', { headers: { Authorization: `Bearer ${p.env.MOTE_TOKEN}` }, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) }); return response.ok; }
+  try { await deploymentProbe(p,'/api/status',timeoutMs);return true; }
   catch { return false; }
+}
+export async function deploymentProbe(p,route,timeoutMs=HEALTH_PROBE_TIMEOUT_MS){
+  if(p.meta?.runtime==='docker'&&process.env.MOTE_DEPLOY_DOCKER_CLI==='1'){
+    const id=await dockerContainer(p);
+    return JSON.parse(await execute('docker',['exec',id,'node','scripts/docker-runtime-probe.mjs',route,String(timeoutMs)],{capture:true,timeoutMs:timeoutMs+5000}));
+  }
+  const response=await fetch(p.url+route,{headers:{Authorization:`Bearer ${p.env.MOTE_TOKEN}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});
+  if(!response.ok)throw Error('Deployment probe failed');
+  // /api/status health callers need only the status, including bodyless probes.
+  return route==='/api/status'?{}:response.json();
 }
 async function ensurePortFree(p) {
   await new Promise((resolvePromise, reject) => {
@@ -283,7 +326,7 @@ async function ensurePortFree(p) {
   });
 }
 export async function startNative(p, foreground = false, options = {}) {
-  await assertLogRetentionCompatible(p);
+  await assertDeploymentCompatible(p);
   const current = await nativeIdentity(p);
   if (current.running) {
     if (!current.managed) throw Error('Recorded PID belongs to another process; refusing to use or stop it');
@@ -336,7 +379,7 @@ export async function stopNative(p, expectedMarker) {
   return { stopped: true };
 }
 export function composeEnvironment(p) {
-  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_IMAGE_TARGET:dockerMediaSelection(p).variant, MOTE_VOLUME: p.meta.volume, MOTE_MODELS_VOLUME: p.meta.modelsVolume || p.meta.volume+'-models', MOTE_MODELS_DIRECTORY: dockerModelDirectory(p.document),
+  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.runtimeImage ?? p.meta.image, MOTE_IMAGE_TARGET:dockerMediaSelection(p).variant, MOTE_VOLUME: p.meta.volume, MOTE_MODELS_VOLUME: p.meta.modelsVolume || p.meta.volume+'-models', MOTE_MODELS_DIRECTORY: dockerModelDirectory(p.document),
     MOTE_PORT: String(p.port), MOTE_CONFIG_DIRECTORY: p.directory, MOTE_CONTAINER_USER: p.configUser || `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
     MOTE_DOCKER_ENV_FILE: join(p.directory, 'generated/secrets.env'), MOTE_BIND_ADDRESS: '127.0.0.1',
     MOTE_TLS_DOMAIN: p.env.MOTE_TLS_DOMAIN, MOTE_TLS_HTTP_PORT: p.env.MOTE_TLS_HTTP_PORT, MOTE_TLS_HTTPS_PORT: p.env.MOTE_TLS_HTTPS_PORT,
@@ -371,12 +414,16 @@ export async function dockerConfigurationUser(p, run = execute) {
 }
 export async function compose(p, args, options = {}) {
   const operation = composeOperation(args);
+  const needsRuntime = ['up', 'create', 'run', 'start', 'restart'].includes(operation);
   if(operation==='build')assertDockerMediaSelection(p);
-  if (['up', 'create', 'run', 'restart'].includes(operation)) await assertLogRetentionCompatible(p);
-  if (['up', 'create', 'run', 'restart'].includes(operation)) await assertDockerMediaRuntime(p,execute);
+  if (needsRuntime) {
+    const {imageId}=await assertDeploymentCompatible(p);
+    p.runtimeImage=imageId;
+  }
+  if (needsRuntime) await assertDockerMediaRuntime({...p,meta:{...p.meta,image:p.runtimeImage}},execute);
   const tunnel = validateTunnel(p.meta.tunnel);
-  if (['up', 'create', 'run', 'restart'].includes(operation)) p.configUser = await dockerConfigurationUser(p);
-  if (tunnel.enabled && ['up','create','run','restart'].includes(operation)) { await assertTunnelToken(p); p.tunnelUser = await dockerTunnelUser(p, execute); }
+  if (needsRuntime) p.configUser = await dockerConfigurationUser(p);
+  if (tunnel.enabled && needsRuntime) { await assertTunnelToken(p); p.tunnelUser = await dockerTunnelUser(p, execute); }
   else if (operation === 'up' && p.meta.tunnel) await removeTunnelSidecars(p, execute);
   // The mounted YAML remains authoritative. Only referenced secrets cross env_file.
   const lines = Object.entries(configSecretEnvironment(p.savedDocument)).map(([key, value]) => { if (/[\r\n]/.test(value)) throw Error('Docker secret values must be single-line'); return `${key}=${value}`; });

@@ -94,7 +94,7 @@ class FirstDeviceDataInstrumentedTest {
         val owner = owner(); val settings = Settings(context)
         require(!settings.enabled && context.queue().depth() == 0 && context.recordDraftStore().draft().getString("text").isBlank())
         require(context.recordDraftStore().draft().getJSONArray("attachments").length() == 0)
-        settings.save(settings.read().copy(server = "", token = "", debugHttp = true, deviceName = "Generated Android 5580", syncMode = "manual", wifiOnly = false, uploadedRetentionDays = 7), confirmCentralEndpoint = true)
+        settings.save(settings.read().copy(server = "", token = "", debugHttp = true, deviceName = "Generated Android 5580", syncMode = "manual", wifiOnly = false), confirmCentralEndpoint = true)
         MoteI18n.select(context, "zh-CN")
         assertEquals("waiting", owner.get("/api/devices/first-data").getString("state"))
         val invitation = owner.post("/api/connections/invitations", JSONObject().put("serverUrl", owner.server).put("label", "Generated Android native acceptance")).getJSONObject("invitation")

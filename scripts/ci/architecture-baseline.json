@@ -286,14 +286,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/actions-services.ts",
-    "to": "C25",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/plugins/activity-services.ts",
     "to": "C05",
     "kind": "comment",

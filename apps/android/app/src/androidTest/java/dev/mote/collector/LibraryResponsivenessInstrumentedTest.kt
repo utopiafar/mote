@@ -63,7 +63,7 @@ class LibraryResponsivenessInstrumentedTest {
             settings.enabled = false
             WorkManager.getInstance(context).cancelAllWork().result.get(20, TimeUnit.SECONDS)
             val queue = DurableQueue(File(QueueStorage(context).current().path), context.localContentCipher(), createMissing = false)
-            queue.withDeferredIndexWrites { ids.forEach { queue.acknowledge(it) } }
+            queue.withDeferredIndexWrites { ids.forEach { queue.removeGeneratedRecord(it) } }
             settings.save(original); settings.status(state, message); LocalStateChanges.changed(records = true, immediate = true)
             MoteI18n.select(context, language)
         }
@@ -114,7 +114,7 @@ class LibraryResponsivenessInstrumentedTest {
                 queue.enqueue(JSONObject().put("id", id).put("source", "screen").put("capturedAt", start.plusMillis(index + 1L).toString())
                     .put("appId", "fixture.library").put("appName", "Generated Library")
                     .put("ocr", JSONObject().put("status", "completed")).put("ocrText", "Generated $index")
-                    .put("privacy", JSONObject().put("excluded", false)), bytes, 64 * 1024 * 1024)
+                    .put("privacy", JSONObject().put("excluded", false)), bytes)
             }
         }
         // The files a user copies/exports are ordinary JSON and original image bytes;
@@ -144,7 +144,7 @@ class LibraryResponsivenessInstrumentedTest {
             scenario.onActivity { activity -> first = views(activity.window.decorView).first { it.tag?.toString()?.startsWith("capture:") == true } }
             val noteId = UUID.randomUUID().toString(); ids += noteId
             queue.enqueue(JSONObject().put("id", noteId).put("source", "note").put("capturedAt", start.toString()).put("ocrText", "Generated unrelated note")
-                .put("privacy", JSONObject().put("excluded", false)), null, 64 * 1024 * 1024)
+                .put("privacy", JSONObject().put("excluded", false)), null)
             LocalStateChanges.changed(records = true, immediate = true)
             val revision = LocalStateChanges.revisions.value.records
             waitFor("background metadata refresh") {

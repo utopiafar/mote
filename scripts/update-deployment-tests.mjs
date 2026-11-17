@@ -34,6 +34,9 @@ test('real isolated central update and rollback preserve credentials, generated 
     // central code into the distinct fixture release. This is an actual process test, not an npm/network build.
     const prepared = await prepareProfileUpdate(p, { manifest, currentVersion: originalVersion }, { downloadReleaseAsset: (selected, path) => downloadReleaseAsset(selected, path, { fetch: async () => new Response(bytes) }), build: async path => {
       await cp(join(repository, 'apps/server/dist'), join(path, 'apps/server/dist'), { recursive: true });
+      // A real source release includes these runtime helpers alongside dist.
+      await cp(join(repository,'scripts'),join(path,'scripts'),{recursive:true});
+      await cp(join(repository,'apps/server/src'),join(path,'apps/server/src'),{recursive:true});
       await writeFile(join(path, 'apps/server/package.json'), JSON.stringify({ name: '@mote/server', type: 'module', version }));
       await symlink(join(repository, 'node_modules'), join(path, 'node_modules'), 'dir');
       await mkdir(join(path, 'apps/web/dist'), { recursive: true }); await writeFile(join(path, 'apps/web/dist/index.html'), '<!doctype html>synthetic update fixture');

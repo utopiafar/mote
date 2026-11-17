@@ -67,6 +67,9 @@ internal class DurableCaptureTransport(
     private val process: String = LoginProcess.id,
     private val now: () -> Long = System::currentTimeMillis,
     private val retentionDays: Int = UploadHistoryRetention.DEFAULT_DAYS,
+    private val connectionGeneration: String = "",
+    private val requireCurrent: () -> Unit = {},
+    private val commitCurrent: ((() -> Unit) -> Unit) = { it() },
 ) {
     private val attempts = CaptureUploadAttempts(attemptStore, batchId, scope, process, now)
 
@@ -77,7 +80,8 @@ internal class DurableCaptureTransport(
         bytes: Long,
         send: () -> Pair<Int, JSONObject?>,
     ): CaptureSendOutcome {
-        val response = attempts.send(events, bytes, individual, originals, send)
+        requireCurrent()
+        val response = attempts.send(events, bytes, individual, originals) { dev.mote.collector.TransferRequestGuard.within(requireCurrent, send) }
         val receipts = if (individual) {
             if (response.first in 200..201) mapOf(events.single().getString("id") to response.first) else emptyMap()
         } else if (response.first == 200) {
@@ -88,9 +92,9 @@ internal class DurableCaptureTransport(
             val id = event.getString("id")
             if (receipts[id] !in 200..201) continue
             val original = originals.single { it.getString("id") == id }
-            CaptureReceiptFinalizer(receiptStore).received(queue, CaptureUploadReceipt.create(
-                origin, deviceId, original, event, batchId, now(), retentionDays,
-            ))
+            commitCurrent { CaptureReceiptFinalizer(receiptStore).received(queue, CaptureUploadReceipt.create(
+                origin, deviceId, original, event, batchId, now(), retentionDays, connectionGeneration,
+            )) }
             acknowledged++
         }
         return CaptureSendOutcome(response, receipts, acknowledged)
@@ -118,7 +122,7 @@ internal class DurableTransportPlugin private constructor(
      * no stale directory survives a migration. */
     fun openQueue(): DurableQueue {
         check(!closed.get()) { "Durable transport plugin is closed" }
-        return QueueStorage(app).openQueue().apply { archiveOrigin = Settings(app).dataOrigin() }
+        return QueueStorage(app).openQueue().apply { archiveOrigin = Settings(app).dataOrigin(); connectionGeneration = Settings(app).connectionGeneration() }
     }
 
     fun captureHistory(): CaptureUploadHistory {
@@ -149,7 +153,7 @@ internal class DurableTransportPlugin private constructor(
         val scope = CaptureUploadReceipt.scope(config.server.trim().trimEnd('/'), Settings(app).deviceId)
         history.prune(UploadHistoryRetention.read(app))
         history.recoverInterrupted(scope, LoginProcess.id, includeCurrentProcess)
-        CaptureReceiptFinalizer(history).recover(queue, scope)
+        dev.mote.collector.ConnectionLease(app, config).commit { CaptureReceiptFinalizer(history).recover(queue, scope) }
         UploadHistoryRecovery.available()
     }
 
@@ -162,10 +166,12 @@ internal class DurableTransportPlugin private constructor(
         history.prune(UploadHistoryRetention.read(app))
         val scope = CaptureUploadReceipt.scope(origin, deviceId)
         history.recoverInterrupted(scope, LoginProcess.id, includeCurrentProcess = true)
-        CaptureReceiptFinalizer(history).recover(queue, scope)
+        val lease = dev.mote.collector.ConnectionLease(app, config)
+        lease.commit { CaptureReceiptFinalizer(history).recover(queue, scope) }
         UploadHistoryRecovery.available()
+        lease.requireCurrent()
         return DurableCaptureTransport(queue, history, history, scope, origin, deviceId, batchId,
-            retentionDays = config.uploadedRetentionDays)
+            retentionDays = 0, connectionGeneration = lease.generation, requireCurrent = lease::requireCurrent, commitCurrent = lease::commit)
     }
 
     /** Generated contract test seam: the same owned transport with an injected
