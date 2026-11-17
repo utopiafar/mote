@@ -239,6 +239,18 @@
    "file": "apps/server/src/plugins/instance-state.ts"
   },
   {
+   "declaration": "processorAdmissionSchemaInstallation",
+   "owner": "processor-admission",
+   "fn": "processorAdmissionSchema",
+   "file": "apps/server/src/admission-schema.ts"
+  },
+  {
+   "declaration": "providerAdmissionSchemaInstallation",
+   "owner": "provider-admission",
+   "fn": "providerAdmissionSchema",
+   "file": "apps/server/src/admission-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -928,6 +940,16 @@
    "owner": "plugin-instance-state",
    "file": "apps/server/src/plugins/instance-state.ts",
    "installer": "instanceStateSchemaInstallation"
+  },
+  "processor_cooldowns": {
+   "owner": "processor-admission",
+   "file": "apps/server/src/admission-schema.ts",
+   "installer": "processorAdmissionSchemaInstallation"
+  },
+  "provider_cooldowns": {
+   "owner": "provider-admission",
+   "file": "apps/server/src/admission-schema.ts",
+   "installer": "providerAdmissionSchemaInstallation"
   },
   "query_runs": {
    "owner": "query-run-storage",

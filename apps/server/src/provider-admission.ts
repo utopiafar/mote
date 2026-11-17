@@ -1,5 +1,7 @@
 import {ProviderFailure} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
+import {providerAdmissionSchemaInstallation} from './admission-schema.js';
+import {installSchemaPlan} from './schema-installation.js';
 import {sha256,StoreError,type Store} from './store.js';
 type Identity=Pick<ModelSettings,'protocol'|'provider'|'baseUrl'|'apiKey'|'headers'>;
 /** Upstream rate limits and explicit Retry-After are shared across features/models
@@ -9,7 +11,7 @@ export class ProviderAdmission {
  private closed=false;
  close(){this.closed=true;}
  private assertOpen(){if(this.closed)throw new StoreError('Provider admission is closed',503);}
- constructor(private store:Store,private now=Date.now){store.db.exec('CREATE TABLE IF NOT EXISTS provider_cooldowns(scope TEXT PRIMARY KEY,code TEXT NOT NULL,until INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS provider_cooldown_expiry ON provider_cooldowns(until);');}
+ constructor(private store:Store,private now=Date.now){installSchemaPlan(store.db,[providerAdmissionSchemaInstallation]);}
  private scope(settings:Identity){return sha256(JSON.stringify([settings.protocol,settings.provider,settings.baseUrl.replace(/\/+$/,''),settings.apiKey,Object.entries(settings.headers).sort(([a],[b])=>a.localeCompare(b))]));}
  check(settings:Identity){this.assertOpen();const row=this.store.db.prepare('SELECT code,until FROM provider_cooldowns WHERE scope=? AND until>?').get(this.scope(settings),this.now());if(row)throw new ProviderFailure({category:'transient',code:String(row.code),executionStarted:false,admissionWaiting:true,retryAfterMs:Math.max(0,Number(row.until)-this.now())});}
  async run<T>(settings:Identity,task:()=>Promise<T>){this.check(settings);try{return await task();}catch(error){
