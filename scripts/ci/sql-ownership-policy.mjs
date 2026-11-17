@@ -142,6 +142,10 @@ export const consumerScopes={
   'OwnerQuestions.decode':'owner-question-services',
   'OwnerQuestions.performReply':'owner-question-services',
  },
+ 'owner-calendar-instructions.ts':{
+  'OwnerCalendarInstructions.targets':'actions',
+  'OwnerCalendarInstructions.targetCurrent':'actions',
+ },
  'memory-lifecycle.ts':{
   'projectMemoryLifecycleSettings':'memory-lifecycle',
   'storedMemoryLifecycleSettings':'memory-lifecycle',

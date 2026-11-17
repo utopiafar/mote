@@ -26,7 +26,7 @@ export interface QueryRequest {
   assistantCurrentInstruction?: true;
   /** Host-offered opaque targets for a single current-owner calendar proposal.
    * These labels grant no writes; only the Host can accept its exact payload. */
-  ownerActionTargets?:readonly {id:string;name:string;kind:'calendar.create'}[];
+  ownerActionTargets?:readonly {id:string;name:string;kind:import('@mote/shared').CurrentActionReference['kind'];event?:import('@mote/shared').CurrentCalendarProposal['action']['event']}[];
   after?: string;
   before?: string;
   deviceId?: string;
