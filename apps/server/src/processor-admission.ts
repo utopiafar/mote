@@ -1,4 +1,6 @@
 import {ProviderFailure} from '@mote/shared';
+import {processorAdmissionSchemaInstallation} from './admission-schema.js';
+import {installSchemaPlan} from './schema-installation.js';
 import {sha256,type Store} from './store.js';
 
 /** Recheck availability, not a prediction of when a long recording finishes. */
@@ -9,7 +11,7 @@ export const PROCESSOR_BUSY_RECHECK_MS=5000;
  * and persists a worker's explicit pre-execution busy feedback. */
 export class ProcessorAdmission {
  constructor(private store:Store,private now=Date.now){
-  store.db.exec('CREATE TABLE IF NOT EXISTS processor_cooldowns(scope TEXT PRIMARY KEY,until INTEGER NOT NULL)');
+  installSchemaPlan(store.db,[processorAdmissionSchemaInstallation]);
  }
  resourceKey(endpoint:string){
   const url=new URL(endpoint);
