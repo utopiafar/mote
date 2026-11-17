@@ -24,9 +24,9 @@ import {registerExecutionSettingsRoutes} from './execution-settings-routes.js';
 import {registerModelSettingsRoutes} from './model-settings-routes.js';
 import type {PluginCenter} from '../plugin-center.js';
 
-/** A09's model runtime registry owns model-agent factories, prepared/retired
+/** The model runtime registry owns model-agent factories, prepared/retired
  * model generations and the mote.models configuration/model settings route
- * table. Model selection authority stays with C03/C04. */
+ * table. Durable settings and model selection/authorization stay with their platform owners. */
 export const agentRuntimeContribution={
   id:'agent-runtime',version:'1.0.0',surface:'data',runtime:'host',
   requires:[
@@ -109,7 +109,7 @@ function checkModelCredentialReuse(saved:ModelDomain,patch:Record<string,unknown
 
 /** The registry, its codex options and every prepared/retired model generation
  * live only inside this plugin scope. A stop drains the registry's generations;
- * durable model settings stay in C03 and re-bind on the next activation. */
+ * durable model settings stay in the configuration platform and re-bind on the next activation. */
 export function createAgentRuntimeServices(dependencies:AgentRuntimeServicesDependencies):AgentRuntimeServices {
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let runtime:AgentRuntimeRegistry|undefined,codex:NonNullable<AgentOptions['codex']>|undefined,closing:Promise<void>|undefined;
@@ -172,8 +172,8 @@ export function createAgentRuntimeServices(dependencies:AgentRuntimeServicesDepe
 }
 export type AgentRuntimePlatform=ReturnType<typeof createAgentRuntimeServices>;
 
-/** Native host factory. The pre-H14 bridge mounts the same route contribution
- * through `moteDomainRoutes`; both paths share one actual registry instance. */
+/** Native host factory reserved for the domain activation. The transitional feature bridge
+ * still mounts the assembly's route contribution through `moteDomainRoutes`. */
 export function createAgentRuntimeFactory(dependencies:AgentRuntimeServicesDependencies){
   return (context:HostPluginContext):PluginLifecycle&{routes:AgentRuntimeServices['routes'];agent:AgentRuntimeRegistry;codex:NonNullable<AgentOptions['codex']>}=>{
     const services=createAgentRuntimeServices(dependencies);
