@@ -14,6 +14,9 @@ import type {Config} from '../src/config.js';
 import {Store,StoreError,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
+import {fileProcessingObjectHash} from '../src/file-attachments.js';
+import {imageMaterialProjection} from '../src/image-materials.js';
+import type {ImageInputRow} from '../src/image-inputs.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {FileProcessing} from '../src/file-processing.js';
 import {imageUnderstanding} from '../src/image-understanding.js';
@@ -173,6 +176,53 @@ test('file maintenance reacquires a released snapshot image before running its e
  const recovery=f.files.beginSnapshotRecovery(id,()=>{});f.files.part(recovery.uploadId,0,f.bytes,()=>{});await f.files.commit(recovery.uploadId,()=>{});await f.images.tick();
  assert.equal(f.files.detail(id).job.state,'succeeded');assert.deepEqual(f.calls(),{ocr:before.ocr+1,visual:before.visual+1});
  const duplicate=await app.inject({method:'POST',url:'/api/file-processing/reprocess',payload:{token:preview.token}});assert.equal(duplicate.statusCode,200,duplicate.body);assert.deepEqual(duplicate.json(),accepted.json());await f.images.tick();assert.deepEqual(f.calls(),{ocr:before.ocr+1,visual:before.visual+1});
+});
+
+for(const retention of ['archive','snapshot'] as const)test(`file-owned ${retention} image hashes keep input and Material guards through caller rollback`,async t=>{
+ const f=await fixture(t),hash=sha256(f.bytes);
+ let id:string;
+ if(retention==='archive')id=await f.upload();
+ else{
+  f.sources.register({id:'generated-owner-snapshot',name:'Generated snapshot',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'snapshot'});
+  const begun=f.files.begin({sourceId:'generated-owner-snapshot',relativePath:'generated.png',sha256:hash,sizeBytes:f.bytes.length,item:{externalId:'generated-image',revision:hash,observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'snapshot',mimeType:'image/png',text:'',document:{fileIndex:{version:1,fileId:'generated-image',contentVersion:hash,mode:'index',coverage:'none',parser:'central-pending',status:'pending',totalCharacters:0,offset:0,length:0,maxIndexCharacters:8000,allowRead:true}}}},()=>{});
+  f.files.part(begun.uploadId,0,f.bytes,()=>{});id=String((await f.files.commit(begun.uploadId,()=>{})).id);
+  assert.equal(f.store.db.prepare('SELECT expires FROM file_snapshot_inputs WHERE capture_id=?').get(id)!.expires,0,'retained processing input has no time-based availability gate');
+ }
+ const row=()=>f.store.db.prepare('SELECT * FROM image_inputs WHERE capture_id=?').get(id) as ImageInputRow;
+ const adapter=f.images.inputs.get('mote.file-image')!,projection=()=>imageMaterialProjection(f.store,id);
+ assert.equal(fileProcessingObjectHash(f.store,id),hash);
+ const original=adapter.resolve(row());assert.ok(original);
+ const chunks:Buffer[]=[];for await(const chunk of original.read())chunks.push(chunk);assert.deepEqual(Buffer.concat(chunks),f.bytes);
+ assert.deepEqual(projection()?.original,{captureId:id,sha256:hash});
+ assert.equal(adapter.resolve({...row(),hash:'0'.repeat(64)}),undefined,'the resolver keeps the accepted input hash guard');
+
+ f.store.db.exec('BEGIN');
+ try{
+  if(retention==='archive'){
+   assert.throws(()=>f.store.db.prepare('UPDATE file_versions SET object_hash=? WHERE capture_id=?').run(Buffer.from(hash),id),{errcode:787},'archived hashes retain their real file-object foreign key');
+   assert.equal(fileProcessingObjectHash(f.store,id),hash);assert.equal(adapter.resolve(row())?.hash,hash);assert.deepEqual(projection()?.original,{captureId:id,sha256:hash});
+  }else{
+   f.store.db.prepare('UPDATE file_snapshot_inputs SET object_hash=? WHERE capture_id=?').run(Buffer.from(hash),id);
+   assert.equal(fileProcessingObjectHash(f.store,id),undefined,'a BLOB cannot be coerced into a usable hash');
+   assert.equal(adapter.resolve(row()),undefined);assert.equal(projection()?.original,undefined);
+  }
+ }finally{f.store.db.exec('ROLLBACK');}
+ assert.equal(fileProcessingObjectHash(f.store,id),hash);
+
+ f.store.db.exec('BEGIN');
+ try{
+  if(retention==='archive')f.store.db.prepare('UPDATE file_versions SET object_hash=NULL WHERE capture_id=?').run(id);
+  else f.files.releaseSnapshotInput(id);
+  assert.equal(fileProcessingObjectHash(f.store,id),undefined);assert.equal(adapter.resolve(row()),undefined);assert.equal(projection()?.original,undefined);
+ }finally{f.store.db.exec('ROLLBACK');}
+ assert.equal(adapter.resolve(row())?.hash,hash);assert.deepEqual(projection()?.original,{captureId:id,sha256:hash},'caller rollback restores availability without cached data');
+
+ f.store.db.exec('BEGIN');
+ try{
+  f.store.db.prepare('UPDATE image_inputs SET hash=? WHERE capture_id=?').run('0'.repeat(64),id);
+  assert.equal(adapter.resolve(row()),undefined);assert.equal(projection()?.original,undefined,'Material retains the exact accepted original hash check');
+ }finally{f.store.db.exec('ROLLBACK');}
+ const acceptedRow=row();assert.equal(f.store.delete(id).deleted,1);assert.equal(adapter.resolve(acceptedRow),undefined);assert.equal(projection(),undefined,'deleted evidence cannot become an available original');
 });
 
 test('one historical request drains more than 100 images and installing a plugin adds no historical work',async t=>{

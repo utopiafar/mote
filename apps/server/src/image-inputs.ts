@@ -1,4 +1,4 @@
-import {fileAttachmentAvailable,FileAttachments} from './file-attachments.js';
+import {fileAttachmentAvailable,fileProcessingObjectHash,FileAttachments} from './file-attachments.js';
 import type {Store} from './store.js';
 import type {FileStore} from './files.js';
 
@@ -22,8 +22,7 @@ export function installImageInputs(store:Store,files:FileStore,registry:ImageInp
  }}),registry.register({id:'mote.file-image',version:'1',resolve:row=>{
   if(!store.isCurrentEvidence(row.capture_id)||!fileAttachmentAvailable(store,row.capture_id))return;
   const version=files.version(row.capture_id),manifest=JSON.parse(version.manifest);
-  const snapshot=store.db.prepare('SELECT object_hash FROM file_snapshot_inputs WHERE capture_id=?').get(row.capture_id);
-  const hash=version.object_hash??(snapshot?String(snapshot.object_hash):null);
+  const hash=fileProcessingObjectHash(store,row.capture_id);
   if(!hash||hash!==row.hash)return;
   return {hash,mimeType:manifest.item.mimeType,sizeBytes:manifest.sizeBytes,read:async function*(){yield* files.processingBytes(row.capture_id);}};
  }})];
