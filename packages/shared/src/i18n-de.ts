@@ -10817,5 +10817,13 @@ export const german: Readonly<Record<string, string>> = {
   "删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。": "Diesen Originaldatensatz und nicht mehr referenzierte Bilder löschen. Weiterhin gültige Erinnerungen bleiben erhalten; das Original kann nicht mehr angesehen oder zitiert werden.",
   "删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。": "Die Originaldatei und den analysierten Text in Central löschen. Weiterhin gültige Erinnerungen bleiben erhalten; das Original kann nicht mehr angesehen oder zitiert werden. Die Originaldatei auf dem Quellgerät bleibt erhalten.",
   "原件已释放，无法回看或引用；这条记忆仍可在其有效范围内使用。": "Das Original wurde freigegeben und kann nicht mehr angesehen oder zitiert werden. Diese Erinnerung bleibt innerhalb ihres Gültigkeitsbereichs nutzbar.",
-  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON-Sicherungen enthalten lokal erfasste Aufzeichnungen, Upload-Status und zugehörige Bilder. Beim Wiederherstellen bleibt der Upload-Status erhalten. Quelldateien und Besprechungsaufnahmen müssen separat gesichert werden."
+  "JSON 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件和会议录音需另行备份。": "JSON-Sicherungen enthalten lokal erfasste Aufzeichnungen, Upload-Status und zugehörige Bilder. Beim Wiederherstellen bleibt der Upload-Status erhalten. Quelldateien und Besprechungsaufnahmen müssen separat gesichert werden.",
+  "清理本机副本": "Lokale Kopie löschen",
+  "本机副本已清理": "Lokale Kopie gelöscht",
+  "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Nur eine lokale Kopie mit bestätigtem Upload löschen. Zeit, Quelle und Empfangsbeleg bleiben erhalten; das Central-Archiv und Ihre Quelldateien bleiben unberührt.",
+  "本机原件不在此设备，连接原中央后可按当前权限读取。": "Das Original befindet sich nicht auf diesem Gerät. Verbinden Sie sich mit dem ursprünglichen Central, um es mit Ihren aktuellen Berechtigungen zu lesen.",
+  "原中央与当前连接不一致，未发送读取请求。": "Der ursprüngliche Central entspricht nicht der aktuellen Verbindung. Es wurde keine Leseanfrage gesendet.",
+  "从中央另存原件": "Original aus Central speichern",
+  "采集阶段仍有待处理输入，暂不能清理本机副本。": "Erfassungsstufen enthalten noch ausstehende Eingaben. Diese lokale Kopie kann noch nicht gelöscht werden.",
+  "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。": "Die lokale Kopie wurde noch nicht vollständig gelöscht. Versuchen Sie es erneut; verbleibende Eingaben werden nicht erneut hochgeladen."
 };
