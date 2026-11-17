@@ -51,6 +51,12 @@ npm run dev
 
 `npm run build:libs` 保留为同一引用图的便捷入口。普通 workspace 构建仍执行原有资产复制和打包；并行构建应使用独立 checkout 与依赖目录。
 
+## 宿主配置登记
+
+Server现有 `ConfigurationPlatform.registerDomain` 和 `ConfigService.registerPlugin` 要求用 `updatePaths` 显式声明插件配置的原始输入路径。可用点路径、现有 `*` 通配符，或按原始候选分支选择路径的纯函数；这是Server Host登记合同，不是新的公共SDK导出。值与完整候选继续由现有schema和事务验证，不再遍历Zod `_def` 推断输入成员。
+
+未知路径在resolve、raw验证和preprocess之前拒绝，文件重载同样受检。可选 `rawInputSchema` 保留独立输入验证与类型作用，它的变换／默认值结果被丢弃，只保存插件原始输入。通配开放范围、分支替换和当前显式声明要求见[配置参考](server-configuration.md#宿主登记的插件领域输入)。领域typed config以及剩余扁平Config／YAML双向投影的收敛仍为后续工作。
+
 ## 环境与资料
 
 dev、test、prod 使用独立配置、令牌、数据库和 App profile。测试中央默认 47852；prod 默认 47832。CLI 的 `--home /absolute/private/profiles` 可选择另一套隔离环境。测试只用程序生成的资料与私有临时环境；不用正式资料、实际屏幕或日常设备作为自动化素材。

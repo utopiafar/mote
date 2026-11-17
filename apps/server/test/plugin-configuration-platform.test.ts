@@ -94,19 +94,19 @@ test('close removes callbacks before held accepted configuration work drains and
 test('declared plugin domains validate values, reject unknown schemas and publish only their own changes',async t=>{
   const {platform}=await fixture(t),events:unknown[]=[];
   assert.throws(()=>platform.configService.current('plugin.missing'),{code:'config_invalid'});
-  const domain=await platform.registerDomain({id:'generated',schema:z.object({enabled:z.boolean()}).strict(),defaultValue:{enabled:false}});
+  const domain=await platform.registerDomain({id:'generated',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}).strict(),defaultValue:{enabled:false}});
   domain.subscribe(value=>events.push(value));
   await domain.update({enabled:true},0);assert.deepEqual(events,[{revision:1,value:{enabled:true}}]);
   await assert.rejects(domain.update({enabled:'bad'} as never,1),{code:'config_invalid'});assert.equal(events.length,1);
-  await assert.rejects(platform.registerDomain({id:'secret',schema:z.object({key:z.string()}),defaultValue:{key:'generated-private'},fields:[{path:'key',sensitive:true}]}),{code:'config_invalid'});
-  await assert.rejects(platform.registerDomain({id:'generated',schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:false}}),{code:'config_conflict'});
+  await assert.rejects(platform.registerDomain({id:'secret',updatePaths:['key'],schema:z.object({key:z.string()}),defaultValue:{key:'generated-private'},fields:[{path:'key',sensitive:true}]}),{code:'config_invalid'});
+  await assert.rejects(platform.registerDomain({id:'generated',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}),defaultValue:{enabled:false}}),{code:'config_conflict'});
   await platform.quiesce('restart');assert.deepEqual(domain.snapshot(),{revision:1,value:{enabled:true}});
   await assert.rejects(domain.update({enabled:false},1),{code:'config_unavailable'});
 });
 
 test('hot plugin edits preserve saved restart-only fields and restart applies the pending value',async t=>{
   const {platform,path}=await fixture(t),events:unknown[]=[];
-  const registration={id:'restartable',schema:z.object({cold:z.number().int(),hot:z.number().int()}).strict(),defaultValue:{cold:0,hot:0},
+  const registration={id:'restartable',updatePaths:['cold','hot'],schema:z.object({cold:z.number().int(),hot:z.number().int()}).strict(),defaultValue:{cold:0,hot:0},
     fields:[{path:'cold',effect:'restart' as const},{path:'hot',effect:'immediate' as const}]};
   const domain=await platform.registerDomain(registration);domain.subscribe(value=>events.push(value));
   await domain.update({cold:1},0);
@@ -125,7 +125,7 @@ test('hot plugin edits preserve saved restart-only fields and restart applies th
 
 test('registered transforming schemas publish their validated output without parsing it again',async t=>{
   const {platform,path}=await fixture(t),events:unknown[]=[];let transforms=0;
-  const domain=await platform.registerDomain({id:'transformed',schema:z.object({limit:z.string().transform(value=>{transforms++;return Number(value);})}).strict(),defaultValue:{limit:'2'}});
+  const domain=await platform.registerDomain({id:'transformed',updatePaths:['limit'],schema:z.object({limit:z.string().transform(value=>{transforms++;return Number(value);})}).strict(),defaultValue:{limit:'2'}});
   const afterRegistration=transforms;
   assert.deepEqual(domain.snapshot(),{revision:0,value:{limit:2}});
   domain.subscribe(value=>events.push(value));
@@ -138,7 +138,7 @@ test('registered transforming schemas publish their validated output without par
 
 test('public plugin patches reject paths stripped by non-strict schemas without persisting hidden settings',async t=>{
   const {platform,path}=await fixture(t);
-  const domain=await platform.registerDomain({id:'nonStrict',schema:z.object({enabled:z.boolean(),nested:z.object({limit:z.number()})}),defaultValue:{enabled:false,nested:{limit:0}}});
+  const domain=await platform.registerDomain({id:'nonStrict',updatePaths:['enabled','nested.limit'],schema:z.object({enabled:z.boolean(),nested:z.object({limit:z.number()})}),defaultValue:{enabled:false,nested:{limit:0}}});
   for(const patch of [{enabled:true,typo:7},{enabled:true,nested:{limit:1,typo:7}}]){
     await assert.rejects(domain.update(patch,0),{code:'config_invalid'});
     assert.deepEqual(domain.snapshot(),{revision:0,value:{enabled:false,nested:{limit:0}}});
@@ -152,7 +152,7 @@ test('input paths remain writable when registered transforms rename output keys'
   const {platform,path}=await fixture(t);
   const schema=z.object({enabled:z.boolean(),nested:z.object({label:z.string()}).transform(({label})=>({title:label})).optional()})
     .transform(({enabled,nested})=>({active:enabled,detail:nested??null}));
-  const domain=await platform.registerDomain({id:'renamed',schema,defaultValue:{enabled:false}});
+  const domain=await platform.registerDomain({id:'renamed',updatePaths:['enabled','nested.label'],schema,defaultValue:{enabled:false}});
   // Raw editor input and parsed output intentionally have distinct shapes.
   await domain.update({enabled:true,nested:{label:'generated label'}},0);
   assert.deepEqual(domain.snapshot(),{revision:1,value:{active:true,detail:{title:'generated label'}}});
@@ -167,13 +167,13 @@ test('input paths remain writable when registered transforms rename output keys'
 test('preprocess and catch wrappers reject hidden input keys while intentionally open schemas remain open',async t=>{
   const {platform,path}=await fixture(t),shape=z.object({enabled:z.boolean()});
   for(const [id,schema] of [['preprocessed',z.preprocess(value=>value,shape)],['caught',shape.catch({enabled:false})]] as const){
-    const domain=await platform.registerDomain({id,schema,rawInputSchema:shape,defaultValue:{enabled:false}}),revision=domain.snapshot().revision;
+    const domain=await platform.registerDomain({id,schema,updatePaths:['enabled'],rawInputSchema:shape,defaultValue:{enabled:false}}),revision=domain.snapshot().revision;
     await assert.rejects(domain.update({enabled:true,typo:7} as never,revision),{code:'config_invalid'});
     assert.deepEqual(domain.snapshot(),{revision,value:{enabled:false}});
     assert.equal((await readFile(path,'utf8')).includes('typo'),false);
     await domain.update({enabled:true},revision);assert.equal(domain.snapshot().value.enabled,true);
   }
-  const open=await platform.registerDomain({id:'open',schema:z.preprocess(value=>value,shape.passthrough().catch({enabled:false})),rawInputSchema:shape.passthrough(),defaultValue:{enabled:false}});
+  const open=await platform.registerDomain({id:'open',updatePaths:['*'],schema:z.preprocess(value=>value,shape.passthrough().catch({enabled:false})),rawInputSchema:shape.passthrough(),defaultValue:{enabled:false}});
   await open.update({enabled:true,declaredOpenValue:7} as never,open.snapshot().revision);
   assert.deepEqual(open.snapshot().value,{enabled:true,declaredOpenValue:7});
 });
@@ -182,7 +182,7 @@ test('declared raw alias inputs are typed and saved without raw-schema defaults 
   const {platform,path}=await fixture(t),events:unknown[]=[];
   const schema=z.preprocess(value=>({enabled:(value as {rawEnabled:boolean}).rawEnabled}),z.object({enabled:z.boolean()}));
   const rawInputSchema=z.object({rawEnabled:z.boolean().transform(value=>!value),rawLabel:z.string().default('generated default must not persist')});
-  const domain=await platform.registerDomain({id:'alias',schema,rawInputSchema,defaultValue:{rawEnabled:false}});
+  const domain=await platform.registerDomain({id:'alias',updatePaths:['rawEnabled','rawLabel'],schema,rawInputSchema,defaultValue:{rawEnabled:false}});
   domain.subscribe(snapshot=>events.push(snapshot));
   await domain.update({rawEnabled:true},0);
   const enabled:boolean=domain.snapshot().value.enabled;assert.equal(enabled,true);
@@ -205,13 +205,24 @@ test('declared raw alias inputs are typed and saved without raw-schema defaults 
   }
 });
 
-test('opaque public preprocessors require an explicit non-opaque raw input declaration',async t=>{
-  const {platform}=await fixture(t),schema=z.preprocess(value=>value,z.object({enabled:z.boolean()}));
-  await assert.rejects(platform.registerDomain({id:'missingRaw',schema,defaultValue:{enabled:false}}),{code:'config_invalid'});
-  await assert.rejects(platform.registerDomain({id:'opaqueRaw',schema,rawInputSchema:z.object({enabled:z.preprocess(value=>value,z.boolean())}),defaultValue:{enabled:false}}),{code:'config_invalid'});
-  // Ordinary catch/object inputs keep their existing registration behavior.
-  const caught=await platform.registerDomain({id:'ordinaryCatch',schema:z.object({enabled:z.boolean()}).catch({enabled:false}),defaultValue:{enabled:false}});
-  await caught.update({enabled:true},0);assert.equal(caught.snapshot().value.enabled,true);
+test('public editors require explicit input paths and reject unknown raw data before even opaque raw validators execute',async t=>{
+  const {platform,path}=await fixture(t);let parsed=0,validated=0;
+  const schema=z.preprocess(value=>{parsed++;return value;},z.object({enabled:z.boolean()}));
+  // This registration has no input-path contract, irrespective of schema wrappers.
+  // @ts-expect-error public editable registrations must explicitly declare paths
+  await assert.rejects(platform.registerDomain({id:'missingPaths',schema,defaultValue:{enabled:false}}),{code:'config_invalid'});
+  assert.equal(parsed,0);
+  // The old _def-based rejection of opaque raw schemas is replaced by an
+  // explicit declaration. No raw/schema callback runs to discover its keys.
+  const domain=await platform.registerDomain({id:'opaqueRaw',schema,updatePaths:['enabled'],rawInputSchema:z.object({enabled:z.preprocess(value=>{validated++;return value;},z.boolean())}),defaultValue:{enabled:false}});
+  const counts={parsed,validated},before=await readFile(path,'utf8');
+  await assert.rejects(domain.update({enabled:true,typo:7} as never,0),{code:'config_invalid'});
+  assert.deepEqual({parsed,validated},counts);assert.equal(await readFile(path,'utf8'),before);
+  await domain.update({enabled:true},0);assert.equal(domain.snapshot().value.enabled,true);
+  assert.deepEqual(parse(await readFile(path,'utf8')).plugins.configuration.opaqueRaw,{enabled:true});
+  // Ordinary catch/object inputs retain their value and update behavior.
+  const caught=await platform.registerDomain({id:'ordinaryCatch',updatePaths:['enabled'],schema:z.object({enabled:z.boolean()}).catch({enabled:false}),defaultValue:{enabled:false}});
+  await caught.update({enabled:true},platform.configService.revision);assert.equal(caught.snapshot().value.enabled,true);
 });
 
 test('effective hot and restart-only inputs satisfy cross-field invariants before persistence or publication',async t=>{
@@ -223,7 +234,7 @@ test('effective hot and restart-only inputs satisfy cross-field invariants befor
       :z.object({min:z.number(),max:z.number()}).refine(value=>value.min<=value.max);
     const value=(min:number,max:number)=>transformed?{floor:min,ceiling:max}:{min,max};
     const raw=(n:number)=>transformed?String(n):n,events:unknown[]=[],prepared:unknown[]=[];
-    const domain=await platform.registerDomain({id,schema,defaultValue:{min:raw(5),max:raw(10)},fields:[{path:'min',effect:'restart'},{path:'max',effect:'immediate'}],
+    const domain=await platform.registerDomain({id,schema,updatePaths:['min','max'],defaultValue:{min:raw(5),max:raw(10)},fields:[{path:'min',effect:'restart'},{path:'max',effect:'immediate'}],
       prepare(next){prepared.push(next);return {apply(){}};}});
     prepared.length=0;domain.subscribe(snapshot=>events.push(snapshot));
     const revision=domain.snapshot().revision;await domain.update({min:raw(1)},revision);
