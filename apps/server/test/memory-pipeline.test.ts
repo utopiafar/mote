@@ -722,3 +722,19 @@ test('Memory count triggers stay singular across restarts and match batch transi
  store.db.prepare('DELETE FROM memory_jobs WHERE id=?').run(job.id);assert.equal(store.db.prepare('SELECT 1 FROM memory_job_counts WHERE job_id=?').get(job.id),undefined);countsMatch();
  assert.throws(()=>pipeline.state(job.id),error=>error instanceof Error&&'statusCode' in error&&error.statusCode===404);
 });
+
+test('an interrupted count-schema installation preserves the caller transaction and retries on the same handle',async t=>{
+ const f=fixture(t),options=()=>({store:f.store,memories:f.memories,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>empty()}}),db:any=f.store.db;
+ db.exec('BEGIN IMMEDIATE');db.exec('CREATE TABLE generated_install_marker(id TEXT PRIMARY KEY)');db.exec("INSERT INTO generated_install_marker VALUES('kept')");
+ const exec=db.exec.bind(db);
+ db.exec=((sql:string)=>{if(sql.includes('batch_count_update'))throw Error('Generated count installation interruption');return exec(sql);}) as typeof db.exec;
+ assert.throws(()=>fixtureMemoryPipeline(options()),/Generated count installation interruption/);
+ db.exec=exec;
+ assert.equal(db.isTransaction,true,'the caller transaction remains open');
+ assert.equal(Number(db.prepare('SELECT count(*) n FROM generated_install_marker').get().n),1);
+ assert.equal(Number(db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='memory_job_counts'").get().n),0,'the failed counts stage leaves no partial objects');
+ db.exec('ROLLBACK');
+ const pipeline=fixtureMemoryPipeline(options());t.after(()=>pipeline.close());
+ assert.equal(Number(db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='memory_job_counts'").get().n),1);
+ for(const name of ['batch_count_insert','batch_count_delete','batch_count_update'])assert.equal(Number(db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='trigger' AND name=?").get(name).n),1,`${name} retries on the same handle`);
+});

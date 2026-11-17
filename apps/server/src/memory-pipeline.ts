@@ -21,9 +21,11 @@ import {memoryStrategyRefSchema,memoryStrategyPin,memoryCandidateOutputContract,
 import {randomUUID} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
+import type {DatabaseSync} from 'node:sqlite';
 import {modelProfileIdSchema} from './model-settings.js';
 import {ProviderFailure,executionEnvelope,type ExecutionEnvelope,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
 import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION,memoryEvidenceFingerprint,type EvidenceRange} from './memory.js';
 
 import type {MemoryValidationDetails} from './memory-validation.js';
@@ -215,8 +217,11 @@ export class MemoryPipeline {
     this.strategies=options.strategies??new MemoryStrategies();
     this.inputAdmission=new MemoryInputAdmission(this.store,options.memories,options.admission,strategy=>this.strategies.resolvePinned(strategy));this.inputs=this.inputAdmission;
     this.batchBudget();
-    this.store.db.exec("CREATE INDEX IF NOT EXISTS memory_generation_context ON memory_batches(json_extract(json,'$.generationContract'))");
-    this.store.db.exec("CREATE INDEX IF NOT EXISTS memory_continuation_parent ON memory_jobs(json_extract(json,'$.continuationOf')) WHERE json_extract(json,'$.continuationOf') IS NOT NULL");
+    const installMemoryPipelineIndexes=(db:DatabaseSync)=>{
+      db.exec("CREATE INDEX IF NOT EXISTS memory_generation_context ON memory_batches(json_extract(json,'$.generationContract'))");
+      db.exec("CREATE INDEX IF NOT EXISTS memory_continuation_parent ON memory_jobs(json_extract(json,'$.continuationOf')) WHERE json_extract(json,'$.continuationOf') IS NOT NULL");
+    };
+    installSchemaPlan(this.store.db,[{owner:'memory',requires:[],install:installMemoryPipelineIndexes}]);
     this.initializeCounts();
     this.initializePrivateStorage();
     this.drafts=new MemoryExtractionDrafts(this.store);
@@ -279,6 +284,7 @@ export class MemoryPipeline {
     const db=this.store.db,own=!db.isTransaction;
     if(own)db.exec('BEGIN IMMEDIATE');
     try{
+      const installMemoryPipelineCounts=(db:DatabaseSync)=>{
       db.exec(`CREATE INDEX IF NOT EXISTS memory_batches_ready ON memory_batches(job_id,json_extract(json,'$.status'),idx);
         CREATE TABLE IF NOT EXISTS memory_job_counts(job_id TEXT PRIMARY KEY REFERENCES memory_jobs(id) ON DELETE CASCADE,total INTEGER NOT NULL DEFAULT 0,completed INTEGER NOT NULL DEFAULT 0,failed INTEGER NOT NULL DEFAULT 0,invalidated INTEGER NOT NULL DEFAULT 0,running INTEGER NOT NULL DEFAULT 0,pending INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0);`);
       // Cover recurring scheduler reads without visiting frozen ranges/private
@@ -291,6 +297,9 @@ export class MemoryPipeline {
       db.exec(`CREATE TRIGGER IF NOT EXISTS batch_count_insert AFTER INSERT ON memory_batches BEGIN INSERT OR IGNORE INTO memory_job_counts(job_id) VALUES(new.job_id); ${delta('new','+')} END;
         CREATE TRIGGER IF NOT EXISTS batch_count_delete AFTER DELETE ON memory_batches BEGIN ${delta('old','-')} END;
         CREATE TRIGGER IF NOT EXISTS batch_count_update AFTER UPDATE OF json ON memory_batches BEGIN ${delta('old','-')} ${delta('new','+')} END;`);
+      };
+      installSchemaPlan(db,[{owner:'memory',requires:[],install:installMemoryPipelineCounts}]);
+
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }

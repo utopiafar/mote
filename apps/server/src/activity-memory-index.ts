@@ -1,4 +1,6 @@
 import type {Store} from './store.js';
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan} from './schema-installation.js';
 
 const ranks:Record<string,number>={running:6,pausing:6,waiting_for_model:5,waiting_for_input:5,paused:5,stale:4,invalidated:4,failed:3,queued:2,pending:2,waiting:2,completed:0,cancelled:-1};
 const rank=(value:string)=>`CASE ${value} ${Object.entries(ranks).map(([name,value])=>`WHEN '${name}' THEN ${value}`).join(' ')} ELSE 2 END`;
@@ -60,7 +62,7 @@ export class ActivityMemoryIndex {
   // Connection-owned subscriptions disappear even after an interrupted host.
   // Replace the owned trigger definitions in the same installation transaction.
   retireActivityMemorySubscriptions(store,'main');retireActivityMemorySubscriptions(store,'temp');
-  db.exec(`CREATE TABLE IF NOT EXISTS activity_memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,status TEXT NOT NULL,import_id TEXT);
+  const installActivityMemorySchema=(db:DatabaseSync)=>{db.exec(`CREATE TABLE IF NOT EXISTS activity_memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,status TEXT NOT NULL,import_id TEXT);
    CREATE TABLE IF NOT EXISTS activity_memory_continuations(job_id TEXT PRIMARY KEY REFERENCES activity_memory_jobs(id) ON DELETE CASCADE,parent_id TEXT NOT NULL,root_id TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS activity_memory_continuation_roots ON activity_memory_continuations(root_id,job_id);
    CREATE INDEX IF NOT EXISTS activity_memory_jobs_recent ON activity_memory_jobs(updated_at DESC,id);
@@ -126,7 +128,8 @@ export class ActivityMemoryIndex {
     WHEN old.job_id IS NOT new.job_id OR json_extract(old.json,'$.memoryIds') IS NOT json_extract(new.json,'$.memoryIds') BEGIN
      ${refreshOutputs('old.job_id')}${refreshOutputs('new.job_id')}
    END;
-   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id;${refreshOutputs('old.job_id')} END;`);
+   CREATE TEMP TRIGGER IF NOT EXISTS activity_memory_batch_delete AFTER DELETE ON memory_batches BEGIN DELETE FROM activity_memory_batches WHERE id=old.id;${refreshOutputs('old.job_id')} END;`);};
+  installSchemaPlan(db,[{owner:'activity-memory-projection',requires:[],install:installActivityMemorySchema}]);
   // A deselected/closed Activity owns no subscriptions. Rebuild its disposable
   // metadata from canonical products when selected again, without mutating a
   // Memory job, replaying model work or granting new input authority.
