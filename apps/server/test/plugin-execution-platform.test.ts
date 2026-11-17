@@ -36,13 +36,13 @@ async function fixture(t:TestContext){
   config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();const settings=new ExecutionSettings(config);
   const model=modelConnection('generated-model',{model:'generated',apiKey:'generated-only'}),dependents:(()=>Promise<unknown>)[]=[];
   let now=Date.now(),vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();
-  let authorization=createAuthorizationPlatform({ownerToken:'generated-execution-owner'},{store:vault.store,availableModelConnections:()=>[model]});await authorization.prepare();
-  let platform=createExecutionPlatform({store:vault.store,settings,modelAuthorization:authorization.assembly.modelAuthorization,clock:()=>now});await platform.prepare();platform.start();
+  let authorization=createAuthorizationPlatform({ownerToken:'generated-execution-owner'},{vault,availableModelConnections:()=>[model]});await authorization.prepare();
+  let platform=createExecutionPlatform({vault,settings,modelAuthorization:authorization.trusted().modelAuthorization,clock:()=>now});await platform.prepare();platform.start();
   let host=new PluginHost({kind:'central',id:'generated-execution-host'});
   const install=(handlers:readonly ExecutionHandler[])=>host.install({identity:identity('handlers'),contributions:[{id:'generated-handlers',apiVersion:'1'}],factory:createExecutionHandlersFactory(platform,handlers)});
   t.after(async()=>{for(const close of dependents.reverse())await close();await host.close();await platform.close();await authorization.close();await config.close();await vault.close();rmSync(directory,{recursive:true,force:true});});
-  return {directory,config,settings,model,install,beforeClose(close:()=>Promise<unknown>){dependents.push(close);},get platform(){return platform;},get host(){return host;},get authorization(){return authorization;},get store(){return vault.store;},advance(ms:number){now+=ms;},
-    async restart(){await host.close();await platform.close();await authorization.close();await vault.close();vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();authorization=createAuthorizationPlatform({ownerToken:'generated-execution-owner'},{store:vault.store,availableModelConnections:()=>[model]});await authorization.prepare();platform=createExecutionPlatform({store:vault.store,settings,modelAuthorization:authorization.assembly.modelAuthorization,clock:()=>now});await platform.prepare();platform.start();host=new PluginHost({kind:'central',id:'generated-execution-host'});},
+  return {directory,config,settings,model,install,beforeClose(close:()=>Promise<unknown>){dependents.push(close);},get platform(){return platform;},get host(){return host;},get authorization(){return authorization;},get store(){return vault.store;},get vault(){return vault;},advance(ms:number){now+=ms;},
+    async restart(){await host.close();await platform.close();await authorization.close();await vault.close();vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();authorization=createAuthorizationPlatform({ownerToken:'generated-execution-owner'},{vault,availableModelConnections:()=>[model]});await authorization.prepare();platform=createExecutionPlatform({vault,settings,modelAuthorization:authorization.trusted().modelAuthorization,clock:()=>now});await platform.prepare();platform.start();host=new PluginHost({kind:'central',id:'generated-execution-host'});},
   };
 }
 
@@ -56,19 +56,19 @@ test('real vault restart retains retry receipts and commits one immutable operat
   assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(calls,2);
   assert.equal(f.platform.submission.enqueue('generated:restart',handler.kind,input),id);await f.platform.submission.drain([id]);assert.equal(calls,2);
   assert.deepEqual(f.store.db.prepare('SELECT value FROM generated_execution_outputs').all().map(row=>row.value),[input.value]);
-  assert.equal(f.platform.assembly.operations.detail('generated:restart').operation.state,'succeeded');
+  assert.equal(f.platform.trusted().operations.detail('generated:restart').operation.state,'succeeded');
   await f.restart();await f.install([handler]);await f.platform.submission.drain([id]);assert.equal(calls,2);assert.equal(f.platform.receipt(id).step?.state,'succeeded');
 });
 
 test('restored jobs retain real C04 model grants and fail closed after an explicit epoch stop',async t=>{
-  const f=await fixture(t),control=f.authorization.assembly.modelAuthorization,connection=f.model;let calls=0;
+  const f=await fixture(t),control=f.authorization.trusted().modelAuthorization,connection=f.model;let calls=0;
   const handler={...base,execute:async()=>{calls++;return null;}};await f.install([handler]);
   control.command({action:'on',revision:0,operationId:randomUUID()});
   f.store.db.exec('BEGIN IMMEDIATE');control.receive('generated-original',{sourceId:'generated-source'});f.store.db.exec('COMMIT');control.automatic('generated-authorized-work',['generated-original'],'working');
   const id=await control.run('generated-authorized-work',async()=>f.platform.submission.enqueue('generated:grant',handler.kind,{revision:1}));
   control.command({action:'stop',revision:control.view().revision,operationId:randomUUID()});await f.restart();await f.install([handler]);await f.platform.submission.drain([id]);
   assert.equal(calls,0);assert.equal(f.platform.receipt(id).step?.state,'waiting');assert.equal(f.platform.receipt(id).step?.attempts,0);assert.equal(f.platform.receipt(id).failure?.code,'background_model_authorization_required');
-  f.authorization.assembly.modelAuthorization.command({action:'on',revision:f.authorization.assembly.modelAuthorization.view().revision,operationId:randomUUID()});f.advance(60000);await f.platform.submission.drain([id]);
+  f.authorization.trusted().modelAuthorization.command({action:'on',revision:f.authorization.trusted().modelAuthorization.view().revision,operationId:randomUUID()});f.advance(60000);await f.platform.submission.drain([id]);
   assert.equal(calls,1);assert.equal(f.platform.receipt(id).step?.state,'succeeded');
 });
 
@@ -88,7 +88,7 @@ test('quiesce refuses new work but lets an accepted lease commit without startin
   const f=await fixture(t),started=deferred(),release=deferred();let calls=0,commits=0;t.after(()=>release.resolve());
   await f.install([{...base,execute:async()=>{calls++;started.resolve();await release.promise;return null;},commit:()=>{commits++;}}]);
   const id=f.platform.submission.enqueue('generated:accepted',base.kind,{}),queued=f.platform.submission.enqueue('generated:backlog',base.kind,{}),run=f.platform.submission.drain([id]);await started.promise;
-  f.platform.quiesce();assert.throws(()=>f.platform.submission.enqueue('generated:new',base.kind,{}),{statusCode:503});assert.throws(()=>f.platform.assembly.executor.enqueue('generated:raw-new',base.kind,{}),{statusCode:503});
+  f.platform.quiesce();assert.throws(()=>f.platform.submission.enqueue('generated:new',base.kind,{}),{statusCode:503});assert.throws(()=>f.platform.trusted().executor.enqueue('generated:raw-new',base.kind,{}),{statusCode:503});
   await f.platform.tick();release.resolve();await run;assert.equal(calls,1);assert.equal(commits,1);assert.equal(f.platform.receipt(queued).step?.state,'waiting');
   await f.restart();await f.install([base]);await f.platform.submission.drain([queued]);assert.equal(f.platform.receipt(queued).step?.state,'succeeded');
 });
@@ -107,19 +107,19 @@ test('four real gates consume configuration and durable provider cooldowns survi
 });
 
 test('the actual SourcePipeline serializes work into the owned engine and publishes retained Coding material',async t=>{
-  const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t),f.platform.assembly.executor);await runtime.ready;
+  const f=await fixture(t),materials=new MaterialStore(f.store),runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t),f.platform.trusted().executor);await runtime.ready;
   f.beforeClose(async()=>{await runtime.close();await materials.index?.close();});
   const sources=new SourceStore(f.store,runtime);sources.register({id:'generated-coding',name:'Generated coding',kind:'coding-agent',deviceId:'generated-device',platform:'macos'});
   const event={externalId:'generated-event',revision:'1',observedAt:'2026-11-03T01:00:00Z',kind:'message',layer:'snapshot',text:'Generated durable source requirement and result.',document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'generated-session',projectKey:'generated-project',eventId:'000001',role:'user',attribution:'human',part:0,parts:1}}};
   const receipt=await sources.upsert('generated-coding',event);await runtime.tick();const published=materials.list().items[0];assert.ok(published);assert.match(materials.read(published.ref,{length:12000}).text,/Generated durable source requirement/);
-  const steps=f.platform.assembly.executor.list({kind:'source.archive-group'}).items;assert.equal(steps.length,1);assert.equal(steps[0].state,'succeeded');assert.equal(steps[0].input.sourceId,'generated-coding');assert.ok(steps[0].input.checkpoint);
-  const repeated=await sources.upsert('generated-coding',event);assert.equal(repeated.id,receipt.id);assert.equal(repeated.duplicate,true);await runtime.tick();assert.equal(materials.list().items[0].ref,published.ref);assert.equal(f.platform.assembly.executor.list({kind:'source.archive-group'}).items.length,1);
-  await runtime.close();assert.equal(f.platform.assembly.executor.closed,false);await materials.index?.close();
+  const steps=f.platform.trusted().executor.list({kind:'source.archive-group'}).items;assert.equal(steps.length,1);assert.equal(steps[0].state,'succeeded');assert.equal(steps[0].input.sourceId,'generated-coding');assert.ok(steps[0].input.checkpoint);
+  const repeated=await sources.upsert('generated-coding',event);assert.equal(repeated.id,receipt.id);assert.equal(repeated.duplicate,true);await runtime.tick();assert.equal(materials.list().items[0].ref,published.ref);assert.equal(f.platform.trusted().executor.list({kind:'source.archive-group'}).items.length,1);
+  await runtime.close();assert.equal(f.platform.trusted().executor.closed,false);await materials.index?.close();
 });
 
 test('H04 owns the restart factory and guards the flat public port without publishing raw handler authority',async t=>{
   const f=await fixture(t);await f.platform.close();const owner=identity('execution-owner');
-  const platform=createExecutionPlatform({store:f.store,settings:f.settings,modelAuthorization:f.authorization.assembly.modelAuthorization});
+  const platform=createExecutionPlatform({vault:f.vault,settings:f.settings,modelAuthorization:f.authorization.trusted().modelAuthorization});
   const handle=await f.host.install({identity:owner,contributions:[executionPlatformDeclaration],restartRequired:true,factory:createExecutionPlatformFactory(platform)});
   let committed=0;await f.host.install({identity:identity('public-submission-handler'),contributions:[{id:'generated-public-handler',apiVersion:'1'}],factory:createExecutionHandlersFactory(platform,[{...base,commit:()=>{committed++;}}])});
   const lease=await f.host.acquire(centralServices.execution,{service:centralServices.execution,provider:{scope:owner,contributionId:executionPlatformDeclaration.id},revision:0});const retained=lease.value;
@@ -133,13 +133,13 @@ test('a failed H04 handler prepare releases earlier registrations without deleti
   const f=await fixture(t);
   await assert.rejects(f.install([base,base]),/Duplicate execution handler/);
   assert.throws(()=>f.platform.submission.enqueue('generated:orphan',base.kind,{}),{statusCode:503});
-  assert.equal(f.platform.assembly.executor.list().items.length,0);
+  assert.equal(f.platform.trusted().executor.list().items.length,0);
   await f.install([base]);const id=f.platform.submission.enqueue('generated:reinstalled',base.kind,{revision:1});await f.platform.submission.drain([id]);assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(f.store.db.isOpen,true);
 });
 
 
 test('accepted real import preparation keeps its preview and blocked confirmation child during quiesce',async t=>{
-  const f=await fixture(t),started=deferred(),release=deferred(),engine=f.platform.assembly.executor;
+  const f=await fixture(t),started=deferred(),release=deferred(),engine=f.platform.trusted().executor;
   const imports=new ImportStore(f.store,new ArchivedFileStore(f.store),new SourceStore(f.store),{executor:engine,prepare:async({workspace,inputPaths})=>{
     started.resolve();await release.promise;
     writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:{externalId:'generated-quiesce-import',revision:'1',observedAt:'2026-11-03T01:00:00Z',kind:'file',layer:'original',text:'Generated accepted import'},evidencePaths:[inputPaths[0]],attachments:[]})+'\n');return {summary:'Generated accepted preview'};
@@ -154,7 +154,7 @@ test('accepted real import preparation keeps its preview and blocked confirmatio
 
 
 test('an accepted terminal projection persists its child during quiesce without lending admission to late callbacks',async t=>{
-  const f=await fixture(t),engine=f.platform.assembly.executor,started=deferred(),release=deferred(),late=deferred();let child='',lateAttempt:Promise<boolean>|undefined,calls=0;
+  const f=await fixture(t),engine=f.platform.trusted().executor,started=deferred(),release=deferred(),late=deferred();let child='',lateAttempt:Promise<boolean>|undefined,calls=0;
   t.after(()=>{release.resolve();late.resolve();});f.store.db.exec('CREATE TABLE generated_projection_outputs(id TEXT PRIMARY KEY)');
   const next={...base,kind:'generated.projected-child',pool:'generated.projected-child',execute:async()=>{calls++;return null;}};
   const parent:ExecutionHandler={...base,execute:async step=>{lateAttempt=late.promise.then(()=>{try{engine.enqueue('generated:detached',next.kind,{});return false;}catch{return true;}});started.resolve();await release.promise;return step.id;},
@@ -174,13 +174,13 @@ test('an accepted replay program durably yields its child during quiesce and res
   f.store.db.exec('CREATE TABLE generated_replay_outputs(id TEXT PRIMARY KEY,value TEXT)');
   const parent:ExecutionHandler={...base,execute:async(step,signal)=>{
     started.resolve();await release.promise;
-    return f.platform.assembly.executor.runStep({id:child,operationId:step.operationId,kind:'generated.replay',pool:'generated.replay',input:{parent:step.id},signal,validate:()=>true,
+    return f.platform.trusted().executor.runStep({id:child,operationId:step.operationId,kind:'generated.replay',pool:'generated.replay',input:{parent:step.id},signal,validate:()=>true,
       execute:async()=>{calls++;return 'Generated replay artifact';},commit:value=>{f.store.db.prepare('INSERT INTO generated_replay_outputs VALUES(?,?)').run(child,String(value));},
       read:()=>{const row=f.store.db.prepare('SELECT value FROM generated_replay_outputs WHERE id=?').get(child);return row?String(row.value):undefined;},project:()=>{}});
   },commit:(step,value)=>{f.store.db.prepare('INSERT INTO generated_replay_outputs VALUES(?,?)').run(step.id,String(value));}};
   await f.install([parent]);const id=f.platform.submission.enqueue('generated:replay',parent.kind,{}),run=f.platform.submission.drain([id]);await started.promise;f.platform.quiesce();release.resolve();await run;
   assert.equal(f.platform.receipt(id).step?.state,'waiting');assert.equal(f.platform.receipt(id).step?.error,'step_pending');assert.equal(f.platform.receipt(id).step?.attempts,0);assert.equal(f.platform.receipt(child).step?.state,'waiting');assert.equal(calls,0);
-  await f.restart();await f.install([parent]);f.advance(2);await f.platform.submission.drain([id]);await f.platform.assembly.executor.drain([child]);f.advance(2);await f.platform.submission.drain([id]);
+  await f.restart();await f.install([parent]);f.advance(2);await f.platform.submission.drain([id]);await f.platform.trusted().executor.drain([child]);f.advance(2);await f.platform.submission.drain([id]);
   assert.equal(f.platform.receipt(id).step?.state,'succeeded');assert.equal(f.platform.receipt(child).step?.state,'succeeded');assert.equal(calls,1);assert.equal(f.store.db.prepare('SELECT count(*) n FROM generated_replay_outputs').get()!.n,2);
 });
 
@@ -206,7 +206,7 @@ for(const mode of ['queued','after-preparation','stop'] as const)test(`accepted 
 
 
 test('actual text FileProcessing preserves its successful artifact and summary projection across quiesce',async t=>{
-  const f=await fixture(t),engine=f.platform.assembly.executor,started=deferred(),release=deferred(),sources=new SourceStore(f.store),files=new FileStore(f.store,sources);
+  const f=await fixture(t),engine=f.platform.trusted().executor,started=deferred(),release=deferred(),sources=new SourceStore(f.store),files=new FileStore(f.store,sources);
   const register=engine.register.bind(engine);let processing:FileProcessing;
   engine.register=handler=>register({...handler,execute:async(step,signal,grant)=>{const result=await handler.execute(step,signal,grant);if(handler.kind==='files.pipeline'){started.resolve();await release.promise;}return result;}});
   try{processing=new FileProcessing(testScope(t),files,undefined,undefined,{executor:engine});}finally{engine.register=register;}
@@ -219,4 +219,19 @@ test('actual text FileProcessing preserves its successful artifact and summary p
   const stoppedPump=assert.rejects(processing.tick(),{statusCode:503});await started.promise;f.platform.quiesce();release.resolve();await stoppedPump;
   const steps=engine.list({operationId:'file:'+ack.id}).items;assert.equal(steps.find(step=>step.kind==='files.pipeline')?.state,'succeeded');const summary=steps.find(step=>step.kind==='files.summary');assert.ok(summary);assert.equal(summary.attempts,0);assert.equal(summary.state,'waiting');assert.equal(summary.error,undefined);
   assert.equal(files.detail(ack.id).job.state,'succeeded');assert.match(JSON.stringify(files.chunks(ack.id)),/Generated actual text processing artifact/);assert.equal(f.store.db.isTransaction,false);
+});
+
+test('public execution ports are frozen function-only closures with no Store or class escape',async t=>{
+  const f=await fixture(t),assembly=f.platform.assembly;
+  assert.equal(Object.getPrototypeOf(assembly),Object.prototype);
+  assert.equal('store' in assembly,false);assert.equal(Reflect.get(assembly,'store'),undefined);
+  for(const port of [assembly.executor,assembly.providerAdmission,assembly.operations]){
+    assert.ok(Object.isFrozen(port));assert.equal(Object.getPrototypeOf(port),Object.prototype);
+    assert.equal('store' in port,false);assert.equal(port.constructor,Object);
+    for(const key of Reflect.ownKeys(port))assert.equal(typeof (port as unknown as Record<PropertyKey,unknown>)[key],'function',String(key));
+    assert.throws(()=>structuredClone(port),/could not be cloned|DataCloneError/i);
+  }
+  assert.equal(assembly.executor.closed(),false);assert.equal(assembly.executor.sameVault(f.store),true);
+  assert.equal(assembly.executor.get('generated-missing'),undefined);assert.equal(assembly.operations.page().items.length,0);
+  await f.platform.close();assert.equal(assembly.executor.closed(),true);assert.throws(()=>assembly.executor.enqueue('generated:late','generated.execution',{}));
 });

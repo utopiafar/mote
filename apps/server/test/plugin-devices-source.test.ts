@@ -13,6 +13,8 @@ import {MaterialStore} from '../src/materials.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {firstDeviceData} from '../src/first-device-data.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
+import {IngressService} from '../src/ingress.js';
+import {testVault} from './fixtures/plugin-runtime-vault.js';
 import type {RequestAuthority} from '../src/plugins/central-contracts.js';
 import {createDevicesSource,createDevicesSourceFactory,devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../src/plugins/devices-source.js';
 
@@ -24,8 +26,10 @@ async function fixture(t:TestContext,options:{releaseOnRequest?:boolean;releaseA
   const directory=mkdtempSync(join(tmpdir(),'mote-devices-source-'));
   const store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),materials=new MaterialStore(store);
   const reader=new EvidenceReader(store,sources,files);
-  const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
-  await platform.prepare();platform.bindRepositories({sources,files,materials});await platform.start();
+  const vault=await testVault(store,directory);
+  const ingress=new IngressService(store,sources,files);
+  const platform=createAuthorizationPlatform({ownerToken},{vault,availableModelConnections:()=>[]});
+  await platform.prepare();platform.bindRepositories({sources,files,materials,ingress});await platform.start();
   const pins=new WeakMap<FastifyRequest,RequestAuthority>();
   let readPin:RequestAuthority|undefined;
   const completeRead=()=>{if(options.releaseAfterRead&&readPin)platform.releaseRequest(readPin);};
@@ -53,7 +57,7 @@ async function fixture(t:TestContext,options:{releaseOnRequest?:boolean;releaseA
   });
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
   intake.routes(app,{request:request=>pins.get(request)});
-  t.after(async()=>{await app.close();await intake.close();await platform.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await app.close();await intake.close();await platform.close();await vault.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-phone',platform:'android',enabled:true,retention:'archive'});
   const post=(url:string,token:string,payload:unknown)=>app.inject({method:'POST',url,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},payload:JSON.stringify(payload)});
   const get=(url:string,headers:Record<string,string>={authorization:`Bearer ${ownerToken}`})=>app.inject({url,headers});

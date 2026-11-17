@@ -16,6 +16,7 @@ import {ConfigService} from '../src/config-service.js';
 import {registerBuiltinDomains} from '../src/config.js';
 import {ReloadableAgent} from '../src/agent-runtime-registry.js';
 import {Store} from '../src/store.js';
+import {testVault} from './fixtures/plugin-runtime-vault.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {createExecutionPlatform} from '../src/plugins/execution-platform.js';
 
@@ -398,8 +399,8 @@ for(const failure of ['initialize','models'] as const)test(`adopted service clos
 test('platform quiesce fences raw and model writes and publishes accepted settings before C05 closes',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-config-drain-')),path=join(directory,'mote.yaml');
   const platform=createConfigurationPlatform({path,initialDocument:seed(),watch:false});await platform.prepare();
-  const store=new Store(join(directory,'vault')),authority=new BackgroundModelAuthorization(store,()=>[]),execution=createExecutionPlatform({store,modelAuthorization:authority,settings:platform.runtimeSettings});
-  t.after(async()=>{await platform.close();await execution.close();authority.close();store.close();await rm(directory,{recursive:true,force:true});});
+  const store=new Store(join(directory,'vault')),vault=await testVault(store,directory),authority=new BackgroundModelAuthorization(store,()=>[]),execution=createExecutionPlatform({vault,modelAuthorization:authority,settings:platform.runtimeSettings});
+  t.after(async()=>{await platform.close();await execution.close();authority.close();await vault.close();store.close();await rm(directory,{recursive:true,force:true});});
   await execution.prepare();execution.start();await platform.bindModels(modelDependencies());
   const service=platform.configService,models=platform.modelSettings,oldModels=models.current(),entered=barrier(),finish=barrier(),events:string[]=[];
   const gate=execution.assembly.agentGate;

@@ -5,22 +5,17 @@ import {captureSchema,rangeSchema,type CaptureInput} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError,type Store} from '../store.js';
-import {IngressService} from '../ingress.js';
-import type {SourceStore} from '../sources.js';
-import type {FileStore} from '../files.js';
-import type {MaterialStore} from '../materials.js';
+import {StoreError} from '../store.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import {safeError} from '../diagnostics.js';
 import {CAPTURE_BATCH_MAX_BYTES} from '../capture-limits.js';
 import {centralServices,type CaptureIntake,type CommitAuthority,type RequestAuthority,type SourceIntake,type SourceRepository} from './central-contracts.js';
-import type {AuthorizationPlatform} from './authorization-platform.js';
+import type {CaptureC04Port,CapturePort,CapturePageQuery} from '../capture-storage.js';
 
 /** Trusted authorization members the capture transport is allowed to use. They are never
  * published: `withCapture`/`withSource` establish the admission scope that makes
- * `commits.capture()` meaningful, and the platform owns the single IngressService. */
-export type CaptureIntakeAuthority=Pick<AuthorizationPlatform,
-  'bindRequest'|'releaseRequest'|'requests'|'commits'|'withCapture'|'withSource'|'captureIntake'|'sourceIntake'>;
+ * `captureCommit()` meaningful, and the trusted owner keeps the single Ingress. */
+export type CaptureIntakeAuthority=CaptureC04Port;
 
 /** The package Manifest is host-owned; this is the actual data-contribution fragment. */
 export const captureIntakeContribution={
@@ -40,12 +35,8 @@ export interface CaptureIntakeOptions {
   readonly diagnostics?:Pick<ServerDiagnostics,'measure'>;
 }
 export interface CaptureIntakeDependencies {
-  /** Vault-owned SQLite and the current domain stores. All four are borrowed. */
-  readonly store:Store;
-  /** One SourceStore built by the trusted root/source-integration parent with the source-pipeline runtime. */
-  readonly sources:SourceStore;
-  readonly files:FileStore;
-  readonly materials:MaterialStore;
+  /** Trusted capture owner; the real Ingress and repositories stay private. */
+  readonly port:CapturePort;
 }
 export interface CaptureRouteContext {
   /** Request pin bound by the host's authorization hook; never caller-supplied. */
@@ -77,11 +68,7 @@ const unavailable=()=>new StoreError('Capture intake is unavailable',503);
  * the vault, the source/file/material repositories and the single authorization platform;
  * closing it revokes admission and drains nothing it does not own. */
 export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:CaptureIntakeDependencies){
-  const {store,sources,files,materials}=dependencies;
-  /** The capture owner owns the single IngressService; the authorization platform binds this exact
-   * instance through bindRepositories, so the authoritative write path and the
-   * plugin routes share one acknowledgement boundary. It has no close(). */
-  const ingress=new IngressService(store,sources,files);
+  const {port}=dependencies;
   let authorization:CaptureIntakeAuthority|undefined;
   const bound=()=>{if(!authorization)throw new StoreError('Capture intake has no authorization binding',503);return authorization;};
   let phase:'created'|'prepared'|'bound'|'active'|'quiescing'|'stopped'|'disposed'='created';
@@ -101,14 +88,7 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     sourceItem:(sourceId:string,input:unknown,authority:CommitAuthority)=>{current();return bound().sourceIntake.sourceItem(sourceId,input,authority);},
     sourceBatch:(sourceId:string,inputs:unknown,authority:CommitAuthority)=>{current();return bound().sourceIntake.sourceBatch(sourceId,inputs,authority);},
   });
-  const sourceRepository:SourceRepository=Object.freeze({
-    register:(raw:unknown)=>{current();return sources.register(raw);},
-    getSource:(id:string)=>{current();return sources.getSource(id);},
-    listSources:()=>{current();return sources.listSources();},
-    getItem:(sourceId:string,externalId:string)=>{current();return sources.getItem(sourceId,externalId);},
-    listItems:(args:Parameters<SourceStore['listItems']>[0])=>{current();return sources.listItems(args);},
-    history:(sourceId:string,externalId:string)=>{current();return sources.history(sourceId,externalId);},
-  });
+  const sourceRepository:SourceRepository=port.sources;
   const ports:CaptureIntakePorts=Object.freeze({captureIntake,sourceIntake,sources:sourceRepository});
   const close=()=>closing??=(async()=>{phase='disposed';})();
   function routes(app:FastifyInstance,context:CaptureRouteContext){
@@ -123,30 +103,30 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     app.post('/api/captures',async(req,reply)=>{
       const input=captureSchema.parse(req.body),request=pin(req);
       const result=await bound().withCapture(request,input,()=>measure('ingest','capture',()=>
-        captureIntake.capture(input,bound().commits.capture()),value=>({count:value.duplicate?0:1})));
+        captureIntake.capture(input,bound().captureCommit()),value=>({count:value.duplicate?0:1})));
       return reply.code(result.duplicate?200:201).send(result);
     });
     app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
       const captures=parseCaptureBundle(req.body),request=pin(req);
       if(new Set(captures.map(input=>input.id)).size!==captures.length)throw new StoreError('Duplicate IDs in bundle');
-      const committed=await bound().withCapture(request,captures,()=>captureIntake.captureSettled(captures,bound().commits.capture()));
+      const committed=await bound().withCapture(request,captures,()=>captureIntake.captureSettled(captures,bound().captureCommit()));
       return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
     });
     app.post('/api/captures/batch',{bodyLimit:12*1024*1024},async req=>{
       const {captures}=z.object({captures:z.array(captureSchema).min(1).max(25)}).strict().parse(req.body),request=pin(req);
       if(new Set(captures.map(input=>input.id)).size!==captures.length)throw new StoreError('Duplicate IDs in batch');
-      const committed=await bound().withCapture(request,captures,()=>captureIntake.captureSettled(captures,bound().commits.capture()));
+      const committed=await bound().withCapture(request,captures,()=>captureIntake.captureSettled(captures,bound().captureCommit()));
       return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
     });
     app.get('/api/captures',async req=>{
       current();const raw=req.query as Record<string,string>,args=rangeSchema.parse(raw);
-      return measure('source','timeline',()=>store.list({...args,cursor:raw.cursor}),page=>({count:page.items.length}));
+      return measure('source','timeline',()=>port.page({...args,cursor:raw.cursor} as CapturePageQuery),page=>({count:page.items.length}));
     });
   }
   return Object.freeze({
     async prepare(){
       if(phase!=='created')throw unavailable();
-      if(sources.store!==store||files.store!==store||materials.store!==store)throw new StoreError('Capture intake repository mismatch',503);
+      port.assertRepositories();
       phase='prepared';
     },
     /** Trusted assembly only: the authorization platform supplies the fixed verifier after it bound the
@@ -158,13 +138,11 @@ export function createCaptureIntake(options:CaptureIntakeOptions,dependencies:Ca
     start(){if(phase!=='bound')throw unavailable();phase='active';},
     quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';},
     stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
-    /** Trusted assembly passes this exact instance to the authorization platform's bindRepositories. */
-    get ingress(){return ingress;},
     /** Trusted assembly registers these on the feature child app, never globally. */
     routes,
     /** Published intake facades plus the trusted source read/control surface used by
    * trusted assembly only (`sources` is intentionally not a host contribution).
-   * Raw IngressService, Store and the commit issuer stay private. */
+   * Raw Ingress, Store and the commit issuer stay private. */
     ports,
   });
 }
@@ -172,7 +150,7 @@ export type CaptureIntakePlatform=ReturnType<typeof createCaptureIntake>;
 
 /** Trusted assembly closure: it binds this exact Ingress into the authorization platform, starts it and
  * returns the fixed authority. Never a published service or caller-supplied object. */
-export type CaptureAuthorizationBinding=(ingress:IngressService)=>CaptureIntakeAuthority|Promise<CaptureIntakeAuthority>;
+export type CaptureAuthorizationBinding=()=>CaptureIntakeAuthority|Promise<CaptureIntakeAuthority>;
 /** Trusted assembly registers the owned routes on its feature child app. */
 export type CaptureRouteRegistration=(platform:CaptureIntakePlatform)=>void;
 
@@ -186,7 +164,7 @@ export function createCaptureIntakeFactory(options:CaptureIntakeOptions,dependen
     return {
       async prepare(){
         await platform.prepare();
-        platform.bindAuthorization(await bind(platform.ingress));
+        platform.bindAuthorization(await bind());
         registerRoutes?.(platform);
       },
       start(){platform.start();context.provide(captureIntakeContribution.id,centralServices.captureIntake,platform.ports.captureIntake);

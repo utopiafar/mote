@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {Store} from '../src/store.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
+import {testVault} from './fixtures/plugin-runtime-vault.js';
 
 const schema=(store:Store)=>store.db.prepare('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name').all();
 const exists=(store:Store,name:string)=>Boolean(store.db.prepare('SELECT 1 FROM sqlite_master WHERE name=?').get(name));
@@ -50,7 +51,9 @@ for(const nested of [false,true])test(`background constructor seed denial preser
 });
 
 test('authorization prepare publishes control only after schema and singleton installation succeed',async t=>{
- const f=fixture(t),{store}=f,options={ownerToken:'generated-owner'},dependencies={store,availableModelConnections:()=>[]};
+ const f=fixture(t),{store}=f,options={ownerToken:'generated-owner'};
+ const vault=await testVault(store,store.directory),dependencies={vault,availableModelConnections:()=>[]};
+ t.after(()=>vault.close());
  const failed=createAuthorizationPlatform(options,dependencies);t.after(()=>failed.close());const before=schema(store);denyLastTable(store);
  await assert.rejects(failed.prepare(),{errcode:23});store.db.setAuthorizer(null);
  assert.deepEqual(schema(store),before);assert.throws(()=>failed.assembly,{code:'authorization_unavailable',statusCode:503});

@@ -151,12 +151,12 @@ test('a device-reported missing original retains its independently authorized sn
  const removed={...manifest,previousRevision:manifest.item.revision,sha256:undefined,item:{...manifest.item,revision:'deleted:generated',observedAt:'2026-10-03T00:00:00Z',deleted:true}};
  const response=await api('PUT','/api/file-sync/v1/revisions',removed);assert.equal(response.statusCode,200,response.body);
  node.files.sweep();
- const chunks=node.files.chunks(id);assert.ok(chunks.length);assert.equal(node.evidenceContext.assembly.reader.contextDependenciesAllowed([id,chunks[0].id]),true);
+ const chunks=node.files.chunks(id);assert.ok(chunks.length);assert.equal(node.featureServices.evidenceReader.contextDependenciesAllowed([id,chunks[0].id]),true);
  const view=await api('GET',`/api/files/${id}/view`);assert.equal(view.statusCode,200,view.body);assert.equal(view.json().originMissing,true);assert.equal(view.json().canOpenOriginal,false);
  const excerpt=await node.featureServices.archiveReader.readFileEvidence!({id,offset:0,length:body.length});assert.equal(excerpt.record?.ocrText,body);
  const found=await api('GET','/api/context/retrieve?source=file&query=retained');assert.equal(found.statusCode,200,found.body);assert.ok(found.json().items.some((item:any)=>item.fileView?.captureId===id));
  const catalog=await api('GET','/api/sources/visible/catalog?parent='+encodeURIComponent('file:///generated/visible/'));assert.equal(catalog.statusCode,200,catalog.body);assert.deepEqual(catalog.json().items.map((item:any)=>item.evidenceId),[id]);
- const disabled=await api('PATCH','/api/sources/visible',{enabled:false});assert.equal(disabled.statusCode,200,disabled.body);assert.equal(node.evidenceContext.assembly.reader.contextDependenciesAllowed([id,chunks[0].id]),false);
+ const disabled=await api('PATCH','/api/sources/visible',{enabled:false});assert.equal(disabled.statusCode,200,disabled.body);assert.equal(node.featureServices.evidenceReader.contextDependenciesAllowed([id,chunks[0].id]),false);
 });
 
 test('retained file history stays owner-readable while context and model reads recheck the current revision and source grant',async t=>{

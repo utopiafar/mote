@@ -14,7 +14,9 @@ import {FileStore} from '../src/files.js';
 import {MaterialStore} from '../src/materials.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
+import {testVault} from './fixtures/plugin-runtime-vault.js';
 import {createCaptureIntake} from '../src/plugins/capture-intake.js';
+import {createCaptureOwner} from '../src/capture-storage.js';
 import type {RequestAuthority} from '../src/plugins/central-contracts.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
@@ -38,7 +40,7 @@ async function fixture(t:any){
   const app=Fastify(),pins=new WeakMap<object,RequestAuthority>();
   app.addHook('onRequest',async request=>{if(!request.headers.authorization)return;pins.set(request,node.authorizationPlatform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)node.authorizationPlatform.releaseRequest(pin);});
-  notesFeature({assertRequestActive:node.featureServices.assertRequestActive,connections:node.featureServices.connections,credential:node.featureServices.credential,diagnostics:node.featureServices.diagnostics,files:node.featureServices.files,ingress:node.featureServices.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:node.authorizationPlatform,route:{request:request=>pins.get(request)},intake:node.captureIntake.ports.captureIntake}}).mount(app,new FeatureScope());
+  notesFeature({assertRequestActive:node.featureServices.assertRequestActive,connections:node.featureServices.connections,credential:node.featureServices.credential,diagnostics:node.featureServices.diagnostics,files:node.featureServices.files,ingress:node.featureServices.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:node.captureC04,route:{request:request=>pins.get(request)},intake:node.captureIntake.ports.captureIntake}}).mount(app,new FeatureScope());
   await app.ready();
   t.after(async()=>{await app.close();await source.close();await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   return {node,source,app,assembly:source.assemblyForRoutes(),headers:{authorization:'Bearer '+config.privateCredential!.token}};
@@ -46,10 +48,11 @@ async function fixture(t:any){
 async function intakeFixture(t:any){
   const directory=mkdtempSync(join(tmpdir(),'mote-notes-intake-')),store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store),files=new FileStore(store,sources);
   const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),level:'debug'});await diagnostics.init();
-  const intake=createCaptureIntake({diagnostics},{store,sources,files,materials});await intake.prepare();
+  const captureOwner=createCaptureOwner({store,sources,files,materials}),intake=createCaptureIntake({diagnostics},{port:captureOwner.port});await intake.prepare();
   const ownerToken='generated-notes-intake-token';
-  const platform=createAuthorizationPlatform({ownerToken},{store,availableModelConnections:()=>[]});
-  await platform.prepare();platform.bindRepositories({sources,files,materials,ingress:intake.ingress});await platform.start();intake.bindAuthorization(platform);intake.start();
+  const vault=await testVault(store,directory);
+  const platform=createAuthorizationPlatform({ownerToken},{vault,availableModelConnections:()=>[]});
+  await platform.prepare();captureOwner.bindRepositories(platform);await platform.start();intake.bindAuthorization(captureOwner.c04Port(platform));intake.start();
   sources.register({id:'generated-note-source',name:'Generated notes',kind:'custom',deviceId:'generated-note-device',platform:'android',enabled:true,retention:'archive'});
   const source=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion:new MaterialNoteDeletion(store,materials)});
   await source.prepare();source.start();
@@ -57,9 +60,9 @@ async function intakeFixture(t:any){
   app.setErrorHandler((error,_request,reply)=>{const value=error as Error&{statusCode?:number;status?:number;code?:string};reply.code(value.statusCode??value.status??500).send({error:value.code??'notes_intake_failed'});});
   app.addHook('onRequest',async request=>{pins.set(request,platform.bindRequest({authorization:request.headers.authorization,method:request.method,route:request.routeOptions.url!,params:request.params as {id?:string},origin:request.headers.origin}));});
   app.addHook('onResponse',async request=>{const pin=pins.get(request);if(pin)platform.releaseRequest(pin);});
-  notesFeature({assertRequestActive:()=>{},connections:platform.assembly.connections!,credential:()=>undefined,diagnostics,files,ingress:intake.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:platform,route:{request:request=>pins.get(request)},intake:intake.ports.captureIntake}}).mount(app,new FeatureScope());
+  notesFeature({assertRequestActive:()=>{},connections:platform.trusted().connections!,credential:()=>undefined,diagnostics,files,ingress:captureOwner.ingress,notesSource:source.assemblyForRoutes(),notesCapture:{authority:captureOwner.c04Port(platform),route:{request:request=>pins.get(request)},intake:intake.ports.captureIntake}}).mount(app,new FeatureScope());
   await app.ready();
-  t.after(async()=>{await app.close();await source.close();await intake.close();await platform.close();await diagnostics.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  t.after(async()=>{await app.close();await source.close();await intake.close();await platform.close();await diagnostics.close();await vault.close();await files.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,sources,platform,intake,app,headers:{authorization:'Bearer '+ownerToken}};
 }
 const note=(changes:Record<string,unknown>={})=>({id:randomUUID(),deviceId:'generated-note-device',deviceName:'Generated device',platform:'android',capturedAt:'2026-11-02T10:00:00.000Z',text:'  Generated note body\nwith original spacing.  ',...changes});

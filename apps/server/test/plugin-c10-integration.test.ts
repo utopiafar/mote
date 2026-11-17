@@ -29,11 +29,13 @@ import {createDevicesSource} from '../src/plugins/devices-source.js';
 import {firstDeviceData} from '../src/first-device-data.js';
 import {ConnectionError,type ConnectionCredential} from '../src/connections.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
-import {sha256} from '../src/store.js';
+import {StoreError,sha256} from '../src/store.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {createExecutionPlatform} from '../src/plugins/execution-platform.js';
 import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeDeclaration} from '../src/plugins/source-runtime.js';
+import {createSourceRuntimeOwner,createC10AuthorizationPort} from '../src/source-runtime-storage.js';
+import {createCaptureOwner} from '../src/capture-storage.js';
 import {codingSourceDeclaration,createCodingSourceFactory,createCodingSourceRoutes} from '../src/coding-source-plugin.js';
 import {createCaptureIntake} from '../src/plugins/capture-intake.js';
 import {createC10Integration,createC10IntegrationFactory,c10IntegrationDeclaration,c10IntegrationContribution} from '../src/plugins/c10-integration.js';
@@ -46,18 +48,20 @@ const item=(externalId='one')=>({externalId,revision:'1',observedAt:new Date().t
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-c10-')),vault=createVaultPlatformAssembly({dataDir:directory});await vault.prepare();const store=vault.store;
   const config=new ConfigService({path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0},watch:false});config.register({id:'execution',schema:executionSettingsSchema,defaultValue:executionSettingsSchema.parse({})});await config.initialize();
-  const materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials),sources=new SourceStore(store,undefined,memoryWork.inputs),connections=new Connections(store,sources),authorization=createAuthorizationPlatform({ownerToken},{store,connections,availableModelConnections:()=>[]});await authorization.prepare();
-  const execution=createExecutionPlatform({store,settings:new ExecutionSettings(config),modelAuthorization:authorization.assembly.modelAuthorization});await execution.prepare();execution.start();
-  const host=new PluginHost({kind:'central',id:'generated-c10-host'}),runtimePlatform=createSourceRuntime({},{store,materials,memoryWork,execution});
+  const materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials);let sources=new SourceStore(store,undefined,memoryWork.inputs);const connections=new Connections(store,sources),authorization=createAuthorizationPlatform({ownerToken},{vault,connections,availableModelConnections:()=>[]});await authorization.prepare();
+  const execution=createExecutionPlatform({vault,settings:new ExecutionSettings(config),modelAuthorization:authorization.trusted().modelAuthorization});await execution.prepare();execution.start();
+  const host=new PluginHost({kind:'central',id:'generated-c10-host'}),sourceOwner=createSourceRuntimeOwner({store,materials,memoryWork,execution}),runtimePlatform=createSourceRuntime({},{port:sourceOwner.port});
   await host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(runtimePlatform)});
-  const runtime=runtimePlatform.runtimeForAssembly;sources.pipelines=runtime;
+  const runtime=sourceOwner.ownerRuntime();sources=sourceOwner.sourceStoreForAssembly();
   await host.install({identity:identity(),contributions:[codingSourceDeclaration],factory:createCodingSourceFactory({runtime,sources,store},createCodingSourceRoutes(runtime))});
   const files=new FileStore(store,sources);
-  const capture=createCaptureIntake({}, {store,sources,files,materials});await capture.prepare();authorization.bindRepositories({sources,files,materials,ingress:capture.ingress,memoryInputs:memoryWork.inputs,memoryWork});await authorization.start();capture.bindAuthorization(authorization);capture.start();
+  const captureOwner=createCaptureOwner({store,sources,files,materials,memoryInputs:memoryWork.inputs,memoryWork}),capture=createCaptureIntake({},{port:captureOwner.port});await capture.prepare();captureOwner.bindRepositories(authorization);await authorization.start();const captureC04=captureOwner.c04Port(authorization);capture.bindAuthorization(captureC04);capture.start();
   const reader=new EvidenceReader(store,sources,files,undefined,undefined,materials,runtime),diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
   const noteDeletion=new MaterialNoteDeletion(store,materials),notes=createNotesSource({page:args=>store.list({...args,source:'note'}),attribution:record=>materials.contextForEvidence(record),evidence:ids=>store.evidence(ids),deleteNote:id=>store.delete(id),noteDeletion});await notes.prepare();notes.start();
+  const sourceControl=sourceOwner.sourceControlForAssembly(),sourceIdentity=sourceOwner.sourceIdentityForAssembly(),c10Authorization=createC10AuthorizationPort(authorization,store);
   let integration:ReturnType<typeof createC10Integration>|undefined;
-  const activate=()=>{const platform=createC10Integration({store,runtime,memoryWork,sources});platform.bindRoutes({authorization,capture,files,evidenceReader:reader,memories:reader.memories});integration=platform;return platform;};
+  const fileCatalog=(sourceId:string,args:Parameters<typeof reader.fileCatalog>[1])=>reader.fileCatalog(sourceId,args);
+  const activate=()=>{const platform=createC10Integration({sources:sourceControl,identity:sourceIdentity,authorization:c10Authorization,capture:captureOwner.port,fileCatalog,memoryCount:()=>reader.memories.count()});platform.bindRoutes({authorization:c10Authorization,capture:captureOwner.port,fileCatalog});integration=platform;return platform;};
   const pinCredentials=new WeakMap<RequestAuthority,ConnectionCredential|undefined>();
   const devices=createDevicesSource({}, {devices:{heartbeat:beat=>store.heartbeat(beat),devices:()=>store.devices()},firstData:()=>firstDeviceData(store,files,reader),authority:authorization,identity:{assertOwnDevice:(pin,beat)=>authorization.requests.assertOwnDevice(pin,beat),assertOwnPlatform:(pin,value)=>{authorization.requests.assertCurrent(pin);if(!pinCredentials.has(pin))throw new ConnectionError('connection_scope_denied',403,'Unknown host request');const c=pinCredentials.get(pin);if(c)connections.assertPlatform(c,value);}}});devices.start();
   const abortedBody=deferred(),abortDone=deferred();let sourceScope:HostScope|undefined;
@@ -74,7 +78,7 @@ async function fixture(t:TestContext){
     const credential=(req:FastifyRequest)=>{authorization.requests.assertCurrent(pins.get(req)!);const c=connections.authenticate(req.headers.authorization);return c&&!connections.isOwner(c)?c:undefined;};
     const route={request:(req:FastifyRequest)=>pins.get(req)};
     capture.routes(child,route);devices.routes(child,route);
-    notesFeature({assertRequestActive:req=>authorization.requests.assertCurrent(pins.get(req)!),connections,credential,diagnostics,files,ingress:capture.ingress,notesSource:notes.assemblyForRoutes(),notesCapture:{authority:authorization,route,intake:capture.ports.captureIntake}}).mount(child,new FeatureScope());
+    notesFeature({assertRequestActive:req=>authorization.requests.assertCurrent(pins.get(req)!),connections,credential,diagnostics,files,ingress:captureOwner.ingress,notesSource:notes.assemblyForRoutes(),notesCapture:{authority:captureC04,route,intake:capture.ports.captureIntake}}).mount(child,new FeatureScope());
     registerCaptureBrowser(child,{store,evidenceReader:reader,connections,credential,deletion:createEvidenceDeletion({captures:store,files,aliases:noteDeletion})});
   });
   await app.listen({host:'127.0.0.1',port:0});const address=app.server.address();assert.ok(address&&typeof address==='object');const url='http://127.0.0.1:'+address.port;
@@ -82,7 +86,7 @@ async function fixture(t:TestContext){
   t.after(async()=>{await app.close();await devices.close();await notes.close();await host.close();await capture.close();await authorization.close();await execution.close();await files.close();await materials.index?.close();await diagnostics.close();await config.close();await vault.close();rmSync(directory,{recursive:true,force:true});});
   const pair=async(deviceId='generated-phone-a')=>{const invitation=connections.invite({serverUrl:'https://generated.invalid',label:'Generated collector',deviceId},'collector');return connections.redeem({code:invitation.invitation.code,deviceId,deviceName:'Generated phone',platform:'android'});};
   const register=async(id:string,deviceId='generated-phone-a',token=ownerToken)=>{const response=await http('/api/sources','POST',{id,name:'Generated source',kind:'custom',deviceId,platform:'android'},token);assert.equal(response.status,200,await response.clone().text());};
-  return {store,materials,memoryWork,runtime,host,owner,integration:integration!,sources,files,capture,devices,reader,authorization,connections,http,pair,register,sourceScope,abortedBody,abortDone,port:address.port};
+  return {store,materials,memoryWork,runtime,host,owner,integration:integration!,sources,files,capture,captureOwner,sourceControl,sourceIdentity,c10Authorization,captureC04,devices,reader,authorization,connections,http,pair,register,sourceScope,abortedBody,abortDone,port:address.port};
 }
 
 test('source control binds real owner/collector request and actual device/platform without publishing an unguarded repository',async t=>{
@@ -147,20 +151,27 @@ test('trusted archive ingestion keeps callback rejection and the original checkp
 });
 
 
-test('failed source owner startup retires its own facade and preserves the shared repository and active owner',async t=>{
-  const f=await fixture(t);await f.register('retained');const pending=new SourceStore(f.store,f.runtime,f.memoryWork.inputs),candidate=createC10Integration({store:f.store,runtime:f.runtime,memoryWork:f.memoryWork,sources:pending});
-  await assert.rejects(f.host.install({identity:identity(),contributions:[c10IntegrationDeclaration],factory:createC10IntegrationFactory(()=>candidate)}),{statusCode:503});
-  assert.throws(()=>candidate.sourcesForAssembly,{statusCode:503});assert.equal(pending.getSource('retained').enabled,true);assert.equal(f.store.db.isOpen,true);assert.equal(f.sources.getSource('retained').enabled,true);
+test('failed source owner binding retires its own facade and preserves the shared repository and active owner',async t=>{
+  const f=await fixture(t);await f.register('retained');
+  const badCapture={...f.captureOwner.port,assertRepositories(){throw new StoreError('Source repository identity changed',503);}};
+  const candidate=createC10Integration({sources:f.sourceControl,identity:f.sourceIdentity,authorization:f.c10Authorization,capture:badCapture,fileCatalog:(id,args)=>f.reader.fileCatalog(id,args),memoryCount:()=>f.reader.memories.count()});
+  assert.throws(()=>candidate.bindRoutes({authorization:f.c10Authorization,capture:badCapture,fileCatalog:(id,args)=>f.reader.fileCatalog(id,args)}),{statusCode:503});
+  await candidate.close();assert.equal(f.store.db.isOpen,true);assert.equal(f.sources.getSource('retained').enabled,true);
   assert.equal((await f.http('/api/sources/retained/items','PUT',item('active-owner'))).status,200);
-  const otherMemory=new MaterialMemoryWork(f.store,f.materials);assert.throws(()=>createC10Integration({store:f.store,runtime:f.runtime,memoryWork:otherMemory,sources:f.sources}),{statusCode:503});
+  const badSources={} as typeof f.sourceControl;
+  const rejected=createC10Integration({sources:badSources,identity:f.sourceIdentity,authorization:f.c10Authorization,capture:f.captureOwner.port,fileCatalog:(id,args)=>f.reader.fileCatalog(id,args),memoryCount:()=>f.reader.memories.count()});
+  assert.throws(()=>rejected.bindRoutes({authorization:f.c10Authorization,capture:f.captureOwner.port,fileCatalog:(id,args)=>f.reader.fileCatalog(id,args)}),{statusCode:503});
+  await rejected.close();
 });
 
 
 test('route binding rejects a different actual Ingress repository even within the same vault',async t=>{
-  const f=await fixture(t),sources=new SourceStore(f.store,f.runtime,f.memoryWork.inputs),candidate=createC10Integration({store:f.store,runtime:f.runtime,memoryWork:f.memoryWork,sources});
-  assert.equal(f.capture.ingress.usesRepositories(f.store,sources,f.files),false);
-  assert.throws(()=>candidate.bindRoutes({authorization:f.authorization,capture:f.capture,files:f.files,evidenceReader:f.reader,memories:f.reader.memories}),{statusCode:503});
-  await candidate.close();assert.equal(f.capture.ingress.usesRepositories(f.store,f.sources,f.files),true);await f.register('still-active');assert.equal(f.store.db.isOpen,true);
+  const f=await fixture(t),sources=new SourceStore(f.store,f.runtime,f.memoryWork.inputs);
+  const badCapture={...f.captureOwner.port,assertRepositories(){throw new StoreError('Capture intake repository mismatch',503);}};
+  assert.equal(f.captureOwner.ingress.usesRepositories(f.store,sources,f.files),false);
+  const candidate=createC10Integration({sources:f.sourceControl,identity:f.sourceIdentity,authorization:f.c10Authorization,capture:badCapture,fileCatalog:(id,args)=>f.reader.fileCatalog(id,args),memoryCount:()=>f.reader.memories.count()});
+  assert.throws(()=>candidate.bindRoutes({authorization:f.c10Authorization,capture:badCapture,fileCatalog:(id,args)=>f.reader.fileCatalog(id,args)}),{statusCode:503});
+  await candidate.close();assert.equal(f.captureOwner.ingress.usesRepositories(f.store,f.sources,f.files),true);await f.register('still-active');assert.equal(f.store.db.isOpen,true);
 });
 
 test('formal Devices shares the actual C04 pin and device rows while source ownership remains independent',async t=>{
@@ -245,4 +256,26 @@ test('default startup restores source routes with a fresh activation without rem
   const retained=await f.request('/api/sources/generated-default-source/item?externalId=before-restart');assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().item.externalId,'before-restart');
   assert.equal((await f.request('/api/sources/generated-default-source/items','PUT',item('after-restart'))).statusCode,200);
   assert.equal(f.node.sources.getItem(f.source.id,'after-restart')?.externalId,'after-restart');
+});
+
+test('real source, capture and authorization ports are frozen function-only with no Store or runtime escape',async t=>{
+  const f=await fixture(t);
+  const ports:Array<[string,object,string[]]>=[
+    ['sourceControl',f.sourceControl,['captureContext','context','getItem','getSource','history','listItems','listSources','register','summary','update','updateCaptureContext','updateContext']],
+    ['sourceIdentity',f.sourceIdentity,['assertBindings','assertSources']],
+    ['capture',f.captureOwner.port,['assertRepositories','assertSourceRepository','capture','captureSettled','page','sourceBatch','sourceItem','sources']],
+    ['captureSources',f.captureOwner.port.sources,['getItem','getSource','history','listItems','listSources','register']],
+    ['c10Authorization',f.c10Authorization,['assertActive','assertOwnCredentialSource','assertOwnDevice','assertPlatform','assertOwnSource','assertRepositories','assertRequest','authenticate','bindRequest','captureCommit','isOwner','releaseRequest','sourceBatch','sourceItem','withSource']],
+  ];
+  const forbidden=['store','db','materials','engine','memoryWork','runtime','ingress','registry','recipes','context','archive'];
+  for(const [name,port,keys] of ports){
+    assert.deepEqual(Object.keys(port).sort(),keys.sort(),name);
+    assert.equal(Object.isFrozen(port),true,name);
+    assert.equal(Object.getPrototypeOf(port),Object.prototype,name);
+    for(const key of forbidden){if(keys.includes(key))continue;assert.equal(Reflect.get(port,key),undefined,`${name}.${key}`);assert.equal(key in port,false,`${name}.${key} inherited`);}
+    assert.throws(()=>structuredClone(port));
+  }
+  assert.deepEqual(f.sourceControl.listSources.call({}),[]);
+  assert.doesNotThrow(()=>f.captureOwner.port.assertRepositories.call({}));
+  assert.deepEqual(Object.keys(f.captureOwner.port.sources).sort(),['getItem','getSource','history','listItems','listSources','register']);
 });

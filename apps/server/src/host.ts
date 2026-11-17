@@ -124,7 +124,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   let availableModelConnections=():ModelConnection[]=>[];
   const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
     readFeatureInventory:()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()]),
-    bootstrap,store,resources,serverVersion,
+    bootstrap,resources,serverVersion,
     availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
     assertModelEvidence:input=>assertModelEvidence(input)});
   const {memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,memoryBindingControl,topics}=memoryInputs({store,configService});
@@ -134,7 +134,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const backend=bootstrap.host.context.plugin((context:Context)=>{backendContext=context;});
   resources.defer(()=>backend.dispose());
   await backend;
-  const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
+  const {sourceRuntime,sourcePipelines,sources,sourceControl,sourceIdentity,c10Authorization,capturePort,captureC04,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
   const {mediaAssets,mediaPreparation,media}=assembleMedia({bootstrap:facts,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
@@ -181,7 +181,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   // its original slot: released after active queries, connectors and the agent.
   resources.defer(()=>memoryBindingControl.close());
   const archivedFiles=bootstrap.vault.archivedFiles;
-  const connections=authorizationPlatform.assembly.connections!;
+  const connections=authorizationPlatform.trusted().connections!;
   // Host surface for AI access, not an installable package. Material publication
   // writes the stable event journal inside its transaction; delivery is separate.
   const developerAccess=new DeveloperAccessHost({store,connections});
@@ -202,7 +202,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const credential=(req:FastifyRequest)=>{const c=connectionIdentity(req);return c&&!connections.isOwner(c)?c:undefined;};
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
-  const notesCapture:NotesCapture={authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
+  const notesCapture:NotesCapture={authority:captureC04,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
   await prepareDevicesDomain({bootstrap,resources,store,files,reader:evidenceReader,diagnostics,notesCapture});
   const {ownerQuestionServices,ownerQuestions}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   // The authorization platform's mote.models table; the feature bridge mounts
@@ -420,8 +420,16 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   app.addHook('onReady',async()=>{try{assistantChanges.tick();}finally{assistantRoutines.tick();}});
   app.addHook('onReady',async()=>{void sourcePipelines.tick().catch(()=>{});void materialOrganizer.tick(200).catch(()=>{});});
   const sourceIntegrationFactory=createC10IntegrationFactory(()=>{
-    const platform=createC10Integration({store,runtime:sourcePipelines,memoryWork:materialMemoryWork,sources});
-    platform.bindRoutes({authorization:authorizationPlatform,capture:captureIntake,files,evidenceReader,memories:evidenceReader.memories});return platform;
+    const sourceAuthorization=c10Authorization;
+    const platform=createC10Integration({
+      sources:sourceControl,
+      identity:sourceIdentity,
+      authorization:sourceAuthorization,
+      capture:capturePort,
+      fileCatalog:(sourceId,args)=>evidenceReader.fileCatalog(sourceId,args),
+      memoryCount:()=>evidenceReader.memories.count(),
+    });
+    platform.bindRoutes({authorization:sourceAuthorization,capture:capturePort,fileCatalog:(sourceId,args)=>evidenceReader.fileCatalog(sourceId,args)});return platform;
   },mount=>mount(app));
   const startSourceIntegration=()=>bootstrap.installSourceIntegration(sourceIntegrationFactory);
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
@@ -475,7 +483,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
   await prepareConnectionsRoutes(bootstrap,resources,{config,connections,connectionIdentity,serverVersion});
-  const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,ownerCalendarAuthority:{conversations,assertContext:assertModelEvidence},queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
+  const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.trusted().operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,ownerCalendarAuthority:{conversations,assertContext:assertModelEvidence},queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
   const {connectors}=await assembleConnectors({app,resources,pluginStorage:bootstrap.pluginStorage,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,bootstrap:facts,configService,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
@@ -625,7 +633,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     get actions(){return workDomains.actions;},connectors,imports,
     queryAgent,pluginCenter,withMediaOwnerBatch,withMediaOwnerIntent,
     connectionIdentity,credential,assertRequestActive,sourceOwner,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},
-    notesCapture:{authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake},
+    notesCapture:{authority:captureC04,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake},
     agentFeatures,archiveReader,
     archivedFiles,maintenanceWorker,store,modelSettings,connections,developerAccess,modelAuthorizationHost,
     jobId,mediaRange,
@@ -675,7 +683,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,assistantRoutines,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,get automaticActivity(){return workDomains.automaticActivity;},configService,featureServices,featureRoutes,get insightServices(){return workDomains.insightServices;},materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,get actions(){return workDomains.actions;},get actionsServices(){return workDomains.actionsServices;},store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,get insightRuns(){return workDomains.insightRuns;},lifecycle,working,get activity(){return workDomains.activity;},get activityServices(){return workDomains.activityServices;},conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
+  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,assistantRoutines,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,captureC04,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,get automaticActivity(){return workDomains.automaticActivity;},configService,featureServices,featureRoutes,get insightServices(){return workDomains.insightServices;},materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,get actions(){return workDomains.actions;},get actionsServices(){return workDomains.actionsServices;},store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,get insightRuns(){return workDomains.insightRuns;},lifecycle,working,get activity(){return workDomains.activity;},get activityServices(){return workDomains.activityServices;},conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

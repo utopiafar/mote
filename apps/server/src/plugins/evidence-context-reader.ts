@@ -1,23 +1,9 @@
 import type {ManifestContribution} from '@mote/plugin-api';
-import {skillCatalog,type ContextReader} from '@mote/agent';
+import type {ContextReader} from '@mote/agent';
 import type {FastifyInstance} from 'fastify';
-import {z} from 'zod';
-import {StoreError,type Store} from '../store.js';
-import type {SourceStore} from '../sources.js';
-import type {FileStore} from '../files.js';
-import type {Indexer} from '../indexer.js';
-import type {FileEvidence} from '../file-evidence.js';
-import type {MaterialStore} from '../materials.js';
-import type {SourcePipelineRuntime} from '../source-pipelines.js';
-import type {SourceItemRecipeCatalog} from '../source-item-recipe.js';
-import type {SourceContextStore} from '../source-context.js';
-import type {MemoryBindings} from '../memory-bindings.js';
-import {createContextTrees,registerContextTreeRoutes,type ContextTreeRegistry} from '../context-trees.js';
-import {createContextQuery} from './query-context.js';
-import {registerContextRoutes} from '../context-routes.js';
-import {navigationScopeSchema} from '../context-navigation.js';
-import {registerEvidenceRoutes} from '../evidence-routes.js';
-import {EvidenceReader,type EvidenceReaderAgentOptions} from '../evidence-reader.js';
+import {StoreError} from '../store.js';
+import type {ContextTreesReadCapability} from '../context-trees.js';
+import type {EvidenceReaderAgentOptions,EvidenceReaderFacade} from '../evidence-reader.js';
 import type {CaptureRead,CaptureContextRead,MaterialRead,MemoryRead,MemoryReadSnapshot,MemoryReadSnapshots,MemoryInputSelection} from '../evidence-read-ports.js';
 import {centralServices,type ContextNavigationRead,type ContextTreesRead} from './central-contracts.js';
 
@@ -37,23 +23,12 @@ export const evidenceContextReaderContribution={
 export const evidenceContextReaderDeclaration={id:evidenceContextReaderContribution.id,apiVersion:'1'} as const;
 export const evidenceContextReaderReplacement='hot' as const;
 
-/** Borrowed trusted repositories. The trusted root or materials owner passes the one actual MaterialStore;
- * this factory never constructs a second Store, source repository, indexer or reader. */
+/** Fixed per-read facade plus the trusted route producer. No Store, repository,
+ * MemoryStore, SourceStore or raw EvidenceReader enters this plugin. */
 export interface EvidenceContextReaderDependencies {
-  readonly store:Store;
-  readonly sources:SourceStore;
-  readonly files?:FileStore;
-  readonly indexer?:Pick<Indexer,'search'>;
-  readonly fileEvidence?:FileEvidence;
-  readonly materials?:MaterialStore;
-  readonly sourcePipelines?:SourcePipelineRuntime;
-  readonly sourceItemRecipes?:SourceItemRecipeCatalog;
-  readonly materialMemoryReady?:(ref:string)=>boolean;
-  /** Canonical SourceContextStore; defaults to the one owned by SourceStore. */
-  readonly sourceContexts?:SourceContextStore;
-  readonly contextTrees?:ContextTreeRegistry;
-  /** The memory control owner's retained-reader source; assigned to the single reader, not owned here. */
-  readonly memoryBindings?:MemoryBindings;
+  readonly reader:EvidenceReaderFacade;
+  readonly contextTrees:ContextTreesReadCapability;
+  readonly mountRoutes:(app:FastifyInstance)=>void;
 }
 
 export interface EvidenceContextReaderPorts {
@@ -69,12 +44,11 @@ export interface EvidenceContextReaderPorts {
 
 export interface EvidenceContextReader {
   readonly ports:EvidenceContextReaderPorts;
-  /** Host business compatibility bridge only: never given to Agent, never a
-   * service value, and never a reason to construct another EvidenceReader. */
-  readonly assembly:{readonly reader:EvidenceReader;readonly contextTrees:ContextTreeRegistry};
+  /** Only the context-tree registry crosses this boundary; the raw reader is
+   * retained by trusted assembly for existing host consumers. */
+  readonly assembly:{readonly contextTrees:ContextTreesReadCapability};
   agent(options:EvidenceReaderAgentOptions):ContextReader;
-  /** Mount the context HTTP contribution once, before the host listens. The
-   * handlers use this reader and its context-tree registry at request time. */
+  /** Mount the trusted context route producer once, before the host listens. */
   routes(app:FastifyInstance):void;
   /** Idempotent. Revokes agent views/ports and releases this reader's retained
    * snapshots; borrowed repositories keep their own lifetime. */
@@ -83,17 +57,7 @@ export interface EvidenceContextReader {
 }
 
 export function createEvidenceContextReader(deps:EvidenceContextReaderDependencies):EvidenceContextReader {
-  const {store,sources}=deps;
-  const unavailable=()=>new StoreError('Evidence context reader dependencies are unavailable',503);
-  if(sources.store!==store)throw unavailable();
-  if(deps.files&&deps.files.store!==store)throw unavailable();
-  if(deps.materials&&deps.materials.store!==store)throw unavailable();
-  if(deps.sourcePipelines&&deps.sourcePipelines.store!==store)throw unavailable();
-  const sourceContexts=deps.sourceContexts??sources.contexts;
-  const reader=new EvidenceReader(store,sources,deps.files,deps.indexer,deps.fileEvidence,deps.materials,deps.sourcePipelines,deps.sourceItemRecipes,deps.materialMemoryReady,sourceContexts);
-  reader.bindDerivedMaterials();
-  if(deps.memoryBindings)reader.memoryBindings=deps.memoryBindings;
-  const contextTrees=deps.contextTrees??createContextTrees();
+  const {reader,contextTrees}=deps;
   let disposed=false;
   const mounted=new WeakSet<FastifyInstance>();
   // The memoryBindings port is used by ContextTreeRegistry.page and other host
@@ -155,7 +119,7 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
       // A caller may retain this capability before disposal. Check the factory
       // lifecycle at invocation, not only when the property is read.
       get memoryBindings(){
-        const bindings=reader.memoryBindings;
+        const bindings=reader.memoryBindings();
         return bindings?{retainSnapshot:(ids?:readonly string[])=>fenced(()=>trackBindingSnapshot(bindings.retainSnapshot(ids)))}:undefined;
       },
       retainMemorySnapshot:context=>fenced(()=>reader.retainMemorySnapshot(context)),
@@ -168,7 +132,7 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
     },
   };
   Object.freeze(ports);
-  const assembly=Object.freeze({reader,contextTrees});
+  const assembly=Object.freeze({contextTrees});
   return Object.freeze({
     ports,
     assembly,
@@ -188,12 +152,7 @@ export function createEvidenceContextReader(deps:EvidenceContextReaderDependenci
       mounted.add(app);
       app.register(async child=>{
         child.addHook('onRequest',async(_request,reply)=>{if(disposed||reader.disposed)return reply.code(503).send({error:'feature_unavailable'});});
-        registerEvidenceRoutes(child,reader);
-        registerContextTreeRoutes(child,reader,contextTrees);
-        child.get('/api/context/segments',async request=>reader.segments(z.object({...navigationScopeSchema.shape,id:z.string().max(1600).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(request.query)));
-        child.get('/api/context-index',async request=>reader.catalogAsync(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),...navigationScopeSchema.shape}).strict().parse(request.query)));
-        registerContextRoutes(child,createContextQuery(store,sources,reader));
-        child.get('/api/skills',async()=>({items:skillCatalog()}));
+        deps.mountRoutes(child);
       });
     },
     dispose(){
