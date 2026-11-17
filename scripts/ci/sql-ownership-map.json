@@ -401,6 +401,18 @@
    "file": "apps/server/src/memory-settings-schema.ts"
   },
   {
+   "declaration": "insightRunsSchemaInstallation",
+   "owner": "insight-runs",
+   "fn": "insightRunsSchema",
+   "file": "apps/server/src/auxiliary-state-schema.ts"
+  },
+  {
+   "declaration": "recordContextSchemaInstallation",
+   "owner": "record-context",
+   "fn": "recordContextSchema",
+   "file": "apps/server/src/auxiliary-state-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -1094,6 +1106,11 @@
    "file": "apps/server/src/connectors/gmail-state.ts",
    "installer": "gmailStateSchemaInstallation"
   },
+  "insight_runs": {
+   "owner": "insight-runs",
+   "file": "apps/server/src/auxiliary-state-schema.ts",
+   "installer": "insightRunsSchemaInstallation"
+  },
   "insights": {
    "owner": "insight",
    "file": "apps/server/src/insight-schema.ts",
@@ -1388,6 +1405,11 @@
    "owner": "query-run-storage",
    "file": "apps/server/src/delegated-query-runs.ts",
    "construction": "DelegatedQueryRuns.constructor"
+  },
+  "record_context_declarations": {
+   "owner": "record-context",
+   "file": "apps/server/src/auxiliary-state-schema.ts",
+   "installer": "recordContextSchemaInstallation"
   },
   "recording_cursors": {
    "owner": "recording-sync",
