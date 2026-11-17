@@ -4,7 +4,7 @@ import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {ModelFeature} from '@mote/shared/models';
 import type {z} from 'zod';
-import {ConfigService,ConfigServiceError,type ConfigDomainRegistration,type ConfigServiceOptions} from '../config-service.js';
+import {ConfigService,ConfigServiceError,type ConfigDomainRegistration,type ConfigServiceOptions,type ConfigUpdatePaths} from '../config-service.js';
 import {registerBuiltinDomains,type Config} from '../config.js';
 import {ExecutionSettings,executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from '../execution-settings.js';
 import {ModelSettingsStore,ModelSettingsError,type ModelSettingsStoreOptions} from '../model-settings.js';
@@ -104,10 +104,10 @@ export function createConfigurationPlatform(options:ConfigurationPlatformOptions
     /** Plugins declare schemas in their existing private namespace; unknown schemas have no handle.
      * Sensitive domains remain private. This public-domain helper cannot export their raw values. */
     async registerDomain<S extends z.ZodTypeAny,R extends z.AnyZodObject|undefined=undefined>(
-      registration:Omit<ConfigDomainRegistration<z.output<S>>,'schema'|'rawInputSchema'>&{schema:S;rawInputSchema?:R},
+      registration:Omit<ConfigDomainRegistration<z.output<S>>,'schema'|'rawInputSchema'|'updatePaths'>&{schema:S;rawInputSchema?:R;updatePaths:ConfigUpdatePaths},
     ):Promise<RegisteredConfigurationDomain<DomainInput<S,R>,z.output<S>>>{
       assertAdmission();if(registration.fields?.some(field=>field.sensitive))throw new ConfigServiceError('config_invalid');
-      const unregister=await service.registerPlugin({...registration,rejectUnknownUpdates:true}),id=`plugin.${registration.id}`;
+      const unregister=await service.registerPlugin(registration),id=`plugin.${registration.id}`;
       if(closing){await unregister();throw new ConfigServiceError('config_unavailable');}
       registrations.set(id,unregister);
       // ConfigService merges partial patches into the saved document and validates the full candidate.
