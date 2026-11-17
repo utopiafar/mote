@@ -71,7 +71,7 @@ test('initialization and cleanup failures retain both errors without closing ano
   assert.equal(sibling.db.isOpen,true);assert.ok(sibling.stats());
 });
 
-// C04 is deliberately absent: this generated, revocable external boundary fixture
+// The production commit verifier is deliberately absent: this generated, revocable external boundary fixture
 // tests invocation/failure propagation only, not production provenance or grant policy.
 function boundary(){
   const token=Object.freeze({fixture:'generated admission'}) as unknown as CommitAuthority;
