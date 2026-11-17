@@ -8,6 +8,7 @@ import type {ModelSettings} from '@mote/shared/models';
 import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
 import {sha256,StoreError,type Store} from '../store.js';
+import {memoryConfigDomain} from '../config.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
@@ -41,7 +42,7 @@ import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
 import type {MemoryPipeline,MemoryModelSelection,MemoryPhasePorts} from '../memory-pipeline.js';
 import {memoryReadRanges} from '../memory-read-context.js';
 import {createMemoryPhasePipeline,memoryPhasePipelineContribution,memoryPhasePipelineDeclaration,memoryPhasePipelineReplacement,type MemoryPhasePipelineOptions,type MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
-import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,type LifecycleSettings,type LifecycleExtension} from '../memory-lifecycle.js';
+import {projectMemoryLifecycleSettings,storedMemoryLifecycleSettings,type LifecycleExtension} from '../memory-lifecycle.js';
 import {createMemoryLifecycleService,memoryLifecycleServiceContribution,memoryLifecycleServiceDeclaration,memoryLifecycleServiceReplacement} from '../plugins/memory-lifecycle-service.js';
 import type {InsightRuns} from '../insight-runs.js';
 import {memoryRecordRepositoryContribution,memoryRecordRepositoryDeclaration,memoryRecordRepositoryReplacement} from '../plugins/memory-record-repository.js';
@@ -101,7 +102,7 @@ export interface MemoryLifecycleRuntimeDependencies {
  * stage. */
 export function memoryInputs(dependencies:MemoryInputStageDependencies){
   const {store,configService}=dependencies;
-  projectMemoryLifecycleSettings(store,configService.current<LifecycleSettings>('memory'));
+  projectMemoryLifecycleSettings(store,configService.current(memoryConfigDomain));
   // The strategy-settings plugin constructs the catalog and both selections
   // only inside its module; the borrowed Store has no independent disposal here.
   const memoryStrategySettings=createMemoryStrategySettings({store});
