@@ -34,7 +34,7 @@ export interface MaterialMemoryIntakeDependencies {
   readonly newInputAdmission?:()=>boolean;
   /** Trusted capture receipt hook. When present this owner installs and later
    * removes the single `Store.captureInputReceived` observer. The current root
-   * still installs it in app.ts until the composition root moves that call site. */
+   * still installs it in host.ts's buildHost composition root until the composition root moves that call site. */
   readonly captureOriginal?:(input:CaptureInput)=>void;
 }
 
