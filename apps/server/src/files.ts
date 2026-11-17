@@ -69,7 +69,7 @@ export class FileStore {
     const version=this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(input.sourceId,input.item.externalId,input.item.revision) as {capture_id:string}|undefined;
     if(version&&!this.store.evidence([version.capture_id]).length)throw new StoreError('Revision was deleted',410);
   }
-  async manifestBatch(raw:unknown,authorize:(sourceId:string)=>void){
+  async manifestBatch(raw:unknown,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
     this.assertAdmitting();
     // Predecessor discovery is part of this protocol; retries reuse the persisted immutable manifest.
     const batch=z.object({items:z.array(z.record(z.unknown())).min(1).max(100)}).strict().parse(raw);
@@ -105,7 +105,7 @@ export class FileStore {
     const results=[];
     for(const input of normalized){
       try{
-        let ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,current):await this.revisionAdmitted(input,current);
+        let ack=input.sha256&&!input.item.deleted?this.beginAdmitted(input,current,admitUpload):await this.revisionAdmitted(input,current);
         if('uploadId' in ack&&!ack.ack)ack=await this.reuse(ack.uploadId,current)??ack;
         results.push({externalId:input.item.externalId,revision:input.item.revision,state:'uploadId' in ack?'missing_original':ack.duplicate?'existing':'accepted',...('uploadId' in ack?{upload:ack}:{ack})});
       }
@@ -120,12 +120,12 @@ export class FileStore {
   private assertAdmitting(){if(this.closed)throw new StoreError('File uploads are closed',503);if(!this.admitting)throw new StoreError('File writes are quiescing',503);}
   /** Owner-scope quiesce boundary; close() also stops admissions. */
   fenceAdmissions(){this.admitting=false;}
-  begin(raw:unknown,authorize:(sourceId:string)=>void){
+  begin(raw:unknown,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
     this.assertAdmitting();
-    return this.beginAdmitted(raw,authorize);
+    return this.beginAdmitted(raw,authorize,admitUpload);
   }
   /** Continue an already admitted batch/recovery under its original grant. */
-  private beginAdmitted(raw:unknown,authorize:(sourceId:string)=>void){
+  private beginAdmitted(raw:unknown,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
     this.assertOpen();
     const input=fileRevisionSchema.parse(raw);authorize(input.sourceId);this.allowed(input);
     if(!input.sha256||!['original','snapshot'].includes(input.item.layer)||input.item.deleted)throw new StoreError('Upload sessions require an original file');
@@ -142,6 +142,7 @@ export class FileStore {
       }
       return this.upload(old.id,authorize);
     }
+    if(input.sizeBytes>FILE_PART_BYTES)admitUpload?.();
     const id=randomUUID(),db=this.store.db,own=!db.isTransaction;privateDirectory(join(this.uploads,id));
     if(own)db.exec('BEGIN IMMEDIATE');
     try{
@@ -363,12 +364,12 @@ export class FileStore {
     const rows=this.store.db.prepare("SELECT v.* FROM file_versions v JOIN file_heads h ON h.capture_id=v.capture_id JOIN file_jobs j ON j.capture_id=v.capture_id WHERE v.source_id=? AND h.origin_missing=0 AND json_extract(v.manifest,'$.item.layer')='snapshot' AND json_extract(v.manifest,'$.sha256') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM file_snapshot_inputs i WHERE i.capture_id=v.capture_id) AND (j.state='waiting' OR j.state='blocked' AND j.error='snapshot_input_expired') ORDER BY v.rowid LIMIT 200").all(sourceId) as Version[];
     return {items:rows.filter(v=>this.needsSnapshotInput(v)).map(v=>{const m=JSON.parse(v.manifest) as FileRevision;return {captureId:v.capture_id,externalId:v.external_id,revision:v.revision,sha256:m.sha256!,sizeBytes:m.sizeBytes,observedAt:m.item.observedAt};})};
   }
-  beginSnapshotRecovery(id:string,authorize:(sourceId:string)=>void){
+  beginSnapshotRecovery(id:string,authorize:(sourceId:string)=>void,admitUpload?:()=>void){
     this.assertAdmitting();
     const v=this.version(id);authorize(v.source_id);const manifest=JSON.parse(v.manifest) as FileRevision;this.allowed(manifest);
     const source=this.sources.getSource(v.source_id);
     if(source.retention!=='snapshot'||manifest.item.layer!=='snapshot'||!manifest.sha256||this.sources.getItem(v.source_id,v.external_id)?.revision!==v.revision)throw new StoreError('Snapshot input recovery is not current or authorized',409);
-    return this.beginAdmitted(manifest,authorize);
+    return this.beginAdmitted(manifest,authorize,admitUpload);
   }
   version(id:string){const v=this.store.db.prepare('SELECT * FROM file_versions WHERE capture_id=?').get(id) as Version|undefined;if(!v)throw new StoreError('File not found',404);return v;}
   detail(id:string,includeArtifacts=true){

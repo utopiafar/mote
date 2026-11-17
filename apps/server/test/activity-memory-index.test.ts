@@ -65,7 +65,7 @@ test('installed legacy item triggers are replaced atomically and retain existing
  assert.throws(()=>new ActivityMemoryIndex(store),/Generated trigger replacement interruption/);db.exec=exec;
  assert.equal(store.db.isTransaction,false);assert.equal(store.db.prepare("SELECT sql FROM sqlite_master WHERE name='activity_memory_job_insert'").get()!.sql,before);assert.equal(entries(store,existing.id).length,1);
  new ActivityMemoryIndex(store);
- for(const name of ['activity_memory_job_insert','activity_memory_items_update'])assert.match(String(store.db.prepare('SELECT sql FROM sqlite_master WHERE name=?').get(name)!.sql),/pins AS MATERIALIZED/);
+ for(const name of ['activity_memory_job_insert','activity_memory_items_update'])assert.match(String(store.db.prepare('SELECT sql FROM sqlite_temp_master WHERE name=?').get(name)!.sql),/pins AS MATERIALIZED/);
  const next=job('generated-after-migration',{evidenceIds:[ref],materialInputs:[{materialId:'generated-material',fingerprint:'current',evidenceIds:[ref]}]});insert(store,next);assert.equal(entries(store,next.id)[0].item_key,'generated-material:current');assert.equal(entries(store,existing.id)[0].item_key,ref);
 });
 
