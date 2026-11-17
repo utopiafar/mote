@@ -85,6 +85,47 @@
    "file": "apps/server/src/material-catalog.ts"
   },
   {
+   "declaration": "executionSchemaInstallation",
+   "owner": "execution",
+   "fn": "executionSchema",
+   "file": "apps/server/src/execution-schema.ts"
+  },
+  {
+   "declaration": "operationProjectionSchemaInstallation",
+   "owner": "operation-projection",
+   "fn": "operationProjectionSchema",
+   "file": "apps/server/src/operation-projection.ts",
+   "callPaths": [
+    [
+     "operationProjectionSchemaInstallation",
+     "operationProjectionSchema"
+    ],
+    [
+     "operationProjectionSchemaInstallation",
+     "operationProjectionSchema",
+     "installOperationHierarchy"
+    ]
+   ]
+  },
+  {
+   "declaration": "taskRecordsSchemaInstallation",
+   "owner": "task-records",
+   "fn": "taskRecordsSchema",
+   "file": "apps/server/src/task-records.ts"
+  },
+  {
+   "declaration": "taskEvidenceSchemaInstallation",
+   "owner": "task-evidence",
+   "fn": "taskEvidenceSchema",
+   "file": "apps/server/src/task-evidence.ts"
+  },
+  {
+   "declaration": "runExecutionSchemaInstallation",
+   "owner": "run-execution",
+   "fn": "runExecutionSchema",
+   "file": "apps/server/src/run-execution.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -322,6 +363,46 @@
    "file": "apps/server/src/capture-schema.ts",
    "installer": "captureSchemaInstallation"
   },
+  "execution_cancellation_aliases": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_dependencies": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_failures": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_fairness": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_operation_steps": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_resources": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_sequence": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_steps": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
   "file_artifacts": {
    "owner": "file",
    "file": "apps/server/src/file-schema.ts",
@@ -547,6 +628,26 @@
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
   },
+  "operation_changes": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "operation_generations": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "operation_parents": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "operation_progress": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
   "perception_jobs": {
    "owner": "perception",
    "file": "apps/server/src/perception-schema.ts",
@@ -556,6 +657,11 @@
    "owner": "perception",
    "file": "apps/server/src/perception-schema.ts",
    "installer": "perceptionSchemaInstallation"
+  },
+  "run_execution_owners": {
+   "owner": "run-execution",
+   "file": "apps/server/src/run-execution.ts",
+   "installer": "runExecutionSchemaInstallation"
   },
   "settings": {
    "owner": "vault",
@@ -581,6 +687,16 @@
    "owner": "source",
    "file": "apps/server/src/source-schema.ts",
    "installer": "sourceSchemaInstallation"
+  },
+  "task_evidence": {
+   "owner": "task-evidence",
+   "file": "apps/server/src/task-evidence.ts",
+   "installer": "taskEvidenceSchemaInstallation"
+  },
+  "task_records": {
+   "owner": "task-records",
+   "file": "apps/server/src/task-records.ts",
+   "installer": "taskRecordsSchemaInstallation"
   },
   "todos": {
    "owner": "todo",

@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync,execFileSync} from 'node:child_process';
-import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership} from './sql-ownership.mjs';
+import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership,issueKey} from './sql-ownership.mjs';
 
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const cli=fileURLToPath(new URL('./sql-ownership.mjs',import.meta.url));
@@ -103,11 +103,12 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,15);assert.equal(Object.keys(result.tables).length,75);
+ assert.equal(result.owners.length,20);assert.equal(Object.keys(result.tables).length,90);
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
- assert.ok(result.uncoveredTables.includes('execution_steps'));assert.ok(result.dynamicStatements>0);
+ assert.equal(result.tables.execution_steps.owner,'execution');assert.ok(result.dynamicStatements>0);
+ assert.ok(result.retainedClassificationDebt.length>0);
  const projection=result.owners.find(owner=>owner.feature==='mote.activity');
  assert.equal(projection.objects.filter(object=>object.type==='table').length,9);
  assert.equal(projection.objects.filter(object=>object.type==='trigger').length,13);
@@ -136,6 +137,55 @@ test('projection helper proofs track SQL dependencies and mutation, not unrelate
  assert.ok(aliased.values.some(sql=>sql.includes('__dynamic__')));
  const escaped=sqlStatements('generated.ts',source+'unknownMutation(states);',options).find(x=>x.scope==='Projection.constructor');
  assert.ok(escaped.values.some(sql=>sql.includes('__dynamic__')));
+});
+
+test('finite installer strings prove array maps, pure return functions and correlated iteration without granting fragments',t=>{
+ const f=fixture(t);f.configuration.finiteInstallations=['oneInstallation'];
+ f.write('apps/server/src/one.ts',"export const oneInstallation={owner:'one',install:one}; const columns=['first','second']; function suffix(value){return `${value} TEXT`;} function one(db){db.exec(`CREATE TABLE own_rows(${columns.map(name=>suffix(name)).join(',')})`);for(const table of ['own_rows','other_rows'])db.exec(`CREATE TRIGGER ${table}_changed AFTER UPDATE ON ${table} BEGIN SELECT 1; END;`);}");
+ const result=f.check(),effects=result.violations.filter(x=>x.rule==='sql-schema-maintenance');
+ assert.equal(effects.length,1);assert.equal(effects[0].to,'other_rows');assert.equal(effects[0].kind,'observe');
+ assert.deepEqual(effects[0].sourceRelations,['other_rows']);
+ assert.deepEqual(sqlStatements('generated.ts',"function one(db){for(const table of ['a','b'])db.exec(`CREATE TRIGGER ${table}_changed AFTER UPDATE ON ${table} BEGIN SELECT 1; END;`);}",{finiteScopes:['one']}).find(x=>x.sink).values,[
+  'CREATE TRIGGER a_changed AFTER UPDATE ON a BEGIN SELECT 1; END;', 'CREATE TRIGGER b_changed AFTER UPDATE ON b BEGIN SELECT 1; END;',
+ ]);
+});
+
+test('schema maintenance is exact to SQL operation, relation, installer and direct db helper path',t=>{
+ const f=fixture(t);f.configuration.finiteInstallations=['oneInstallation'];
+ const original="export const oneInstallation={owner:'one',install:one};function one(db){helper(db);}function helper(db){db.exec('CREATE TABLE own_rows(id TEXT); CREATE TRIGGER sync AFTER UPDATE ON own_rows BEGIN UPDATE other_rows SET id=new.id; END;');}";
+ f.write('apps/server/src/one.ts',original);
+ const issue=f.check().violations.find(x=>x.rule==='sql-schema-maintenance');assert.equal(issue.kind,'update');assert.deepEqual(issue.callPath,['oneInstallation','one','helper']);
+ f.configuration.schemaMaintenance=[{...issue,reason:'Generated schema maintenance'}];assert.deepEqual(rules(f.check()),[]);
+ for(const changed of [original.replace('UPDATE other_rows SET id=new.id','DELETE FROM other_rows'),original.replace('UPDATE other_rows','UPDATE missing_rows')]){
+  f.write('apps/server/src/one.ts',changed);assert.ok(rules(f.check()).includes('sql-schema-maintenance'));
+ }
+ f.write('apps/server/src/one.ts',original.replace('helper(db);','helper(db);helper(db);'));assert.throws(()=>f.check(),/one concrete construction call/);
+ const duplicate=original.replace(" END;');", " END;');db.exec('CREATE TABLE own_rows(id TEXT); CREATE TRIGGER sync AFTER UPDATE ON own_rows BEGIN UPDATE other_rows SET id=new.id; END;');");
+ f.write('apps/server/src/one.ts',duplicate);assert.ok(rules(f.check()).includes('sql-schema-maintenance'),'copied maintenance SQL is another occurrence');
+ f.write('apps/server/src/one.ts',original+'function runtime(db){helper(db);}');assert.throws(()=>f.check(),/another call path/);
+ f.write('apps/server/src/one.ts',original+'function runtime(db){one(db);}');assert.throws(()=>f.check(),/installer cannot acquire another runtime call path/);
+ f.write('apps/server/src/one.ts',original+'const alias=helper;');assert.throws(()=>f.check(),/another call path/);
+ f.write('apps/server/src/one.ts',original.replace('helper(db);','db=externalDb;helper(db);'));assert.throws(()=>f.check(),/schema db parameter/);
+ f.write('apps/server/src/one.ts',original.replace('helper(db);','const alias=db;helper(alias);'));assert.throws(()=>f.check(),/schema db parameter/);
+ f.write('apps/server/src/one.ts',original.replace('helper(db);','(()=>helper(db))();'));assert.throws(()=>f.check(),/no visible SQL/);
+ f.write('apps/server/src/one.ts',original.replace("db.exec('CREATE TABLE", "db.exec(externalSql);db.exec('CREATE TABLE"));assert.throws(()=>f.check(),/must be static/);
+});
+
+test('owner registration retains only witnessed exact unresolved debt and rejects new scope, occurrence, table and operation',t=>{
+ const f=fixture(t);delete f.configuration.installations['two.ts'];
+ f.write('apps/server/src/consumer.ts',"function read(db){db.prepare('SELECT * FROM other_rows');}");
+ const issue=f.check().violations.find(x=>x.rule==='sql-uncovered-table'),baseline=[{...issue,reason:'Generated existing unresolved relation'}];
+ f.configuration.installations['two.ts']=['twoInstallation'];
+ assert.ok(rules(f.check(baseline)).includes('sql-cross-owner'),'no scope witness means no classification fallback');
+ const refined=f.check(baseline).violations.find(x=>x.rule==='sql-cross-owner');
+ f.configuration.retainedClassificationScopes=[{...refined,operation:undefined}];assert.ok(rules(f.check(baseline)).includes('sql-cross-owner'),'an unknown operation cannot be refined');
+ f.configuration.retainedClassificationScopes=[refined];
+ assert.deepEqual(rules(f.check(baseline)),[]);assert.equal(f.check(baseline).retainedClassificationDebt.length,1);
+ const baselineBytes=JSON.stringify(baseline);
+ for(const source of ["function read(db){db.prepare('UPDATE other_rows SET id=?');}","function read(db){db.prepare('SELECT * FROM own_rows');}","function moved(db){db.prepare('SELECT * FROM other_rows');}","function read(db){db.prepare('SELECT * FROM other_rows');db.prepare('SELECT * FROM other_rows');}"]){
+  f.write('apps/server/src/consumer.ts',source);const result=f.check(baseline);assert.ok(result.violations.length||result.stale.length);assert.equal(result.retainedClassificationDebt.length,0);
+ }
+ assert.equal(JSON.stringify(baseline),baselineBytes);
 });
 
 test('actual CLI rejects an inserted cross-owner query in a copy of the production source, permits the existing shared model, and cleans up',t=>{
@@ -169,6 +219,15 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  const activationPath=resolve(root,'apps/server/src/plugins/activity-services.ts'),activationSource=readFileSync(activationPath,'utf8');
  writeFileSync(activationPath,activationSource.replace("featureId:'mote.activity'","featureId:'mote.changed'"));
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/actual production feature activation/);writeFileSync(activationPath,activationSource);
+ const operationsPath=resolve(root,'apps/server/src/operation-projection.ts'),operationsSource=readFileSync(operationsPath,'utf8');
+ writeFileSync(operationsPath,operationsSource+'\nfunction generatedRuntimeCaller(db:DatabaseSync){installOperationHierarchy(db);}');
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/schema db helper cannot inherit installer authority/);
+ writeFileSync(operationsPath,operationsSource.replace('DELETE FROM execution_operation_steps WHERE step_id=old.id','DELETE FROM execution_steps WHERE id=old.id'));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-schema-maintenance.*execution_steps.*delete/);
+ writeFileSync(operationsPath,operationsSource);
+ const evidencePath=resolve(root,'apps/server/src/task-evidence.ts'),evidenceSource=readFileSync(evidencePath,'utf8');
+ writeFileSync(evidencePath,evidenceSource.replace('UPDATE task_records SET','UPDATE memories SET'));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-schema-maintenance.*memories.*update/);writeFileSync(evidencePath,evidenceSource);
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner: apps\/server\/src\/material-index.ts.*settings/);

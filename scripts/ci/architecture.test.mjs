@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {moduleReferences,checkArchitecture} from './architecture.mjs';
 import {ownershipInventory,sqlStatements,issueKey} from './sql-ownership.mjs';
-import {installations,sharedReads,sharedObservations,projections} from './sql-ownership-policy.mjs';
+import {installations,sharedReads,sharedObservations,projections,finiteInstallations,schemaMaintenance} from './sql-ownership-policy.mjs';
 
 const cli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
 const repository=fileURLToPath(new URL('../..',import.meta.url));
@@ -44,6 +44,8 @@ function fixture(t){
     const tables=Object.entries(productionSql.tables).filter(([,table])=>table.installer===name).map(([table])=>`CREATE TABLE ${table}(id TEXT);`).join('');
     return `export const ${name}={owner:'${productionOwners.get(name)}',install:install${index}}; function install${index}(db){db.exec(${JSON.stringify(tables)});}`;
   }).join('\n'));
+  for(const [file,names] of Object.entries(installations))if(names.some(name=>finiteInstallations.includes(name)))
+    write('apps/server/src/'+file,readFileSync(join(repository,'apps/server/src/'+file),'utf8').replace(/^import .*;\n/gm,''));
   for(const projection of projections){
     const source=readFileSync(join(repository,'apps/server/src/'+projection.file),'utf8').replace(/^import .*;\n/gm,'');
     write('apps/server/src/'+projection.file,source);
@@ -52,7 +54,7 @@ function fixture(t){
   const catalog='apps/server/src/material-catalog.ts',catalogSource=readFileSync(join(repository,catalog),'utf8');
   const facet=sqlStatements(catalog,catalogSource).find(statement=>statement.fingerprint===sharedReads[0].symbol);
   write(catalog,readFileSync(join(root,catalog),'utf8')+`\nfunction fixtureFacet(db){db.prepare(${facet.expression});}`);
-  const sql=ownershipInventory(root),grants=new Set([...sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'}))].map(issueKey));
+  const sql=ownershipInventory(root),grants=new Set([...sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'})),...schemaMaintenance.map(item=>({...item,rule:'sql-schema-maintenance'}))].map(issueKey));
   const debt=sql.issues.filter(issue=>!grants.has(issueKey(issue))).map(({line,...issue})=>({...issue,reason:'Generated architecture fixture'}));
   write('scripts/ci/sql-ownership-baseline.json',JSON.stringify(debt));
   write('scripts/ci/sql-ownership-map.json',JSON.stringify({owners:sql.owners,tables:sql.tables}));

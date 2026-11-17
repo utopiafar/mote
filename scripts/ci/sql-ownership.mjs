@@ -47,7 +47,7 @@ export function sqlTokens(sql){
  * are local relations. Unknown interpolation remains a separate hard issue even
  * when the visible part can be checked. Foreign keys are schema dependencies,
  * not runtime reads; trigger bodies still expose actual SELECT/UPDATE targets. */
-export function sqlAccesses(sql,{schemaLifecycle=false}={}){
+export function sqlAccesses(sql,{schemaLifecycle=false,maintenance=false}={}){
  const tokens=sqlTokens(sql),t=tokens.map(token=>token.quoted?"#"+token.text:token.text),accesses=[],created=[],ctes=[];
  const relation=(index,kind)=>{
   if(t[index]==='(')return;
@@ -78,29 +78,29 @@ export function sqlAccesses(sql,{schemaLifecycle=false}={}){
   if(t[i]===')'){fromDepths.delete(depth);depth--;}
   if(['where','group','having','order','limit','union','except','intersect','returning','set','values',';'].includes(t[i]))fromDepths.delete(depth);
   if(t[i]==='from'||t[i]==='join'){
-   relation(i+1,t[i]==='from'&&t[i-1]==='delete'?'write':'read');
+   relation(i+1,t[i]==='from'&&t[i-1]==='delete'?(maintenance?'delete':'write'):'read');
    if(t[i]==='from')fromDepths.add(depth);
   }
   if(t[i]===','&&fromDepths.has(depth))relation(i+1,'read');
-  if(t[i]==='into'&&['insert','replace','abort','fail','ignore','rollback'].includes(t[i-1]))relation(i+1,'write');
+  if(t[i]==='into'&&['insert','replace','abort','fail','ignore','rollback'].includes(t[i-1]))relation(i+1,maintenance?'insert':'write');
   if(t[i]==='update'&&!['do','after','before'].includes(t[i-1])&&!['of','on'].includes(t[i+1])){
-   let j=i+1;if(t[j]==='or')j+=2;relation(j,'write');
+   let j=i+1;if(t[j]==='or')j+=2;relation(j,maintenance?'update':'write');
   }
   if(t[i]==='create'){
    let j=i+1;if(['temp','temporary'].includes(t[j]))j++;if(['virtual','unique'].includes(t[j]))j++;
    const temporary=['temp','temporary'].includes(t[i+1]),type=t[j++];if(t[j]==='if')j+=3;
    if(['table','view','index','trigger'].includes(type)&&tokens[j]?.identifier){
     created.push({type,name:tokens[j].text});
-    if(type==='table'||type==='view')relation(j,'write');
+    if(type==='table'||type==='view')relation(j,maintenance?'create':'write');
     // Index/trigger attachment is a schema write to its target, not a read.
     if(type==='index'||type==='trigger'){
      while(j<t.length&&!['on',';'].includes(t[j]))j++;
-     if(t[j]==='on')relation(j+1,type==='trigger'&&temporary?'observe':'write');
+     if(t[j]==='on')relation(j+1,type==='trigger'&&(temporary||maintenance)?'observe':maintenance?'index':'write');
     }
    }
   }
   if(schemaLifecycle&&t[i]==='drop'&&t[i+1]==='trigger')relation(i+2+(t[i+2]==='if'?2:0),'drop-trigger');
-  if(['drop','alter'].includes(t[i])&&['table','view'].includes(t[i+1]))relation(i+2+(t[i+2]==='if'?2:0),'write');
+  if(['drop','alter'].includes(t[i])&&['table','view'].includes(t[i+1]))relation(i+2+(t[i+2]==='if'?2:0),maintenance?t[i]:'write');
  }
  return {accesses:[...new Map(accesses.map(value=>[JSON.stringify(value),value])).values()],created};
 }
@@ -152,21 +152,30 @@ export function sqlStatements(file,text,{finiteScopes=[]}={}){
   if(ts.isTemplateExpression(node))return node.templateSpans.reduce((values,span)=>combine(values,next(span.expression)).map(value=>value+span.literal.text),[node.head.text]);
   if(helpers&&ts.isCallExpression(node)){
    if(ts.isIdentifier(node.expression)){
-    const fn=unwrap(binding(node.expression));
-    if(fn&&ts.isArrowFunction(fn)&&!ts.isBlock(fn.body)&&fn.parameters.every(parameter=>ts.isIdentifier(parameter.name))){
+    const fn=unwrap(binding(node.expression))??declarationFor(node.expression);
+    let body=fn&&(ts.isArrowFunction(fn)||ts.isFunctionDeclaration(fn))?fn.body:undefined;
+    if(body&&ts.isBlock(body))body=body.statements.length===1&&ts.isReturnStatement(body.statements[0])?body.statements[0].expression:undefined;
+    if(body&&!fn.asteriskToken&&!fn.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.AsyncKeyword)&&node.arguments.length<=fn.parameters.length&&!node.arguments.some(ts.isSpreadElement)&&fn.parameters.every(parameter=>ts.isIdentifier(parameter.name)&&!parameter.dotDotDotToken)){
      const env=new Map(environment);
      for(const [index,parameter] of fn.parameters.entries())env.set(parameter.name.text,next(node.arguments[index]??parameter.initializer));
-     return next(fn.body,env);
+     return next(body,env);
     }
    }
    // The existing finite CASE helper: Object.entries(constObject).map(
    // ([name,value])=>literalTemplate).join(literalSeparator). Never execute JS.
    const join=node.expression;
-   if(ts.isPropertyAccessExpression(join)&&join.name.text==='join'&&ts.isCallExpression(join.expression)){
+   if(ts.isPropertyAccessExpression(join)&&join.name.text==='join'&&node.arguments.length===1&&ts.isCallExpression(join.expression)){
     const map=join.expression,mapCall=map.expression;
-    if(ts.isPropertyAccessExpression(mapCall)&&mapCall.name.text==='map'&&ts.isCallExpression(mapCall.expression)){
-     const entries=mapCall.expression,fn=map.arguments[0],object=entries.arguments[0];
-     if(ts.isPropertyAccessExpression(entries.expression)&&entries.expression.expression.getText(source)==='Object'&&!mutated.has('Object')&&!mutated.has('Array')&&!declarationFor(entries.expression.expression)&&entries.expression.name.text==='entries'&&object&&ts.isIdentifier(object)&&!mutated.has(object.text)&&fn&&ts.isArrowFunction(fn)&&!ts.isBlock(fn.body)&&fn.parameters.length===1&&ts.isArrayBindingPattern(fn.parameters[0].name)){
+    if(ts.isPropertyAccessExpression(mapCall)&&mapCall.name.text==='map'&&map.arguments.length===1){
+     const fn=map.arguments[0],receiver=mapCall.expression;
+     const array=ts.isIdentifier(receiver)?unwrap(binding(receiver)):unwrap(receiver);
+     if(array&&ts.isArrayLiteralExpression(array)&&(!ts.isIdentifier(receiver)||!mutated.has(receiver.text))&&fn&&ts.isArrowFunction(fn)&&!ts.isBlock(fn.body)&&!fn.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.AsyncKeyword)&&fn.parameters.length===1&&ts.isIdentifier(fn.parameters[0].name)){
+      const pieces=[];
+      for(const item of array.elements){const values=next(item);if(values.length!==1)return ['__dynamic__'];const env=new Map(environment);env.set(fn.parameters[0].name.text,values);const value=next(fn.body,env);if(value.length!==1)return ['__dynamic__'];pieces.push(value[0]);}
+      const separator=next(node.arguments[0]);if(separator.length===1)return [pieces.join(separator[0])];
+     }
+     const entries=mapCall.expression,object=ts.isCallExpression(entries)?entries.arguments[0]:undefined;
+     if(ts.isCallExpression(entries)&&entries.arguments.length===1&&ts.isPropertyAccessExpression(entries.expression)&&entries.expression.expression.getText(source)==='Object'&&!mutated.has('Object')&&!mutated.has('Array')&&!declarationFor(entries.expression.expression)&&entries.expression.name.text==='entries'&&object&&ts.isIdentifier(object)&&!mutated.has(object.text)&&fn&&ts.isArrowFunction(fn)&&!ts.isBlock(fn.body)&&!fn.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.AsyncKeyword)&&fn.parameters.length===1&&ts.isArrayBindingPattern(fn.parameters[0].name)){
       const values=unwrap(binding(object)),names=fn.parameters[0].name.elements;
       if(values&&ts.isObjectLiteralExpression(values)&&names.length===2&&names.every(name=>ts.isBindingElement(name)&&ts.isIdentifier(name.name))){
        const pieces=[];
@@ -185,14 +194,21 @@ export function sqlStatements(file,text,{finiteScopes=[]}={}){
   return ['__dynamic__'];
  };
  const statements=[],sinkArguments=new Set();
- const record=(node,expression)=>{
+ const record=(node,expression,sink=false)=>{
   let fn;for(let p=node.parent;p;p=p.parent)if(ts.isFunctionDeclaration(p)){fn=p.name?.text;break;}
-  let scope;for(let p=node.parent;p;p=p.parent){if(ts.isConstructorDeclaration(p)&&ts.isClassDeclaration(p.parent)){scope=p.parent.name?.text+'.constructor';break;}if(ts.isFunctionDeclaration(p)){scope=p.name?.text;break;}if(ts.isMethodDeclaration(p)&&ts.isClassDeclaration(p.parent)){scope=p.parent.name?.text+'.'+p.name.getText(source);break;}}
-  const values=[...new Set(literal(expression,new Set(),new Map(),finiteScopes.includes(scope)))],dynamic=values.some(value=>value.includes('__dynamic__'));
+  let scope,scopeNode;for(let p=node.parent;p;p=p.parent){if(ts.isConstructorDeclaration(p)&&ts.isClassDeclaration(p.parent)){scope=p.parent.name?.text+'.constructor';scopeNode=p;break;}if(ts.isFunctionDeclaration(p)){scope=p.name?.text;scopeNode=p;break;}if(ts.isMethodDeclaration(p)&&ts.isClassDeclaration(p.parent)){scope=p.parent.name?.text+'.'+p.name.getText(source);scopeNode=p;break;}}
+  const helpers=sink&&finiteScopes.includes(scope);let environments=[new Map()];
+  if(helpers)for(let parent=node.parent;parent;parent=parent.parent)if(ts.isForOfStatement(parent)&&ts.isVariableDeclarationList(parent.initializer)&&parent.initializer.declarations.length===1&&ts.isIdentifier(parent.initializer.declarations[0].name)){
+   const name=parent.initializer.declarations[0].name.text;
+   environments=environments.flatMap(environment=>(mutated.has(name)?['__dynamic__']:literal(parent.expression,new Set(),environment,true)).map(value=>new Map([...environment,[name,[value]]])));
+   if(environments.length>64)environments=[new Map([[name,['__dynamic__']]])];
+  }
+  const values=[...new Set(environments.flatMap(environment=>literal(expression,new Set(),environment,helpers)))],dynamic=values.some(value=>value.includes('__dynamic__'));
   // An unresolved call is frozen to its enclosing lexical body as well. An
   // edit to a helper cannot silently reuse a generic `prepare(sql)` exception.
   let context=node; if(dynamic)for(let p=node.parent;p;p=p.parent)if(ts.isFunctionLike(p)||ts.isSourceFile(p)){context=p;break;}
-  statements.push({line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1,fn,scope,expression:expression?.getText(source)??'<missing>',values,
+  let callback=false;if(sink)for(let p=node.parent;p;p=p.parent){if(ts.isFunctionDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isMethodDeclaration(p))break;if(ts.isFunctionLike(p)){callback=true;break;}}
+  statements.push({sink,callback,line:source.getLineAndCharacterOfPosition(node.getStart(source)).line+1,fn,scope,scopeFingerprint:hash((scopeNode??source).getText(source)),expression:expression?.getText(source)??'<missing>',values,
    fingerprint:hash(JSON.stringify([expression?.getText(source),values,dynamic?context.getText(source):null]))});
  };
  const sqlMethod=node=>{
@@ -207,7 +223,7 @@ export function sqlStatements(file,text,{finiteScopes=[]}={}){
  };
  const visit=node=>{
   if(ts.isCallExpression(node)){
-   if(node.arguments.length&&sink(node.expression)){sinkArguments.add(node.arguments[0]);record(node,node.arguments[0]);}
+   if(node.arguments.length&&sink(node.expression)){sinkArguments.add(node.arguments[0]);record(node,node.arguments[0],true);}
   }
   ts.forEachChild(node,visit);
  };visit(source);
@@ -240,6 +256,57 @@ function installerDeclarations(file,text,names){
  };visit(source);
  if(result.length!==names.length)throw Error(`${file}: missing declared installer`);
  return result;
+}
+
+/** Follow only direct, same-file, one-db-argument construction helpers.
+ * A helper cannot also escape or acquire a runtime caller and retain this path. */
+function installerContexts(file,text,installation){
+ const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true),definitions=new Map();
+ const definitionsVisit=node=>{if(ts.isFunctionDeclaration(node)&&node.name)definitions.set(node.name.text,node);ts.forEachChild(node,definitionsVisit);};definitionsVisit(source);
+ const contexts=[],calls=new Set(),active=new Set();
+ const visitFunction=(name,path)=>{
+  if(active.has(name))throw Error(`${file}: recursive schema helper is not supported`);
+  if(contexts.some(context=>context.fn===name))throw Error(`${file}: schema db helper must have one concrete construction call`);
+  const fn=definitions.get(name);if(!fn?.body||fn.parameters.length!==1||!ts.isIdentifier(fn.parameters[0].name))throw Error(`${file}: schema helper must receive only its explicit db parameter`);
+  active.add(name);contexts.push({fn:name,callPath:path});
+  const visit=node=>{
+   if(node!==fn&&ts.isFunctionLike(node))return;
+   if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)&&definitions.has(node.expression.text)&&node.arguments.length===1&&ts.isIdentifier(node.arguments[0])&&node.arguments[0].text===fn.parameters[0].name.text){calls.add(node);visitFunction(node.expression.text,[...path,node.expression.text]);}
+   ts.forEachChild(node,visit);
+  };visit(fn);active.delete(name);
+ };
+ visitFunction(installation.fn,[installation.declaration,installation.fn]);
+ for(const context of contexts){
+  const fn=definitions.get(context.fn),db=fn.parameters[0].name.text;
+  const validateDb=node=>{
+   if(node!==fn&&ts.isFunctionLike(node))return;
+   if(ts.isIdentifier(node)&&node.text===db){const parent=node.parent;
+    if(ts.isParameter(parent)&&parent.name===node){}
+    else if(ts.isPropertyAccessExpression(parent)&&parent.expression===node&&['exec','prepare'].includes(parent.name.text)&&ts.isCallExpression(parent.parent)&&parent.parent.expression===parent){}
+    else if(ts.isCallExpression(parent)&&parent.arguments[0]===node&&calls.has(parent)){}
+    else throw Error(`${file}: schema db parameter cannot be reassigned, aliased or escape its direct construction path`);
+   }
+   ts.forEachChild(node,validateDb);
+  };validateDb(fn);
+ }
+ const helpers=new Set(contexts.slice(1).map(context=>context.fn));
+ const validate=node=>{
+  if(ts.isFunctionDeclaration(node)&&node.name?.text===installation.fn&&node.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.ExportKeyword))throw Error(`${file}: schema installer cannot escape its registered declaration`);
+  if(ts.isIdentifier(node)&&node.text===installation.fn){
+   const parent=node.parent;let declaration=parent;
+   while(declaration&&!ts.isVariableDeclaration(declaration)&&!ts.isSourceFile(declaration))declaration=declaration.parent;
+   const registered=ts.isPropertyAssignment(parent)&&parent.name.getText(source)==='install'&&parent.initializer===node&&declaration&&ts.isVariableDeclaration(declaration)&&ts.isIdentifier(declaration.name)&&declaration.name.text===installation.declaration;
+   if(!(ts.isFunctionDeclaration(parent)&&parent.name===node)&&!registered)throw Error(`${file}: schema installer cannot acquire another runtime call path`);
+  }
+  if(ts.isFunctionDeclaration(node)&&node.name&&helpers.has(node.name.text)&&node.modifiers?.some(modifier=>modifier.kind===ts.SyntaxKind.ExportKeyword))throw Error(`${file}: schema db helper cannot escape its installer path`);
+  if(ts.isIdentifier(node)&&helpers.has(node.text)){
+   const parent=node.parent;
+   if(ts.isFunctionDeclaration(parent)&&parent.name===node){}
+   else if(ts.isCallExpression(parent)&&parent.expression===node&&calls.has(parent)){}
+   else throw Error(`${file}: schema db helper cannot inherit installer authority at another call path`);
+  }
+  ts.forEachChild(node,validate);
+ };validate(source);return contexts;
 }
 
 /** A lifecycle's finite schema parameter is supported by actual production
@@ -282,13 +349,19 @@ function validateProjectionLifecycleCalls(sources,projections){
 export function ownershipInventory(root='.',configuration=policy){
  root=resolve(root);const sources=new Map(files(resolve(root,prefix)).map(file=>[slash(relative(root,file)),readFileSync(file,'utf8')]));
  validateProjectionLifecycleCalls(sources,configuration.projections??[]);
- const statements=new Map([...sources].map(([file,text])=>[file,sqlStatements(file,text,{finiteScopes:(configuration.projections??[]).filter(item=>prefix+item.file===file).flatMap(item=>[item.scope,...item.lifecycleScopes])})]));
- const owners=[],tables={},functions=new Map(),projectionScopes=new Map(),projectionObjects=new Map();
+ const finiteNames=new Set(configuration.finiteInstallations??[]),registered=new Map();
  for(const [name,names] of Object.entries(configuration.installations)){
   const file=prefix+name,text=sources.get(file);if(text===undefined)throw Error(`Missing SQL owner source: ${file}`);
-  for(const installation of installerDeclarations(file,text,names)){
-   owners.push({...installation,file});functions.set(file+'#'+installation.fn,installation.owner);
-   const body=statements.get(file).filter(statement=>statement.fn===installation.fn);
+  registered.set(file,installerDeclarations(file,text,names).map(installation=>({...installation,finite:finiteNames.has(installation.declaration),contexts:finiteNames.has(installation.declaration)?installerContexts(file,text,installation):[{fn:installation.fn,callPath:[installation.declaration,installation.fn]}]})));
+ }
+ const statements=new Map([...sources].map(([file,text])=>[file,sqlStatements(file,text,{finiteScopes:[...(configuration.projections??[]).filter(item=>prefix+item.file===file).flatMap(item=>[item.scope,...item.lifecycleScopes]),...(registered.get(file)??[]).filter(item=>item.finite).flatMap(item=>item.contexts.map(context=>context.fn))]})]));
+ const owners=[],tables={},functions=new Map(),projectionScopes=new Map(),projectionObjects=new Map();
+ for(const [file,installations] of registered){
+  for(const installation of installations){
+   const {finite,contexts,...declaration}=installation;
+   owners.push({...declaration,file,...(contexts.length>1?{callPaths:contexts.map(context=>context.callPath)}:{})});
+   for(const context of contexts)functions.set(file+'#'+context.fn,{owner:installation.owner,installer:installation.declaration,callPath:context.callPath,finite});
+   const body=statements.get(file).filter(statement=>contexts.some(context=>context.fn===statement.fn)&&(!finite||statement.sink&&!statement.callback));
    if(!body.length)throw Error(`${file}: installer ${installation.fn} has no visible SQL`);
    for(const statement of body)for(const sql of statement.values){
     if(sql.includes('__dynamic__'))throw Error(`${file}: schema owner SQL must be static`);
@@ -322,18 +395,25 @@ export function ownershipInventory(root='.',configuration=policy){
  const issues=[],uncoveredFiles=new Set(),uncoveredTables=new Set(),coveredFiles=new Set();
  let dynamicStatements=0;
  for(const [file,items] of statements)for(const statement of items){
-  const owner=projectionScopes.get(file+'#'+statement.scope)??functions.get(file+'#'+statement.fn)??configuration.consumers[file.slice(prefix.length)];
-  const add=(rule,to,kind)=>issues.push({rule,from:file,to,kind,symbol:statement.fingerprint,line:statement.line});
+  const registeredContext=functions.get(file+'#'+statement.fn),context=registeredContext&&(!registeredContext.finite||statement.sink&&!statement.callback)?registeredContext:undefined;
+  const owner=projectionScopes.get(file+'#'+statement.scope)??context?.owner??configuration.consumers[file.slice(prefix.length)];
+  const add=(rule,to,kind)=>{
+   const operations=rule==='sql-cross-owner'?[...new Set(statement.values.flatMap(sql=>sqlAccesses(sql,{maintenance:true}).accesses).filter(access=>access.table===to&&(kind==='read'?access.kind==='read':access.kind!=='read')).map(access=>access.kind))]:[];
+   issues.push({rule,from:file,to,kind,symbol:statement.fingerprint,scope:statement.scope,scopeFingerprint:statement.scopeFingerprint,...(operations.length?{operation:operations.length===1?operations[0]:undefined,completeSql:statement.values.every(sql=>!sql.includes('__dynamic__'))}:{}),line:statement.line});
+  };
   if(!owner){uncoveredFiles.add(file);add('sql-uncovered-consumer','[owner pending]','coverage');}
   else coveredFiles.add(file);
   if(owner&&!owners.some(item=>item.owner===owner))throw Error(`${file}: consumer owner ${owner} has no production installer`);
   if(statement.values.some(sql=>sql.includes('__dynamic__')))dynamicStatements++;
   for(const sql of statement.values){
    if(owner&&sql.includes('__dynamic__'))add('sql-dynamic','[unproved SQL]','dynamic');
-   for(const access of sqlAccesses(sql,{schemaLifecycle:projectionScopes.has(file+'#'+statement.scope)}).accesses){
+   const accesses=sqlAccesses(sql,{schemaLifecycle:projectionScopes.has(file+'#'+statement.scope),maintenance:context?.finite===true}).accesses;
+   const sourceRelations=[...new Set(accesses.filter(access=>access.kind==='observe').map(access=>access.table))].sort();
+   for(const access of accesses){
     if(access.table.startsWith('sqlite_'))continue; // SQLite's own schema, never domain data.
     if(access.table.includes('__dynamic__'))continue;
     const target=access.kind==='drop-trigger'?projectionObjects.get(access.table):tables[access.table]?.owner;
+    if(context?.finite){if(!target)uncoveredTables.add(access.table);if(target!==owner)issues.push({rule:'sql-schema-maintenance',from:file,to:access.table,kind:access.kind,symbol:hash(sql),statementFingerprint:statement.fingerprint,installer:context.installer,callPath:context.callPath,sourceRelations,line:statement.line});continue;}
     if(!target){uncoveredTables.add(access.table);if(owner)add(sql.includes('__dynamic__')?'sql-unproved-relation':'sql-uncovered-table',access.table,access.kind);}
     else if(owner&&target!==owner)add('sql-cross-owner',access.table,access.kind);
    }
@@ -342,7 +422,7 @@ export function ownershipInventory(root='.',configuration=policy){
  const unique=[...new Map(issues.map(issue=>[issueKey(issue),issue])).values()].sort((a,b)=>issueKey(a).localeCompare(issueKey(b)));
  return {dynamicStatements,owners,tables:Object.fromEntries(Object.entries(tables).sort()),coveredFiles:[...coveredFiles].sort(),uncoveredFiles:[...uncoveredFiles].sort(),uncoveredTables:[...uncoveredTables].sort(),issues:unique};
 }
-export const issueKey=issue=>JSON.stringify([issue.rule,issue.from,issue.to,issue.kind,issue.symbol]);
+export const issueKey=issue=>JSON.stringify([issue.rule,issue.from,issue.to,issue.kind,issue.symbol,...(issue.rule==='sql-schema-maintenance'?[issue.installer,issue.callPath,issue.sourceRelations,issue.statementFingerprint]:[])]);
 export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
  const inventory=ownershipInventory(root,configuration);
  const grants=configuration.sharedReads.map(grant=>{
@@ -350,6 +430,7 @@ export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
   return {...grant,rule:'sql-cross-owner',kind:'read'};
  });
  for(const grant of configuration.sharedObservations??[]){if(grant.kind!==undefined&&grant.kind!=='observe')throw Error('Shared SQL subscriptions only grant observations');grants.push({...grant,rule:'sql-cross-owner',kind:'observe'});}
+ for(const grant of configuration.schemaMaintenance??[]){if(!['read','observe','index','insert','update','delete'].includes(grant.kind)||!grant.installer||!grant.callPath?.length||!Array.isArray(grant.sourceRelations)||!/^[a-f0-9]{64}$/.test(grant.statementFingerprint??''))throw Error('Schema maintenance requires an installer, concrete call path and exact operation');grants.push({...grant,rule:'sql-schema-maintenance'});}
  const rawDebt=baseline??JSON.parse(readFileSync(resolve(root,'scripts/ci/sql-ownership-baseline.json'),'utf8'));
  const debt=rawDebt.flatMap(({symbols,...item})=>symbols?symbols.map(symbol=>({...item,symbol})):[item]);
  const generated={owners:inventory.owners,tables:inventory.tables};
@@ -359,12 +440,23 @@ export function checkSqlOwnership(root='.',{configuration=policy,baseline}={}){
   if(!item.reason?.trim()||!/^([a-f0-9]{64})$/.test(item.symbol)||allowed.has(issueKey(item)))throw Error('SQL exceptions require a reason, unique statement fingerprint and concrete access');
   allowed.set(issueKey(item),item);
  }
- const present=new Set(inventory.issues.map(issueKey));
- return {...inventory,violations:inventory.issues.filter(issue=>!allowed.has(issueKey(issue))),exceptions:inventory.issues.filter(issue=>allowed.has(issueKey(issue))),stale:[...debt,...grants].filter(item=>!present.has(issueKey(item)))};
+ // A newly known table owner refines an existing unresolved access into a
+ // cross-owner diagnosis. Retain that exact debt without rewriting the ledger;
+ // no other file, SQL, relation, access kind or schema-maintenance path matches.
+ const match=issue=>{
+  if(allowed.has(issueKey(issue)))return allowed.get(issueKey(issue));
+  if(issue.rule==='sql-cross-owner'&&['read','write'].includes(issue.kind))for(const rule of ['sql-uncovered-table','sql-unproved-relation']){
+   const entry=allowed.get(issueKey({...issue,rule}));
+   const witness=(configuration.retainedClassificationScopes??[]).find(item=>issueKey({...item,rule})===issueKey({...issue,rule})&&item.scope===issue.scope&&item.scopeFingerprint===issue.scopeFingerprint&&item.operation===issue.operation&&(issue.kind!=='write'||item.completeSql===true&&issue.completeSql===true));
+   if(entry&&witness&&entry.to&&entry.kind===issue.kind&&(issue.kind==='read'?issue.operation==='read':['insert','update','delete'].includes(issue.operation))&&/^[a-f0-9]{64}$/.test(entry.symbol))return entry;
+  }
+ };
+ const matched=inventory.issues.map(issue=>({issue,exception:match(issue)})),present=new Set(matched.filter(item=>item.exception).map(item=>issueKey(item.exception)));
+ return {...inventory,violations:matched.filter(item=>!item.exception).map(item=>item.issue),exceptions:matched.filter(item=>item.exception).map(item=>item.issue),retainedClassificationDebt:matched.filter(item=>item.exception&&item.issue.rule!==item.exception.rule).map(item=>({issue:item.issue,originalRule:item.exception.rule})),stale:[...debt,...grants].filter(item=>!present.has(issueKey(item)))};
 }
 export const sqlOwnershipSummary=result=>{
  const projections=result.owners.filter(owner=>owner.feature).length;
- return `SQL ownership: ${result.owners.length-projections} schema owners + ${projections} scoped projection owner(s), ${Object.keys(result.tables).length} tables/views, ${result.coveredFiles.length} files with covered SQL scopes; PARTIAL coverage: ${result.uncoveredFiles.length} files with pending consumers, ${result.uncoveredTables.length} referenced relations pending, ${result.dynamicStatements} unproved SQL statements. ${result.exceptions.length} concrete existing exceptions.`;
+ return `SQL ownership: ${result.owners.length-projections} schema owners + ${projections} scoped projection owner(s), ${Object.keys(result.tables).length} tables/views, ${result.coveredFiles.length} files with covered SQL scopes; PARTIAL coverage: ${result.uncoveredFiles.length} files with pending consumers, ${result.uncoveredTables.length} referenced relations pending, ${result.dynamicStatements} unproved SQL statements. ${result.exceptions.length} concrete existing exceptions (${result.retainedClassificationDebt?.length??0} retained classification debts).`;
 };
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{
