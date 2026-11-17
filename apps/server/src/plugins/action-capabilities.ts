@@ -1,3 +1,5 @@
+import {installSchemaPlan} from '../schema-installation.js';
+import {actionCapabilitiesSchemaInstallation} from '../action-capabilities-schema.js';
 import {ActionInputScope} from '../action-input-scope.js';
 import {actionGrantCommandSchema,type ActionConnectorChoice,type ActionGrant,type ActionPluginProvider,type ActionPluginIdentity,type CentralConnectorActionTarget} from '@mote/shared';
 import {actionCapabilityCommandSchema,actionCapabilityDraftSchema,actionDeviceDeclarationSchema,actionPluginCapabilityIdentitySchema,actionPluginCapabilitySchema,calendarManageCapability,calendarCapabilityIdentitySchema,projectDeviceCapability,type ActionCapabilityDraft,type ActionDeviceCapability,type DeviceCapabilityProjection} from '@mote/shared';
@@ -8,11 +10,7 @@ import type {Connections,ConnectionCredential} from '../connections.js';
 /** Owner control plane; installing a plugin or saving a draft never authorizes execution. */
 export class ActionCapabilities {
  readonly inputs:ActionInputScope;
- constructor(private store:ConstructorParameters<typeof ActionInputScope>[0],private sources:SourceStore,private connections:Connections,private providers:()=>ActionPluginProvider[]=()=>[]){this.inputs=new ActionInputScope(store,sources);store.db.exec(`
-  CREATE TABLE IF NOT EXISTS action_device_capabilities(device_id TEXT PRIMARY KEY,json TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS action_capability_grants(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS action_capability_drafts(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS action_capability_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL);`);store.registerStorage('actions-services',{
+ constructor(private store:ConstructorParameters<typeof ActionInputScope>[0],private sources:SourceStore,private connections:Connections,private providers:()=>ActionPluginProvider[]=()=>[]){this.inputs=new ActionInputScope(store,sources);installSchemaPlan(store.db,[actionCapabilitiesSchemaInstallation]);store.registerStorage('actions-services',{
   action_device_capabilities:'length(CAST(json AS BLOB))+length(CAST(device_id AS BLOB))+128',
   action_capability_grants:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+256',
   action_capability_drafts:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',

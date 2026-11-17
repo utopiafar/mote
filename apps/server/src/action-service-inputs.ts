@@ -6,7 +6,7 @@ import {ActionCapabilities} from './plugins/action-capabilities.js';
 import {registerActionCapabilityRoutes} from './plugins/action-capability-routes.js';
 import {ManagedCalendar} from './managed-calendar.js';
 import {TodoStore,registerTodoRoutes} from './todos.js';
-import {AssistantActions,registerAssistantActionRoutes} from './assistant-actions.js';
+import {createAssistantActions,registerAssistantActionRoutes,type AssistantActions} from './assistant-actions.js';
 import {OwnerCalendarInstructions,type OwnerCalendarAuthority} from './owner-calendar-instructions.js';
 import {StoreError,type Store} from './store.js';
 import type {ActionsDomain,ActionsServicesInputs} from './plugins/actions-services.js';
@@ -56,7 +56,7 @@ export function createActionsServiceInputs(deps:ActionsInputDependencies){
       capabilities=new ActionCapabilities(deps.store,deps.sources,deps.connections,deps.actionProviders);
       const currentCapabilities=capabilities,managed=new ManagedCalendar(deps.store,current,currentCapabilities,deps.connections,deps.connectorAction);
       if(deps.ownerCalendarAuthority){ownerCalendar=new OwnerCalendarInstructions(deps.store,current,deps.ownerCalendarAuthority,target=>currentCapabilities.resolveCentralTarget(target)?.identity);ownerCalendar.recover();}
-      if(deps.assistantTasks)assistant=new AssistantActions(deps.store,deps.assistantTasks,current,todos,managed);
+      if(deps.assistantTasks)assistant=createAssistantActions(deps.store,deps.assistantTasks,current,todos,managed);
       const tickManaged=()=>{
         if(closed)return Promise.resolve();
         const work=managed.tick();pending.add(work);void work.then(()=>pending.delete(work),()=>pending.delete(work));return work;
