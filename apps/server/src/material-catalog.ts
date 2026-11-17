@@ -4,6 +4,28 @@ import type {Context} from '@deepseek-ai/cordis';
 import {z} from 'zod';
 import type {MaterialStore} from './materials.js';
 import {StoreError} from './store.js';
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,schemaObjectsExist,type SchemaInstallation,type SchemaObject} from './schema-installation.js';
+import {materialHeadsPrerequisite} from './material-schema.js';
+
+const materialCatalogObjects=[
+ {type:'table',name:'material_catalog_generation'},
+ {type:'index',name:'material_catalog_order'},
+ {type:'trigger',name:'material_catalog_insert'},
+ {type:'trigger',name:'material_catalog_update'},
+ {type:'trigger',name:'material_catalog_delete'},
+] as const satisfies readonly SchemaObject[];
+export const materialCatalogSchemaInstallation={
+ owner:'material-catalog',requires:[],prerequisites:[materialHeadsPrerequisite],install:materialCatalogSchema,
+} as const satisfies SchemaInstallation;
+function materialCatalogSchema(db:DatabaseSync){
+ db.exec(`CREATE TABLE IF NOT EXISTS material_catalog_generation(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL);
+        INSERT OR IGNORE INTO material_catalog_generation VALUES(1,0);
+        CREATE INDEX IF NOT EXISTS material_catalog_order ON material_heads(retired,COALESCE(last_at,first_at,updated_at) DESC,id DESC);
+        CREATE TRIGGER IF NOT EXISTS material_catalog_insert AFTER INSERT ON material_heads BEGIN UPDATE material_catalog_generation SET version=version+1; END;
+        CREATE TRIGGER IF NOT EXISTS material_catalog_update AFTER UPDATE ON material_heads BEGIN UPDATE material_catalog_generation SET version=version+1; END;
+        CREATE TRIGGER IF NOT EXISTS material_catalog_delete AFTER DELETE ON material_heads BEGIN UPDATE material_catalog_generation SET version=version+1; END;`);
+}
 
 const anchor=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:/-]+$/).refine(value=>!value.includes('://')&&!value.startsWith('/'),'Presentation anchors cannot be URLs or paths');
 const descriptor=z.object({id:anchor,kind:anchor,schemaVersion:z.number().int().positive(),label:z.string().min(1).max(120),card:anchor.optional(),detail:anchor.optional(),panels:z.array(anchor).max(16).optional(),actions:z.array(anchor).max(16).optional()}).strict();
@@ -27,18 +49,12 @@ export class MaterialCatalog {
   readonly registry=new MaterialCatalogRegistry();
   private secret=randomBytes(32);
   constructor(private materials:MaterialStore){}
-  private initialized=false;
   generation(){
     const db=this.materials.store.db;
-    if(!this.initialized){
-      db.exec(`CREATE TABLE IF NOT EXISTS material_catalog_generation(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL);
-        INSERT OR IGNORE INTO material_catalog_generation VALUES(1,0);
-        CREATE INDEX IF NOT EXISTS material_catalog_order ON material_heads(retired,COALESCE(last_at,first_at,updated_at) DESC,id DESC);
-        CREATE TRIGGER IF NOT EXISTS material_catalog_insert AFTER INSERT ON material_heads BEGIN UPDATE material_catalog_generation SET version=version+1; END;
-        CREATE TRIGGER IF NOT EXISTS material_catalog_update AFTER UPDATE ON material_heads BEGIN UPDATE material_catalog_generation SET version=version+1; END;
-        CREATE TRIGGER IF NOT EXISTS material_catalog_delete AFTER DELETE ON material_heads BEGIN UPDATE material_catalog_generation SET version=version+1; END;`);
-      this.initialized=true;
-    }
+    // Catalog activation stays lazy. Database facts, rather than an instance
+    // flag, let the same handle recover after a caller rolls back its first use.
+    if(!schemaObjectsExist(db,materialCatalogObjects)||!db.prepare('SELECT 1 FROM material_catalog_generation WHERE id=1').get())
+      installSchemaPlan(db,[materialCatalogSchemaInstallation]);
     return String(db.prepare('SELECT version FROM material_catalog_generation WHERE id=1').get()!.version);
   }
   private seal(value:unknown){const payload=Buffer.from(JSON.stringify(value)).toString('base64url');return payload+'.'+createHmac('sha256',this.secret).update(payload).digest('base64url');}
