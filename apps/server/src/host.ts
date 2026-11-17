@@ -59,7 +59,7 @@ import { join,relative,sep } from 'node:path';
 import { z } from 'zod';
 import {installAgentReadTools} from './plugins/agent-read-tools.js';
 import { repositoryRoot,serverConfigDomain,modelsConfigDomain,pluginsConfigDomain,dshConfigDomain,connectorsConfigDomain } from './config.js';
-import {contributeDomainRoutes} from './plugins/domain-routes.js';
+import {contributeDomainRoutes,collectSelectedFeatureRoutes} from './plugins/domain-routes.js';
 import type {ConfigurationPlatformOptions} from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
@@ -645,6 +645,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   await pluginControl.startBuilds();
   registerPluginControlHttp(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   app.get('/api/local-image-processing',async request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);return localImages.state();});
+  if(bootstrap.selectsFeature('mote.media'))contributeDomainRoutes(backendContext,{'mote.media':Object.freeze({mount:(app:FastifyInstance,scope:import('./features/index.js').FeatureScope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}})});
   const domainRoutes=backendContext.get('moteDomainRoutes')??{};
   const selected=(id:string)=>bootstrap.selectsFeature(id);
   const routes:FeatureRoute[]=[];
@@ -663,9 +664,9 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   if(selected('mote.coding'))routes.push(codingFeature);
   if(selected('mote.sources'))routes.push(withAgentTools(sourcesFeature({credential,evidenceReader,sources,store,materials,sourcePipelines})));
   if(selected('mote.models'))routes.push(domain('mote.models'));
-  if(selected('mote.processing'))routes.push(domain('mote.processing'));
+  if(selected('mote.processing'))routes.push(...collectSelectedFeatureRoutes(['mote.processing'],domainRoutes,[],id=>agentFeatures.dispose(id)));
   if(selected('mote.notes')&&bootstrap.selectsPlugin('notes-source'))routes.push(withAgentTools(notesFeature({assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture})));
-  if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}));
+  if(selected('mote.media'))routes.push(...collectSelectedFeatureRoutes(['mote.media'],domainRoutes,[],id=>agentFeatures.dispose(id)));
   if(selected('mote.owner-questions'))routes.push(domain('mote.owner-questions'));
   if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));

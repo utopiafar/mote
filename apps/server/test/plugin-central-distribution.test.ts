@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
+import {existsSync,mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {defaultDistribution,defaultFeatures,defaultPlugins,storageProvider} from '../src/distribution/default.js';
@@ -21,6 +21,9 @@ import {plugins as workPlugins} from '../src/assembly/work.js';
 import {plugins as importPlugins} from '../src/assembly/imports.js';
 import type {CentralDistribution,CentralDomainPlugin,FoundationProvider} from '../src/bootstrap.js';
 import {Store} from '../src/store.js';
+import {centralServices} from '../src/plugins/central-contracts.js';
+import {mediaAssetsServiceContribution} from '../src/plugins/media-assets-service.js';
+import {ocrAsrReadinessContribution} from '../src/plugins/ocr-asr-readiness.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {FUNASR_PINS} from '../src/funasr-contract.js';
 
@@ -133,6 +136,46 @@ test('[M] removing an ordinary business plugin leaves its feature unavailable, r
   const restored=await buildApp(config,{agent,backgroundWorker:false});t.after(()=>restored.app.close());
   assert.equal((await restored.app.inject({url:`/api/notes/${input.id}`,headers})).json().ocrText,input.text);
   await restored.app.close();
+});
+
+test('the default Host installs the selected media processing services and an omitted processing feature creates no exclusive schema',async t=>{
+ const selectedFixture=fixture(t),selected=await buildApp(selectedFixture.config,{agent,backgroundWorker:false});t.after(()=>selected.app.close());
+ assert.equal(selected.processingServices.port.phase,'active');
+ assert.ok(selected.workflows&&selected.processing);
+ assert.equal(selected.processing.view().settings.enabled,true);
+ assert.equal(selected.featureServices.mediaPreparation.phase,'active');
+ assert.equal(typeof selected.featureServices.mediaAssets.ready,'function');
+ for(const url of ['/api/media-preparation','/api/media-models','/api/processing','/api/perception'])assert.equal((await selected.app.inject({url,headers:selectedFixture.headers})).statusCode,200,url);
+ for(const selection of ['feature','plugin','media'] as const)await t.test(selection,async t=>{
+  const missingFixture=fixture(t),reduced:CentralDistribution={...defaultDistribution,
+    ...(selection==='feature'?{features:defaultFeatures.filter(id=>id!=='mote.processing')}:selection==='plugin'?{plugins:defaultPlugins.filter(plugin=>plugin.contribution.id!=='processing-services')}:{features:defaultFeatures.filter(id=>id!=='mote.media')})};
+  await assert.rejects(buildApp(missingFixture.config,{agent,backgroundWorker:false,distribution:reduced}),selection==='media'?/Media assets domain is not selected/:/Processing domain is not selected/);
+  assert.equal(existsSync(join(dirname(missingFixture.config.path),'media-models')),false,'an unselected media feature must not create its managed directory');
+  const reopened=new Store(dirname(missingFixture.config.path));
+  try{
+   for(const name of ['processing_jobs','media_model_intents','file_diarization_overrides','file_configuration_snapshots','file_processor_waits','file_summary_pages','file_semantic_calls','file_semantic_withdrawals','media_execution_calls','media_execution_instance','image_backfills','image_backfill_items','image_exclusions'])assert.equal(reopened.db.prepare('SELECT 1 FROM sqlite_master WHERE name=?').get(name),undefined,name);
+  }finally{reopened.close();}
+ });
+});
+
+test('selected media owners publish their declared service contracts to a real lease consumer',async t=>{
+ const {config}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});t.after(()=>node.app.close());
+ const assets=await node.bootstrap.acquireDomainService(mediaAssetsServiceContribution.id,centralServices.mediaAssetsRead);
+ const readiness=await node.bootstrap.acquireDomainService(ocrAsrReadinessContribution.id,centralServices.mediaReadiness);
+ try{
+  assert.equal(assets.value.status('ocr').role,'ocr');
+  assert.equal(readiness.value.phase,'active');
+ }finally{await assets.release();await readiness.release();}
+});
+
+test('published media service leases cannot revive after the selected owner closes',async t=>{
+ const {config}=fixture(t),node=await buildApp(config,{agent,backgroundWorker:false});t.after(async()=>{await node.app.close().catch(()=>{});});
+ const assets=await node.bootstrap.acquireDomainService(mediaAssetsServiceContribution.id,centralServices.mediaAssetsRead);
+ const readiness=await node.bootstrap.acquireDomainService(ocrAsrReadinessContribution.id,centralServices.mediaReadiness);
+ await node.app.close();
+ assert.throws(()=>assets.value.status('ocr'),{code:'stale_scope'});
+ assert.throws(()=>readiness.value.phase,{code:'stale_scope'});
+ await assets.release();await readiness.release();
 });
 
 test('[M] a missing required platform provider refuses startup before any app or resource is published',async t=>{
