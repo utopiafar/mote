@@ -1,4 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const fileSchemaInstallation={owner:'file',requires:['capture','source'],install:fileSchema} as const satisfies SchemaInstallation;
 
 /** Files own immutable versions, processing state and links to their evidence. */
 export function fileSchema(db:DatabaseSync){db.exec(`
