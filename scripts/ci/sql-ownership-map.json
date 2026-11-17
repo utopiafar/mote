@@ -309,6 +309,20 @@
    "file": "apps/server/src/plugin-surface-schema.ts"
   },
   {
+   "declaration": "delegationJournalSchemaInstallation",
+   "owner": "delegation",
+   "fn": "delegationJournalSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/delegation-schema.ts"
+  },
+  {
+   "declaration": "delegationSourceContextSchemaInstallation",
+   "owner": "delegation",
+   "fn": "delegationSourceContextSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/delegation-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -688,6 +702,46 @@
    "owner": "conversation",
    "file": "apps/server/src/conversation-schema.ts",
    "installer": "conversationSchemaInstallation"
+  },
+  "delegation_artifacts": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
+  },
+  "delegation_dependencies": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
+  },
+  "delegation_events": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
+  },
+  "delegation_payloads": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
+  },
+  "delegation_results": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
+  },
+  "delegation_source_context_dependencies": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationSourceContextSchemaInstallation"
+  },
+  "delegation_units": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
+  },
+  "delegation_works": {
+   "owner": "delegation",
+   "file": "apps/server/src/delegation-schema.ts",
+   "installer": "delegationJournalSchemaInstallation"
   },
   "developer_deliveries": {
    "owner": "developer-access",
