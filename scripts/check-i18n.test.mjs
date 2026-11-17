@@ -127,3 +127,31 @@ test('G2-06 a missing data-i18n attribute key fails the translation check',t=>{
  assert.equal(checked.exitCode,1);
  assert.match(errors.join('\n'),/Missing English translations/);
 });
+
+test('G2-07 comments and raw-text/RCDATA contents are not translated elements',t=>{
+ const keys=['真实标题','真实文本','真实占位'];
+ const root=fixture(t,{
+  enKeys:keys,
+  source:'export {};\n',
+  html:`<!doctype html>
+<html><head>
+<title><img alt="标题伪键" data-i18n-alt><span data-i18n>标题伪文本</span></title>
+</head><body>
+<!-- <img alt="注释伪键" data-i18n-alt><span data-i18n>注释伪文本</span> -->
+<script type="application/json">{"example":"<img alt='脚本伪键' data-i18n-alt><span data-i18n>脚本伪文本</span>"}</script>
+<style>.example::before { content: "<img alt='样式伪键' data-i18n-alt><span data-i18n>样式伪文本</span>"; }</style>
+<textarea><img alt="文本域伪键" data-i18n-alt><span data-i18n>文本域伪文本</span></textarea>
+<div title="真实标题" data-i18n-title></div>
+<span data-i18n>真实文本</span>
+<input placeholder="真实占位" data-i18n-placeholder>
+</body></html>`,
+ });
+ const result=scanI18n({root});
+ assert.deepEqual([...result.referenced].sort(),[...keys].sort());
+ assert.deepEqual(result.missing,[]);
+ assert.deepEqual(result.unused,[]);
+ const output=[],errors=[];
+ const checked=checkI18n({root,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ assert.equal(checked.exitCode,0,errors.join('\n'));
+ assert.match(output.join('\n'),/Unused messages: 0 \(warning only/);
+});

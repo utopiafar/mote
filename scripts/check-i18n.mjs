@@ -57,7 +57,21 @@ function decodeHtmlAttribute(value){
  });
 }
 
-/** Minimal tag scanner: quoted `>` stays inside an attribute value, as in authored HTML. */
+/** HTML parses these elements' contents as text, not as child elements. */
+const htmlRawTextElements=new Set(['script','style','textarea','title','xmp','iframe','noembed','noframes','noscript']);
+const htmlPlainTextElements=new Set(['plaintext']);
+
+function htmlEndTag(html,name,from){
+ const lower=html.toLowerCase(),needle=`</${name}`;
+ for(let at=lower.indexOf(needle,from);at>=0;at=lower.indexOf(needle,at+needle.length)){
+  const next=html[at+needle.length];
+  if(next===undefined||next==='>'||next==='/'||/\s/.test(next))return at;
+ }
+ return -1;
+}
+
+/** Minimal tag scanner: quoted `>` stays inside an attribute value, and raw-text/RCDATA
+ *  contents (plus comments) are skipped instead of being reinterpreted as markup. */
 function htmlStartTags(html){
  const tags=[];
  for(let cursor=0;cursor<html.length;){
@@ -75,7 +89,14 @@ function htmlStartTags(html){
    if(char==='>')break;
   }
   if(end>=html.length)break;
-  tags.push(html.slice(open,end+1));cursor=end+1;
+  const tag=html.slice(open,end+1),name=/^<\s*([^\s/>]+)/.exec(tag)?.[1].toLowerCase();
+  tags.push({tag,end});
+  cursor=end+1;
+  if(name&&htmlPlainTextElements.has(name)){cursor=html.length;break;}
+  if(name&&htmlRawTextElements.has(name)){
+   const close=htmlEndTag(html,name,cursor);
+   cursor=close<0?html.length:close;
+  }
  }
  return tags;
 }
@@ -128,12 +149,14 @@ export function scanI18n({
  }
 
  const html=readFileSync(join(root,htmlFile),'utf8');
- for(const m of html.matchAll(/<[^>]*data-i18n(?:\s|>)[^<]*|<[^>]*data-i18n>/g)){
-  const key=m[0].slice(m[0].indexOf('>')+1);if(!key)continue;check(key,'desktop HTML');referenced.add(key);
- }
- // Only marked attributes are translated; unrelated HTML text/attributes stay untranslated.
- for(const tag of htmlStartTags(html)){
+ // Only actual start tags count; comments and raw-text/RCDATA contents are not elements.
+ for(const {tag,end} of htmlStartTags(html)){
   const attributes=htmlAttributes(tag);
+  if(attributes.has('data-i18n')){
+   const next=html.indexOf('<',end+1);
+   const key=html.slice(end+1,next<0?html.length:next);
+   if(key){check(key,'desktop HTML');referenced.add(key);}
+  }
   for(const [marker,attribute] of Object.entries(htmlAttributeKeys)){
    if(!attributes.has(marker))continue;
    const key=attributes.get(attribute);
