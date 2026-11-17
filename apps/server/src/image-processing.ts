@@ -18,6 +18,7 @@ import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import {invalidateRetiredFileEvidence} from './evidence-dependencies.js';
 import {imageSettingsSchema,perceptionConfigurationSchema,defaultPerceptionConfiguration,type PerceptionConfiguration} from './perception-configuration.js';
 import type {ConfigService} from './config-service.js';
+import {perceptionConfigDomain} from './config.js';
 import {effectiveProcessorParameters} from './processor-parameters.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 import {requestLocalJson,isLoopback} from './local-http.js';
@@ -75,10 +76,10 @@ export class ImageProcessing {
  private previews=new Map<string,{expires:number;watermark:number;query:z.infer<typeof historicalSchema>;captureIds?:string[]}>();
  constructor(private store:Store,private processing:FileProcessing,engine:ExecutionEngine,private options:{modelAuthority?:ModelProcessingAuthority;understanding?:ImageUnderstanding;mediaAssets?:MediaAssets;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:PerceptionConfiguration;materials?:MaterialStore;probeOcr?:()=>Promise<boolean>}={}){
   this.media=mediaRuntimeSettings(options.media);this.processorAdmission=new ProcessorAdmission(store);
-  this.savedSettings=perceptionConfigurationSchema.parse(options.configService?.current<PerceptionConfiguration>('perception')??options.configuration??defaultPerceptionConfiguration());
+  this.savedSettings=options.configService?.current(perceptionConfigDomain)??perceptionConfigurationSchema.parse(options.configuration??defaultPerceptionConfiguration());
   this.publishSettings();
-  options.configService?.setHandler<PerceptionConfiguration>('perception',next=>{
-   const value=perceptionConfigurationSchema.parse(next),previous=structuredClone(this.savedSettings);
+  options.configService?.setHandler(perceptionConfigDomain,next=>{
+   const value=next,previous=structuredClone(this.savedSettings);
    // Permissions must remain old while any domain awaits resource preparation.
    return {apply:()=>{},publish:()=>this.publishConfiguration(value),rollback:()=>this.publishConfiguration(previous),complete:()=>this.completeSettings(value)};
   });

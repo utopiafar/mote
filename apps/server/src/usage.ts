@@ -12,42 +12,47 @@ export function estimateCost(tokens:TokenUsage|undefined,price:ModelPrice|undefi
   return (uncached*price.input+tokens.outputTokens*price.output+tokens.cacheReadTokens*price.cacheRead+tokens.cacheWriteTokens*price.cacheWrite)/1e6;
 }
 export type OperationUsage={operationId:string;wallDurationMs:number;modelDurationMs:number;total:UsageTotals;items:UsageReceipt[]};
-export class UsageLedger {
-  constructor(private readonly store:Store){
+class UsageBackend {
+  readonly #store:Store;
+  constructor(store:Store,check:()=>void){
+    this.#store=store;check();
     store.db.exec("CREATE TABLE IF NOT EXISTS model_usage(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS model_usage_created ON model_usage(created_at); CREATE INDEX IF NOT EXISTS model_usage_operation ON model_usage(json_extract(json,'$.attribution.operationId'),created_at,id); CREATE TABLE IF NOT EXISTS model_prices(id TEXT PRIMARY KEY,json TEXT NOT NULL)");
+    check();
     for(const row of store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){
       const receipt=JSON.parse(row.json) as UsageReceipt;
       // An interrupted process cannot confirm that its last cumulative sample was final.
       if(receipt.tokens?.measurement==='thread_cumulative')receipt.tokens={...receipt.tokens,complete:false};
-      this.save({...receipt,status:'failed',estimatedCost:null});
+      this.save({...receipt,status:'failed',estimatedCost:null},check);
     }
   }
-  prices():ModelPrice[]{return (this.store.db.prepare('SELECT json FROM model_prices ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
-  setPrice(body:unknown){const price=priceSchema.parse(body);this.store.db.prepare('INSERT INTO model_prices VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify([price.provider,price.model]),JSON.stringify(price));return price;}
-  private save(receipt:UsageReceipt){this.store.db.prepare('INSERT INTO model_usage VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(receipt.id,receipt.createdAt,JSON.stringify(receipt));}
-  start(provider:string,model:string,operation:string,attribution?:UsageAttribution){
-    const price=this.prices().find(p=>p.provider===provider&&p.model===model),started=Date.now();
+  prices(check:()=>void):ModelPrice[]{check();return (this.#store.db.prepare('SELECT json FROM model_prices ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
+  setPrice(check:()=>void,body:unknown){const price=priceSchema.parse(body);check();this.#store.db.prepare('INSERT INTO model_prices VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify([price.provider,price.model]),JSON.stringify(price));return price;}
+  private save(receipt:UsageReceipt,check:()=>void){const json=JSON.stringify(receipt);check();this.#store.db.prepare('INSERT INTO model_usage VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(receipt.id,receipt.createdAt,json);}
+  start(check:()=>void,provider:string,model:string,operation:string,attribution?:UsageAttribution){
+    const price=this.prices(check).find(p=>p.provider===provider&&p.model===model),started=Date.now();
     const receipt:UsageReceipt={id:randomUUID(),provider,model,operation,...(attribution?{attribution:structuredClone(attribution)}:{}),createdAt:new Date(started).toISOString(),durationMs:0,status:'running',estimatedCost:null,currency:price?.currency??'USD',...(price?{price:structuredClone(price)}:{})};
-    this.save(receipt);
+    this.save(receipt,check);
     return {
-      update:(tokens:TokenUsage)=>{receipt.tokens=structuredClone(tokens);receipt.durationMs=Date.now()-started;receipt.estimatedCost=estimateCost(tokens,price);this.save(receipt);},
-      finish:(status:'completed'|'failed')=>{receipt.status=status;receipt.durationMs=Date.now()-started;this.save(receipt);return structuredClone(receipt);},
+      update:(tokens:TokenUsage)=>{receipt.tokens=structuredClone(tokens);receipt.durationMs=Date.now()-started;receipt.estimatedCost=estimateCost(tokens,price);this.save(receipt,check);},
+      finish:(status:'completed'|'failed')=>{receipt.status=status;receipt.durationMs=Date.now()-started;this.save(receipt,check);return structuredClone(receipt);},
       /** Remove a receipt that never began a model operation. Admission waits and
        * pre-start refusals must not leave a running row or a failed usage entry. */
-      discard:()=>{if(receipt.status==='running')this.store.db.prepare('DELETE FROM model_usage WHERE id=?').run(receipt.id);},
+      discard:()=>{check();if(receipt.status==='running')this.#store.db.prepare('DELETE FROM model_usage WHERE id=?').run(receipt.id);},
     };
   }
   /** Fold every durable fragment receipt, including yielded coordinators,
    * delegated research, working context, writers and independent reviewers. */
-  operation(operationId:string,createdAt?:string,finishedAt?:string):OperationUsage{
-    const items=(this.store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.attribution.operationId')=? ORDER BY created_at,id").all(operationId) as {json:string}[]).map(row=>JSON.parse(row.json) as UsageReceipt);
+  operation(check:()=>void,operationId:string,createdAt?:string,finishedAt?:string):OperationUsage{
+    check();
+    const items=(this.#store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.attribution.operationId')=? ORDER BY created_at,id").all(operationId) as {json:string}[]).map(row=>JSON.parse(row.json) as UsageReceipt);
     const start=createdAt?Date.parse(createdAt):items.length?Math.min(...items.map(item=>Date.parse(item.createdAt))):Date.now();
     const end=finishedAt?Date.parse(finishedAt):items.length?Math.max(...items.map(item=>Date.parse(item.createdAt)+item.durationMs)):start;
     return {operationId,wallDurationMs:Math.max(0,end-start),modelDurationMs:items.reduce((sum,item)=>sum+item.durationMs,0),total:usageTotals(items),items};
   }
-  summary(from:string,to:string,timeZone:string,filters:UsageFilters={},groupBy:UsageGroupBy='agent',page=1,pageSize=20):UsageSummary {
+  summary(check:()=>void,from:string,to:string,timeZone:string,filters:UsageFilters={},groupBy:UsageGroupBy='agent',page=1,pageSize=20):UsageSummary {
+    check();
     const day=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'});
-    const scoped=(this.store.db.prepare('SELECT json FROM model_usage WHERE created_at>=? AND created_at<? ORDER BY created_at DESC,id DESC').all(new Date(Date.parse(from)-86400000).toISOString(),new Date(Date.parse(to)+172800000).toISOString()) as {json:string}[])
+    const scoped=(this.#store.db.prepare('SELECT json FROM model_usage WHERE created_at>=? AND created_at<? ORDER BY created_at DESC,id DESC').all(new Date(Date.parse(from)-86400000).toISOString(),new Date(Date.parse(to)+172800000).toISOString()) as {json:string}[])
       .map(r=>JSON.parse(r.json) as UsageReceipt).filter(r=>{const d=day.format(new Date(r.createdAt));return d>=from&&d<=to;});
     const facets:UsageSummary['facets']={agentId:[],moduleId:[],skillId:[]};
     for(const [field,dimension] of [['agentId','agent'],['moduleId','module'],['skillId','skill']] as const){
@@ -69,8 +74,40 @@ export class UsageLedger {
     }
     const grouped:UsageGroup[]=[...groups].map(([id,g])=>({id,label:g.label,filter:g.filter,...usageTotals(g.items)}));
     grouped.sort((a,b)=>b.totalTokens-a.totalTokens||b.runs-a.runs||a.id.localeCompare(b.id));
-    return {from,to,timeZone,groupBy,filters,total:usageTotals(rows),days:[...days].sort(([a],[b])=>b.localeCompare(a)).map(([date,items])=>({date,...usageTotals(items)})),groups:grouped,facets,items:rows.slice((page-1)*pageSize,page*pageSize),itemsTotal:rows.length,page,pageSize,prices:this.prices()};
+    return {from,to,timeZone,groupBy,filters,total:usageTotals(rows),days:[...days].sort(([a],[b])=>b.localeCompare(a)).map(([date,items])=>({date,...usageTotals(items)})),groups:grouped,facets,items:rows.slice((page-1)*pageSize,page*pageSize),itemsTotal:rows.length,page,pageSize,prices:this.prices(check)};
   }
+}
+
+/** A closed domain view. Deriving a view preserves its parent fence and shares
+ * the backend; only a Store-backed owner performs schema/startup recovery.
+ * ECMAScript private fields keep the Store/backend out of retained views. */
+export class UsageLedger {
+  readonly #backend:UsageBackend;
+  readonly #current:()=>void;
+  constructor(source:Store|UsageLedger,check:()=>void=()=>{}){
+    if(source instanceof UsageLedger){
+      source.#current();check();
+      this.#backend=source.#backend;
+      this.#current=()=>{source.#current();check();};
+    }else{
+      check();this.#current=check;this.#backend=new UsageBackend(source,check);
+    }
+  }
+  start(provider:string,model:string,operation:string,attribution?:UsageAttribution){
+    this.#current();const meter=this.#backend.start(this.#current,provider,model,operation,attribution);
+    return {
+      update:(tokens:TokenUsage)=>{this.#current();meter.update(tokens);},
+      finish:(status:'completed'|'failed')=>{this.#current();return meter.finish(status);},
+      discard:()=>{this.#current();meter.discard();},
+    };
+  }
+  operation(operationId:string,createdAt?:string,finishedAt?:string):OperationUsage{
+    this.#current();return this.#backend.operation(this.#current,operationId,createdAt,finishedAt);
+  }
+  summary(from:string,to:string,timeZone:string,filters:UsageFilters={},groupBy:UsageGroupBy='agent',page=1,pageSize=20):UsageSummary{
+    this.#current();return this.#backend.summary(this.#current,from,to,timeZone,filters,groupBy,page,pageSize);
+  }
+  setPrice(body:unknown){this.#current();return this.#backend.setPrice(this.#current,body);}
 }
 
 /** All views fold the same receipts; changing the grouping never duplicates costs. */

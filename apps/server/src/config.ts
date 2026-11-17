@@ -138,6 +138,13 @@ type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcur
 /** Existing buildApp fixtures can still supply a Config without writing configuration files. */
 export type Config = Omit<LoadedConfig, OptionalFields | 'dsh'> & Partial<Pick<LoadedConfig, OptionalFields | 'dsh'>> & { configService?: ConfigService };
 
+/** Registered schema identities shared with typed domain consumers. */
+export const actionsConfigDomain = Object.freeze({id:'actions',schema:actionsRuntimeSettingsSchema}) satisfies ConfigDomainReference<typeof actionsRuntimeSettingsSchema>;
+export const perceptionConfigDomain = Object.freeze({id:'perception',schema:perceptionConfigurationSchema}) satisfies ConfigDomainReference<typeof perceptionConfigurationSchema>;
+export const processingConfigDomain = Object.freeze({id:'processing',schema:processingConfigurationSchema}) satisfies ConfigDomainReference<typeof processingConfigurationSchema>;
+export const workflowConfigDomain = Object.freeze({id:'workflows',schema:workflowConfigurationSchema}) satisfies ConfigDomainReference<typeof workflowConfigurationSchema>;
+export const memoryConfigDomain = Object.freeze({id:'memory',schema:lifecycleSettingsSchema}) satisfies ConfigDomainReference<typeof lifecycleSettingsSchema>;
+
 /** One schema identity for Activity registration and its typed runtime consumer. */
 export const activityConfigDomain = Object.freeze({id:'activity',schema:activityConfigurationSchema}) satisfies ConfigDomainReference<typeof activityConfigurationSchema>;
 
@@ -197,14 +204,14 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
     ]),
     definition('plugins', pluginsConfigSchema, false, [{ path: 'importPythonPacks', effect: 'restart' }, { path: 'configuration', sensitive: true }]), definition('updates', updatesConfigSchema, true),
     definition('media', mediaConfigSchema, true, [{ path: 'workerToken', sensitive: true }]),
-    definition('processing', processingConfigurationSchema, false, [{ path: 'settings.apiKey', sensitive: true }, { path: 'settings.localWorkerApiKey', sensitive: true }, { path: 'policy.services.*.apiKey', sensitive: true }, { path: 'settings', effect: 'next-request' }, { path: 'policy', effect: 'next-request' }]),
-    definition('perception', perceptionConfigurationSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'concurrency', effect: 'next-admission' }, { path: 'providerRevision', effect: 'next-request' }, { path: 'allowExternalProcessing', effect: 'next-request' }, { path: 'allowQueryImages', effect: 'next-request' }, { path: 'understandingEnabled', effect: 'next-request' }]),
-    definition('memory', lifecycleSettingsSchema, false, Object.keys(lifecycleSettingsSchema.parse({})).map(path => ({ path, effect: 'next-admission' as const }))),
+    definition(processingConfigDomain.id, processingConfigDomain.schema, false, [{ path: 'settings.apiKey', sensitive: true }, { path: 'settings.localWorkerApiKey', sensitive: true }, { path: 'policy.services.*.apiKey', sensitive: true }, { path: 'settings', effect: 'next-request' }, { path: 'policy', effect: 'next-request' }]),
+    definition(perceptionConfigDomain.id, perceptionConfigDomain.schema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'concurrency', effect: 'next-admission' }, { path: 'providerRevision', effect: 'next-request' }, { path: 'allowExternalProcessing', effect: 'next-request' }, { path: 'allowQueryImages', effect: 'next-request' }, { path: 'understandingEnabled', effect: 'next-request' }]),
+    definition(memoryConfigDomain.id, memoryConfigDomain.schema, false, Object.keys(lifecycleSettingsSchema.parse({})).map(path => ({ path, effect: 'next-admission' as const }))),
     definition('conversations', conversationSettingsSchema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
-    definition('actions', actionsRuntimeSettingsSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
+    definition(actionsConfigDomain.id, actionsConfigDomain.schema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
     definition(activityConfigDomain.id, activityConfigDomain.schema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
     definition('notifications', notificationSettingsSchema, false, [{path:'enabled',effect:'immediate'},{path:'timeZone',effect:'immediate'},{path:'quietHours',effect:'immediate'},{path:'minIntervalMinutes',effect:'immediate'}]),
-    definition('workflows', workflowConfigurationSchema, false, Object.keys(workflowConfigurationSchema.parse({})).flatMap(path => [{ path: `${path}.enabled`, effect: 'immediate' as const }, { path: `${path}.concurrency`, effect: 'next-admission' as const }])),
+    definition(workflowConfigDomain.id, workflowConfigDomain.schema, false, Object.keys(workflowConfigurationSchema.parse({})).flatMap(path => [{ path: `${path}.enabled`, effect: 'immediate' as const }, { path: `${path}.concurrency`, effect: 'next-admission' as const }])),
   ];
 }
 export function registerBuiltinDomains(service: ConfigService, config?: Config): void {
