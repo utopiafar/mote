@@ -19,10 +19,11 @@ const gate=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>r
  * installation/imports and inference replaced by a generated Python boundary.
  * MediaPreparation, native receipts, model download/verification, owned process,
  * health, persisted plugin selection and stop remain production code. */
-export async function generatedLocalImageSetup(t:TestContext,runtime:'native'|'docker'='native'){
+export async function generatedLocalImageSetup(t:TestContext,runtime:'native'|'docker'='native',workerFixture?:{script:string;token:string},createModelAgent?:NonNullable<Parameters<typeof buildApp>[1]>['createModelAgent']){
  const directory=await mkdtemp(join(tmpdir(),'mote-generated-image-setup-')),prior=MEDIA_CATALOG['local-image'],bytes=Buffer.from('Generated optional image model bytes');
  const modelDirectory=join(directory,'models'),modelName='component/model.bin',digest=createHash('sha256').update(bytes).digest('hex');
- MEDIA_CATALOG['local-image']={version:'generated-image-setup',files:[{name:modelName,size:bytes.length,sha256:digest,official:'https://generated-image-setup.invalid/model'}]};
+ MEDIA_CATALOG['local-image']={version:'generated-image-setup',files:[{name:modelName,size:bytes.length,sha256:digest,official:'https://generated-image-setup.invalid/model'}],
+  ...(workerFixture?{models:{image:{id:LOCAL_IMAGE_MODEL.id,repository:'generated-img08',revision:'generated-img08-boundary',license:'generated-fixture',directory:'.'}}}:{})};
  const download=createServer((_request,response)=>response.writeHead(200,{'content-length':bytes.length}).end(bytes));
  let node:Awaited<ReturnType<typeof buildApp>>|undefined;
  const holds:ReturnType<typeof gate>[]=[];
@@ -31,9 +32,9 @@ export async function generatedLocalImageSetup(t:TestContext,runtime:'native'|'d
  const downloadEndpoint=`http://127.0.0.1:${(download.address() as {port:number}).port}`,originalFetch=fetch;
  t.mock.method(globalThis,'fetch',(input:Parameters<typeof fetch>[0],init?:RequestInit)=>String(input).startsWith('https://generated-image-setup.invalid/')?originalFetch(downloadEndpoint,init):originalFetch(input,init));
  const reservation=createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const port=(reservation.address() as {port:number}).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
- const python=execFileSync('python3',['-c','import sys;print(sys.executable)'],{encoding:'utf8'}).trim(),worker=join(directory,'generated-vlm.py'),pidPath=join(directory,'worker.pid');
+ const python=execFileSync('python3',['-c','import sys;print(sys.executable)'],{encoding:'utf8'}).trim(),worker=workerFixture?.script??join(directory,'generated-vlm.py'),pidPath=join(directory,'worker.pid');
  const scripts=fileURLToPath(new URL('../../../../scripts/',import.meta.url));
- await writeFile(worker,`import json,os,sys
+ if(!workerFixture)await writeFile(worker,`import json,os,sys
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 sys.path.insert(0,${JSON.stringify(scripts)})
@@ -73,12 +74,12 @@ ThreadingHTTPServer(('127.0.0.1',int(sys.argv[sys.argv.index('--port')+1])),Hand
    return Buffer.alloc(0);
   }});
  };
- const token='generated-image-setup-owner',workerToken='generated-image-setup-worker';
+ const token='generated-image-setup-owner',workerToken=workerFixture?.token??'generated-image-setup-worker';
  const config:Config={dataDir:join(directory,'data'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',configuration:{runtime},media:{modelDirectory,python:'python3',workerToken,ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',localImagePort:port,localImageEndpoint:`http://127.0.0.1:${port}/v1/interpret`}};
- node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare});
+ node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare,...(createModelAgent?{createModelAgent}:{})});
  return {directory,bytes,counts,token,workerToken,config,pidPath,endpoint:config.media!.localImageEndpoint!,supported:runtime==='native'&&mediaRoleSupported('local-image'),get node(){return node!;},installed:join(modelDirectory,'local-image',modelName),
   holdDependencies(){held=gate();holds.push(held);return {entered:entered.promise,release:held.release};},
-  async restart(){await node!.app.close();node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare});},
+  async restart(){await node!.app.close();node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare,...(createModelAgent?{createModelAgent}:{})});},
   async until(check:()=>boolean|Promise<boolean>,label:string){const deadline=Date.now()+10000;while(!await check()){assert.ok(Date.now()<deadline,label);await new Promise(resolve=>setTimeout(resolve,5));}},
   async request(path:string,init?:RequestInit){
    const response=await node!.app.inject({url:path,method:(init?.method??'GET') as 'GET'|'POST'|'PATCH',headers:{authorization:'Bearer '+token},...(init?.body?{payload:JSON.parse(String(init.body))}:{})});

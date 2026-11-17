@@ -396,7 +396,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
               const value=JSON.parse(payload.text) as Record<string,unknown>;
               payload={...payload,text:JSON.stringify({...value,budgetCoverage:{truncated:true,requestedLength:original.length??null,deliveredLength:args.length,instruction:'The host shortened this page for the model context budget. Follow the returned continuation to inspect more; the unread tail is not evidence.'}})};
             }
-            const payloadTokens=selectedRuntime.id===CODEX_RUNTIME_ID?estimateToolPayloadTokens(payload):estimateSerializedTokens(payload).tokens;
+            const payloadTokens=estimateToolPayloadTokens(payload);
             if(!controlled.has(call.name)&&payloadTokens>toolRemaining){
               staged.discard();
               return {payload:omitted(),confirm(){},discard(){}};
