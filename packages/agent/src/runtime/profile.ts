@@ -14,7 +14,7 @@ export interface RuntimeProfileConfiguration {
   readonly allowedHostCapabilities: RuntimeProfile['allowedHostCapabilities'];
   readonly launch: TrustedRuntimeLaunch;
 }
-/** C03/A10 supply explicit revisions and model capability facts around the current ModelProfile.
+/** Callers supply explicit revisions and model capability facts around the current ModelProfile.
  * Facts apply exactly to profile.settings.model; changing that ID requires fresh model facts/revision.
  * connectionFingerprint includes local-login identity when applicable; this module never reads auth files. */
 export interface ModelProfileInput {
@@ -28,7 +28,7 @@ export interface ResolvedRunSelection {
   readonly receipt: RunSelectionReceipt;
   readonly runtime: ResolvedRuntimeProfile<RuntimeProfileConfiguration>;
   readonly model: ModelProfileInput;
-  /** Exact A01 identity projection; obtaining a real model lease remains A09's responsibility. */
+  /** Exact Host-facing identity projection; obtaining a real model lease remains a runtime/model lifecycle concern. */
   readonly modelSelection: ModelSelection;
   /** Internal-only. Credentials/launch changes alter identity without serializing them publicly. */
   readonly runtimeFingerprint: string;
@@ -151,6 +151,6 @@ export function publicRunSelection(selection: ResolvedRunSelection): RunSelectio
 }
 
 /** New runs resolve from a committed snapshot; accepted runs keep the detached selection above.
- * Config prepare/activate/rollback belongs to A09/C03. Ordinary changes may drain old leases;
- * revoke/stop still invalidate current grants and the A01 final fence, even for an immutable selection. */
+ * Config prepare/activate/rollback belongs to the configuration service and model lifecycle. Ordinary changes may drain old leases;
+ * revoke/stop still invalidate current grants and the Host's final fence, even for an immutable selection. */
 export type RuntimeSettingsSnapshot = {readonly revision: number; readonly value: RuntimeSettings};

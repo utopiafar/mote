@@ -120,7 +120,7 @@ export function toolFingerprint(
 export type ToolParse = (args: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>>;
 export type ToolExecute = (args: Readonly<Record<string, unknown>>, port: HostSessionPort) => unknown | Promise<unknown>;
 
-/** Validated, deep-frozen descriptor owned by the parent A08 session. `parse`
+/** Validated, deep-frozen descriptor owned by the parent Host tool session. `parse`
  * and `execute` are local trusted code: they never enter a snapshot or a
  * discovery document, and `execute` receives only the parent-bound port. */
 export interface ToolDescriptor {
