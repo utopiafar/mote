@@ -44,6 +44,22 @@ test('production Python bytes decode through FileOutputRegistry and retain raw t
   assert.equal(payload.checkpoint.json,recognition.checkpoint.json);
 });
 
+test('CTC precision retains the Python producer raw pair and rejects invented bounds or substituted token text',()=>{
+  const response=parseFunasrResponse(bundle.ctcResponse,request);
+  assert.equal(response.status,'succeeded');assert.equal(response.operation,'recognize');
+  if(response.status!=='succeeded'||response.operation!=='recognize')throw Error('Expected complete generated CTC output');
+  const cp=parseFunasrArchive(response.checkpoint,request);
+  assert.deepEqual(cp.recognitionChunks[0],{vadIndex:0,text:'甲乙',tokens:[
+    {text:'甲',startMs:100,endMs:200},{text:'乙',startMs:700,endMs:900}]});
+  assert.deepEqual(cp.sentences.map(s=>s.precision),['ctc','ctc']);
+  for(const mutate of [
+    (value:FunasrCheckpoint)=>{delete value.recognitionChunks[0].tokens;},
+    (value:FunasrCheckpoint)=>{value.recognitionChunks[0].tokens![0].text='另一个词';},
+    (value:FunasrCheckpoint)=>{value.sentences[0].endMs=201;},
+    (value:FunasrCheckpoint)=>{value.recognitionChunks[0].tokens![0].startMs=-1;},
+  ]){const changed=structuredClone(cp);mutate(changed);assert.throws(()=>parseFunasrArchive(archive(changed),request));}
+});
+
 test('native CAM results project to current dialogue and Diarization without fake sherpa provenance or SPEAKER_None',()=>{
   const outputs=new FileOutputRegistry();outputs.register(funasrDialogueOutput);
   const dialogue=outputs.decode(funasrDialogueOutput,JSON.parse(bundle.diarizeResponse)).transcript;

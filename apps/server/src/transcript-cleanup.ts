@@ -8,7 +8,7 @@ export const TRANSCRIPT_CLEANUP={id:'mote.transcript-cleanup',version:'1'} as co
 export const transcriptCleanupSettingsSchema=z.object({enabled:z.boolean().default(true)}).strict();
 export type TranscriptCleanupSettings=z.infer<typeof transcriptCleanupSettingsSchema>;
 const digest=z.string().regex(/^[a-f0-9]{64}$/);
-const precisionSchema=z.array(z.enum(['sentence','vad','unknown'])).max(50000);
+const precisionSchema=z.array(z.enum(['sentence','vad','ctc','unknown'])).max(50000);
 export type TranscriptTimingPrecision=z.infer<typeof precisionSchema>[number];
 const cleanupResultSchema=z.object({
   transcript:transcriptSchema,

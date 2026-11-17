@@ -38,10 +38,10 @@ import re
 PROTOCOL = 'mote.funasr/1'
 SDK_VERSION = '1.4.25'
 SDK_WHEEL_SHA256 = '11ab7bd8c7574a94579b83a9f8fe837af46be6229462da5f3004a04a017cee75'
-PINS = {'recipe': {'id': 'mote.audio-dialogue', 'version': '3'},
-        'extract': {'id': 'audio.local-dialogue', 'version': '5'},
-        'diarize': {'id': 'audio.diarize', 'version': '4'},
-        'align': {'id': 'mote.funasr-align', 'version': '1'}}
+PINS = {'recipe': {'id': 'mote.audio-dialogue', 'version': '4'},
+        'extract': {'id': 'audio.local-dialogue', 'version': '6'},
+        'diarize': {'id': 'audio.diarize', 'version': '5'},
+        'align': {'id': 'mote.funasr-align', 'version': '2'}}
 MODEL_IDS = {'asr': 'FunAudioLLM/Fun-ASR-Nano-2512',
              'vad': 'iic/speech_fsmn_vad_zh-cn-16k-common-pytorch',
              'speaker': 'iic/speech_campplus_sv_zh-cn_16k-common',
@@ -179,7 +179,7 @@ def validate_checkpoint(cp, expected=None):
     array(cp['recognitionChunks'], LIMITS['vad'])
     require(len(cp['recognitionChunks']) == len(cp['vad']), 'Incomplete VAD recognition coverage')
     for index, chunk in enumerate(cp['recognitionChunks']):
-        obj(chunk, ['vadIndex', 'text'])
+        obj(chunk, ['vadIndex', 'text'] + (['tokens'] if 'tokens' in chunk else []))
         number(chunk['vadIndex'], 0, LIMITS['vad']-1, True)
         require(chunk['vadIndex'] == index, 'Incomplete VAD recognition coverage')
         text(chunk['text'], LIMITS['textBytes'])
@@ -188,9 +188,26 @@ def validate_checkpoint(cp, expected=None):
     for sentence in cp['sentences']:
         obj(sentence, ['startMs', 'endMs', 'text', 'precision'])
         text(sentence['text'], 32000, True, 8000)
-        require(sentence['precision'] in ('sentence', 'vad'), 'Unknown timing precision')
+        require(sentence['precision'] in ('sentence', 'vad', 'ctc'), 'Unknown timing precision')
     timeline(cp['vad'], cp['source']['durationMs'], True, True)
     timeline(cp['sentences'], cp['source']['durationMs'])
+    observed_ctc = set()
+    for index, chunk in enumerate(cp['recognitionChunks']):
+        if 'tokens' not in chunk:
+            continue
+        array(chunk['tokens'], LIMITS['sentences'])
+        for token in chunk['tokens']:
+            obj(token, ['startMs', 'endMs', 'text'])
+            text(token['text'], LIMITS['textBytes'])
+        timeline(chunk['tokens'], cp['source']['durationMs'])
+        region = cp['vad'][index]
+        require(all(region['startMs'] <= token['startMs'] <= token['endMs'] <= region['endMs']
+                    for token in chunk['tokens']), 'CTC token outside its recognition region')
+        require(''.join(token['text'] for token in chunk['tokens']) == chunk['text'], 'CTC tokens do not match final ASR text')
+        observed_ctc.update((token['startMs'], token['endMs']) for token in chunk['tokens'])
+    for sentence in cp['sentences']:
+        require(sentence['precision'] != 'ctc' or (sentence['startMs'], sentence['endMs']) in observed_ctc,
+                'CTC sentence has no archived token observation')
     require(bool(cp['text'].strip()) == bool(cp['sentences']), 'Text and sentence coverage disagree')
     def covered(time):
         lo, hi = 0, len(cp['vad'])
@@ -257,7 +274,8 @@ def checkpoint_from_sdk(source, identity, vad_result, sdk_result, recognized_chu
     chunks = []
     for index, chunk in enumerate(recognized_chunks):
         require(type(chunk) is dict and 'text' in chunk, 'SDK chunk text field required')
-        chunks.append({'vadIndex': index, 'text': chunk['text']})
+        chunks.append({'vadIndex': index, 'text': chunk['text'],
+                       **({'tokens': chunk['tokens']} if 'tokens' in chunk else {})})
     text(sdk_result['text'], LIMITS['textBytes'])
     if 'sentence_info' not in sdk_result:
         require(sdk_result['text'] == '' and not vad_result['value'], 'SDK sentence_info required')
@@ -268,7 +286,8 @@ def checkpoint_from_sdk(source, identity, vad_result, sdk_result, recognized_chu
         require(type(item) is dict and all(k in item for k in ('text', 'start', 'end')), 'SDK sentence text/start/end required')
         if 'sentence' in item:
             require(item['sentence'] == item['text'], 'Conflicting SDK sentence alias')
-        sentences.append({'startMs': item['start'], 'endMs': item['end'], 'text': item['text'], 'precision': precision})
+        sentences.append({'startMs': item['start'], 'endMs': item['end'], 'text': item['text'],
+                          'precision': item.get('precision', precision)})
     vad = []
     for item in vad_result['value']:
         require(type(item) in (list, tuple) and len(item) == 2, 'Invalid SDK VAD interval')
