@@ -80,7 +80,7 @@ export function imageMaterialProjection(store:Store,id:string):ImageMaterialProj
  const settings=store.db.prepare("SELECT value FROM settings WHERE key='perception-effective'").get();
  let originalAvailable=false;
  if(input.hash){
-  const original=input.adapter==='mote.capture-image'?store.db.prepare('SELECT blob_hash AS hash FROM captures WHERE id=?').get(id):store.db.prepare(`SELECT coalesce(v.object_hash,(SELECT object_hash FROM file_snapshot_inputs s WHERE s.capture_id=v.capture_id AND s.expires>?)) AS hash FROM file_versions v WHERE v.capture_id=?`).get(Date.now(),id);
+  const original=input.adapter==='mote.capture-image'?store.db.prepare('SELECT blob_hash AS hash FROM captures WHERE id=?').get(id):store.db.prepare(`SELECT coalesce(v.object_hash,(SELECT object_hash FROM file_snapshot_inputs s WHERE s.capture_id=v.capture_id)) AS hash FROM file_versions v WHERE v.capture_id=?`).get(id);
   if(original?.hash===input.hash)try{store.assets.get(input.hash);originalAvailable=true;}catch{/* Removed originals never become ready from a stale input hash. */}
  }
  return projectImageMaterial({input,products,jobs,originalAvailable,understandingEnabled:!settings||JSON.parse(String(settings.value)).understandingEnabled!==false});
