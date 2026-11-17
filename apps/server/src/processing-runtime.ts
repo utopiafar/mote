@@ -1,4 +1,6 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {processingRuntimeSchemaInstallation} from './processing-runtime-schema.js';
 import {MaterialConsumerRegistry} from './material-consumers.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep,type ExecutionState} from './execution-engine.js';
 import type {ProcessingJobView} from '@mote/shared';
@@ -61,19 +63,17 @@ export class ProcessingRuntime {
   constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;enabled?:boolean}>>={},private now=Date.now,engine:ExecutionEngine|undefined,private materials:MaterialStore|undefined,scope:HostScope,private configService?:ConfigService){
     scope.assertCurrent();
     this.policy=workflowConfigurationSchema.parse(configService?.current('workflows')??defaultWorkflowConfiguration(limits));
-    configService?.setHandler<WorkflowConfiguration>('workflows',next=>{const value=workflowConfigurationSchema.parse(next),previous=this.settings();return {apply:()=>{},publish:()=>{this.policy=structuredClone(value);},rollback:()=>{this.policy=structuredClone(previous);},complete:()=>this.completePolicy(value,previous)};});
     this.resources=new PluginResourceScope(undefined,'Processing runtime plugin scope disposal failed');
-    scope.defer(()=>this.resources.close());
     this.registry=new ContextProcessorRegistry(scope);this.consumers=new MaterialConsumerRegistry(scope);
+    installSchemaPlan(store.db,[processingRuntimeSchemaInstallation]);
+    // Publish runtime bindings only after the storage transaction succeeds.
+    configService?.setHandler<WorkflowConfiguration>('workflows',next=>{const value=workflowConfigurationSchema.parse(next),previous=this.settings();return {apply:()=>{},publish:()=>{this.policy=structuredClone(value);},rollback:()=>{this.policy=structuredClone(previous);},complete:()=>this.completePolicy(value,previous)};});
+    scope.defer(()=>this.resources.close());
     const services=scope.cordis.plugin((context:Context)=>{
       context.provide('moteContextProcessors',this.registry);context.provide('moteMaterialConsumers',this.consumers);
     });
     this.context=services.ctx;
     this.resources.retire(()=>services.dispose());
-    store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
-      CREATE INDEX IF NOT EXISTS processing_parent_grant ON processing_jobs(json_extract(json,'$.parentGrant.stepId'),json_extract(json,'$.config.generationContract'),coalesce(json_extract(json,'$.config.modelFingerprint'),''),id);
-      CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));`);
     if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.unregister.push(this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,

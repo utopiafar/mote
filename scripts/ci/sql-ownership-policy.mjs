@@ -30,6 +30,7 @@ export const installations={
  'memory-phase-outputs.ts':['memoryPhaseOutputsSchemaInstallation'],
  'plugins/plugin-control-store.ts':['pluginControlSchemaInstallation'],
  'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
+ 'processing-runtime-schema.ts':['processingRuntimeSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -80,9 +81,17 @@ export const consumers={
  'material-organizers.ts':'material',
 };
 
-/** These Task adapter methods belong to the formal runtime marker owner. The
- * older Task schema and other consumers in the same file remain pending. */
+/** Only reviewed methods inherit their registered owner. Dynamic Processing
+ * views and the older Task consumers in these same files remain pending. */
 export const consumerScopes={
+ 'processing-runtime.ts':{
+  'ProcessingRuntime.enqueue':'processing-runtime',
+  'ProcessingRuntime.completePolicy':'processing-runtime',
+  'ProcessingRuntime.job':'processing-runtime',
+  'ProcessingRuntime.project':'processing-runtime',
+  'ProcessingRuntime.tick':'processing-runtime',
+  'ProcessingRuntime.commit':'processing-runtime',
+ },
  'assistant-tasks.ts':{
   'AssistantTasks.currentBatch':'assistant-task-runtime',
   'AssistantTasks.continueSteering':'assistant-task-runtime',
@@ -92,6 +101,22 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {
+  from:'apps/server/src/processing-runtime.ts',
+  to:'execution_steps',
+  symbol:'fb446ea0f8c28fa81827000b98fc125b46a42ee90cbd3f8efd45ef906e2c1318',
+  scope:'ProcessingRuntime.completePolicy',
+  scopeFingerprint:'69f157a709dec4a604dc9226561c86ab0db39893239cd63974a66a1757111027',
+  reason:'Read only blocked Processing step IDs and owned lane metadata before retrying re-enabled work through ExecutionEngine.',
+ },
+ {
+  from:'apps/server/src/processing-runtime.ts',
+  to:'execution_steps',
+  symbol:'515703e003d897109e42addb2a958ca7b6b9250abfaa211d3bc906f49c7439ce',
+  scope:'ProcessingRuntime.tick',
+  scopeFingerprint:'4fe9dfe57084647a10a9117cbd3a69539952bf902ea7ce1312331632db58e585',
+  reason:'Read at most 1000 ready or expired-lease Processing step IDs before draining those IDs through ExecutionEngine.',
+ },
  {
   "from": "apps/server/src/memory-phase-outputs.ts",
   "to": "execution_steps",
@@ -307,7 +332,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','processingRuntimeSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",

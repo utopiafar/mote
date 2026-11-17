@@ -221,6 +221,13 @@
    "file": "apps/server/src/plugins/instance-state.ts"
   },
   {
+   "declaration": "processingRuntimeSchemaInstallation",
+   "owner": "processing-runtime",
+   "fn": "processingRuntimeSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/processing-runtime-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -910,6 +917,16 @@
    "owner": "plugin-instance-state",
    "file": "apps/server/src/plugins/instance-state.ts",
    "installer": "instanceStateSchemaInstallation"
+  },
+  "processing_dependencies": {
+   "owner": "processing-runtime",
+   "file": "apps/server/src/processing-runtime-schema.ts",
+   "installer": "processingRuntimeSchemaInstallation"
+  },
+  "processing_jobs": {
+   "owner": "processing-runtime",
+   "file": "apps/server/src/processing-runtime-schema.ts",
+   "installer": "processingRuntimeSchemaInstallation"
   },
   "query_runs": {
    "owner": "query-run-storage",
