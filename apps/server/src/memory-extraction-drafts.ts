@@ -1,17 +1,17 @@
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import type {QueryResult} from '@mote/shared';
 import type {Store} from './store.js';
 import {retainedMemoryReadReceipt} from './memory-read-context.js';
 
-/** Private, bounded stage output. Explicit recipes may share a validated product
- * with identical generation inputs; review/checkpoint identities stay separate.
- * Never indexed, served as evidence, or treated as a Memory verdict. */
-export class MemoryExtractionDrafts {
-  constructor(private store:Store,private maxBytes=8*1024*1024,private maxEntries=128){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS memory_extraction_drafts(
+export const memoryExtractionDraftsSchemaInstallation={owner:'memory-extraction-drafts',requires:[],prerequisites:[{owner:'memory',objects:[{type:'table',name:'memory_batches'},{type:'table',name:'memory_jobs'},{type:'table',name:'memory_batch_dependencies'}]}],install:memoryExtractionDraftsSchema} as const satisfies SchemaInstallation;
+
+function memoryExtractionDraftsSchema(db:DatabaseSync){
+  db.exec(`CREATE TABLE IF NOT EXISTS memory_extraction_drafts(
       batch_id TEXT PRIMARY KEY REFERENCES memory_batches(id) ON DELETE CASCADE,
       input_hash TEXT NOT NULL,json TEXT NOT NULL,created_at INTEGER NOT NULL,shared INTEGER NOT NULL DEFAULT 0);`);
-    store.db.exec(`CREATE INDEX IF NOT EXISTS memory_drafts_shared ON memory_extraction_drafts(input_hash) WHERE shared=1;
+    db.exec(`CREATE INDEX IF NOT EXISTS memory_drafts_shared ON memory_extraction_drafts(input_hash) WHERE shared=1;
       CREATE TRIGGER IF NOT EXISTS memory_draft_batch_terminal AFTER UPDATE OF json ON memory_batches
         WHEN json_extract(new.json,'$.status') IN ('completed','invalidated') BEGIN
         DELETE FROM memory_extraction_drafts WHERE batch_id=new.id AND (shared=0 OR json_extract(new.json,'$.status')='invalidated'); END;
@@ -20,6 +20,14 @@ export class MemoryExtractionDrafts {
       CREATE TRIGGER IF NOT EXISTS memory_draft_job_cancelled AFTER UPDATE OF json ON memory_jobs
         WHEN json_extract(new.json,'$.status')='cancelled' BEGIN
         DELETE FROM memory_extraction_drafts WHERE shared=0 AND batch_id IN (SELECT id FROM memory_batches WHERE job_id=new.id); END;`);
+}
+
+/** Private, bounded stage output. Explicit recipes may share a validated product
+ * with identical generation inputs; review/checkpoint identities stay separate.
+ * Never indexed, served as evidence, or treated as a Memory verdict. */
+export class MemoryExtractionDrafts {
+  constructor(private store:Store,private maxBytes=8*1024*1024,private maxEntries=128){
+    installSchemaPlan(store.db,[memoryExtractionDraftsSchemaInstallation]);
   }
   // Cancellation ends a consumer's work, not an already validated shared stage.
   // Other consumers still need their own admission, exact input hash and review.
