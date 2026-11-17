@@ -6,7 +6,7 @@ export interface QueryRequest {
   language?: import('@mote/shared/i18n').Locale;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;ownerAmendments?:{messageId:string;question:string}[];untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {imageEvidence?:unknown;queryWorkspace?:unknown;delegation?:unknown;memoryWork?:unknown;originatingSuggestion?:unknown;ownerClarificationReply?:unknown;ownerAmendments?:{messageId:string;question:string}[];ownerInstruction?:{messageId:string;question:string};untrustedMemoryDraft?:unknown;untrustedInterpretations?:string;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction'|'other';
   /** Host-selected procedure, never selected from captured text. */
   skill?: string;
@@ -19,9 +19,11 @@ export interface QueryRequest {
   /** Current derived context, including complete explicitly standing items.
    * It grants neither original citations, owner identity nor Action authority. */
   openingMemories?:{id:string;title:string;statement:string;uncertainty:string;contextPriority?:'standing';status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string;admission?:{scope:string;attribution:'user'|'third_party'|'observed'|'inferred'};validFrom?:string;validUntil?:string}[];
-  /** Host-only permission for one optional goal-only draft in the final
+  /** Host-only permission for one optional draft proposal in the final
    * answer. Model output never chooses the draft identity, scope or capability. */
   assistantDraft?: true;
+  /** Host-bound live owner message, never inferred from captured content. */
+  assistantCurrentInstruction?: true;
   after?: string;
   before?: string;
   deviceId?: string;

@@ -168,8 +168,8 @@ export interface AgentRuntimeRegistryStatus extends AgentRuntimeGenerationStatus
 
 /** The single owner of the Agent runtime generation: it builds wrapped
  * per-profile adapters, tracks prepared and retired model registries, and
- * drains every created adapter on close. A05 owns actual runtime services and
- * Host output; C04 remains the sole model admission/disclosure authority. */
+ * drains every created adapter on close. Each QueryAgent owns actual runtime services
+ * and Host output; request authorization remains the sole model admission/disclosure authority. */
 export class AgentRuntimeRegistry extends ReloadableAgent {
   private shuttingDown=false;
   private preparationTurn=Promise.resolve();

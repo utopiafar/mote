@@ -1,8 +1,8 @@
 /** Declarative plugin view runtime: renders a strictly-parsed component spec
- * bound to the U01 contribution descriptor. The spec carries only declared
+ * bound to the contribution descriptor contract. The spec carries only declared
  * components, field references and command IDs — never executable callbacks,
  * SQL or URLs. Commands fire only through the host's typed invoker, gated by
- * the U02 view lifetime so stale-generation results are dropped. */
+ * the shared view lifetime so stale-generation results are dropped. */
 import React from 'react';
 import { ViewLifetime } from '@mote/shared/plugin-view-lifetime';
 import { strictDataArray, strictDataObject, isToken, type UiContributionDescriptor } from '@mote/shared/plugin-ui';

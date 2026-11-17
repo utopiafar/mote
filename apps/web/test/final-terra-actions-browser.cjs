@@ -1,6 +1,6 @@
 require('../../../scripts/fixture-background.cjs');
 require('../../../scripts/fixture-language.cjs');
-/** Manually selected real Actions/H11 leg. This runner never installs a plugin,
+/** Manually selected real Actions missing-time information leg. This runner never installs a plugin,
  * seeds an action, claims an action, supplies a receipt, or retries a mutation.
  *
  * MOTE_UI_FINAL_LIVE=1, MOTE_FINAL_CONNECTION=<0600 root connection JSON>,
@@ -20,7 +20,7 @@ require('../../../scripts/fixture-language.cjs');
  * expectManaged defaults true; semantic uncertainty is never cleared here.
  * phase=receipt requires nativeResultPath from the real Android
  * FinalCalendarJourneyInstrumentedTest.executeSelected and optional
- * priorInformationReportPath for the pre-H11 proposal/model comparison.
+ * priorInformationReportPath for the proposal/model comparison before missing-time completion.
  *
  * Each phase starts a clean hidden browser and preserves Central for other legs.
  * Native CalendarProvider execution is exclusively performed by root's Android
