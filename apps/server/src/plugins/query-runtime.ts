@@ -127,7 +127,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         const prepared=prepareTaskContext({...input,assistantDraft:true});
         if(prepared.responseMode==='answer'&&Object.hasOwn((prepared.outputSchema.properties??{}) as Record<string,unknown>,'draft')){
           draftScope=scope;const operation=input.traceContext?.operationId,current=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
-          const live=current?.status==='running'&&current.question===input.question&&!current.attachments?.length&&assistantDrafts.capabilities().includes('assistant.task.start');
+          const live=current?.status==='running'&&current.question.trim()===input.question&&!current.attachments?.length&&assistantDrafts.capabilities().includes('assistant.task.start');
           input={...input,assistantDraft:true,...(live?{assistantCurrentInstruction:true}:{})};
         }
       }
@@ -273,13 +273,13 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       if(accounting)throw accounting;
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       const completedUsage=runState.mode==='host'?hostReceipt:undefined;
-      // A goal-only model proposal becomes a host-bound draft only inside this
+      // A semantic model proposal becomes a host-bound draft only inside this
       // ordinary conversation answer. The proposal itself is never persisted.
       const {draftProposal,...answerResult}=result as QueryResult & {draftProposal?:import('@mote/shared').AssistantDraftProposal};
       let draft:import('@mote/shared').AssistantDraft|undefined;
       if(draftProposal&&input.assistantDraft&&draftScope)try{
         const operation=input.traceContext?.operationId,message=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
-        const current=draftProposal.input==='current-instruction'&&input.assistantCurrentInstruction&&message?.status==='running'&&message.question===input.question;
+        const current=draftProposal.input==='current-instruction'&&input.assistantCurrentInstruction&&message?.status==='running'&&message.question.trim()===input.question;
         draft=assistantDrafts.issue({goal:draftProposal.goal,scope:draftScope,...(current?{currentInstruction:{requestId:currentInstructionRequestId(message)}}:{})});
       }catch{/* A malformed proposal cannot fail a valid answer. */}
       return {...answerResult,originalEvidenceDependencies,...(draft?{draft}:{}),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};

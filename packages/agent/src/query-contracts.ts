@@ -19,7 +19,7 @@ export interface QueryRequest {
   /** Current derived context, including complete explicitly standing items.
    * It grants neither original citations, owner identity nor Action authority. */
   openingMemories?:{id:string;title:string;statement:string;uncertainty:string;contextPriority?:'standing';status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string;admission?:{scope:string;attribution:'user'|'third_party'|'observed'|'inferred'};validFrom?:string;validUntil?:string}[];
-  /** Host-only permission for one optional goal-only draft in the final
+  /** Host-only permission for one optional draft proposal in the final
    * answer. Model output never chooses the draft identity, scope or capability. */
   assistantDraft?: true;
   /** Host-bound live owner message, never inferred from captured content. */

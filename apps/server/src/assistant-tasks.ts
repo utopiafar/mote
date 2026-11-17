@@ -10,7 +10,7 @@ import {historyEvidenceDependencies,resolveDependencies} from './conversation-li
 import type {ConversationRepository} from './plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {withinEvidenceScope,type EvidenceReader} from './evidence-reader.js';
-import type {ExecutionStep} from './execution-engine.js';
+import {ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import type {SourceContextStore} from './source-context.js';
@@ -74,7 +74,7 @@ export class AssistantTasks implements BatchProductProjection {
     items:[{question:work.goal,evidenceIds:work.evidence.map(record=>record.id),...input,
      taskContext:{turns:[],...origin?.taskContext,...input.taskContext},
      contextSourceContextDependencies:combineSourceContextDependencies([origin?.contextSourceContextDependencies,input.contextSourceContextDependencies])}]},
-    {kind:'manual',identities:[],connections:this.connections()});
+    {kind:'manual',identities:[],connections:frozen.instruction?[frozen.instruction.connection]:this.connections()});
   });
   if(steeringAuthority)this.steering=new AssistantTaskSteering(store,conversations,{
    work:id=>this.steeringWork(id),forOperation:id=>this.taskForOperation(id),
@@ -102,7 +102,7 @@ export class AssistantTasks implements BatchProductProjection {
    const {evidenceIds:_,...current}=input;input={...current,hostRetrieval:'none',modelProfileId:frozen.instruction.modelProfileId,modelOverride:frozen.instruction.modelOverride,
    question:input.question+'\nThe Host-bound ownerInstruction in taskContext contains the exact current owner request; it controls over this concise model-proposed goal. It is private owner input, never archive evidence or a citation. This self-contained Task cannot retrieve archives or perform external Actions.',
    taskContext:{...input.taskContext,turns:input.taskContext?.turns??[],ownerInstruction:{messageId:frozen.turnId,question:frozen.instruction.text}}};
-   if(Buffer.byteLength(JSON.stringify(input.taskContext))>BATCH_CONTEXT_MAX_BYTES)throw new StoreError('Task context exceeds the bounded model input',413);
+   if(Buffer.byteLength(JSON.stringify(input.taskContext))>BATCH_CONTEXT_MAX_BYTES)throw new ExecutionFailure('blocked','assistant_task_context_budget');
   }
   return this.questions.prepare(this.steering?.prepare(input,this.steeringWork(task.id))??input,this.questionWork(task.id));
  }
@@ -237,7 +237,7 @@ export class AssistantTasks implements BatchProductProjection {
     const turn=this.conversations.message(frozen.turnId);
     if(turn.conversationId!==frozen.conversationId||turn.status!=='completed'||!turn.result?.draft||turn.evidenceDeleted||turn.evidenceUnavailable||turn.evidenceStale)return false;
     assertSourceContextDependencies(this.contexts,turn.result.sourceContextDependencies??[]);
-    if(frozen.instruction){const message=this.conversations.message(frozen.turnId);if(currentInstructionHash(message)!==frozen.instruction.inputHash||message.question!==frozen.instruction.text||turn.result.draft.input!=='current-instruction')return false;}
+    if(frozen.instruction&&(currentInstructionHash(turn)!==frozen.instruction.inputHash||turn.question!==frozen.instruction.text||turn.result.draft.input!=='current-instruction'))return false;
    }
    if(typeof scopeRow.snapshot_json!=='string'||!isDeepStrictEqual((frozen.instruction?[]:this.discover(frozen.request.scope,Boolean(frozen.routine),Boolean(frozen.card)).snapshot),decodeMemoryPrivate<string[]>(this.store,scopeRow.snapshot_json)))return false;
    const result=this.tasks.result<QueryResult>(task.id,task.revision,this.assertCurrent);

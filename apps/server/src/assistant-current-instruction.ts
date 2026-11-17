@@ -3,7 +3,7 @@ import {conversationInputIdentity} from './conversations.js';
 import type {ModelConnection} from './background-model-authorization.js';
 import {sha256} from './store.js';
 
-/** Host-only origin in the existing encrypted Task input. This is owner text,
+/** Host-only origin in the existing private Task input. This is owner text,
  * not a capture, retrieval record, citation, source grant or Action authority. */
 export type CurrentInstructionOrigin={inputHash:string;text:string;modelProfileId:string;modelOverride:string;connection:ModelConnection};
 export type CurrentInstructionModel=Pick<CurrentInstructionOrigin,'modelProfileId'|'modelOverride'|'connection'>;

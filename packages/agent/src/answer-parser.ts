@@ -56,7 +56,7 @@ export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRec
   validateInlineCitations(value.answer, ids, records.keys());
   let draftProposal: AssistantDraftProposal | undefined;
   if (value.draft !== undefined) {
-    // A draft is a goal-only proposal. It never carries scope, identity,
+    // A draft is a semantic proposal. It never carries scope, identity,
     // revision, capability, task or action fields; those belong to the host.
     if (!options.draft)
       throw new AgentResponseError(

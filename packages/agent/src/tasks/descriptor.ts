@@ -24,10 +24,21 @@ export const ASSISTANT_DRAFT_OUTPUT_SCHEMA: Readonly<Record<string, unknown>> = 
   properties: {
     answer: {type: 'string'},
     citationIds: {type: 'array', items: {type: 'string'}},
-    draft: {type: ['object', 'null'], properties: {goal: {type: 'string'}, input: {type:'string',enum:['current-instruction']}}, required: ['goal'], additionalProperties: false},
+    draft: {type: ['object', 'null'], properties: {goal: {type: 'string'}}, required: ['goal'], additionalProperties: false},
   },
   required: ['answer', 'citationIds', 'draft'],
   additionalProperties: false,
+});
+
+/** Only the Host-bound current-owner variant permits this semantic selection.
+ * Each strict object requires every declared property; neither form grants an effect. */
+export const CURRENT_INSTRUCTION_OUTPUT_SCHEMA: Readonly<Record<string,unknown>> = Object.freeze({
+  ...ASSISTANT_DRAFT_OUTPUT_SCHEMA,
+  properties:{answer:{type:'string'},citationIds:{type:'array',items:{type:'string'}},draft:{anyOf:[
+    {type:'null'},
+    {type:'object',properties:{goal:{type:'string'}},required:['goal'],additionalProperties:false},
+    {type:'object',properties:{goal:{type:'string'},input:{type:'string',enum:['current-instruction']}},required:['goal','input'],additionalProperties:false},
+  ]}},
 });
 
 export interface SkillDescriptor {
