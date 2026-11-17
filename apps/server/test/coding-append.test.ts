@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {evidenceRefId} from '@mote/shared';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
@@ -24,7 +25,7 @@ const event=(i:number,text=`Generated Coding event ${i}. ${'x'.repeat(200)}`)=>(
 });
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-coding-append-')),store=new Store(directory),materials=new MaterialStore(store);
-  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated Coding',kind:'coding-agent',deviceId:'fixture-device',platform:'macos'});
   t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
   return {store,materials,runtime,sources};
@@ -218,7 +219,7 @@ test('one thousand generated Coding events form one complete searchable Material
 
 test('a second append after restart keeps pinned revisions and reuses the stable prefix',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-coding-reopen-'));
-  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));
   await runtime.ready;
   let sources=new SourceStore(store,runtime);
   sources.register({id:'coding',name:'Generated Coding',kind:'coding-agent',deviceId:'fixture-device',platform:'macos'});
@@ -231,7 +232,7 @@ test('a second append after restart keeps pinned revisions and reuses the stable
   const firstAnchors=materials.evidenceIds(first.ref);
   const prefix=firstAnchors[0]!,tail=firstAnchors.at(-1)!;
   await runtime.close();store.close();
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));
   await runtime.ready;sources=new SourceStore(store,runtime);
   const oldRead=SourceArchiveRawReader.prototype.read;let reads=0;
   SourceArchiveRawReader.prototype.read=async function(ref,request){reads++;return oldRead.call(this,ref,request);};

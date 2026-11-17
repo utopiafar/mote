@@ -1509,46 +1509,6 @@
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
   },
   {
-    "rule": "server-new-context",
-    "from": "apps/server/src/connectors/index.ts",
-    "to": "new Context(",
-    "kind": "runtime",
-    "symbol": "occurrence:1",
-    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
-  },
-  {
-    "rule": "server-new-context",
-    "from": "apps/server/src/file-processors.ts",
-    "to": "new Context(",
-    "kind": "runtime",
-    "symbol": "occurrence:1",
-    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
-  },
-  {
-    "rule": "server-new-context",
-    "from": "apps/server/src/host.ts",
-    "to": "new Context(",
-    "kind": "runtime",
-    "symbol": "occurrence:1",
-    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
-  },
-  {
-    "rule": "server-new-context",
-    "from": "apps/server/src/processing-runtime.ts",
-    "to": "new Context(",
-    "kind": "runtime",
-    "symbol": "occurrence:1",
-    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
-  },
-  {
-    "rule": "server-new-context",
-    "from": "apps/server/src/source-pipelines.ts",
-    "to": "new Context(",
-    "kind": "runtime",
-    "symbol": "occurrence:1",
-    "reason": "Existing server-owned Cordis root; the Cordis root unification removes this construction site."
-  },
-  {
     "rule": "server-plugins-no-store",
     "from": "apps/server/src/plugins/authorization-platform.ts",
     "to": "apps/server/src/store.ts",

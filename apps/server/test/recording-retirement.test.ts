@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -16,7 +17,7 @@ import {feishuTranscript} from '../src/connectors/recording-formats.js';
 
 function deferred(){let resolve!:()=>void;return {promise:new Promise<void>(done=>resolve=done),resolve};}
 for(const phase of ['account','discover','metadata','transcript','media'] as const)test(`recording close waits for an uncooperative ${phase} call before retiring its provider while shared siblings continue`,async t=>{
- const directory=await mkdtemp(join(tmpdir(),'mote-recording-retirement-')),store=new Store(directory),materials=new MaterialStore(store),engine=new ExecutionEngine(store),pipelines=new SourcePipelineRuntime(store,materials,[],undefined,engine);await pipelines.ready;
+ const directory=await mkdtemp(join(tmpdir(),'mote-recording-retirement-')),store=new Store(directory),materials=new MaterialStore(store),engine=new ExecutionEngine(store),pipelines=new SourcePipelineRuntime(store,materials,[],testScope(t),engine);await pipelines.ready;
  const sources=new SourceStore(store,pipelines),files=new FileStore(store,sources),entered=deferred(),held=deferred();let enabled=false,exited=false,retired=0,sibling=0;
  sources.capabilities.register('generated.recordings',{lifecycle:'continuous',discovery:'provider-list',listening:'polling',readOriginal:'explicit-provider-read',synchronization:'revisions',externalWrite:false});
  const wait=async(boundary:typeof phase)=>{if(enabled&&boundary===phase){entered.resolve();await held.promise;exited=true;}};

@@ -2,7 +2,7 @@ import {forgetRetiredConversationRoots} from './conversation-retention.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {z} from 'zod';
 import {MaterialMemoryWork,type MaterialMemoryRunner,type MaterialMemoryPlanner,type MemoryWorkProposal,type MemoryWorkCandidate} from './material-memory-work.js';
-import {Context,type Plugin} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host';
 import type {SourceConnection,SourceItem} from '@mote/shared';
 import {materialId,type CodingArchiveSnapshot,type MaterialAppendDraft,type MaterialDraft,type MaterialStore} from './materials.js';
@@ -72,16 +72,20 @@ export class SourcePipelineRuntime {
   readonly ready:Promise<void>;
   private productConsumer?:{observeProducts:(ref:string,bindingIds:readonly string[])=>void};
   setProductConsumer(consumer:{observeProducts:(ref:string,bindingIds:readonly string[])=>void}){this.productConsumer=consumer;}
-  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],scope?:HostScope,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork,handlers?:Pick<ExecutionEngine,'register'>){
+  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],scope:HostScope,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork,handlers?:Pick<ExecutionEngine,'register'>){
+    scope.assertCurrent();
     this.resources=new PluginResourceScope(undefined,'Source pipeline plugin scope disposal failed');
     this.registry=new SourcePipelineRegistry(scope);this.recipes=new SourceRecipeExecutor(scope);
-    this.context=scope?.cordis.root??new Context();
-    if(!scope)this.resources.retire(()=>this.context.fiber.dispose());
-    if(scope)scope.defer(()=>this.resources.close());
-    const provide=(name:string,value:unknown)=>{const remove=this.context.provide(name,value);this.resources.retire(()=>remove());};
+    scope.defer(()=>this.resources.close());
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
     materials.bindIndexEngine(this.engine);
-    this.archive=new SourceArchive(store);provide('moteSourcePipelines',this.registry);provide('moteSourceRecipes',this.recipes);provide('moteMaterialCatalog',materials.catalog.registry);
+    this.archive=new SourceArchive(store);
+    // Ready children publish ports while the owning domain is still preparing.
+    const services=scope.cordis.plugin((context:Context)=>{
+      context.provide('moteSourcePipelines',this.registry);context.provide('moteSourceRecipes',this.recipes);context.provide('moteMaterialCatalog',materials.catalog.registry);
+    });
+    this.context=services.ctx;
+    this.resources.retire(()=>services.dispose());
     store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL,storage TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,memory_trigger TEXT NOT NULL,
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
@@ -97,7 +101,7 @@ export class SourcePipelineRuntime {
       this.resources.defer(()=>fiber.dispose());
       await this.resources.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Source pipeline plugin initialization and disposal failed',{cause:error});}throw error;}})());
     };
-    this.ready=(async()=>{try{for(const plugin of plugins)await install(plugin);}finally{this.initializing=false;}})();
+    this.ready=(async()=>{try{await services;for(const plugin of plugins)await install(plugin);}finally{this.initializing=false;}})();
   }
   private assertAccepting(){if(!this.accepting||this.stopped||this.initializing)throw new StoreError('Source pipeline unavailable',409);}
   start(){if(this.stopped)throw new StoreError('Source pipeline unavailable',409);this.accepting=true;}

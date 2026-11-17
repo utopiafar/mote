@@ -123,5 +123,3 @@ export class MemoryStrategies {
 /** Consumer-facing registry surface. A plugin activation fences registration
  * after quiesce; reads keep serving already pinned work. */
 export type MemoryStrategiesPort=Pick<MemoryStrategies,'registerExtraction'|'registerReview'|'registerRecipe'|'registerIntegration'|'registerIntegrationRecipe'|'resolve'|'resolvePinned'|'resolveIntegration'|'resolvePinnedIntegration'|'list'|'listIntegrations'>;
-
-declare module '@deepseek-ai/cordis' {interface Context {moteMemoryStrategies:MemoryStrategies;}}

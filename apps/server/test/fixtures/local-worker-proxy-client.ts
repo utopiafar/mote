@@ -1,3 +1,4 @@
+import {createTestScope} from './plugin-scope.js';
 // A fresh Node process must configure its global proxy agents at startup.
 import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
@@ -21,7 +22,8 @@ const body=(bytes:Buffer)=>(async function*(){yield bytes.subarray(0,3);yield by
 const provider=new HttpTranscriptionProvider(),input=()=>({body:body(audio),sizeBytes:audio.length,mimeType:'audio/wav',settings,maxAudioMs:2000,signal:AbortSignal.timeout(5000)});
 assert.equal((await provider.transcribe({...input(),localOnly:true})).segments[0].text,'Generated speech');
 assert.equal((await provider.transcribe({...input(),localOnly:false})).segments[0].text,'Generated speech');
-const runtime=new FileProcessorRuntime();await runtime.ready;
+const owner=createTestScope();
+const runtime=new FileProcessorRuntime(undefined,undefined,undefined,undefined,owner.scope);await runtime.ready;
 try{
   const processorInput=(bytes:Buffer,mimeType:string):ProcessorInput=>({file:{id:'generated-id',title:'Generated fixture',mimeType,sizeBytes:bytes.length,sha256:sha256(bytes)},settings,maxAudioMs:2000,signal:AbortSignal.timeout(5000),recognition:native.recognition.checkpoint,readOriginal:()=>body(bytes)});
   const response=parseFunasrResponse(await runtime.registry.get('audio.diarize').process(processorInput(audio,'audio/wav')));
@@ -29,5 +31,5 @@ try{
   const diarization=projectFunasrDiarization(parseFunasrArchive(response.checkpoint),response.diarization);assert.equal(diarization.observedSpeakers,1);
   const ocr=await runtime.registry.get('image.http').process(processorInput(image,'image/png')) as {durationMs:number};assert.equal(ocr.durationMs,0);
   const health=await requestLocalJson(endpoint+'/health',{headers:{Authorization:'Bearer '+apiKey},signal:AbortSignal.timeout(5000),limit:4096}) as {execution:string};assert.equal(health.execution,'local');
-}finally{await runtime.close();}
+}finally{await runtime.close();await owner.close();}
 console.log('passed');

@@ -63,12 +63,15 @@ object HttpJson {
             }
             TransferRequestGuard.check()
             val code = connection.responseCode
+            TransferRequestGuard.check()
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.use { input ->
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(8192)
                 while (true) {
+                    TransferRequestGuard.check()
                     val count = input.read(buffer)
+                    TransferRequestGuard.check()
                     if (count < 0) break
                     require(output.size() + count <= maxResponseBytes) { MoteI18n.text("响应超过大小限制") }
                     output.write(buffer, 0, count)
@@ -76,6 +79,7 @@ object HttpJson {
                 output.toString("UTF-8")
             }
             val value = response?.let { runCatching { JSONObject(it) }.getOrNull() }
+            TransferRequestGuard.check()
             // External connector authorization failures do not invalidate the node login.
             rejectUnauthorized(code, url, token, value?.optString("error"))
             return code to value

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -65,7 +66,7 @@ test('a real SourcePipeline output enters the ledger and the planner consumes th
   const f=profile(t);
   const open=async()=>{
     const materials=new MaterialStore(f.store),engine=new ExecutionEngine(f.store),entry=await install(f.host,f.store,materials);
-    const runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],undefined,engine,entry.work);
+    const runtime=new SourcePipelineRuntime(f.store,materials,[codingSourcePlugin],testScope(t),engine,entry.work);
     runtime.quiesce();await runtime.ready;runtime.start();
     const sources=new SourceStore(f.store,runtime);sources.register({id:'generated-coding',name:'Generated coding',kind:'coding-agent',deviceId:'generated-device',platform:'macos'});
     runtime.configure('generated-coding',{settleSeconds:0});

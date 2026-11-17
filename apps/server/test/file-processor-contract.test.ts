@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -63,8 +64,8 @@ test('a duplicate processor contribution fails atomically and never replaces the
  assert.throws(()=>registry.get('fixture.contribution'),/unavailable/);
 });
 
-test('the default local recording capability installs the current recipe and native outputs together and removes retired speaker choices',async()=>{
- const runtime=new FileProcessorRuntime();try{await runtime.ready;
+test('the default local recording capability installs the current recipe and native outputs together and removes retired speaker choices',async(t)=>{
+ const runtime=new FileProcessorRuntime(undefined,undefined,undefined,undefined,testScope(t));try{await runtime.ready;
   const audio=runtime.registry.get('audio.local-dialogue'),diarize=runtime.registry.get('audio.diarize');
   assert.equal(audio.name,'本地多人录音');assert.equal(audio.version,FUNASR_PINS.extract.version);assert.equal(diarize.version,FUNASR_PINS.diarize.version);
   assert.deepEqual(defaultFileRecipe(audio),FUNASR_PINS.recipe);assert.deepEqual(defaultFileOutput(audio),{id:funasrTranscriptOutput.id,version:funasrTranscriptOutput.version});
@@ -76,8 +77,8 @@ test('the default local recording capability installs the current recipe and nat
  }finally{await runtime.close();}
 });
 
-test('a native output conflict rolls back the whole default processor and recipe contribution',async()=>{
- const runtime=new FileProcessorRuntime(undefined,[],[],undefined,undefined,{builtinContributions:false});await runtime.ready;
+test('a native output conflict rolls back the whole default processor and recipe contribution',async(t)=>{
+ const runtime=new FileProcessorRuntime(undefined,[],[],undefined,testScope(t),{builtinContributions:false});await runtime.ready;
  const remove=runtime.outputs.register(funasrDialogueOutput);try{
   assert.throws(()=>runtime.installContributions(),/Duplicate file output/);assert.deepEqual(runtime.registry.list(),[]);assert.deepEqual(runtime.recipes.list(),{recipes:[],stages:[]});
   assert.deepEqual(runtime.outputs.list(),[{id:funasrDialogueOutput.id,version:funasrDialogueOutput.version,kind:'dialogue'}]);

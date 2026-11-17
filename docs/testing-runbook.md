@@ -27,6 +27,16 @@ node --import tsx apps/android/test-fixtures/central-kotlin-contract.ts --all-un
 
 The runner selects `CentralProducerContractTest`, forces only the Gradle test task to execute, and rejects skipped contract cases. It verifies partial upload recovery, lost final ACK recovery, exact revision/ID and original bytes, current ingress requirements, permission failures, forgotten originals and late responses after session invalidation. It also runs the production meeting archive transfer through a real local journal rename failure after Central's exact ACK: pending state and WAV bytes survive, restart consumes `begin.ack`, and part/commit requests each remain at one. A JDK HTTP adapter replaces the unavailable Android transport runtime; this establishes actual Kotlin use-case consumption, not `HttpJson`'s Android clock/meter, native permissions, background workers, physical-device behavior or model quality. Running other JVM unit selections without this runner skips the producer-dependent class.
 
+## Android local content readback contract
+
+With the same built libraries, Node SQLite ABI, JDK and SDK prerequisites:
+
+```sh
+node --import tsx apps/android/test-fixtures/storage-readback-contract.ts
+```
+
+This small generated-data contract runs the actual `CaptureRecordsActivity` and `MeetingRecordingActivity`, Library plugin Host, stores, native `HttpJson`/image/stream readers and a private real Central. Only application-wide capture/worker startup, OS key protection and the selected SAF destination provider are substituted in Robolectric. It covers owner confirmation, note/JPEG/WAV release and readback, reopened lightweight stores, exact WAV integrity before destination opening, Host withdrawal, an unobserved A→B→A, offline/sign-out, original-origin mismatch and Central deletion. The same Gradle invocation runs the focused queue/meeting release units, including shared images, ZIP anti-resurrection, held/unknown inputs and real unlink/final-rename failures. It rejects skipped contract cases and closes its temporary server/profile; no device, native capture or model is used.
+
 ## Android advanced Web contract
 
 With the same built libraries, Node SQLite ABI, JDK and SDK prerequisites, run:

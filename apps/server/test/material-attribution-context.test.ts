@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -69,7 +70,7 @@ test('source prose, document declarations and draft context cannot grant owner a
 });
 
 test('correction invalidates existing processing products and rejects late processor commits',async t=>{
-  const {materials,store,draft}=await fixture(t),first=materials.publish(draft),runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:true}},Date.now,undefined,materials);
+  const {materials,store,draft}=await fixture(t),first=materials.publish(draft),runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:true}},Date.now,undefined,materials,testScope(t));
   t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.context',version:'1',lane:'semantic',async process(input){assert.equal(input.materials[0].material.attributionContext?.ownerRelation,'unknown');return [{kind:'generated',text:'Generated result',metadata:{}}];}});
   const job=runtime.enqueue([{name:'read',processor:'fixture.context',materialInputs:[{ref:first.ref}]}]).read;await runtime.tick();
@@ -115,7 +116,7 @@ test('context correction does not revive invalidated material evidence pending r
 
 
 test('raw processing observations carry trusted context and corrections fence raw jobs and artifacts',async t=>{
-  const {materials,store,draft,receipt}=await fixture(t),first=materials.publish(draft),runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:true}},Date.now,undefined,materials);
+  const {materials,store,draft,receipt}=await fixture(t),first=materials.publish(draft),runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:true}},Date.now,undefined,materials,testScope(t));
   t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.raw-context',version:'1',lane:'semantic',async process(input){assert.equal(input.observations[0].attributionContext?.ownerRelation,'unknown');return [{kind:'generated',text:'Generated raw result',metadata:{}}];}});
   const job=runtime.enqueue([{name:'read',processor:'fixture.raw-context',inputs:[receipt.id]}]).read;await runtime.tick();
@@ -133,7 +134,7 @@ test('artifact retrieval exposes bounded per-original attribution contexts',asyn
   for(let i=1;i<4;i++){const externalId='related-'+i,received=await sources.upsert('fixture',{...item,externalId,text:'Generated related '+i});ids.push(received.id);
     const material=materials.publish({...draft,id:materialId('fixture',externalId),origin:{sourceId:'fixture',externalId},members:[{id:received.id,kind:'capture',ref:'capture:'+received.id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated related '+i,memberIds:[received.id]}]});
     materials.correctContext(material.id,material.revision,i===1?'owner':'third_party');}
-  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);t.after(()=>runtime.close());
+  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.multi-context',version:'1',lane:'semantic',async process(){return [{kind:'generated',text:'Generated linked content',metadata:{}}];}});
   const job=runtime.enqueue([{name:'read',processor:'fixture.multi-context',inputs:ids}]).read;await runtime.tick();
   const output=store.archive.get(runtime.view().jobs.find(j=>j.id===job)!.outputs[0])!,artifact=reader.artifact(formatArtifactRef(output.id,output.revision))!;
@@ -143,7 +144,7 @@ test('artifact retrieval exposes bounded per-original attribution contexts',asyn
 
 test('source declaration reset retains a version fence against unknown-owner-unknown late results',async t=>{
   const {materials,store,sources,draft,receipt}=await fixture(t);materials.publish(draft);
-  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);t.after(()=>runtime.close());
+  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.reset-race',version:'1',lane:'semantic',async process(){sources.update('fixture',{ownerRelation:'owner'});sources.update('fixture',{ownerRelation:null});return [{kind:'generated',text:'Obsolete default-context result',metadata:{}}];}});
   const job=runtime.enqueue([{name:'read',processor:'fixture.reset-race',inputs:[receipt.id]}]).read;await runtime.tick();
   assert.deepEqual(runtime.view().jobs.find(j=>j.id===job)?.outputs,[]);const context=materials.get(draft.id)!.attributionContext!;
@@ -167,7 +168,7 @@ test('shared originals reuse identical context and expose bounded complete linea
   assert.deepEqual(changed.materialDeclarations?.items,conflict.materialDeclarations?.items);assert.notEqual(changed.materialDeclarations?.digest,conflict.materialDeclarations?.digest);
   const reset=materials.correctContext(hidden.id,hiddenOverride.revision,null),resetContext=materials.contextForEvidence(raw);
   assert.equal(materials.read(reset.ref).material.attributionContext?.ownerRelation,'third_party');assert.notEqual(resetContext.materialDeclarations?.digest,changed.materialDeclarations?.digest);
-  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);t.after(()=>runtime.close());
+  const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.shared-context-race',version:'1',lane:'semantic',async process(input){assert.equal(input.observations[0].attributionContext?.materialDeclarations?.total,35);materials.correctContext(hidden.id,reset.revision,'owner');return [{kind:'generated',text:'Stale shared-original interpretation',metadata:{}}];}});
   const job=runtime.enqueue([{name:'read',processor:'fixture.shared-context-race',inputs:[receipt.id]}]).read;await runtime.tick();
   assert.deepEqual(runtime.view().jobs.find(j=>j.id===job)?.outputs,[]);
@@ -243,7 +244,7 @@ test('source default correction stales raw semantic claims even before a Materia
 
 
 test('source correction before any Material withdraws generic semantic products and their downstream excerpt results',async t=>{
- const {store,materials,sources,receipt}=await fixture(t),reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials),runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials);
+ const {store,materials,sources,receipt}=await fixture(t),reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials),runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t));
  t.after(()=>runtime.close());
  const excerpt=await sources.upsert('fixture',{externalId:'generated-transcript-excerpt',revision:'1',observedAt:'2026-10-01T01:00:00Z',kind:'file',layer:'original',text:'Generated verbatim transcript',document:{contentRole:'transcript',timeBasis:'unknown'}});
  store.db.prepare('INSERT INTO file_evidence_links VALUES(?,?)').run(receipt.id,excerpt.id);

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {readAgentCredential} from './login-fixture.js';
 import {test} from 'node:test';
@@ -29,12 +30,12 @@ async function fixture(t:any){
  }};
  const analyses:any[]=[];let waitAnalysis:(()=>Promise<void>)|undefined;const provider={transcribe:async(input:any)=>{calls.push(input);return {durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Synthetic offline dialogue'}]};}};
  const options={plugins:[plugin,aliasPlugin],analyze:async(records:any[],prompt:string,settings:any)=>{analyses.push({settings,prompt});if(waitAnalysis)await waitAnalysis();return {answer:prompt===TURN_GROUP_PROMPT?JSON.stringify({groups:[[0]]}):'Synthetic summary',citations:[{id:records[0].id}]};}};
- let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
+ let processing=new FileProcessing(testScope(t),files,provider,undefined,options);await processing.runtime.ready;
  const initial=processing.view();for(const profile of initial.policy.profiles)if(profile.processorId==='audio.local-dialogue')profile.processorId='fixture.dialogue';processing.update({revision:initial.revision,settings:initial.settings,policy:initial.policy});
  const save=(policy:any=processing.view().policy,settings:any={})=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,...settings},policy});
  async function upload(name:string,mime='audio/wav',sourceId='phone',layer:'original'|'reference'='original',revision='1',previousRevision:string|null=null){const bytes=Buffer.from('Generated fixture '+name),manifest:FileRevision={sourceId,previousRevision,item:{externalId:name,revision,observedAt:new Date().toISOString(),title:name,kind:'file',layer,text:'',mimeType:mime,deleted:false},relativePath:name,sizeBytes:bytes.length,...(layer==='original'?{sha256:sha256(bytes)}:{})};if(layer==='reference')return (await files.revision(manifest,()=>{})).id;const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});return (await files.commit(session.uploadId,()=>{})).id;}
  t.after(async()=>{await processing.close();store.close();rmSync(dir,{force:true,recursive:true});});
- return {dir,store,files,calls,analyses,save,upload,holdAnalysis(wait:()=>Promise<void>){waitAnalysis=wait;},get processing(){return processing;},async restart(){const configuration=processing.configurationSnapshot();await processing.close();processing=new FileProcessing(files,provider,undefined,{...options,configuration});await processing.runtime.ready;}};
+ return {dir,store,files,calls,analyses,save,upload,holdAnalysis(wait:()=>Promise<void>){waitAnalysis=wait;},get processing(){return processing;},async restart(){const configuration=processing.configurationSnapshot();await processing.close();processing=new FileProcessing(testScope(t),files,provider,undefined,{...options,configuration});await processing.runtime.ready;}};
 }
 function customPolicy(f:Awaited<ReturnType<typeof fixture>>):FilePolicy{
  const policy=f.processing.view().policy as FilePolicy;
@@ -42,8 +43,8 @@ function customPolicy(f:Awaited<ReturnType<typeof fixture>>):FilePolicy{
  policy.rules.find(r=>r.type==='audio/*')!.profileId='two';policy.rules.push({sourceId:'phone',type:'audio/*',profileId:'four'});return policy;
 }
 
-test('current local policy accepts CAM++ count ranges and the cleanup switch while rejecting newly selected retired speaker processors',async()=>{
- const runtime=new FileProcessorRuntime();await runtime.ready;try{
+test('current local policy accepts CAM++ count ranges and the cleanup switch while rejecting newly selected retired speaker processors',async(t)=>{
+ const runtime=new FileProcessorRuntime(undefined,undefined,undefined,undefined,testScope(t));await runtime.ready;try{
   const policy=createDefaultFilePolicy(runtime.registry,'http://127.0.0.1:9009/transcribe'),profile=policy.profiles.find(p=>p.processorId==='audio.local-dialogue')!;
   assert.equal(profile.parameters.deduplicate,true);profile.parameters={speakerCount:null,speakerMin:2,speakerMax:4,deduplicate:false,semanticTurns:false};
   const parsed=parseFilePolicy(policy,policy,runtime.registry);assert.deepEqual(parsed.profiles.find(p=>p.id===profile.id)!.parameters,profile.parameters);
