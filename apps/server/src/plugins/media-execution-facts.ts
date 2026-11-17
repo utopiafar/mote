@@ -1,6 +1,8 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {requestLocalJson,isLoopback} from '../local-http.js';
+import {installSchemaPlan} from '../schema-installation.js';
+import {mediaExecutionCallsSchemaInstallation} from '../file-processing-schema.js';
 import {sha256,StoreError} from '../store.js';
 import type {ExecutionStep} from '../execution-engine.js';
 import type {FileStore} from '../files.js';
@@ -18,9 +20,7 @@ const view=(row:Row):MediaExecutionCall=>({requestId:row.request_id,scope:row.sc
 export class MediaExecutionCalls {
  private nonce:string;
  constructor(private store:Store){
-  store.db.exec(`CREATE TABLE IF NOT EXISTS media_execution_instance(id INTEGER PRIMARY KEY CHECK(id=1),nonce TEXT NOT NULL);
-   CREATE TABLE IF NOT EXISTS media_execution_calls(request_id TEXT PRIMARY KEY,scope TEXT NOT NULL,capture_id TEXT NOT NULL,step_id TEXT NOT NULL,input TEXT NOT NULL,generation TEXT NOT NULL,configuration TEXT NOT NULL,stage TEXT NOT NULL,issued_attempt INTEGER NOT NULL,supported INTEGER NOT NULL DEFAULT -1,fact TEXT,state TEXT NOT NULL DEFAULT 'issued');
-   CREATE INDEX IF NOT EXISTS media_execution_pending ON media_execution_calls(state);`);
+  installSchemaPlan(store.db,[mediaExecutionCallsSchemaInstallation]);
   store.registerStorage('media-processing',{
     media_execution_calls:'length(CAST(input AS BLOB))+coalesce(length(CAST(fact AS BLOB)),0)+1024',
     media_execution_instance:'length(CAST(nonce AS BLOB))+128',

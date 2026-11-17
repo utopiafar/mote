@@ -49,6 +49,78 @@
    "file": "apps/server/src/file-schema.ts"
   },
   {
+   "declaration": "fileProcessingMediaIntentsSchemaInstallation",
+   "owner": "file",
+   "fn": "fileProcessingMediaIntentsSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "fileDiarizationOverridesSchemaInstallation",
+   "owner": "file",
+   "fn": "fileDiarizationOverridesSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "fileConfigurationSnapshotsSchemaInstallation",
+   "owner": "file",
+   "fn": "fileConfigurationSnapshotsSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "fileProcessorWaitsSchemaInstallation",
+   "owner": "file",
+   "fn": "fileProcessorWaitsSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "fileSummaryPagesSchemaInstallation",
+   "owner": "file",
+   "fn": "fileSummaryPagesSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "fileSemanticWithdrawalsSchemaInstallation",
+   "owner": "file",
+   "fn": "fileSemanticWithdrawalsSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "mediaExecutionCallsSchemaInstallation",
+   "owner": "file",
+   "fn": "mediaExecutionCallsSchema",
+   "file": "apps/server/src/file-processing-schema.ts"
+  },
+  {
+   "declaration": "importUploadsSchemaInstallation",
+   "owner": "import",
+   "fn": "importUploadsSchema",
+   "file": "apps/server/src/import-schema.ts"
+  },
+  {
+   "declaration": "importAttributionSchemaInstallation",
+   "owner": "import",
+   "fn": "importAttributionSchema",
+   "file": "apps/server/src/import-schema.ts"
+  },
+  {
+   "declaration": "importIntakeOverridesSchemaInstallation",
+   "owner": "import",
+   "fn": "importIntakeOverridesSchema",
+   "file": "apps/server/src/import-schema.ts"
+  },
+  {
+   "declaration": "importJobsSchemaInstallation",
+   "owner": "import",
+   "fn": "importJobsSchema",
+   "file": "apps/server/src/import-schema.ts"
+  },
+  {
+   "declaration": "importCreateRequestsSchemaInstallation",
+   "owner": "import",
+   "fn": "importCreateRequestsSchema",
+   "file": "apps/server/src/import-schema.ts"
+  },
+  {
    "declaration": "memoryStorageSchemaInstallation",
    "owner": "memory",
    "fn": "memoryStorageSchema",
@@ -858,6 +930,11 @@
    "file": "apps/server/src/capture-schema.ts",
    "installer": "captureProjectionSchemaInstallation"
   },
+  "capture_import_declarations": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importAttributionSchemaInstallation"
+  },
   "capture_ocr_receipts": {
    "owner": "capture",
    "file": "apps/server/src/capture-schema.ts",
@@ -1033,6 +1110,16 @@
    "file": "apps/server/src/file-schema.ts",
    "installer": "fileSchemaInstallation"
   },
+  "file_configuration_snapshots": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileConfigurationSnapshotsSchemaInstallation"
+  },
+  "file_diarization_overrides": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileDiarizationOverridesSchemaInstallation"
+  },
   "file_evidence_links": {
    "owner": "file",
    "file": "apps/server/src/file-schema.ts",
@@ -1063,10 +1150,25 @@
    "file": "apps/server/src/file-schema.ts",
    "installer": "fileSchemaInstallation"
   },
+  "file_processor_waits": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileProcessorWaitsSchemaInstallation"
+  },
   "file_reviews": {
    "owner": "file",
    "file": "apps/server/src/file-schema.ts",
    "installer": "fileSchemaInstallation"
+  },
+  "file_semantic_calls": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileSemanticWithdrawalsSchemaInstallation"
+  },
+  "file_semantic_withdrawals": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileSemanticWithdrawalsSchemaInstallation"
   },
   "file_snapshot_index": {
    "owner": "file",
@@ -1087,6 +1189,11 @@
    "owner": "file",
    "file": "apps/server/src/file-schema.ts",
    "installer": "fileSchemaInstallation"
+  },
+  "file_summary_pages": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileSummaryPagesSchemaInstallation"
   },
   "file_upload_scopes": {
    "owner": "file",
@@ -1112,6 +1219,36 @@
    "owner": "gmail-sync",
    "file": "apps/server/src/connectors/gmail-state.ts",
    "installer": "gmailStateSchemaInstallation"
+  },
+  "image_intake_overrides": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importIntakeOverridesSchemaInstallation"
+  },
+  "import_create_requests": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importCreateRequestsSchemaInstallation"
+  },
+  "import_jobs": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importJobsSchemaInstallation"
+  },
+  "import_owner_declarations": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importAttributionSchemaInstallation"
+  },
+  "import_upload_parts": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importUploadsSchemaInstallation"
+  },
+  "import_uploads": {
+   "owner": "import",
+   "file": "apps/server/src/import-schema.ts",
+   "installer": "importUploadsSchemaInstallation"
   },
   "insight_runs": {
    "owner": "insight-runs",
@@ -1237,6 +1374,21 @@
    "owner": "mcp-import",
    "file": "apps/server/src/connectors/mcp-import-state.ts",
    "installer": "mcpStateSchemaInstallation"
+  },
+  "media_execution_calls": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "mediaExecutionCallsSchemaInstallation"
+  },
+  "media_execution_instance": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "mediaExecutionCallsSchemaInstallation"
+  },
+  "media_model_intents": {
+   "owner": "file",
+   "file": "apps/server/src/file-processing-schema.ts",
+   "installer": "fileProcessingMediaIntentsSchemaInstallation"
   },
   "memories": {
    "owner": "memory",

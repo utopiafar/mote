@@ -21,6 +21,8 @@ import type {Plugin} from '@deepseek-ai/cordis';
 import type {HostScope} from '@mote/plugin-host';
 import {FileStore} from './files.js';
 import {StoreError,sha256} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {fileProcessingMediaIntentsSchemaInstallation,fileDiarizationOverridesSchemaInstallation,fileConfigurationSnapshotsSchemaInstallation,fileProcessorWaitsSchemaInstallation,fileSummaryPagesSchemaInstallation,fileSemanticWithdrawalsSchemaInstallation} from './file-processing-schema.js';
 import {FileProcessorRuntime,isLoopback,mediaModelConnection,type FileProcessor,type TranscriptionProvider,type ProcessorInput,type MediaRequestIdentity} from './file-processors.js';
 import {MediaExecutionCalls,readMediaExecutionFact,eraseMediaExecutionFact,type MediaExecutionCall,type MediaStage} from './plugins/media-execution-facts.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
@@ -73,20 +75,21 @@ export class FileProcessing {
   private unregister:Array<()=>Promise<void>>=[];
   constructor(scope:HostScope,readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{modelAuthority?:ModelProcessingAuthority;executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;plugins?:Plugin[];modules?:string[];builtinContributions?:boolean;dialogueCleanup?:FileDialogueCleanup;analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2])=>{settings:ModelSettings;identity:ModelAgentIdentity};analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets;mediaPreparation?:Pick<MediaPreparation,'preparing'>;media?:Partial<MediaRuntimeSettings>;configService?:ConfigService;configuration?:ProcessingConfiguration;contextForEvidence?:(record:CaptureRecord)=>AttributionContext}={}){
     this.media=mediaRuntimeSettings(options.media);
-    files.store.db.exec('CREATE TABLE IF NOT EXISTS media_model_intents(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,intent_id TEXT NOT NULL,PRIMARY KEY(capture_id,phase))');
+    installSchemaPlan(files.store.db,[fileProcessingMediaIntentsSchemaInstallation]);
     this.processorAdmission=new ProcessorAdmission(files.store);
     this.mediaCalls=new MediaExecutionCalls(files.store);
     installEvidenceDependencies(files.store);
-    files.store.db.exec('CREATE TABLE IF NOT EXISTS file_diarization_overrides(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE,json TEXT NOT NULL)');
+    installSchemaPlan(files.store.db,[fileDiarizationOverridesSchemaInstallation]);
     this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,scope,{builtinContributions:options.builtinContributions,dialogueCleanup:options.dialogueCleanup});
     const initial=options.configService?.current(processingConfigDomain)??processingConfigurationSchema.parse(options.configuration??defaultProcessingConfiguration(this.media));
     this.saved={revision:options.configService?String(options.configService.revision):'initial',...initial};
     this.publishImagePolicy();
-    files.store.db.exec("CREATE TABLE IF NOT EXISTS file_configuration_snapshots(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(capture_id,fingerprint))");
-    files.store.db.exec("CREATE TABLE IF NOT EXISTS file_processor_waits(resource_key TEXT PRIMARY KEY,capture_id TEXT NOT NULL,token TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('running','unknown'))); UPDATE file_processor_waits SET state='unknown' WHERE state='running'");
+    installSchemaPlan(files.store.db,[fileConfigurationSnapshotsSchemaInstallation]);
+    installSchemaPlan(files.store.db,[fileProcessorWaitsSchemaInstallation]);
+    files.store.db.exec("UPDATE file_processor_waits SET state='unknown' WHERE state='running'");
 
-    files.store.db.exec('CREATE TABLE IF NOT EXISTS file_summary_pages(capture_id TEXT NOT NULL REFERENCES file_versions(capture_id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,json TEXT NOT NULL,PRIMARY KEY(capture_id,fingerprint))');
-    files.store.db.exec('CREATE TABLE IF NOT EXISTS file_semantic_withdrawals(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE); CREATE TABLE IF NOT EXISTS file_semantic_calls(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE)');
+    installSchemaPlan(files.store.db,[fileSummaryPagesSchemaInstallation]);
+    installSchemaPlan(files.store.db,[fileSemanticWithdrawalsSchemaInstallation]);
     this.engine=options.executor??new ExecutionEngine(files.store);this.owned=!options.executor;
     files.processingReceiptCurrent=(input,phase)=>this.validInput(input,phase);
     files.snapshotInputResupplied=id=>{if(this.closing||this.stopping)return;if(this.imageControl?.owns(id))this.imageControl.prepare();else this.enqueue(id,'pipeline');};
