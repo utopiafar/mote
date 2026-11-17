@@ -72,4 +72,3 @@ for(const nested of [false,true])test(`a failed Memory activation preserves pre-
  if(nested){store.db.exec("INSERT INTO generated_outer VALUES('after'); COMMIT");assert.equal(store.db.prepare('SELECT count(*) n FROM generated_outer').get()!.n,2);}
  store.db.exec('DROP VIEW memory_catalog');new MemoryStore(store);assert.deepEqual(store.db.prepare('SELECT * FROM memory_deletions').all(),data);
 });
-

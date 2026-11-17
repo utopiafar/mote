@@ -56,7 +56,7 @@ export class MemoryStore {
   constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){
     let deletions:MemoryDeletions|undefined;
     installSchemaPlan(store.db,[{...memorySearchSchemaInstallation,install:db=>{
-      // Keep C24's existing activation and trigger creation order, while the
+      // Initialize the deletion ledger before search triggers, while the
       // common plan checks external facts before either collaborator writes.
       deletions=openMemoryDeletions(store,{records:{read:ids=>this.readEvidence([...ids])}});
       memorySearchSchemaInstallation.install(db);
