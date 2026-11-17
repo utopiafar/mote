@@ -19,6 +19,7 @@ import {SourcePipelineRuntime} from '../apps/server/src/source-pipelines.js';
 import {registerMemoryDelegation} from '../apps/server/src/memory-delegation.js';
 import {buildApp} from '../apps/server/src/app.js';
 import type {Config} from '../apps/server/src/config.js';
+import {createTestScope} from '../apps/server/test/fixtures/plugin-scope.js';
 
 assert.equal(process.env.MOTE_PLANNING_CODEX_LIVE,'1','Opt in with MOTE_PLANNING_CODEX_LIVE=1');
 const directory=await mkdtemp(join(tmpdir(),'mote-planning-codex-live-')),started=Date.now();
@@ -28,7 +29,8 @@ const save=()=>writeFile(reportPath,JSON.stringify(report,null,2)+'\n',{mode:0o6
 const progress=(stage:string,data:Record<string,unknown>={})=>console.log(JSON.stringify({stage,...data}));
 const traces:{type:string;tool?:string;payload?:any}[]=[];
 const agent=createAgent({provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'high',agentTimeoutMs:300000,codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME},reader:{search:async()=>[],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]}});
-const store=new Store(join(directory,'planning')),sources=new SourceStore(store),materials=new MaterialStore(store),memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),engine=new ExecutionEngine(store),work=new MaterialMemoryWork(store,materials),runtime=new DelegationRuntime(store,engine),sourcePipelines=new SourcePipelineRuntime(store,materials,[],undefined,engine,work);
+const sourceOwner=createTestScope();
+const store=new Store(join(directory,'planning')),sources=new SourceStore(store),materials=new MaterialStore(store),memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id)),engine=new ExecutionEngine(store),work=new MaterialMemoryWork(store,materials),runtime=new DelegationRuntime(store,engine),sourcePipelines=new SourcePipelineRuntime(store,materials,[],sourceOwner.scope,engine,work);
 const pipeline=new MemoryPipeline({store,memories,executor:engine,requireAdmission:true,admission:{automaticAllowed:job=>work.authorized(job),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:()=>['material'],materialAllowedForMemory:()=>true},models:{configured:()=>true,model:()=>model},phases:{query:async()=>{throw Error('The large-catalog scenario only validates planning; product execution belongs to the HTTP scenario');}}});
 const adapter=registerMemoryDelegation({runtime,pipeline,work,sourcePipelines,query:async input=>{
  const call={phase:'planning',startedAt:new Date().toISOString(),status:'running',durationMs:0};report.calls.push(call);progress('model-start',{call:report.calls.length,phase:call.phase});
@@ -82,4 +84,4 @@ try{
  const before=report.calls.length;await node!.app.close();node=undefined;await openHttp();await node!.sourcePipelines.drainMemory(node!.memoryPipeline,true);await node!.delegation.tick();assert.equal(report.calls.length,before);assert.deepEqual(node!.memoryPipeline.list().map(job=>job.id).sort(),jobIds);assert.equal((await request('GET','/api/operations?state=running')).items.length,0);
  report.scenarios.push({name:'http-source-memory-review-restart',originals:4,jobs:jobs.length,independentlyReviewed:true,checkpointCount,noReplay:true});report.status='passed';progress('accepted',{scenarios:report.scenarios,modelCalls:report.calls.length});
 }catch(error){report.status='failed';report.failure=error instanceof Error?error.message:String(error);process.exitCode=1;progress('failed',{failure:report.failure});}
-finally{clearTimeout(timeout);report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-started;await save();await node?.app.close();await agent.close();await runtime.close();await engine.close();await adapter.close();await pipeline.close();await sourcePipelines.close();store.close();await rm(directory,{recursive:true,force:true});}
+finally{clearTimeout(timeout);report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-started;await save();await node?.app.close();await agent.close();await runtime.close();await engine.close();await adapter.close();await pipeline.close();await sourcePipelines.close();await sourceOwner.close();store.close();await rm(directory,{recursive:true,force:true});}

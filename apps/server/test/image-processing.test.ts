@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,7 +39,7 @@ import {perceptionSchema} from '../src/perception-schema.js';
 
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-unified-images-')),store=new Store(directory),materials=new MaterialStore(store);let clock=Date.now();const memoryWork=new MaterialMemoryWork(store,materials,()=>clock,()=>true);
- const sources=new SourceStore(store,undefined,memoryWork.inputs),files=new FileStore(store,sources),archived=new ArchivedFileStore(store),engine=new ExecutionEngine(store),processing=new FileProcessing(files,undefined,undefined,{executor:engine});await processing.runtime.ready;
+ const sources=new SourceStore(store,undefined,memoryWork.inputs),files=new FileStore(store,sources),archived=new ArchivedFileStore(store),engine=new ExecutionEngine(store),processing=new FileProcessing(testScope(t),files,undefined,undefined,{executor:engine});await processing.runtime.ready;
  let ocrCalls=0,visualCalls=0,empty=false,failVisual=false;
  processing.runtime.registry.get('image.http').process=async()=>{ocrCalls++;return {durationMs:0,segments:empty?[]:[{startMs:0,endMs:0,text:'Generated third-party article: I resigned.'}]};};
  const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,memoryWork);
@@ -773,7 +774,7 @@ test('an image with empty OCR and no interpretation falls back to its metadata, 
 });
 
 async function screenshotOcrFixture(t:import('node:test').TestContext,options:{managed?:boolean;probeOcr?:()=>Promise<boolean>}={}){
- const directory=mkdtempSync(join(tmpdir(),'mote-screenshot-ocr-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),engine=new ExecutionEngine(store),processing=new FileProcessing(files,undefined,undefined,{executor:engine});
+ const directory=mkdtempSync(join(tmpdir(),'mote-screenshot-ocr-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources),engine=new ExecutionEngine(store),processing=new FileProcessing(testScope(t),files,undefined,undefined,{executor:engine});
  await processing.runtime.ready;
  new ArchivedFileStore(store);
  const assets=options.managed?new MediaAssets(join(directory,'models')):undefined;
@@ -792,7 +793,7 @@ test('managed media uses the injected startup snapshot and keeps worker credenti
  const directory=mkdtempSync(join(tmpdir(),'mote-media-config-')),store=new Store(directory);
  const media={ocrEndpoint:'http://127.0.0.1:19910/ocr',asrEndpoint:'http://127.0.0.1:19909/transcribe',workerToken:'generated-worker-credential'};
  const assets=new MediaAssets(join(directory,'models')),files=new FileStore(store,new SourceStore(store));
- const processing=new FileProcessing(files,undefined,undefined,{mediaAssets:assets,media});
+ const processing=new FileProcessing(testScope(t),files,undefined,undefined,{mediaAssets:assets,media});
  t.after(async()=>{await processing.close();store.close();rmSync(directory,{recursive:true,force:true});});
  await processing.runtime.ready;
  assert.equal(processing.imageDefault().services[0].endpoint,media.ocrEndpoint);
@@ -807,7 +808,7 @@ test('managed media uses the injected startup snapshot and keeps worker credenti
 
 test('ambient media variables never replace the current managed OCR default',async t=>{
  const previous=process.env.MOTE_MEDIA_OCR_ENDPOINT;process.env.MOTE_MEDIA_OCR_ENDPOINT='https://ambient.example.invalid/ocr';
- const directory=mkdtempSync(join(tmpdir(),'mote-media-default-')),store=new Store(directory),files=new FileStore(store,new SourceStore(store)),processing=new FileProcessing(files);
+ const directory=mkdtempSync(join(tmpdir(),'mote-media-default-')),store=new Store(directory),files=new FileStore(store,new SourceStore(store)),processing=new FileProcessing(testScope(t),files);
  t.after(async()=>{if(previous===undefined)delete process.env.MOTE_MEDIA_OCR_ENDPOINT;else process.env.MOTE_MEDIA_OCR_ENDPOINT=previous;await processing.close();store.close();rmSync(directory,{recursive:true,force:true});});
  await processing.runtime.ready;
  assert.equal(processing.imageDefault().services[0].endpoint,DEFAULT_MEDIA_OCR_ENDPOINT);

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -56,7 +57,7 @@ test('capture-scoped host notes cannot be forged by content and preserve correct
   const anchors=materials.evidenceIds(material.ref),fingerprint=materials.input(material.ref,['body'])!.fingerprint;
   assert.equal(materials.evidence(anchors)[0].attributionContext?.importStatements?.[0].instruction,note);
   assert.equal(materials.contextForEvidence(materials.evidence(anchors)[0]).importStatements?.[0].instruction,note);
-  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:true}},Date.now,undefined,materials);cleanup.push(()=>runtime.close());
+  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:1,enabled:true}},Date.now,undefined,materials,testScope(t));cleanup.push(()=>runtime.close());
   runtime.registry.register({id:'generated.context-fence',version:'1',lane:'semantic',async process(input){
     assert.equal(input.observations[0].attributionContext?.importStatements?.[0].instruction,note);
     materials.correctContext(material.id,material.revision,'third_party');return [{kind:'generated',text:'Late generated result',metadata:{}}];

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -263,7 +264,7 @@ test('a commitment event write failure leaves no partial commitment or evidence 
 test('the actual stored semantic producer and A5 reader provide original proof and full lineage to the commitment consumer',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-commitment-understanding-')),store=new Store(dir),sources=new SourceStore(store),materials=new MaterialStore(store);
  const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials),adapter=new AssistantUnderstandingReader(store,materials,reader);
- const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials),commitments=new AssistantCommitments(store,reader);
+ const runtime=new ProcessingRuntime(store,[],{},Date.now,undefined,materials,testScope(t)),commitments=new AssistantCommitments(store,reader);
  t.after(async()=>{await runtime.close();store.close();rmSync(dir,{recursive:true,force:true});});
  sources.register({id:'generated-a',kind:'custom',name:'Generated A',deviceId:'device-a',platform:'import'});
  const body='Generated Alex will share the plan when ready.';

@@ -1,4 +1,5 @@
 import {join} from 'node:path';
+import type {Context} from '@deepseek-ai/cordis';
 import type {FastifyInstance} from 'fastify';
 import type {Config} from '../config.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -23,6 +24,7 @@ import {ZodError} from 'zod';
 
 export interface ConnectorsAssemblyDependencies {
   readonly app:FastifyInstance;
+  readonly backendContext:Context;
   readonly resources:ServerResources;
   readonly memoryRecipeSettings:MemoryRecipeSettings;
   readonly diagnostics:ServerDiagnostics;
@@ -56,7 +58,7 @@ export async function assembleConnectors(dependencies:ConnectorsAssemblyDependen
     mapError:error=>error instanceof ConnectorError?{status:error.statusCode,error:error.code}:error instanceof ZodError?{status:400,error:'connector_input_invalid'}:undefined,
   });
   const connectorConfig={...config,publicUrl:config.configuration?.publicUrl??undefined};
-  const connectors=await registerConnectors(app,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,config.connectors,resource)},dependencies.connectorTesting,additionalManifests,dispatcher);
+  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,config.connectors,resource)},dependencies.connectorTesting,additionalManifests,dispatcher);
   resources.defer(()=>connectors.close());
   return Object.freeze({connectors});
 }

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -16,7 +17,7 @@ import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
 const all={kind:'all' as const};
 function fixture(t:TestContext){
- const dir=mkdtempSync(join(tmpdir(),'mote-observation-')),store=new Store(dir,{}),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(files);
+ const dir=mkdtempSync(join(tmpdir(),'mote-observation-')),store=new Store(dir,{}),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(testScope(t),files);
  for(const [id,retention] of [['snapshot','snapshot'],['archive','archive'],['reference','reference'],['other','archive']] as const)
   sources.register({id,name:'Generated '+id,kind:'local-files',deviceId:id,platform:'macos',retention});
  const evidence=new EvidenceReader(store,sources,files),reader=new FileObservationReader(evidence);

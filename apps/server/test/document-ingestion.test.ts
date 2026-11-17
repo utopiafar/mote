@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,7 +29,7 @@ function pdfPages(texts:(string|undefined)[]){
 }
 
 test('PDF, DOCX and XLSX share central decoding text and locators across automatic import and file processing',async t=>{
- const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-ingestion-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),archive=new ArchivedFileStore(store),imports=new ImportStore(store,archive,sources),processing=new FileProcessing(files);
+ const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-ingestion-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),archive=new ArchivedFileStore(store),imports=new ImportStore(store,archive,sources),processing=new FileProcessing(testScope(t),files);
  t.after(async()=>{await processing.close();await imports.stop();store.close();rmSync(dir,{recursive:true,force:true});});
  await processing.runtime.ready;
  sources.register({id:'generated-documents',name:'Generated documents',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
@@ -48,7 +49,7 @@ test('PDF, DOCX and XLSX share central decoding text and locators across automat
  }
 });
 test('real text, mixed PDF, DOCX and XLSX outputs retain tail coordinates through FileView and Material',async t=>{
- const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-coverage-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(files),materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);
+ const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-coverage-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(testScope(t),files),materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);
  t.after(async()=>{await organizers.close();await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
  sources.register({id:'generated-coverage',name:'Generated coverage',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
  await processing.runtime.ready;processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true},policy:fixtureFilePolicy({...processing.view().settings,enabled:true},processing.runtime.registry)});
@@ -86,7 +87,7 @@ test('a scanned PDF retains its original and explicitly fails extraction without
  const job=await imports.create({files:[{name:'scanned.pdf',dataBase64:bytes.toString('base64')}],processing:'automatic'}),result=await imports.prepare(job.id);assert.equal(result.status,'failed');assert.match(result.error??'',/unsupported_format/);assert.deepEqual(archive.read(result.files[0].id),bytes);assert.equal(store.list().items.length,0);
 });
 test('file view distinguishes a scanned PDF without text from a parser failure',async t=>{
- const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-unavailable-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(files);
+ const dir=realpathSync(mkdtempSync(join(tmpdir(),'mote-document-unavailable-'))),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(testScope(t),files);
  t.after(async()=>{await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
  sources.register({id:'generated-unavailable',name:'Generated',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
  await processing.runtime.ready;processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true},policy:fixtureFilePolicy({...processing.view().settings,enabled:true},processing.runtime.registry)});

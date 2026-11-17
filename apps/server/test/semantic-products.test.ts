@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
@@ -61,7 +62,7 @@ test('one shared action cue consumes all its original supports exactly once acro
 });
 
 test('semantic model trace and usage reference the executing workflow operation',async t=>{
- const {ProcessingRuntime}=await import('../src/processing-runtime.js');const f=await fixture(t),runtime=new ProcessingRuntime(f.store),usage=new UsageLedger(f.store);let seen:QueryInput['traceContext'];
+ const {ProcessingRuntime}=await import('../src/processing-runtime.js');const f=await fixture(t),runtime=new ProcessingRuntime(f.store,undefined,undefined,undefined,undefined,undefined,testScope(t)),usage=new UsageLedger(f.store);let seen:QueryInput['traceContext'];
  runtime.registry.register(semanticProcessor({store:f.store,memories:f.memories,records:ids=>f.store.evidence(ids),usage,selection:()=>config,query:async input=>{seen=input.traceContext;const current=f.store.db.prepare("SELECT operation_id FROM execution_steps WHERE id=? AND state='running'").get(seen!.jobId!);assert.equal(seen!.operationId,current?.operation_id);return result(f.id,output(f.id));}}));
  const ids=runtime.enqueue([{name:'semantics',processor:'mote.segment-understanding',artifactInputs:[{id:f.segment.id,revision:f.segment.revision}],config:{artifactId:f.segment.id,modelFingerprint:config.fingerprint}}]);await runtime.tick();assert.equal(runtime.engine.get(ids.semantics)?.state,'succeeded');assert.equal(seen?.jobId,ids.semantics);const receipt=JSON.parse(String(f.store.db.prepare('SELECT json FROM model_usage').get()!.json));assert.equal(receipt.attribution.operationId,seen!.operationId);assert.equal(receipt.attribution.jobId,ids.semantics);await runtime.close();
 });

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -28,7 +29,7 @@ function fixture(t:TestContext){
 
 test('semantic and memory lanes continue beyond both former daily allowances across midnight',async t=>{
   const store=fixture(t);let now=Date.parse('2026-10-05T23:59:59Z');
-  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:2},memory:{concurrency:2}},()=>now);t.after(()=>runtime.close());
+  const runtime=new ProcessingRuntime(store,[],{semantic:{concurrency:2},memory:{concurrency:2}},()=>now,undefined,undefined,testScope(t));t.after(()=>runtime.close());
   const record=observation('G'.repeat(12000));await store.ingest(record);
   const calls={semantic:0,memory:0},active={semantic:0,memory:0},peak={semantic:0,memory:0};
   for(const lane of ['semantic','memory'] as const){
@@ -48,7 +49,7 @@ test('semantic and memory lanes continue beyond both former daily allowances acr
 });
 
 test('parent re-entry preserves a failed semantic child until an explicit retry',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());
  const record=observation();await store.ingest(record);let calls=0,fail=true;
  runtime.registry.register({id:'fixture.terminal-semantic',version:'1',lane:'semantic',async process(){calls++;if(fail)throw Error('Generated unknown processing failure');return [{kind:'generated',text:'Generated explicitly retried result',metadata:{}}];}});
  runtime.engine.register({kind:'fixture.parent',pool:'fixture.parent',policy:EXECUTION_POLICIES.orchestration,concurrency:()=>1,validate:()=>true,admit:()=>new ExecutionFailure('waiting','generated_resource_wait',60000),execute:async()=>undefined,commit:()=>{}});
@@ -65,7 +66,7 @@ test('parent re-entry preserves a failed semantic child until an explicit retry'
 });
 
 test('processor failure receipts preserve fixed causes and context without persisting arbitrary messages',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());
  const record=observation();await store.ingest(record);
  runtime.registry.register({id:'fixture.failure-code',version:'1',lane:'semantic',async process(input){
   const error=new ProcessingFailure('permanent',String(input.config.code));
@@ -83,7 +84,7 @@ test('processor failure receipts preserve fixed causes and context without persi
 });
 
 test('processor output boundary accepts the full allowance and retains a distinct output_limit above it',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());
  const record=observation();await store.ingest(record);let calls=0;
  runtime.registry.register({id:'fixture.output-boundary',version:'1',lane:'semantic',async process(input){
   calls++;const output={kind:'generated',text:'Generated output',metadata:{padding:''}};
@@ -141,7 +142,7 @@ test('module close waits for a held async processor before plugin retirement whi
    }}));
    ctx.effect(()=>()=>{retired++;});
  };
- const runtime=new ProcessingRuntime(store,[plugin],{},Date.now,engine);await runtime.ready;
+ const runtime=new ProcessingRuntime(store,[plugin],{},Date.now,engine,undefined,testScope(t));await runtime.ready;
  t.after(async()=>{release();await runtime.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
  const record=observation('Generated held processor source');await store.ingest(record);
  const id=runtime.enqueue([{name:'held',processor:'fixture.held-close',inputs:[record.id]}]).held;

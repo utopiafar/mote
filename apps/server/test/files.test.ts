@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {scanVectors} from '../src/vector-work.js';
@@ -104,7 +105,7 @@ test('reference handles a huge external file without bytes or processing; versio
 test('processor builds timestamped layers and tail search, source removal retains them, forget blocks resurrection',async t=>{
  const {files,store,sources}=fixture(t),bytes=Buffer.from('synthetic audio placeholder'),ack=await upload(files,manifest(bytes),bytes);let calls=0;
  const provider:TranscriptionProvider={transcribe:async()=>{calls++;return {durationMs:90000,segments:[{startMs:0,endMs:1000,text:'计划下周联系对方，并未完成。'},{startMs:89000,endMs:90000,text:'尾部校验：项目代号青杉，金额三百元。'}]};}};
- const processing=new FileProcessing(files,provider,async records=>({answer:`合成摘要 [${records[0].id}]`,citations:[{id:records[0].id}]}));t.after(()=>processing.close());await processing.runtime.ready;
+ const processing=new FileProcessing(testScope(t),files,provider,async records=>({answer:`合成摘要 [${records[0].id}]`,citations:[{id:records[0].id}]}));t.after(()=>processing.close());await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:false,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:false,audioProcessor:'audio.http'},processing.runtime.registry)});
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'blocked');
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,summarize:true},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,summarize:true},processing.runtime.registry)});await processing.tick();
@@ -124,14 +125,14 @@ test('processor builds timestamped layers and tail search, source removal retain
 test('deleting a file while ASR is in flight cannot recreate derived content',async t=>{
  const {files,store}=fixture(t),bytes=Buffer.from('race fixture'),ack=await upload(files,manifest(bytes),bytes);
  let release!:(v:any)=>void,started!:()=>void;const begun=new Promise<void>(r=>{started=r;});
- const processing=new FileProcessing(files,{transcribe:async()=>{started();return new Promise(r=>{release=r;});}});t.after(()=>processing.close());await processing.runtime.ready;
+ const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>{started();return new Promise(r=>{release=r;});}});t.after(()=>processing.close());await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});
  const running=processing.tick();await begun;files.forget(ack.id);release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'must disappear'}]});await running;
  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_chunks').get()!.n,0);
 });
 
 test('processing settings never expose credentials or silently reuse them at another endpoint',async t=>{
- const {files}=fixture(t),processing=new FileProcessing(files);t.after(()=>processing.close());await processing.runtime.ready;
+ const {files}=fixture(t),processing=new FileProcessing(testScope(t),files);t.after(()=>processing.close());await processing.runtime.ready;
  const initial=processing.view();processing.update({revision:initial.revision,settings:{...initial.settings,apiKey:'synthetic-secret'},policy:fixtureFilePolicy({...initial.settings,apiKey:'synthetic-secret'},processing.runtime.registry)});
  assert.ok(!JSON.stringify(processing.view()).includes('synthetic-secret'));
  assert.throws(()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,endpoint:'https://example.test/transcribe',allowRemote:true},policy:fixtureFilePolicy({...processing.view().settings,endpoint:'https://example.test/transcribe',allowRemote:true},processing.runtime.registry)}),{statusCode:409});
@@ -196,7 +197,7 @@ test('reference manifests are metered and a SQLite write failure does not publis
 test('changing a processing provider during a job requeues it and rejects the old derived output; silence is valid',async t=>{
  const {files,store}=fixture(t),bytes=Buffer.from('provider change'),ack=await upload(files,manifest(bytes),bytes);
  let release!:(v:any)=>void,started!:()=>void;const begun=new Promise<void>(r=>{started=r;});let first=true;
- const processing=new FileProcessing(files,{transcribe:async()=>{if(first){first=false;started();return new Promise(r=>{release=r;});}return {durationMs:1000,segments:[]};}});t.after(()=>processing.close());await processing.runtime.ready;
+ const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>{if(first){first=false;started();return new Promise(r=>{release=r;});}return {durationMs:1000,segments:[]};}});t.after(()=>processing.close());await processing.runtime.ready;
  const update=(endpoint=processing.view().settings.endpoint)=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http',endpoint},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http',endpoint},processing.runtime.registry)});update();
  const running=processing.tick();await begun;update('http://127.0.0.1:9010/transcribe');release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'superseded output'}]});await running;
  assert.ok(['waiting','running','succeeded'].includes(files.detail(ack.id).job.state),'the new definition is queued or has already advanced through the shared engine');assert.equal(files.chunks(ack.id).length,0);for(const until=Date.now()+5000;Date.now()<until&&files.detail(ack.id).job.state!=='succeeded';){await processing.tick();if(files.detail(ack.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
@@ -211,7 +212,7 @@ test('file digest mismatch never creates an archive or ACK',async t=>{
 
 test('derived semantic index respects device/app bounds and disappears with its file',async t=>{
  const {files,store}=fixture(t),bytes=Buffer.from('generated vector input'),ack=await upload(files,manifest(bytes),bytes);
- const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'A planned visit; attendance unknown.'}]})});t.after(()=>processing.close());await processing.runtime.ready;
+ const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'A planned visit; attendance unknown.'}]})});t.after(()=>processing.close());await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});await processing.tick();const chunk=files.chunks(ack.id)[0];
  assert.equal(files.pendingIndex('fixture-vector').length,1);files.indexed(chunk.id,[1,0,0],'fixture-vector');assert.equal(files.pendingIndex('fixture-vector').length,0);
  const search=async(args:Parameters<FileStore['vectorQuery']>[1])=>{const query=files.vectorQuery('fixture-vector',args);if(!query)return [];return (await scanVectors({path:join(store.directory,'mote.sqlite'),queries:[query],vector:[1,0,0],limit:30},AbortSignal.timeout(10000)))[0].candidates;};

@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {rejectSqliteWrites} from './fixtures/sqlite-writer.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -86,7 +87,7 @@ test('only exact original lineage inherits descriptions and material spans never
 
 test('a semantic processor receives separate scoped description, and deletion fences a late result',async t=>{
   const f=fixture(t),input=capture();await f.ingress.capture(input);let calls=0;
-  const runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials);t.after(()=>runtime.close());
+  const runtime=new ProcessingRuntime(f.store,[],{},Date.now,undefined,f.materials,testScope(t));t.after(()=>runtime.close());
   runtime.registry.register({id:'fixture.record-context',version:'1',lane:'semantic',async process(value){
     calls++;assert.equal(value.observations[0].ocrText,input.ocrText);assert.equal(value.observations[0].attributionContext?.recordContextStatements?.[0].description,description);
     f.store.delete(input.id);return [{kind:'generated',text:'Generated late interpretation',metadata:{}}];

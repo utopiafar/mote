@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer,type IncomingMessage,type ServerResponse} from 'node:http';
@@ -121,7 +122,7 @@ test('cancelling PDF OCR stops requests and leaves no reusable render state',asy
 });
 
 test('file processing sends scanned pages through the configured local OCR service',async t=>{
- const dir=mkdtempSync(join(tmpdir(),'mote-scanned-pdf-')),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(files);
+ const dir=mkdtempSync(join(tmpdir(),'mote-scanned-pdf-')),store=new Store(dir),sources=new SourceStore(store),files=new FileStore(store,sources),processing=new FileProcessing(testScope(t),files);
  t.after(async()=>{await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
  await processing.runtime.ready;
  sources.register({id:'generated-scanned-pdf',name:'Generated scanned PDF',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});

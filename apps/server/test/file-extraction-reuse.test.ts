@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -28,7 +29,7 @@ async function fixture(t:TestContext,options:{native?:boolean;modelAuthority?:Mo
  const instances:FileProcessing[]=[];let calls=0;
  const output={id:'fixture.extraction',version:'1'},payload=z.object({text:z.string(),parser:z.literal('generated')}).strict();
  const start=async()=>{
-  const processing=new FileProcessing(files,undefined,undefined,{configuration:instances.at(-1)?.configurationSnapshot(),modelAuthority:options.modelAuthority});instances.push(processing);await processing.runtime.ready;
+  const processing=new FileProcessing(testScope(t),files,undefined,undefined,{configuration:instances.at(-1)?.configurationSnapshot(),modelAuthority:options.modelAuthority});instances.push(processing);await processing.runtime.ready;
   processing.runtime.outputs.register({...output,kind:'text',parse:value=>payload.parse(value),project:value=>({...transcript,segments:[{...transcript.segments[0],text:payload.parse(value).text}]})});
   processing.runtime.registry.register({id:'fixture.extract',name:'Generated extraction',version:'1',stage:'extract',mediaTypes:['text/'],localOnly:true,reuseByContent:true,output,
    parameters:[{key:'variant',label:'Generated variant',type:'string',default:'a'}],dependencies:{settings:[],parameters:['variant']},

@@ -76,7 +76,8 @@ export interface ConnectorManifest {
   sourceKinds:readonly (string|{kind:string;capabilities:SourceCapabilityDescriptor})[];
   /** Optional key in GET /api/connectors/status. */
   statusKey?:string;
-  create(context:ConnectorContext):ConnectorInstance|Promise<ConnectorInstance>;
+  /** Trusted deployment code receives the exact host-owned instance scope. */
+  create(context:ConnectorContext,scope:HostScope):ConnectorInstance|Promise<ConnectorInstance>;
 }
 
 const descriptorSchema=z.object({
@@ -146,7 +147,7 @@ export class ConnectorRegistry {
       for(const manifest of this.manifests){
         const scope=this.options.scopeFor?.(manifest);
         if(!scope)throw Error('Connector scope is unavailable');
-        const instance=await manifest.create(this.instanceContext(manifest,scope));
+        const instance=await manifest.create(this.instanceContext(manifest,scope),scope);
         if(!instance||typeof instance!=='object')throw Error(`Connector ${manifest.id} did not create an instance`);
         const disposedLate=async()=>{
           try{await instance.close?.();}catch(cleanup){throw new AggregateError([Error('Connector registry is closed'),cleanup],'Connector late initialization and disposal failed');}
@@ -197,7 +198,7 @@ export class ConnectorRegistry {
     if(this.instances.some(entry=>entry.manifest.id===manifest.id))throw Error(`Connector ${manifest.id} is already started`);
     scope.assertCurrent();
     let instance:ConnectorInstance|undefined;
-    try{instance=await manifest.create(this.instanceContext(manifest,scope));}catch(error){this.recordFailure(manifest,error);throw error;}
+    try{instance=await manifest.create(this.instanceContext(manifest,scope),scope);}catch(error){this.recordFailure(manifest,error);throw error;}
     if(!instance||typeof instance!=='object'){this.recordFailure(manifest,Error('Invalid connector instance'),'failed');throw Error(`Connector ${manifest.id} did not create an instance`);}
     try{scope.assertCurrent();}catch(error){try{await instance.close?.();}catch(cleanup){throw connectorCleanupFailure([error,cleanup]);}throw error;}
     if(this.closed){

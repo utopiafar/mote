@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +19,7 @@ import {codingProjectContext} from '../src/coding-project.js';
 
 async function fixture(t:TestContext){
   const dir=mkdtempSync(join(tmpdir(),'mote-personal-routing-')),store=new Store(dir),materials=new MaterialStore(store);
-  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],testScope(t));await runtime.ready;
   const sources=new SourceStore(store,runtime);
   sources.register({id:'generated',name:'Generated agent conversations',kind:'coding-agent',deviceId:'fixture',platform:'macos'});
   const memories=new MemoryStore(store,ids=>[...store.evidence(ids),...materials.evidence(ids)],id=>store.isCurrentEvidence(id)||materials.isCurrentEvidence(id));

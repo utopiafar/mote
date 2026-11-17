@@ -1,3 +1,4 @@
+import {testScope} from './fixtures/plugin-scope.js';
 import {authorizeFixtureModels,withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test} from 'node:test';
@@ -42,7 +43,7 @@ test('conversation writes append one turn and pages neither load nor rewrite ear
  conversations.append(conversations.get(id!),{question:'One more'},answer);assert.equal(store.db.prepare('SELECT json FROM conversation_turns WHERE conversation_id=? AND idx=0').get(id!)!.json,untouched);
 });
 test('artifact-only downstream gets no ancestral observations and upstream deletion revokes descendants',async t=>{
- const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const record=note();await store.ingest(record);store.archive.aggregate();const parent=store.archive.page().items[0]!;
+ const store=fixture(t),runtime=new ProcessingRuntime(store,undefined,undefined,undefined,undefined,undefined,testScope(t));t.after(()=>runtime.close());const record=note();await store.ingest(record);store.archive.aggregate();const parent=store.archive.page().items[0]!;
  runtime.registry.register({id:'fixture.artifact-only',version:'1',lane:'semantic',async process(input){assert.deepEqual(input.observations,[]);assert.equal(input.artifacts[0].outputs[0].text,record.ocrText);return [{kind:'semantic',text:'Generated compact interpretation',metadata:{evidenceRanges:[{id:record.id,offset:0,length:record.ocrText.length}]}}];}});
  const job=runtime.enqueue([{name:'semantic',processor:'fixture.artifact-only',artifactInputs:[{id:parent.id,revision:parent.revision}]}]);await runtime.tick();
  const out=JSON.parse(String(store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(job.semantic)!.json)).outputs[0];assert.ok(store.archive.get(out));store.delete(record.id);assert.equal(store.archive.get(out),undefined);

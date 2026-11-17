@@ -28,6 +28,7 @@ object LocalDataFormat {
         if (RuntimeProfile.current.fileCredentials) DevCredentialFormat.requireCurrent(directory, hasConfiguration)
     }
     fun validateEvent(event: org.json.JSONObject) {
+        ReleasedCapture.validate(event)
         require(event.keys().asSequence().none { it in setOf("_ocrResult", "_ocrUploaded", "_ocrAttempts", "_ocrConflict") }) { MoteI18n.text(RESET_MESSAGE) }
         require(event.optJSONObject("ocr")?.optString("status") != "pending") { MoteI18n.text(RESET_MESSAGE) }
     }
