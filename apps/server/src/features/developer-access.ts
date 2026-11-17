@@ -1,13 +1,24 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
+import type {Context} from '@deepseek-ai/cordis';
 import {moteText} from '../i18n.js';
 import type {ConnectionCredential} from '../connections.js';
 import {DeveloperAccessError,type DeveloperAccessHost} from '../developer-access.js';
+import type {bootstrapCentral} from '../bootstrap.js';
+import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import type {FeatureRoute} from './index.js';
 
 export interface DeveloperAccessFeatureDependencies {
   readonly host:DeveloperAccessHost;
   readonly credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
   readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
+}
+
+/** Developer access is a companion surface of the selected Connections feature.
+ * It joins the same route table and is mounted by the common selected collector,
+ * never by an independent Host push or a second Connections owner. */
+export function prepareDeveloperAccessRoute(bootstrap:Pick<Awaited<ReturnType<typeof bootstrapCentral>>,'selectsFeature'>,context:Context,dependencies:DeveloperAccessFeatureDependencies){
+  if(!bootstrap.selectsFeature('mote.connections'))return;
+  contributeDomainRoutes(context,{'mote.developer-access':{mount:developerAccessFeature(dependencies).mount}});
 }
 
 /** Owner management is separate from the read-only Developer API. The global

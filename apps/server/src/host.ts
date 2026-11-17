@@ -22,7 +22,7 @@ import {AssistantRoutines} from './assistant-routines.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
 import {assemblePlatform} from './assembly/platform.js';
-import {assembleSources,prepareDevicesDomain} from './assembly/sources.js';
+import {assembleSources,prepareDevicesDomain,prepareSourceFeatureRoutes} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
 import {memoryInputs,memoryRuntime} from './assembly/memory.js';
@@ -73,7 +73,7 @@ import {withinEvidenceScope} from './evidence-reader.js';
 import { ExecutionFailure } from './execution-engine.js';
 import {retainFailureContext} from './execution-failures.js';
 import {executionSettingsSchema,diagnosticsSettingsSchema,type ExecutionSettingsValue,type DiagnosticsSettingsValue} from './execution-settings.js';
-import {FeatureRoutes,installFeatureRoutes,type FeatureRoute} from './features/index.js';
+import {FeatureRoutes,installFeatureRoutes} from './features/index.js';
 import type { TranscriptionProvider } from './file-processing.js';
 import {fileOriginalRawRef } from './file-raw-reader.js';
 import { registerFileRoutes } from './file-routes.js';
@@ -87,7 +87,7 @@ import {createPluginControlPlatform,pluginControlDeclaration} from './plugin-cen
 import {GitHubPluginReleases} from './plugin-release.js';
 import {OutboundExportHost} from './plugins/outbound-export-host.js';
 import {DeveloperAccessError,DeveloperAccessHost} from './developer-access.js';
-import {developerAccessFeature} from './features/developer-access.js';
+import {prepareDeveloperAccessRoute} from './features/developer-access.js';
 import {registerPluginControlHttp} from './plugins/plugin-control-http.js';
 import type { ModelAgentFactory } from './model-agent.js';
 import { ModelCatalogError } from './model-catalog.js';
@@ -98,13 +98,8 @@ import { MAX_RAW_READ_BYTES } from './raw-reader.js';
 import { semanticProcessor } from './semantic-extraction.js';
 import { conversationUnderstandingProcessor } from './conversation-understanding.js';
 import { EvidenceStore as Store,StoreError } from './evidence-store.js';
-import {captureFeature} from './features/capture.js';
-import {notesFeature,type NotesCapture} from './features/notes.js';
-import {filesFeature} from './features/files.js';
-import {sourcesFeature} from './features/sources.js';
 import {prepareConnectionsRoutes} from './features/connections.js';
 import {mediaModelsFeature,mediaPreparationFeature} from './features/media.js';
-import {registerMemoryAssociationRoutes} from './features/memory/associations.js';
 import {AssistantNotifications} from './assistant-notifications.js';
 import type {NotificationSettings} from './notification-configuration.js';
 import {parseCaptureBundle} from './plugins/capture-intake.js';
@@ -134,7 +129,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const backend=bootstrap.host.context.plugin((context:Context)=>{backendContext=context;});
   resources.defer(()=>backend.dispose());
   await backend;
-  const {sourceRuntime,sourcePipelines,sources,sourceControl,sourceIdentity,c10Authorization,capturePort,captureC04,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
+  const {sourceRuntime,sourcePipelines,sources,sourceControl,sourceIdentity,c10Authorization,capturePort,captureC04,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback}=await assembleSources({bootstrap,backendContext,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
   const {mediaAssets,mediaPreparation,media}=assembleMedia({bootstrap:facts,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
@@ -202,7 +197,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const credential=(req:FastifyRequest)=>{const c=connectionIdentity(req);return c&&!connections.isOwner(c)?c:undefined;};
   const assertRequestActive=(req:FastifyRequest)=>{const c=connectionIdentity(req);if(c)connections.assertActive(c);};
   const sourceOwner=(req:FastifyRequest,id:string)=>{assertRequestActive(req);const c=credential(req);if(c)connections.assertOwnSource(c,id);};
-  const notesCapture:NotesCapture={authority:captureC04,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
+  const notesCapture={authority:captureC04,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
   await prepareDevicesDomain({bootstrap,resources,store,files,reader:evidenceReader,diagnostics,notesCapture});
   const {ownerQuestionServices,ownerQuestions}=workInputs({store,backendContext,resources,credential,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections()});
   // The authorization platform's mote.models table; the feature bridge mounts
@@ -532,7 +527,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,memoryPublicationService}=memoryRuntime({store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions:ownerQuestionServices.port,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(facts.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),lifecycle:{automatic:dependencies?.backgroundWorker!==false,whenReady:task=>{app.addHook('onReady',async()=>{task();});},semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:workDomains.insights?.runs??false,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),replacements:dependencies?.memoryExtensions},availableModelConnections:()=>availableModelConnections(),queryAgent,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
+  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,memoryPublicationService}=memoryRuntime({store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions:ownerQuestionServices.port,assistantCommitments,assertRequestActive,credential,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(facts.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),lifecycle:{automatic:dependencies?.backgroundWorker!==false,whenReady:task=>{app.addHook('onReady',async()=>{task();});},semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:workDomains.insights?.runs??false,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),replacements:dependencies?.memoryExtensions},availableModelConnections:()=>availableModelConnections(),queryAgent,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   memoryWorkingHost=working;memoryLifecycleHost=lifecycle;
 
   const {imports,importServices}=assembleImports({store,resources,backendContext,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,importPythonPacks:configService.current(pluginsConfigDomain).importPythonPacks,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),evidenceReader,prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
@@ -646,34 +641,21 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   registerPluginControlHttp(app,{plugins:pluginCenter,bindings:memoryBindings,automation:memoryAutomation,owner:request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);}});
   app.get('/api/local-image-processing',async request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner authorization is required for plugin control',403);return localImages.state();});
   if(bootstrap.selectsFeature('mote.media'))contributeDomainRoutes(backendContext,{'mote.media':Object.freeze({mount:(app:FastifyInstance,scope:import('./features/index.js').FeatureScope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}})});
+  prepareSourceFeatureRoutes({
+    bootstrap,backendContext,
+    files:{withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}},
+    capture:{store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker},
+    sources:{credential,evidenceReader,sources,store,materials,sourcePipelines},
+    notes:{assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture},
+  });
+  prepareDeveloperAccessRoute(bootstrap,backendContext,{host:developerAccess,credential,connectionIdentity});
   const domainRoutes=backendContext.get('moteDomainRoutes')??{};
-  const selected=(id:string)=>bootstrap.selectsFeature(id);
-  const routes:FeatureRoute[]=[];
-  const withAgentTools=(route:FeatureRoute):FeatureRoute=>({...route,mount:(app,scope)=>{route.mount(app,scope);scope.defer(()=>agentFeatures.dispose(route.id));}});
-  const domain=(id:string,extra?:(app:FastifyInstance,scope:import('./features/index.js').FeatureScope)=>void):FeatureRoute=>withAgentTools({id,mount:(app,scope)=>{domainRoutes[id]?.mount(app,scope);extra?.(app,scope);}});
-  if(selected('mote.files'))routes.push(withAgentTools(filesFeature({withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}})));
-  if(selected('mote.connections')){
-    const route=workDomains.routes.find(route=>route.id==='mote.connections');
-    if(route)routes.push(withAgentTools(route));
+  const featureOrder=[...bootstrap.features];
+  if(bootstrap.selectsFeature('mote.connections')){
+    const at=featureOrder.indexOf('mote.connections');
+    if(at>=0)featureOrder.splice(at+1,0,'mote.developer-access');
   }
-  if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
-  if(selected('mote.storage'))routes.push(domain('mote.storage'));
-  if(selected('mote.capture'))routes.push(withAgentTools(captureFeature({store,connections,credential,assertRequestActive,diagnostics,evidenceReader,files,ingress,executor,maintenanceWorker})));
-  if(selected('mote.coding'))routes.push(codingFeature);
-  if(selected('mote.sources'))routes.push(withAgentTools(sourcesFeature({credential,evidenceReader,sources,store,materials,sourcePipelines})));
-  if(selected('mote.models'))routes.push(domain('mote.models'));
-  if(selected('mote.processing'))routes.push(...collectSelectedFeatureRoutes(['mote.processing'],domainRoutes,[],id=>agentFeatures.dispose(id)));
-  if(selected('mote.notes')&&bootstrap.selectsPlugin('notes-source'))routes.push(withAgentTools(notesFeature({assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture})));
-  if(selected('mote.media'))routes.push(...collectSelectedFeatureRoutes(['mote.media'],domainRoutes,[],id=>agentFeatures.dispose(id)));
-  if(selected('mote.owner-questions'))routes.push(domain('mote.owner-questions'));
-  if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
-  if(selected('mote.imports'))routes.push(domain('mote.imports'));
-  if(selected('mote.ask'))routes.push(domain('mote.ask'));
-  for(const route of workDomains.routes){
-    if(route.id==='mote.connections')continue; // Mounted in its fixed slot before developer access.
-    const order=bootstrap.features.indexOf(route.id),at=routes.findIndex(entry=>bootstrap.features.indexOf(entry.id)>order);
-    routes.splice(at<0?routes.length:at,0,domain(route.id,(app,scope)=>route.mount(app,scope)));
-  }
+  const routes=collectSelectedFeatureRoutes(featureOrder,domainRoutes,workDomains.routes,id=>agentFeatures.dispose(id));
   await installFeatureRoutes(featureRoutes,routes);
   resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
