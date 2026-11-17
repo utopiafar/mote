@@ -39,6 +39,7 @@ import type {ModelConnection} from '../background-model-authorization.js';
 import {fileAttachmentAvailable} from '../file-attachments.js';
 import {conversationInputIdentity} from '../conversations.js';
 import {acceptedConversationAmendments,createConversationSteering} from '../conversation-steering.js';
+import type {AssistantTaskSteering} from '../assistant-task-steering.js';
 
 /** C27 owns the durable delegation journal and the replayable Ask receipts
  * that the admitted query runtime prepares and commits. */
@@ -76,6 +77,7 @@ export interface QueryRunDependencies {
   readonly usageLedger:UsageLedger;
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'manual'> & {readonly control:Pick<BackgroundModelAuthorization,'workState'|'manual'|'run'>};
   readonly availableModelConnections:()=>ModelConnection[];
+  readonly taskSteering?:AssistantTaskSteering;
 }
 
 interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns;readonly queue:ConversationQueue}

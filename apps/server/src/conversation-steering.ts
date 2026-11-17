@@ -14,10 +14,12 @@ import {isDeepStrictEqual} from 'node:util';
 const decisionSchema=z.discriminatedUnion('kind',[
   z.object({kind:z.literal('independent')}).strict(),
   z.object({kind:z.literal('supplement'),targetMessageId:z.string().uuid(),reply:z.string().min(1)}).strict(),
+  z.object({kind:z.literal('task-supplement'),targetTaskId:z.string().uuid(),reply:z.string().min(1)}).strict(),
 ]);
 const strictSelection=(scope:ConversationMessage['scope'])=>scope.evidenceIds??(scope.kind==='selection'&&scope.sourceIds?.length===0?[]:undefined);
-const visibleScope=(current:ConversationMessage,prior:ConversationMessage)=>scopeContainsHistory(current.scope,prior.scope)&&
-  (strictSelection(current.scope)===undefined||strictSelection(prior.scope)!==undefined&&isDeepStrictEqual([...(strictSelection(current.scope)??[])].sort(),[...(strictSelection(prior.scope)??[])].sort()));
+export const conversationSteeringScopeContains=(current:ConversationMessage['scope'],prior:ConversationMessage['scope'])=>scopeContainsHistory(current,prior)&&
+  (strictSelection(current)===undefined||strictSelection(prior)!==undefined&&isDeepStrictEqual([...(strictSelection(current)??[])].sort(),[...(strictSelection(prior)??[])].sort()));
+const visibleScope=(current:ConversationMessage,prior:ConversationMessage)=>conversationSteeringScopeContains(current.scope,prior.scope);
 
 export function acceptedConversationAmendments(dependencies:QueryRunDependencies,message:ConversationMessage){
   const amendments=(message.amendedBy??[]).map(id=>dependencies.conversations.message(id)).sort((a,b)=>a.seq-b.seq);
@@ -64,19 +66,25 @@ export function createConversationSteering(dependencies:QueryRunDependencies,run
     let message=assertCurrent();
     if(!message.disposition){
       const candidates=conversations.pendingHeads({parallel:true}).filter(compatible);
-      if(!candidates.length){conversations.disposition(message.id,{kind:'independent'});return perform(input);}
-      const question=JSON.stringify({task:'mote.conversation-disposition',instruction:'Decide whether this owner message supplements/corrects one listed current work item, or is an independent request. Interpret meaning from the actual message, visible conversation and work. Do not classify by keywords. Return the answer string as one JSON object: {kind:"independent"} or {kind:"supplement",targetMessageId:exact candidate id,reply:brief acknowledgement usable only after an actual native steering ACK}. Never claim a queued continuation has been applied. Read-only decision; no tools or actions.',message:{id:message.id,question:message.question,scope:message.scope},candidates:candidates.map(candidate=>({id:candidate.id,runId:candidate.runId,version:candidate.version,question:candidate.question,status:candidate.status}))});
+      const tasks=dependencies.taskSteering?.candidates(message,input)??[];
+      if(!candidates.length&&!tasks.length){conversations.disposition(message.id,{kind:'independent'});return perform(input);}
+      const question=JSON.stringify({task:'mote.conversation-disposition',instruction:'Decide whether this owner message supplements/corrects one listed current work item, or is an independent request. Interpret meaning from the actual message, visible conversation and work. Do not classify by keywords. Return answer as one JSON object: {kind:"independent"}; for a query candidate {kind:"supplement",targetMessageId:exact candidate id,reply:brief acknowledgement}; for an assistant.task candidate {kind:"task-supplement",targetTaskId:exact candidate id,reply:brief acknowledgement}. The acknowledgement is usable only after an actual native steering ACK. Never claim a queued continuation has been applied. Choose only a listed identity; no tools or actions.',message:{id:message.id,question:message.question,scope:message.scope},candidates:[...candidates.map(candidate=>({kind:'query',id:candidate.id,runId:candidate.runId,version:candidate.version,question:candidate.question,status:candidate.status})),...tasks.map(({reference:_,...metadata})=>metadata)]});
       const parse=(result:QueryResult)=>decisionSchema.parse(JSON.parse(result.answer));
       const routed=await perform({...input,question,responseMode:'other',assistantDraft:undefined,hostControlChannel:undefined,hostToolSelection:[],contextCapabilitySnapshot:undefined,onContextCapabilities:undefined,validateOutput:result=>{
-        try{const decision=parse(result);if(decision.kind==='supplement'&&!candidates.some(candidate=>candidate.id===decision.targetMessageId))throw Error();if(result.citations.length)throw Error();}
+        try{const decision=parse(result);if(decision.kind==='supplement'&&!candidates.some(candidate=>candidate.id===decision.targetMessageId)||decision.kind==='task-supplement'&&!tasks.some(candidate=>candidate.id===decision.targetTaskId))throw Error();if(result.citations.length)throw Error();}
         catch{return {code:'conversation_disposition',feedback:'Return only the requested JSON decision in answer, using an exact listed target id and no citations.'};}
       }});
       assertCurrent();const decision=parse(routed);
       if(decision.kind==='independent'){conversations.disposition(message.id,decision);return perform(input);}
-      const candidate=candidates.find(candidate=>candidate.id===decision.targetMessageId)!;
-      message=conversations.disposition(message.id,{kind:'supplement',targetMessageId:candidate.id,targetRunId:candidate.runId!,targetVersion:candidate.version,acknowledgement:{...routed,answer:decision.reply}});
+      if(decision.kind==='task-supplement')message=conversations.disposition(message.id,{kind:'task-supplement',...tasks.find(candidate=>candidate.id===decision.targetTaskId)!.reference,acknowledgement:{...routed,answer:decision.reply}});
+      else{const candidate=candidates.find(candidate=>candidate.id===decision.targetMessageId)!;
+       message=conversations.disposition(message.id,{kind:'supplement',targetMessageId:candidate.id,targetRunId:candidate.runId!,targetVersion:candidate.version,acknowledgement:{...routed,answer:decision.reply}});}
     }
     const decision=message.disposition!;if(decision.kind==='independent')return perform(input);
+    if(decision.kind==='task-supplement'){
+      if(!dependencies.taskSteering)throw new ExecutionFailure('blocked','assistant_task_unavailable');
+      return dependencies.taskSteering.apply(message,input,assertCurrent);
+    }
     const target=conversations.message(decision.targetMessageId),base={targetMessageId:target.id,targetRunId:decision.targetRunId};
     if(message.steering?.state==='pending'){
       conversations.recordSteering(message.id,{...message.steering,state:'unknown'});throw new ExecutionFailure('permanent','steering_delivery_unknown');

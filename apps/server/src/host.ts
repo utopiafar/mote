@@ -307,7 +307,8 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   let tickAssistantFollowup=()=>{};
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>{
     const prepared=assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input;
-    return query.queryAgent(assistantFollowup?assistantFollowup.prepareQuery(prepared):prepared,'query','conversations');
+    const execute=(value:QueryInput)=>query.queryAgent(assistantFollowup?assistantFollowup.prepareQuery(value):value,'query','conversations');
+    return assistantTasks?assistantTasks.execute(prepared,execute,()=>{const profile=modelSettings.select('chat',prepared.modelProfileId);return{modelProfileId:profile.id,modelOverride:prepared.modelOverride??profile.settings.model};}):execute(prepared);
   },ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Batch evidence is no longer permitted',409);
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
@@ -324,7 +325,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   };
   assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections(),ownerQuestionServices.port,{
     input:ref=>assistantRoutines.input(ref),current:ref=>assistantRoutines.current(ref),allows:automaticEvidenceAllowed,control:modelAuthorization,
-  });
+  },{workState:id=>modelAuthorization.workState(id),isCurrentGrant:(id,fence)=>executor.isCurrentGrant(id,fence),abortLocal:id=>executor.abortLocal(id)});
   resources.defer(()=>assistantTasks!.close());
   assistantRoutines=new AssistantRoutines(store,modelAuthorization,ref=>assistantTasks!.startRoutine(ref),(ref,scope)=>{
     if(scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(ref.sourceId))return;
