@@ -135,13 +135,15 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,42);assert.equal(Object.keys(result.tables).length,130);
+ assert.equal(result.owners.length,43);assert.equal(Object.keys(result.tables).length,132);
  assert.deepEqual(result.owners.filter(owner=>owner.owner==='actions').map(owner=>owner.declaration),['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation']);
  for(const table of ['action_meta','action_proposals','action_semantic_checkpoints','action_targets','action_jobs','action_chunk_changes'])assert.deepEqual(result.tables[table],{owner:'actions',file:'apps/server/src/actions-schema.ts',installer:'actionsSchemaInstallation'});
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
  assert.equal(result.tables.execution_steps.owner,'execution');assert.ok(result.dynamicStatements>0);
+ assert.equal(result.tables.processing_jobs.owner,'processing-runtime');assert.equal(result.tables.processing_dependencies.owner,'processing-runtime');
+ assert.ok(result.uncoveredFiles.includes('apps/server/src/processing-runtime.ts'),'the dynamic Processing view stays pending');
  assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,4);
  assert.equal(result.tables.assistant_task_runtime.owner,'assistant-task-runtime');assert.equal(result.owners.filter(owner=>owner.construction).length,3);
  assert.deepEqual(result.pendingRawWrites.map(({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})=>({symbol,scope,scopeFingerprint,to,knownRawTargetOwner})),originalPendingWrites);
@@ -298,6 +300,46 @@ test('existing storage claims bind only actual DDL sinks and their production co
   f.write(target,source+'\nfunction unrelatedShadow('+className+'){return new '+className+'();}');assert.equal(ownershipInventory(f.root,configuration).owners.length,1,'a same-spelled local parameter is not the production class binding');
   f.write(target,source+"\nfunction unrelatedRuntime(db){db.prepare('DELETE FROM settings');}");inventory=ownershipInventory(f.root,configuration);assert.ok(inventory.issues.some(issue=>issue.from===target&&issue.scope==='unrelatedRuntime'&&issue.rule==='sql-uncovered-consumer'));
  }
+});
+
+test('actual CLI keeps Processing methods, exact shared reads and pending views within their reviewed boundaries',t=>{
+ const root=mkdtempSync(join(tmpdir(),'mote-processing-sql-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const tracked=execFileSync('git',['ls-files','-z','--','apps','packages','scripts','*.json'],{cwd:repository,encoding:'utf8'}).split('\0').filter(file=>/\.(?:[cm]?[jt]sx?|json)$/.test(file));
+ for(const file of tracked){mkdirSync(resolve(root,file,'..'),{recursive:true});copyFileSync(resolve(repository,file),resolve(root,file));}
+ const run=()=>spawnSync(process.execPath,[architectureCli],{cwd:root,encoding:'utf8'});
+ const runtimeFile='apps/server/src/processing-runtime.ts',schemaFile='apps/server/src/processing-runtime-schema.ts';
+ const runtime=readFileSync(resolve(root,runtimeFile),'utf8'),schema=readFileSync(resolve(root,schemaFile),'utf8');
+ const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baseline=readFileSync(baselinePath,'utf8');
+ let result=run();assert.equal(result.status,0,result.stderr);
+ const pending=checkSqlOwnership(root).exceptions.filter(issue=>issue.from===runtimeFile&&issue.scope==='ProcessingRuntime.view');
+ assert.equal(pending.length,2);assert.ok(pending.every(issue=>issue.rule==='sql-uncovered-consumer'));
+ assert.equal(policy.consumers['processing-runtime.ts'],undefined);
+ const job='private job(id:string):Job{',policyBody='private completePolicy(policy:WorkflowConfiguration,previous:WorkflowConfiguration){',tick='async tick(){';
+ writeFileSync(resolve(root,runtimeFile),runtime.replace(job,job+"this.store.db.prepare('SELECT id FROM processing_jobs LIMIT 1');"));
+ result=run();assert.equal(result.status,0,result.stderr);writeFileSync(resolve(root,runtimeFile),runtime);
+ const tickRead=sqlStatements(runtimeFile,runtime).find(statement=>statement.scope==='ProcessingRuntime.tick');assert.ok(tickRead);
+ const cases=[
+  ['Execution write',runtimeFile,runtime.replace(job,job+"this.store.db.prepare('DELETE FROM execution_steps WHERE id=?');"),/sql-cross-owner.*processing-runtime.ts.*execution_steps.*write/],
+  ['Material write',runtimeFile,runtime.replace(job,job+"this.store.db.prepare('DELETE FROM material_heads WHERE id=?');"),/sql-cross-owner.*processing-runtime.ts.*material_heads.*write/],
+  ['policy method body',runtimeFile,runtime.replace(policyBody,policyBody+'void 0;'),/sql-cross-owner.*processing-runtime.ts.*execution_steps.*read/],
+  ['tick method body',runtimeFile,runtime.replace(tick,tick+'void 0;'),/sql-cross-owner.*processing-runtime.ts.*execution_steps.*read/],
+  ['shared SQL bytes',runtimeFile,runtime.replace("SELECT id FROM execution_steps WHERE (kind LIKE", "SELECT /* generated change */ id FROM execution_steps WHERE (kind LIKE"),/sql-cross-owner.*processing-runtime.ts.*execution_steps.*read/],
+  ['shared read moved into another owned method',runtimeFile,runtime.replace(job,job+'this.store.db.prepare('+tickRead.expression+');'),/sql-cross-owner.*processing-runtime.ts.*execution_steps.*read/],
+  ['second shared read occurrence',runtimeFile,runtime.replace(tick,tick+'this.store.db.prepare('+tickRead.expression+');'),/sql-cross-owner.*processing-runtime.ts.*execution_steps.*read/],
+  ['dynamic owned query',runtimeFile,runtime.replace(job,job+'this.store.db.prepare(id);'),/sql-dynamic.*processing-runtime.ts/],
+  ['new method in the same file',runtimeFile,runtime+'\nfunction generatedProcessingConsumer(db){db.prepare(\'SELECT id FROM processing_jobs\');}',/sql-uncovered-consumer.*processing-runtime.ts/],
+  ['changed pending view SQL',runtimeFile,runtime.replace('SELECT rowid,id,lane,state,attempts','SELECT /* generated change */ rowid,id,lane,state,attempts'),/sql-uncovered-consumer.*processing-runtime.ts/],
+  ['new occurrence in the pending view',runtimeFile,runtime.replace('view(args:{state?:string;cursor?:number;limit?:number}={}){','view(args:{state?:string;cursor?:number;limit?:number}={}){this.store.db.prepare(\'SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state\');'),/sql-uncovered-consumer.*processing-runtime.ts/],
+  ['foreign installer write',schemaFile,schema.replace('install(db){','install(db){db.exec(\'DELETE FROM execution_steps\');'),/sql-schema-maintenance.*processing-runtime-schema.ts.*execution_steps.*delete/],
+  ['foreign installer read',schemaFile,schema.replace('install(db){','install(db){db.prepare(\'SELECT id FROM material_heads\');'),/sql-schema-maintenance.*processing-runtime-schema.ts.*material_heads.*read/],
+  ['escaped installer',schemaFile,schema+'\nconst generatedAlias=processingRuntimeSchemaInstallation.install;',/inline installer cannot escape/],
+ ];
+ for(const [name,file,changed,error]of cases){
+  const original=file===runtimeFile?runtime:schema;assert.notEqual(changed,original,name);
+  try{writeFileSync(resolve(root,file),changed);result=run();assert.equal(result.status,1,name+': '+result.stderr);assert.match(result.stderr,error,name);t.diagnostic('Processing '+name+' rejects through the total CLI');}
+  finally{writeFileSync(resolve(root,file),original);}
+ }
+ assert.equal(readFileSync(baselinePath,'utf8'),baseline);result=run();assert.equal(result.status,0,result.stderr);
 });
 
 test('actual CLI rejects an inserted cross-owner query in a copy of the production source, permits the existing shared model, and cleans up',t=>{
