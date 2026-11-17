@@ -2,7 +2,13 @@
 
 The product direction is one continuing conversation for questions, records, corrections and authorized work. The model interprets the owner's latest instructions and effective Memory, with reasonable judgment for low-consequence details that are easy to correct. Pure recording needs a light acknowledgement; evidence and structured detail stay behind small optional entry points.
 
-The main conversation persists each owner message before starting its read-only query or action draft. When compatible work is already active, the selected model decides whether the new message supplements that work or starts an independent request. Independent messages can answer while another query waits. Explicit calendar creation can use a current owner instruction and its original Action receipt. Other unified Actions and lightweight recording/onboarding remain separate implementation steps in the [architecture map](architecture.md).
+The main conversation persists each owner message before starting its read-only query or action draft. When compatible work is already active, the selected model decides whether the new message supplements that work or starts an independent request. Independent messages can answer while another query waits. Explicit calendar creation can use a current owner instruction and its original Action receipt. The single-Material acquaintance entry uses this same conversation. Lightweight recording and the remaining authorized Action entrypoints are separate implementation steps in the [architecture map](architecture.md).
+
+## Starting from a selected Material
+
+Home’s first-acquaintance entry opens the Library. After opening a readable current Material, choose **First acquaintance** to prepare an editable question in the main conversation. Navigation preserves the exact Material revision and checks before discarding an existing unsent draft. Sending the question uses the normal durable owner-message route; it does not start a separate onboarding Task.
+
+This entry reads only the selected pinned Material and original evidence delivered from it. It offers no search or catalog tools and includes neither unrelated conversation history nor opening Memory. The Material’s source selection remains visible, but it does not authorize other Materials from that source. Current source and original-read permissions still apply; a changed, retired or revoked version cannot be silently replaced. Cancelling a running answer preserves the owner message and rejects late results. Ordinary Material questions keep their existing contextual-research behavior, and the existing bulk-onboarding API and saved runs retain their cancellation and continuation paths.
 
 ## Conversation and background work
 

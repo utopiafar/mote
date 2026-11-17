@@ -135,6 +135,93 @@ export function sqlAccesses(sql,{schemaLifecycle=false,maintenance=false}={}){
 
 /** Resolve only immutable lexical constants and finite literal branches. Unknown
  * values are marked, never treated as an empty/approved SQL statement. */
+/** One fixed production port, not general interprocedural inference. Only the
+ * expressions carrying WorkingMemory to QueryPreparation are witnesses; an
+ * unrelated edit to any of these modules does not change this proof. */
+export function workingMemoryPrepareProof(sourceTexts){
+ try{
+  const expressions=[],groups=new Map();
+  const need=value=>{if(!value)throw Error('Changed WorkingMemory port');return value;};
+  const one=values=>{need(values.length===1);return values[0];};
+  const find=(root,predicate)=>{const result=[];const visit=node=>{if(predicate(node))result.push(node);ts.forEachChild(node,visit);};visit(root);return result;};
+  const env=(group,file)=>{const text=need(sourceTexts.get(file)),source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);need(!source.parseDiagnostics.length);return {group,file,source,resolve:declarationResolver(source)};};
+  const take=(e,role,node)=>{need(node);const expression=typeof node==='string'?node:node.getText(e.source),entry={file:e.file,role,expression};expressions.push(entry);const items=groups.get(e.group)??[];items.push([role,expression]);groups.set(e.group,items);return node;};
+  const named=(e,root,predicate,name)=>one(find(root,node=>predicate(node)&&node.name?.getText(e.source)===name));
+  const fn=(e,name)=>named(e,e.source,ts.isFunctionDeclaration,name);
+  const parameter=(e,owner,type)=>{const node=owner.parameters[0];need(node?.name.getText(e.source)==='dependencies'&&node.type?.getText(e.source)===type&&!node.initializer);take(e,'parameter:'+owner.name.text,node);return node;};
+  const imported=(e,name,file,typeOnly=false)=>{
+   const declaration=one(e.source.statements.filter(node=>ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&resolve(dirname(e.file),node.moduleSpecifier.text.replace(/\.js$/,'.ts'))===resolve(file)&&node.importClause?.namedBindings&&ts.isNamedImports(node.importClause.namedBindings)&&node.importClause.namedBindings.elements.some(item=>item.name.text===name)));
+   const binding=one(declaration.importClause.namedBindings.elements.filter(item=>item.name.text===name));need(!binding.propertyName&&(Boolean(declaration.importClause.isTypeOnly||binding.isTypeOnly)===typeOnly));
+   take(e,'import:'+name,JSON.stringify([declaration.moduleSpecifier.text,binding.getText(e.source),typeOnly]));return binding;
+  };
+  const variable=(e,root,name)=>one(find(root,node=>ts.isVariableDeclaration(node)&&(ts.isIdentifier(node.name)?node.name.text===name:ts.isObjectBindingPattern(node.name)&&node.name.elements.some(item=>item.name.getText(e.source)===name))));
+  const field=(e,name,type)=>{const declaration=named(e,e.source,ts.isInterfaceDeclaration,name),member=one(declaration.members.filter(node=>node.name?.getText(e.source)==='working'));need(ts.isPropertySignature(member)&&member.type?.getText(e.source)===type);take(e,'interface:'+name,member);return declaration;};
+  const objectField=(e,object,name,spread=false)=>{need(object&&ts.isObjectLiteralExpression(object)&&object.properties.every(node=>!node.name||!ts.isComputedPropertyName(node.name))&&(spread||!object.properties.some(ts.isSpreadAssignment)));return one(object.properties.filter(node=>node.name?.getText(e.source)===name));};
+  const destructured=(e,root,name,dependency)=>{const declaration=variable(e,root,name);need(ts.isObjectBindingPattern(declaration.name)&&Boolean(declaration.parent.flags&ts.NodeFlags.Const)&&ts.isIdentifier(declaration.initializer)&&e.resolve(declaration.initializer)===dependency);const member=one(declaration.name.elements.filter(node=>node.name.getText(e.source)===name));need(!member.propertyName&&!member.initializer&&!member.dotDotDotToken);take(e,'binding:'+name,member);take(e,'binding-source:'+name,declaration.initializer);return declaration;};
+  const call=(e,root,name,binding)=>{const node=one(find(root,node=>ts.isCallExpression(node)&&ts.isIdentifier(node.expression)&&node.expression.text===name));need(e.resolve(node.expression)===binding);return node;};
+  const rootIdentifier=node=>{while(ts.isPropertyAccessExpression(node)||ts.isElementAccessExpression(node)||ts.isNonNullExpression(node))node=node.expression;return ts.isIdentifier(node)?node:undefined;};
+  const writes=(e,root,binding)=>find(root,node=>{const left=ts.isBinaryExpression(node)&&node.operatorToken.kind>=ts.SyntaxKind.FirstAssignment&&node.operatorToken.kind<=ts.SyntaxKind.LastAssignment?node.left:ts.isDeleteExpression(node)?node.expression:(ts.isPostfixUnaryExpression(node)||ts.isPrefixUnaryExpression(node))&&[ts.SyntaxKind.PlusPlusToken,ts.SyntaxKind.MinusMinusToken].includes(node.operator)?node.operand:undefined;const id=left&&rootIdentifier(left);return id&&e.resolve(id)===binding;});
+  const references=(e,binding,name,portInput=false,capture)=>{const uses=find(e.source,node=>{
+   if(!ts.isIdentifier(node)||e.resolve(node)!==binding)return false;
+   const parent=node.parent;
+   if((ts.isPropertyAccessExpression(parent)||ts.isPropertyAssignment(parent)||ts.isMethodDeclaration(parent)||ts.isGetAccessorDeclaration(parent))&&parent.name===node)return false;
+   if((ts.isVariableDeclaration(parent)||ts.isParameter(parent)||ts.isClassDeclaration(parent)||ts.isImportSpecifier(parent))&&parent.name===node)return false;
+   // The canonical working destructure is already witnessed separately. Pin
+   // other whole-input uses (including reflective mutation) and working-field
+   // references, without pinning unrelated readonly dependency fields.
+   if(portInput&&(node===capture?.initializer||ts.isPropertyAccessExpression(parent)&&parent.expression===node&&parent.name.text!=='working'))return false;
+   return true;
+  });take(e,'references:'+name,JSON.stringify(uses.map(node=>node.parent.getText(e.source))));};
+  const directWrite=(e,node,left,right)=>{need(ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.EqualsToken&&node.left.getText(e.source)===left&&node.right.getText(e.source)===right);take(e,'assignment:'+left+':'+right,node);};
+  const pick="Pick<WorkingMemory,'prepare'>",definitionFile='apps/server/src/working-memory.ts';
+  const consumer=env('scope','apps/server/src/plugins/query-preparation.ts'),factory=fn(consumer,'createQueryPreparation'),input=parameter(consumer,factory,'QueryPreparationDependencies');
+  field(consumer,'QueryPreparationDependencies',pick);imported(consumer,'WorkingMemory',definitionFile,true);
+  const receiver=destructured(consumer,factory,'working',input),prepare=one(factory.body.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='prepare'));
+  const invocation=one(find(consumer.source,node=>ts.isCallExpression(node)&&node.expression.getText(consumer.source)==='working.prepare'));
+  need(executionScope(invocation,consumer.source).node===prepare&&consumer.resolve(invocation.expression.expression)===receiver&&!writes(consumer,factory,receiver).length&&!writes(consumer,factory,input).length);
+  const callFingerprint=hash(invocation.getText(consumer.source));
+  const runs=env('queryRuns','apps/server/src/plugins/query-runs.ts'),callbacks=fn(runs,'createRunCallbacks'),runInput=parameter(runs,callbacks,'QueryRunDependencies');
+  field(runs,'QueryRunDependencies',pick);imported(runs,'WorkingMemory',definitionFile,true);
+  const runReceiver=destructured(runs,callbacks,'working',runInput),consumerImport=imported(runs,'createQueryPreparation',consumer.file),consumerCall=call(runs,callbacks,'createQueryPreparation',consumerImport),consumerValue=objectField(runs,consumerCall.arguments[0],'working');
+  need(ts.isShorthandPropertyAssignment(consumerValue)&&runs.resolve(consumerValue.name)===runReceiver&&!writes(runs,callbacks,runReceiver).length&&!writes(runs,callbacks,runInput).length);take(runs,'consumer-working',consumerValue);
+  const platform=fn(runs,'createQueryRunsPlatform'),platformInput=parameter(runs,platform,'QueryRunDependencies'),callbackCall=call(runs,platform,'createRunCallbacks',callbacks);
+  need(ts.isIdentifier(callbackCall.arguments[0])&&runs.resolve(callbackCall.arguments[0])===platformInput);take(runs,'callback-dependencies',callbackCall.arguments[0]);need(!writes(runs,platform,platformInput).length);
+  const query=env('queryAssembly','apps/server/src/assembly/query.ts'),queryFactory=fn(query,'prepareQueryRuns'),queryInput=parameter(query,queryFactory,'QueryRunsAssemblyDependencies');
+  const queryInterface=named(query,query.source,ts.isInterfaceDeclaration,'QueryRunsAssemblyDependencies');need(queryInterface.heritageClauses?.length===1&&queryInterface.heritageClauses[0].getText(query.source)==="extends Omit<QueryRunDependencies,'conversationSettings'>"&&queryInterface.members.every(node=>!ts.isIndexSignatureDeclaration(node)&&node.name?.getText(query.source)!=='working'));take(query,'inherited-working',queryInterface.heritageClauses[0]);
+  imported(query,'QueryRunDependencies',runs.file,true);const platformImport=imported(query,'createQueryRunsPlatform',runs.file),platformCall=call(query,queryFactory,'createQueryRunsPlatform',platformImport),forward=platformCall.arguments[0];
+  need(ts.isObjectLiteralExpression(forward)&&forward.properties.filter(ts.isSpreadAssignment).length===1&&ts.isSpreadAssignment(forward.properties[0])&&ts.isIdentifier(forward.properties[0].expression)&&query.resolve(forward.properties[0].expression)===queryInput&&forward.properties.every(node=>!node.name||!ts.isComputedPropertyName(node.name)&&node.name.getText(query.source)!=='working'));take(query,'forward-working',forward.properties[0]);need(!writes(query,queryFactory,queryInput).length);
+  const host=env('host','apps/server/src/host.ts'),build=fn(host,'buildHost'),queryImport=imported(host,'prepareQueryRuns',query.file),hostCall=call(host,build,'prepareQueryRuns',queryImport),hostWorking=objectField(host,hostCall.arguments[0],'working');
+  need(ts.isPropertyAssignment(hostWorking)&&hostWorking.initializer.getText(host.source)==='queryWorking');take(host,'query-working',hostWorking);
+  const proxy=variable(host,build,'queryWorking');need(host.resolve(hostWorking.initializer)===proxy&&proxy.type?.getText(host.source)===pick&&Boolean(proxy.parent.flags&ts.NodeFlags.Const));take(host,'proxy-type',proxy.type);
+  const proxyMethod=objectField(host,proxy.initializer,'prepare');need(proxy.initializer.properties.length===1&&ts.isPropertyAssignment(proxyMethod)&&proxyMethod.initializer.getText(host.source)==='(...args)=>memoryWorkingHost!.prepare(...args)');take(host,'proxy',proxyMethod);
+  const handle=variable(host,build,'memoryWorkingHost');need(handle.type?.getText(host.source)===pick+'|undefined'&&!handle.initializer);take(host,'handle-type',handle.type);
+  const proxyReceiver=one(find(proxyMethod,node=>ts.isIdentifier(node)&&node.text==='memoryWorkingHost'));need(host.resolve(proxyReceiver)===handle&&!writes(host,build,proxy).length);
+  const handleWrite=one(writes(host,build,handle));directWrite(host,handleWrite,'memoryWorkingHost','working');
+  const runtimeImport=imported(host,'memoryRuntime','apps/server/src/assembly/memory.ts'),runtimeWorking=variable(host,build,'working');need(ts.isObjectBindingPattern(runtimeWorking.name)&&ts.isCallExpression(runtimeWorking.initializer)&&host.resolve(runtimeWorking.initializer.expression)===runtimeImport&&host.resolve(handleWrite.right)===runtimeWorking&&!writes(host,build,runtimeWorking).length);take(host,'memory-working',one(runtimeWorking.name.elements.filter(node=>node.name.getText(host.source)==='working')));
+  const memory=env('memoryAssembly','apps/server/src/assembly/memory.ts'),runtime=fn(memory,'memoryRuntime'),serviceImport=imported(memory,'createMemoryLifecycleService','apps/server/src/plugins/memory-lifecycle-service.ts'),serviceCall=call(memory,runtime,'createMemoryLifecycleService',serviceImport),service=variable(memory,runtime,'memoryLifecycleService');need(service.initializer===serviceCall&&Boolean(service.parent.flags&ts.NodeFlags.Const)&&!writes(memory,runtime,service).length);
+  const memoryWorking=variable(memory,runtime,'working');need(Boolean(memoryWorking.parent.flags&ts.NodeFlags.Const)&&ts.isPropertyAccessExpression(memoryWorking.initializer)&&memoryWorking.initializer.name.text==='working'&&memory.resolve(memoryWorking.initializer.expression)===service&&!writes(memory,runtime,memoryWorking).length);take(memory,'service-working',memoryWorking.initializer);
+  const returned=one(runtime.body.statements.filter(node=>ts.isReturnStatement(node))),frozen=returned.expression;need(ts.isCallExpression(frozen)&&frozen.expression.getText(memory.source)==='Object.freeze');const returnedWorking=objectField(memory,frozen.arguments[0],'working');need(ts.isShorthandPropertyAssignment(returnedWorking)&&memory.resolve(returnedWorking.name)===memoryWorking);take(memory,'returned-working',returnedWorking);
+  const lifecycle=env('lifecycle','apps/server/src/plugins/memory-lifecycle-service.ts'),create=fn(lifecycle,'createMemoryLifecycleService');parameter(lifecycle,create,'MemoryLifecycleServiceDependencies');need(create.type?.getText(lifecycle.source)==='MemoryLifecycleServicePlatform');take(lifecycle,'return-type',create.type);
+  field(lifecycle,'MemoryLifecycleServicePort','WorkingMemory');field(lifecycle,'MemoryLifecycleServicePlatform','WorkingMemory');const classImport=imported(lifecycle,'WorkingMemory',definitionFile);
+  const owned=variable(lifecycle,create,'ownedWorking'),live=variable(lifecycle,create,'working');for(const declaration of [owned,live]){need(declaration.type?.getText(lifecycle.source)==='WorkingMemory|undefined'&&!declaration.initializer);take(lifecycle,'type:'+declaration.name.text,declaration.type);}
+  const construct=one(writes(lifecycle,create,owned));need(ts.isBinaryExpression(construct)&&construct.operatorToken.kind===ts.SyntaxKind.EqualsToken&&ts.isNewExpression(construct.right)&&lifecycle.resolve(construct.right.expression)===classImport&&construct.right.getText(lifecycle.source)==='new WorkingMemory(dependencies.store,dependencies.conversations)');take(lifecycle,'constructor',construct);
+  const liveWrites=writes(lifecycle,create,live);need(liveWrites.length===2);for(const write of liveWrites){const value=write.right?.getText(lifecycle.source);need(value==='ownedWorking'||value==='undefined');directWrite(lifecycle,write,'working',value);if(value==='ownedWorking')need(lifecycle.resolve(write.right)===owned);}
+  const readable=variable(lifecycle,create,'readable');need(ts.isArrowFunction(readable.initializer));take(lifecycle,'readable',readable.initializer);
+  const getters=find(create,node=>ts.isGetAccessorDeclaration(node)&&node.name.getText(lifecycle.source)==='working');need(getters.length===2);
+  for(const [index,getter] of getters.entries()){need(getter.body?.statements.length===1&&ts.isReturnStatement(getter.body.statements[0]));const value=getter.body.statements[0].expression;need(ts.isPropertyAccessExpression(value)&&value.name.text==='working'&&ts.isCallExpression(value.expression)&&value.expression.arguments.length===0&&lifecycle.resolve(value.expression.expression)===readable);objectField(lifecycle,getter.parent,'working');take(lifecycle,'getter:'+index,getter);}
+  const definition=env('definition',definitionFile),klass=named(definition,definition.source,ts.isClassDeclaration,'WorkingMemory');need(!klass.heritageClauses?.length);const method=one(klass.members.filter(node=>ts.isMethodDeclaration(node)&&node.name.getText(definition.source)==='prepare')),constructor=one(klass.members.filter(ts.isConstructorDeclaration));need(method.parameters[0]?.type?.getText(definition.source)==='Conversation');imported(definition,'Conversation','apps/server/src/conversations.ts',true);take(definition,'prepare',method);take(definition,'constructor',constructor);
+  // Extra aliases, prototype changes and reflective writes are related uses of
+  // these precise bindings, rather than unrelated module text or dataflow.
+  for(const [e,binding,name] of [[consumer,receiver,'working'],[runs,runReceiver,'working'],[host,proxy,'queryWorking'],[host,handle,'memoryWorkingHost'],[host,runtimeWorking,'working'],[memory,service,'memoryLifecycleService'],[memory,memoryWorking,'working'],[lifecycle,owned,'ownedWorking'],[lifecycle,live,'working'],[lifecycle,readable,'readable'],[lifecycle,classImport,'WorkingMemory'],[definition,klass,'WorkingMemory']])references(e,binding,name);
+  // Only these actual port inputs are covered, not aliases or general valueflow.
+  references(consumer,input,'preparation-input',true,receiver);
+  references(runs,runInput,'callback-input',true,runReceiver);
+  references(runs,platformInput,'platform-input',true);
+  references(query,queryInput,'assembly-input',true);
+  return {fingerprints:{callFingerprint,...Object.fromEntries([...groups].map(([name,items])=>[name==='scope'?'scopeFingerprint':name+'Fingerprint',hash(JSON.stringify(items))]))},expressions};
+ }catch{return undefined;}
+}
+
 export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[],nonSqlProofs=[],nonSqlEvidence=[],sourceTexts=new Map(),importedHelpers=[]}={}){
  const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
  if(source.parseDiagnostics.length)throw Error(`${file}: ${ts.flattenDiagnosticMessageText(source.parseDiagnostics[0].messageText,' ')}`);
@@ -327,6 +414,12 @@ export function sqlStatements(file,text,{finiteScopes=[],provedFragmentScopes=[]
     const fingerprints={classHeaderFingerprint:hash(header(owner)),definitionClassHeaderFingerprint:hash(header(target)),definitionFingerprint:hash(implementation.getText(source)),callFingerprint:hash(node.getText(source)),argumentBindingsFingerprint:hash(JSON.stringify([...bindings]))};
     if(occurrence!==proof.occurrence||Object.entries(fingerprints).some(([key,value])=>proof[key]!==value))continue;
     nonSqlEvidence.push({...proof,...fingerprints});return true;
+   }
+   if(proof.kind==='working-memory-port'){
+    if(file!=='apps/server/src/plugins/query-preparation.ts'||proof.scope!=='prepare'||proof.receiver!=='working'||method!=='prepare'||proof.entryType!=='WorkingMemory')continue;
+    const evidence=workingMemoryPrepareProof(new Map([...sourceTexts,[file,text]]));
+    if(!evidence||occurrence!==proof.occurrence||Object.entries(evidence.fingerprints).some(([key,value])=>proof[key]!==value)||evidence.fingerprints.callFingerprint!==hash(node.getText(source)))continue;
+    nonSqlEvidence.push({...proof,...evidence.fingerprints});return true;
    }
    if(proof.kind==='class-method'){
     const definitionText=sourceTexts.get(proof.definitionFile);if(definitionText===undefined)continue;

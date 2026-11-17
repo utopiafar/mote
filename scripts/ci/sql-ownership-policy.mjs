@@ -2091,6 +2091,24 @@ export const nonSqlCalls=[
    "callFingerprint": "1ef836fd9a53701bbe4b3df3597e206ce9cc5b3813da953f321ea70b50391734",
    "argumentBindingsFingerprint": "1da0e0d2cbc8d4fa35a80d55b718cceed9f02857fc8f8ebe3f59b74afbd198ff",
    "reason": "Exact this.prepare resource lifecycle call, bound to its local class declaration, direct heritage where applicable, implementation and actual argument bindings; database calls inside the method remain scanned."
+ },
+ {
+   "kind": "working-memory-port",
+   "from": "apps/server/src/plugins/query-preparation.ts",
+   "scope": "prepare",
+   "receiver": "working",
+   "method": "prepare",
+   "entryType": "WorkingMemory",
+   "occurrence": 1,
+   "callFingerprint": "a15f54de6ed5c2de279f62007d8cdc008819b82814105588ad9ce4fffbefc438",
+   "scopeFingerprint": "d1a9e0aa81637036e60db398181603f1bd897c647c99ee406bbebac39edebfca",
+   "queryRunsFingerprint": "0020572e46126aa45ba9b48ca4bd473be185d6f355483ac8134243ae4f56ccc5",
+   "queryAssemblyFingerprint": "cc3a3fe08c1ec5c73c1e8727baa45f4dc806c8877cf5ba316da723b346ae2f73",
+   "hostFingerprint": "ed90a0e73dc60c3a5484bde0b20a86abb080339defad5eeb148fdc746bd873e7",
+   "memoryAssemblyFingerprint": "4e43052f63a33cd9ace516a8fd15a5014f523d996941eebf024611e22dd86705",
+   "lifecycleFingerprint": "4f89c902c1471d00c6d7ca0f001894998918aaec22cb047004986cc1d0d7bf18",
+   "definitionFingerprint": "2297635951754863c6388ee6a479d3f10c4b425f2a35a905f2a735a9aef352f6",
+   "reason": "Only the exact WorkingMemory conversation-context method reached through the fixed typed production injection chain is non-SQL; its internal storage and all other prepare calls remain checked."
  }
 ];
 

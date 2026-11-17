@@ -69,9 +69,11 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     if(anchorIds)scope.anchorEvidenceIds=anchorIds;
     if(anchorMaterialRef)scope.anchorMaterialRef=anchorMaterialRef;
     selectedQueryMaterial(scope,true);
+    const materialOnly=Boolean(anchorMaterialRef&&sourceIds!==undefined);
     const bounded=hasTimeOrDeviceScope(scope);
     const restricted=scope.evidenceIds!==undefined||sourceIds!==undefined||bounded;
     const scopedPrevious=previous&&restricted?{...previous,turns:scopedHistoryTurns(previous.turns,scope,attachmentIds).filter(turn=>{
+      if(materialOnly&&turn.scope.anchorMaterialRef!==anchorMaterialRef)return false;
       if(sourceIds===undefined)return true;
       // A saved turn's retained roots can be wider than its declared scope
       // (for example through earlier derived dialogue). Omit that turn rather
@@ -93,7 +95,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
     const stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
     const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(stepId,fence))throw new StoreError('Query preparation grant expired',409);const result=write();if(own)store.db.exec('COMMIT');return result;}catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}};
-    const opening=await openingMemoryContext({memories:async args=>{
+    const opening=materialOnly?{leads:[],evidenceDependencies:{version:1 as const,complete:true,ids:[]}}:await openingMemoryContext({memories:async args=>{
         const page=await readCurrentMemoryPage(memoryReader,{
           kind:scope.evidenceIds!==undefined||sourceIds!==undefined?'selection':'all',...(sourceIds!==undefined?{sourceIds}:{}),...(scope.evidenceIds!==undefined?{evidenceIds:scope.evidenceIds}:{}),
           ...(scope.after?{after:scope.after}:{}),...(scope.before?{before:scope.before}:{}),...(scope.deviceId?{deviceId:scope.deviceId}:{}),
@@ -110,7 +112,8 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     // The transport subsequently checks the actual serialized provider body.
     const emptySelection=(scope.evidenceIds?.length===0||sourceIds?.length===0)&&!historicalSelection;
     const preparedScope=emptySelection?{...scope,evidenceIds:undefined}:scope;
-    const preliminary:QueryInput={question,...preparedScope,...(emptySelection?{hostToolSelection:[]}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),contextTime,language:saved.language??'zh-CN',executionLane:'interactive',directImages,openingMemories:opening.leads};
+    const toolSelection=materialOnly?['material_read','evidence']:emptySelection?[]:undefined;
+    const preliminary:QueryInput={question,...preparedScope,...(toolSelection?{hostToolSelection:toolSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),contextTime,language:saved.language??'zh-CN',executionLane:'interactive',directImages,openingMemories:opening.leads};
     const seeds=scope.evidenceIds!==undefined?selectedRecords.map(record=>originalEvidenceReceipt(record,0,12000,scope.timeZone)):[];
     const assembled=assembleHostContext(preliminary,seeds,modelBudget.maxTokens);
     const budget=calculateContextBudget({contextWindow:modelBudget.contextWindow,outputLimit:modelBudget.maxTokens,configuration:{historyRatio:modelBudget.historyRatio,lowWatermarkRatio:modelBudget.lowWatermarkRatio},usage:{
@@ -129,7 +132,7 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     const conversation=!previous?.turns.length?undefined:scopedPrevious?scopedConversation():await working.prepare(previous,lifecycleSettings(),question,input=>query({...input,modelBudget,contextTime,traceContext:{...input.traceContext,operationId:work.operationId},executionLane:'interactive',modelProfileId:profile.id,modelOverride:model,signal}),{signal,commit},budget);
     // Empty product selections must still answer the owner's text, but cannot
     // expose archive tools or seed the agent's nonempty extraction session.
-    const prepared:QueryInput={traceContext:{operationId:work.operationId},language:saved.language??'zh-CN',executionLane:'interactive',question,modelBudget,...preparedScope,...(emptySelection?{hostToolSelection:[]}:{}),...(historicalSelection?{historicalSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),...(selectedRecords.length?{processingEvidence:Object.fromEntries(selectedRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]))}:{}),contextTime,modelProfileId:profile.id,modelOverride:model,directImages,openingMemories:opening.leads,contextEvidenceDependencies:{...opening.evidenceDependencies,ids:[...new Set([...opening.evidenceDependencies.ids,...(scope.evidenceIds??[]),...(scope.anchorEvidenceIds??[])])]},...(conversation?{conversation}:{})};
+    const prepared:QueryInput={traceContext:{operationId:work.operationId},language:saved.language??'zh-CN',executionLane:'interactive',question,modelBudget,...preparedScope,...(toolSelection?{hostToolSelection:toolSelection}:{}),...(historicalSelection?{historicalSelection}:{}),...(historicalSelection?.evidenceIds&&scope.evidenceIds?.length===0?{hostRetrieval:'none' as const}:{}),...(selectedRecords.length?{processingEvidence:Object.fromEntries(selectedRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]))}:{}),contextTime,modelProfileId:profile.id,modelOverride:model,directImages,openingMemories:opening.leads,contextEvidenceDependencies:{...opening.evidenceDependencies,ids:[...new Set([...opening.evidenceDependencies.ids,...(scope.evidenceIds??[]),...(scope.anchorEvidenceIds??[])])]},...(conversation?{conversation}:{})};
     commit(()=>{
       assertModelEvidence(prepared);
       const freshImages=queryImages(directImages.map(image=>image.id));

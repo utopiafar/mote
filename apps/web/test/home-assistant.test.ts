@@ -47,7 +47,7 @@ function client(handler:(path:string,init?:RequestInit)=>unknown,ids=capabilityI
  },setAgentTimeout:()=>{}} as Api;
 }
 
-const entryCapabilities=[...capabilityIds,'GET:/api/conversations','POST:/api/assistant/onboarding','GET:/api/assistant/onboarding/:id','POST:/api/assistant/onboarding/:id/cancel','GET:/api/model-authorization','GET:/api/work-activity','GET:/api/assistant/matters','GET:/api/memories','GET:/api/context-trees','GET:/api/assistant/commitments','GET:/api/assistant/workbench'];
+const entryCapabilities=[...capabilityIds,'GET:/api/conversations','GET:/api/materials','POST:/api/conversations/messages','POST:/api/assistant/onboarding','GET:/api/assistant/onboarding/:id','POST:/api/assistant/onboarding/:id/cancel','GET:/api/model-authorization','GET:/api/work-activity','GET:/api/assistant/matters','GET:/api/memories','GET:/api/context-trees','GET:/api/assistant/commitments','GET:/api/assistant/workbench'];
 const assistant=(d:Document)=>{const panel=d.querySelector<HTMLElement>('[aria-label="个人助理"]');assert.ok(panel,'Home always exposes the assistant before its first result');return panel;};
 
 test('an empty first Home exposes acquaintance, the main conversation, tasks and follow-up without starting any work',async t=>{
@@ -59,7 +59,7 @@ test('an empty first Home exposes acquaintance, the main conversation, tasks and
  assert.ok(d.querySelector('.central-first-use'),'the same entry is visible during the actual first-use Home');
  assert.equal(panel.closest('details'),null,'the entry is visible without expanding a directory');
  assert.equal(d.querySelector('.home-page')!.firstElementChild!.nextElementSibling,panel,'the assistant is the first Home section');
- for(const href of ['#/ask','#/connections','#/activity','#/assistant/matters','#/assistant/memory','#/assistant/workbench'])assert.ok(panel.querySelector('a[href="'+href+'"]'),href);
+ for(const href of ['#/ask','#/library?view=materials','#/activity','#/assistant/matters','#/assistant/memory','#/assistant/workbench'])assert.ok(panel.querySelector('a[href="'+href+'"]'),href);
  assert.match(panel.textContent!,/此浏览器还没有可恢复的初次认识记录/);assert.match(panel.textContent!,/后台模型已关闭/);assert.match(panel.textContent!,/暂无记录/);
  assert.match(home(d).textContent!,/当前页暂无动态或建议/);
  assert.equal(calls.some(call=>call.method!=='GET'),false,'viewing Home never authorizes onboarding or a task');
