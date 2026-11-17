@@ -8,7 +8,7 @@ import type {FileProcessing} from '../file-processing.js';
 import type {IngressService} from '../ingress.js';
 import type {FeatureRoute} from './index.js';
 
-/** C11's files-source factory owns FileStore creation/close/sweep, the
+/** The files-source factory owns FileStore creation/close/sweep, the
  * playback-grant scope and the file transport. This feature only mounts the
  * plugin's single route contribution. */
 export interface FilesFeatureSource {readonly playback:FilePlaybackGrants}

@@ -36,7 +36,7 @@ async function fixture(t:TestContext,options:{releaseOnRequest?:boolean;releaseA
     authority:platform,
     identity:{
       assertOwnDevice:(request,value)=>platform.requests.assertOwnDevice(request,value),
-      // C04 owns the released-pin/MCP/foreign-platform rules; the handler keeps
+      // The authorization platform owns the released-pin/MCP/foreign-platform rules; the handler keeps
       // no credential map or second identity registry.
       assertOwnPlatform:(request,value)=>platform.requests.assertOwnPlatform(request,value),
     },
