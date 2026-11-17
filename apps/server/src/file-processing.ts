@@ -35,6 +35,7 @@ import {FunasrWorkerFailure} from './funasr-client.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
 
 import type {ConfigService} from './config-service.js';
+import {processingConfigDomain} from './config.js';
 import {processingConfigurationSchema,defaultProcessingConfiguration,type ProcessingConfiguration} from './processing-configuration.js';
 import {isDeepStrictEqual} from 'node:util';
 import {effectiveProcessorParameters} from './processor-parameters.js';
@@ -78,8 +79,8 @@ export class FileProcessing {
     installEvidenceDependencies(files.store);
     files.store.db.exec('CREATE TABLE IF NOT EXISTS file_diarization_overrides(capture_id TEXT PRIMARY KEY REFERENCES file_versions(capture_id) ON DELETE CASCADE,json TEXT NOT NULL)');
     this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,scope,{builtinContributions:options.builtinContributions,dialogueCleanup:options.dialogueCleanup});
-    const initial=options.configService?.current<ProcessingConfiguration>('processing')??options.configuration??defaultProcessingConfiguration(this.media);
-    this.saved={revision:options.configService?String(options.configService.revision):'initial',...processingConfigurationSchema.parse(initial)};
+    const initial=options.configService?.current(processingConfigDomain)??processingConfigurationSchema.parse(options.configuration??defaultProcessingConfiguration(this.media));
+    this.saved={revision:options.configService?String(options.configService.revision):'initial',...initial};
     this.publishImagePolicy();
     files.store.db.exec("CREATE TABLE IF NOT EXISTS file_configuration_snapshots(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(capture_id,fingerprint))");
     files.store.db.exec("CREATE TABLE IF NOT EXISTS file_processor_waits(resource_key TEXT PRIMARY KEY,capture_id TEXT NOT NULL,token TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('running','unknown'))); UPDATE file_processor_waits SET state='unknown' WHERE state='running'");
@@ -89,11 +90,11 @@ export class FileProcessing {
     this.engine=options.executor??new ExecutionEngine(files.store);this.owned=!options.executor;
     files.processingReceiptCurrent=(input,phase)=>this.validInput(input,phase);
     files.snapshotInputResupplied=id=>{if(this.closing||this.stopping)return;if(this.imageControl?.owns(id))this.imageControl.prepare();else this.enqueue(id,'pipeline');};
-    options.configService?.setHandler<ProcessingConfiguration>('processing',async next=>{
+    options.configService?.setHandler(processingConfigDomain,async next=>{
       await this.runtime.ready;
       // Private YAML is a complete candidate, not a masked public form. Omission
       // removes credentials, and registry defaults must not mutate its effective value.
-      const value={settings:fileProcessingSchema.parse(next.settings),policy:parseFilePolicy(next.policy,this.saved.policy,this.runtime.registry,{preserveCredentials:false,applyParameterDefaults:false})};
+      const value={settings:next.settings,policy:parseFilePolicy(next.policy,this.saved.policy,this.runtime.registry,{preserveCredentials:false,applyParameterDefaults:false})};
       const previous=structuredClone(this.saved),before=this.pendingFingerprints(),revision=String(options.configService!.revision+1);
       // A later plugin may await or fail in apply. Publish the runtime snapshot
       // and its intake projection only at the shared synchronous commit barrier.
