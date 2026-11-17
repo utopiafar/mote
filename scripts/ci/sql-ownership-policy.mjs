@@ -25,6 +25,7 @@ export const installations={
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
+ 'memory-input-plans-schema.ts':['memoryInputPlansSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -73,6 +74,11 @@ export const consumers={
 /** These Task adapter methods belong to the formal runtime marker owner. The
  * older Task schema and other consumers in the same file remain pending. */
 export const consumerScopes={
+ 'memory-input-plans.ts':{
+  'MemoryInputPlans.list':'memory-input-plans',
+  'MemoryInputPlans.get':'memory-input-plans',
+  'MemoryInputPlans.put':'memory-input-plans',
+ },
  'assistant-tasks.ts':{
   'AssistantTasks.currentBatch':'assistant-task-runtime',
   'AssistantTasks.continueSteering':'assistant-task-runtime',
@@ -273,7 +279,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputPlansSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/operation-projection.ts",

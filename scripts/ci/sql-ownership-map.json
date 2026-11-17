@@ -191,6 +191,13 @@
    "file": "apps/server/src/assistant-task-runtime-schema.ts"
   },
   {
+   "declaration": "memoryInputPlansSchemaInstallation",
+   "owner": "memory-input-plans",
+   "fn": "memoryInputPlansSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/memory-input-plans-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -795,6 +802,11 @@
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_input_plans": {
+   "owner": "memory-input-plans",
+   "file": "apps/server/src/memory-input-plans-schema.ts",
+   "installer": "memoryInputPlansSchemaInstallation"
   },
   "memory_jobs": {
    "owner": "memory",
