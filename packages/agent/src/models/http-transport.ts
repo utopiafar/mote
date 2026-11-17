@@ -15,7 +15,7 @@ type FailureReport = {status:number;retryAfter?:string;diagnostic?:FailureDiagno
 export function boundedModelFetch(transport:FetchTransport,bridge:string,maximumBytes=32*1024*1024,configuration?:TransportConfiguration,reportFailure?:(value:FailureReport)=>void|Promise<void>,authorizeRequest?:()=>void|Promise<void>){
   let received=0;
   let exceeded=false;
-  const budget=configuration?.contextWindow&&configuration.maxTokens?createRequestBudget(configuration.contextWindow,configuration.maxTokens):undefined;
+  const budget=configuration?.contextWindow&&configuration.maxTokens?createRequestBudget(configuration.contextWindow,configuration.maxTokens,configuration.protocol):undefined;
   const tooLarge=()=>new Error('Model response exceeds the agent byte budget');
   return async(input:RequestInfo|URL,init?:RequestInit)=>{
     const url=input instanceof Request?input.url:String(input);

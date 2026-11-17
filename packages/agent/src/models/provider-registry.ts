@@ -1,4 +1,5 @@
 import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,type ModelProtocol} from '@mote/shared/models';
+import {IMAGE_MAX_BYTES} from '@mote/shared';
 import {AgentConfigurationError, type AgentOptions} from '../types.js';
 
 const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'];
@@ -134,6 +135,7 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
       [route]: {
         ...(protocol === 'google-generative-ai' ? {} : {api: protocol}),
         apiKeyEnv: 'MOTE_MODEL_API_KEY', baseURL: baseUrl,
+        requestImageMaxBytes: IMAGE_MAX_BYTES,
         models: [{...model, input: ['text','image'], reasoningEfforts: effort === 'auto' ? false : {off: null, low: 'low', high: 'high', max: 'max'}}],
         ...(effort === 'auto' ? {} : {reasoning: effort}),
         ...(protocol === 'openai-completions' ? {compat: {supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: effort !== 'auto', maxTokensField: completionTokenProviders.has(options.provider ?? '') ? 'max_completion_tokens' : 'max_tokens'}} : {}),

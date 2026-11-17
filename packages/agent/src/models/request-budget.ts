@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
-import {estimateSerializedTokens} from './context-budget.js';
+import type {ModelProtocol} from '@mote/shared/models';
+import {estimateHttpRequestTokens} from './image-budget.js';
 
 type Slot = {get():unknown; set(value:unknown):void};
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -42,9 +43,9 @@ function historySlots(value:unknown, slots:Slot[]=[], withinUser=false):Slot[]{
 /** One isolated transport tracks only hashes of tool results accepted by a
  * preceding provider request. Unsent reads are never shortened here: the Host
  * must decide their disclosure and citation receipts before sending them. */
-export function createRequestBudget(window:number,output:number){
+export function createRequestBudget(window:number,output:number,protocol?:ModelProtocol){
   const delivered=new Set<string>();
-  const measure=(body:unknown)=>estimateSerializedTokens(body).tokens+output;
+  const measure=(body:unknown)=>estimateHttpRequestTokens(body,protocol)+output;
   const remember=(body:unknown)=>{for(const slot of resultSlots(body))delivered.add(fingerprint(slot.get()));};
   const fit=(body:Record<string,unknown>,target=window):boolean=>{
     if(measure(body)<=target)return true;
