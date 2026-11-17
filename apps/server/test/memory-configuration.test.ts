@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { serializeConfigDocument } from '@mote/shared/config-file';
+import { buildApp } from '../src/app.js';
+import type { Config } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 import { parseConfigDocument, readConfigDocument, registerBuiltinDomains } from '../src/config.js';
 import { MemoryLifecycle, storedMemoryLifecycleSettings, type LifecycleWindow } from '../src/memory-lifecycle.js';
@@ -52,4 +54,27 @@ test('external Memory budget edits affect the next admitted window while active 
   service = new ConfigService({ path: file, watch: false }); registerBuiltinDomains(service); await service.initialize();
   lifecycle = new MemoryLifecycle(store, () => true, () => 0, undefined, undefined, service);
   assert.equal(lifecycle.settings().batchCharacters, 256); assert.equal(service.revision, 1); assert.equal(readFileSync(file, 'utf8'), persisted);
+});
+
+test('owner HTTP saves Memory through its typed configuration consumer and restart keeps the saved budget', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'mote-memory-config-http-'));
+  const config: Config = { dataDir: directory, token: 'generated-memory-config-owner', tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0, allowedOrigins: [], model: 'generated-model', modelProvider: 'custom', modelProtocol: 'openai-completions', modelBaseUrl: 'https://generated.invalid/v1', apiKey: 'generated-unused', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false, logLevel: 'silent' };
+  const agent = { configured: false, close: async () => {}, query: async () => { throw Error('Generated Memory configuration must not invoke a model'); } };
+  const headers = { authorization: 'Bearer ' + config.token };
+  let node = await buildApp(config, { backgroundWorker: false, agent }); await node.app.ready();
+  t.after(async () => { await node.app.close().catch(() => {}); rmSync(directory, { recursive: true, force: true }); });
+  const view = async () => { const response = await node.app.inject({ url: '/api/configuration', headers }); assert.equal(response.statusCode, 200, response.body); return response.json(); };
+  const initial = await view(); assert.equal(node.lifecycle.settings().batchCharacters, 12000);
+  const saved = await node.app.inject({ method: 'PUT', url: '/api/configuration/memory', headers, payload: { revision: initial.revision, value: { batchCharacters: 256 } } });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal(node.lifecycle.settings().batchCharacters, 256); assert.equal(storedMemoryLifecycleSettings(node.store).batchCharacters, 256);
+  const afterSave = await view(); assert.equal(afterSave.revision, initial.revision + 1);
+  const invalid = await node.app.inject({ method: 'PUT', url: '/api/configuration/memory', headers, payload: { revision: afterSave.revision, value: { batchCharacters: 100 } } });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+  assert.equal((await view()).revision, afterSave.revision);
+  assert.equal(node.lifecycle.settings().batchCharacters, 256); assert.equal(storedMemoryLifecycleSettings(node.store).batchCharacters, 256);
+  await node.app.close();
+  node = await buildApp(config, { backgroundWorker: false, agent }); await node.app.ready();
+  assert.equal((await view()).revision, afterSave.revision);
+  assert.equal(node.lifecycle.settings().batchCharacters, 256); assert.equal(storedMemoryLifecycleSettings(node.store).batchCharacters, 256);
 });

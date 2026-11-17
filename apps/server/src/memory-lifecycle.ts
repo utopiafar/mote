@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {Store,StoreError,sha256} from './store.js';
 import type {ConfigService} from './config-service.js';
+import {memoryConfigDomain} from './config.js';
 import {lifecycleSettingsSchema,defaultLifecycleSettings,type LifecycleSettings} from './memory-configuration.js';
 export {lifecycleSettingsSchema,defaultLifecycleSettings,type LifecycleSettings} from './memory-configuration.js';
 
@@ -44,7 +45,7 @@ export class MemoryLifecycle {
   private interrupting?:Promise<void>;private closing?:Promise<void>;
   private policy:LifecycleSettings;
   constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,private executor?:ExecutionEngine,private semanticContextTime?:()=>string,private configService?:ConfigService){
-    this.policy=lifecycleSettingsSchema.parse(configService?.current('memory')??defaultLifecycleSettings);
+    this.policy=configService?.current(memoryConfigDomain)??lifecycleSettingsSchema.parse(defaultLifecycleSettings);
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,stream TEXT NOT NULL,entity TEXT NOT NULL);
@@ -55,8 +56,8 @@ export class MemoryLifecycle {
       CREATE TRIGGER IF NOT EXISTS conversation_event_update AFTER UPDATE ON conversations WHEN new.json!=old.json BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
     `);
     projectMemoryLifecycleSettings(store,this.policy);
-    configService?.setHandler<LifecycleSettings>('memory',next=>{
-      const previous=this.settings(),candidate=lifecycleSettingsSchema.parse(next);
+    configService?.setHandler(memoryConfigDomain,next=>{
+      const previous=this.settings(),candidate=structuredClone(next);
       return {apply:()=>{},publish:()=>this.applySettings(candidate),rollback:()=>this.applySettings(previous)};
     });
   }
