@@ -1,3 +1,4 @@
+import type {DatabaseSync} from 'node:sqlite';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
 import {AgentTimeoutError} from '@mote/agent';
@@ -9,14 +10,41 @@ import {Store,StoreError,sha256} from './store.js';
 import type {ConfigService} from './config-service.js';
 import {memoryConfigDomain} from './config.js';
 import {lifecycleSettingsSchema,defaultLifecycleSettings,type LifecycleSettings} from './memory-configuration.js';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
+import {memoryLifecycleEffectiveSchemaInstallation} from './memory-lifecycle-schema.js';
 export {lifecycleSettingsSchema,defaultLifecycleSettings,type LifecycleSettings} from './memory-configuration.js';
+
+/** Runtime triggers require the existing record tables. The constructor also
+ * projects effective settings inside this installation transaction. */
+export const memoryLifecycleSchemaInstallation={
+ owner:'memory-lifecycle',requires:[],
+ prerequisites:[
+  {owner:'memory',objects:[{type:'table',name:'memories'}]},
+  {owner:'conversation',objects:[{type:'table',name:'conversations'}]},
+ ],
+ install:memoryLifecycleSchema,
+} as const satisfies SchemaInstallation;
+
+function memoryLifecycleSchema(db:DatabaseSync){
+  db.exec(`
+      CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memory_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,stream TEXT NOT NULL,entity TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS memory_events_stream ON memory_events(stream,seq);
+      CREATE TRIGGER IF NOT EXISTS memory_event_insert AFTER INSERT ON memories WHEN json_extract(new.json,'$.tier')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
+      CREATE TRIGGER IF NOT EXISTS memory_event_update AFTER UPDATE ON memories WHEN new.json!=old.json AND json_extract(new.json,'$.tier')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
+      CREATE TRIGGER IF NOT EXISTS conversation_event_insert AFTER INSERT ON conversations BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
+      CREATE TRIGGER IF NOT EXISTS conversation_event_update AFTER UPDATE ON conversations WHEN new.json!=old.json BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
+    `);
+}
 
 /** Derived runtime projection for code that receives originals before the lifecycle runtime exists.
  * The YAML service owns settings; this table is never a saved configuration source. */
 export function projectMemoryLifecycleSettings(store:Store,settings:LifecycleSettings):void {
   const value=lifecycleSettingsSchema.parse(settings);
-  store.db.exec('CREATE TABLE IF NOT EXISTS memory_lifecycle_effective(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL)');
-  store.db.prepare('INSERT INTO memory_lifecycle_effective VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify(value));
+  installSchemaPlan(store.db,[{...memoryLifecycleEffectiveSchemaInstallation,install:db=>{
+    memoryLifecycleEffectiveSchemaInstallation.install(db);
+    db.prepare('INSERT INTO memory_lifecycle_effective VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify(value));
+  }}]);
 }
 export function storedMemoryLifecycleSettings(store:Store):LifecycleSettings {
   if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_lifecycle_effective'").get())return structuredClone(defaultLifecycleSettings);
@@ -46,16 +74,10 @@ export class MemoryLifecycle {
   private policy:LifecycleSettings;
   constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,private executor?:ExecutionEngine,private semanticContextTime?:()=>string,private configService?:ConfigService){
     this.policy=configService?.current(memoryConfigDomain)??lifecycleSettingsSchema.parse(defaultLifecycleSettings);
-    store.db.exec(`
-      CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memory_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,stream TEXT NOT NULL,entity TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS memory_events_stream ON memory_events(stream,seq);
-      CREATE TRIGGER IF NOT EXISTS memory_event_insert AFTER INSERT ON memories WHEN json_extract(new.json,'$.tier')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
-      CREATE TRIGGER IF NOT EXISTS memory_event_update AFTER UPDATE ON memories WHEN new.json!=old.json AND json_extract(new.json,'$.tier')='episode' BEGIN INSERT INTO memory_events(stream,entity) VALUES('memory',new.id); END;
-      CREATE TRIGGER IF NOT EXISTS conversation_event_insert AFTER INSERT ON conversations BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
-      CREATE TRIGGER IF NOT EXISTS conversation_event_update AFTER UPDATE ON conversations WHEN new.json!=old.json BEGIN INSERT INTO memory_events(stream,entity) VALUES('conversation',new.id); END;
-    `);
-    projectMemoryLifecycleSettings(store,this.policy);
+    installSchemaPlan(store.db,[{...memoryLifecycleSchemaInstallation,install:db=>{
+      memoryLifecycleSchemaInstallation.install(db);
+      projectMemoryLifecycleSettings(store,this.policy);
+    }}]);
     configService?.setHandler(memoryConfigDomain,next=>{
       const previous=this.settings(),candidate=structuredClone(next);
       return {apply:()=>{},publish:()=>this.applySettings(candidate),rollback:()=>this.applySettings(previous)};

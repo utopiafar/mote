@@ -233,6 +233,24 @@
    ]
   },
   {
+   "declaration": "memoryLifecycleEffectiveSchemaInstallation",
+   "owner": "memory-lifecycle",
+   "fn": "memoryLifecycleEffectiveSchema",
+   "file": "apps/server/src/memory-lifecycle-schema.ts"
+  },
+  {
+   "declaration": "memoryNativeStagesSchemaInstallation",
+   "owner": "memory-native-stages",
+   "fn": "memoryNativeStagesSchema",
+   "file": "apps/server/src/memory-native-stage-schema.ts"
+  },
+  {
+   "declaration": "memoryPublicationSchemaInstallation",
+   "owner": "memory-publication",
+   "fn": "memoryPublicationSchema",
+   "file": "apps/server/src/plugins/memory-publication-schema.ts"
+  },
+  {
    "declaration": "gmailStateSchemaInstallation",
    "owner": "gmail-sync",
    "fn": "gmailStateSchemaInstallation.install",
@@ -1430,6 +1448,16 @@
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
   },
+  "memory_engine_stage_cleanups": {
+   "owner": "memory-native-stages",
+   "file": "apps/server/src/memory-native-stage-schema.ts",
+   "installer": "memoryNativeStagesSchemaInstallation"
+  },
+  "memory_engine_stage_drafts": {
+   "owner": "memory-native-stages",
+   "file": "apps/server/src/memory-native-stage-schema.ts",
+   "installer": "memoryNativeStagesSchemaInstallation"
+  },
   "memory_extraction_drafts": {
    "owner": "memory-extraction-drafts",
    "file": "apps/server/src/memory-extraction-drafts.ts",
@@ -1449,6 +1477,16 @@
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_lifecycle_effective": {
+   "owner": "memory-lifecycle",
+   "file": "apps/server/src/memory-lifecycle-schema.ts",
+   "installer": "memoryLifecycleEffectiveSchemaInstallation"
+  },
+  "memory_owner_mutations": {
+   "owner": "memory-publication",
+   "file": "apps/server/src/plugins/memory-publication-schema.ts",
+   "installer": "memoryPublicationSchemaInstallation"
   },
   "memory_phase_outputs": {
    "owner": "memory-phase-outputs",
@@ -1470,6 +1508,11 @@
    "file": "apps/server/src/memory-settings-schema.ts",
    "installer": "memoryProviderConfigurationsSchemaInstallation"
   },
+  "memory_provider_erases": {
+   "owner": "memory-publication",
+   "file": "apps/server/src/plugins/memory-publication-schema.ts",
+   "installer": "memoryPublicationSchemaInstallation"
+  },
   "memory_provider_evidence_revocations": {
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
@@ -1479,6 +1522,21 @@
    "owner": "memory-binding",
    "file": "apps/server/src/memory-binding-schema.ts",
    "installer": "memoryBindingSchemaInstallation"
+  },
+  "memory_provider_writes": {
+   "owner": "memory-publication",
+   "file": "apps/server/src/plugins/memory-publication-schema.ts",
+   "installer": "memoryPublicationSchemaInstallation"
+  },
+  "memory_publication_outputs": {
+   "owner": "memory-publication",
+   "file": "apps/server/src/plugins/memory-publication-schema.ts",
+   "installer": "memoryPublicationSchemaInstallation"
+  },
+  "memory_publications": {
+   "owner": "memory-publication",
+   "file": "apps/server/src/plugins/memory-publication-schema.ts",
+   "installer": "memoryPublicationSchemaInstallation"
   },
   "memory_recipe_settings": {
    "owner": "memory-recipe-settings",

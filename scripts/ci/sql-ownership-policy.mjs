@@ -23,6 +23,9 @@ export const installations={
  'task-evidence.ts':['taskEvidenceSchemaInstallation'],
  'run-execution.ts':['runExecutionSchemaInstallation'],
  'memory-search-schema.ts':['memorySearchSchemaInstallation'],
+ 'memory-lifecycle-schema.ts':['memoryLifecycleEffectiveSchemaInstallation'],
+ 'memory-native-stage-schema.ts':['memoryNativeStagesSchemaInstallation'],
+ 'plugins/memory-publication-schema.ts':['memoryPublicationSchemaInstallation'],
  'connectors/gmail-state.ts':['gmailStateSchemaInstallation'],
  'connectors/lark-state.ts':['larkStateSchemaInstallation'],
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
@@ -128,6 +131,10 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'memory-lifecycle.ts':{
+  'projectMemoryLifecycleSettings':'memory-lifecycle',
+  'storedMemoryLifecycleSettings':'memory-lifecycle',
+ },
  'actions.ts':{'Actions.proposeCurrentCalendar':'actions','Actions.connectorClaim':'actions','Actions.discover':'actions'},
  'processor-admission.ts':{
   'ProcessorAdmission.check':'processor-admission',
