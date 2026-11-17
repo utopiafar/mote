@@ -1,5 +1,19 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": {"noEmit": true, "rootDir": "."},
-  "include": ["src", "test/*.types.ts"]
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "composite": false,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/types.tsbuildinfo"
+  },
+  "include": [
+    "src",
+    "test/*.types.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.json"
+    }
+  ]
 }
