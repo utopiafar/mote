@@ -19,6 +19,11 @@ export const installations={
  'task-records.ts':['taskRecordsSchemaInstallation'],
  'task-evidence.ts':['taskEvidenceSchemaInstallation'],
  'run-execution.ts':['runExecutionSchemaInstallation'],
+ 'memory-search-schema.ts':['memorySearchSchemaInstallation'],
+ 'connectors/gmail-state.ts':['gmailStateSchemaInstallation'],
+ 'connectors/lark-state.ts':['larkStateSchemaInstallation'],
+ 'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
+ 'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -193,7 +198,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/operation-projection.ts",
@@ -530,6 +535,165 @@ export const schemaMaintenance=[
    "captures"
   ],
   "reason": "Invalidate dependent TaskRecords, increment revision and erase private input/result bodies when their original evidence is deleted."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "captures",
+  "kind": "observe",
+  "symbol": "fb83ede99d3d77a241d253238f06890e0bf3f5ac8e325692e7568d4c1d5cc878",
+  "statementFingerprint": "8d1f489fbe76ea558541b80cbc2c5066b5b3cecd44d488b754bc4b5a829f16c7",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryCatalog"
+  ],
+  "sourceRelations": [
+   "captures",
+   "memories"
+  ],
+  "reason": "Maintain Memory search/catalog projections and evidence-validity subscriptions from canonical Memory and original capture events."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memories",
+  "kind": "delete",
+  "symbol": "fb83ede99d3d77a241d253238f06890e0bf3f5ac8e325692e7568d4c1d5cc878",
+  "statementFingerprint": "8d1f489fbe76ea558541b80cbc2c5066b5b3cecd44d488b754bc4b5a829f16c7",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryCatalog"
+  ],
+  "sourceRelations": [
+   "captures",
+   "memories"
+  ],
+  "reason": "Delete dependent canonical Memories on original capture removal unless the exact released-original fingerprint is retained."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memories",
+  "kind": "index",
+  "symbol": "ba7919c0a92ab9483b7df3cdf46d69cb71fa9c32be6d60f448eb1493bf60fb2d",
+  "statementFingerprint": "c144ec51fe340e0bd0985f41da25828195c510cde67cbe1eb21713f7c0bb7914",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryIndex"
+  ],
+  "sourceRelations": [
+   "memories"
+  ],
+  "reason": "Index canonical Memory context priority for the existing search projection."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memories",
+  "kind": "observe",
+  "symbol": "ba7919c0a92ab9483b7df3cdf46d69cb71fa9c32be6d60f448eb1493bf60fb2d",
+  "statementFingerprint": "c144ec51fe340e0bd0985f41da25828195c510cde67cbe1eb21713f7c0bb7914",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryIndex"
+  ],
+  "sourceRelations": [
+   "memories"
+  ],
+  "reason": "Maintain Memory search/catalog projections and evidence-validity subscriptions from canonical Memory and original capture events."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memories",
+  "kind": "observe",
+  "symbol": "fb83ede99d3d77a241d253238f06890e0bf3f5ac8e325692e7568d4c1d5cc878",
+  "statementFingerprint": "8d1f489fbe76ea558541b80cbc2c5066b5b3cecd44d488b754bc4b5a829f16c7",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryCatalog"
+  ],
+  "sourceRelations": [
+   "captures",
+   "memories"
+  ],
+  "reason": "Maintain Memory search/catalog projections and evidence-validity subscriptions from canonical Memory and original capture events."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memories",
+  "kind": "update",
+  "symbol": "fb83ede99d3d77a241d253238f06890e0bf3f5ac8e325692e7568d4c1d5cc878",
+  "statementFingerprint": "8d1f489fbe76ea558541b80cbc2c5066b5b3cecd44d488b754bc4b5a829f16c7",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryCatalog"
+  ],
+  "sourceRelations": [
+   "captures",
+   "memories"
+  ],
+  "reason": "Mark canonical Memories stale when their original capture JSON changes."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memory_dependencies",
+  "kind": "read",
+  "symbol": "fb83ede99d3d77a241d253238f06890e0bf3f5ac8e325692e7568d4c1d5cc878",
+  "statementFingerprint": "8d1f489fbe76ea558541b80cbc2c5066b5b3cecd44d488b754bc4b5a829f16c7",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryCatalog"
+  ],
+  "sourceRelations": [
+   "captures",
+   "memories"
+  ],
+  "reason": "Read canonical Memory dependencies to identify Memories affected by an original evidence edit or deletion."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memory_provider_evidence_revocations",
+  "kind": "read",
+  "symbol": "fb83ede99d3d77a241d253238f06890e0bf3f5ac8e325692e7568d4c1d5cc878",
+  "statementFingerprint": "8d1f489fbe76ea558541b80cbc2c5066b5b3cecd44d488b754bc4b5a829f16c7",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryCatalog"
+  ],
+  "sourceRelations": [
+   "captures",
+   "memories"
+  ],
+  "reason": "Read released-original fingerprint guards so original deletion preserves the explicitly retained Memory revision."
+ },
+ {
+  "from": "apps/server/src/memory-search-schema.ts",
+  "to": "memory_provider_evidence_revocations",
+  "kind": "update",
+  "symbol": "ba7919c0a92ab9483b7df3cdf46d69cb71fa9c32be6d60f448eb1493bf60fb2d",
+  "statementFingerprint": "c144ec51fe340e0bd0985f41da25828195c510cde67cbe1eb21713f7c0bb7914",
+  "installer": "memorySearchSchemaInstallation",
+  "callPath": [
+   "memorySearchSchemaInstallation",
+   "memorySearchSchemaInstallation.install",
+   "memoryIndex"
+  ],
+  "sourceRelations": [
+   "memories"
+  ],
+  "reason": "When a canonical Memory is deleted, remove only its saved released-original fingerprint from revocation metadata."
  }
 ];
 
@@ -794,5 +958,31 @@ export const retainedClassificationScopes=[
   "scopeFingerprint": "72d120039f2945c48a51ba055a8da0c9e06526c33fdee1bf50658d7ff85ba00b",
   "operation": "read",
   "completeSql": true
+ }
+];
+
+/** Exact declared non-SQL lifecycle callback; this is not a table-access grant. */
+export const nonSqlCalls=[
+ {
+  "from": "apps/server/src/config-service.ts",
+  "scope": "ConfigService.registerPlugin",
+  "receiver": "entry",
+  "method": "prepare",
+  "entryType": "RegisteredDomain",
+  "registrationType": "ConfigDomainRegistration",
+  "resultType": "PreparedConfigChange",
+  "parameter": "domain",
+  "registry": "domains",
+  "occurrence": 1,
+  "moduleFingerprint": "facc083fbd475bd7b1aef7cec83d9320bb2f42ee2446ac2f3177dd3d544d99ee",
+  "scopeFingerprint": "b89970c81770586b1876add64a75d7b1bbd5ff732f53e8d4e4f646108ca1ce1c",
+  "callFingerprint": "a0fd506d67a3351b4dcbbefc3fe3c990b97f317c4c2037f575de667df2bcfce1",
+  "bindingFingerprint": "fcaf741687d2a4e2042051f224e563f6b827b722b1cf843b34d19c351ea5649c",
+  "parameterFingerprint": "b484735fd50769615edbc3d043abd0b8499316f5b1117cf8ff4568943fbb1d4e",
+  "registryFingerprint": "b08bd4bb6ffcb44a9ac9c20bdaf13b3d59aae37fcb67880705c15bb6ec47fbd0",
+  "registrationFingerprint": "9691359f2a8be8dd84265f759fc2ab7a63e310fef696aac980c8897318cad7d0",
+  "aliasFingerprint": "f63efb0f051ed10651b0fb3f1c77c2b1a3b09aedc13525edd013bd487ba2635d",
+  "resultFingerprint": "8f7756929d7885a638709e641aecbe547de915e7bee4c1f18d7d392185a6494a",
+  "reason": "Typed local ConfigDomainRegistration callback prepares a resource change for the configuration registry; its result is PreparedConfigChange, not a SQLite statement."
  }
 ];

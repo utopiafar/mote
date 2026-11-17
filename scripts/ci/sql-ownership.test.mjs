@@ -4,6 +4,8 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,appendFileSync,c
 import {tmpdir} from 'node:os';
 import {resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
+import {nonSqlCalls} from './sql-ownership-policy.mjs';
 import {spawnSync,execFileSync} from 'node:child_process';
 import {sqlAccesses,sqlStatements,ownershipInventory,checkSqlOwnership,issueKey} from './sql-ownership.mjs';
 
@@ -116,12 +118,12 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,20);assert.equal(Object.keys(result.tables).length,90);
+ assert.equal(result.owners.length,26);assert.equal(Object.keys(result.tables).length,99);
  assert.ok(result.coveredFiles.includes('apps/server/src/material-index.ts'));
  assert.ok(result.coveredFiles.includes('apps/server/src/evidence-store.ts'));
  assert.ok(result.uncoveredFiles.includes('apps/server/src/execution-engine.ts'));
  assert.equal(result.tables.execution_steps.owner,'execution');assert.ok(result.dynamicStatements>0);
- assert.ok(result.retainedClassificationDebt.length>0);
+ assert.ok(result.retainedClassificationDebt.length>0);assert.equal(result.nonSqlCalls.length,1);
  const projection=result.owners.find(owner=>owner.feature==='mote.activity');
  assert.equal(projection.objects.filter(object=>object.type==='table').length,9);
  assert.equal(projection.objects.filter(object=>object.type==='trigger').length,13);
@@ -201,6 +203,28 @@ test('owner registration retains only witnessed exact unresolved debt and reject
  assert.equal(JSON.stringify(baseline),baselineBytes);
 });
 
+test('literal method and arrow installers keep only direct db construction and fully proved private string builders',t=>{
+ const f=fixture(t);f.configuration.finiteInstallations=['oneInstallation'];
+ for(const member of ["install(db){schema(db);}","install:db=>{schema(db);}"]){
+  const source=`export const oneInstallation={owner:'one',${member}};function schema(db){const insert=(value)=>\`INSERT INTO own_rows VALUES('\${value}')\`;db.exec('CREATE TABLE own_rows(id TEXT)');db.exec(insert('generated'));}`;
+  f.write('apps/server/src/one.ts',source);assert.deepEqual(rules(f.check()),[]);assert.equal(f.check().tables.own_rows.owner,'one');
+  f.write('apps/server/src/one.ts',source.replace("db.exec(insert('generated'));","db.exec(insert('generated'));publish(insert);"));assert.ok(rules(f.check()).includes('sql-uncovered-consumer'),'a string builder cannot escape into runtime authority');
+  f.write('apps/server/src/one.ts',source+'function runtime(db){schema(db);}');assert.throws(()=>f.check(),/another call path/);
+  f.write('apps/server/src/one.ts',source+'oneInstallation.install(db);');assert.throws(()=>f.check(),/inline installer cannot escape/);
+  f.write('apps/server/src/one.ts',source.replace('schema(db);','(()=>schema(db))();'));assert.throws(()=>f.check(),/no visible SQL/);
+ }
+});
+
+test('a non-SQL registration callback needs the exact local type, binding, complete call and scope proof',()=>{
+ const proof=nonSqlCalls[0],source=readFileSync(resolve(repository,proof.from),'utf8'),evidence=[];
+ const original=sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:evidence});assert.equal(evidence.length,1);assert.equal(original.filter(statement=>statement.scope===proof.scope).length,0);
+ const call='entry.prepare?.(clone(value), clone(value))';
+ for(const changed of [source.replace(call,"entry.prepare?.('SELECT value FROM settings', clone(value))"),source.replace('const entry: RegisteredDomain = { ...domain,','const entry: RegisteredDomain = { ...database,'),source.replace(call,call+';candidate = await '+call)]){
+  const rejected=[];const statements=sqlStatements(proof.from,changed,{nonSqlProofs:[proof],nonSqlEvidence:rejected});assert.equal(rejected.length,0);assert.ok(statements.some(statement=>statement.scope===proof.scope),'changed callbacks remain subject to sink checks');
+ }
+ const db=new DatabaseSync(':memory:');try{db.exec("CREATE TABLE settings(value TEXT);INSERT INTO settings VALUES('generated-proof-value')");const entry=db;assert.equal(entry.prepare('SELECT value FROM settings').get().value,'generated-proof-value');}finally{db.close();}
+});
+
 test('actual CLI rejects an inserted cross-owner query in a copy of the production source, permits the existing shared model, and cleans up',t=>{
  const root=mkdtempSync(join(tmpdir(),'mote-sql-production-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  // Copy tracked code/config only, never profiles, dependencies or user data.
@@ -241,6 +265,15 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  const evidencePath=resolve(root,'apps/server/src/task-evidence.ts'),evidenceSource=readFileSync(evidencePath,'utf8');
  writeFileSync(evidencePath,evidenceSource.replace('UPDATE task_records SET','UPDATE memories SET'));
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-schema-maintenance.*memories.*update/);writeFileSync(evidencePath,evidenceSource);
+ const searchPath=resolve(root,'apps/server/src/memory-search-schema.ts'),searchSource=readFileSync(searchPath,'utf8');
+ writeFileSync(searchPath,searchSource+'\nfunction generatedRuntime(db:DatabaseSync){memoryCatalog(db);}');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/schema db helper cannot inherit installer authority/);writeFileSync(searchPath,searchSource);
+ const connectorPath=resolve(root,'apps/server/src/connectors/gmail-state.ts'),connectorSource=readFileSync(connectorPath,'utf8');
+ writeFileSync(connectorPath,connectorSource.replace("db.exec('CREATE TABLE", "db.prepare('UPDATE captures SET json=json WHERE id=?');db.exec('CREATE TABLE"));result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-schema-maintenance.*captures.*update/);writeFileSync(connectorPath,connectorSource);
+ const configPath=resolve(root,'apps/server/src/config-service.ts'),configSource=readFileSync(configPath,'utf8'),configCall='entry.prepare?.(clone(value), clone(value))';
+ for(const changed of [configSource+'\nexport function generatedSqliteReceiver(db,sql){const entry=db;return entry.prepare(sql);}',configSource.replace(configCall,"entry.prepare?.('SELECT value FROM settings', clone(value))"),configSource.replace(configCall,configCall+';candidate = await '+configCall)]){
+  writeFileSync(configPath,changed);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*config-service.ts/);
+ }
+ writeFileSync(configPath,configSource);
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner: apps\/server\/src\/material-index.ts.*settings/);

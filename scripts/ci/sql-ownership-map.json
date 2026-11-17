@@ -126,6 +126,64 @@
    "file": "apps/server/src/run-execution.ts"
   },
   {
+   "declaration": "memorySearchSchemaInstallation",
+   "owner": "memory-search",
+   "fn": "memorySearchSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/memory-search-schema.ts",
+   "callPaths": [
+    [
+     "memorySearchSchemaInstallation",
+     "memorySearchSchemaInstallation.install"
+    ],
+    [
+     "memorySearchSchemaInstallation",
+     "memorySearchSchemaInstallation.install",
+     "memoryIndex"
+    ],
+    [
+     "memorySearchSchemaInstallation",
+     "memorySearchSchemaInstallation.install",
+     "memoryCatalog"
+    ]
+   ]
+  },
+  {
+   "declaration": "gmailStateSchemaInstallation",
+   "owner": "gmail-sync",
+   "fn": "gmailStateSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/gmail-state.ts"
+  },
+  {
+   "declaration": "larkStateSchemaInstallation",
+   "owner": "lark-document-sync",
+   "fn": "larkStateSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/lark-state.ts"
+  },
+  {
+   "declaration": "mcpStateSchemaInstallation",
+   "owner": "mcp-import",
+   "fn": "mcpStateSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/mcp-import-state.ts"
+  },
+  {
+   "declaration": "recordingMediaSchemaInstallation",
+   "owner": "recording-media",
+   "fn": "recordingMediaSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/recording-state.ts"
+  },
+  {
+   "declaration": "recordingSyncSchemaInstallation",
+   "owner": "recording-sync",
+   "fn": "recordingSyncSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/recording-state.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -503,10 +561,20 @@
    "file": "apps/server/src/file-schema.ts",
    "installer": "fileSchemaInstallation"
   },
+  "gmail_sync_members": {
+   "owner": "gmail-sync",
+   "file": "apps/server/src/connectors/gmail-state.ts",
+   "installer": "gmailStateSchemaInstallation"
+  },
   "insights": {
    "owner": "insight",
    "file": "apps/server/src/insight-schema.ts",
    "installer": "insightSchemaInstallation"
+  },
+  "lark_document_sync": {
+   "owner": "lark-document-sync",
+   "file": "apps/server/src/connectors/lark-state.ts",
+   "installer": "larkStateSchemaInstallation"
   },
   "material_block_payloads": {
    "owner": "material",
@@ -593,10 +661,20 @@
    "file": "apps/server/src/material-schema.ts",
    "installer": "materialSchemaInstallation"
   },
+  "mcp_import_manifests": {
+   "owner": "mcp-import",
+   "file": "apps/server/src/connectors/mcp-import-state.ts",
+   "installer": "mcpStateSchemaInstallation"
+  },
   "memories": {
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memories_fts": {
+   "owner": "memory-search",
+   "file": "apps/server/src/memory-search-schema.ts",
+   "installer": "memorySearchSchemaInstallation"
   },
   "memory_batch_dependencies": {
    "owner": "memory",
@@ -607,6 +685,11 @@
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_catalog": {
+   "owner": "memory-search",
+   "file": "apps/server/src/memory-search-schema.ts",
+   "installer": "memorySearchSchemaInstallation"
   },
   "memory_checkpoints": {
    "owner": "memory",
@@ -627,6 +710,11 @@
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_scopes": {
+   "owner": "memory-search",
+   "file": "apps/server/src/memory-search-schema.ts",
+   "installer": "memorySearchSchemaInstallation"
   },
   "operation_changes": {
    "owner": "operation-projection",
@@ -657,6 +745,21 @@
    "owner": "perception",
    "file": "apps/server/src/perception-schema.ts",
    "installer": "perceptionSchemaInstallation"
+  },
+  "recording_cursors": {
+   "owner": "recording-sync",
+   "file": "apps/server/src/connectors/recording-state.ts",
+   "installer": "recordingSyncSchemaInstallation"
+  },
+  "recording_exports": {
+   "owner": "recording-sync",
+   "file": "apps/server/src/connectors/recording-state.ts",
+   "installer": "recordingSyncSchemaInstallation"
+  },
+  "recording_media": {
+   "owner": "recording-media",
+   "file": "apps/server/src/connectors/recording-state.ts",
+   "installer": "recordingMediaSchemaInstallation"
   },
   "run_execution_owners": {
    "owner": "run-execution",

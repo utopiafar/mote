@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {moduleReferences,checkArchitecture} from './architecture.mjs';
 import {ownershipInventory,sqlStatements,issueKey} from './sql-ownership.mjs';
-import {installations,sharedReads,sharedObservations,projections,finiteInstallations,schemaMaintenance} from './sql-ownership-policy.mjs';
+import {installations,sharedReads,sharedObservations,projections,finiteInstallations,schemaMaintenance,nonSqlCalls} from './sql-ownership-policy.mjs';
 
 const cli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
 const repository=fileURLToPath(new URL('../..',import.meta.url));
@@ -51,6 +51,7 @@ function fixture(t){
     write('apps/server/src/'+projection.file,source);
     write('apps/server/src/'+projection.activationFile,`export const ${projection.activation}={activation:{featureId:${JSON.stringify(projection.feature)}}};`);
   }
+  for(const proof of nonSqlCalls)write(proof.from,readFileSync(join(repository,proof.from),'utf8'));
   const catalog='apps/server/src/material-catalog.ts',catalogSource=readFileSync(join(repository,catalog),'utf8');
   const facet=sqlStatements(catalog,catalogSource).find(statement=>statement.fingerprint===sharedReads[0].symbol);
   write(catalog,readFileSync(join(root,catalog),'utf8')+`\nfunction fixtureFacet(db){db.prepare(${facet.expression});}`);
