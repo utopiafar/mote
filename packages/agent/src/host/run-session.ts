@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import type {Cancellation, ServiceLease} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
-import {parseRuntimeOutcome, RuntimeContractError, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
+import {parseRuntimeOutcome, RuntimeContractError,RuntimeSteeringUnavailable, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type AgentTraceEvent, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
 import {ContextToolError} from '../tool-errors.js';
@@ -15,7 +15,7 @@ import {hostOutputPolicy, snapshotHostEvidence} from './output.js';
 import {createHostRunLifecycle} from './run-lifecycle.js';
 import {createRuntimeUsageEvents} from './runtime-events.js';
 import {hostOutputService} from './run-contracts.js';
-import type {HostEvidenceSnapshot, HostOutputDecision, HostRunDependencies, HostRunEvent, HostRunSession} from './run-contracts.js';
+import type {HostEvidenceSnapshot, HostOutputDecision, HostRunDependencies, HostRunEvent, HostRunSession,HostRunControl,HostSteeringTarget} from './run-contracts.js';
 
 class HostCancellationError extends DOMException {
   constructor(readonly kind: Cancellation['kind']) { super('Runtime cancelled', 'AbortError'); }
@@ -145,6 +145,8 @@ class ManagedHostRunSession implements HostRunSession {
   private attempt?: RuntimeAttempt;
   private lastAttempt?: RuntimeAttempt;
   private pending = new Set<Promise<unknown>>();
+  private steeringPending = new Set<Promise<unknown>>();
+  private steeringFailure?:{error:unknown};
   private deliveryCleanupErrors: unknown[] = [];
   private hostToolFailure?: {error: unknown};
   private execution?: Promise<AgentAnswer>;
@@ -264,6 +266,29 @@ class ManagedHostRunSession implements HostRunSession {
     if (!this.runtimeHandle) throw new RuntimeContractError();
     return this.runtimeHandle;
   }
+  get control():HostRunControl {
+    return {
+      supported:Boolean(this.handle.steering),
+      current:()=>{
+        if(!this.attempt||this.lifecycle.phase!=='running')return;
+        this.assertAttempt(this.attempt);const target=this.handle.steering?.target();
+        return target?{identity:structuredClone(this.dependencies.identity),attemptId:this.attempt.id,turnId:target.turnId}:undefined;
+      },
+      steer:(target:HostSteeringTarget,text:string,acknowledge:(receipt:HostSteeringTarget)=>void)=>{
+        const operation=this.track(async()=>{
+        const attempt=this.attempt,steering=this.handle.steering;
+        if(!steering)throw new RuntimeSteeringUnavailable('unsupported');
+        if(!attempt||target.attemptId!==attempt.id||!isDeepStrictEqual(target.identity,this.dependencies.identity)||steering.target()?.turnId!==target.turnId)throw new RuntimeSteeringUnavailable('stale');
+        this.assertAttempt(attempt);const receipt=await steering.send({attempt,turnId:target.turnId,text});this.assertAttempt(attempt);
+        if(receipt.turnId!==target.turnId)throw new RuntimeContractError();
+        const accepted={identity:structuredClone(this.dependencies.identity),attemptId:attempt.id,turnId:receipt.turnId};
+        try{acknowledge(accepted);this.assertAttempt(attempt);}catch(error){this.steeringFailure={error};void this.cancel({kind:'revoked'}).catch(()=>{});throw error;}
+        return accepted;
+        });
+        this.steeringPending.add(operation);void operation.finally(()=>this.steeringPending.delete(operation)).catch(()=>{});return operation;
+      },
+    };
+  }
   get evidence(): HostEvidenceSnapshot { return snapshotHostEvidence(this.assembly.evidence()); }
   private notify(event: HostRunEvent) { try { this.assembly.observe?.(event); } catch { /* Observation grants nothing. */ } }
   private observeRuntime(event: HostRunEvent) {
@@ -282,6 +307,7 @@ class ManagedHostRunSession implements HostRunSession {
     // A provider may translate a mandatory local read/confirmation failure into
     // a typed tool terminal. Host policy and its original reason remain here.
     if (this.hostToolFailure) throw this.hostToolFailure.error;
+    if(this.steeringFailure)throw this.steeringFailure.error;
     this.assertLifetime();
     if (this.deliveryCleanupErrors.length) throw new AgentProviderError();
     if (this.lifecycle.phase === 'closed' || this.lifecycle.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
@@ -325,6 +351,7 @@ class ManagedHostRunSession implements HostRunSession {
     try {
       this.runtimeWork = Promise.resolve().then(() => error ? this.handle.repair({...request, validation: {reason: error.reason, feedback: error.message}} satisfies RuntimeRepairRequest) : this.handle.run(request));
       const raw = await this.runtimeWork;
+      await Promise.all([...this.steeringPending]);
       this.assertAttempt(attempt);
       const outcome = parseRuntimeOutcome(raw);
       reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});

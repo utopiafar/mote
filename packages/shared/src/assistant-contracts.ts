@@ -33,12 +33,14 @@ const singleAnchor=(value:{anchorEvidenceIds?:string[];anchorMaterialRef?:string
 export const conversationMessageInputSchema=z.object(conversationMessageFields).strict().refine(singleAnchor,{message:'Choose one anchor'});
 export type ConversationMessageInput=z.infer<typeof conversationMessageInputSchema>;
 export const conversationMessageStateSchema=z.enum(['accepted','queued','running','completed','failed','cancelled']);
+export const conversationSteeringSchema=z.object({targetMessageId:uuid,targetRunId:z.string().min(1).max(200),state:z.enum(['pending','accepted','continuation','unknown','cancelled'])}).strict();
 /** Result bodies and recovery are outside this admission contract. */
 export const conversationMessageSchema=z.object({
   ...conversationMessageFields,id:uuid,seq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   revision,status:conversationMessageStateSchema,createdAt:z.string().datetime({offset:true}),runId:z.string().min(1).max(200).optional(),
   evidenceDeleted:z.boolean().optional(),evidenceStale:z.boolean().optional(),evidenceUnavailable:z.boolean().optional(),
   historyEvidenceDependencies:evidenceDependenciesSchema.optional(),
+  steering:conversationSteeringSchema.optional(),amendedBy:z.array(uuid).optional(),supersededBy:z.array(uuid).optional(),
 }).strict().refine(singleAnchor,{message:'Choose one anchor'});
 export type ConversationMessage=z.infer<typeof conversationMessageSchema>;
 

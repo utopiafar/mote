@@ -69,7 +69,8 @@ test('new answers receive bounded visible memory leads and respect explicit arch
   assert.deepEqual(seen[1].openingMemories,[]);
   store.delete(published.original.id);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Again'}})).statusCode,200);
-  assert.deepEqual(seen[2].openingMemories,[],'deleting the published card cannot fall back to the proposed draft');
+  assert.deepEqual(seen[2].openingMemories?.map(item=>[item.id,item.status]),[[published.memory.id,'published']],'ordinary original release preserves the published claim and cannot fall back to a proposed draft');
+  assert.deepEqual(store.evidence([published.original.id]),[],'the retained claim grants no original read');
 });
 
 test('full client login can read, continue and delete saved conversations',async t=>{

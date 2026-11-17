@@ -22,7 +22,7 @@ import type {createModelEvidenceAuthority} from '../model-evidence-authority.js'
 
 type QueryPreparationStore=ConstructorParameters<typeof DelegationRuntime>[0];
 
-export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string;historyBeforeSeq?:number};
+export type SavedQuery={hostRequest:unknown;language?:QueryInput['language'];prepared?:QueryInput;configurationFingerprint?:string;historyBeforeSeq?:number;steeringPreparedFor?:string[];continuationPrepared?:boolean;queryCapabilitySnapshot?:QueryInput['contextCapabilitySnapshot']};
 export interface QueryPreparationDependencies {
   store:QueryPreparationStore;
   files:Pick<FileStore,'detail'|'version'>;
