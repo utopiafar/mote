@@ -24,7 +24,7 @@ async function fixture(t:Parameters<Parameters<typeof test>[1]>[0]){
  class Assets extends MediaAssets { installed=new Set<MediaRole>();installs=0;sources:(('auto'|'official'|'mirror')|undefined)[]=[];override ready(role:MediaRole){return this.installed.has(role);}override async installAsync(role:MediaRole,source?:'auto'|'official'|'mirror',signal?:AbortSignal){signal?.throwIfAborted();this.installs++;this.sources.push(source);this.installed.add(role);}}
  const assets=new Assets(join(directory,'models'));
  const media={modelDirectory:assets.root,python:process.execPath,workerToken:'generated-worker-token',ocrPort:port,asrPort:port,ocrEndpoint:`http://127.0.0.1:${port}/ocr`,asrEndpoint:`http://127.0.0.1:${port}/transcribe`};
- return {directory,assets,media};
+ return {directory,assets,media,runtimeRoot:join(directory,'media-runtime')};
 }
 async function settled(preparation:MediaPreparation,role:MediaRole){for(let index=0;index<300;index++){const status=await preparation.status(role);if(['prepared','ready','failed','cancelled','unsupported'].includes(status.state))return status;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Preparation did not settle');}
 test('one preparation owns repeated clicks; cancel fences late dependency completion and retry remains possible',async t=>{
@@ -178,8 +178,8 @@ ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
   if(args[0]==='-c')return Buffer.from(JSON.stringify({python:'3.11.17',ffmpeg:join(command.replace(/\/bin\/python$/,''),'lib/ffmpeg')}));
   return Buffer.alloc(0);
  }});
- const options={runtime:'native' as const,media,assets,repository,prepare,startupTimeoutMs:2000};
- return {root,scripts,media,assets,python,repository,prepare,counts:()=>({installs,pip}),supported:allRoles.filter(role=>mediaRoleSupported(role)),make(overrides:Partial<ConstructorParameters<typeof MediaPreparation>[0]>={}){const preparation=new MediaPreparation({...options,...overrides});preparations.push(preparation);return preparation;},async mode(role:string,value:string){await writeFile(join(scripts,role+'.mode'),value);},async waitFile(name:string){for(let i=0;i<300;i++){const value=await readFile(join(scripts,name),'utf8').catch(()=>undefined);if(value!==undefined)return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated lifecycle did not reach '+name);}};
+ const options={runtime:'native' as const,media,assets,runtimeRoot:runtime,repository,prepare,startupTimeoutMs:2000};
+ return {root,scripts,media,assets,runtimeRoot:runtime,python,repository,prepare,counts:()=>({installs,pip}),supported:allRoles.filter(role=>mediaRoleSupported(role)),make(overrides:Partial<ConstructorParameters<typeof MediaPreparation>[0]>={}){const preparation=new MediaPreparation({...options,...overrides});preparations.push(preparation);return preparation;},async mode(role:string,value:string){await writeFile(join(scripts,role+'.mode'),value);},async waitFile(name:string){for(let i=0;i<300;i++){const value=await readFile(join(scripts,name),'utf8').catch(()=>undefined);if(value!==undefined)return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated lifecycle did not reach '+name);}};
 }
 const gone=(pid:number)=>{try{process.kill(pid,0);return false;}catch(error){if((error as NodeJS.ErrnoException).code==='ESRCH')return true;throw error;}};
 const settleRole=settled as (preparation:MediaPreparation,role:import('@mote/shared').MediaRole)=>ReturnType<typeof settled>;
@@ -254,7 +254,7 @@ test('local-image asset repair leaves selection unchanged and the existing plugi
  // actual loader's pinned-byte verifier before publishing its real HTTP health.
  const original=await readFile(script,'utf8'),scripts=fileURLToPath(new URL('../../../scripts/',import.meta.url));
  await writeFile(script,`import sys\nsys.path.insert(0,${JSON.stringify(scripts)})\nfrom mote_vlm import verify_assets\nverify_assets(sys.argv[sys.argv.index('--model-root')+1],${JSON.stringify([[installed.file.name,installed.file.size,installed.file.sha256]])})\n`+original);
- await f.prepare({repository:f.repository,directory:join(installed.assets.root,'runtime'),role:'local-image',signal:new AbortController().signal});
+ await f.prepare({repository:f.repository,directory:f.runtimeRoot,role:'local-image',signal:new AbortController().signal});
  await writeFile(installed.path,Buffer.alloc(installed.bytes.length,1));assert.equal(installed.assets.ready('local-image'),true);
  const host=new PluginHost({kind:'central',id:'generated-image-repair'});t.after(()=>host.close());
  const desired=localImageProcessingSelection;
@@ -298,7 +298,7 @@ test('the actual preparer isolates three worker roles, stops only VLM, reaps des
  const pids=Object.fromEntries(await Promise.all(f.supported.map(async role=>[role,Number(await f.waitFile(role+'.pid'))])));
  const environment=JSON.parse(await f.waitFile('ocr.environment.json'));
  for(const name of ['OPENAI_API_KEY','MOTE_TOKEN','MOTE_CONFIG_FILE','PYTHONPATH','HF_TOKEN','AWS_SECRET_ACCESS_KEY'])assert.equal(environment[name],null,name);
- assert.equal(environment.MOTE_MEDIA_WORKER_TOKEN,f.media.workerToken);assert.ok(environment.HOME.startsWith(join(f.assets.root,'runtime/ocr/worker')));
+ assert.equal(environment.MOTE_MEDIA_WORKER_TOKEN,f.media.workerToken);assert.ok(environment.HOME.startsWith(join(f.runtimeRoot,'ocr/worker')));
  if(f.supported.includes('local-image')){
   const child=Number(await f.waitFile('local-image.child-pid'));
   await preparation.stop('local-image');assert.equal(gone(pids['local-image']),true);assert.equal(gone(child),true,'a detached-output model child must be gone before stop returns');
@@ -352,7 +352,7 @@ test('an occupied port is never adopted or killed, and an old ASR health produce
 
 test('a real failed asset import cannot start an inference process',async t=>{
  const f=await lifecycle(t),assets=new MediaAssets(f.assets.root),bundle=join(f.root,'bad-bundle');await mkdir(bundle);await writeFile(join(bundle,'config.json'),'generated invalid asset');
- await f.prepare({repository:f.repository,directory:join(assets.root,'runtime'),role:'dialogue',signal:new AbortController().signal});
+ await f.prepare({repository:f.repository,directory:f.runtimeRoot,role:'dialogue',signal:new AbortController().signal});
  await assert.rejects(assets.importBundle('dialogue',bundle),/Invalid model asset/);assert.equal(assets.status('dialogue').state,'failed');
  let dependenciesAccepted=false;
  const preparation=f.make({assets,prepare:async options=>{const result=await f.prepare(options);dependenciesAccepted=true;return result;}});await preparation.start('dialogue',false);const status=await settled(preparation,'dialogue');
