@@ -16,7 +16,7 @@ export interface SourcesFeatureDependencies {
   readonly sourcePipelines:{tick():Promise<unknown>;close():unknown};
 }
 
-/** sources: retains polling and the library view; C10 owns source transport. */
+/** sources: retains polling and the library view; the plugin owns source transport. */
 export function sourcesFeature(dependencies:SourcesFeatureDependencies):FeatureRoute {
   const {sourcePipelines}=dependencies;
   return Object.freeze({id:'mote.sources',mount(app:FastifyInstance,scope:FeatureScope){

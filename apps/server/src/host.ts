@@ -192,7 +192,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   let liveRequestPins=0;
   const bindRequestPin=(req:FastifyRequest)=>authorizationPlatform.bindRequest({authorization:req.headers.authorization,method:req.method,route:req.routeOptions.url??'unknown',params:req.params as {id?:string},origin:req.headers.origin});
   // A client that disconnects before the response finishes never reaches
-  // onResponse, and its C04 pin is a strong entry. Release idempotently from
+  // onResponse, and its request pin is a strong entry. Release idempotently from
   // response completion and from a premature socket close.
   const releaseRequestPin=(req:FastifyRequest)=>{const pin=pins.get(req);if(!pin)return;pins.delete(req);liveRequestPins--;authorizationPlatform.releaseRequest(pin);};
   const assignRequestPin=(req:FastifyRequest,reply:FastifyReply)=>{pins.set(req,bindRequestPin(req));liveRequestPins++;reply.raw.once('close',()=>releaseRequestPin(req));};

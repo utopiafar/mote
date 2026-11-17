@@ -78,7 +78,7 @@ export interface QueryRunsAssemblyDependencies extends Omit<QueryRunDependencies
   readonly assistantOwner:(request:FastifyRequest)=>void;
 }
 
-/** Install C27's delegation runtime and replayable Ask receipts, then mount
+/** Install the delegation runtime and replayable Ask receipts, then mount
  * its command routes once against the current activation. The durable journal,
  * execution slots and model profile of an accepted run are owned inside the
  * plugin scope; a stopped activation fences late commits. */

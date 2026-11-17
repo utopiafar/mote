@@ -41,7 +41,7 @@ import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
 import {nativeApplicationContext} from '../dsh-application-context.js';
 
-/** C27 owns admitted model runs and the insight entry. Routes and preparation
+/** This owner keeps admitted model runs and the insight entry. Routes and preparation
  * are contributed by the same query domain activation. */
 export const queryRuntimeContribution={
   id:'query-runtime',version:'1.0.0',surface:'data',runtime:'host',

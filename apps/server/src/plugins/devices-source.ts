@@ -9,7 +9,7 @@ import type {AuthorizationPlatform} from './authorization-platform.js';
 import type {firstDeviceData} from '../first-device-data.js';
 type FirstDeviceData=ReturnType<typeof firstDeviceData>;
 
-/** Trusted C04 members only. Request pins come from the host's bindRequest hook. */
+/** Trusted request-authority members only. Request pins come from the host's bindRequest hook. */
 export type DeviceRequestAuthority=Pick<AuthorizationPlatform,'bindRequest'|'releaseRequest'|'requests'>;
 
 /** Narrow device repository. Implemented by trusted assembly over the real
@@ -20,7 +20,7 @@ export interface DeviceHeartbeatStore {
 }
 
 /** Collector identity checks stay in trusted assembly because platform ownership
- * is not part of the frozen RequestAuthorization contract yet (C01 decision). */
+ * is not part of the frozen RequestAuthorization contract yet. */
 export interface DeviceIdentityCheck {
   assertOwnDevice(request:RequestAuthority,beat:Heartbeat):void;
   assertOwnPlatform(request:RequestAuthority,platform:Heartbeat['platform']):void;
@@ -81,7 +81,7 @@ export function createDevicesSource(options:DeviceSourceOptions,dependencies:Dev
     const pin=(request:FastifyRequest)=>{
       const value=context.request(request);
       if(!value)throw new StoreError('Owner authorization is required',401);
-      // The host map can still hold a pin whose C04 authority was released or
+      // The host map can still hold a pin whose authority was released or
       // revoked after admission; every route revalidates the current authority.
       authority.requests.assertCurrent(value);
       return value;
@@ -121,7 +121,7 @@ export function createDevicesSource(options:DeviceSourceOptions,dependencies:Dev
 }
 export type DevicesSource=ReturnType<typeof createDevicesSource>;
 
-/** Compiled trusted H04 owner. The host never infers routes from contributions. */
+/** Compiled trusted device-source owner. The host never infers routes from contributions. */
 export function createDevicesSourceFactory(options:DeviceSourceOptions,dependencies:DeviceSourceDependencies,registerRoutes?:((platform:DevicesSource)=>void)){
   return (context:HostPluginContext):PluginLifecycle=>{
     const platform=createDevicesSource(options,dependencies,context.scope);
