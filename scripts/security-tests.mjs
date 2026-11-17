@@ -91,7 +91,7 @@ test('backup includes private file originals, excludes workspaces, and restores 
   const snapshot=new DatabaseSync(join(out,'mote.sqlite'),{readOnly:true});const saved=JSON.parse(snapshot.prepare('SELECT json FROM import_jobs').get().json);snapshot.close();
   assert.equal(saved.status,'queued');assert.equal(saved.processingStatus,'archived');assert.equal(saved.failurePhase,'prepare');assert.equal(saved.workspace,undefined);assert.equal(saved.inputs,undefined);assert.equal(saved.manifestHash,undefined);assert.equal(saved.preview,undefined);assert.equal(saved.progress.processed,0);assert.deepEqual(saved.captureIds,['retained-evidence-id']);
   const untouched=new DatabaseSync(join(source,'mote.sqlite'),{readOnly:true});assert.equal(JSON.parse(untouched.prepare('SELECT json FROM import_jobs').get().json).status,'importing');untouched.close();
-  const target=join(directory,'restored');await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'absent-process.json')},out);assert.deepEqual(await readFile(join(target,file)),original);assert.equal((await stat(join(target,file))).mode&0o777,0o600);
+  const target=join(directory,'restored');await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(directory,'absent-process.json')},out);assert.deepEqual(await readFile(join(target,file)),original);assert.equal((await stat(join(target,file))).mode&0o777,0o600);
   await writeFile(join(out,file),'changed');await assert.rejects(verifiedBackup(out),/checksum mismatch/);
 }));
 
@@ -123,7 +123,7 @@ test('backup preserves current plain/encrypted chunks and processing history whi
   for(const name of [`files/objects/${originalHash}/0.aes`,`files/objects/${hash}/0.plain`,`files/objects/${hash}/1.aes`])assert.ok(checked.names.includes(name));
   assert.deepEqual((await readdir(join(out,'files'))).sort(),['objects']);
   await assert.rejects(lstat(join(out,'file-processing.json')),{code:'ENOENT'});
-  const target=join(directory,'restored'),profile={meta:{runtime:'native'},dataDir:target,processFile:join(directory,'absent-process.json')};await restoreProfile(profile,out);
+  const target=join(directory,'restored'),profile={meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(directory,'absent-process.json')};await restoreProfile(profile,out);
   assert.deepEqual(await readFile(join(target,'files','objects',originalHash,'0.aes')),original);
   for(const [index,bytes] of parts.entries())assert.deepEqual(await readFile(join(target,'files','objects',hash,index+(index?'.aes':'.plain'))),bytes);
   for(const path of [target,join(target,'files'),join(target,'files','objects'),join(target,'files','objects',hash)])assert.equal((await stat(path)).mode&0o777,0o700);
@@ -158,7 +158,7 @@ test('restore only accepts canonical bounded file part paths before touching the
   const manifest=JSON.parse(await readFile(join(out,'backup-manifest.json'),'utf8'));await mkdir(target);await writeFile(join(target,'sentinel'),'keep');
   for(const name of [`files/objects/${hash}/128`,`files/objects/${hash}/-1`,`files/objects/${hash}/01`,`files/objects/${hash}/0.0`,`files/objects/${hash}/0/extra`,`files/objects/${hash}/../secret`,`files/uploads/${hash}/0`,`imports/${hash}/script.mjs`]){
     await writeFile(join(out,'backup-manifest.json'),JSON.stringify({...manifest,checksums:{...manifest.checksums,[name]:hash}}));
-    await assert.rejects(restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(directory,'none')},out),/Unsafe backup manifest entry/);assert.equal(await readFile(join(target,'sentinel'),'utf8'),'keep');
+    await assert.rejects(restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(directory,'none')},out),/Unsafe backup manifest entry/);assert.equal(await readFile(join(target,'sentinel'),'utf8'),'keep');
   }
 }));
 
