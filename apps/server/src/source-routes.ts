@@ -9,7 +9,7 @@ import type {SourceFileCatalogRead} from './evidence-read-ports.js';
 import type {IngressService} from './ingress.js';
 import {captureContextChannelSchema,readCaptureContext,updateCaptureContext} from './capture-context.js';
 import {navigationScopeSchema} from './context-navigation.js';
-/** Fixed trusted C10 request binding; never an ordinary plugin service. */
+/** Fixed trusted source-route request binding; never an ordinary plugin service. */
 export interface SourceRouteAdmission {
   assertCurrent(request:FastifyRequest):void;
   assertWritable(request:FastifyRequest):void;

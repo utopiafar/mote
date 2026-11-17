@@ -44,7 +44,7 @@ const routeGuard=(readable:()=>boolean,writable:()=>boolean)=>async(request:{met
   if(write?!writable():!readable())return reply.code(503).send({error:'feature_unavailable'});
 };
 
-/** C24's owner mutations. A disabled publication activation refuses them before
+/** Owner mutations for published Memory. A disabled publication activation refuses them before
  * any body, model or remote provider work begins. */
 export function registerMemoryOwnerRoutes(app:FastifyInstance,dependencies:MemoryOwnerRouteDependencies){
   app.register(async child=>{
