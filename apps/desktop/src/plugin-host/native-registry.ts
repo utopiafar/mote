@@ -1,7 +1,7 @@
 /** Build-time native provider registry for the Mac host. Providers ship inside
  * the client build and are registered at startup; nothing arrives over the
  * network. Capability matching is exact (capability + apiVersion + platform),
- * per the frozen U01 descriptor contract. */
+ * per the frozen native-provider descriptor contract. */
 import {
   nativeProviderKey, nativeProviderSatisfies, parseNativeProvider,
   type NativeProviderDescriptor,
