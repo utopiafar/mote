@@ -15,6 +15,7 @@ import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
 import {materialId} from '../apps/server/src/materials.js';
+import {authorizeFixtureModels} from '../apps/server/test/fixtures/model-authorization.js';
 
 const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'},'processor-module':{type:'string'},'audio-processor':{type:'string'}}});
 const audioProcessor=values['audio-processor']??'audio.local-dialogue';
@@ -108,6 +109,8 @@ try{
       ...(asr?{audioProcessor,localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
     },policy});
   }
+  // Give explicit owner consent in this isolated profile after configuring processing.
+  await authorizeFixtureModels(node);
   for(const file of manifest.files){
     const result:Record<string,unknown>={id:file.id,mimeType:file.mimeType,observedAt:file.observedAt,status:'running'};
     (report.files as unknown[]).push(result);await save();const started=Date.now();
