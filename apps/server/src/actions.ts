@@ -14,6 +14,7 @@ import type {FileStore} from './files.js';
 import type {Connections,ConnectionCredential} from './connections.js';
 import { ConfigServiceError, type ConfigService } from './config-service.js';
 import { actionsRuntimeSettingsSchema, type ActionsRuntimeSettings } from './actions-configuration.js';
+import { actionsConfigDomain } from './config.js';
 
 const settingsSchema=z.object({enabled:z.boolean(),timeZone:actionZone,reviewDeviceIds:z.array(z.string().min(1).max(200)).max(100)}).strict();
 const authorizationSchema=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),reviewDeviceIds:settingsSchema.shape.reviewDeviceIds}).strict();
@@ -34,7 +35,7 @@ export class Actions {
   private runtimeSettings:ActionsRuntimeSettings;
   private settingsTail:Promise<void>=Promise.resolve();
   constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
-    this.runtimeSettings=actionsRuntimeSettingsSchema.parse(options.configService?.current('actions')??{});
+    this.runtimeSettings=options.configService?.current(actionsConfigDomain)??actionsRuntimeSettingsSchema.parse({});
     store.db.exec(`CREATE TABLE IF NOT EXISTS action_meta(key TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS action_proposals(id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS action_semantic_checkpoints(artifact_id TEXT PRIMARY KEY REFERENCES context_artifacts(id) ON DELETE CASCADE,revision TEXT NOT NULL);
@@ -44,7 +45,7 @@ export class Actions {
       CREATE TRIGGER IF NOT EXISTS action_chunk_added AFTER INSERT ON file_chunks BEGIN INSERT INTO action_chunk_changes(id) VALUES(NEW.id); END;
       CREATE TRIGGER IF NOT EXISTS action_artifact_changed AFTER UPDATE OF current ON file_artifacts BEGIN INSERT INTO action_chunk_changes(id) SELECT id FROM file_chunks WHERE artifact_id=NEW.id; END;
       CREATE INDEX IF NOT EXISTS action_jobs_status ON action_jobs(status);`);
-    options.configService?.setHandler<ActionsRuntimeSettings>('actions',next=>{
+    options.configService?.setHandler(actionsConfigDomain,next=>{
       const previous=structuredClone(this.runtimeSettings),candidate=structuredClone(next);
       return {apply:()=>{},publish:()=>{this.runtimeSettings=candidate;},rollback:()=>{this.runtimeSettings=previous;}};
     });
