@@ -1,6 +1,19 @@
+import type {DatabaseSync} from 'node:sqlite';
+import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
 import type {PluginPackageView,PluginInstanceView} from '@mote/shared';
 import type {PluginManifest} from '../plugin-release.js';
 import {sha256,StoreError,type Store} from '../store.js';
+
+export const pluginControlSchemaInstallation={owner:'plugin-control',requires:[],install:pluginControlSchema} as const satisfies SchemaInstallation;
+
+/** The control constructor retains its original four-table and seed closure. */
+function pluginControlSchema(db:DatabaseSync){db.exec(`
+    CREATE TABLE IF NOT EXISTS plugin_center(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL);
+    INSERT OR IGNORE INTO plugin_center VALUES(1,1);
+    CREATE TABLE IF NOT EXISTS plugin_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS plugin_control_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS plugin_build_instances(id TEXT PRIMARY KEY,json TEXT NOT NULL);
+  `);}
 
 export interface PluginCommand {readonly operationId:string;readonly expectedRevision:number}
 /** An acknowledgement of a committed control intent, not proof of a remote effect. */
@@ -31,13 +44,7 @@ export interface BuildInstanceRecord {view:PluginInstanceView;configurationId?:s
  * Runtime effects occur only after COMMIT; receipts never assert their completion.
  * These feature-owned tables install before app.ready(). */
 export class PluginControlStore {
-  constructor(readonly store:Store){store.db.exec(`
-    CREATE TABLE IF NOT EXISTS plugin_center(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL);
-    INSERT OR IGNORE INTO plugin_center VALUES(1,1);
-    CREATE TABLE IF NOT EXISTS plugin_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS plugin_control_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS plugin_build_instances(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-  `);
+  constructor(readonly store:Store){installSchemaPlan(store.db,[pluginControlSchemaInstallation]);
   store.registerStorage('plugin-control',{
     plugin_center:'144',
     plugin_commands:'length(CAST(id AS BLOB))+length(CAST(fingerprint AS BLOB))+128',
