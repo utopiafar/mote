@@ -1,4 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
+import type {SchemaInstallation} from './schema-installation.js';
+
+export const perceptionSchemaInstallation={owner:'perception',requires:['capture'],install:perceptionSchema} as const satisfies SchemaInstallation;
 
 /** Perception owns OCR work, results and the intake trigger; captures must already exist. */
 export function perceptionSchema(db:DatabaseSync){db.exec(`

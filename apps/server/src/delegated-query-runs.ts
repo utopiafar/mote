@@ -213,7 +213,7 @@ export class DelegatedQueryRuns {
     }
     input=this.callbacks.resolveInput?.(input)??input;
     const request=input as {anchorEvidenceIds?:string[]|null;evidenceIds?:string[]|null;question:string;conversationId?:string;after?:string;before?:string;deviceId?:string;timeZone?:string;modelProfileId?:string;modelOverride?:string};
-    if(request.conversationId&&this.store.db.prepare("SELECT 1 FROM query_runs WHERE json_extract(json,'$.conversationId')=? AND json_extract(json,'$.status')='running'").get(request.conversationId))throw new StoreError('An answer is already running in this conversation',409);
+    if(request.conversationId&&!identity&&this.store.db.prepare("SELECT 1 FROM query_runs WHERE json_extract(json,'$.conversationId')=? AND json_extract(json,'$.status')='running'").get(request.conversationId))throw new StoreError('An answer is already running in this conversation',409);
     const at=new Date().toISOString(),contextTime=this.callbacks.contextTime?.()??at,run:QueryRun={id,operationId:'query:'+id,status:'running',createdAt:at,updatedAt:at,events:[],evidenceRevision:this.store.deletionRevision(),...(request.conversationId?{conversationId:request.conversationId}:{}),...this.callbacks.initialReceipt?.(id)};
     const saved:SavedInput={question:request.question,hostRequest:input,language:requestLocale.getStore()??'zh-CN',...(deadline.timeoutMs!==undefined&&deadline.timeoutMs!==null?{executionTimeoutMs:Math.max(1,deadline.timeoutMs)}:{})};
     const foreground=this.foregroundRequests.get(id);if(foreground)foreground.executionTimeoutMs=saved.executionTimeoutMs;

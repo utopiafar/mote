@@ -1,4 +1,5 @@
 import {moteText} from '@mote/shared/i18n';
+import type {ConversationMessage as StoredConversationMessage} from '@mote/shared';
 import {ApiError,type Api} from '../../api';
 
 /** The product conversation queue persists the owner's exact input before a
@@ -13,7 +14,7 @@ export interface ConversationMessageScope {
   evidenceIds?:string[];
   sourceIds?:string[];
 }
-export interface ConversationMessage {
+export interface ConversationMessage extends Pick<StoredConversationMessage,'steering'|'amendedBy'|'supersededBy'> {
   id:string;
   conversationId:string;
   clientRequestId:string;

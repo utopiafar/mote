@@ -9,6 +9,7 @@ import {rm} from 'node:fs/promises';
 import {AgentNotConfiguredError,AgentProviderError,AgentTimeoutError,type AgentOptions,type AgentTraceEvent} from './types.js';
 import {codexImageMetadata,codexImageSteerInputs,type ImagePayload} from './tools/image-result.js';
 import {launchCodexAppServer} from './runtime/codex/launch.js';
+import {RuntimeSteeringUnavailable} from './runtime/contracts.js';
 
 export type CodexTool={type:'function';name:string;description:string;inputSchema:unknown};
 export type CodexToolDelivery=(result:unknown)=>Promise<unknown>;
@@ -49,6 +50,7 @@ export class CodexSession {
   private sequence=0;
   private requests=new Map<number,Pending>();
   private turn?:Pending;
+  private startingTurn?:{turn:Pending;events:Rpc[]};
   private failure?:Error;
   private modelAdmission=new AbortController();
   private ending=false;
@@ -60,6 +62,9 @@ export class CodexSession {
   private bytes=0;
   private toolQueue=Promise.resolve();
   private deliveringImage=false;
+  private deliveringSteering=false;
+  private steeringReceipt?:{turn:Pending;turnId:string;acknowledged:boolean};
+  private activeTurnId?:string;
   private timer?:ReturnType<typeof setTimeout>;
   private budget:ActiveExecutionBudget;
   private usage?:TokenUsage;
@@ -139,8 +144,8 @@ export class CodexSession {
   }
 
   private send(message:Rpc){if(this.failure)throw this.failure;if(!this.child||this.ending)throw this.providerError();this.child.stdin.write(JSON.stringify(message)+'\n');}
-  private request(method:string,params:unknown):Promise<any>{
-    return new Promise((resolve,reject)=>{const id=++this.sequence;this.requests.set(id,{resolve,reject});try{this.send({id,method,params});}catch(error){this.requests.delete(id);reject(error);}});
+  private request(method:string,params:unknown,onResult?:(value:any)=>void):Promise<any>{
+    return new Promise((resolve,reject)=>{const id=++this.sequence;this.requests.set(id,{resolve:value=>{onResult?.(value);resolve(value);},reject});try{this.send({id,method,params});}catch(error){this.requests.delete(id);reject(error);}});
   }
   private fail(error:Error){
     this.modelAdmission.abort(error);
@@ -149,7 +154,7 @@ export class CodexSession {
     // cancellation or child exit can end a turn without a final provider event.
     // Successful cleanup also calls fail(), but no turn remains in that case.
     if(this.turn)this.interruptUsage();
-    for(const pending of this.requests.values())pending.reject(error);this.requests.clear();this.turn?.reject(error);this.turn=undefined;
+    for(const pending of this.requests.values())pending.reject(error);this.requests.clear();this.turn?.reject(error);this.turn=undefined;this.activeTurnId=undefined;this.startingTurn=undefined;
     if(this.child&&!this.ending)this.child.kill('SIGTERM');
   }
   private receive(chunk:string){
@@ -168,6 +173,27 @@ export class CodexSession {
     this.fail(this.providerError({category:'permanent',code:'processing_limit'},{source:'runtime',stage:'model',code}));
   }
   private emit(event:AgentTraceEvent){try{this.observe?.(event);}catch{}}
+  steeringTarget():{turnId:string}|undefined {
+    if(this.turn&&this.activeTurnId&&!this.failure&&!this.ending)return {turnId:this.activeTurnId};
+  }
+  async steer(turnId:string,text:string):Promise<{turnId:string}>{
+    const pending=this.turn;
+    if(!pending||this.steeringTarget()?.turnId!==turnId||this.deliveringSteering)throw new RuntimeSteeringUnavailable('stale');
+    this.deliveringSteering=true;
+    const receipt={turn:pending,turnId,acknowledged:false};this.steeringReceipt=receipt;
+    try{
+      await this.options.authorizeModelRequest?.();
+      if(this.turn!==pending||this.steeringTarget()?.turnId!==turnId)throw new RuntimeSteeringUnavailable('stale');
+      await this.request('turn/steer',{threadId:this.threadId,expectedTurnId:turnId,input:[{type:'text',text,text_elements:[]}]},accepted=>{receipt.acknowledged=this.turn===pending&&this.steeringTarget()?.turnId===turnId&&accepted?.turnId===turnId;if(receipt.acknowledged)this.messages.clear();});
+      // The native terminal may follow its ACK in the same read frame. Only
+      // that positively ordered ACK permits the completion to remain valid.
+      if(!receipt.acknowledged||this.failure||this.ending)throw this.providerError(undefined,{source:'runtime',code:'steering_ack_mismatch',stage:'model'});
+      return {turnId};
+    }catch(error){
+      if(!(error instanceof RuntimeSteeringUnavailable))this.fail(error instanceof AgentProviderError?error:this.providerError(undefined,errorDiagnostics(error)));
+      throw error;
+    }finally{this.deliveringSteering=false;if(this.steeringReceipt===receipt)this.steeringReceipt=undefined;}
+  }
   private async deliverToolImage(turnId:unknown,metadata:unknown,image:{mimeType:string;data:string}){
     const turn=this.turn;
     try{
@@ -186,9 +212,20 @@ export class CodexSession {
   private deltaText=new Map<string,string>();
   private deltaTimer?:ReturnType<typeof setTimeout>;
   private flushDeltas(){if(this.deltaTimer)clearTimeout(this.deltaTimer);this.deltaTimer=undefined;for(const [type,text] of this.deltaText)this.emit({type:'codex.'+type,stage:'model',payload:{text}});this.deltaText.clear();}
+  private rejectTurnMessage(message:Rpc){
+    if(message.id!==undefined&&message.method)this.send({id:message.id,error:{code:-32600,message:'The native turn is no longer active'}});
+  }
   private dispatch(message:Rpc){
     const method=message.method??'',p=message.params;
     if(p?.threadId&&this.threadId&&p.threadId!==this.threadId)return;
+    const turnId=p?.turnId??p?.turn?.id,turnEvent=method.startsWith('turn/')||method.startsWith('item/');
+    if(message.method&&(typeof turnId==='string'||turnEvent)){
+      // App Server can emit a new turn's events before its start response.
+      // Keep them within the existing stream/execution budgets, then dispatch
+      // only the exact identity acknowledged for this pending Host attempt.
+      if(this.startingTurn){this.startingTurn.events.push(message);return;}
+      if(turnEvent&&!this.turn||this.activeTurnId&&typeof turnId==='string'&&turnId!==this.activeTurnId){this.rejectTurnMessage(message);return;}
+    }
     if(['item/agentMessage/delta','item/reasoning/summaryTextDelta','item/reasoning/textDelta'].includes(method)&&typeof p?.delta==='string'){
       this.deltaText.set(method,(this.deltaText.get(method)??'')+p.delta);
       if((this.deltaText.get(method)?.length??0)>=4096)this.flushDeltas();
@@ -207,12 +244,15 @@ export class CodexSession {
     }
     if(message.method==='configWarning'){this.fail(this.providerError(undefined,{source:'codex',code:'config_warning',stage:'startup'}));return;}
     if(message.id!==undefined&&!message.method){
-      const pending=this.requests.get(Number(message.id));if(!pending)return;this.requests.delete(Number(message.id));
+      // A failing synchronous ACK hook must remain reachable by fail(),
+      // including failures while replaying the acknowledged turn's events.
+      const pending=this.requests.get(Number(message.id));if(!pending)return;
       if(message.error){
         const inputLimit=inputLimitMetadata(message.error);
         this.emit({type:'codex.rpc.failed',stage:'model',payload:{requestId:message.id,code:(message.error as {code?:number}).code,...inputLimit}});
         pending.reject(this.providerError(inputLimit?{category:'permanent',code:'processing_limit'}:codexFailure((message.error as {data?:{codexErrorInfo?:unknown}}).data?.codexErrorInfo),{...codexFailureDiagnostics((message.error as {data?:{codexErrorInfo?:unknown}}).data?.codexErrorInfo),...(inputLimit?{code:'input_too_large'}:{}),rpcCode:(message.error as {code?:number}).code}));
       }else pending.resolve(message.result);
+      this.requests.delete(Number(message.id));
       return;
     }
     if(message.id!==undefined&&message.method){
@@ -258,8 +298,9 @@ export class CodexSession {
     // turn bookkeeping. Every other unexpected native tool fails closed. Shell/files are enabled only for the
     // separately scoped import workspace; query sessions have no environment.
     if(message.method==='turn/completed'){
-      if(this.deliveringImage){this.fail(this.providerError());return;}
-      const pending=this.turn;this.turn=undefined;
+      if(this.activeTurnId&&params.turn?.id&&params.turn.id!==this.activeTurnId)return;
+      if(this.deliveringImage||this.deliveringSteering&&!this.steeringReceipt?.acknowledged){this.fail(this.providerError());return;}
+      const pending=this.turn;this.turn=undefined;this.activeTurnId=undefined;
       if(params.turn?.status!=='completed')this.interruptUsage();
       if(params.turn?.status!=='completed')pending?.reject(params.turn?.status==='interrupted'?this.providerError({category:'permanent',code:'cancelled'}):this.providerError(codexFailure(params.turn?.error?.codexErrorInfo??this.turnError),codexFailureDiagnostics(params.turn?.error?.codexErrorInfo??this.turnError)));
       else pending?.resolve([...this.messages.values()].at(-1)??'');
@@ -277,13 +318,24 @@ export class CodexSession {
     this.usageInterrupted=false;
     this.messages.clear();
     this.turnError=undefined;
+    this.activeTurnId=undefined;
     if(this.usage)this.publishUsage({...this.usage,complete:false});
     const completed=new Promise<string>((resolve,reject)=>{this.turn={resolve,reject};});
     // Attach a rejection handler before awaiting the start acknowledgement.
     void completed.catch(()=>{});
     const effort=this.options.reasoningEffort;
-    try{await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort}:{})});return await completed;}
-    catch(error){this.interruptUsage();this.turn=undefined;throw error;}
+    const pending=this.turn!,starting={turn:pending,events:[] as Rpc[]};this.startingTurn=starting;
+    try{await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort}:{})},started=>{
+      if(this.turn!==starting.turn||this.startingTurn!==starting)return;
+      if(typeof started?.turn?.id!=='string'||!started.turn.id)throw this.providerError();
+      const turnId=started.turn.id;this.activeTurnId=turnId;this.startingTurn=undefined;
+      for(const event of starting.events){
+        if(this.failure||this.ending)break;
+        if((event.params?.turnId??event.params?.turn?.id)!==turnId)this.rejectTurnMessage(event);
+        else this.dispatch(event);
+      }
+    });return await completed;}
+    catch(error){this.interruptUsage();this.turn=undefined;this.activeTurnId=undefined;this.startingTurn=undefined;throw error;}
   }
   close():Promise<void>{return this.closed??=this.cleanup();}
   private async cleanup(){
