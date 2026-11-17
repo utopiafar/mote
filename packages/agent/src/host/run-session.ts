@@ -112,7 +112,7 @@ export async function settleHostCleanup(tasks: readonly (() => unknown | Promise
   if (!primaryFailure) throw new AggregateError(errors, 'Host run cleanup failed');
 }
 
-/** A08 supplies staged reads: no ledger mutation before confirm. The Host
+/** Staged reads: no ledger mutation before confirm. The Host
  * checks the issued attempt before read, before disclosure and after ACK. */
 export interface HostSessionAssembly {
   readonly systemPrompt: string;
