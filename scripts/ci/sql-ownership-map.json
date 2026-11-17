@@ -8,6 +8,12 @@
    "file": "apps/server/src/action-capabilities-schema.ts"
   },
   {
+   "declaration": "ownerQuestionsSchemaInstallation",
+   "owner": "owner-question-services",
+   "fn": "ownerQuestionsSchema",
+   "file": "apps/server/src/owner-questions-schema.ts"
+  },
+  {
    "declaration": "processorAdmissionSchemaInstallation",
    "owner": "processor-admission",
    "fn": "processorAdmissionSchema",
@@ -1604,6 +1610,21 @@
    "owner": "outbound-export",
    "file": "apps/server/src/plugin-surface-schema.ts",
    "installer": "outboundExportSchemaInstallation"
+  },
+  "owner_question_dependencies": {
+   "owner": "owner-question-services",
+   "file": "apps/server/src/owner-questions-schema.ts",
+   "installer": "ownerQuestionsSchemaInstallation"
+  },
+  "owner_question_replies": {
+   "owner": "owner-question-services",
+   "file": "apps/server/src/owner-questions-schema.ts",
+   "installer": "ownerQuestionsSchemaInstallation"
+  },
+  "owner_questions": {
+   "owner": "owner-question-services",
+   "file": "apps/server/src/owner-questions-schema.ts",
+   "installer": "ownerQuestionsSchemaInstallation"
   },
   "perception_jobs": {
    "owner": "perception",
