@@ -1,4 +1,5 @@
 import type {Context} from '@deepseek-ai/cordis';
+import type {ServiceLease} from '@mote/plugin-api/contracts';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
@@ -28,14 +29,15 @@ import type {Connections,ConnectionCredential} from '../connections.js';
 import type {PluginCenter} from '../plugin-center.js';
 import type {SourceStore} from '../sources.js';
 import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
-import {actionsServicesContribution,actionsServicesDeclaration,actionsServicesReplacement,createActionsServices} from '../plugins/actions-services.js';
+import {actionsServicesPlugin,actionsServicesInputsContribution,actionsServicesInputsDeclaration,actionsServicesInputsContract,actionsServicesContract,type ActionsServices} from '../plugins/actions-services.js';
+import {createActionsServiceInputs} from '../action-service-inputs.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createActivityServices} from '../plugins/activity-services.js';
 
-/** Work-domain selections. Insights has an executable activation; Actions
- * retains its existing assembly bridge until its own domain moves. */
+/** Executable work domains and their private build input providers. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
-  {contribution:actionsServicesContribution,declaration:actionsServicesDeclaration,replacement:actionsServicesReplacement},
+  {contribution:actionsServicesInputsContribution,declaration:actionsServicesInputsDeclaration,replacement:'restart'},
+  actionsServicesPlugin,
   {contribution:insightServicesInputsContribution,declaration:insightServicesInputsDeclaration,replacement:'restart'},
   insightServicesPlugin,
 ]);
@@ -67,12 +69,13 @@ export function workInputs(dependencies:WorkInputDependencies){
 export type WorkDomainDependencies=Parameters<typeof insightServiceInputs>[0]&{
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly resources:ServerResources;
+  readonly actions:ActionsAssemblyDependencies;
 }
 
 /** Publish only the private typed adapter. The selected declaration, common
  * loader and plugin lifecycle create the domain and contribute its routes. */
 export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
-  const {bootstrap,resources,...inputs}=dependencies;
+  const {bootstrap,resources,actions:actionInputs,...inputs}=dependencies;
   const selected=bootstrap.selectsFeature('mote.insights')&&bootstrap.selectsPlugin(insightServicesPlugin.contribution.id);
   if(selected){
     if(!bootstrap.selectsPlugin(insightServicesInputsContribution.id))throw Error('Insights input provider is not selected');
@@ -87,6 +90,29 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
     });
     resources.defer(()=>handle.close('shutdown'));
   }
+  const actionsSelected=bootstrap.selectsFeature('mote.actions')&&bootstrap.selectsPlugin(actionsServicesPlugin.contribution.id);
+  let actionsInput:ReturnType<typeof createActionsServiceInputs>|undefined;
+  if(actionsSelected){
+    if(!bootstrap.selectsPlugin(actionsServicesInputsContribution.id))throw Error('Actions input provider is not selected');
+    actionsInput=createActionsServiceInputs({
+      store:actionInputs.store,files:actionInputs.files,sources:actionInputs.sources,connections:actionInputs.connections,executor:actionInputs.executor,
+      configService:actionInputs.configService,semanticArtifacts:actionInputs.semanticArtifacts,assistantTasks:actionInputs.assistantTasks,
+      readEvidence:ids=>actionInputs.evidenceReader.memories.readEvidence(ids),currentEvidence:id=>actionInputs.evidenceReader.memories.isCurrentEvidence(id),
+      actionProviders:()=>actionInputs.pluginCenter.actionProviders(),connectorAction:input=>actionInputs.pluginCenter.executeConnectorAction(input),
+      query:input=>actionInputs.queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),configured:()=>actionInputs.agent.configured,
+      authorization:{credential:actionInputs.credential,connectionIdentity:actionInputs.connectionIdentity},
+    });
+    const value=actionsInput.inputs;
+    const handle=await bootstrap.host.install({
+      identity:{host:bootstrap.host.identity,packageId:actionsServicesInputsContribution.id,installationId:'build:actions-services-inputs@1.0.0',instanceId:'action-inputs',activationId:randomUUID()},
+      contributions:[actionsServicesInputsDeclaration],restartRequired:true,
+      factory(context){
+        bootstrap.registerDomainService(context.provide(actionsServicesInputsContribution.id,actionsServicesInputsContract,value));
+        return {prepare(){},start(){},quiesce(){},stop(){},dispose(){}};
+      },
+    });
+    resources.defer(()=>handle.close('shutdown'));
+  }
   const domains=await bootstrap.activateDomains();
   resources.beforeClose(()=>domains.quiesce());resources.defer(()=>domains.close());
   let insights:InsightServices|undefined;
@@ -94,10 +120,17 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
     const lease=await bootstrap.acquireDomainService(insightServicesPlugin.contribution.id,insightServicesContract);
     resources.defer(()=>lease.release());insights=lease.value;
   }
+  let actionsLease:ServiceLease<ActionsServices>|undefined;
+  if(actionsSelected){
+    actionsLease=await bootstrap.acquireDomainService(actionsServicesPlugin.contribution.id,actionsServicesContract);
+    resources.defer(()=>actionsLease!.release());
+  }
   const current=()=>{if(!insights)throw Error('Insights plugin is not selected');return insights;};
   return Object.freeze({
     routes:domains.routes,insights,
     get insightServices(){return current();},get insightRuns(){return current().runs;},
+    get actions(){if(!actionsLease||!actionsInput)throw Error('Actions plugin is not selected');actionsLease.assertCurrent();return actionsInput.actionsForAssembly;},
+    get actionsServices(){if(!actionsLease)throw Error('Actions plugin is not selected');return actionsLease.value;},
     contributeAssistantRoutes(context:Context,cards:Parameters<typeof insightAssistantFeature>[1]){
       if(insights)contributeDomainRoutes(context,{'mote.insights':insightAssistantFeature(insights,cards)});
     },
@@ -108,8 +141,6 @@ export interface ActionsAssemblyDependencies {
   readonly store:Store;
   readonly assistantTasks:import('../assistant-tasks.js').AssistantTasks;
   readonly evidenceReader:EvidenceReader;
-  readonly resources:ServerResources;
-  readonly backendContext:Context;
   readonly files:FileStore;
   readonly sources:SourceStore;
   readonly connections:Connections;
@@ -120,26 +151,8 @@ export interface ActionsAssemblyDependencies {
   readonly semanticArtifacts:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
   readonly credential:(request:FastifyRequest)=>ConnectionCredential|undefined;
   readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
-  /** Late-bound: the admitted query path assembles after Actions; the callback
-   * is only invoked by accepted work. */
+  /** The admitted query path is fixed by assembly and invoked only by accepted work. */
   readonly queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
-}
-
-/** The actions-services plugin owns the domain objects, poll and route table;
- * the assembly only binds its dependencies, lifecycle and route contribution. */
-export async function assembleActions(dependencies:ActionsAssemblyDependencies){
-  const {store,files,resources,backendContext,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,queryAgent}=dependencies;
-  const services=createActionsServices({store,files,sources,connections,executor,configService,semanticArtifacts,
-    assistantTasks:dependencies.assistantTasks,readEvidence:ids=>dependencies.evidenceReader.memories.readEvidence(ids),currentEvidence:id=>dependencies.evidenceReader.memories.isCurrentEvidence(id),
-    actionProviders:()=>pluginCenter.actionProviders(),
-    connectorAction:input=>pluginCenter.executeConnectorAction(input),
-    query:input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),
-    configured:()=>agent.configured,
-    authorization:{credential,connectionIdentity}});
-  resources.defer(()=>services.close());
-  await services.prepare();services.start();
-  contributeDomainRoutes(backendContext,{'mote.actions':Object.freeze({mount:(app:Parameters<typeof services.routes>[0])=>services.routes(app)})});
-  return Object.freeze({actions:services.actionsForAssembly});
 }
 
 export interface ActivityAssemblyDependencies {

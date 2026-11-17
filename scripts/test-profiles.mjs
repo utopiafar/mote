@@ -157,7 +157,7 @@ try {
   const release = join(directory, 'release-next'); await mkdir(join(release, 'apps/server/dist'), { recursive: true });
   await writeFile(join(release, 'package.json'), '{"type":"module"}');
   await writeFile(join(release, 'apps/server/dist/index.js'), `import ${JSON.stringify(new URL('apps/server/dist/index.js', 'file://' + repository + '/').href)};\n`);
-  for (const marker of ['log-retention-config.mjs','diagnostic-log-store.mjs','config-service.js']) await cp(join(repository, 'apps/server/dist', marker), join(release, 'apps/server/dist', marker));
+  await cp(join(repository, 'apps/server/dist/deployment-contract.json'), join(release, 'apps/server/dist/deployment-contract.json'));
   await cli(home, 'dev', 'start'); await cli(home, 'dev', 'upgrade', ['--release', release]);
   assert.equal((await request(dev, `/api/notes/${saved.id}`)).ocrText, saved.text);
   const afterUpgrade = note(); await request(dev, '/api/notes', { method: 'POST', body: afterUpgrade, status: 201 });
