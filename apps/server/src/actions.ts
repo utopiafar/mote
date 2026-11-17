@@ -177,9 +177,9 @@ export class Actions {
   messageProposalRevision(){return this.meta('message-proposals',{revision:0}).revision;}
   /** Internal Actions-owner sink. Its caller must already hold the real query
    * commit transaction and the exact private single-use message receipt. */
-  proposeCurrentCalendar(id:string,event:ActionProposal['event'],target:CentralConnectorActionTarget,ownerInstruction:NonNullable<ActionProposal['ownerInstruction']>){
+  proposeCurrentCalendar(id:string,event:ActionProposal['event'],target:CentralConnectorActionTarget,ownerInstruction:NonNullable<ActionProposal['ownerInstruction']>,change?:{kind:'calendar.update'|'calendar.cancel';original:NonNullable<ActionProposal['related']>}){
     if(!this.store.db.isTransaction)throw new StoreError('Owner Action acceptance requires its query transaction',409);
-    const at=new Date().toISOString(),action:ActionProposal={id,kind:'calendar.create',event:calendarEventSchema.parse(event),target,ownerInstruction,evidence:[],uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at};
+    const at=new Date().toISOString(),action:ActionProposal={id,kind:change?.kind??'calendar.create',event:calendarEventSchema.parse(event),...(change?{related:structuredClone(change.original)}:{}),target,ownerInstruction,evidence:[],uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at};
     if(this.store.db.prepare('SELECT 1 FROM action_proposals WHERE id=?').get(id)||this.options.ownerInstructionCurrent?.(action)!==true)throw new StoreError('The current owner Action receipt is unavailable',409);
     return this.save(action);
   }
