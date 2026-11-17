@@ -1,7 +1,7 @@
 import { rename, stat, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { compose, startNative, stopNative, nativeIdentity, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, updateProfileConfiguration, assertLogRetentionCompatible } from './profile-lib.mjs';
+import { compose, startNative, stopNative, nativeIdentity, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, updateProfileConfiguration, assertDeploymentCompatible, deploymentProbe } from './profile-lib.mjs';
 import { preserveConnectorState, restoreConnectorState } from './update-private.mjs';
 import {dockerImageVariant,assertDockerMediaRuntime} from './docker-media.mjs';
 
@@ -22,7 +22,7 @@ export async function changeProfileDeployment(p, options = {}) {
     if (!options.image) throw Error('Docker upgrade requires --image; build or pull it first');
     next = { image: await execute('docker', ['image', 'inspect', '--format', '{{.Id}}', options.image], { capture: true }), imageVariant:dockerImageVariant(options.imageVariant??p.meta.imageVariant) };
   }
-  await assertLogRetentionCompatible({ ...p, meta: { ...p.meta, ...next } });
+  await assertDeploymentCompatible({ ...p, meta: { ...p.meta, ...next } });
   if(p.meta.runtime==='docker')await assertDockerMediaRuntime({...p,meta:{...p.meta,...next}},execute);
   let wasRunning;
   if (p.meta.runtime === 'docker') {
@@ -61,8 +61,8 @@ export async function changeProfileDeployment(p, options = {}) {
     // Failure retains the snapshot and selection record. Never automatically run old code on migrated data.
     const started = await startProfile(p);
     if (prepared?.releaseVersion) {
-      const response = await fetch(p.url + '/api/health', { redirect: 'error', signal: AbortSignal.timeout(5000) });
-      if (!response.ok || (await response.json()).version !== prepared.releaseVersion) throw Error('Updated process version did not match the signed release; snapshot retained for explicit rollback');
+      const response = await deploymentProbe(p,'/api/health',5000);
+      if (response.version !== prepared.releaseVersion) throw Error('Updated process version did not match the signed release; snapshot retained for explicit rollback');
     }
     return { ...started, snapshot: backup, ...(preservedData ? { preservedData } : {}) };
   } finally { if (privateConnectors) await rm(privateConnectors, { recursive: true, force: true }); }

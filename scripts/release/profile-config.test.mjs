@@ -7,9 +7,18 @@ import {spawnSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {setTimeout as delay} from 'node:timers/promises';
 const composeAvailable = spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status === 0;
-import {profilePaths,initialize,loadProfile,effectiveConfiguration,isolatedEnvironment,setPublicUrl,compose,composeEnvironment,dockerConfigurationUser,health} from '../profile-lib.mjs';
+import {profilePaths,initialize,loadProfile,effectiveConfiguration,isolatedEnvironment,setPublicUrl,compose,composeEnvironment,dockerConfigurationUser,health,withProfileLock} from '../profile-lib.mjs';
 import {parseConfigDocument,serializeConfigDocument} from '../../packages/shared/src/config-file.ts';
 async function fixture(t) {const directory=await mkdtemp(join(tmpdir(),'mote-yaml-profile-'));t.after(()=>rm(directory,{recursive:true,force:true}));return directory;}
+test('interrupted lifecycle recovery fails closed and ordinary stale PID recovery leaves no claim',async t=>{
+ const directory=await fixture(t),p={directory},path=join(directory,'lifecycle.lock'),recovery=path+'.recovery';let entered=false;
+ await writeFile(recovery,'generated-interrupted-recovery',{mode:0o600});
+ await assert.rejects(withProfileLock(p,async()=>{entered=true;}),/Lifecycle recovery is active or interrupted/);
+ assert.equal(entered,false);assert.equal(await stat(path).then(()=>true,()=>false),false);assert.equal(await readFile(recovery,'utf8'),'generated-interrupted-recovery');
+ await rm(recovery);await writeFile(path,'2147483647',{mode:0o600});
+ await withProfileLock(p,async()=>{entered=true;assert.equal(await readFile(path,'utf8'),String(process.pid));assert.equal(await stat(recovery).then(()=>true,()=>false),false);});
+ assert.equal(entered,true);assert.equal(await stat(path).then(()=>true,()=>false),false);
+});
 function changedPaths(before,after,path=[]) {
  if(Object.is(before,after))return [];
  if(!before||!after||typeof before!=='object'||typeof after!=='object'||Array.isArray(before)!==Array.isArray(after))return [path];
