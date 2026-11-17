@@ -35,6 +35,7 @@ export const installations={
  'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
  'actions-schema.ts':['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation'],
  'processing-runtime-schema.ts':['processingRuntimeSchemaInstallation'],
+ "background-model-authorization-schema.ts":["backgroundModelAuthorizationSchemaInstallation"],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -150,6 +151,22 @@ export const consumerScopes={
   "ProcessingRuntime.tick": "processing-runtime",
   "ProcessingRuntime.commit": "processing-runtime"
  },
+ "background-model-authorization.ts":{
+ "BackgroundModelAuthorization.state": "background-model-authorization",
+ "BackgroundModelAuthorization.transaction": "background-model-authorization",
+ "BackgroundModelAuthorization.command": "background-model-authorization",
+ "BackgroundModelAuthorization.receive": "background-model-authorization",
+ "BackgroundModelAuthorization.derive": "background-model-authorization",
+ "BackgroundModelAuthorization.roots": "background-model-authorization",
+ "BackgroundModelAuthorization.freshTriggers": "background-model-authorization",
+ "BackgroundModelAuthorization.save": "background-model-authorization",
+ "BackgroundModelAuthorization.saved": "background-model-authorization",
+ "BackgroundModelAuthorization.automatic": "background-model-authorization",
+ "BackgroundModelAuthorization.bindStep": "background-model-authorization",
+ "BackgroundModelAuthorization.stepAuthority": "background-model-authorization",
+ "BackgroundModelAuthorization.assertStep": "background-model-authorization",
+ "BackgroundModelAuthorization.runStep": "background-model-authorization"
+},
 };
 
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
@@ -458,7 +475,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation"];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",
