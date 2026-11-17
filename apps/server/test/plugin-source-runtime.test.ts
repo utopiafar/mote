@@ -22,6 +22,8 @@ import {createAuthorizationPlatform} from '../src/plugins/authorization-platform
 import {createExecutionPlatform,createExecutionHandlersFactory} from '../src/plugins/execution-platform.js';
 import {createSourceRuntime,createSourceRuntimeFactory,sourceRuntimeDeclaration,sourceRuntimeContribution} from '../src/plugins/source-runtime.js';
 import {codingSourceDeclaration,createCodingSourceFactory,createCodingSourceRoutes} from '../src/coding-source-plugin.js';
+import {SourcePipelineRuntime} from '../src/source-pipelines.js';
+import {createTestScope} from './fixtures/plugin-scope.js';
 
 const ownerToken='generated-source-owner',sourceId='generated-coding';
 const identity=()=>({packageId:'generated.source-runtime',installationId:randomUUID(),instanceId:randomUUID(),activationId:randomUUID(),host:{kind:'central' as const,id:'generated-source-host'}});
@@ -51,6 +53,59 @@ async function fixture(t:TestContext){
       try{if(Array.isArray(items))return await authorization.withSource(request,source,items,()=>authorization.sourceIntake.sourceBatch(source,items,authorization.commits.capture()));return await authorization.withSource(request,source,items,()=>authorization.sourceIntake.sourceItem(source,items,authorization.commits.capture()));}finally{authorization.releaseRequest(request);}},
   };
 }
+
+test('source owner publishes one close promise before a real handler binding synchronously reenters',async t=>{
+  const f=await fixture(t),s=f.state;await s.codingOwner.close('disabled');await s.owner.close('disabled');
+  let platform!:ReturnType<typeof createSourceRuntime>,nested:Promise<void>|undefined,calls=0;
+  const execution={...s.execution,handlersForAssembly(scope:Parameters<typeof s.execution.handlersForAssembly>[0]){
+    const binding=s.execution.handlersForAssembly(scope);
+    return {...binding,close(){calls++;if(calls===1)nested=platform.close();return binding.close();}};
+  }};
+  platform=createSourceRuntime({},{...s.dependencies,execution});
+  const handle=await s.host.install({identity:identity(),contributions:[sourceRuntimeDeclaration],factory:createSourceRuntimeFactory(platform)});
+  const closing=platform.close();assert.equal(platform.close(),closing);await closing;
+  assert.equal(nested,closing);assert.equal(calls,1);assert.throws(()=>platform.runtimeForAssembly,{statusCode:503});
+  assert.equal(s.store.db.isOpen,true);assert.equal(s.execution.assembly.executor.closed,false);await handle.close('disabled');
+});
+
+test('source close collects a synchronous first failure and a late binding rejection without losing borrowed resources',async t=>{
+  const f=await fixture(t),s=f.state;await s.codingOwner.close('disabled');await s.owner.close('disabled');
+  const root=createTestScope(),release=deferred(),first=Error('Generated synchronous source close failure'),late=Error('Generated late source binding failure'),unhandled:unknown[]=[];
+  const observe=(error:unknown)=>unhandled.push(error);process.on('unhandledRejection',observe);
+  let calls=0;
+  const execution={...s.execution,handlersForAssembly(scope:Parameters<typeof s.execution.handlersForAssembly>[0]){
+    const binding=s.execution.handlersForAssembly(scope);
+    return {...binding,close(){calls++;return binding.close().then(async()=>{await release.promise;throw late;});}};
+  }};
+  const platform=createSourceRuntime({},{...s.dependencies,execution});await platform.prepare(root.scope);platform.start();
+  const runtime=platform.runtimeForAssembly,realClose=runtime.close.bind(runtime),mock=t.mock.method(runtime,'close',()=>{throw first;});
+  try{
+    let closing!:Promise<void>;assert.doesNotThrow(()=>{closing=platform.close();});assert.equal(platform.close(),closing);
+    const rejected=assert.rejects(closing,error=>error instanceof AggregateError&&error.cause===first&&error.errors[0]===first&&error.errors[1]===late);
+    release.resolve();await rejected;await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(calls,1);assert.deepEqual(unhandled,[]);assert.equal(s.store.db.isOpen,true);assert.equal(s.execution.assembly.executor.closed,false);
+  }finally{release.resolve();mock.mock.restore();await realClose();await platform.close().catch(()=>{});await root.close();process.off('unhandledRejection',observe);}
+});
+
+for(const failure of [false,true])test(`pipeline close publishes its promise before unregister ${failure?'throws and later cleanup rejects':'synchronously reenters'}`,async t=>{
+  const f=await fixture(t),s=f.state;await s.codingOwner.close('disabled');await s.owner.close('disabled');
+  const root=createTestScope(),binding=s.execution.handlersForAssembly(root.scope),first=Error('Generated unregister failure'),late=Error('Generated resource tail failure');
+  let runtime!:SourcePipelineRuntime,nested:Promise<void>|undefined,calls=0;
+  const handlers={register(handler:Parameters<typeof binding.register>[0]){
+    const unregister=binding.register(handler);
+    return ()=>{calls++;const result=unregister();if(failure){void result.catch(()=>{});throw first;}if(calls===1)nested=runtime.close();return result;};
+  }};
+  runtime=new SourcePipelineRuntime(s.store,s.materials,[],root.scope,s.execution.assembly.executor,s.memoryWork,handlers);await runtime.ready;
+  const resources=(runtime as unknown as {resources:{close():Promise<void>}}).resources,realDispose=resources.close.bind(resources);
+  const mock=failure?t.mock.method(resources,'close',()=>realDispose().then(()=>{throw late;})):undefined;
+  try{
+    let closing!:Promise<void>;assert.doesNotThrow(()=>{closing=runtime.close();});assert.equal(runtime.close(),closing);
+    if(failure)await assert.rejects(closing,error=>error instanceof AggregateError&&error.cause===first&&error.errors[0]===first&&error.errors[1]===late);
+    else{await closing;assert.equal(nested,closing);}
+    assert.equal(calls,1);assert.equal(s.execution.assembly.executor.closed,false);assert.equal(s.store.db.isOpen,true);
+    assert.throws(()=>runtime.start(),{statusCode:409});
+  }finally{mock?.mock.restore();await Promise.resolve().then(()=>runtime.close()).catch(()=>{});await binding.close();await root.close();}
+});
 
 test('persisted low-priority binding wins while fresh sources use default priority and reject ambiguity',async t=>{
   const f=await fixture(t),s=f.state;

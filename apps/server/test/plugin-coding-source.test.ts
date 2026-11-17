@@ -1,4 +1,4 @@
-import {testScope} from './fixtures/plugin-scope.js';
+import {testScope,createTestScope} from './fixtures/plugin-scope.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -13,7 +13,7 @@ import {MaterialStore} from '../src/materials.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {SourceStore} from '../src/sources.js';
 import {FeatureRoutes,installFeatureRoutes} from '../src/features/index.js';
-import {codingSourceContribution,codingSourceDeclaration,codingSourceReplacement,createCodingSourceFactory,createCodingSourceRoutes,type CodingSourceOptions} from '../src/coding-source-plugin.js';
+import {codingSourceContribution,codingSourceDeclaration,codingSourceReplacement,createCodingSource,createCodingSourceFactory,createCodingSourceRoutes,type CodingSourceOptions} from '../src/coding-source-plugin.js';
 
 const identity=()=>({packageId:'generated.coding-source',installationId:randomUUID(),instanceId:'coding',activationId:randomUUID(),host:{kind:'central' as const,id:'generated-coding-host'}});
 const codingEvent=(id:string)=>({externalId:id,revision:'1',observedAt:'2026-11-03T01:00:00.000Z',kind:'message',layer:'snapshot',text:'Generated coding requirement '+id,document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'generated-session',projectKey:'generated-project',eventId:id,role:'user',attribution:'human',part:0,parts:1}}});
@@ -112,4 +112,36 @@ test('coding stop drains an accepted archive read before unregistering the recip
   assert.equal(s.runtime.registry.get('mote.coding'),undefined);
   assert.match(s.materials.read(s.materials.list().items[0]!.ref,{length:12000}).text,/Generated coding requirement accepted/);
   assert.equal(s.store.db.prepare("SELECT state FROM source_pipeline_work").get()!.state,'complete');
+});
+
+for(const failure of [false,true])test(`coding close publishes its promise before route withdrawal ${failure?'throws':'synchronously reenters'}`,async t=>{
+  const f=await fixture(t),s=f.state;await f.stopCoding();
+  const root=createTestScope(),first=Error('Generated coding route withdrawal failure');
+  let source!:ReturnType<typeof createCodingSource>,nested:Promise<void>|undefined,calls=0;
+  const routes={...s.routes,deactivate(activation:Parameters<typeof s.routes.deactivate>[0]){
+    calls++;s.routes.deactivate(activation);if(failure)throw first;if(calls===1)nested=source.close();
+  }};
+  source=createCodingSource({runtime:s.runtime,sources:s.sources,store:s.store},routes,root.scope);await source.prepare();source.start();
+  try{
+    const closing=source.close();assert.equal(source.close(),closing);
+    if(failure)await assert.rejects(closing,error=>error===first);
+    else{await closing;assert.equal(nested,closing);}
+    assert.equal(calls,1);assert.equal(s.runtime.registry.get('mote.coding'),undefined);assert.equal(s.store.db.isOpen,true);
+    assert.equal((await s.app.inject('/api/coding/uploads')).statusCode,503);assert.throws(()=>source.start(),{statusCode:503});
+    await f.startCoding();assert.equal((await s.app.inject('/api/coding/uploads')).statusCode,200);
+  }finally{await source.close().catch(()=>{});await root.close();}
+});
+
+test('coding preparation released after close cannot reactivate an old scope or retain a recipe',async t=>{
+  const f=await fixture(t),s=f.state;await f.stopCoding();
+  const root=createTestScope();let entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+  const plugin:Plugin=async()=>{entered();await held;};
+  const source=createCodingSource({runtime:s.runtime,sources:s.sources,store:s.store},s.routes,root.scope,{plugins:[plugin]});
+  const preparing=source.prepare();await started;
+  try{
+    const closing=source.close(),rejected=assert.rejects(preparing,{statusCode:503});release();await Promise.all([closing,rejected]);
+    assert.throws(()=>source.start(),{statusCode:503});assert.equal(s.runtime.registry.get('mote.coding'),undefined);
+    await f.startCoding();assert.equal((await s.app.inject('/api/coding/uploads')).statusCode,200);
+  }finally{release();await Promise.allSettled([preparing,source.close()]);await root.close();}
 });

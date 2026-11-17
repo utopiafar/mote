@@ -3,7 +3,7 @@ import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
 import type {Context,Plugin} from '@deepseek-ai/cordis';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle} from '@mote/plugin-api/contracts';
 import {PluginResourceScope,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceStore} from './sources.js';
@@ -230,7 +230,7 @@ interface CodingSourceDependencies {
 }
 type CodingSourceActivation=CodingSourceDependencies;
 export interface CodingSourceOptions {readonly plugins?:readonly Plugin[];}
-export interface CodingSource extends PluginLifecycle {close():Promise<void>;}
+export interface CodingSource {prepare():Promise<void>;start():void;quiesce():void;close():Promise<void>;}
 
 const routeContributions=new WeakMap<SourcePipelineRuntime,ReturnType<typeof createCodingSourceRoutes>>();
 export function codingSourceRoutesFor(runtime:SourcePipelineRuntime){return routeContributions.get(runtime);}
@@ -283,38 +283,49 @@ export function createCodingSourceRoutes(runtime:SourcePipelineRuntime){
 /** Owns only the coding recipe scope. The shared runtime, Store and source
  * catalogue remain borrowed and continue serving other source kinds. */
 export function createCodingSource(dependencies:CodingSourceDependencies,routes:ReturnType<typeof createCodingSourceRoutes>,scope:HostScope,options:CodingSourceOptions={}):CodingSource{
-  let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'='created';
+  let admission:boolean|undefined;
   let activation:CodingSourceActivation|undefined,uninstall:(()=>void)|undefined,plugins:PluginResourceScope|undefined,closing:Promise<void>|undefined;
   const unavailable=()=>new StoreError('Coding source is unavailable',503);
-  const close=()=>closing??=(async()=>{
-    if(activation)routes.deactivate(activation);
-    activation=undefined;const owned=plugins,remove=uninstall;plugins=undefined;uninstall=undefined;
-    try{await owned?.close();}finally{remove?.();phase='stopped';}
-  })();
-  const quiesce=()=>{if(phase==='active'){phase='quiescing';dependencies.runtime.registry.quiesce('mote.coding');routes.deactivate(activation!);}};
+  const close=()=>{
+    if(closing)return closing;
+    let resolve!:()=>void,reject!:(error:unknown)=>void;
+    closing=new Promise<void>((done,failed)=>{resolve=done;reject=failed;});
+    const current=activation,owned=plugins,remove=uninstall;activation=undefined;plugins=undefined;uninstall=undefined;admission=false;
+    void (async()=>{
+      const errors:unknown[]=[];
+      try{if(current){dependencies.runtime.registry.quiesce('mote.coding');routes.deactivate(current);}}catch(error){errors.push(error);}
+      try{await owned?.close();}catch(error){errors.push(error);}
+      try{remove?.();}catch(error){errors.push(error);}
+      if(errors.length===1)throw errors[0];
+      if(errors.length)throw new AggregateError(errors,'Coding source disposal failed',{cause:errors[0]});
+    })().then(resolve,reject);
+    return closing;
+  };
+  const quiesce=()=>{if(admission){admission=false;dependencies.runtime.registry.quiesce('mote.coding');routes.deactivate(activation!);}};
   return Object.freeze({
     async prepare(){
-      if(phase!=='created')throw unavailable();phase='preparing';
+      if(activation||plugins||uninstall||closing)throw unavailable();
       try{
+        scope.assertCurrent();
         uninstall=installCodingSource({moteSourceRecipes:dependencies.runtime.recipes,moteSourcePipelines:dependencies.runtime.registry,moteMaterialCatalog:dependencies.runtime.materials.catalog.registry},{accepting:false});
         plugins=new PluginResourceScope(undefined,'Coding source plugin scope disposal failed');
         scope.defer(()=>plugins?.close());
         const install=async(plugin:Plugin)=>{
+          if(closing)throw unavailable();
           const fiber=dependencies.runtime.context.plugin(plugin);
           plugins!.defer(()=>fiber.dispose());
           await plugins!.join((async()=>{try{await fiber;}catch(error){try{await fiber.dispose();}catch(cleanup){throw new AggregateError([error,cleanup],'Coding source plugin initialization and disposal failed',{cause:error});}throw error;}})());
         };
         for(const plugin of options.plugins??[])await install(plugin);
-        activation={...dependencies};phase='prepared';
+        scope.assertCurrent();if(closing)throw unavailable();activation={...dependencies};
       }catch(error){
         try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Coding source preparation and disposal failed',{cause:error});}
         throw error;
       }
     },
-    start(){if(phase!=='prepared'||!activation)throw unavailable();routes.activate(activation);dependencies.runtime.registry.start('mote.coding');phase='active';},
+    start(){if(!activation||closing||admission!==undefined)throw unavailable();routes.activate(activation);dependencies.runtime.registry.start('mote.coding');admission=true;},
     quiesce,
-    async stop(_reason?:StopReason){quiesce();await dependencies.runtime.drainPipeline('mote.coding');await close();},
-    dispose:close,close,
+    close,
   });
 }
 
@@ -322,6 +333,6 @@ export function createCodingSourceFactory(dependencies:CodingSourceDependencies,
   return (context:HostPluginContext):PluginLifecycle=>{
     const source=createCodingSource(dependencies,routes,context.scope,options);
     context.scope.defer(()=>source.close());
-    return {prepare:()=>source.prepare(),start:()=>source.start(),quiesce:(reason:StopReason)=>source.quiesce(reason),stop:(reason:StopReason)=>source.stop(reason),dispose:()=>source.dispose()};
+    return {prepare:source.prepare,start:source.start,quiesce:source.quiesce,stop:async()=>{source.quiesce();await dependencies.runtime.drainPipeline('mote.coding');await source.close();},dispose:source.close};
   };
 }
