@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "node_modules/.cache/typecheck.tsbuildinfo",
+    "declaration": false
+  },
+  "references": [
+    {
+      "path": "../../packages/agent"
+    },
+    {
+      "path": "../../packages/plugin-api"
+    },
+    {
+      "path": "../../packages/plugin-host"
+    },
+    {
+      "path": "../../packages/shared"
+    }
+  ]
+}

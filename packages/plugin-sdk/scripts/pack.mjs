@@ -43,7 +43,7 @@ async function copyPackage(source, target) {
   await regularTree(join(source, 'dist'));
   await mkdir(target, {recursive: true});
   await writeFile(join(target, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
-  await cp(join(source, 'dist'), join(target, 'dist'), {recursive: true, force: false, errorOnExist: true});
+  await cp(join(source, 'dist'), join(target, 'dist'), {recursive: true, force: false, errorOnExist: true, filter: path => !path.endsWith('.tsbuildinfo')});
   return manifest;
 }
 // Resolve from the actual dependency owner, including nested installations.
