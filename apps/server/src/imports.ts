@@ -12,7 +12,7 @@ import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
-import {ProviderFailure,importRequestSchema,importReviewDecisionSchema,sourceItemSchema,type ArchivedFile,type ImportDispositions,type ImportHostMedia,type ImportJob,type ImportRequest,type ImportReviewDecision,type ImportReviewGate,type SourceItem} from '@mote/shared';
+import {FILE_PART_BYTES,ProviderFailure,importRequestSchema,importReviewDecisionSchema,sourceItemSchema,type ArchivedFile,type ImportDispositions,type ImportHostMedia,type ImportJob,type ImportRequest,type ImportReviewDecision,type ImportReviewGate,type SourceItem} from '@mote/shared';
 import {ArchivedFileStore,MAX_FILE_BYTES,archiveRelativePath} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {SourceStore} from './sources.js';
@@ -149,18 +149,18 @@ export class ImportStore {
     if(receipt&&!job)throw new StoreError('This import request was deleted; start a new import',410);
     return job?this.public(job):undefined;
   }
-  async create(raw:unknown):Promise<ImportJob> {
+  async create(raw:unknown,admitInlineUpload?:()=>void):Promise<ImportJob> {
     if(this.closed)throw new StoreError('Import feature is closed',503);
     const request=importRequestSchema.parse(raw);
-    if(!request.requestId)return this.trackCreation(this.createRequest(request));
+    if(!request.requestId)return this.trackCreation(this.createRequest(request,undefined,admitInlineUpload));
     const fingerprint=sha256(JSON.stringify(request)),pending=this.creating.get(request.requestId);
     if(pending){if(pending.fingerprint!==fingerprint)throw new StoreError('Import request ID already belongs to a different request',409);return pending.promise;}
     const existing=this.createdRequest(request.requestId,fingerprint);if(existing)return existing;
-    const promise=this.trackCreation(this.createRequest(request,fingerprint));this.creating.set(request.requestId,{fingerprint,promise});
+    const promise=this.trackCreation(this.createRequest(request,fingerprint,admitInlineUpload));this.creating.set(request.requestId,{fingerprint,promise});
     try{return await promise;}finally{if(this.creating.get(request.requestId)?.promise===promise)this.creating.delete(request.requestId);}
   }
   private trackCreation(work:Promise<ImportJob>){this.creationJobs.add(work);void work.finally(()=>this.creationJobs.delete(work)).catch(()=>{});return work;}
-  private async createRequest(request:ImportRequest,createFingerprint?:string):Promise<ImportJob> {
+  private async createRequest(request:ImportRequest,createFingerprint?:string,admitInlineUpload?:()=>void):Promise<ImportJob> {
     const configuredPack=request.sourcePackId?this.runtime.sourcePacks?.get(request.sourcePackId):undefined;
     if(request.sourcePackId&&!configuredPack)throw new StoreError('Requested Python Source Pack is not installed on this node',409);
     const entries:{name:string;mimeType?:string;bytes?:Buffer;fileId?:string;path?:string;sizeBytes?:number;identity?:string}[]=[];let total=0;
@@ -168,7 +168,14 @@ export class ImportStore {
     if(request.archivedFileIds){
       for(const id of request.archivedFileIds){const file=this.files.get(id);total+=file.sizeBytes;if(total>MAX_INPUT_BYTES)throw new StoreError('Import exceeds 256 MiB',413);entries.push({name:file.relativePath,mimeType:file.mimeType,fileId:id});}
     }else if(request.files){
-      for(const file of request.files){if(!validBase64(file.dataBase64))throw new StoreError('Invalid file base64');add(file.name,Buffer.from(file.dataBase64,'base64'),file.mimeType);}
+      let inlineBytes=0;
+      for(const file of request.files){
+        if(!validBase64(file.dataBase64))throw new StoreError('Invalid file base64');archiveRelativePath(file.name);
+        const bytes=Buffer.byteLength(file.dataBase64,'base64');inlineBytes+=bytes;
+        if(bytes>MAX_FILE_BYTES||inlineBytes>MAX_INPUT_BYTES)throw new StoreError('Import exceeds file count or size limits (64 MiB per file, 256 MiB total)',413);
+      }
+      if(inlineBytes>FILE_PART_BYTES)admitInlineUpload?.();
+      for(const file of request.files)add(file.name,Buffer.from(file.dataBase64,'base64'),file.mimeType);
     }else{
       try{
       const source=realpathSync(resolve(request.directory!)),vault=realpathSync(this.store.directory);

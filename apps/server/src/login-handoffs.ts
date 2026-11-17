@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { connectionServerUrl } from '@mote/shared';
 import { ConnectionError, type Connections } from './connections.js';
+import {LocalRateLimit} from './local-rate-limits.js';
 const secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export const loginDeviceSchema = z.object({serverUrl:z.string().transform((v,ctx)=>{try{return connectionServerUrl(v);}catch{ctx.addIssue({code:'custom',message:'Invalid server URL'});return z.NEVER;}}),deviceId:z.string().regex(/^[a-zA-Z0-9_.:-]{1,128}$/),deviceName:z.string().trim().min(1).max(128),platform:z.enum(['android','macos','windows','linux','other']),challenge:z.string().regex(/^[a-f0-9]{64}$/),durationMs:z.union([z.literal(0),z.literal(86400000),z.literal(604800000),z.literal(2592000000)]).default(2592000000)}).strict();
@@ -16,7 +17,9 @@ export class LoginHandoffs {
   private requests = new Map<string,Request>();
   // Expiring request lookup may prune a request while its durable session is in flight.
   private readonly approvals=new Set<Promise<Grant>>();
-  constructor(private connections:Connections,private clock=Date.now) {}
+  private readonly polls:LocalRateLimit;
+  private readonly acknowledgements:LocalRateLimit;
+  constructor(private connections:Connections,private clock=Date.now) {this.polls=new LocalRateLimit(60,clock);this.acknowledgements=new LocalRateLimit(10,clock);}
   private prune(){this.assertOpen();for(const [k,v] of this.tickets)if(v.deadline<=this.clock())this.tickets.delete(k);for(const [k,v] of this.requests)if(v.deadline<=this.clock())this.requests.delete(k);}
   ticket(token:string,authorize:()=>void,expiresAt?:number){
     authorize();this.prune();const code=randomBytes(32).toString('base64url');
@@ -47,9 +50,10 @@ export class LoginHandoffs {
     })();const approval=r.approval;this.approvals.add(approval);
     try{await approval;}catch(e){r.approval=undefined;throw e;}finally{this.approvals.delete(approval);}return {approved:true};
   }
-  async close(){this.closed=true;const pending=[...this.approvals];this.tickets.clear();this.requests.clear();await Promise.allSettled(pending);if(this.cleanupErrors.length)throw new AggregateError(this.cleanupErrors,'Login handoff disposal failed');}
+  async close(){this.closed=true;this.polls.close();this.acknowledgements.close();const pending=[...this.approvals];this.tickets.clear();this.requests.clear();await Promise.allSettled(pending);if(this.cleanupErrors.length)throw new AggregateError(this.cleanupErrors,'Login handoff disposal failed');}
   poll(raw:unknown,ack=false){const {id,verifier}=z.object({id:secret,verifier:secret}).strict().parse(raw),r=this.request(id);
     if(hash(verifier)!==r.input.challenge)throw new ConnectionError('unauthorized',401,'Invalid login verifier');
+    (ack?this.acknowledgements:this.polls).take(hash(id));
     if(ack){if(!r.grant)throw new ConnectionError('login_pending',409,'Login pending');this.requests.delete(hash(id));return {acknowledged:true};}
     r.authorize?.();return r.grant?{ready:true,...r.grant}:{ready:false};
   }
