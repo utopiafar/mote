@@ -17,7 +17,9 @@ import {createFilesSource,filesSourceContribution,filesSourceDeclaration,filesSo
 import {createCaptureIntake,captureIntakeContribution,captureIntakeDeclaration,captureIntakeReplacement} from '../plugins/capture-intake.js';
 import {createNotesSource,notesSourceContribution,notesSourceDeclaration,notesSourceReplacement,unavailableNotesSource} from '../plugins/notes-source.js';
 import {c10IntegrationContribution,c10IntegrationDeclaration,c10IntegrationReplacement} from '../plugins/c10-integration.js';
-import {devicesSourceContribution,devicesSourceDeclaration,devicesSourceReplacement} from '../plugins/devices-source.js';
+import {devicesSourcePlugin,devicesFactoryContribution,devicesFactoryDeclaration,createDevicesDomainFactory,bindDevicesDomainFactory} from '../plugins/devices-domain.js';
+import {firstDeviceData} from '../first-device-data.js';
+import type {NotesCapture} from '../features/notes.js';
 import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
 import type {FeatureRoute} from '../features/index.js';
 
@@ -30,7 +32,8 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:captureIntakeContribution,declaration:captureIntakeDeclaration,replacement:captureIntakeReplacement},
   {contribution:c10IntegrationContribution,declaration:c10IntegrationDeclaration,replacement:c10IntegrationReplacement},
   {contribution:notesSourceContribution,declaration:notesSourceDeclaration,replacement:notesSourceReplacement},
-  {contribution:devicesSourceContribution,declaration:devicesSourceDeclaration,replacement:devicesSourceReplacement},
+  {contribution:devicesFactoryContribution,declaration:devicesFactoryDeclaration,replacement:'restart'},
+  devicesSourcePlugin,
 ]);
 
 export interface SourcesAssemblyDependencies {
@@ -82,4 +85,20 @@ export async function assembleSources(dependencies:SourcesAssemblyDependencies){
   materialMemoryWork.inputs.onOriginalInput=(input,automatic)=>modelAuthorizationHost.source(input,automatic);
   // sourceRuntime, capture and files slices.
   return Object.freeze({sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback:filesAssembly.playback,codingFeature});
+}
+
+/** Only narrow device operations and the existing request authority enter the
+ * constructor closure. Vault, files and evidence retain their original owners. */
+export async function prepareDevicesDomain(dependencies:{
+ readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;readonly resources:ServerResources;
+ readonly store:Store;readonly files:FileStore;readonly reader:Parameters<typeof firstDeviceData>[2];
+ readonly diagnostics:Pick<ServerDiagnostics,'record'>;readonly notesCapture:NotesCapture;
+}){
+ const {bootstrap,resources,store,files,reader,diagnostics,notesCapture}=dependencies;
+ if(!bootstrap.selectsFeature('mote.devices')||!bootstrap.selectsPlugin(devicesSourcePlugin.contribution.id))return;
+ const factory=createDevicesDomainFactory({recordQueueSnapshot:beat=>diagnostics.record('queue.snapshot',{queueDepth:beat.queueDepth})},{
+  devices:{heartbeat:beat=>store.heartbeat(beat),devices:()=>store.devices()},firstData:()=>firstDeviceData(store,files,reader),authority:notesCapture.authority,
+  identity:{assertOwnDevice:(request,beat)=>notesCapture.authority.requests.assertOwnDevice(request,beat),assertOwnPlatform:(request,platform)=>notesCapture.authority.requests.assertOwnPlatform(request,platform)},
+ },notesCapture.route);
+ await bindDevicesDomainFactory(bootstrap,resources,factory);
 }
