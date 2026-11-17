@@ -22,38 +22,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/desktop/scripts/final-source-permission-smoke.cjs",
-    "to": "M23",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/desktop/scripts/final-source-permission-smoke.cjs",
-    "to": "M24",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/desktop/src/plugin-host/native-registry.ts",
-    "to": "U01",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/desktop/test/plugin-stage-smoke.cjs",
-    "to": "G4",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/agent-runtime-events.ts",
     "to": "C06",
     "kind": "comment",
