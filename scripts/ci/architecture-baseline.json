@@ -21,14 +21,6 @@
     "reason": "Trusted installed service entry: the release manifest validates a relative entry, archive installation verifies its digest and confines extraction, and only that installed directory is loaded. This is the service counterpart of the two configured plugin loaders."
   },
   {
-    "rule": "server-plugins-no-store",
-    "from": "apps/server/src/plugins/vault-platform.ts",
-    "to": "apps/server/src/store.ts",
-    "kind": "runtime",
-    "symbol": "Store",
-    "reason": "Existing Vault boundary debt: the Vault platform still depends on the concrete Store for current wiring; its domain unit must remove this exception when the dependency narrows to a repository port."
-  },
-  {
     "rule": "server-host-allowlist",
     "from": "apps/server/src/host.ts",
     "to": "apps/server/src/assembly/agent.ts",
@@ -633,7 +625,7 @@
   {
     "rule": "server-host-allowlist",
     "from": "apps/server/src/host.ts",
-    "to": "apps/server/src/store.ts",
+    "to": "apps/server/src/evidence-store.ts",
     "kind": "runtime",
     "reason": "Existing host composition debt: this domain dependency must be removed with its owned plugin activation; the host infrastructure allowlist must not grow to absorb it."
   },

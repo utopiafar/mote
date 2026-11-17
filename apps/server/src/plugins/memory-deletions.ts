@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {AgentTimeoutError,type QueryInput} from '@mote/agent';
 import {withExecutionCancellation} from '../execution-cancellation.js';
 import {sourceContentTime,sourceIdSchema,type CaptureRecord,type QueryResult} from '@mote/shared';
-import {StoreError,sha256} from '../store.js';
+import {StoreError,sha256} from '../evidence-store.js';
 
 import {memoryRelationSchema,type Memory} from '../memory-schema.js';
 import {releasedMemoryOriginal} from '../memory-original-retention.js';

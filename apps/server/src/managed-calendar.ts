@@ -1,5 +1,5 @@
 import {calendarEventSchema,calendarExpired,isCentralConnectorActionTarget,type ActionConnectorChoice,type ActionGrant,type ActionProposal,type ActionProposalTarget,type CentralConnectorActionTarget,type ConnectorActionExecution,type ConnectorActionReceipt} from '@mote/shared';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import type {Actions} from './actions.js';
 import type {ActionCapabilities} from './plugins/action-capabilities.js';
 import type {Connections,ConnectionCredential} from './connections.js';

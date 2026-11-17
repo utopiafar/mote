@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Context} from '@deepseek-ai/cordis';
 import type {HostScope} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {ConfigService} from '../src/config-service.js';

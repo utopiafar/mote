@@ -30,7 +30,7 @@ import {createDevicesSource} from '../src/plugins/devices-source.js';
 import {firstDeviceData} from '../src/first-device-data.js';
 import {ConnectionError,type ConnectionCredential} from '../src/connections.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
-import {StoreError,sha256} from '../src/store.js';
+import {StoreError,sha256} from '../src/evidence-store.js';
 import {createVaultPlatformAssembly} from '../src/plugins/vault-platform.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {createExecutionPlatform} from '../src/plugins/execution-platform.js';

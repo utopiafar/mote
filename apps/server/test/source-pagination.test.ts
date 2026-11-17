@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {registerSourceRoutes} from '../src/source-routes.js';
 import {createSourceControl} from '../src/source-runtime-storage.js';

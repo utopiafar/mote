@@ -3,7 +3,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {CaptureIntakeAuthority,CaptureRouteContext} from '../plugins/capture-intake.js';
 import type {CaptureIntake} from '../plugins/central-contracts.js';
 import type {NotesSourceAssembly} from '../plugins/notes-source.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {ConnectionCredential,Connections} from '../connections.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {FileStore} from '../files.js';

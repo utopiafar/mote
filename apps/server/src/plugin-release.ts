@@ -12,7 +12,7 @@ import {
   packageManifestSchema, PluginContractError,
   type ManifestDependency, type PackageManifest,
 } from '@mote/plugin-api';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {isOfficialLocalPluginRepository,officialLocalPluginEntry,type OfficialPluginCatalogEntry} from './official-plugin-catalog.js';
 
 /** The one current package Manifest is owned by @mote/plugin-api. This wrapper

@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,readdirSync,rmSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {sourceItemSchema,type SourceItem} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceArchive,archiveHash} from '../src/source-archive.js';
 
 const sourceId='generated-source',group='generated-session';

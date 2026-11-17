@@ -5,7 +5,7 @@ import {buildApp} from '../../server/src/app.js';
 import {memoryEvidenceFingerprint} from '../../server/src/memory.js';
 import {materialId} from '../../server/src/materials.js';
 import sharp from 'sharp';
-import {sha256} from '../../server/src/store.js';
+import {sha256} from '../../server/src/evidence-store.js';
 import {uploadNoteAttachment} from '../src/plugins/notes/note-attachments.js';
 import type {Api} from '../src/api.js';
 const directory=process.argv[2];if(!directory)throw Error('Generated fixture directory required');

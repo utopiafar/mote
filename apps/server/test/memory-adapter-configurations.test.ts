@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {zipSync,strToU8} from 'fflate';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {memorySchema} from '../src/memory-schema.js';
 import {memoryProviderKey,type MemoryProviderNamespace} from '../src/memory-provider-contract.js';

@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {MemoryStrategies} from './memory-strategies.js';
 import {memoryRecipeBindingSchema,memoryStrategyRefSchema,type MemoryRecipeBinding} from './memory-strategy-contract.js';
 import {isCaptureMemorySource} from './capture-memory-source.js';

@@ -8,13 +8,13 @@ import {randomUUID} from 'node:crypto';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MemoryStrategies} from '../src/memory-strategies.js';
 import {MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
 import {RANGE_SELECTION_DAILY_RECIPE} from '../src/memory-range-selection-policy.js';
 import {uiPageCaptureSource} from '../src/capture-memory-source.js';
 import {screenImageSource} from '../src/image-inputs.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {dailyEventFixtures} from './fixtures/daily-events.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 

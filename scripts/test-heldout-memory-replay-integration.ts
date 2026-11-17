@@ -9,7 +9,7 @@ import {memorySchema} from '../apps/server/src/memory-schema.js';
 import {requestMemoryIntegration} from '../apps/server/src/memory-integration.js';
 import {defaultMemoryIntegrationRecipe} from '../apps/server/src/memory-integration-policy.js';
 import {lifecycleSettingsSchema} from '../apps/server/src/memory-lifecycle.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {check,equal,json,hashObject,closed,cloneClosed,sqliteCheck,externalNew,corpus,evaluation,verifyFreeze} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,inspectAdmissionLedger,StageSafetyError} from './test-heldout-memory-replay-ledger.js';

@@ -7,7 +7,7 @@ import {type FileRevision,FILE_PART_BYTES} from '@mote/shared';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../src/app.js';
 import {configurationFromFile} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {SourceSync} from '../../desktop/src/source-sync.js';
 import {sourceState} from '../../desktop/src/source-state-store.js';
 import type {ScannedItem,SourceDefinition,SourceRequest} from '../../desktop/src/source-types.js';

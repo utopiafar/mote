@@ -1,7 +1,7 @@
 import {createHash,createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import type {CapturePreview,CaptureTimelineGroup,CaptureTimelinePage,CaptureTimelineMembers} from '@mote/shared';
-import {Store,StoreError,type Range} from './store.js';
+import {EvidenceStore as Store,StoreError,type Range} from './evidence-store.js';
 import {captureSessionMembersSql} from './capture-session-members.js';
 
 export type TimelineRange=Pick<Range,'deviceId'|'appId'|'source'|'collection'|'ocrStatus'>&{after:string;before:string;timeZone:string;limit:number;cursor?:string};

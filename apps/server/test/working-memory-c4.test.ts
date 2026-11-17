@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AgentTimeoutError,calculateContextBudget,estimateSerializedTokens,type QueryInput} from '@mote/agent';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {Conversations} from '../src/conversations.js';
 import {WorkingMemory} from '../src/working-memory.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';

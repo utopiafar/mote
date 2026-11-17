@@ -2,7 +2,7 @@
 import {after,test} from 'node:test';
 import {mkdir,writeFile,realpath,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {assertRuntimePin,runtimePin,type RuntimePin} from './test-heldout-memory-replay-stage.js';
 import {base,check,json,SafeFailure} from './test-heldout-memory-replay.js';
 const output=process.env.MOTE_HELDOUT_TEST_OUTPUT??join(base,'heldout-runtime-pin-'+Date.now());await mkdir(output,{mode:0o700});

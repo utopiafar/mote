@@ -10,7 +10,7 @@ import type {StatementSync} from 'node:sqlite';
 import {fileRevisionSchema,fileViewSchema,sourceItemSchema,FILE_MAX_BYTES,FILE_PART_BYTES,FILE_PART_RECEIPTS,executionEnvelope,transcriptSchema,type FileCoverage,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import type {ContextRecord,ContextRange} from '@mote/agent';
-import {Store,StoreError,sha256,type Range} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256,type Range} from './evidence-store.js';
 import {SourceStore} from './sources.js';
 import {privateDirectory} from './private-storage.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';

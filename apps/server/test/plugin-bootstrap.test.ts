@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import {bootstrapCentral,type CentralDistribution,type FoundationProvider} from '../src/bootstrap.js';
 import {defaultDistribution,configurationProvider,storageProvider} from '../src/distribution/default.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {executionSettingsSchema} from '../src/execution-settings.js';

@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {FILE_PART_BYTES} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';

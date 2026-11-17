@@ -10,7 +10,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {zipSync,strToU8} from 'fflate';
 import type {QueryResult} from '@mote/shared';
 import {createMemoryProvider} from '../../../examples/worker-plugin/main.mjs';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {MemoryStore} from '../src/memory.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {PluginCenter} from '../src/plugin-center.js';

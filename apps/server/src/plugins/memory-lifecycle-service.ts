@@ -10,7 +10,7 @@ import type {InsightRuns} from '../insight-runs.js';
 import type {MemoryIntegrationSettings} from '../memory-integration-settings.js';
 import type {MemoryPipeline} from '../memory-pipeline.js';
 import type {MemoryStore} from '../memory.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {recoverableMemoryJobs,registerMemoryExtensions} from '../lifecycle-extensions.js';
 import {MemoryLifecycle,type LifecycleExtension} from '../memory-lifecycle.js';
 import {WorkingMemory} from '../working-memory.js';

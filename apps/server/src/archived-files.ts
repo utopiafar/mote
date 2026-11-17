@@ -7,7 +7,7 @@ import {basename,join} from 'node:path';
 import {z} from 'zod';
 import {FILE_MAX_BYTES,type ArchivedFile} from '@mote/shared';
 import {privateDirectory} from './private-storage.js';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {Asset} from './assets.js';
 
 /** In-memory import/container parsing budget, independent of original archive size. */

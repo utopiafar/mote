@@ -10,7 +10,7 @@ import {documentSchema} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import type {MemoryJobDetail} from '../apps/server/src/memory-pipeline.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {memoryStrategyRefSchema} from '../apps/server/src/memory-strategy-contract.js';

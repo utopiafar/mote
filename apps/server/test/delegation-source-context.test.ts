@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {AgentYieldError,type QueryInput} from '@mote/agent';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {assertSourceContextDependencies} from '../src/source-context-lineage.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

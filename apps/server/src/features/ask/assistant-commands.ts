@@ -4,7 +4,7 @@ import {z} from 'zod';
 import type {AssistantDrafts} from '../../assistant-drafts.js';
 import type {AssistantTasks} from '../../assistant-tasks.js';
 import type {AssistantRoutines} from '../../assistant-routines.js';
-import {StoreError} from '../../store.js';
+import {StoreError} from '../../evidence-store.js';
 
 /** Owner command envelope for a validated answer draft. Capability selection
  * and domain effects stay in the registered handler, never in model text. */

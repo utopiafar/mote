@@ -9,7 +9,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore} from '../src/materials.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 

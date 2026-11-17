@@ -10,7 +10,7 @@ import {randomUUID} from 'node:crypto';
 import {parseAnswer,type QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {materialId} from '../src/materials.js';
 import {serveGeneratedFunasr} from './fixtures/funasr.js';
 

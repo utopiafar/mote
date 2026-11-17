@@ -2,7 +2,7 @@ import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
 import {decodeSourceText,sourceTextFormat,sourceItemKinds} from '@mote/shared';
 import {MaterialStore,formatMaterialRef,type MaterialStoredBlock} from './materials.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 // Presentation of the source-item organizer's declared block formats, never
 // intent inference. Unknown structures remain literal text in the fallback.

@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {sourceItemSchema,type SourceItem,type UsageReceipt} from '@mote/shared';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {archiveHash,sourceReceiptId} from '../apps/server/src/source-archive.js';
 import {corpus,evaluation,recipes,check,equal,hashObject,parse,lines,verifyFreeze,closed,cloneClosed,sqliteCheck,externalNew} from './test-heldout-memory-replay.js';

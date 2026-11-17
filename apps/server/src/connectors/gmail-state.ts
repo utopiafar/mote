@@ -1,4 +1,4 @@
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
 
 export const gmailStateSchemaInstallation={owner:'gmail-sync',requires:[],install:db=>{db.exec('CREATE TABLE IF NOT EXISTS gmail_sync_members(source_id TEXT NOT NULL,message_id TEXT NOT NULL,epoch TEXT NOT NULL,PRIMARY KEY(source_id,message_id))');}} as const satisfies SchemaInstallation;

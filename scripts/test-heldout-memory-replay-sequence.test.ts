@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {QueryResult} from '@mote/shared';
 import {base,check,equal,json,SafeFailure} from './test-heldout-memory-replay.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {AdmissionLedger,inspectAdmissionLedger,StageSafetyError} from './test-heldout-memory-replay-ledger.js';
 import {freezeStage,freezeContinuation,newOutput,runBatch,treeHash,codeHashes,executorPins} from './test-heldout-memory-replay-stage.js';
 import {freezePhase,runPhase,phaseCursor,type PhaseManifest} from './test-heldout-memory-replay-sequence.js';

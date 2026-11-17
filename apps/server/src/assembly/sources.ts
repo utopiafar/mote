@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {StoreError,type Store} from '../store.js';
+import {StoreError,type EvidenceStore as Store} from '../evidence-store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {FileStore} from '../files.js';

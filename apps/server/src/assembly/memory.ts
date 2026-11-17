@@ -6,7 +6,7 @@ import type {QueryResult} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import type {FastifyInstance} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
-import {sha256,StoreError,type Store} from '../store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from '../evidence-store.js';
 import {memoryConfigDomain,perceptionConfigDomain} from '../config.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';

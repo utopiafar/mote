@@ -1,5 +1,5 @@
 import {DatabaseSync,type StatementSync} from 'node:sqlite';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 const writeError=(error:unknown)=>{
  const code=error&&typeof error==='object'?(error as {errcode?:unknown}).errcode:undefined;

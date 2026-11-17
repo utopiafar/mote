@@ -3,7 +3,7 @@ import {z} from 'zod';
 import {fileEvidenceSchema,queryScopeSchema,type CaptureRecord,type DocumentActivity,type EvidenceDependencies,type FileCoverage,type FileRevision,type QueryScope,type SourceDocument,type SourceItem} from '@mote/shared';
 import {EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
 import {defaultEvidenceExposurePolicy,type EvidenceExposurePolicy} from './evidence-exposure.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 const unavailable=()=>new StoreError('File observation is unavailable in the selected scope',404);
 const MAX_COMPARISON_CHARACTERS=250_000;

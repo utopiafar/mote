@@ -6,7 +6,7 @@ import {parseMaterialRef,type MaterialRecord,type MaterialStore} from './materia
 import {parseSemanticProducts} from './semantic-extraction.js';
 import {validateConversationClaims} from './conversation-understanding.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 type Range={id:string;offset:number;length:number};
 type MaterialRange={ref:string;offset:number;length:number;total:number};

@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {PluginHost} from '@mote/plugin-host';
 import {serviceContract,type ScopeIdentity,type ServiceBinding} from '@mote/plugin-api/contracts';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type TrustedPluginBuild} from '../src/plugin-center.js';

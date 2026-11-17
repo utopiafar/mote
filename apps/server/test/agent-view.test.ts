@@ -4,7 +4,7 @@ import Fastify from 'fastify';
 import {buildContextEnvelope,type ContextReader} from '@mote/agent';
 import {registerAgentViewRoutes} from '../src/plugins/agent-view-routes.js';
 import {contextIndex} from '../src/context-index.js';
-import type {Store} from '../src/store.js';
+import type {EvidenceStore as Store} from '../src/evidence-store.js';
 import type {SourceStore} from '../src/sources.js';
 
 test('root catalog avoids corpus scans; source and layer cursors allow complete bounded browsing',()=>{

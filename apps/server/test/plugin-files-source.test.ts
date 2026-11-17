@@ -7,7 +7,7 @@ import Fastify from 'fastify';
 import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {PluginHost} from '@mote/plugin-host';
 import type {ScopeIdentity,ServiceBinding} from '@mote/plugin-api/contracts';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';

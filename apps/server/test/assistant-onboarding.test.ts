@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import Fastify from 'fastify';
 import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
 import {fileCoverageSchema,type QueryResult,type QueryScope} from '@mote/shared';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {EvidenceReader} from '../src/evidence-reader.js';

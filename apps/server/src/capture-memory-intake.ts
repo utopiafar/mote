@@ -1,7 +1,7 @@
 import type {CaptureInput} from '@mote/shared';
 import {screenImageSource} from './image-inputs.js';
 import type {MaterialMemoryWork} from './material-memory-work.js';
-import {sha256,type Store} from './store.js';
+import {sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {uiPageCaptureSource} from './capture-memory-source.js';
 
 export {uiPageCaptureSource} from './capture-memory-source.js';

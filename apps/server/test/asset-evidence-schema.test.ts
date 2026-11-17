@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {installSchemaPlan,type SchemaInstallation} from '../src/schema-installation.js';
 import {assetSchemaInstallation,archivedFilesSchemaInstallation,evidenceMaterialLineageSchemaInstallation,assetCaptureReferencesInstallation,evidenceDependenciesWithoutMaterialsInstallation,evidenceDependenciesWithMaterialsInstallation} from '../src/asset-evidence-schema.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {installEvidenceDependencies} from '../src/evidence-dependencies.js';

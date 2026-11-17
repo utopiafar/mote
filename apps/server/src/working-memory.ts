@@ -2,7 +2,7 @@ import {estimateSerializedTokens,type ContextBudgetResult,type QueryInput} from 
 import type {EvidenceDependencies,QueryResult} from '@mote/shared';
 import type {Conversation,ConversationTurn} from './conversations.js';
 import type {ConversationRepository as Conversations} from './plugins/central-contracts.js';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {LifecycleExecution,LifecycleSettings} from './memory-lifecycle.js';
 import {combineDependencies} from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';

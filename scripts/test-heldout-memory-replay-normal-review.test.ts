@@ -11,7 +11,7 @@ import type {ContextReader, QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryStore} from '../apps/server/src/memory.js';
 import {MemoryExtractionDrafts} from '../apps/server/src/memory-extraction-drafts.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {base, json, hashObject, SafeFailure} from './test-heldout-memory-replay.js';
 import {type Manifest, codeHashes, executorPins, newOutput, treeHash, runBatch, openNode, batchPin} from './test-heldout-memory-replay-stage.js';
 import {AdmissionLedger, readAdmissionChain, inspectAdmissionLedger, StageSafetyError, normalLimits, normalReviewLimits, normalReviewAuthorization, authorizeNormalReview, readNormalReviewPlan, readNormalPlan, type NormalContinuation, type NormalReviewRecovery, type NormalReviewRequest, type NormalReviewPlan} from './test-heldout-memory-replay-ledger.js';

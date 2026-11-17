@@ -13,7 +13,7 @@ import {AssistantTaskAcceptance} from '../src/assistant-task-acceptance.js';
 import type {MatterAuthority} from '../src/assistant-matters.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {SourceContextStore} from '../src/source-context.js';
-import {StoreError} from '../src/store.js';
+import {StoreError} from '../src/evidence-store.js';
 import {TaskRecords} from '../src/task-records.js';
 
 const token='generated-acceptance-owner';

@@ -8,7 +8,7 @@ import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {ModelDomain} from '../model-settings.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {UsageLedger} from '../usage.js';
 import type {FileStore} from '../files.js';

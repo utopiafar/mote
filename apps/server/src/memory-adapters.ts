@@ -3,7 +3,7 @@ import type {PluginInstanceView} from '@mote/shared';
 import type {PluginCenter,StoredPackage} from './plugin-center.js';
 import {memoryProviderNamespaceSchema,type MemoryProvider,type MemoryProviderNamespace} from './memory-provider-contract.js';
 import {WorkerMemoryProvider} from './worker-memory-provider.js';
-import {sha256,StoreError} from './store.js';
+import {sha256,StoreError} from './evidence-store.js';
 import {probeMemoryProvider} from './memory-provider-probe.js';
 import type {MemoryEngine} from './memory-native-stage-contract.js';
 import type {ModelSettingsStore} from './model-settings.js';

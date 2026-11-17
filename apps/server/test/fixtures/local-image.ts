@@ -4,7 +4,7 @@ import type {AddressInfo} from 'node:net';
 import sharp from 'sharp';
 import type {Transcript,ImageReadInput} from '@mote/shared';
 import {imageInterpretationSchema,type ImageInterpretation} from '../../src/image-recipes.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import {LOCAL_IMAGE_MODEL,LOCAL_IMAGE_PROMPT_VERSION,LOCAL_IMAGE_PROTOCOL,localImageRequestSchema,localImageResponseSchema,type LocalImageRequest,type LocalImageSuccess,type LocalImageErrorCode} from '../../src/local-image-contract.js';
 
 export type LocalImageFixture={

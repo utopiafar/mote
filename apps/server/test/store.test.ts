@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import sharp from 'sharp';
-import { Store } from '../src/store.js';
+import { EvidenceStore as Store } from '../src/evidence-store.js';
 
 async function fixture(overrides:Record<string,unknown>={}) {
   const image=await sharp({create:{width:60,height:30,channels:3,background:'#83a69b'}}).png().toBuffer();

@@ -1,7 +1,7 @@
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import type {Store} from '../../src/store.js';
+import type {EvidenceStore as Store} from '../../src/evidence-store.js';
 
 /** Run while the reader is paused at a synchronous domain validation boundary.
  * No busy wait: the caller cannot release its transaction until this returns. */

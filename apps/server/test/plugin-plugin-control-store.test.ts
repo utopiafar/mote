@@ -10,7 +10,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {zipSync,strToU8} from 'fflate';
 import {PluginHost} from '@mote/plugin-host';
 import {serviceContract,type ScopeIdentity,type ServiceBinding} from '@mote/plugin-api/contracts';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';

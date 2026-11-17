@@ -1,4 +1,4 @@
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {retireTaskRecordsSql} from './task-evidence.js';
 
 /** A version and its feedback can outlive its current projection. Cleanup also

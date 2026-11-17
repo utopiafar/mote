@@ -9,7 +9,7 @@ import {formatEvidenceRef} from '@mote/shared';
 import {DelegationRuntime,type DelegationWork} from '../delegation-runtime.js';
 import {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {RunDeadline} from '../run-execution.js';
-import {StoreError,sha256} from '../store.js';
+import {StoreError,sha256} from '../evidence-store.js';
 import {ExecutionFailure,type ExecutionEngine} from '../execution-engine.js';
 import type {ExecutionObservability} from '../execution-observability.js';
 import type {ExecutionSettings} from '../execution-settings.js';

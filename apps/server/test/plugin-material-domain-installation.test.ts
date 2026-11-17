@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import Fastify from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
 import {serviceContract,type ServiceBinding,type ServiceContract} from '@mote/plugin-api/contracts';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';

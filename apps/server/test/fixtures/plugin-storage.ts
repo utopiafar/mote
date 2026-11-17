@@ -1,6 +1,6 @@
 import type {StateLimits} from '@mote/plugin-api';
 import type {HostScope} from '@mote/plugin-host';
-import {StoreError,type Store} from '../../src/store.js';
+import {StoreError,type EvidenceStore as Store} from '../../src/evidence-store.js';
 import {createVaultInstanceState} from '../../src/plugin-instance-state-storage.js';
 import {createVaultPluginControlStore} from '../../src/plugin-control-storage.js';
 import {Context} from '@deepseek-ai/cordis';

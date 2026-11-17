@@ -1,6 +1,6 @@
 import {createTestScope} from './plugin-scope.js';
 import assert from 'node:assert/strict';
-import {Store} from '../../src/store.js';
+import {EvidenceStore as Store} from '../../src/evidence-store.js';
 import {SourceStore} from '../../src/sources.js';
 import {MaterialStore,materialId} from '../../src/materials.js';
 import {ProcessingRuntime} from '../../src/processing-runtime.js';

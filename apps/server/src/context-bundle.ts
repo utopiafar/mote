@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import type {ContextReader} from '@mote/agent';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {cardFromMemoryOverview,contextCard,type ContextCard,type ContextQueryInput} from './context-query.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {Memory} from './memory.js';

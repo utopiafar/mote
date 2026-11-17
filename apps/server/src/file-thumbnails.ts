@@ -1,6 +1,6 @@
 import type {Readable} from 'node:stream';
 import sharp from 'sharp';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export const FILE_THUMBNAIL_TYPES=new Set(['image/png','image/jpeg','image/webp','image/gif']);
 export const FILE_THUMBNAIL_MAX_ORIGINAL_BYTES=32*1024*1024;

@@ -13,7 +13,7 @@ import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../../../apps/server/src/app.js';
 import type {ConfigurationPlatformOptions} from '../../../apps/server/src/config.js';
-import {sha256} from '../../../apps/server/src/store.js';
+import {sha256} from '../../../apps/server/src/evidence-store.js';
 import {MEDIA_CATALOG} from '../../../apps/server/src/media-assets.js';
 import {LOCAL_IMAGE_MODEL,LOCAL_IMAGE_PROMPT_VERSION} from '../../../apps/server/src/local-image-contract.js';
 import {localImageProcessingSelection} from '../../../apps/server/src/plugins/local-image-processing.js';

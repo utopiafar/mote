@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ProviderFailure} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ProcessorAdmission,PROCESSOR_BUSY_RECHECK_MS} from '../src/processor-admission.js';
 
 test('worker busy is shared by stages and connections, persists restart and isolates independent workers',async t=>{

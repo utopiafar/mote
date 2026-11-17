@@ -1,8 +1,8 @@
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {Connections} from '../src/connections.js';
 import {ConfigService} from '../src/config-service.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {randomUUID} from 'node:crypto';

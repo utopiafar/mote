@@ -6,7 +6,7 @@ import type {OwnerQuestionRecord,OwnerQuestionAnswer} from './owner-question-con
 import {MaterialStore,parseMaterialRef} from './materials.js';
 import type {MemoryOwnerContinuationPort} from './memory-owner-continuation.js';
 import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {MemoryWorkMember} from './memory-work-contract.js';
 import {linkOperationParent} from './operation-projection.js';
 

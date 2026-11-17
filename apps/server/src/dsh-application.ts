@@ -7,7 +7,7 @@ import type {DshConfiguration} from './dsh-configuration.js';
 import {dshInstanceKey,NATIVE_OUTPUT_CAPABILITY} from './dsh-configuration.js';
 import {privateDirectory} from './private-storage.js';
 import {MAX_FILE_BYTES,archiveRelativePath} from './archived-files.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {bindInstanceStateCommit} from './plugin-instance-state-storage.js';
 import {replaceContentFile} from './content-encryption.js';
 

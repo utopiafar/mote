@@ -1,6 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {PluginControlStore as PluginControlAccess,PluginCommand,PluginCommandReceipt,BuildInstance} from './plugins/plugin-control-store.js';
 
 export const pluginControlSchemaInstallation={owner:'plugin-control',requires:[],install:pluginControlSchema} as const satisfies SchemaInstallation;

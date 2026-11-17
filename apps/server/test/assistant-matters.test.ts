@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import type {EvidenceDependencies} from '@mote/shared';
 import {ZodError} from 'zod';
 import {AssistantMatters,type MatterAuthority} from '../src/assistant-matters.js';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {TaskRecords,type AssertTaskCurrent} from '../src/task-records.js';
 
 const conflict=(error:unknown)=>error instanceof StoreError&&error.statusCode===409;

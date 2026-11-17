@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {FileStore} from '../src/files.js';

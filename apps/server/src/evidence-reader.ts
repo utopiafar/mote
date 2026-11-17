@@ -5,7 +5,7 @@ import {materialDependencyStatus,type MaterialInputPin} from './material-readine
 import {scopeRecord} from './evidence-scope-record.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,attributionContextSchema,sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type AttributionContext,type SourceContextDeclaration,type CaptureRecord,type QueryScope} from '@mote/shared';
 import {ContextToolError,type ContextReader} from '@mote/agent';
-import {StoreError,type Store,type Range} from './store.js';
+import {StoreError,type EvidenceStore as Store,type Range} from './evidence-store.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {openMemoryRecords} from './plugins/memory-record-repository.js';
 import type {SourceStore} from './sources.js';

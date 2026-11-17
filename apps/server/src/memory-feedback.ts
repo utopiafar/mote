@@ -1,4 +1,4 @@
-import {sha256} from './store.js';
+import {sha256} from './evidence-store.js';
 import {z} from 'zod';
 import type {MemoryWorkMember,MemoryWorkCoverage,MemoryWorkInspection} from './memory-work-contract.js';
 import type {ModelConfiguration} from './model-configuration.js';

@@ -7,7 +7,7 @@ import type {MemoryAutomation} from '../memory-automation.js';
 import type {MemoryLifecycle} from '../memory-lifecycle.js';
 import type {MemoryPipeline} from '../memory-pipeline.js';
 import type {MemoryPublication} from './memory-publication.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices,type MemoryBindingControl} from './central-contracts.js';
 
 /** C21D owns the authoritative binding state machine and the local control

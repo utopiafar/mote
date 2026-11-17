@@ -5,7 +5,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {LarkSelection} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {LarkConnector,LARK_SCOPES} from '../src/connectors/lark.js';
 import type {LarkCommand,LarkRunner} from '../src/connectors/lark-cli.js';

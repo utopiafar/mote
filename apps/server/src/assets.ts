@@ -6,7 +6,7 @@ import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {FILE_PART_BYTES,FILE_MAX_BYTES} from '@mote/shared';
 import {privateDirectory,privateFile} from './private-storage.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {prepareAsset} from './asset-work.js';
 import {readAssetParts,writeAssetPart,assetPartLine,type AssetPart} from './asset-part-metadata.js';
 

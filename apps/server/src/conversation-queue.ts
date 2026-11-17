@@ -6,7 +6,7 @@ import {withinEvidenceScope} from './evidence-reader.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {resolveDependencies} from './conversation-lineage.js';
 import {safeError} from './diagnostics.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {ConversationMessage} from './conversations.js';
 import type {QueryRunDependencies} from './plugins/query-runs.js';
 import type {DelegatedQueryRuns} from './delegated-query-runs.js';

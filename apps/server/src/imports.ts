@@ -16,7 +16,7 @@ import {FILE_PART_BYTES,ProviderFailure,importRequestSchema,importReviewDecision
 import {ArchivedFileStore,MAX_FILE_BYTES,archiveRelativePath} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {SourceStore} from './sources.js';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {importIntakeOverridesSchemaInstallation,importJobsSchemaInstallation,importCreateRequestsSchemaInstallation} from './import-schema.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionStep} from './execution-engine.js';

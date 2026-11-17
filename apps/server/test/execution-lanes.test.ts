@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,type ExecutionHandler} from '../src/execution-engine.js';
 
 const handler:ExecutionHandler={kind:'generated.background',pool:'generated.lanes',concurrency:()=>64,validate:()=>true,execute:async()=>null,commit:()=>{}};

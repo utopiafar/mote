@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {memoryNativeStagesSchemaInstallation} from './memory-native-stage-schema.js';
 import {memoryEngineDraftPin,type MemoryEngineDraftContext,type MemoryEngineDraftPin,type MemoryNativeStageAdapter,type MemoryNativeStagePort} from './memory-native-stage-contract.js';

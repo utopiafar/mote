@@ -9,7 +9,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {type ContextReader,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {UsageLedger} from '../apps/server/src/usage.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {ProviderFailure} from '@mote/shared';
 import {base,recipes,check,equal,json,cloneClosed,closed,hashObject,SafeFailure} from './test-heldout-memory-replay.js';
 import {openNode,drain,treeHash,type Manifest,freezeStage,newOutput,batchPin,settings,bindings,protectedTables,codeHashes,executorPins,experimentHash} from './test-heldout-memory-replay-stage.js';

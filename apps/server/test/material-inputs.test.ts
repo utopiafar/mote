@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {MemoryStrategies} from '../src/memory-strategies.js';
 import {MemoryStore} from '../src/memory.js';

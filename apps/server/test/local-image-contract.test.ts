@@ -13,7 +13,7 @@ import type {ModelAgentFactory} from '../src/model-agent.js';
 import {ImageInterpretationError} from '../src/image-recipes.js';
 import {imageOutput} from '../src/evidence-image.js';
 import {requestLocalJson} from '../src/local-http.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {memoryImageGrants} from '../src/memory-image-grants.js';
 import {LOCAL_IMAGE_ERRORS,LOCAL_IMAGE_PROTOCOL,localImagePluginStateSchema,localImageRequestSchema,parseLocalImageResponse,type LocalImageSuccess} from '../src/local-image-contract.js';
 import {generatedLocalImages,startLocalImageFixtureWorker,type LocalImageFixture,type LocalImageWorkerFault} from './fixtures/local-image.js';

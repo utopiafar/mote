@@ -5,7 +5,7 @@ import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {connectionClientPlatforms,connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
 import {PrivateFile} from './connectors/private-file.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 import type {ConnectorConfig} from './connectors/types.js';
 

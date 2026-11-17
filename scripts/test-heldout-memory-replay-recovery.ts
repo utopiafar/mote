@@ -47,7 +47,7 @@ export async function prepareNativeRetry(input:{parent:string;destination:string
 
 import {readFile,open,realpath,unlink} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {batchPin,codeHashes,executorPins,privateWrite} from './test-heldout-memory-replay-stage.js';
 import {type Ref,type WavePlan,type PhaseManifest,ref,readRef,rootAndRuntime,validation,phaseCursor,freezePhase} from './test-heldout-memory-replay-sequence.js';
 import {type RecoveryPlan,type RecoveryLineage,inspectStoppedRecoveryLedger,reserveRecoveryPreparation,validateRecoveryPrefix,authorizeRecovery,readRecoveryPlan} from './test-heldout-memory-replay-ledger.js';

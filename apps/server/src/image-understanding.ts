@@ -5,7 +5,7 @@ import type {ProcessingService,TokenUsage} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
 import {ImageInterpretationError,ImagePixelsNotInspectedError,imageInterpretationSchema,type ImageInterpretation} from './image-recipes.js';
 import type {ImageUnderstanding,ImageUnderstandingSelection} from './image-processing.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {retainErrorIdentity} from './execution-failures.js';
 
 const interpretationText=(raw:string)=>raw.trim().replace(/^```(?:json)?\s*\n?/,'').replace(/\n?```$/,'');

@@ -1,7 +1,7 @@
 import {operationStepStateSchema,operationStateSchema,type OperationSummary,type OperationState,type OperationPage,type OperationDetail,type OperationChanges} from '@mote/shared';
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 const states=operationStepStateSchema.options;
 const waitingReason="CASE WHEN state IN ('blocked','waiting','failed') THEN (SELECT CASE e.error WHEN 'processor_still_running' THEN 'processor_response_unknown' ELSE e.error END FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=operation_progress.id AND o.active=1 AND e.state='blocked' AND e.error IN ('awaiting_confirmation','processor_response_unknown') ORDER BY e.updated_at DESC LIMIT 1) END AS waiting_reason";
 const summary=(row:Record<string,unknown>):OperationSummary=>({id:String(row.id),kind:String(row.kind)||'processing',state:row.state as OperationState,total:Number(row.total),notScheduled:Number(row.not_scheduled),optionalIssues:Number(row.total)-Number(row.not_scheduled)-states.reduce((sum,state)=>sum+Number(row[state]),0),counts:Object.fromEntries(states.map(state=>[state,Number(row[state])])) as OperationSummary['counts'],createdAt:Number(row.created_at),updatedAt:Number(row.updated_at),...(row.waiting_reason?{waitingReason:row.waiting_reason as OperationSummary['waitingReason']}:{})});

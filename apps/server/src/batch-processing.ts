@@ -4,7 +4,7 @@ import {BackgroundModelAuthorization,type AutomaticModelPurpose,type ModelConnec
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
 import {resolveDependencies} from './conversation-lineage.js';

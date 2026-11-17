@@ -4,7 +4,7 @@ import {ownerQuestionCreateSchema,type OwnerQuestionRecord} from './owner-questi
 import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
 import {assertSourceContextDependencies} from './source-context-lineage.js';
 import type {SourceContextStore} from './source-context.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {TaskRecords,type TaskRecord} from './task-records.js';
 import type {BatchQuery} from './batch-processing.js';
 

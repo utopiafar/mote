@@ -1,5 +1,5 @@
 import type {EvidenceDependencies} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 export function combineDependencies(values:(EvidenceDependencies|undefined)[]):EvidenceDependencies|undefined {
   if(values.some(value=>!value))return;

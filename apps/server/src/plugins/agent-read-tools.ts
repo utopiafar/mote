@@ -1,7 +1,7 @@
 import {Context} from '@deepseek-ai/cordis';
 import {FeatureRegistry} from '@mote/shared';
 import {createOfficialReadPacks,defineToolDescriptor,type ToolDescriptor,type ReadPackRegistration,type ContextReader} from '@mote/agent';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {HostContributionDescriptor} from '../feature-inventory.js';
 
 const groups:Record<string,(keyof ContextReader)[]>={

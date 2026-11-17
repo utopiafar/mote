@@ -1,5 +1,5 @@
 import type {ImportMemoryProgress} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {MemoryWorkMember} from './memory-work-contract.js';
 
 type State=Exclude<keyof ImportMemoryProgress,'total'|'receipts'|'jobIds'>;

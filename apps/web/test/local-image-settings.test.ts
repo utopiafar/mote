@@ -14,7 +14,7 @@ import {LocalImageSettings,type LocalImageSettingsProps,type LocalImageSettingsC
 import {MediaPreparation} from '../src/MediaPreparation.js';
 import {ApiError,readApiJson,readApiError,type Api} from '../src/api.js';
 import {resources,readResource} from '../src/resource-cache.js';
-import {Store,StoreError} from '../../server/src/store.js';
+import {EvidenceStore as Store,StoreError} from '../../server/src/evidence-store.js';
 import {ExecutionEngine} from '../../server/src/execution-engine.js';
 import {GitHubPluginReleases} from '../../server/src/plugin-release.js';
 import {createPluginControlPlatform,pluginControlDeclaration,type PluginCenter} from '../../server/src/plugin-center.js';

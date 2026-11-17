@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {privateDirectory} from './private-storage.js';
 import type {SourceItem} from '@mote/shared';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 export const archiveHash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const sourceReceiptId=(sourceId:string,item:Pick<SourceItem,'externalId'|'revision'>)=>{

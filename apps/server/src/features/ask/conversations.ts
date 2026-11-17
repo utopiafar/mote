@@ -1,7 +1,7 @@
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
 import type {ConversationRepository} from '../../plugins/central-contracts.js';
-import {StoreError} from '../../store.js';
+import {StoreError} from '../../evidence-store.js';
 
 /** Conversation routes dispatch through the current plugin activation. */
 export function registerConversationRoutes(app:FastifyInstance,conversations:()=>ConversationRepository,multipleConversations:()=>boolean){

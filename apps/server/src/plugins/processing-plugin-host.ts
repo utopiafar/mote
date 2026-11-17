@@ -8,7 +8,7 @@ import {MaterialConsumerRegistry} from '../material-consumers.js';
 import {ImportIntakeRegistry} from '../import-intake.js';
 import {ImageInputRegistry} from '../image-inputs.js';
 import {ImageRecipeRegistry} from '../image-recipes.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 type Registry=Record<string,(value:any)=>()=>void>;
 type Declaration={live?:()=>void;remove:()=>void;publish:()=>()=>void;active:boolean};

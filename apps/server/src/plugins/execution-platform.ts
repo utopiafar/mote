@@ -1,7 +1,7 @@
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {ExecutionFailure,type ExecutionEngine,type ExecutionHandler,type ExecutionGrant} from '../execution-engine.js';
 import type {ProviderAdmission} from '../provider-admission.js';
 import type {Operations} from '../operations.js';

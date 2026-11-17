@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import Fastify from 'fastify';
-import {Store} from '../../server/src/store';
+import {EvidenceStore as Store} from '../../server/src/evidence-store';
 import {SourceStore} from '../../server/src/sources';
 import {EvidenceReader} from '../../server/src/evidence-reader';
 import {createContextQuery} from '../../server/src/plugins/query-context';

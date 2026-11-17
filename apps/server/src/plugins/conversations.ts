@@ -4,7 +4,7 @@ import type {PluginLifecycle,ServiceBinding} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {Conversations} from '../conversations.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 type Store=ConstructorParameters<typeof Conversations>[0];
 import {registerConversationRoutes} from '../features/ask/conversations.js';
 import {centralServices,type ConversationRepository} from './central-contracts.js';

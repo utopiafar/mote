@@ -9,7 +9,7 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import type {Transcript} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import type {FileProcessor} from '../src/file-processors.js';
 

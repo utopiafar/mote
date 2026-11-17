@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {operationStateSchema,type OperationState,type EvidenceDependencies} from '@mote/shared';
 import {z} from 'zod';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {addTaskEvidence,taskEvidenceSchemaInstallation,retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';

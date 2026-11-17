@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {MemoryBindings} from '../src/memory-bindings.js';

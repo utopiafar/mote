@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import {createMemoryProvider} from '../../../examples/worker-plugin/main.mjs';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {createContextQuery} from '../src/plugins/query-context.js';

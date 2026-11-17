@@ -9,7 +9,7 @@ import type {Context,Plugin} from '@deepseek-ai/cordis';
 import {z} from 'zod';
 import {artifactOutput,type ArtifactOutput} from './evidence-archive.js';
 import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './materials.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host';
 import type {ConfigService} from './config-service.js';
 import {workflowConfigDomain} from './config.js';

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';

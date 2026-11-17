@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {FILE_MAX_BYTES,FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {readAgentCredential} from './login-fixture.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {FileEvidence} from '../src/file-evidence.js';

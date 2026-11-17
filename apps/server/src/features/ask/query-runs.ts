@@ -3,7 +3,7 @@ import type {FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {conversationMessageInputSchema} from '@mote/shared';
-import {StoreError} from '../../store.js';
+import {StoreError} from '../../evidence-store.js';
 import {agentModelConnection} from '../../model-authorization-host.js';
 import type {ModelConnection} from '../../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../../model-authorization-host.js';

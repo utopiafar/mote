@@ -8,7 +8,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {assistantTaskRecordSchema} from '@mote/shared';
 import {TaskRecords} from '../src/task-records.js';

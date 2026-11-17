@@ -3,7 +3,7 @@ import {heartbeatSchema,type DeviceRecord,type Heartbeat} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {RequestAuthority} from './central-contracts.js';
 import type {AuthorizationPlatform} from './authorization-platform.js';
 import type {firstDeviceData} from '../first-device-data.js';

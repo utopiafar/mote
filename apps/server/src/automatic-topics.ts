@@ -4,7 +4,7 @@ import type {MemoryRead,MemoryReadSnapshot,MemoryReadSnapshots} from './evidence
 import type {MemoryStore} from './memory.js';
 import type {Memory} from './memory-schema.js';
 import {memoryBodyDigest} from './memory-provider-contract.js';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {ContextTree} from './context-trees.js';
 export type TopicMemoryRead=Pick<MemoryRead,'memoryAsync'|'assertMemoryReadable'> & Partial<Pick<MemoryReadSnapshots,'memoryBindings'>> & {readonly memories:Pick<MemoryStore,'get'>};
 

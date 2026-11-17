@@ -1,7 +1,7 @@
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import {evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {type EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
 import {retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';

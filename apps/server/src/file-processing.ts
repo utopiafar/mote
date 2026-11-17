@@ -20,7 +20,7 @@ import type {ContextRecord,QueryInput} from '@mote/agent';
 import type {Plugin} from '@deepseek-ai/cordis';
 import type {HostScope} from '@mote/plugin-host';
 import {FileStore} from './files.js';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {fileProcessingMediaIntentsSchemaInstallation,fileDiarizationOverridesSchemaInstallation,fileConfigurationSnapshotsSchemaInstallation,fileProcessorWaitsSchemaInstallation,fileSummaryPagesSchemaInstallation,fileSemanticWithdrawalsSchemaInstallation} from './file-processing-schema.js';
 import {FileProcessorRuntime,isLoopback,mediaModelConnection,type FileProcessor,type TranscriptionProvider,type ProcessorInput,type MediaRequestIdentity} from './file-processors.js';

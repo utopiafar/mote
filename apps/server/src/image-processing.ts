@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {AgentNotConfiguredError,AgentResponseError,AgentTimeoutError} from '@mote/agent';
 import {ProviderFailure,fileProcessingSchema,transcriptSchema,unknownAttributionContext,type CaptureRecord,type Transcript,type ProcessingService} from '@mote/shared';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {FileProcessing} from './file-processing.js';
 import {processorSettingsFingerprint,processorContract} from './file-configuration.js';

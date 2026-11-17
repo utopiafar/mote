@@ -1,7 +1,7 @@
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {MediaAssets} from '../media-assets.js';
 import {centralServices,type MediaAssetsRead} from './central-contracts.js';
 

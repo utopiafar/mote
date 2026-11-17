@@ -4,7 +4,7 @@ import type {ConnectionCredential} from '../connections.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {MaterialStore} from '../materials.js';
 import type {SourceStore} from '../sources.js';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {FeatureRoute,FeatureScope} from './index.js';
 
 export interface SourcesFeatureDependencies {

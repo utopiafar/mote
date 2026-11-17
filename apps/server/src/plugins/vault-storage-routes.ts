@@ -1,7 +1,7 @@
 import type {FastifyInstance} from 'fastify';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import {z} from 'zod';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {PluginResourceScope} from '@mote/plugin-host';
 import type {ArchivedFileStore} from '../archived-files.js';
 import type {ContentStorageService} from '../content-storage.js';

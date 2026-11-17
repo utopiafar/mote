@@ -8,7 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {zipSync,strToU8} from 'fflate';
 import {buildApp,type QueryAgent} from '../../src/app.js';
 import type {ConfigurationPlatformOptions} from '../../src/config.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import {GitHubPluginReleases} from '../../src/plugin-release.js';
 import {CalendarActions,type CalendarActionIO} from '../../../desktop/src/calendar-actions.js';
 

@@ -7,7 +7,7 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionFailureReceipt,type Execu
 import type {FailureContext} from './execution-failures.js';
 import {DelegationStore} from './delegation-store.js';
 import {queryWorkspace,type QueryWorkspace} from './delegation-protocol.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {sourceContextDeclarationSchema,type SourceContextDeclaration} from '@mote/shared';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
 export {originalEvidenceReceipt} from '@mote/agent';

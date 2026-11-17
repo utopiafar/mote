@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {z} from 'zod';
 import {moteText} from './i18n.js';
 import {PrivateFile} from './connectors/private-file.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {developerAccessSchemaInstallation} from './plugin-surface-schema.js';
 import type {Connections,ConnectionCredential} from './connections.js';

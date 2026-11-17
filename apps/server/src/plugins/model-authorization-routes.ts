@@ -1,6 +1,6 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {BackgroundModelAuthorization} from '../background-model-authorization.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 /** Owner control plane. HTTP inputs describe a decision; they are never an
  * executable task authority and cannot choose a work or execution identity. */

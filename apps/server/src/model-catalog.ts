@@ -2,7 +2,7 @@ import { moteText } from './i18n.js';
 import {spawn} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {normalizeCodexServiceTier,type ModelSettings} from '@mote/shared/models';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string;serviceTiers?:string[]}
 export class ModelCatalogError extends StoreError {constructor(){super(moteText("无法读取模型列表。请检查节点上的服务、凭据及目录接口；仍可手动填写模型 ID。"),502);}}
 const failure=()=>new ModelCatalogError();

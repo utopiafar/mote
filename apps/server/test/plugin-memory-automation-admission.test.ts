@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PluginHost} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {centralServices,type MemoryAdmission} from '../src/plugins/central-contracts.js';
 import {
   createMemoryAutomationAdmission,createMemoryAutomationAdmissionFactory,

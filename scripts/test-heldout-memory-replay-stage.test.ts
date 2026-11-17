@@ -6,7 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {AgentTimeoutError,type QueryInput,type ContextReader} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {base,check,equal,cloneClosed,ablateClone,json} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,StageSafetyError,readAdmissionChain} from './test-heldout-memory-replay-ledger.js';
 import {freezeStage,newOutput,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';

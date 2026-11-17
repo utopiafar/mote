@@ -14,7 +14,7 @@ import {ServerDiagnostics} from '../src/diagnostics.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionHandler} from '../src/execution-engine.js';
 import {MaterialStore} from '../src/materials.js';
 import {Operations} from '../src/operations.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {UsageLedger} from '../src/usage.js';
 import {createAgentViewServices,type AgentViewRouteDependencies} from '../src/plugins/agent-view-routes.js';
 import {createActivityServices,createActivityServicesFactory,activityServicesContribution,type ActivityServicesDependencies} from '../src/plugins/activity-services.js';

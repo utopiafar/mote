@@ -8,7 +8,7 @@ import {centralCalendarPluginCapabilitySchema,messageSendPluginCapabilitySchema,
 import {buildApp} from '../../src/app.js';
 import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import {TaskRecords} from '../../src/task-records.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import {hostRun} from './host-run.js';
 
 export const actionText='Generated meeting follow-up: prepare the brief and propose the next appointment.';

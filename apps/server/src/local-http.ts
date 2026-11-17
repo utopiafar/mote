@@ -2,7 +2,7 @@ import {Agent as HttpAgent,request as httpRequest,type IncomingHttpHeaders} from
 import {Agent as HttpsAgent,request as httpsRequest} from 'node:https';
 import {once} from 'node:events';
 import {ProviderFailure,providerHttpFailure} from '@mote/shared';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export function isLoopback(endpoint:string){try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}}
 

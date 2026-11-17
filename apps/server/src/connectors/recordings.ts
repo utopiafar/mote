@@ -1,7 +1,7 @@
 import {EXECUTION_POLICIES} from '../execution-policy.js';
 import {recordingResources,type RecordingContext} from './recording-context.js';
 import {z} from 'zod';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {recordingSelectionSchema,type RecordingSelection,type RecordingStatus,type Transcript} from '@mote/shared';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep,type ExecutionGrant} from '../execution-engine.js';

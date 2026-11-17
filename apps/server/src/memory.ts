@@ -8,7 +8,7 @@ import type {StatementSync} from 'node:sqlite';
 import {z} from 'zod';
 import {validateInlineCitations,SOURCE_TIME_INSTRUCTIONS,skillCatalog} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,noteCapture,type CaptureRecord,type QueryResult} from '@mote/shared';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {memorySearchSchemaInstallation} from './memory-search-schema.js';
 import {CODING_MEMORY_CONTRACT,codingMemorySchema,memorySchema,memoryAdmissionSchema,memoryRelationSchema,memoryReviewReceiptSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';

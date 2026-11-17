@@ -2,7 +2,7 @@ import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import { moteText } from '../../src/i18n.js';
 import {filePolicySchema,fileProcessingSchema,resolveFileRule,matchesFileType,type FilePolicy,type FileProcessingSettings,type ProcessingProfile,type ProcessingService,type PolicyRule} from '@mote/shared';
 import {type ProcessorRegistry,isLoopback} from '../../src/file-processors.js';
-import {StoreError,sha256} from '../../src/store.js';
+import {StoreError,sha256} from '../../src/evidence-store.js';
 
 export function fixtureFilePolicy(s:FileProcessingSettings,registry:ProcessorRegistry):FilePolicy{
   const services:ProcessingService[]=[{id:'asr-api',name:moteText("录音转写接口"),kind:'asr',execution:isLoopback(s.endpoint)?'local':'remote',endpoint:s.endpoint,model:'',apiKey:s.apiKey},{id:'asr-local',name:moteText("本地录音服务"),kind:'asr',execution:'local',endpoint:s.localEndpoint,model:'',apiKey:s.localWorkerApiKey}];

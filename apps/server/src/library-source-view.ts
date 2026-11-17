@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 import type {MaterialStore} from './materials.js';
 import type {EvidenceReader} from './evidence-reader.js';

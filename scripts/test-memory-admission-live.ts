@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createAgent,type QueryInput} from '@mote/agent';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 import {MemoryStore,MEMORY_EXTRACTION_PROMPT} from '../apps/server/src/memory.js';
 import {MemoryPipeline} from '../apps/server/src/memory-pipeline.js';

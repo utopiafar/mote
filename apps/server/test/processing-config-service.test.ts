@@ -10,7 +10,7 @@ import sharp from 'sharp';
 import {parse,stringify} from 'yaml';
 import {z} from 'zod';
 import {ConfigService} from '../src/config-service.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';

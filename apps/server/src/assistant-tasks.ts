@@ -15,7 +15,7 @@ import {ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
 import type {SourceContextStore} from './source-context.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {TaskRecords,type TaskRecord} from './task-records.js';
 import type {ModelConnection} from './background-model-authorization.js';
 import {addTaskEvidence,retireTaskRecordsSql,taskEvidenceIds} from './task-evidence.js';

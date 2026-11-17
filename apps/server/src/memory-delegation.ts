@@ -5,7 +5,7 @@ import type {ContextRecord,QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {DelegationRuntime,type DelegationWork} from './delegation-runtime.js';
 import {ExecutionFailure} from './execution-engine.js';
-import {sha256,StoreError} from './store.js';
+import {sha256,StoreError} from './evidence-store.js';
 import type {MemoryPipeline} from './memory-pipeline.js';
 import type {MaterialMemoryWork,MemoryWorkCandidate,MemoryWorkProposal} from './material-memory-work.js';
 import type {SourcePipelineRuntime} from './source-pipelines.js';

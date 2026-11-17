@@ -1,5 +1,5 @@
 import type {CaptureRecord, SourceContextDeclaration} from '@mote/shared';
-import type {Range, Store} from './store.js';
+import type {Range, EvidenceStore as Store} from './evidence-store.js';
 import type {MaterialPage, MaterialReadPage} from './materials.js';
 import type {Memory} from './memory-schema.js';
 import type {MemoryProviderKey} from './memory-provider-contract.js';

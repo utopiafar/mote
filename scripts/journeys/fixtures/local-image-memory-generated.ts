@@ -4,7 +4,7 @@ import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import sharp from 'sharp';
-import {sha256} from '../../../apps/server/src/store.js';
+import {sha256} from '../../../apps/server/src/evidence-store.js';
 import {RANGE_SELECTION_PERSONAL_RECIPE,SINGLE_PASS_PERSONAL_RECIPE} from '../../../apps/server/src/memory-range-selection-policy.js';
 import type {MemoryWorkMember} from '../../../apps/server/src/memory-work-contract.js';
 import {generatedImageCentral,modelText,pixels,toolResult,type Image,type ModelRequest,type Reply} from './local-image-central-generated.js';

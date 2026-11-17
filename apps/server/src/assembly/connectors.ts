@@ -5,7 +5,7 @@ import {connectorsConfigDomain,serverConfigDomain,type ConfigurationBootstrap} f
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {Connections} from '../connections.js';
 import type {AuthorizationPlatform} from '../plugins/authorization-platform.js';
 import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';

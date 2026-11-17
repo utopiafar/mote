@@ -10,7 +10,7 @@ import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Conversations} from '../src/conversations.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const token='generated-context-policy-token',headers={authorization:'Bearer '+token};

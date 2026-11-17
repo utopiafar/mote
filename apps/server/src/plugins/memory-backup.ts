@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import type {MemoryBindings} from '../memory-bindings.js';
 import {MemoryProviderError,memoryProviderRecordSchema,memoryProviderNamespaceSchema,memoryBodyDigest,withMemoryHostState} from '../memory-provider-contract.js';
 import {memorySchema,type Memory} from '../memory-schema.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const revision=(snapshot:ReturnType<MemoryBindings['retainSnapshot']>)=>digest({binding:snapshot.binding,catalog:snapshot.catalog,recordDigests:snapshot.recordDigests,metadata:snapshot.metadata});

@@ -11,7 +11,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {FileObservationReader} from '../src/file-observations.js';
 import {AssistantFollowup} from '../src/assistant-followup.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
 const token='generated-j2-owner',headers={authorization:'Bearer '+token};

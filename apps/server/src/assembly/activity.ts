@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {PluginHostError} from '@mote/plugin-host';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import type {ServerResources} from '../server-resources.js';
 import type {ActivityDelegationReader} from '../activity.js';

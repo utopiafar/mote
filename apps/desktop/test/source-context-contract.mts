@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
-import {Store} from '../../server/src/store';
+import {EvidenceStore as Store} from '../../server/src/evidence-store';
 import {SourceStore} from '../../server/src/sources';
 import {registerSourceRoutes} from '../../server/src/source-routes';
 import {centralSourceContentPage} from '../src/content-library';

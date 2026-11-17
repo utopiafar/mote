@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {installSchemaPlan} from '../src/schema-installation.js';
 import {memoryInputPlansSchemaInstallation} from '../src/memory-input-plans-schema.js';
 import {MemoryInputPlans} from '../src/memory-input-plans.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore} from '../src/memory.js';
 

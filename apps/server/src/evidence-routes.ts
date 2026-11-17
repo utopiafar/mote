@@ -2,9 +2,9 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {evidenceRefId,formatEvidenceRef} from '@mote/shared';
 import type {CaptureRead,MemoryRead} from './evidence-read-ports.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {navigationScopeSchema} from './context-navigation.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {Memory} from './memory-schema.js';
 type OwnerEvidenceRead=Pick<CaptureRead,'archivedEvidence'|'imageReference'> & Pick<MemoryRead,'memoryAsync'|'memoryPageAsync'> & {readonly store:Pick<Store,'image'>};
 

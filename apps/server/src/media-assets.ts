@@ -5,7 +5,7 @@ import {dirname,join,relative,resolve} from 'node:path';
 import {MEDIA_MODEL_PATHS,MEDIA_MODEL_COMPONENT_PATHS,mediaRoleSchema,type MediaRole,type MediaAssetStatus} from '@mote/shared';
 import {FUNASR_MODEL_IDS} from './funasr-contract.js';
 import {LOCAL_IMAGE_MODEL} from './local-image-contract.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export type {MediaRole} from '@mote/shared';
 type Content={size:number;sha256:string};

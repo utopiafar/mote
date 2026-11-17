@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {browseSourceContexts} from '../src/source-context-catalog.js';
 import {contextIndex} from '../src/context-index.js';

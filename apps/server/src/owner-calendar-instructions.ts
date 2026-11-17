@@ -6,7 +6,7 @@ import type {ConversationRepository} from './plugins/central-contracts.js';
 import {currentInstructionHash} from './assistant-current-instruction.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 type History=NonNullable<QueryInput['historyContext']>;
 type OfferedTarget={id:string;choice:ActionConnectorChoice;identity:ActionPluginProvider['identity'];change?:{kind:'calendar.update'|'calendar.cancel';original:NonNullable<ActionProposal['related']>}};

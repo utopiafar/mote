@@ -1,4 +1,4 @@
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 export type EvidenceDeletionCapability={available:boolean;kind:'capture'|'file'|null};
 type Alias={virtual:boolean;captureId?:string};
 /** The publication feature owns evidence deletion identity. Records, file archives and Material

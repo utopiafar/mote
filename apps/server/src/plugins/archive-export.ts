@@ -1,6 +1,6 @@
 import type {FastifyInstance} from 'fastify';
 import {z} from 'zod';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {ArchivedFileStore} from '../archived-files.js';
 import type {FileStore} from '../files.js';

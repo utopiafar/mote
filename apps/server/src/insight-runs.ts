@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
 import {createInsightSnapshot} from './insight-snapshots.js';
 import type {InsightSnapshot,QueryResult} from '@mote/shared';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import {safeError} from './diagnostics.js';
 import type {ExecutionEnvelope} from '@mote/shared/execution';
 import {RunExecution,runEnvelope,type RunExecutionOptions,type RunDeadline} from './run-execution.js';

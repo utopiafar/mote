@@ -12,7 +12,7 @@ import {TaskRecords} from '../src/task-records.js';
 import {AssistantCards,type AssistantCardPublication} from '../src/assistant-cards.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {SourceStore} from '../src/sources.js';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 const all:QueryScope={kind:'all'};
@@ -263,7 +263,7 @@ test('encrypted card bodies and feedback survive restart and maintenance deletio
  await node.app.close();closed=true;node=await buildApp(config,options);closed=false;
  assert.equal(node.featureServices.assistantCards.get(id,all).body,'Generated private body');assert.equal(node.featureServices.assistantCards.get(id,all).feedback[0].note,'Generated private feedback');
  await node.app.close();closed=true;
- const maintenance=new (await import('../src/store.js')).Store(directory,{dataKey:config.initialDocument!.storage.dataKey,contentEncryptionEnabled:true,maintenance:true});
+ const maintenance=new (await import('../src/evidence-store.js')).EvidenceStore(directory,{dataKey:config.initialDocument!.storage.dataKey,contentEncryptionEnabled:true,maintenance:true});
  try{
   maintenance.delete(original);
   assert.equal(maintenance.db.prepare('SELECT private_json FROM assistant_card_versions WHERE card_id=?').get(id)!.private_json,null);
@@ -289,7 +289,7 @@ test('a card version write failure rolls back a card and its evidence inside the
 
 for(const failure of ['full','rollback'] as const)test(`SQLite ${failure} inside a card savepoint preserves its original error, old evidence and pending upload across recovery`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-card-full-')),store=new Store(directory),sources=new SourceStore(store),reader=new EvidenceReader(store,sources),cards=new AssistantCards(store,reader);
- const {FileStore}=await import('../src/files.js'),{sha256}=await import('../src/store.js'),files=new FileStore(store,sources);
+ const {FileStore}=await import('../src/files.js'),{sha256}=await import('../src/evidence-store.js'),files=new FileStore(store,sources);
  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
  const original=randomUUID();await store.ingest({id:original,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated previously retained original'});
  sources.register({id:'generated-pending',name:'Generated pending',kind:'local-files',deviceId:'generated',platform:'import',retention:'archive'});

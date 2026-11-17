@@ -6,7 +6,7 @@ import {modelConnection} from './background-model-authorization.js';
 import {mediaModelIdentities} from './media-assets.js';
 import {mediaRoleEndpoint,mediaRuntimeSettings,type MediaRuntimeSettings} from './media-configuration.js';
 import {requestLocalJson} from './local-http.js';
-import {sha256,StoreError} from './store.js';
+import {sha256,StoreError} from './evidence-store.js';
 import type {UsageLedger} from './usage.js';
 import type {LocalImageProcessingPort} from './plugins/local-image-processing.js';
 

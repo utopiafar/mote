@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import Fastify, {type FastifyRequest} from 'fastify';
 import {PluginHost} from '@mote/plugin-host';
 import {serviceContract, type ScopeIdentity} from '@mote/plugin-api/contracts';
-import {Store, StoreError, sha256} from '../src/store.js';
+import {EvidenceStore as Store, StoreError, sha256} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases} from '../src/plugin-release.js';
 import {createPluginControlPlatform, pluginControlDeclaration, type TrustedPluginBuild} from '../src/plugin-center.js';

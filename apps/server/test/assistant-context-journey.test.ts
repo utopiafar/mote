@@ -9,7 +9,7 @@ import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import {defaultLifecycleSettings} from '../src/memory-lifecycle.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {hostRun} from './fixtures/host-run.js';

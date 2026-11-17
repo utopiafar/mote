@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Fastify from 'fastify';
 import {OAuth2Client} from 'google-auth-library';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 
 import {connectorRegistryHost} from './fixtures/connector-host.js';

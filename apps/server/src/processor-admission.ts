@@ -1,7 +1,7 @@
 import {ProviderFailure} from '@mote/shared';
 import {processorAdmissionSchemaInstallation} from './admission-schema.js';
 import {installSchemaPlan} from './schema-installation.js';
-import {sha256,type Store} from './store.js';
+import {sha256,type EvidenceStore as Store} from './evidence-store.js';
 
 /** Recheck availability, not a prediction of when a long recording finishes. */
 export const PROCESSOR_BUSY_RECHECK_MS=5000;

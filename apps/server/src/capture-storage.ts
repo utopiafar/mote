@@ -1,5 +1,5 @@
 import type {CaptureInput} from '@mote/shared';
-import {StoreError,type Range,type Store} from './store.js';
+import {StoreError,type Range,type EvidenceStore as Store} from './evidence-store.js';
 import {IngressService} from './ingress.js';
 import type {SourceStore} from './sources.js';
 import type {FileStore} from './files.js';

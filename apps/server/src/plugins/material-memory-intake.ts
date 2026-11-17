@@ -2,7 +2,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {CaptureInput} from '@mote/shared';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {MaterialStore} from '../materials.js';
 import type {MemoryRecipeSettings} from '../memory-recipe-settings.js';
 import type {MemoryInputSelection} from '../evidence-read-ports.js';

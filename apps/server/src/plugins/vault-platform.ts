@@ -3,7 +3,7 @@ import type {ManifestContribution} from '@mote/plugin-api';
 import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import {stateLimits,type StateLimits} from '@mote/plugin-api';
 import {join} from 'node:path';
-import {Store,StoreError} from '../store.js';
+import {EvidenceStore as Store,StoreError} from '../evidence-store.js';
 import {SourceStore} from '../sources.js';
 import {FileStore} from '../files.js';
 import {MaterialStore} from '../materials.js';

@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync,readdirSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {FILE_PART_BYTES} from '@mote/shared';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-commit-worker-')),options={},store=new Store(dir,options),sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'generated',name:'Generated files',kind:'local-files',deviceId:'generated',platform:'android',retention:'archive'});t.after(async()=>{await files.close();store.close();rmSync(dir,{recursive:true,force:true});});return {store,sources,files,options};}

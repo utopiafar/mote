@@ -10,7 +10,7 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createAgent,type AgentAnswer,type AgentTraceEvent,type ContextReader,type QueryInput} from '../../../../packages/agent/src/index.js';
 import {ProviderFailure,type QueryResult,type TokenUsage} from '@mote/shared';
-import {Store,sha256} from '../../src/store.js';
+import {EvidenceStore as Store,sha256} from '../../src/evidence-store.js';
 import {SourceStore} from '../../src/sources.js';
 import {ImportAttributionStore} from '../../src/import-attribution.js';
 import {MaterialStore,materialId} from '../../src/materials.js';

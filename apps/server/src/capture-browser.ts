@@ -9,7 +9,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import sharp from 'sharp';
 import {sourceSchema,formatEvidenceRef} from '@mote/shared';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 
 const rangeFields={

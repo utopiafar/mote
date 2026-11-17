@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 
 function oldVault(directory:string,epoch?:string){
   const db=new DatabaseSync(join(directory,'mote.sqlite'));

@@ -2,7 +2,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import {navigationScopeSchema} from './context-navigation.js';
 import {availableFileAttachmentSql,readableFileSql} from './file-access.js';
-import type {Range} from './store.js';
+import type {Range} from './evidence-store.js';
 import type {SchemaInstallation} from './schema-installation.js';
 
 export const sourceCatalogSchemaInstallation={owner:'source-catalog',requires:['capture','source'],install:initializeSourceCatalog} as const satisfies SchemaInstallation;

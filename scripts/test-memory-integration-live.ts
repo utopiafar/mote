@@ -8,7 +8,7 @@ import {execFileSync} from 'node:child_process';
 import type {UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 
 function outside(path:string){const value=resolve(path),part=relative(repositoryRoot,value);assert.ok(part==='..'||part.startsWith('../'),'Private runs must stay outside Git');return value;}

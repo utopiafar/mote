@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {NativeApplicationContext,NativeApplicationExposure} from '@mote/agent/runtime/dsh';
 import type {Conversations} from './conversations.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {contextFailure} from './model-evidence-authority.js';
 import {historyEvidenceDependencies,resolveDependencies} from './conversation-lineage.js';
 import type {QueryScope} from './query-scope.js';

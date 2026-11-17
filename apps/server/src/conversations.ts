@@ -5,7 +5,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {HostSteeringTarget} from '@mote/agent';
 import type {QueryResult,QueryScope} from '@mote/shared';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import {combineDependencies,resolveDependencies,historyEvidenceDependencies} from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';

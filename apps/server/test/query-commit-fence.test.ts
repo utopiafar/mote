@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 const token='generated-query-fence-owner',headers={authorization:`Bearer ${token}`};

@@ -9,7 +9,7 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-e
 import {GitHubPluginReleases,type PluginManifest,type ResolvedPluginRelease} from './plugin-release.js';
 import {HostedPluginRuntime,WorkerPluginRuntime,type PluginRuntime} from './plugin-runtime.js';
 import {memoryControlCommandSchema} from './memory-automation.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {pluginReleasePreviewsSchemaInstallation} from './plugin-surface-schema.js';
 import type {PluginControlStore,BuildInstance,BuildInstanceRecord,BuildPackageRecord,BuildSelection} from './plugins/plugin-control-store.js';

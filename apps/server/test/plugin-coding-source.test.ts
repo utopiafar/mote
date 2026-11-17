@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import Fastify from 'fastify';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {PluginHost} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore} from '../src/materials.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {SourceStore} from '../src/sources.js';

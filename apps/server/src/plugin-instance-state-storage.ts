@@ -6,7 +6,7 @@ import {
   StateError, stateLimits,
   type StateCheckpoint, type StateLimits, type StateRecord, type StateStore, type StateValue, type StateWriteCondition,
 } from '@mote/plugin-api';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {sourceIdSchema} from '@mote/shared';
 
 export const instanceStateSchemaInstallation={owner:'plugin-instance-state',requires:[],install:instanceStateSchema} as const satisfies SchemaInstallation;

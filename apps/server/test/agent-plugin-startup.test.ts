@@ -16,7 +16,7 @@ import {buildApp} from '../src/app.js';
 import {registerBuiltinDomains,type ConfigurationPlatformOptions} from '../src/config.js';
 import {ConfigService} from '../src/config-service.js';
 import {ConcurrencyGate} from '../src/concurrency.js';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import type {QueryAgent} from '../src/query-agent.js';
 import {modelConfiguration} from '../src/model-configuration.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';

@@ -1,6 +1,6 @@
 import {archiveHash,SourceArchive} from './source-archive.js';
 import type {SourceItem} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {MAX_RAW_PAGE_ITEMS,MAX_RAW_READ_BYTES} from './raw-reader.js';
 import type {RawCollectionRef,RawPageRequest,RawPageResult,RawReadRequest,RawReadResult,RawReader,RawRef} from './raw-reader.js';
 

@@ -1,5 +1,5 @@
 import {assembleHostContext,estimateSerializedTokens,originalEvidenceReceipt,type ContextRecord,type QueryInput} from '@mote/agent';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export type AssistantRequestCapacity={contextWindow:number;maxOutputTokens:number;draftTokens:number;language?:QueryInput['language']};
 type Original={id:string;offset:number;quote:string};

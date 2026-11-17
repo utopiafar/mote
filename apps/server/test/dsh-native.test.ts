@@ -12,7 +12,7 @@ import {dshConfigDomain,registerBuiltinDomains} from '../src/config.js';
 import {dshConfigurationSchema} from '../src/dsh-configuration.js';
 import {dshSelectionBoundary, nativeDshSource, type InstalledDshAuthority} from '../src/dsh-native.js';
 import {activateInstalledDsh, installedDshModule, nativeDshCatalog, projectInstalledDshModules} from '../src/dsh-installed-modules.js';
-import {StoreError} from '../src/store.js';
+import {StoreError} from '../src/evidence-store.js';
 import {safeError} from '../src/diagnostics.js';
 import {AgentProviderError} from '@mote/agent';
 import {DshProfileError} from '@mote/agent/runtime/dsh';

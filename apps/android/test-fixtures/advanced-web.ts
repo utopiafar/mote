@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildApp} from '../../server/src/app.js';
-import {sha256} from '../../server/src/store.js';
+import {sha256} from '../../server/src/evidence-store.js';
 import {consumeAdvancedTargets,type AdvancedContractOutput} from '../../web/test/advanced-web-contract.js';
 
 // Actual Central ticket HTTP -> production Kotlin handoff -> actual Web

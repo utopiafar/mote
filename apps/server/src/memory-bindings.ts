@@ -12,7 +12,7 @@ import {MemoryAutomation,memoryControlCommandSchema} from './memory-automation.j
 import {publishOperationChange} from './operation-projection.js';
 import type {MemoryStore} from './memory.js';
 import type {PluginCenter} from './plugin-center.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 type Binding={planId:string;generation:number;namespace?:MemoryProviderNamespace};
 type Preparation={view:MemoryPreparationView;source:Binding;target:Binding;stepId:string;snapshot?:string;prepared?:MemoryProviderRecord[]};

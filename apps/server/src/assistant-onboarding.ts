@@ -11,7 +11,7 @@ import type {SourceArchive} from './source-archive.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {retireTaskRecordsSql} from './task-evidence.js';
 import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {OwnerQuestionsPort} from './plugins/central-contracts.js';
 import {safeError,type ServerDiagnostics} from './diagnostics.js';
 

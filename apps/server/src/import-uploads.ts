@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import {rm} from 'node:fs/promises';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {importUploadsSchemaInstallation} from './import-schema.js';
 import {ArchivedFileStore,archiveRelativePath} from './archived-files.js';

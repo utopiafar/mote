@@ -4,7 +4,7 @@ import type {ContextQuery} from '../context-query.js';
 import {createContextQuery} from '../plugins/query-context.js';
 import {ServerDiagnostics} from '../diagnostics.js';
 import type {SourceStore} from '../sources.js';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import type {MaterialStore} from '../materials.js';
 import {mcpImportState,type McpImportState} from './mcp-import-state.js';
 import {ConnectorError,type ConnectorConfig,type ConnectorContext} from './types.js';

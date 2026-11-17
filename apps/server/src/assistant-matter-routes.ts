@@ -8,7 +8,7 @@ import {registerAssistantCommitmentList} from './assistant-commitment-routes.js'
 import type {AssistantTasks} from './assistant-tasks.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {TaskRecords} from './task-records.js';
 
 const empty=(scope:QueryScope)=>scope.kind==='selection'&&scope.sourceIds?.length===0||scope.evidenceIds?.length===0;

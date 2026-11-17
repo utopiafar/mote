@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseAnswer,type QueryInput,type ContextReader} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore,MemoryOutputValidationError} from '../src/memory.js';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';

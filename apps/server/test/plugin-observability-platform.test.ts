@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import type {ReleaseManifest} from '@mote/shared/release';
 import {PluginHost} from '@mote/plugin-host';
 import type {PluginScope,ScopeIdentity,ServiceBinding} from '@mote/plugin-api/contracts';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,ExecutionFailure} from '../src/execution-engine.js';
 import {EXECUTION_POLICIES} from '../src/execution-policy.js';
 import {ServerDiagnostics,safeError} from '../src/diagnostics.js';

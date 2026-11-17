@@ -7,7 +7,7 @@ import {performance} from 'node:perf_hooks';
 import {gzipSync} from 'node:zlib';
 import sharp from 'sharp';
 import assert from 'node:assert/strict';
-import {Store} from '../apps/server/src/store.js';
+import {EvidenceStore as Store} from '../apps/server/src/evidence-store.js';
 import {SourceStore} from '../apps/server/src/sources.js';
 const path=mkdtempSync(join(tmpdir(),'mote-scale-')),store=new Store(path,{}),sources=new SourceStore(store);
 const counts={observations:Number(process.env.MOTE_BENCH_OBSERVATIONS??20000),files:Number(process.env.MOTE_BENCH_FILES??100000)};

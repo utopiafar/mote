@@ -6,7 +6,7 @@ import type {ConfigService} from '../config-service.js';
 import type {MediaAssets} from '../media-assets.js';
 import type {MediaConfiguration} from '../media-configuration.js';
 import {MediaPreparation} from '../media-preparation.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 
 export const ocrAsrReadinessContribution={

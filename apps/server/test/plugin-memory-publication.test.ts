@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {PluginHost} from '@mote/plugin-host';
 import type {ServiceLease} from '@mote/plugin-api/contracts';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MemoryStore} from '../src/memory.js';
 import {memorySchema,type Memory} from '../src/memory-schema.js';
 import type {MemoryBindings} from '../src/memory-bindings.js';

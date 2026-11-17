@@ -1,6 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
-import {sha256,StoreError} from './store.js';
+import {sha256,StoreError} from './evidence-store.js';
 
 /** The automation owner borrows a narrow vault surface: durable control rows and
  * metadata accounting. It never needs the complete Store backdoor. */

@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {Conversations} from '../src/conversations.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {materialId} from '../src/materials.js';

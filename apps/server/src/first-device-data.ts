@@ -1,5 +1,5 @@
 import {formatEvidenceRef,type CaptureRecord} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {FileStore} from './files.js';
 import type {CaptureRead} from './evidence-read-ports.js';
 

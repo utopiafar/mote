@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {zipSync,strToU8} from 'fflate';
 import {buildApp} from '../../src/app.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import type {PluginManifest,PluginReleaseTransport} from '../../src/plugin-release.js';
 import type {Api} from '../../../web/src/api';

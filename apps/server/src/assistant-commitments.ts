@@ -6,7 +6,7 @@ import {withinEvidenceScope,type EvidenceReader} from './evidence-reader.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {combineSourceContextDependencies,sourceContextDependenciesCurrent,assertSourceContextDependencies} from './source-context-lineage.js';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
 import type {AssertTaskCurrent} from './task-records.js';
 import {TodoStore} from './todos.js';

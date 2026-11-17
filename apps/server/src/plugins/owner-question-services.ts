@@ -7,7 +7,7 @@ import {ownerQuestionReplySchema,ownerQuestionStateSchema} from '@mote/shared';
 import type {ModelConnection} from '../background-model-authorization.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import {OwnerQuestions} from '../owner-questions.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices,type OwnerQuestionsPort} from './central-contracts.js';
 
 /** This plugin owns the durable owner-question ledger and its owner-only HTTP table.

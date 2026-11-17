@@ -1,7 +1,7 @@
 import {extname} from 'node:path';
 import type {ArchivedFile} from '@mote/shared';
 import {formatWork} from './format-work.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {isAppleDouble} from './appledouble.js';
 
 export type FormatInput={file:ArchivedFile;prefix:Buffer};

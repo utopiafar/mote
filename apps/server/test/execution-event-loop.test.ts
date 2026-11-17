@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 
 test('filling available model slots lets callbacks cancel queued work before its first attempt',async t=>{
  const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
- const {Store}=await import('../src/store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
+ const {EvidenceStore: Store}=await import('../src/evidence-store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-slot-admission-turn-')),store=new Store(directory),engine=new ExecutionEngine(store);
  let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve),started:string[]=[];
  t.after(async()=>{release();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
@@ -25,7 +25,7 @@ test('filling available model slots lets callbacks cancel queued work before its
 
 test('draining work in a full pool does not join an unrelated completion backlog',async t=>{
  const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
- const {Store}=await import('../src/store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
+ const {EvidenceStore: Store}=await import('../src/evidence-store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-independent-drain-')),store=new Store(directory),engine=new ExecutionEngine(store);
  let release!:()=>void,enter!:()=>void,completed=0;const held=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>enter=resolve),backlog:string[]=[];
  t.after(async()=>{release();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
@@ -80,7 +80,7 @@ for(const mode of ['background','drain','mixed-lanes'])test(`a large admission-w
 
 for(const outcome of ['blocked','exhausted','admission-error'] as const)test(`draining ${outcome} decisions lets event-loop callbacks run before the backlog settles`,async t=>{
  const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
- const {Store}=await import('../src/store.js'),{ExecutionEngine,ExecutionFailure}=await import('../src/execution-engine.js');
+ const {EvidenceStore: Store}=await import('../src/evidence-store.js'),{ExecutionEngine,ExecutionFailure}=await import('../src/execution-engine.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-terminal-admission-')),store=new Store(directory),engine=new ExecutionEngine(store);
  t.after(async()=>{await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
  let executions=0;

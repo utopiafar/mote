@@ -1,5 +1,5 @@
-import type {Store} from './store.js';
-import {StoreError} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
+import {StoreError} from './evidence-store.js';
 import type {FileStore} from './files.js';
 import type {ArchivedFileStore} from './archived-files.js';
 import {FileRawReader,fileOriginalRawRef,archivedOriginalRawRef} from './file-raw-reader.js';

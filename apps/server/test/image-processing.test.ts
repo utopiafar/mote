@@ -11,7 +11,7 @@ import {ProviderFailure} from '@mote/shared';
 import {AgentNotConfiguredError,AgentResponseError,AgentTimeoutError} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {fileProcessingObjectHash} from '../src/file-attachments.js';

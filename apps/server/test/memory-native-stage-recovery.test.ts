@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {constants} from 'node:sqlite';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryNativeStages} from '../src/memory-native-stages.js';
 

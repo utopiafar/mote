@@ -12,7 +12,7 @@ import type {ImportPreparation,ImportPreparationResult} from './imports.js';
 import type {ModelSettingsStore} from './model-settings.js';
 import {agentModelConnection} from './model-authorization-host.js';
 import type {ProviderAdmission} from './provider-admission.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export type {ImportCapability};
 export type ImportCapabilityFactory=(options:Omit<AgentOptions,'reader'>)=>ImportCapability;

@@ -9,7 +9,7 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import type {FileStore} from '../files.js';
 import type {ConnectionCredential,Connections} from '../connections.js';
 import type {IngressService} from '../ingress.js';
-import {StoreError,type Store} from '../store.js';
+import {StoreError,type EvidenceStore as Store} from '../evidence-store.js';
 import {parseCaptureBundle} from '../plugins/capture-intake.js';
 import type {FeatureRoute,FeatureScope} from './index.js';
 

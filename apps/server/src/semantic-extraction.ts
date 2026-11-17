@@ -5,7 +5,7 @@ import type {QueryInput} from '@mote/agent';
 import type {ContextProcessor} from './processing-runtime.js';
 import type {ModelConfiguration} from './model-configuration.js';
 import type {UsageLedger} from './usage.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {claimSchema,MemoryStore,MemoryOutputValidationError} from './memory.js';
 import {memoryProfile} from './memory-profiles.js';
 import type {MemoryWorkContract} from './memory-strategy-contract.js';

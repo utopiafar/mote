@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 
 const base={deviceId:'generated-scope',deviceName:'Synthetic count fixture',platform:'import',appId:'dev.mote.notes',appName:'记录',durationMs:0,source:'note',ocrText:'Generated evidence only.',privacy:{excluded:false,redacted:false,mode:'none'}};
 function vault(t:{after(fn:()=>void):void}) {const directory=mkdtempSync(join(tmpdir(),'mote-count-'));const store=new Store(directory);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;}

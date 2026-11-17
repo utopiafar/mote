@@ -3,7 +3,7 @@ import {sourceContextSchemaInstallation} from './source-state-schema.js';
 import {z} from 'zod';
 import {createHash} from 'node:crypto';
 import {sourceContextDeclarationSchema,sourceDescriptionDeclarationSchema,sourceContextUpdateSchema,type AttributionContext,type SourceContextDeclaration,type SourceContextSnapshot} from '@mote/shared';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {sourceContextArchiveDeclarationSchema as declarationSchema,portableSourceContextSchema,type PortableSourceContext} from './source-context-contract.js';
 export {portableSourceContextSchema,type PortableSourceContext} from './source-context-contract.js';

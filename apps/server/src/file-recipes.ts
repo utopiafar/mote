@@ -1,7 +1,7 @@
 import {PluginEpochs,type HostScope} from '@mote/plugin-host';
 import {transcriptSchema,type Transcript} from '@mote/shared';
 import type {ProcessorInput} from './file-processors.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {recipeFingerprint,freezeRecipe} from './recipe-contract.js';
 import {ExecutionFailure} from './execution-engine.js';
 import {FUNASR_PINS,funasrTranscriptOutput,funasrDialogueOutput,parseFunasrResponse,parseFunasrArchive,type FunasrCheckpoint} from './funasr-contract.js';

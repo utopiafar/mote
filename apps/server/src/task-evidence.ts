@@ -1,8 +1,8 @@
 import type {EvidenceDependencies} from '@mote/shared';
 import type {DatabaseSync} from 'node:sqlite';
 import type {SchemaInstallation} from './schema-installation.js';
-import type {Store} from './store.js';
-import {StoreError} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
+import {StoreError} from './evidence-store.js';
 import {resolveDependencies} from './conversation-lineage.js';
 
 export const taskEvidenceSchemaInstallation={

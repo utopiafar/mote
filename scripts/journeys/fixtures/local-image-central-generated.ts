@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
 import {generatedLocalImageSetup} from '../../../apps/server/test/fixtures/media-setup.js';
 import {generatedLocalImages,type LocalImageFixture} from '../../../apps/server/test/fixtures/local-image.js';
-import {sha256} from '../../../apps/server/src/store.js';
+import {sha256} from '../../../apps/server/src/evidence-store.js';
 import {localImageProcessingSelection} from '../../../apps/server/src/plugins/local-image-processing.js';
 import {createModelAgent,type ModelAgentFactory} from '../../../apps/server/src/model-agent.js';
 

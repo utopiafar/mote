@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,type SchemaInstallation} from '../src/schema-installation.js';
 import {installVaultSchema,vaultSchemaInstallations} from '../src/vault-schema-installation.js';
 import {StoreDatabase} from '../src/sqlite-database.js';
-import {StoreError} from '../src/store.js';
+import {StoreError} from '../src/evidence-store.js';
 
 const schema=(db:DatabaseSync)=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all();
 function incompatibleCatalog(db:DatabaseSync){

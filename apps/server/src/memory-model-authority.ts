@@ -1,6 +1,6 @@
 import type {AutomaticMemoryGrant} from './memory-input-authorization.js';
 import type {MemoryJob} from './memory-pipeline.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 /** Host lookup only. Model authorization still validates and consumes grants;
  * observing Memory metadata never grants execution or disclosure. */

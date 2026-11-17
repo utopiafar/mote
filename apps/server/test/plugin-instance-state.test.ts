@@ -9,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {backup} from 'node:sqlite';
 import {PluginHost} from '@mote/plugin-host';
 import {StateError, stateLimits, type ScopeIdentity, type StateLimits, type StateStore} from '@mote/plugin-api';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {bindInstanceStateCommit} from '../src/plugin-instance-state-storage.js';
 
 const lifecycle = () => ({prepare() {}, start() {}, quiesce() {}, stop() {}, dispose() {}});

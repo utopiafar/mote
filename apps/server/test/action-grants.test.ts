@@ -9,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {zipSync,strToU8} from 'fflate';
 import {calendarPluginCapabilitySchema,centralCalendarPluginCapabilitySchema,messageSendPluginCapabilitySchema} from '@mote/shared';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {Connections} from '../src/connections.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import Fastify,{type FastifyRequest} from 'fastify';
 import {captureSchema,heartbeatSchema,type CaptureInput,type Heartbeat} from '@mote/shared';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {MaterialStore} from '../src/materials.js';

@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ownerQuestionProviderRefSchema,ownerQuestionReplySchema,ownerQuestionSchema,ownerQuestionStateSchema,type OwnerQuestion,type OwnerQuestionPage,type OwnerQuestionProviderRef,type OwnerQuestionReply} from '@mote/shared';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
 import {ownerQuestionsSchemaInstallation} from './owner-questions-schema.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';

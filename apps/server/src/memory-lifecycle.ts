@@ -6,7 +6,7 @@ import {ProviderFailure} from '@mote/shared';
 import {MemoryProviderError} from './memory-provider-contract.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {Store,StoreError,sha256} from './store.js';
+import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import type {ConfigService} from './config-service.js';
 import {memoryConfigDomain} from './config.js';
 import {lifecycleSettingsSchema,defaultLifecycleSettings,type LifecycleSettings} from './memory-configuration.js';

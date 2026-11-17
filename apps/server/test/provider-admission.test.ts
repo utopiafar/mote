@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,rmSync} from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';
-import {ProviderFailure} from '@mote/shared';import {Store} from '../src/store.js';import {ProviderAdmission} from '../src/provider-admission.js';import {ConcurrencyGate} from '../src/concurrency.js';
+import {ProviderFailure} from '@mote/shared';import {EvidenceStore as Store} from '../src/evidence-store.js';import {ProviderAdmission} from '../src/provider-admission.js';import {ConcurrencyGate} from '../src/concurrency.js';
 const settings={protocol:'openai-completions' as const,provider:'custom',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-private-key',headers:{'X-Fixture':'generated-private-header'}};
 test('provider cooldown survives reconstruction, shares credentials across models, and never persists settings',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-provider-admission-')),store=new Store(dir),other=new Store(dir);let now=10000,calls=0;

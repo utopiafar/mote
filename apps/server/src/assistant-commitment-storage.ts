@@ -1,4 +1,4 @@
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 /** A correction refers to a specific timeline item. If that item is retired,
  * its corrections cannot remain as independent derived prose. Receipts stay

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {materialId,type MaterialStore} from './materials.js';
 
 /** Only the host's complete authored-note body is another identity of the

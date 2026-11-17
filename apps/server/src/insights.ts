@@ -2,7 +2,7 @@ import sanitizeHtml from 'sanitize-html';
 import {z} from 'zod';
 import {skillCatalog,validateInlineCitations} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 export type InsightArtifact={id:string;title:string;html:string;createdAt:string;skillId:string;skillVersion:string};
 export type InsightResult=QueryResult&{artifact?:InsightArtifact};

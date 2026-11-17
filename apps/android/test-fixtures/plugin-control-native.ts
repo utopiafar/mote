@@ -9,7 +9,7 @@ import {zipSync, strToU8} from 'fflate';
 import {buildApp} from '../../server/src/app.js';
 import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {GitHubPluginReleases} from '../../server/src/plugin-release.js';
-import {sha256} from '../../server/src/store.js';
+import {sha256} from '../../server/src/evidence-store.js';
 
 // Real Central plugin-control routes feed the production Kotlin client. Only
 // the unavailable Android transport runtime is replaced by JDK HTTP in the JVM

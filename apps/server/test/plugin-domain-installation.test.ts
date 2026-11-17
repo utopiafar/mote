@@ -9,7 +9,7 @@ import Fastify from 'fastify';
 import {PluginHost,type HostPluginContext} from '@mote/plugin-host';
 import {serviceContract,type ServiceBinding} from '@mote/plugin-api/contracts';
 import {createDomainActivations,type CentralDomainPlugin} from '../src/domain-activation.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

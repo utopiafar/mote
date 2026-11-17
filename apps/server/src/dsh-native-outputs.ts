@@ -3,7 +3,7 @@ import {basename} from 'node:path';
 import type {SourceStore} from './sources.js';
 import {materialId,type MaterialStore} from './materials.js';
 import type {MaterialDerivation} from './material-derivation.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {PublishNativeOutputs} from './dsh-application.js';
 
 /** Trusted producer over the same SourceIntake repositories. The source row is

@@ -11,7 +11,7 @@ import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
 import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {larkDocumentJourneys,larkJourneyOwnerContext} from '../apps/server/test/fixtures/lark-document-journeys.js';
 import {larkJourneyRunner} from '../apps/server/test/fixtures/lark-journey-runner.js';

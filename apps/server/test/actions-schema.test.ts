@@ -11,7 +11,7 @@ import {Actions} from '../src/actions.js';
 import {actionsRuntimeSettingsSchema} from '../src/actions-configuration.js';
 import {ConfigService} from '../src/config-service.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 

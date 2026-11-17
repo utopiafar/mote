@@ -1,5 +1,5 @@
 import type {CaptureRecord} from '@mote/shared';
-import type {Range} from './store.js';
+import type {Range} from './evidence-store.js';
 
 export type MediaActivityRange = Range & {
   appVisibility?: 'foreground'|'background'|'unknown';

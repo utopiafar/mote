@@ -8,7 +8,7 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-e
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import type {Memory} from './memory-schema.js';
 import {memoryBodyDigest} from './memory-provider-contract.js';
-import {sha256,type Store} from './store.js';
+import {sha256,type EvidenceStore as Store} from './evidence-store.js';
 import type {MemoryStore} from './memory.js';
 
 export type MemoryTopicsSelection={profileId:string;model:string;connection:ModelConnection};

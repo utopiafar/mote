@@ -1,5 +1,5 @@
 import {InsightRuns} from './insight-runs.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {ExecutionEngine} from './execution-engine.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {InsightServicesDependencies} from './plugins/insight-services.js';

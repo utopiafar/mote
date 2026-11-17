@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import {defaultDistribution} from '../src/distribution/default.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {featureInventoryPlugin} from '../src/plugins/feature-inventory-domain.js';
 import {plugins as inventoryPlugins,prepareFeatureInventory} from '../src/plugins/feature-inventory-domain.js';
 import Fastify from 'fastify';

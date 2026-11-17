@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {MaterialStore,materialId,materialManifestSchema,materialEvidenceContextSchema} from './materials.js';
-import {StoreError,sha256,type Store} from './store.js';
+import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {ImportAttributionStore} from './import-attribution.js';
 import {portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution-contract.js';
 import {SourceContextStore} from './source-context.js';

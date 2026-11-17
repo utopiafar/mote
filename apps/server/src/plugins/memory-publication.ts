@@ -7,7 +7,7 @@ import type {QueryResult} from '@mote/shared';
 import type {MemoryStore,MemoryExtractOptions} from '../memory.js';
 import {memoryProviderKey,memoryBodyDigest,withMemoryHostState,type MemoryProvider,type MemoryProviderKey,type MemoryProviderNamespace,type MemoryProviderReceipt} from '../memory-provider-contract.js';
 import {ExecutionEngine,ExecutionFailure} from '../execution-engine.js';
-import {sha256,StoreError} from '../store.js';
+import {sha256,StoreError} from '../evidence-store.js';
 import type {EvidenceStore as Store} from '../evidence-store.js';
 import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';

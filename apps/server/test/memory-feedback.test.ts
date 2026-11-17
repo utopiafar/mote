@@ -11,7 +11,7 @@ import {retainFailureContext} from '../src/execution-failures.js';
 import {ActivityProjection} from '../src/activity.js';
 import {Operations} from '../src/operations.js';
 import {OwnerQuestions} from '../src/owner-questions.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MemoryStore} from '../src/memory.js';

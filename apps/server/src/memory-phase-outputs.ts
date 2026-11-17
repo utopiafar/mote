@@ -3,7 +3,7 @@ import {installSchemaPlan,type SchemaInstallation} from './schema-installation.j
 import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 export const memoryPhaseOutputsSchemaInstallation={owner:'memory-phase-outputs',requires:[],prerequisites:[{owner:'memory',objects:[{type:'table',name:'memory_batches'},{type:'table',name:'memory_jobs'},{type:'table',name:'memory_batch_dependencies'}]},{owner:'execution',objects:[{type:'table',name:'execution_steps'}]}],install:memoryPhaseOutputsSchema} as const satisfies SchemaInstallation;
 

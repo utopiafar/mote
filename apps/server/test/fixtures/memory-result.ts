@@ -3,7 +3,7 @@ import type {QueryResult} from '@mote/shared';
 import type {MemoryStore} from '../../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineOptions} from '../../src/memory-pipeline.js';
 import {memoryReviewReceipt} from '../../src/memory-review.js';
-import {sha256} from '../../src/store.js';
+import {sha256} from '../../src/evidence-store.js';
 import type {MemoryWorkMember} from '../../src/memory-work-contract.js';
 /** Synthetic models choose canonical admission and quote actual generated fixture evidence. */
 export function fixtureMemoryResult(memories:MemoryStore,result:QueryResult,ranges?:{id:string;offset:number;length:number}[],input?:Pick<QueryInput,'taskContext'>):QueryResult {

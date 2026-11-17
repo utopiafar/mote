@@ -4,7 +4,7 @@ import {constants} from 'node:sqlite';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {BackgroundModelAuthorization} from '../src/background-model-authorization.js';
 import {createAuthorizationPlatform} from '../src/plugins/authorization-platform.js';
 import {testVault} from './fixtures/plugin-runtime-vault.js';

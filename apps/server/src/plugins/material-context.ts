@@ -9,7 +9,7 @@ import type {EvidenceReader} from '../evidence-reader.js';
 import {registerOwnerLibraryBrowse} from '../owner-library-browse.js';
 import {registerMaterialRoutes} from '../material-routes.js';
 import {registerSourceMaterialView} from '../source-material-view.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 
 /** Materials parent bridge: the materials feature's HTTP contribution lives with the

@@ -9,7 +9,7 @@ import {providerAdmissionSchemaInstallation,processorAdmissionSchemaInstallation
 import {installSchemaPlan} from '../src/schema-installation.js';
 import {ProcessorAdmission} from '../src/processor-admission.js';
 import {ProviderAdmission} from '../src/provider-admission.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 
 const object=(db:DatabaseSync,name:string)=>db.prepare('SELECT type,name FROM sqlite_master WHERE name=?').get(name);
 const settings={protocol:'openai-completions' as const,provider:'custom',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-private-key',headers:{'X-Fixture':'generated-private-header'}};

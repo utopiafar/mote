@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import Fastify from 'fastify';
 import {randomUUID} from 'node:crypto';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine,type ExecutionHandler} from '../src/execution-engine.js';
 import {Operations,registerOperations} from '../src/operations.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';

@@ -4,7 +4,7 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import type {ExecutionEngine} from '../execution-engine.js';
 import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {MaterialStore} from '../materials.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {MaterialOrganizerRuntime,type MaterialOrganizer} from '../material-organizers.js';
 import {centralServices} from './central-contracts.js';
 

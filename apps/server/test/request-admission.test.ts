@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp, type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model call permitted');},close:async()=>{}};
 async function fixture(t:TestContext, agent=inactive){

@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {sourceMaterialView} from '../src/source-material-view.js';
 import {buildApp} from '../src/app.js';

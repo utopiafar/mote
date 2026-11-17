@@ -1,7 +1,7 @@
 import type {QueryInput} from '@mote/agent';
 import type {MaterialInputPin} from './material-readiness.js';
 import {fileAttachmentAvailable} from './file-attachments.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {QueryResult} from '@mote/shared';
 import type {MaterialStore} from './materials.js';
 import type {MemoryEvidence} from './memory-schema.js';

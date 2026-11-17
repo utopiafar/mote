@@ -8,7 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {strToU8,zipSync} from 'fflate';
 import {evidenceDependenciesSchema,pluginInstanceCommandSchema,sourceEvidenceRevisionSchema,type CaptureRecord} from '@mote/shared';
 import {parseSemanticProducts} from '../../../apps/server/src/semantic-extraction.js';
-import {Store,sha256} from '../../../apps/server/src/store.js';
+import {EvidenceStore as Store,sha256} from '../../../apps/server/src/evidence-store.js';
 import {ExecutionEngine} from '../../../apps/server/src/execution-engine.js';
 import {PluginCenter} from '../../../apps/server/src/plugin-center.js';
 import {GitHubPluginReleases,type PluginManifest,type PluginReleaseTransport} from '../../../apps/server/src/plugin-release.js';

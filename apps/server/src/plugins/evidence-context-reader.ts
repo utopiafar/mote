@@ -3,7 +3,7 @@ import {serviceContract} from '@mote/plugin-api/contracts';
 import type {ContextReader} from '@mote/agent';
 import type {FastifyInstance} from 'fastify';
 import type {CentralDomainPlugin} from '../domain-activation.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {ContextTreesReadCapability} from '../context-trees.js';
 import type {EvidenceReaderAgentOptions,EvidenceReaderFacade} from '../evidence-reader.js';
 import type {CaptureRead,CaptureContextRead,MaterialRead,MemoryRead,MemoryReadSnapshot,MemoryReadSnapshots,MemoryInputSelection} from '../evidence-read-ports.js';

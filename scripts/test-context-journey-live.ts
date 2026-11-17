@@ -9,7 +9,7 @@ import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {contextJourneyCases,type ContextJourneyCase} from './fixtures/context-journey.js';
 import {contextJudgmentQuestion} from './context-journey-judgment.js';
 

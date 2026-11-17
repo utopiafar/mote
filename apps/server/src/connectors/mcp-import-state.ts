@@ -1,4 +1,4 @@
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 import {installSchemaPlan,type SchemaInstallation} from '../schema-installation.js';
 
 export const mcpStateSchemaInstallation={owner:'mcp-import',requires:[],prerequisites:[{owner:'source',objects:[{type:'table',name:'source_connections'}]}],install:db=>{db.exec('CREATE TABLE IF NOT EXISTS mcp_import_manifests(source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,identity TEXT NOT NULL,members TEXT NOT NULL,PRIMARY KEY(source_id,identity))');}} as const satisfies SchemaInstallation;

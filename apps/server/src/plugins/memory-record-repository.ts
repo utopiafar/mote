@@ -5,7 +5,7 @@ import {MemoryStore} from '../memory.js';
 import {memoryStorageSchema} from '../memory-storage-schema.js';
 import {memorySchema} from '../memory-schema.js';
 import {memoryBodyDigest,memoryProviderKey} from '../memory-provider-contract.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 import type {MemoryRecordHostState,MemoryRecordRead,MemoryRecordSnapshot,MemoryRecordSnapshots} from '../evidence-read-ports.js';
 

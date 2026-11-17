@@ -1,7 +1,7 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
 import {z} from 'zod';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {memoryRecipeScope,type MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {memoryRecipeBindingSchema,type MemoryRecipeBinding} from './memory-strategy-contract.js';
 

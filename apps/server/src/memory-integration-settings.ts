@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import type {MemoryStrategies} from './memory-strategies.js';
 import {memoryIntegrationBindingSchema,memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {defaultMemoryIntegrationRecipe} from './memory-integration-policy.js';

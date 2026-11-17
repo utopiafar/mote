@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import {noteCapture,noteSchema} from '@mote/shared';
 import {PluginHost} from '@mote/plugin-host';
 import type {ScopeIdentity} from '@mote/plugin-api/contracts';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {MaterialStore} from '../src/materials.js';

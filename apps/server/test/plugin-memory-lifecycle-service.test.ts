@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setImmediate as flushImmediate} from 'node:timers/promises';
 import {PluginHost} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {Conversations} from '../src/conversations.js';
 import {MemoryStore} from '../src/memory.js';

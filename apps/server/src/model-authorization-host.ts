@@ -6,7 +6,7 @@ import type {ModelSettings} from '@mote/shared/models';
 import type {ModelAgentIdentity} from './model-agent.js';
 import {formatMaterialRef,type MaterialStore} from './materials.js';
 import type {FileStore} from './files.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import {BackgroundModelAuthorization,modelConnection,type AutomaticModelPurpose,type ModelConnection,type ModelDisclosure} from './background-model-authorization.js';
 
 export const captureModelIdentity=(id:string)=>'capture:'+id;

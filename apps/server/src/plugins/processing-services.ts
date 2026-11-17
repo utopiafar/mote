@@ -17,7 +17,7 @@ import {ProcessingRuntime} from '../processing-runtime.js';
 import {FileProcessing,type FileAnalysis,type TranscriptionProvider} from '../file-processing.js';
 import type {FileProcessorContribution} from '../file-processors.js';
 import {funasrDialogueCleanup} from '../file-dialogue.js';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import {centralServices} from './central-contracts.js';
 import {contributeDomainRoutes} from './domain-routes.js';
 import {registerProcessingJobRoutes} from '../features/processing/processing-services.js';

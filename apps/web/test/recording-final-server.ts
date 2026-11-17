@@ -3,7 +3,7 @@ import {join,resolve} from 'node:path';
 import {existsSync} from 'node:fs';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {buildApp} from '../../server/src/app.js';
-import {sha256} from '../../server/src/store.js';
+import {sha256} from '../../server/src/evidence-store.js';
 const [directory,webRoot]=process.argv.slice(2);if(!directory||!webRoot)throw Error('Private profile and isolated Web root required');
 const token=randomBytes(32).toString('hex'),when='2026-10-29T01:00:00Z';let modelCalls=0;
 const runtime=await buildApp({path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{webRoot:resolve(webRoot),backgroundWorker:false,agent:{configured:false,query:async()=>{modelCalls++;throw Error('Recording UI fixture must not call models');},close:async()=>{}}});

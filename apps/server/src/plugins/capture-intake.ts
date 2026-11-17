@@ -5,7 +5,7 @@ import {captureSchema,rangeSchema,type CaptureInput} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import {safeError} from '../diagnostics.js';
 import {CAPTURE_BATCH_MAX_BYTES} from '../capture-limits.js';

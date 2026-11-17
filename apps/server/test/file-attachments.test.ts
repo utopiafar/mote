@@ -12,7 +12,7 @@ import sharp from 'sharp';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {materialId} from '../src/materials.js';
 import {fileAttachmentParent} from '../src/file-attachments.js';
 import {EvidenceReader} from '../src/evidence-reader.js';

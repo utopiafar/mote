@@ -11,7 +11,7 @@ import type {FastifyRequest} from 'fastify';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {LocalRateLimit,LocalRateLimitError,UploadHttpProtection} from '../src/local-rate-limits.js';
-import {sha256} from '../src/store.js';
+import {sha256} from '../src/evidence-store.js';
 import {SourceSync} from '../../desktop/src/source-sync.js';
 import type {ScannedItem,SourceDefinition,SourceRequest} from '../../desktop/src/source-types.js';
 

@@ -12,7 +12,7 @@ import { actionsRuntimeSettingsSchema } from '../src/actions-configuration.js';
 import { ConfigService } from '../src/config-service.js';
 import { MemoryLifecycle, storedMemoryLifecycleSettings } from '../src/memory-lifecycle.js';
 import { lifecycleSettingsSchema } from '../src/memory-configuration.js';
-import { Store } from '../src/store.js';
+import { EvidenceStore as Store } from '../src/evidence-store.js';
 import { SourceStore } from '../src/sources.js';
 import { FileStore } from '../src/files.js';
 

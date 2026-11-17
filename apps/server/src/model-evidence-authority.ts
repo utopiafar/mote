@@ -11,7 +11,7 @@ import {combineDependencies} from './conversation-lineage.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {memoryEvidenceFingerprint} from './memory.js';
 import type {assertMemoryImageGrants} from './memory-image-grants.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import {querySourcePolicy} from './query-source-scope.js';
 import type {QueryScope} from './query-scope.js';
 

@@ -1,5 +1,5 @@
 import type {CaptureRecord} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 
 // Read scope metadata only: expanding a derived artifact must not materialize all original text/images.
 const field=(path:string)=>`json_extract(json,'$.${path}')`;

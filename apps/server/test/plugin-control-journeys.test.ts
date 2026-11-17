@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {strToU8, zipSync} from 'fflate';
 import type {PluginInstanceView, QueryResult} from '@mote/shared';
-import {Store, sha256} from '../src/store.js';
+import {EvidenceStore as Store, sha256} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {GitHubPluginReleases, type PluginManifest, type PluginReleaseTransport} from '../src/plugin-release.js';
 import {PluginCenter} from '../src/plugin-center.js';

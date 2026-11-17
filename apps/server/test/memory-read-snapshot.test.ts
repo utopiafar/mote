@@ -6,7 +6,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Store,StoreError} from '../src/store.js';
+import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {registerEvidenceRoutes} from '../src/evidence-routes.js';

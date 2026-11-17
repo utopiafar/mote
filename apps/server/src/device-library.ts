@@ -2,7 +2,7 @@ import {storedCaptureLibraryVersion} from './capture-library-version.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {createHash} from 'node:crypto';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import {ConnectionError,type ConnectionCredential} from './connections.js';
 
 const sources=['screen','ui_page','activity','media','notification','device_event','note'] as const;

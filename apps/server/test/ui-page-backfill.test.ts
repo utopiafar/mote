@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {uiPageText,type UiPageV3} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MaterialMemoryObservation} from '../src/material-memory-work.js';
 

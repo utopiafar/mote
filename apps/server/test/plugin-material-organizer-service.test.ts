@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PluginHost} from '@mote/plugin-host';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {ExecutionEngine} from '../src/execution-engine.js';

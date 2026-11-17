@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store,StoreError,sha256} from '../src/store.js';
+import {EvidenceStore as Store,StoreError,sha256} from '../src/evidence-store.js';
 import {calendarPluginCapabilitySchema} from '@mote/shared';
 
 const owner='generated-action-capability-owner',mcpReadToken='generated-static-read-mcp-token-123456789',headers=(token=owner)=>({authorization:'Bearer '+token});

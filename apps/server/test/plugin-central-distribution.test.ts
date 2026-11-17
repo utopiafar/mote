@@ -20,7 +20,7 @@ import {plugins as agentPlugins} from '../src/assembly/agent.js';
 import {plugins as workPlugins} from '../src/assembly/work.js';
 import {plugins as importPlugins} from '../src/assembly/imports.js';
 import type {CentralDistribution,CentralDomainPlugin,FoundationProvider} from '../src/bootstrap.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {centralServices} from '../src/plugins/central-contracts.js';
 import {mediaAssetsServiceContribution} from '../src/plugins/media-assets-service.js';
 import {ocrAsrReadinessContribution} from '../src/plugins/ocr-asr-readiness.js';

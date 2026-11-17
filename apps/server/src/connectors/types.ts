@@ -1,6 +1,6 @@
 import type {StateStore} from '@mote/plugin-api';
 import type {SourceStore} from '../sources.js';
-import type {Store} from '../store.js';
+import type {EvidenceStore as Store} from '../evidence-store.js';
 
 export interface ConnectorConfig {
   directory: string;

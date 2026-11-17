@@ -7,7 +7,7 @@ import {BackgroundModelAuthorization} from './background-model-authorization.js'
 import {BatchProcessing,type BatchRequest} from './batch-processing.js';
 import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import {retireTaskRecordsSql} from './task-evidence.js';
-import {sha256,StoreError,type Store} from './store.js';
+import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 
 type ChangeRow={seq:number;kind:'original'|'material'|'feedback';identity:string;source_id:string|null;object_id:string|null;previous_revision:string|null;at:number};
 type WorkRow={key:string;root:string;source_id:string;capture_id:string|null;material_id:string|null;previous_revision:string|null;task_id:string;first_at:number;last_at:number;started_batch:string|null;needs_review:number};

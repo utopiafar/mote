@@ -12,7 +12,7 @@ import {parseConnectionInvitation,MOTE_PROTOCOL_RANGE,noteCapture} from '@mote/s
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Connections,ConnectionError,type ConnectionFile} from '../src/connections.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model calls belong in connection tests');},close:async()=>{}};

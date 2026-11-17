@@ -7,7 +7,7 @@ import {promisify} from 'node:util';
 import {setTimeout as delay} from 'node:timers/promises';
 import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
-import {sha256} from '../../../apps/server/src/store.js';
+import {sha256} from '../../../apps/server/src/evidence-store.js';
 import {generatedImageCentral,modelText,pixels,toolResult,type Image,type ModelRequest,type Reply} from './local-image-central-generated.js';
 
 function envelope(body:ModelRequest):any{

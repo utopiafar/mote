@@ -9,7 +9,7 @@ import {ExecutionFailure} from './execution-engine.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {MemoryStore} from './memory.js';
 import {FileStore} from './files.js';
-import {Store,StoreError} from './store.js';
+import {EvidenceStore as Store,StoreError} from './evidence-store.js';
 import {WorkingMemory} from './working-memory.js';
 import {insightResult} from './insights.js';
 import {registerMemoryIntegration} from './memory-integration.js';

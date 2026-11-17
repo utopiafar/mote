@@ -1,7 +1,7 @@
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionHandler} from '../src/execution-engine.js';
 import {EXECUTION_POLICIES} from '../src/execution-policy.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readdirSync,readFileSync} from 'node:fs';
@@ -83,7 +83,7 @@ test('real app Memory reader keeps its result and original failure, leaves Ask u
 });
 
 test('the original 500ms delegation pump runs through a throwing observer and stops on close',async t=>{
- const {Store}=await import('../src/store.js'),{ExecutionEngine}=await import('../src/execution-engine.js'),{DelegationRuntime}=await import('../src/delegation-runtime.js');
+ const {EvidenceStore: Store}=await import('../src/evidence-store.js'),{ExecutionEngine}=await import('../src/execution-engine.js'),{DelegationRuntime}=await import('../src/delegation-runtime.js');
  const directory=mkdtempSync(join(tmpdir(),'mote-pump-observation-')),store=new Store(directory),engine=new ExecutionEngine(store);
  let observed=0,pumped=0;
  const tick=engine.tick.bind(engine);engine.tick=()=>{pumped++;return tick();};

@@ -4,7 +4,7 @@ import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLea
 import type {ManifestContribution,StateStore} from '@mote/plugin-api';
 import type {ConfigurationBootstrap} from './config.js';
 import type {ConfigService} from './config-service.js';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
 import type {ConfigurationPlatform,ConfigurationPlatformOptions} from './plugins/configuration-platform.js';
 import {c10IntegrationDeclaration} from './plugins/c10-integration.js';

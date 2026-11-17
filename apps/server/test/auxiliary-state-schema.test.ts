@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {captureSchema} from '@mote/shared';
 import {installSchemaPlan} from '../src/schema-installation.js';
 import {insightRunsSchemaInstallation,recordContextSchemaInstallation} from '../src/auxiliary-state-schema.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {InsightRuns} from '../src/insight-runs.js';
 import {RecordContextStore} from '../src/record-context.js';

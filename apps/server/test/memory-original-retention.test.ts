@@ -9,7 +9,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {readCurrentMemoryPage} from '../src/current-memory.js';
-import {Store,sha256} from '../src/store.js';
+import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {releasedMemoryOriginal} from '../src/memory-original-retention.js';
 import {materialId} from '../src/materials.js';

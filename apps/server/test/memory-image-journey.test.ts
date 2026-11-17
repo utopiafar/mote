@@ -11,7 +11,7 @@ import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
-import {StoreError,sha256} from '../src/store.js';
+import {StoreError,sha256} from '../src/evidence-store.js';
 import {memoryImageGrants,uninspectedMemoryImageTargets} from '../src/memory-image-grants.js';
 import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';

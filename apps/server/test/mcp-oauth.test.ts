@@ -14,7 +14,7 @@ import {McpOAuthServer} from '../src/connectors/mcp-oauth.js';
 import {registerMcpOAuthRoutes} from '../src/connectors/mcp-oauth-routes.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
 import {SourceStore} from '../src/sources.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {connectorReader} from './fixtures/connector-reader.js';
 
 const owner='synthetic-owner-for-mcp-oauth-tests';

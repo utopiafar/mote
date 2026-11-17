@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MemoryStore} from '../src/memory.js';
 import {SourceStore} from '../src/sources.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';

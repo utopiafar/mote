@@ -3,7 +3,7 @@ import {transcriptSchema} from '@mote/shared';
 import {fileAttachmentParent} from './file-attachments.js';
 import type {FileStore} from './files.js';
 import type {FileOutputRegistry,ComponentRef} from './file-recipes.js';
-import {sha256} from './store.js';
+import {sha256} from './evidence-store.js';
 
 /** The current format identifies privacy transformations by mode/redacted.
  * Redacted inputs have no pinned transformation revision, so conservatively

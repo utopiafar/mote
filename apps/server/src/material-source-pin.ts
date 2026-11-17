@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {evidenceRefId} from '@mote/shared';
-import type {Store} from './store.js';
+import type {EvidenceStore as Store} from './evidence-store.js';
 import type {MaterialRecord,MaterialStore} from './materials.js';
 import {fileAttachmentParent} from './file-attachments.js';
 import type {SourceArchive} from './source-archive.js';

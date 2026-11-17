@@ -9,7 +9,7 @@ import {fork} from 'node:child_process';
 import {createRequire} from 'node:module';
 import type {ManifestTask} from './import-manifest-worker.js';
 import type {Transcript,ArchivedFile} from '@mote/shared';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 export type FormatTask=ManifestTask|{kind:'document';path:string;mimeType:string;ocr?:{endpoint?:string;apiKey?:string}}|{kind:'text';path:string;maxBytes:number;chunkCharacters:number}|{kind:'zip';path:string;output:string;maxFiles:number;maxBytes:number}|{kind:'plain';inputs:{file:ArchivedFile;path:string}[];createdAt:string;manifest:string};
 type Results={document:Transcript;manifest:ReturnType<typeof import('./import-manifest-worker.js').validateImportManifest>;text:{durationMs:number;segments:{startMs:number;endMs:number;text:string}[]};zip:{files:{name:string;path:string;bytes:number}[];bytes:number};plain:{count:number;warnings:string[];partial:boolean;samples:{title:string;text:string;kind:string;attachmentCount:number}[];hash:string}};
 // A single decoding/manifest subprocess can cover a large configured import.

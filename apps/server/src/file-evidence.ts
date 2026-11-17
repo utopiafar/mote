@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
 
 // The existing tool contract uses bounded UTF-16 text ranges.

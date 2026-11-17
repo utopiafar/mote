@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {parseAnswer} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {MaterialStore,materialId,type MaterialReadPage} from '../src/materials.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {SourceStore} from '../src/sources.js';

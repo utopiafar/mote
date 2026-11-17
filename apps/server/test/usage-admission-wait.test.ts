@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {ProviderFailure} from '@mote/shared';
-import {Store} from '../src/store.js';
+import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {UsageLedger} from '../src/usage.js';
 import {MemoryStore} from '../src/memory.js';
 import {semanticProcessor} from '../src/semantic-extraction.js';

@@ -3,7 +3,7 @@ import {queryScopeSchema} from '@mote/shared';
 import {z} from 'zod';
 import type {AssistantFollowup} from './assistant-followup.js';
 import type {AssistantChangeFeed} from './assistant-change-feed.js';
-import {StoreError} from './store.js';
+import {StoreError} from './evidence-store.js';
 
 /** The owner retries a saved analysis under its exact scope and revision.
  * No raw executor, batch mutation or model authorization is exposed. */

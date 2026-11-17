@@ -2,7 +2,7 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,PluginScope,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {StoreError} from '../store.js';
+import {StoreError} from '../evidence-store.js';
 import type {SourceFileCatalogRead} from '../evidence-read-ports.js';
 import {LayersReadModel} from '../layers-read-model.js';
 import type {ConnectionCredential} from '../connections.js';

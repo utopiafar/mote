@@ -9,7 +9,7 @@ import {PluginResourceScope,PluginEpochs,type HostScope} from '@mote/plugin-host
 import type {SourceConnection,SourceItem} from '@mote/shared';
 import {materialId,type CodingArchiveSnapshot,type MaterialAppendDraft,type MaterialDraft,type MaterialStore} from './materials.js';
 import {SourceArchive,archiveHash} from './source-archive.js';
-import {StoreError,type Store} from './store.js';
+import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {SourceRecipeExecutor,type RecipeSnapshot} from './source-recipe-executor.js';
 import {recipeFingerprint} from './recipe-contract.js';
 import type {InstalledRecipe} from './recipe-registry.js';

@@ -8,7 +8,7 @@ import type {ConversationMessage,ConversationSteering} from './conversations.js'
 import {conversationInputIdentity} from './conversations.js';
 import {scopeContainsHistory} from './query-scope.js';
 import {ExecutionFailure} from './execution-engine.js';
-import {StoreError,sha256} from './store.js';
+import {StoreError,sha256} from './evidence-store.js';
 import {isDeepStrictEqual} from 'node:util';
 
 const decisionSchema=z.discriminatedUnion('kind',[

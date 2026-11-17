@@ -12,7 +12,7 @@ import {safeError} from '../apps/server/src/diagnostics.js';
 import {AgentYieldError} from '@mote/agent';
 import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
-import {sha256} from '../apps/server/src/store.js';
+import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import type {UsageReceipt} from '@mote/shared';
 const recordSchema=z.object({key:z.string().min(1).max(80),text:z.string().min(1).max(12000),declared:z.enum(['owner','third_party','mixed','unknown']),question:z.string().min(1).max(2000),rubric:z.string().min(1).max(4000)}).strict();

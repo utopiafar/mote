@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {sourceSchema,evidenceRefId,formatEvidenceRef} from '@mote/shared';
-import type {Range} from './store.js';
+import type {Range} from './evidence-store.js';
 
 /** Navigation is an explicit query scope, never an authorization grant or an original. */
 export const navigationScopeSchema=z.object({
