@@ -217,7 +217,7 @@ export function isolatedEnvironment(p, extra = {}) {
   result.NO_PROXY = result.no_proxy = bypass;
   return result;
 }
-export function execute(command, args, { env, cwd = repository, capture = false, timeoutMs = 120000 } = {}) {
+export function execute(command, args, { env, cwd = repository, capture = false, timeoutMs = 120000, failureCode } = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { cwd, env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit' });
     let output = '', outputBytes = 0, timedOut = false, outputExceeded = false;
@@ -230,7 +230,14 @@ export function execute(command, args, { env, cwd = repository, capture = false,
       if (chunk.length > remaining) { outputExceeded = true; terminate(); }
     });
     child.on('error', error => { clearTimeout(timer); clearTimeout(killTimer); reject(error); });
-    child.on('close', code => { clearTimeout(timer); clearTimeout(killTimer); if (code === 0 && !timedOut && !outputExceeded) resolvePromise(output.trim()); else reject(Error(`${command} ${args[0] ?? ''} ${outputExceeded ? 'exceeded output limit' : timedOut ? 'timed out' : `exited ${code}`}${capture ? '; diagnostic output suppressed to avoid exposing configuration' : ''}`)); });
+    child.on('close', code => {
+      clearTimeout(timer); clearTimeout(killTimer);
+      if(code===0&&!timedOut&&!outputExceeded){resolvePromise(output.trim());return;}
+      const error=Error(`${command} ${args[0] ?? ''} ${outputExceeded ? 'exceeded output limit' : timedOut ? 'timed out' : `exited ${code}`}${capture ? '; diagnostic output suppressed to avoid exposing configuration' : ''}`);
+      // Only a safe protocol code escapes. Captured diagnostics stay private.
+      if(capture&&!timedOut&&!outputExceeded&&failureCode){const classified=failureCode(output);if(classified)error.code=classified;}
+      reject(error);
+    });
   });
 }
 export async function withProfileLock(p, operation) {
@@ -469,7 +476,8 @@ export async function assertVaultStopped(directory) {
     catch (error) { if (error.code !== 'ESRCH') throw error; }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
-export async function backupProfile(p, out) {
+export async function backupProfile(p, out, { instance } = {}) {
+  if(instance!==undefined&&!/^[a-f0-9-]{36}$/.test(instance))throw Error('Invalid backup process identity');
   const destination = resolve(out ?? join(p.directory, 'backups', new Date().toISOString().replace(/[:.]/g, '-')));
   let source = p.dataDir, stage;
   try {
@@ -480,7 +488,7 @@ export async function backupProfile(p, out) {
       // A stopped container's PID namespace is unrelated to host PIDs. Remove only the copied lock.
       await rm(join(stage, 'server.pid'), { force: true }); source = stage;
     }
-    await execute(process.execPath, [join(repository, 'scripts/backup.ts'), '--data', source, '--out', destination,'--profile-lock',join(await realpath(p.directory),'lifecycle.lock')], { env: isolatedEnvironment(p,{...(p.env.MOTE_DATA_KEY?{MOTE_DATA_KEY:p.env.MOTE_DATA_KEY}:{}),...(process.env.MOTE_DEPLOY_DOCKER_CLI==='1'?{MOTE_DEPLOY_DOCKER_CLI:'1'}:{})}) });
+    await execute(process.execPath, [join(repository, 'scripts/backup.ts'), '--data', source, '--out', destination,'--profile-lock',join(await realpath(p.directory),'lifecycle.lock'),...(instance?['--mote-backup-instance='+instance]:[])], { env: isolatedEnvironment(p,{...(p.env.MOTE_DATA_KEY?{MOTE_DATA_KEY:p.env.MOTE_DATA_KEY}:{}),...(process.env.MOTE_DEPLOY_DOCKER_CLI==='1'?{MOTE_DEPLOY_DOCKER_CLI:'1'}:{})}) });
     return destination;
   } finally { if (stage) await rm(stage, { recursive: true, force: true }); }
 }
@@ -496,8 +504,8 @@ export async function profileContentKey(p){
       if(!ids.length)return;if(ids.length!==1||!/^[a-f0-9]{64}$/.test(ids[0]))throw Error('Cannot identify the profile content-key owner');
       const generated=join(await realpath(p.directory),'generated'),folder=await lstat(generated);if(!folder.isDirectory()||folder.isSymbolicLink()||await realpath(generated)!==generated)throw Error('Profile generated directory must be an ordinary directory');
       temporary=join(generated,'.backup-key-'+randomUUID());path=temporary;
-      try{await execute('docker',['cp',ids[0]+':/data/content-key',path],{capture:true});}
-      catch(error){if(/Could not find the file \/data\/content-key|No such file or directory/.test(error.message))return;throw error;}
+      try{await execute('docker',['cp',ids[0]+':/data/content-key',path],{capture:true,failureCode:output=>/Could not find the file \/data\/content-key in container/.test(output)?'ENOENT':undefined});}
+      catch(error){if(error.code==='ENOENT')return;throw error;}
     }else path=join(await realpath(p.dataDir),'content-key');
     const info=await lstat(path);if(!info.isFile()||info.nlink!==1||(info.mode&0o077)!==0||process.getuid&&info.uid!==process.getuid()||await realpath(path)!==path)throw Error('Original content key must be a private owned regular file');
     const value=(await readFile(path,'utf8')).trim();if(!/^[a-f0-9]{64}$/i.test(value))throw Error('Invalid original content key');return value;
@@ -543,12 +551,11 @@ export async function verifiedBackup(backup,{dataKey}={}) {
   } finally { db.close(); }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };
 }
-export async function restoreProfile(p, backup,{dataKey}={}) {
-  await assertDeploymentCompatible(p);
-  dataKey??=await profileContentKey(p);
+/** Shared offline restore preparation. Callers own and remove the returned
+ * stage; no Central/application is started and no active vault is changed. */
+export async function prepareBackupRestore(backup,parent,{dataKey}={}) {
   const checked = await verifiedBackup(backup,{dataKey});
-  const stage = join(p.meta.runtime === 'native' ? dirname(p.dataDir) : p.directory, `.mote-restore-${randomUUID()}`); await mkdir(join(stage, 'blobs'), { recursive: true, mode: 0o700 });
-  let restored=false;
+  const stage = join(parent, `.mote-restore-${randomUUID()}`); await mkdir(join(stage, 'blobs'), { recursive: true, mode: 0o700 });
   try {
     for (const name of checked.names) {
       await mkdir(dirname(join(stage,name)),{recursive:true,mode:0o700});
@@ -556,6 +563,14 @@ export async function restoreProfile(p, backup,{dataKey}={}) {
       await chmod(join(stage,name),0o600);
       if (await sha(join(stage, name)) !== checked.checksums[name]) throw Error('Backup changed while copying; active data was not changed');
     }
+    return {stage,checked};
+  }catch(error){await rm(stage,{recursive:true,force:true});throw error;}
+}
+export async function restoreProfile(p, backup,{dataKey}={}) {
+  await assertDeploymentCompatible(p);
+  dataKey??=await profileContentKey(p);
+  const {stage,checked}=await prepareBackupRestore(backup,p.meta.runtime==='native'?dirname(p.dataDir):p.directory,{dataKey});
+  try {
     if (p.meta.runtime === 'docker') {
       const existing = (await compose(p, ['ps', '--all', '--quiet', 'mote'], { capture: true })).trim();
       if (existing) await assertDockerStopped(p);
@@ -571,7 +586,7 @@ export async function restoreProfile(p, backup,{dataKey}={}) {
       if ((await readdir(p.dataDir)).length) throw Error('Restore requires an empty data directory; existing data is never overwritten');
       await rmdir(p.dataDir); await rename(stage, p.dataDir);
     }
-    restored=true;return { restored: true, source: checked.directory };
+    return { restored: true, source: checked.directory };
   } finally {
     await rm(stage, { recursive: true, force: true });
   }
