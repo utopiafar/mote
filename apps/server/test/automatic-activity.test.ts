@@ -10,7 +10,7 @@ import {uiPageText,type UiPageV3} from '@mote/shared';
 import {DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import {activityConfigDomain,type Config} from '../src/config.js';
 import {parseConfigDocument,serializeConfigDocument} from '@mote/shared/config-file';
 
 const token='generated-automatic-activity-owner-token',headers={authorization:`Bearer ${token}`};
@@ -39,6 +39,39 @@ async function fixture(t:TestContext){const dataDir=mkdtempSync(join(tmpdir(),'m
   const ingest=(payload:unknown,auth=headers)=>node.app.inject({method:'POST',url:'/api/captures',headers:auth,payload});
   return {get node(){return node;},calls,control,save,ingest,async restart(edit?:(path:string)=>void){const path=node.configService.path;await node.app.close();edit?.(path);node=await buildApp(config,dependencies);await node.app.ready();}};
 }
+
+test('typed Activity config follows real owner HTTP, failed saves, intake revocation and restart',{timeout:120000},async t=>{
+  const f=await fixture(t);let origin=await f.node.app.listen({host:'127.0.0.1',port:0});
+  const request=async(method:string,path:string,body?:unknown)=>{
+    const response=await fetch(origin+path,{method,headers:{...headers,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000)});
+    return {status:response.status,body:await response.json()};
+  };
+  const configure=async(enabled:boolean,modelProfileId=DEPLOYMENT_MODEL_PROFILE_ID)=>request('PUT','/api/processing/activity',{revision:f.node.configService.revision,settings:{enabled,modelProfileId}});
+  const epoch=()=>String(f.node.store.db.prepare("SELECT value FROM settings WHERE key='activity-permission-epoch'").get()!.value);
+  assert.equal((await configure(true)).status,200);
+  assert.deepEqual(f.node.configService.current(activityConfigDomain),{enabled:true,modelProfileId:DEPLOYMENT_MODEL_PROFILE_ID});
+  assert.deepEqual(parseConfigDocument(readFileSync(f.node.configService.path,'utf8')).document.activity,{enabled:true,modelProfileId:DEPLOYMENT_MODEL_PROFILE_ID});
+  const accepted=observation();assert.equal((await request('POST','/api/captures',accepted)).status,201);
+  assert.equal(f.node.store.db.prepare('SELECT authorized FROM activity_intake_receipts WHERE capture_id=?').get(accepted.id)!.authorized,1);
+  const before=readFileSync(f.node.configService.path,'utf8'),revision=f.node.configService.revision,permissionEpoch=epoch();
+  const failed=await configure(true,'generated-missing-profile');assert.equal(failed.status,503);assert.equal(failed.body.error,'config_prepare_failed');
+  assert.equal(readFileSync(f.node.configService.path,'utf8'),before);assert.equal(f.node.configService.revision,revision);
+  assert.equal(f.node.configService.current(activityConfigDomain).enabled,true);assert.equal(f.node.automaticActivity.view().settings.enabled,true);
+  const unrelated=await request('PUT','/api/configuration/notifications',{revision,value:{enabled:false}});assert.equal(unrelated.status,200);
+  assert.equal(epoch(),permissionEpoch,'another domain cannot revoke or republish Activity permission');
+  assert.equal(f.node.automaticActivity.view().settings.enabled,true);
+  assert.equal((await configure(false)).status,200);assert.notEqual(epoch(),permissionEpoch);
+  assert.equal(f.node.configService.current(activityConfigDomain).enabled,false);assert.equal(f.node.automaticActivity.view().counts.cancelled,1);
+  const denied=observation(1);assert.equal((await request('POST','/api/captures',denied)).status,201);
+  assert.equal(f.node.store.db.prepare('SELECT authorized FROM activity_intake_receipts WHERE capture_id=?').get(denied.id)!.authorized,0);
+  await f.restart();origin=await f.node.app.listen({host:'127.0.0.1',port:0});
+  assert.equal(f.node.configService.current(activityConfigDomain).enabled,false);await f.node.automaticActivity.tick();assert.equal(f.calls.length,0);
+  assert.equal((await configure(true)).status,200);assert.equal((await request('POST','/api/captures',denied)).status,200);
+  assert.equal(f.node.store.db.prepare('SELECT authorized FROM activity_intake_receipts WHERE capture_id=?').get(denied.id)!.authorized,0,'reenabling does not authorize an earlier denied revision');
+  const future=observation(2);assert.equal((await request('POST','/api/captures',future)).status,201);
+  assert.equal(f.node.store.db.prepare('SELECT authorized FROM activity_intake_receipts WHERE capture_id=?').get(future.id)!.authorized,1);
+  assert.equal(f.calls.length,0,'this configuration journey makes no model request');
+});
 
 test('real prospective HTTP intake survives restart, publishes incremental Activity and remains queryable without Memory',async t=>{
   const f=await fixture(t),old=observation();assert.equal((await f.ingest(old)).statusCode,201);
