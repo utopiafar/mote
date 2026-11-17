@@ -25,6 +25,7 @@ export const installations={
  'connectors/mcp-import-state.ts':['mcpStateSchemaInstallation'],
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
+ 'memory-input-plans-schema.ts':['memoryInputPlansSchemaInstallation'],
  'source-state-schema.ts':['sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation'],
  'memory-input-authorization.ts':['memoryInputAuthorizationSchemaInstallation'],
  'memory-extraction-drafts.ts':['memoryExtractionDraftsSchemaInstallation'],
@@ -83,6 +84,11 @@ export const consumers={
 /** These Task adapter methods belong to the formal runtime marker owner. The
  * older Task schema and other consumers in the same file remain pending. */
 export const consumerScopes={
+ 'memory-input-plans.ts':{
+  'MemoryInputPlans.list':'memory-input-plans',
+  'MemoryInputPlans.get':'memory-input-plans',
+  'MemoryInputPlans.put':'memory-input-plans',
+ },
  'source-context.ts':{
   'SourceContextStore.constructor':'source-context',
   'SourceContextStore.source':'source',
@@ -416,7 +422,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",

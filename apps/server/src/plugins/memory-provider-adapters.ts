@@ -7,7 +7,7 @@ import {MemoryAdapters} from '../memory-adapters.js';
 import {StoreError} from '../store.js';
 import {centralServices,type MemoryProviderAdapters} from './central-contracts.js';
 
-/** C23 owns the external Memory provider adapters: generic worker providers and
+/** This service owns the external Memory provider adapters: generic worker providers and
  * the installed engine seam, plus their fixed namespace/configuration readers,
  * prepared-stage cleanup and the actual capability probe. Provider objects are
  * only built here; consumers use the leased port or the trusted assembly

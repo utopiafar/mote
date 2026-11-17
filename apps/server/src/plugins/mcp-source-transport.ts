@@ -2,7 +2,7 @@ import type {ConnectorManifest} from '../connectors/registry.js';
 import {registerMcp,RemoteMcp,type McpTransportBinding} from '../connectors/mcp.js';
 import {mcpContext,remoteMcpContext} from '../connectors/mcp-context.js';
 
-/** C16's MCP transport and remote source. This module owns connectors/mcp.ts,
+/** The MCP transport and remote source. This module owns connectors/mcp.ts,
  * mcp-context.ts and mcp-import-state.ts: the inbound Fastify transport, its
  * read/write credential split, the remote discovery/import client and the
  * membership ledger live and die with the instance. The host keeps the
