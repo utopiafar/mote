@@ -38,6 +38,7 @@ import type {ObservabilityAssembly} from './observability-platform.js';
 import {assistantDraftScope,type AssistantDrafts} from '../assistant-drafts.js';
 import {currentInstructionRequestId} from '../assistant-current-instruction.js';
 import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
+import {createOwnerCalendarControl} from '../owner-calendar-control.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
 import {nativeApplicationContext} from '../dsh-application-context.js';
 
@@ -118,9 +119,10 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     if(lifecycle.isClosing())throw new StoreError('Central node is shutting down',503);
     input=pinProcessingEvidence(input);
     if(input.skill==='personal-insight'&&!input.validateOutput)input={...input,validateOutput:validateInsightOutput};
-    // A draft is a host-issued answer attachment, never a tool or model
-    // capability. Only ordinary interactive conversation answers can carry one.
+    // Ordinary interactive answers can carry a Host-issued draft. The separate
+    // current-owner control below only prepares that same proposal.
     let draftScope:ReturnType<typeof assistantDraftScope>;
+    let calendarControl:ReturnType<typeof createOwnerCalendarControl>|undefined;
     const ownerActions=operation==='query'&&moduleId==='conversations'&&input.executionLane!=='background'?dependencies.ownerActions?.():undefined;
     if(operation==='query'&&moduleId==='conversations'&&input.executionLane!=='background'&&(assistantDrafts.capabilities().length||ownerActions)){
       const scope=assistantDraftScope(input);
@@ -132,6 +134,10 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
           draftScope=scope;const operation=input.traceContext?.operationId,current=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
           const live=current?.status==='running'&&current.question.trim()===input.question&&!current.attachments?.length&&(assistantDrafts.capabilities().includes('assistant.task.start')||ownerActions);
           input={...input,assistantDraft:true,...(live?{assistantCurrentInstruction:true,...(ownerActions?{ownerActionTargets:ownerActions.offerOwnerCalendar(current!.id,(input as ReaderQueryScope).sourceIds)}:{})}:{})};
+          if(live&&ownerActions&&input.ownerActionTargets?.some(target=>target.kind==='calendar.create')){
+            calendarControl=createOwnerCalendarControl({ownerActions,messageId:current!.id,sourceIds:(input as ReaderQueryScope).sourceIds,channel:input.hostControlChannel});
+            input={...input,hostControlChannel:calendarControl.channel};
+          }
         }
       }
     }
@@ -279,16 +285,17 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       // A semantic model proposal becomes a host-bound draft only inside this
       // ordinary conversation answer. The proposal itself is never persisted.
       const {draftProposal,currentAction:_untrustedAction,...answerResult}=result as QueryResult & {draftProposal?:import('@mote/shared').AssistantDraftProposal};
+      const proposal=calendarControl?.resolve(draftProposal)??draftProposal;
       let draft:import('@mote/shared').AssistantDraft|undefined;
       let currentAction:import('@mote/shared').CurrentActionReference|undefined;
-      if(draftProposal?.input==='current-action'){
+      if(proposal?.input==='current-action'){
         const operation=input.traceContext?.operationId,message=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
         if(!ownerActions||!input.assistantCurrentInstruction||message?.status!=='running'||message.question.trim()!==input.question)throw new StoreError('A current owner message is required for this Action proposal',409);
-        currentAction=ownerActions.proposeOwnerCalendar(message.id,draftProposal,result.runId);
-      }else if(draftProposal&&input.assistantDraft&&draftScope)try{
+        currentAction=ownerActions.proposeOwnerCalendar(message.id,proposal,result.runId);
+      }else if(proposal&&input.assistantDraft&&draftScope)try{
         const operation=input.traceContext?.operationId,message=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
-        const current=draftProposal.input==='current-instruction'&&input.assistantCurrentInstruction&&message?.status==='running'&&message.question.trim()===input.question;
-        draft=assistantDrafts.issue({goal:draftProposal.goal,scope:draftScope,...(current?{currentInstruction:{requestId:currentInstructionRequestId(message)}}:{})});
+        const current=proposal.input==='current-instruction'&&input.assistantCurrentInstruction&&message?.status==='running'&&message.question.trim()===input.question;
+        draft=assistantDrafts.issue({goal:proposal.goal,scope:draftScope,...(current?{currentInstruction:{requestId:currentInstructionRequestId(message)}}:{})});
       }catch{/* A malformed proposal cannot fail a valid answer. */}
       return {...answerResult,originalEvidenceDependencies,...(draft?{draft}:{}),...(currentAction?{currentAction}:{}),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{
