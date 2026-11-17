@@ -4,6 +4,7 @@ import type {CaptureInput,CaptureRecord,QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {activityConfigurationSchema,type ActivityConfiguration} from './activity-configuration.js';
 import type {ConfigService} from './config-service.js';
+import {activityConfigDomain} from './config.js';
 import {ExecutionFailure,type ExecutionEngine,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {materialId,type MaterialDraft,type MaterialRecord,type MaterialStore} from './materials.js';
@@ -29,7 +30,7 @@ export class AutomaticActivity {
   private unregister:()=>Promise<void>;
   constructor(private store:Store,private materials:MaterialStore,private engine:ExecutionEngine,private config:ConfigService,
     private options:{query:(input:QueryInput)=>Promise<QueryResult>;selection:(profileId:string)=>ModelConfiguration&{configured:boolean};lane:()=>{enabled:boolean;concurrency:number}}){
-    this.policy=activityConfigurationSchema.parse(config.current('activity'));
+    this.policy=config.current(activityConfigDomain);
     store.db.exec(`CREATE TABLE IF NOT EXISTS activity_input_grants(capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,scope_key TEXT NOT NULL,epoch TEXT NOT NULL,step_id TEXT NOT NULL,consumed INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS activity_batches(scope_key TEXT NOT NULL,epoch TEXT NOT NULL,generation INTEGER NOT NULL,step_id TEXT NOT NULL,PRIMARY KEY(scope_key,epoch));
       CREATE TABLE IF NOT EXISTS activity_intake_receipts(capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,authorized INTEGER NOT NULL,reason TEXT NOT NULL,epoch TEXT NOT NULL);
@@ -41,8 +42,8 @@ export class AutomaticActivity {
     // save, or the owner may have edited the file while it was stopped.
     if(!this.policy.enabled||previousPolicy&&previousPolicy.modelProfileId!==this.policy.modelProfileId)this.revoke();
     this.savePermissionPolicy();
-    config.setHandler<ActivityConfiguration>('activity',next=>{
-      const previous=this.policy,value=activityConfigurationSchema.parse(next);
+    config.setHandler(activityConfigDomain,next=>{
+      const previous=this.policy,value=next;
       if(value.enabled&&value.modelProfileId)this.options.selection(value.modelProfileId);
       return {apply:()=>{},publish:()=>{this.policy=value;},rollback:()=>{this.policy=previous;},complete:()=>{if(previous.enabled&&(!value.enabled||previous.modelProfileId!==value.modelProfileId))this.revoke();this.savePermissionPolicy();}};
     });

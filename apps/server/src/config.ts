@@ -18,7 +18,7 @@ import { workflowConfigurationSchema } from './workflow-configuration.js';
 import { activityConfigurationSchema } from './activity-configuration.js';
 import { notificationSettingsSchema } from './notification-configuration.js';
 import { dshConfigurationSchema, validateDshModelProfiles, type DshConfiguration } from './dsh-configuration.js';
-import type { ConfigDomainRegistration, ConfigService } from './config-service.js';
+import type { ConfigDomainReference, ConfigDomainRegistration, ConfigService } from './config-service.js';
 import { defaultLogMaxBytes, logRetentionFromDocument, LogRetentionError, MAX_LOG_FILE_BYTES, DEFAULT_LOG_RETENTION, type LogRetention, MiB } from './log-retention-config.mjs';
 
 export const repositoryRoot = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
@@ -138,6 +138,9 @@ type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcur
 /** Existing buildApp fixtures can still supply a Config without writing configuration files. */
 export type Config = Omit<LoadedConfig, OptionalFields | 'dsh'> & Partial<Pick<LoadedConfig, OptionalFields | 'dsh'>> & { configService?: ConfigService };
 
+/** One schema identity for Activity registration and its typed runtime consumer. */
+export const activityConfigDomain = Object.freeze({id:'activity',schema:activityConfigurationSchema}) satisfies ConfigDomainReference<typeof activityConfigurationSchema>;
+
 function resolveDomainSecrets(id: string, value: unknown): unknown {
   return parseYaml(serializeConfigDocument({ version: 1, revision: 0, [id]: value })).document[id];
 }
@@ -199,7 +202,7 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
     definition('memory', lifecycleSettingsSchema, false, Object.keys(lifecycleSettingsSchema.parse({})).map(path => ({ path, effect: 'next-admission' as const }))),
     definition('conversations', conversationSettingsSchema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
     definition('actions', actionsRuntimeSettingsSchema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
-    definition('activity', activityConfigurationSchema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
+    definition(activityConfigDomain.id, activityConfigDomain.schema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
     definition('notifications', notificationSettingsSchema, false, [{path:'enabled',effect:'immediate'},{path:'timeZone',effect:'immediate'},{path:'quietHours',effect:'immediate'},{path:'minIntervalMinutes',effect:'immediate'}]),
     definition('workflows', workflowConfigurationSchema, false, Object.keys(workflowConfigurationSchema.parse({})).flatMap(path => [{ path: `${path}.enabled`, effect: 'immediate' as const }, { path: `${path}.concurrency`, effect: 'next-admission' as const }])),
   ];
