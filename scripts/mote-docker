@@ -1,0 +1,62 @@
+#!/bin/sh
+# Docker-only deployment bootstrap. No host Node, npm or Docker credentials mount.
+set -eu
+fail() { printf '%s\n' "Mote Docker: $*" >&2; exit 1; }
+profile_home="$(CDPATH= cd -P "$(dirname "$0")/.." && pwd)/.mote/profiles"
+profile_name=dev
+next=
+for argument do
+  if [ -n "$next" ]; then
+    case "$next" in home) profile_home=$argument;; profile) profile_name=$argument;; esac
+    next=
+    continue
+  fi
+  case "$argument" in
+    --) break;;
+    --home) next=home;; --home=*) profile_home=${argument#--home=};;
+    --profile) next=profile;; --profile=*) profile_name=${argument#--profile=};;
+  esac
+done
+[ -z "$next" ] || fail "Missing --$next value"
+case "$profile_name" in ''|legacy|[!a-z0-9]*|*[!a-z0-9_-]*) fail 'Invalid isolated profile name';; esac
+[ "${#profile_name}" -le 32 ] || fail 'Profile name is too long'
+case "$profile_home" in /*) ;; *) profile_home="$PWD/$profile_home";; esac
+# Keep path spelling stable: profile project/volume identities include this path.
+while [ "${profile_home%/}" != "$profile_home" ]; do profile_home=${profile_home%/}; done
+case "$profile_home/" in ''|/|*/../*|*/./*|*//*|*,*|*[[:cntrl:]]*) fail 'Use an absolute profile home without dot segments, commas or control characters';; esac
+case "$profile_home" in /app|/app/*|/var|/var/run|/var/run/*|/tmp|/proc|/proc/*|/sys|/sys/*|/dev|/dev/*|/usr|/usr/*|/bin|/bin/*|/lib|/lib/*|/etc|/etc/*) fail 'Profile home would hide the tooling runtime or socket';; esac
+if [ -n "${DOCKER_CONTEXT:-}" ]; then
+  endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}')
+elif [ -n "${DOCKER_HOST:-}" ]; then endpoint=$DOCKER_HOST
+else endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
+fi
+case "$endpoint" in unix:///*) socket=${endpoint#unix://};; *) fail 'YAML bind mounts require a local Unix Docker engine; remote SSH/TCP contexts are unsupported';; esac
+case "$socket" in *,*|*'
+'*|*'
+'*) fail 'Unsupported Docker socket path';; esac
+[ -S "$socket" ] || fail 'Local Docker socket is unavailable'
+# Consume the selected endpoint for every host call as well as the container
+# mount. Ambient host/context variables must not select a different daemon.
+DOCKER_CONTEXT=
+DOCKER_HOST=$endpoint
+export DOCKER_CONTEXT DOCKER_HOST
+security=$(docker info --format '{{json .SecurityOptions}}')
+case "$security" in *name=rootless*) container_user=0:0;; *name=userns*) fail 'Docker userns-remap is unsupported for private YAML bind mounts';; *) container_user="$(id -u):$(id -g)";; esac
+case "$(uname -s)" in
+  Darwin) socket_group=$(stat -Lf '%g' "$socket");;
+  Linux) socket_group=$(stat -Lc '%g' "$socket");;
+  *) fail 'Supported hosts are Linux with Docker Engine and macOS with Docker Desktop';;
+esac
+cli_image=${MOTE_DEPLOY_CLI_IMAGE:-mote-central:cli}
+docker image inspect "$cli_image" --format '{{.Id}}' >/dev/null || fail 'Build or pull the deployment CLI image with the host Docker CLI first'
+mkdir -p "$profile_home"
+exec docker run --rm --pull never --network none --read-only --tmpfs /tmp:rw,nosuid,nodev \
+  --name "mote-${profile_name}-cli-$(id -u)-$$" \
+  --user "$container_user" --group-add "$socket_group" --group-add 0 \
+  --security-opt no-new-privileges:true --cap-drop ALL \
+  --mount "type=bind,source=$socket,target=/var/run/docker.sock" \
+  --mount "type=bind,source=$profile_home,target=$profile_home" \
+  --env DOCKER_HOST=unix:///var/run/docker.sock --env HOME=/tmp \
+  --env MOTE_DEPLOY_DOCKER_CLI=1 --env "MOTE_DEPLOY_HOME=$profile_home" \
+  --env "MOTE_DEPLOY_WORKING_DIRECTORY=$PWD" \
+  "$cli_image" "$@"
