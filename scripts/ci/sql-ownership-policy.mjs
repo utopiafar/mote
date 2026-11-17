@@ -2,6 +2,7 @@
  * installer after its domain registration lands, then remove its uncovered debt. */
 export const installations={
  'action-capabilities-schema.ts':['actionCapabilitiesSchemaInstallation'],
+ 'owner-questions-schema.ts':['ownerQuestionsSchemaInstallation'],
  'admission-schema.ts':['processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'],
  'vault-schema.ts':['vaultSchemaInstallation'],
  'capture-schema.ts':['captureSchemaInstallation','captureProjectionSchemaInstallation'],
@@ -132,6 +133,15 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'owner-questions.ts':{
+  'OwnerQuestions.row':'owner-question-services',
+  'OwnerQuestions.transaction':'owner-question-services',
+  'OwnerQuestions.receipt':'owner-question-services',
+  'OwnerQuestions.create':'owner-question-services',
+  'OwnerQuestions.save':'owner-question-services',
+  'OwnerQuestions.decode':'owner-question-services',
+  'OwnerQuestions.performReply':'owner-question-services',
+ },
  'memory-lifecycle.ts':{
   'projectMemoryLifecycleSettings':'memory-lifecycle',
   'storedMemoryLifecycleSettings':'memory-lifecycle',

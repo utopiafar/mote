@@ -2,6 +2,8 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ownerQuestionProviderRefSchema,ownerQuestionReplySchema,ownerQuestionSchema,ownerQuestionStateSchema,type OwnerQuestion,type OwnerQuestionPage,type OwnerQuestionProviderRef,type OwnerQuestionReply} from '@mote/shared';
 import {StoreError,sha256,type Store} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {ownerQuestionsSchemaInstallation} from './owner-questions-schema.js';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {moteText} from './i18n.js';
 import {ownerQuestionAnswerSchema,ownerQuestionCreateSchema,ownerQuestionProviderInstallationSchema,type OwnerQuestionAnswer,type OwnerQuestionCreate,type OwnerQuestionProvider,type OwnerQuestionRecord,type ResolvedOwnerQuestionReply} from './owner-question-contract.js';
@@ -18,11 +20,7 @@ export class OwnerQuestions {
  private pending=new Map<string,{hash:string;work:Promise<OwnerQuestion>}>();
  constructor(private store:Store,private now=()=>new Date().toISOString()){
   const db=store.db;
-  db.exec(`CREATE TABLE IF NOT EXISTS owner_questions(id TEXT PRIMARY KEY,identity TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL);
-   CREATE INDEX IF NOT EXISTS owner_questions_recent ON owner_questions(updated_at DESC,id DESC);
-   CREATE TABLE IF NOT EXISTS owner_question_dependencies(question_id TEXT NOT NULL REFERENCES owner_questions(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,PRIMARY KEY(question_id,evidence_id));
-   CREATE INDEX IF NOT EXISTS owner_question_evidence ON owner_question_dependencies(evidence_id,question_id);
-   CREATE TABLE IF NOT EXISTS owner_question_replies(question_id TEXT NOT NULL REFERENCES owner_questions(id) ON DELETE CASCADE,request_id TEXT NOT NULL,request_hash TEXT NOT NULL,PRIMARY KEY(question_id,request_id));`);
+  installSchemaPlan(db,[ownerQuestionsSchemaInstallation]);
   const retire=(id:string)=>`UPDATE owner_questions SET json=json_set(json_remove(json,'$.private','$.continuationId'),'$.state','obsolete','$.revision',json_extract(json,'$.revision')+1),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE json_extract(json,'$.state')!='obsolete' AND id IN (SELECT question_id FROM owner_question_dependencies WHERE evidence_id=${id});`;
   db.exec(`CREATE TRIGGER IF NOT EXISTS owner_question_original_deleted BEFORE DELETE ON captures BEGIN ${retire('old.id')} END;`);
   for(const [table,event,condition] of [['file_chunks','BEFORE DELETE',''],['material_evidence','AFTER UPDATE OF invalidated',' WHEN new.invalidated=1']] as const){
