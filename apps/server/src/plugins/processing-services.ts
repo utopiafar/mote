@@ -23,7 +23,7 @@ import {contributeDomainRoutes} from './domain-routes.js';
 import {registerProcessingJobRoutes} from '../features/processing/processing-services.js';
 import type {MediaReadinessPort} from './ocr-asr-readiness.js';
 
-/** C17's durable ProcessingRuntime, its job storage/poll and FileProcessing.
+/** The durable ProcessingRuntime, its job storage/poll and FileProcessing.
  * Materials source a product consumer from the same activation. */
 export const processingServicesContribution={
   id:'processing-services',version:'1.0.0',surface:'data',runtime:'host',

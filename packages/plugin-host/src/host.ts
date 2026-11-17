@@ -29,6 +29,18 @@ export interface HostPluginContext {
 export interface HostPluginOptions {
   readonly stateFor?: (scope: HostScope) => StateStore;
 }
+export type ServiceAccess = Pick<ServiceLease<unknown>, 'signal' | 'assertCurrent'>;
+let invokingServiceAccess: ServiceAccess | undefined;
+/** Capture at the synchronous entry to a provider method, before awaiting. A
+ * provider returning a retained handle can keep this actual lease's fence; the
+ * host does not inspect or recursively wrap that handle. Outside a call there
+ * is no invoking access. This adds no authority beyond the existing lease. */
+export function currentServiceAccess(): ServiceAccess | undefined { return invokingServiceAccess; }
+function withServiceAccess<T>(access: ServiceAccess, work: () => T): T {
+  const previous = invokingServiceAccess;
+  invokingServiceAccess = access;
+  try { return work(); } finally { invokingServiceAccess = previous; }
+}
 /** Executable input from a resolved activation plan, not another wire/package Manifest. */
 export interface PluginDefinition {
   readonly identity: ScopeIdentity;
@@ -211,11 +223,12 @@ export class PluginHost implements ServiceResolver {
       if (signal?.aborted) return reject('cancelled');
     };
     assertCurrent();
+    const access: ServiceAccess = Object.freeze({signal: leaseSignal, assertCurrent});
     const actual = port.owner.context!.get(port.key) as T;
     if (actual === undefined) return reject('dependency_unavailable');
     const invoke = (callback: Function, receiver: unknown, args: unknown[]): unknown => {
       assertCurrent();
-      const value = Reflect.apply(callback, receiver, args);
+      const value = withServiceAccess(access, () => Reflect.apply(callback, receiver, args));
       if (value && typeof value.then === 'function') {
         const work = Promise.resolve(value);
         const pending = new Promise<unknown>((resolve, reject) => {

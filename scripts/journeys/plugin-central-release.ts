@@ -1,4 +1,4 @@
-/** G5 candidate-release journey (manual selection only; not part of ordinary checks).
+/** Candidate-release journey (manual selection only; not part of ordinary checks).
  *
  * Covers the release acceptance in three separated scenarios:
  *  1. Build the default Central distribution, start the packaged artifact from
@@ -148,7 +148,7 @@ function scenario(id: Scenario['id'], run: (checks: Check[]) => Promise<void>): 
   })();
 }
 
-/** Scenario 1: REL05 packages the current candidate; its clean-run starts the
+/** Scenario 1: The distribution build packages the current candidate; the clean-run starts the
  * artifact from a fresh home and inventories the complete default feature set. */
 async function defaultDistribution(checks: Check[]) {
   const output = join(work, 'distribution'), started = Date.now();

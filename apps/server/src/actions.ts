@@ -14,6 +14,9 @@ import type {FileStore} from './files.js';
 import type {Connections,ConnectionCredential} from './connections.js';
 import { ConfigServiceError, type ConfigService } from './config-service.js';
 import { actionsRuntimeSettingsSchema, type ActionsRuntimeSettings } from './actions-configuration.js';
+import { actionsConfigDomain } from './config.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {actionsSchemaInstallation,actionsExecutionSchemaInstallation,actionsRetirementSchemaInstallation} from './actions-schema.js';
 
 const settingsSchema=z.object({enabled:z.boolean(),timeZone:actionZone,reviewDeviceIds:z.array(z.string().min(1).max(200)).max(100)}).strict();
 const authorizationSchema=z.object({revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),reviewDeviceIds:settingsSchema.shape.reviewDeviceIds}).strict();
@@ -34,27 +37,13 @@ export class Actions {
   private runtimeSettings:ActionsRuntimeSettings;
   private settingsTail:Promise<void>=Promise.resolve();
   constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
-    this.runtimeSettings=actionsRuntimeSettingsSchema.parse(options.configService?.current('actions')??{});
-    store.db.exec(`CREATE TABLE IF NOT EXISTS action_meta(key TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_proposals(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_semantic_checkpoints(artifact_id TEXT PRIMARY KEY REFERENCES context_artifacts(id) ON DELETE CASCADE,revision TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_targets(device_id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_jobs(key TEXT PRIMARY KEY,id TEXT NOT NULL,offset INTEGER NOT NULL,length INTEGER NOT NULL,fingerprint TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS action_chunk_changes(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL);
-      CREATE TRIGGER IF NOT EXISTS action_chunk_added AFTER INSERT ON file_chunks BEGIN INSERT INTO action_chunk_changes(id) VALUES(NEW.id); END;
-      CREATE TRIGGER IF NOT EXISTS action_artifact_changed AFTER UPDATE OF current ON file_artifacts BEGIN INSERT INTO action_chunk_changes(id) SELECT id FROM file_chunks WHERE artifact_id=NEW.id; END;
-      CREATE INDEX IF NOT EXISTS action_jobs_status ON action_jobs(status);`);
-    options.configService?.setHandler<ActionsRuntimeSettings>('actions',next=>{
-      const previous=structuredClone(this.runtimeSettings),candidate=structuredClone(next);
-      return {apply:()=>{},publish:()=>{this.runtimeSettings=candidate;},rollback:()=>{this.runtimeSettings=previous;}};
-    });
+    this.runtimeSettings=options.configService?.current(actionsConfigDomain)??actionsRuntimeSettingsSchema.parse({});
+    installSchemaPlan(store.db,[actionsSchemaInstallation]);
     this.engine=options.executor??new ExecutionEngine(store);this.owned=!options.executor;
-    // The engine's durable transitions project identically even when another host
-    // cancels a step without loading this domain's in-memory handler.
-    const projectSql="UPDATE action_jobs SET status=CASE new.state WHEN 'waiting' THEN 'pending' WHEN 'succeeded' THEN 'completed' ELSE new.state END,attempts=new.attempts WHERE key=json_extract(new.input,'$.jobKey');";
-    store.db.exec(`CREATE TRIGGER IF NOT EXISTS action_execution_created AFTER INSERT ON execution_steps WHEN new.kind='actions.extract' BEGIN ${projectSql} END; CREATE TRIGGER IF NOT EXISTS action_execution_changed AFTER UPDATE OF state,attempts ON execution_steps WHEN new.kind='actions.extract' BEGIN ${projectSql} END;`);
-
-    this.unregister=this.engine.register({kind:'actions.extract',pool:'actions.extract',concurrency:()=>1,policy:EXECUTION_POLICIES.orchestration,
+    let registered:(()=>Promise<void>)|undefined;
+    try{
+    installSchemaPlan(store.db,[actionsExecutionSchemaInstallation]);
+    this.unregister=registered=this.engine.register({kind:'actions.extract',pool:'actions.extract',concurrency:()=>1,policy:EXECUTION_POLICIES.orchestration,
       validate:step=>this.validJob(String(step.input.jobKey)),
       admit:()=>this.closed?new ExecutionFailure('blocked','actions_closed'):!this.settings().enabled?new ExecutionFailure('blocked','actions_disabled'):!this.configured()?new ExecutionFailure('blocked','model_not_configured'):undefined,
       execute:(step,signal)=>withExecutionCancellation(AbortSignal.any([signal,this.abort.signal]),()=>this.analyze(this.job(String(step.input.jobKey))!,step,AbortSignal.any([signal,this.abort.signal]))),
@@ -63,18 +52,21 @@ export class Actions {
     });
     let cursor=0;for(;;){const rows=store.db.prepare('SELECT rowid,key,status,attempts FROM action_jobs WHERE rowid>? ORDER BY rowid LIMIT 500').all(cursor);if(!rows.length)break;for(const row of rows){this.admit(String(row.key),String(row.status),Number(row.attempts));cursor=Number(row.rowid);}}
     if(!this.meta('chunksInitialized',false)){store.db.exec('INSERT INTO action_chunk_changes(id) SELECT id FROM file_chunks');this.setMeta('chunksInitialized',true);}
-    // Erase deleted original quotations even while discovery is disabled or the UI is closed.
-    for(const table of ['captures','file_chunks'])store.db.exec(`CREATE TRIGGER IF NOT EXISTS actions_${table}_deleted AFTER DELETE ON ${table} BEGIN
-      UPDATE action_proposals SET json=json_set(json,'$.evidence',json('[]'),'$.version',json_extract(json,'$.version')+1,
-        '$.event',CASE WHEN json_extract(json,'$.status') IN ('proposed','approved','dismissed','stale') THEN json('{"title":"来源已删除的日程建议","start":null,"end":null,"timeZone":null,"allDay":false,"location":"","description":""}') ELSE json_extract(json,'$.event') END,
-        '$.uncertainty','', '$.status',CASE WHEN json_extract(json,'$.status') IN ('proposed','approved','dismissed','stale') THEN 'stale' ELSE json_extract(json,'$.status') END)
-      WHERE EXISTS(SELECT 1 FROM json_each(action_proposals.json,'$.evidence') e WHERE json_extract(e.value,'$.id')=OLD.id);
-      DELETE FROM action_jobs WHERE id=OLD.id;
-    END;`);
-    for(const table of ['captures','file_chunks'])store.db.exec(`CREATE TRIGGER IF NOT EXISTS actions_related_${table}_deleted AFTER DELETE ON ${table} BEGIN
-      UPDATE action_proposals SET json=json_set(json,'$.related.event',json('{"title":"来源已删除的日程建议","start":null,"end":null,"timeZone":null,"allDay":false,"location":"","description":""}'))
-      WHERE json_type(json,'$.related')='object' AND json_extract(json,'$.status') IN ('proposed','approved','dismissed','stale') AND EXISTS(SELECT 1 FROM json_each(action_proposals.json,'$.evidence') e WHERE json_extract(e.value,'$.id')=OLD.id);
-    END;`);
+    installSchemaPlan(store.db,[actionsRetirementSchemaInstallation]);
+    // Publish the configuration callback only after this synchronous constructor
+    // succeeds, so failure cannot replace a previously live owner's handler.
+    options.configService?.setHandler(actionsConfigDomain,next=>{
+      const previous=structuredClone(this.runtimeSettings),candidate=structuredClone(next);
+      return {apply:()=>{},publish:()=>{this.runtimeSettings=candidate;},rollback:()=>{this.runtimeSettings=previous;}};
+    });
+    }catch(error){
+      this.closed=true;this.abort.abort();
+      // No execution can start before this constructor yields. Both cleanup
+      // methods withdraw admission synchronously; collect their settled tails
+      // without replacing the construction error or closing a borrowed Engine.
+      this.closing=Promise.allSettled([...(registered?[registered()]:[]),...(this.owned?[this.engine.close()]:[])]).then(()=>{});
+      throw error;
+    }
   }
   private meta<T>(key:string,fallback:T):T {const r=this.store.db.prepare('SELECT json FROM action_meta WHERE key=?').get(key) as {json:string}|undefined;return r?JSON.parse(r.json):fallback;}
   private setMeta(key:string,value:unknown){this.store.db.prepare('INSERT INTO action_meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json').run(key,JSON.stringify(value));}

@@ -9,7 +9,7 @@ type HostRunEvent=Parameters<HostRunEventObserver>[0];
 export interface HostRunUsageObserverOptions {
   /** Bound by trusted assembly to one actual Host run, never prompt/config data. */
   readonly runId:string;
-  /** The existing C06 run-level meter. A Host attempt starts at most one receipt. */
+  /** The existing run-level admitted-usage meter. A Host attempt starts at most one receipt. */
   readonly meter:AdmittedUsageMeter;
   readonly diagnostics:Pick<ServerDiagnostics,'record'>;
 }

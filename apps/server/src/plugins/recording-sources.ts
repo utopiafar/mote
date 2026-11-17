@@ -13,7 +13,7 @@ import {RecordingAuthorization} from './recording-authorization.js';
 export {RecordingConnector} from '../connectors/recordings.js';
 export type {RecordingProvider,RecordingAccount,RecordingMetadata} from '../connectors/recordings.js';
 
-/** C15's Feishu and DingTalk recording sources. This module owns
+/** The Feishu and DingTalk recording sources. This module owns
  * connectors/recordings.ts, lark-recordings.ts, dingtalk-recordings.ts,
  * recording-staging.ts, recording-state.ts and recording-memory.ts, plus the
  * non-replayable authorization cache and its retirement. The shared

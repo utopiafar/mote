@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const repo=new URL('../../../',import.meta.url);
 const read=path=>readFileSync(new URL(path,repo),'utf8');
-// G11: navigation draws the shared line icons; character glyphs are not an icon set.
+// Navigation draws the shared line icons; character glyphs are not an icon set.
 const characterGlyphs=['▣','▧','♩','⌕','⌂','▤','↗','◇','⚙'];
 const navigationSources=[
   'apps/web/src/WorkspaceSidebar.tsx',

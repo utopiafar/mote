@@ -104,7 +104,6 @@ import {filesFeature} from './features/files.js';
 import {sourcesFeature} from './features/sources.js';
 import {connectionsFeature} from './features/connections.js';
 import {mediaModelsFeature,mediaPreparationFeature} from './features/media.js';
-import {inventoryFeature} from './features/features.js';
 import {registerMemoryAssociationRoutes} from './features/memory/associations.js';
 import {AssistantNotifications} from './assistant-notifications.js';
 import type {NotificationSettings} from './notification-configuration.js';
@@ -124,6 +123,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
   let availableModelConnections=():ModelConnection[]=>[];
   const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
+    readFeatureInventory:()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()]),
     bootstrap,config,store,resources,serverVersion,
     availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
     assertModelEvidence:input=>assertModelEvidence(input)});
@@ -660,7 +660,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     const order=bootstrap.features.indexOf(route.id),at=routes.findIndex(entry=>bootstrap.features.indexOf(entry.id)>order);
     routes.splice(at<0?routes.length:at,0,domain(route.id,(app,scope)=>route.mount(app,scope)));
   }
-  if(selected('mote.features'))routes.push(inventoryFeature(()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()])));
   await installFeatureRoutes(featureRoutes,routes);
   resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
