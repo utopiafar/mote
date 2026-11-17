@@ -37,14 +37,15 @@ function runCli(root){
  return spawnSync(process.execPath,[cli,root],{encoding:'utf8'});
 }
 
-test('G2-01 an unreferenced key is reported without failing the translation check',t=>{
+test('G2-01 an unreferenced key fails the translation check',t=>{
  const root=fixture(t,{
   enKeys:['有引用的词条','没有任何引用的词条'],
   source:"import {moteText} from '@mote/shared/i18n';\nexport const label=moteText('有引用的词条');\n",
  });
  const result=runCli(root);
- assert.equal(result.status,0,result.stderr);
- assert.match(result.stdout,/Unused messages: 1 \(warning only/);
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/Unused messages/);
+ assert.match(result.stdout,/Unused messages: 1/);
  assert.ok(result.stdout.includes('没有任何引用的词条'),result.stdout);
  assert.ok(!result.stdout.includes('有引用的词条'),result.stdout);
 });
@@ -60,7 +61,7 @@ test('G2-02 an allowlisted dynamic key stays out of the unused report',t=>{
  const result=checkI18n({root,allowlist:['动态拼接：{0}'],stdout:text=>output.push(text),stderr:text=>errors.push(text)});
  assert.equal(result.exitCode,0,errors.join('\n'));
  const report=output.join('\n');
- assert.match(report,/Unused messages: 0 \(warning only/);
+ assert.match(report,/Unused messages: 0/);
  assert.ok(!report.includes('动态拼接：{0}'),report);
 });
 
@@ -75,19 +76,21 @@ test('G2-03 a missing English entry still fails with a non-zero exit code',t=>{
  assert.match(result.stderr,/Missing English translations/);
 });
 
-test('G2-04 a stale allowlist entry is listed separately and only warns',t=>{
+test('G2-04 a stale allowlist entry fails the translation check',t=>{
  const root=fixture(t,{
   enKeys:['有引用的词条'],
   source:"import {moteText} from '@mote/shared/i18n';\nexport const label=moteText('有引用的词条');\n",
  });
+ const allowlist=['有引用的词条','已删除的动态词条'];
+ assert.deepEqual(scanI18n({root,allowlist}).staleAllowlist,['已删除的动态词条']);
  const output=[],errors=[];
- const result=checkI18n({root,allowlist:['有引用的词条','已删除的动态词条'],stdout:text=>output.push(text),stderr:text=>errors.push(text)});
- assert.equal(result.exitCode,0,errors.join('\n'));
- assert.deepEqual(result.staleAllowlist,['已删除的动态词条']);
+ const result=checkI18n({root,allowlist,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ assert.equal(result.exitCode,1);
  const report=output.join('\n');
- assert.match(report,/Stale dynamic-key allowlist entries: 1 \(warning only/);
+ assert.match(report,/Stale dynamic-key allowlist entries: 1/);
  assert.ok(report.includes('已删除的动态词条'),report);
  assert.ok(!report.includes('有引用的词条'),report);
+ assert.match(errors.join('\n'),/Stale dynamic-key allowlist entries/);
 });
 
 test('G2-05 four data-i18n attribute forms are referenced while unmarked HTML stays untranslated',t=>{
@@ -109,9 +112,9 @@ test('G2-05 four data-i18n attribute forms are referenced while unmarked HTML st
  assert.deepEqual(result.unused,[]);
  assert.deepEqual(result.missing,[]);
  const output=[],errors=[];
- const checked=checkI18n({root,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ const checked=checkI18n({root,allowlist:[],stdout:text=>output.push(text),stderr:text=>errors.push(text)});
  assert.equal(checked.exitCode,0,errors.join('\n'));
- assert.match(output.join('\n'),/Unused messages: 0 \(warning only/);
+ assert.match(output.join('\n'),/Unused messages: 0/);
 });
 
 test('G2-06 a missing data-i18n attribute key fails the translation check',t=>{
@@ -123,7 +126,7 @@ test('G2-06 a missing data-i18n attribute key fails the translation check',t=>{
  const result=scanI18n({root});
  assert.deepEqual(result.missing,[{file:'desktop HTML',key:'压缩前图片'}]);
  const output=[],errors=[];
- const checked=checkI18n({root,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ const checked=checkI18n({root,allowlist:[],stdout:text=>output.push(text),stderr:text=>errors.push(text)});
  assert.equal(checked.exitCode,1);
  assert.match(errors.join('\n'),/Missing English translations/);
 });
@@ -151,7 +154,23 @@ test('G2-07 comments and raw-text/RCDATA contents are not translated elements',t
  assert.deepEqual(result.missing,[]);
  assert.deepEqual(result.unused,[]);
  const output=[],errors=[];
- const checked=checkI18n({root,stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ const checked=checkI18n({root,allowlist:[],stdout:text=>output.push(text),stderr:text=>errors.push(text)});
  assert.equal(checked.exitCode,0,errors.join('\n'));
- assert.match(output.join('\n'),/Unused messages: 0 \(warning only/);
+ assert.match(output.join('\n'),/Unused messages: 0/);
+});
+
+test('G2-08 a literal MoteI18n.text call inside a Kotlin string template is referenced',t=>{
+ const root=fixture(t,{
+  enKeys:['模板内词条','其他词条'],
+  source:'export {};\n',
+ });
+ mkdirSync(join(root,'apps/android/app/src/main/java/dev/mote/collector'),{recursive:true});
+ writeFileSync(join(root,'apps/android/app/src/main/java/dev/mote/collector/Fixture.kt'),'val line = "${if (flag) MoteI18n.text("模板内词条") else MoteI18n.text("其他词条")}"\n');
+ const result=scanI18n({root,allowlist:[]});
+ assert.ok(result.referenced.has('模板内词条'),'nested template literal must be referenced');
+ assert.deepEqual(result.unused,[]);
+ const output=[],errors=[];
+ const checked=checkI18n({root,allowlist:[],stdout:text=>output.push(text),stderr:text=>errors.push(text)});
+ assert.equal(checked.exitCode,0,errors.join('\n'));
+ assert.match(output.join('\n'),/Unused messages: 0/);
 });

@@ -142,8 +142,10 @@ export function scanI18n({
  for(const file of walk(join(root,androidDir)).filter(f=>f.endsWith('.kt'))){
   const text=readFileSync(file,'utf8');
   // These explicit route descriptors provide dynamic translation keys to native navigation.
-  if(file.endsWith('/PrimaryNavigation.kt'))for(const m of text.matchAll(/(?:MoteNavigationGroup|^\s*[A-Z_]+)\(("(?:[^"\\]|\\.)*")/gm))check(JSON.parse(m[1]),file);
-  for(const m of text.matchAll(/MoteI18n\.text\(("(?:[^"\\]|\\.)*")/g))check(JSON.parse(m[1].replaceAll('\\$','$')),file);
+  if(file.endsWith('/PrimaryNavigation.kt'))for(const m of text.matchAll(/(?:MoteNavigationGroup|^\s*[A-Z_]+)\(("(?:[^"\\]|\\.)*")/gm)){const key=JSON.parse(m[1]);check(key,file);referenced.add(key);}
+  // A literal argument is an authored key even when the call sits inside a Kotlin string template,
+  // where the generic quoted-string scan cannot safely pair nested quotes.
+  for(const m of text.matchAll(/MoteI18n\.text\(("(?:[^"\\]|\\.)*")/g)){const key=JSON.parse(m[1].replaceAll('\\$','$'));check(key,file);referenced.add(key);}
   for(const m of text.matchAll(/"(?:[^"\\]|\\.)*"/g)){const value=kotlinLiteral(m[0]);if(value!==undefined)referenced.add(value);}
   for(const m of text.matchAll(/"""([\s\S]*?)"""/g))referenced.add(m[1]);
  }
@@ -172,11 +174,11 @@ export function scanI18n({
  return {catalogs,catalog,missing,referenced,unused,staleAllowlist};
 }
 
-/** Warning-only report. Unused-key removal is deferred to W-3. */
+/** Both lists are actionable: unused keys belong out of the catalog and stale allowlist entries no longer exist. */
 export function formatReport({unused,staleAllowlist}){
- const lines=[`Unused messages: ${unused.length} (warning only; removal is deferred to W-3)`];
+ const lines=[`Unused messages: ${unused.length}`];
  for(const key of unused)lines.push(`  ${JSON.stringify(key)}`);
- lines.push(`Stale dynamic-key allowlist entries: ${staleAllowlist.length} (warning only)`);
+ lines.push(`Stale dynamic-key allowlist entries: ${staleAllowlist.length}`);
  for(const key of staleAllowlist)lines.push(`  ${JSON.stringify(key)}`);
  return lines.join('\n');
 }
@@ -200,6 +202,8 @@ export function checkI18n({root=process.cwd(),stdout=console.log,stderr=console.
   const result=scanI18n({root,...options});
   stdout(formatReport(result));
   assert.deepEqual(result.missing,[],'Missing English translations');
+  assert.deepEqual(result.unused,[],'Unused messages');
+  assert.deepEqual(result.staleAllowlist,[],'Stale dynamic-key allowlist entries');
   validateCatalogs(result,root,options.androidAssetDir??defaultAndroidAssetDir);
   stdout(`Checked ${Object.keys(result.catalog).length} messages across ${Object.keys(result.catalogs).length} locales and TS/Kotlin call sites.`);
   return {...result,exitCode:0};
