@@ -16,6 +16,8 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   compose [--profile NAME] [--home PATH] -- build|ps|...
   backup [--profile NAME] [--home PATH] [--out NEW_DIRECTORY]
   restore --from BACKUP [--profile NAME] [--home PATH]
+  backup-schedule configure --enable|--disable [--interval-hours N] [--keep-count N] [--keep-days N] [--profile NAME] [--home PATH]
+  backup-schedule status|run-due|watch|restore-check [--from BACKUP] [--poll-seconds N] [--profile NAME] [--home PATH]
   launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
   migrate-storage-owner [--profile NAME] [--home PATH] (Docker only, stopped; preserve a backup first)
   media-runtime --role ocr|dialogue|local-image [--profile NAME] [--home PATH] [--python PYTHON_BINARY] (Native profile, stopped)
@@ -56,6 +58,11 @@ const print = value => console.info(JSON.stringify(value));
 async function main() {
   if (values.help || command === 'help') { console.info(help); return; }
   if (Number(process.versions.node.split('.')[0]) < 24) throw Error('Node.js 24 or newer is required');
+  if(command==='backup-schedule'){
+    if(positionals.length!==2||tail.length)throw Error('backup-schedule requires one action and named options');
+    const {runBackupSchedule}=await import('./backup-schedule.mjs');
+    await runBackupSchedule(profilePaths(values.profile,values.home),positionals[1],values,print);return;
+  }
   if (positionals.length > 1) throw Error('Unexpected arguments; use -- before exec/compose arguments');
   const paths = profilePaths(values.profile, values.home);
   if (command === 'init') { print(await initialize(paths, values)); return; }

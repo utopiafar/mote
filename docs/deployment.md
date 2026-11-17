@@ -243,7 +243,30 @@ CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，只�
 
 加密 APP 的备份与恢复会用原密钥验证内部 manifest 和所有密封文件。备份不携带该密钥；恢复前在目标私有 YAML 的 `storage.dataKey` 配置原值或声明的密钥引用。原环境自动生成的 `content-key` 也须另存，其内容可作为该原值，不能改用新随机密钥。恢复仍要求空资料目录／卷。
 
-此备份是明确的时间点快照。快照中已经撤回的披露仍不可读；恢复后的新交互继续核验当前配置、来源和权限，不推断快照之后未随备份提供的事件。恢复和普通启动不会自行发起旧 APP 交互或添加 native grant；在新节点显式选择模型、APP 组合与授权后，所有者可发起新的 SDK 续聊。既有执行恢复、自动 Memory 授权及外部效果的幂等边界保持不变。当前仍需显式停库和执行备份；定时触发、备份保留与自动恢复核验尚待后续单元。
+此备份是明确的时间点快照。快照中已经撤回的披露仍不可读；恢复后的新交互继续核验当前配置、来源和权限，不推断快照之后未随备份提供的事件。恢复和普通启动不会自行发起旧 APP 交互或添加 native grant；在新节点显式选择模型、APP 组合与授权后，所有者可发起新的 SDK 续聊。既有执行恢复、自动 Memory 授权及外部效果的幂等边界保持不变。普通 `backup` 仍要求显式停库；可选调度入口负责下面的停库、验证和原状态恢复。
+
+### 可选的离线备份策略
+
+策略默认关闭。配置只写该 profile 的私有元数据，不安装 cron、launchd 或服务，也不启动后台任务。Native 与 Docker-only 入口使用相同操作；后者将下面的 `node scripts/mote.mjs` 换成 `scripts/mote-docker`：
+
+```sh
+node scripts/mote.mjs backup-schedule status --profile prod --home /srv/mote/profiles
+node scripts/mote.mjs backup-schedule configure --enable --interval-hours 24 --keep-count 7 --keep-days 30 --profile prod --home /srv/mote/profiles
+node scripts/mote.mjs backup-schedule run-due --profile prod --home /srv/mote/profiles
+node scripts/mote.mjs backup-schedule watch --poll-seconds 30 --profile prod --home /srv/mote/profiles
+node scripts/mote.mjs backup-schedule restore-check --profile prod --home /srv/mote/profiles
+node scripts/mote.mjs backup-schedule configure --disable --profile prod --home /srv/mote/profiles
+```
+
+启用或重新配置后，下一次显式 `run-due` 即可执行当前到期备份；`watch` 是显式前台轮询，Ctrl+C 会让当前操作安全收尾后退出。轮询默认 30 秒，正整数秒数不得超过 Node 的单次 timer 范围。没有执行者时不会发生备份。迟到的执行只生成一份当前快照，下一次到期时间从成功完成时起按间隔计算，不补造错过时段。
+
+执行与普通备份、升级和恢复共用 profile lifecycle lock。工具先持久记录实际运行意图，再停库、执行正式备份并验证，最后恢复原状态；原本停止的环境保持停止。Docker 重启使用实际原 image，Native 使用实际原 release，待选部署不会被当作本次升级。失败或中断保留待完成意图；下一次 `run-due` 先恢复该意图，再判断新到期任务，已验证的同一备份不会重复复制。原运行状态恢复与保留处理完成后才推进 nextAt。未完成恢复时先用 `run-due` 重试，再重新配置策略。
+
+调度备份位于 profile 的 `backups/scheduled/`。保留策略仅移除本工具登记且 owner/receipt、manifest、全部内容及 SQLite integrity/FK 校验均通过的完成备份。`keep-count N` 至少保留最新 N 份有效备份，`keep-days D` 另设年龄下限；仅在份数以外且早于 D 天的备份才删除，D=0 表示只按份数。N 最小为 1，删除前重验最新有效保留结果。手工、未登记、未知结构、额外文件、损坏、半成品或链接路径保持原样；失败副本不作为唯一可恢复结果，也不自动清理。
+
+`restore-check` 默认选择最新有效的已登记备份，也可用 `--from BACKUP` 显式核验另一份本代备份；Docker-only 的路径须在挂载的 profile home 内。它共用正式 restore 的校验复制路径，恢复到自有临时目录，重验内容并执行 SQLite integrity/FK 检查，然后删除临时目录。不会启动 Central、模型、Action 或旧 APP；没有 Central 服务容器时也可按所选部署合同离线核验。加密 APP 仍要求原 key，由现有私有配置或原环境受保护文件取得，不会写入备份或策略元数据。
+
+### 在新的空环境恢复
 
 在另一台机器初始化本代新的空环境，然后恢复本代完整离线备份：
 

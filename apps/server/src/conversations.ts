@@ -2,7 +2,7 @@ import {inheritRetiredConversationRoots,unavailableHistoryEvidence} from './conv
 import {createHash,randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {HostSteeringTarget} from '@mote/agent';
-import type {QueryResult} from '@mote/shared';
+import type {QueryResult,QueryScope} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {combineDependencies,resolveDependencies,historyEvidenceDependencies} from './conversation-lineage.js';
 import {SourceContextStore} from './source-context.js';
@@ -13,9 +13,11 @@ export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'tim
 export type ConversationStatus = 'accepted'|'queued'|'running'|'completed'|'failed'|'cancelled';
 type Attachment = {id:string;name:string;mimeType:string};
 type Failure = {code:string;message:string};
-export type ConversationDisposition={kind:'independent'}|{kind:'supplement';targetMessageId:string;targetRunId:string;targetVersion:number;acknowledgement:QueryResult};
+export type TaskSteeringReference={targetTaskId:string;targetOperationId:string;targetRevision:number;targetBatchId:string;taskInputHash:string};
+export type ConversationDisposition={kind:'independent'}|{kind:'supplement';targetMessageId:string;targetRunId:string;targetVersion:number;acknowledgement:QueryResult}|({kind:'task-supplement';acknowledgement:QueryResult}&TaskSteeringReference);
 export type ConversationSteering={targetMessageId:string;targetRunId:string;state:'pending'|'accepted'|'continuation'|'unknown'|'cancelled';registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget};
-export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[];disposition?:ConversationDisposition;steering?:ConversationSteering;amendedBy?:string[];supersededBy?:string[]};
+export type ConversationTaskSteering=Omit<TaskSteeringReference,'taskInputHash'|'targetBatchId'>&{taskInputHash?:string;targetBatchId?:string;scope:QueryScope;origin?:{conversationId:string;turnId:string};state:ConversationSteering['state'];stepId?:string;stepFence?:string;registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget;continuationBatchId?:string};
+export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[];disposition?:ConversationDisposition;steering?:ConversationSteering;taskSteering?:ConversationTaskSteering;amendedBy?:string[];supersededBy?:string[]};
 /** Mutable execution/steering receipts never alter the owner's accepted input. */
 export function conversationInputIdentity(message:ConversationMessage){return {id:message.id,conversationId:message.conversationId,seq:message.seq,clientRequestId:message.clientRequestId,question:message.question,scope:message.scope,attachments:message.attachments,modelProfileId:message.modelProfileId,modelOverride:message.modelOverride};}
 export type ConversationMessage = ConversationTurn & {conversationId:string};
@@ -133,10 +135,10 @@ export class Conversations {
     return {...value,firstIndex:oldest??0,nextCursor:hasMore&&oldest!==undefined?String(oldest):null};
   }
   private visibleTurn(value:ConversationTurn):ConversationTurn {
-    const {disposition:_,steering,...publicTurn}=value;
+    const {disposition:_,steering,taskSteering,...publicTurn}=value;
     // Routing inputs, model receipts and native fences are private execution
     // state. History/catalog consumers receive only the actual relationship.
-    let turn:ConversationTurn={...publicTurn,...(steering?{steering:{targetMessageId:steering.targetMessageId,targetRunId:steering.targetRunId,state:steering.state}}:{})};
+    let turn:ConversationTurn={...publicTurn,...(steering?{steering:{targetMessageId:steering.targetMessageId,targetRunId:steering.targetRunId,state:steering.state}}:{}),...(taskSteering?{taskSteering:{targetTaskId:taskSteering.targetTaskId,targetOperationId:taskSteering.targetOperationId,targetRevision:taskSteering.targetRevision,scope:taskSteering.scope,...(taskSteering.origin?{origin:taskSteering.origin}:{}),state:taskSteering.state}}:{})};
     // A submitted reference is dialogue input even when no retrieval tool was
     // called. Derive missing pins at read time as well as at publication, so
     // existing user messages cannot become untracked summary inputs.
@@ -255,6 +257,17 @@ export class Conversations {
     const row=this.store.db.prepare("SELECT 1 FROM conversation_turns WHERE json_extract(json,'$.steering.targetMessageId')=? AND (json_extract(json,'$.steering.state') IN ('pending','unknown') OR json_extract(json,'$.steering.state')='cancelled' AND json_type(json,'$.steering.target')='object') LIMIT 1").get(id);
     if(row)throw Object.assign(new StoreError('A steering delivery is unconfirmed or withdrawn',409),{code:'steering_delivery_unknown'});
   }
+  /** The Task owner checks scope/revision/fence in the surrounding write;
+   * this record binds its receipt to the exact accepted owner message. */
+  recordTaskSteering(id:string,value:ConversationTaskSteering):ConversationMessage {
+    return this.transaction(()=>{
+      const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn,decision=message.disposition;
+      if(message.status!=='running'||decision?.kind!=='task-supplement'||decision.targetTaskId!==value.targetTaskId||decision.targetOperationId!==value.targetOperationId||decision.targetBatchId!==value.targetBatchId||decision.taskInputHash!==value.taskInputHash)throw new StoreError('Assistant task steering input changed',409);
+      const previous=message.taskSteering?.state;
+      if(previous&&(!['pending','continuation'].includes(previous)||value.state==='pending'))throw new StoreError('Assistant task steering receipt already settled',409);
+      return {conversationId:row.conversation_id,...this.rewrite(row.conversation_id,{...message,taskSteering:structuredClone(value),version:message.version+1},row.json)};
+    });
+  }
 
   queue(id:string,{expectedVersion}:{expectedVersion:number}):ConversationMessage {
     return this.transaction(()=>{
@@ -291,9 +304,9 @@ export class Conversations {
     return this.transaction(()=>{
       const row=this.messageRow(id),message=JSON.parse(row.json) as ConversationTurn;
       if(message.status==='cancelled')return {conversationId:row.conversation_id,...message};
-      const applied=message.status==='completed'&&message.steering?.state==='accepted'&&['accepted','queued','running'].includes(this.message(message.steering.targetMessageId).status);
+      const applied=message.status==='completed'&&(message.taskSteering?.state==='accepted'||message.steering?.state==='accepted'&&['accepted','queued','running'].includes(this.message(message.steering.targetMessageId).status))||message.status==='failed'&&['pending','unknown'].includes(message.taskSteering?.state??'');
       if(!['accepted','queued','running'].includes(message.status)&&!applied)throw new StoreError('Conversation message is already finished',409);
-      const cancelled:ConversationTurn={...message,status:'cancelled',version:message.version+1,...(message.steering?{steering:{...message.steering,state:'cancelled'}}:{})};
+      const cancelled:ConversationTurn={...message,status:'cancelled',version:message.version+1,...(message.steering?{steering:{...message.steering,state:'cancelled'}}:{}),...(message.taskSteering?{taskSteering:{...message.taskSteering,state:'cancelled'}}:{})};
       delete cancelled.result;delete cancelled.error;
       if(message.steering?.state==='continuation'){
         const targetRow=this.messageRow(message.steering.targetMessageId),target=JSON.parse(targetRow.json) as ConversationTurn;
