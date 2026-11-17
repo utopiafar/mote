@@ -43,6 +43,7 @@ test('an external project consumes the packed SDK tarball and browser bundle wit
   const temporary = mkdtempSync(join(tmpdir(), 'mote-plugin-sdk-external-'));
   t.after(() => execFileSync('rm', ['-rf', temporary]));
   const packed = JSON.parse(run(process.execPath, [join(packageRoot, 'scripts/pack.mjs'), '--json', '--pack-destination', temporary], packageRoot));
+  assert.ok(packed[0].files.every(file => !file.path.endsWith('.tsbuildinfo')), 'compiler caches do not enter the public SDK package');
   const tarball = join(temporary, String(packed[0].filename));
   const external = join(temporary, 'external');
   mkdirSync(external);

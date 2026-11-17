@@ -28,6 +28,29 @@ npm run dev
 
 已构建中央并配置命名 Tunnel 时，`npm run up` 可运行中央和隧道；它不构建、不启动采集，也不创建域名路由。Mac 的独立开发 App 使用 `npm run desktop:dev`；构建和权限条件见[Mac指南](desktop.md)。
 
+## TypeScript 检查与构建
+
+`npm ci` 后直接运行 `npm run typecheck`，或选择 workspace，例如 `npm run typecheck -w @mote/server`，无需先运行 `build:libs`。根 solution 与 workspace 命令使用 [TypeScript project references](https://www.typescriptlang.org/docs/handbook/project-references.html)，先生成缺失或变更的库声明，再检查消费者；依赖出错会停止下游项目。根检查和 Web 检查也运行现有 architecture 守护，包括 `browser-no-node`。
+
+引用关系对应实际包导入：
+
+| 项目 | 直接引用的库 |
+| --- | --- |
+| plugin-api | 无 |
+| plugin-host | plugin-api |
+| plugin-sdk | plugin-api、plugin-host |
+| shared | plugin-api |
+| agent | shared、plugin-api、plugin-host |
+| diagnostics | shared |
+| Server | agent、plugin-api、plugin-host、shared |
+| Web | shared |
+| Desktop | diagnostics、shared |
+| scripts | agent、shared；原有相对路径 app/fixture 导入仍由脚本检查覆盖 |
+
+消费者读取引用库刚生成的声明。Server 与 Desktop 使用独立的 `noEmit` 检查配置，构建配置分别保留 NodeNext 与 CommonJS 输出；Web 保留 Bundler 解析和 `noEmit`。solution 还检查 plugin-api 原有的公共类型 fixture。库产物及其构建信息放在 `dist`，检查缓存放在 `node_modules/.cache`；Agent 的 `.mjs` 插件入口纳入项目输入，依赖构建也会生成该运行资产。
+
+`npm run build:libs` 保留为同一引用图的便捷入口。普通 workspace 构建仍执行原有资产复制和打包；并行构建应使用独立 checkout 与依赖目录。
+
 ## 环境与资料
 
 dev、test、prod 使用独立配置、令牌、数据库和 App profile。测试中央默认 47852；prod 默认 47832。CLI 的 `--home /absolute/private/profiles` 可选择另一套隔离环境。测试只用程序生成的资料与私有临时环境；不用正式资料、实际屏幕或日常设备作为自动化素材。
@@ -41,7 +64,7 @@ dev、test、prod 使用独立配置、令牌、数据库和 App profile。测�
 ## 修改与协作
 
 - 自行决定实现细节，复用现有术语、组件、SDK 和任务基础，按实际需求迭代接口与实现。
-- 共享或 Agent 库有改动或缺少构建产物时运行 `npm run build:libs`；多人工作时串行安排共享构建。
+- 类型检查自动构建引用库；只需要库运行产物时可运行 `npm run build:libs`，共用输出目录的构建应串行安排。
 - 新增 `moteText` 源文案时补齐六份目标语言目录，再运行 `node scripts/sync-i18n.mjs` 与 `npm run check:i18n`。
 - 跨模块工作尽早接通一条最短真实路径，使用真实入口和生产者／消费者；独立模块才适合分工，同一模块不并行重复实现。
 - 对外行为、接口、开发命令或有效约束变化时，同次更新现行文档及中英文版本；内部重构不额外制造文档任务。
