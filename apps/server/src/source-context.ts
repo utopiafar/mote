@@ -1,3 +1,5 @@
+import {installSchemaPlan} from './schema-installation.js';
+import {sourceContextSchemaInstallation} from './source-state-schema.js';
 import {z} from 'zod';
 import {createHash} from 'node:crypto';
 import {sourceContextDeclarationSchema,sourceDescriptionDeclarationSchema,sourceContextUpdateSchema,type AttributionContext,type SourceContextDeclaration,type SourceContextSnapshot} from '@mote/shared';
@@ -12,10 +14,7 @@ const fingerprint=(value:{sourceId:string;version:number;description:string})=>c
  * rows, and a source's public JSON holds only the immutable version pin. */
 export class SourceContextStore {
   constructor(private readonly store:Store){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS source_context_declarations(
-      source_id TEXT NOT NULL REFERENCES source_connections(id) ON DELETE CASCADE,
-      version INTEGER NOT NULL,fingerprint TEXT NOT NULL,json TEXT NOT NULL,updated_at TEXT NOT NULL,
-      PRIMARY KEY(source_id,version));`);
+    installSchemaPlan(store.db,[sourceContextSchemaInstallation]);
     if(store.contentEncryption.enabled){
       const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
       try{
