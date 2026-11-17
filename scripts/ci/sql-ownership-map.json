@@ -389,6 +389,18 @@
    "file": "apps/server/src/asset-evidence-schema.ts"
   },
   {
+   "declaration": "memoryProviderConfigurationsSchemaInstallation",
+   "owner": "memory-provider-configurations",
+   "fn": "memoryProviderConfigurationsSchema",
+   "file": "apps/server/src/memory-settings-schema.ts"
+  },
+  {
+   "declaration": "memoryRecipeSettingsSchemaInstallation",
+   "owner": "memory-recipe-settings",
+   "fn": "memoryRecipeSettingsSchema",
+   "file": "apps/server/src/memory-settings-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -1262,10 +1274,20 @@
    "file": "apps/server/src/memory-phase-outputs.ts",
    "installer": "memoryPhaseOutputsSchemaInstallation"
   },
+  "memory_provider_configurations": {
+   "owner": "memory-provider-configurations",
+   "file": "apps/server/src/memory-settings-schema.ts",
+   "installer": "memoryProviderConfigurationsSchemaInstallation"
+  },
   "memory_provider_evidence_revocations": {
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_recipe_settings": {
+   "owner": "memory-recipe-settings",
+   "file": "apps/server/src/memory-settings-schema.ts",
+   "installer": "memoryRecipeSettingsSchemaInstallation"
   },
   "memory_scopes": {
    "owner": "memory-search",

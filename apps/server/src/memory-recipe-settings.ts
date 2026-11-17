@@ -4,6 +4,8 @@ import type {MemoryStrategies} from './memory-strategies.js';
 import {memoryRecipeBindingSchema,memoryStrategyRefSchema,type MemoryRecipeBinding} from './memory-strategy-contract.js';
 import {isCaptureMemorySource} from './capture-memory-source.js';
 import {RANGE_SELECTION_PERSONAL_RECIPE,RANGE_SELECTION_DAILY_RECIPE} from './memory-range-selection-policy.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {memoryRecipeSettingsSchemaInstallation} from './memory-settings-schema.js';
 
 export const memoryRecipeScope=(binding:MemoryRecipeBinding)=>'recipe/'+sha256(JSON.stringify(binding));
 const bindingsSchema=z.array(memoryRecipeBindingSchema).min(1).max(10);
@@ -18,7 +20,7 @@ export class MemoryRecipeSettings {
   onChange?:()=>void;
   onApplied?:()=>void;
   constructor(private store:Store,private strategies:MemoryStrategies){
-    store.db.exec('CREATE TABLE IF NOT EXISTS memory_recipe_settings(id TEXT PRIMARY KEY,source_id TEXT REFERENCES source_connections(id) ON DELETE CASCADE,json TEXT NOT NULL)');
+    installSchemaPlan(store.db,[memoryRecipeSettingsSchemaInstallation]);
     this.initializeDefaults();
   }
   private stored(id:string){return this.store.db.prepare('SELECT json FROM memory_recipe_settings WHERE id=?').get(id);}
