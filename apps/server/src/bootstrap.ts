@@ -135,6 +135,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
       /** Producers register the binding returned by provide(), not an object
        * lookup or a guessed activation/revision. Ordinary plugins still acquire
        * only the exact requirements enforced by PluginHost. */
+      domainActivation:Object.freeze({selectedDomain:domainActivations.selectedDomain,installDomain:domainActivations.installDomain}),
       registerDomainService:domainActivations.register,
       acquireDomainService:domainActivations.acquire,
       activateDomains:domainActivations.activate,

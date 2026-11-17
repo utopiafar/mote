@@ -1,7 +1,8 @@
 import type {FastifyInstance} from 'fastify';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import {serviceContract,type PluginLifecycle,type StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
+import type {CentralDomainPlugin} from '../domain-activation.js';
 import type {MaterialStore} from '../materials.js';
 import type {MaterialOrganizerRuntime} from '../material-organizers.js';
 import type {EvidenceReader} from '../evidence-reader.js';
@@ -79,3 +80,34 @@ export function createMaterialContextFactory(dependencies:MaterialContextDepende
     return {prepare:platform.prepare,start:platform.start,quiesce:platform.quiesce,stop:platform.stop,dispose:platform.dispose};
   };
 }
+
+/** Private build input for the selected Material HTTP owner. It lends the one
+ * MaterialStore, organizer runtime and EvidenceReader; it constructs nothing. */
+export interface MaterialContextInputs extends MaterialContextDependencies {
+  readonly onStarted?:(platform:MaterialContext)=>void;
+}
+export const materialContextInputsContract=serviceContract<MaterialContextInputs>('mote.central.material-context-inputs','1');
+export const materialContextInputsContribution={
+  id:'material-context-inputs',version:'1.0.0',surface:'data',runtime:'host',
+  provides:[{kind:'service' as const,id:materialContextInputsContract.id,apiVersion:materialContextInputsContract.apiVersion,cardinality:'single' as const}],
+} as const satisfies ManifestContribution;
+export const materialContextInputsDeclaration={id:materialContextInputsContribution.id,apiVersion:'1'} as const;
+
+/** Selected owner activation: this activation owns the route table and its
+ * handler lifetime. It borrows the existing Material/Evidence owners. */
+export const materialContextPlugin:CentralDomainPlugin=Object.freeze<CentralDomainPlugin>({
+  contribution:materialContextContribution,declaration:materialContextDeclaration,replacement:materialContextReplacement,
+  activation:{featureId:'mote.materials',requires:{inputs:{provider:materialContextInputsContribution.id,service:materialContextInputsContract}},
+    async create(context,bindings){
+      const input=await context.services.acquire(materialContextInputsContract,bindings.inputs!);
+      context.scope.defer(()=>input.release());
+      const platform=createMaterialContext(input.value);
+      context.scope.defer(()=>platform.close());
+      return {
+        route:{id:'mote.materials',mount(app){platform.routes(app);}},
+        prepare:platform.prepare,
+        start(){platform.start();input.value.onStarted?.(platform);},
+        quiesce:platform.quiesce,stop:platform.stop,dispose:platform.dispose,
+      };
+    }},
+});
