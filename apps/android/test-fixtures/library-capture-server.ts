@@ -4,16 +4,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {z} from 'zod';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 
 /** Loopback-only generated library fixture; denial is an HTTP fault, not a product permission change. */
 const readyPath=process.argv[2];
 if(!readyPath)throw Error('Provide a private readiness JSON path');
 const dataDir=await mkdtemp(join(tmpdir(),'mote-library-native-'));
 const token='generated-library-recovery-owner-123456';
-const config:Config={dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:process.argv[3]?z.coerce.number().int().min(1024).max(65535).parse(process.argv[3]):0,profile:'test',tokenFromEnvironment:true,
-  dataKey:'31'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,
-  allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'31'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:process.argv[3]?z.coerce.number().int().min(1024).max(65535).parse(process.argv[3]):0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
 const value=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model calls in library fixture');},close:async()=>{}}});
 // Hold automatic organization so the explicit generated Material revision stays pinned.
 value.materialOrganizer.tick=async()=>0;
@@ -65,7 +63,7 @@ value.app.post('/api/fixture/library-material',async req=>{
   if(capture?.provenance?.sourceId!==q.sourceId||capture.provenance.externalId!==q.externalId)throw Error('Generated source mismatch');
   return value.materials.publish({id:materialId(q.sourceId,q.externalId),kind:'mote.document',schemaVersion:1,title:'Generated B1 organized material',origin:{sourceId:q.sourceId,externalId:q.externalId,deviceId:capture.deviceId,lastAt:capture.capturedAt},members:[{id:'original',kind:'capture',ref:'capture:'+capture.id}],blocks:[{id:'body',kind:'text',format:'plain',text:q.text,memberIds:['original']}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},{expectedRevision:value.materials.get(materialId(q.sourceId,q.externalId))?.revision});
 });
-await value.app.listen({host:config.host,port:config.port});
+await value.app.listen({host:config.initialDocument!.server.host,port:config.initialDocument!.server.port});
 const address=value.app.server.address();if(!address||typeof address==='string')throw Error('Missing listener');
 await writeFile(readyPath,JSON.stringify({port:address.port,token,generatedOnly:true}),{mode:0o600});
 console.log('Generated library fixture ready');

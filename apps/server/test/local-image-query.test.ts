@@ -11,7 +11,7 @@ import sharp from 'sharp';
 import {PluginHost} from '@mote/plugin-host';
 import {ProviderFailure,unknownAttributionContext,type QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {createModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
 import {Store,sha256} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
@@ -107,8 +107,8 @@ async function fixture(t:TestContext){
    return {answer:JSON.stringify(result),citations:[],trace:[],runId:randomUUID()};
   }};
  };
- const config:Config={dataDir:join(directory,'archive'),token:'generated-query-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:askModel,modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as AddressInfo).port}/v1`,apiKey:'generated-ask-fixture',modelMaxTokens:8192,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:30000,diagnosticsEnabled:false,logLevel:'silent'};
- node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node,headers={authorization:'Bearer '+config.token};
+ const config:ConfigurationPlatformOptions={path:(join(directory,'archive'))+'/mote.yaml',privateCredential:{token:'generated-query-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'archive'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:askModel,provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as AddressInfo).port}/v1`,apiKey:'generated-ask-fixture',maxTokens:8192,allowUnauthenticatedLocal:false,agentTimeoutMs:30000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
+ node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node,headers={authorization:'Bearer '+config.privateCredential!.token};
  const modelView=central.modelSettings.view();await central.modelSettings.updateDefaults({revision:modelView.revision,defaults:modelView.defaults,defaultModels:{file:'generated-configured-intake',memory:'generated-selected-memory',chat:askModel}});
  await central.processing.saveImageDefault({endpoint:'http://127.0.0.1:9/generated-ocr'});
  central.processing.runtime.registry.get('image.http').process=async input=>{

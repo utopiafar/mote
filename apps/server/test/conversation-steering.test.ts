@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {createServer} from 'node:http';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
 
@@ -45,9 +45,9 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
     if(question==='GENERATED-LONG-WORK')await nativeReleased;if(res.destroyed)return;
     writeMessagesResponse(res,{stage:1,model:'generated-steering-model',text:JSON.stringify({answer:question==='GENERATED-LONG-WORK'?'Generated original completed answer.':'Generated continuation answer.',citationIds:[],draft:question==='GENERATED-LONG-WORK'?{goal:'Generated old task draft'}:null})});
   });await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-  const config:Config={dataDir:join(root,'vault'),token:'generated-steering-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-steering-model',modelProvider:runtime==='codex'?'codex':'deepseek',modelProtocol:runtime==='codex'?'codex-app-server':'deepseek',modelBaseUrl:runtime==='codex'?'':'http://127.0.0.1:'+(provider.address() as {port:number}).port,apiKey:runtime==='codex'?'':'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',agentTimeoutMs:20000,codexBin:executable,codexHome:root};
+  const config:ConfigurationPlatformOptions={path:(join(root,'vault'))+'/mote.yaml',privateCredential:{token:'generated-steering-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'vault'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-steering-model',provider:runtime==='codex'?'codex':'deepseek',protocol:runtime==='codex'?'codex-app-server':'deepseek',baseUrl:runtime==='codex'?'':'http://127.0.0.1:'+(provider.address() as {port:number}).port,apiKey:runtime==='codex'?'':'generated-unused',allowUnauthenticatedLocal:false,agentTimeoutMs:20000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:executable,home:root}},diagnostics:{enabled:false,level:'silent'}}};
   const open=()=>buildApp(config,{backgroundWorker:false});
-  let node=await open();t.after(async()=>{release();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(root,{recursive:true,force:true});});const headers={authorization:'Bearer '+config.token};
+  let node=await open();t.after(async()=>{release();await node.app.close();provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));rmSync(root,{recursive:true,force:true});});const headers={authorization:'Bearer '+config.privateCredential!.token};
   const id=(await node.app.inject({url:'/api/conversations/main',headers})).json().id as string;
   const rpc=()=>{try{return readFileSync(rpcPath,'utf8').trim().split('\n').filter(Boolean).map(row=>JSON.parse(row));}catch{return [];}};
   const post=async(question:string,clientRequestId=randomUUID(),scope:Record<string,unknown>={kind:'all'},extra:Record<string,unknown>={})=>{const payload={conversationId:id,clientRequestId,question,scope,...extra},response=await node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload});assert.equal(response.statusCode,202,response.body);return {message:response.json(),payload};};

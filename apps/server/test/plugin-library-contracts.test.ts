@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 import {Store} from '../src/store.js';
 import {MaterialStore} from '../src/materials.js';
@@ -20,9 +20,9 @@ function fixture(t:import('node:test').TestContext,limits:ConstructorParameters<
 test('a deployed namespaced pack synchronizes, executes its flow, exposes one logical item and consumes an opted-in product',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-library-pack-'));
  const journal=await import(pathToFileURL(fileURLToPath(new URL('../../../examples/journal-plugin/plugin.mjs',import.meta.url))).href);
- const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[],googleClientId:'',googleClientSecret:'',googleRedirectUri:'',syncIntervalMs:900000,allowLocalMcp:false}};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-fixture-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[],googleClientId:'',googleClientSecret:'',googleRedirectUri:'',syncIntervalMs:900000,allowLocalMcp:false}}};
  const node=await buildApp(config,{backgroundWorker:false,connectorManifests:[journal.connector],processingPlugins:[journal.backendPlugin]});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'};
+ const headers={authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'};
  const request=async(url:string,method:'GET'|'POST'|'PUT'='GET',payload?:unknown)=>{const result=await node.app.inject({url,method,headers,payload});assert.equal(result.statusCode,200,result.body);return result.json();};
  assert.equal((await node.app.inject('/api/library/catalog')).statusCode,401);
  await request('/api/sources','POST',{id:'fixture-journal',name:'Generated journal',kind:'fixture.journal',deviceId:'fixture-device',platform:'import'});

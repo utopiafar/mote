@@ -46,9 +46,9 @@ async function fixture(
   const directory = mkdtempSync(join(tmpdir(), 'mote-indexer-fixture-'));
   const store = new Store(directory, { embeddingEnabled: true });
   const config = {
-    embeddingModel: 'generated-embedding-fixture',
-    embeddingBaseUrl: `http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,
-    embeddingApiKey: 'synthetic-provider-token-only',
+    model: 'generated-embedding-fixture',
+    baseUrl: `http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,
+    apiKey: 'synthetic-provider-token-only',
   };
   const indexer = new Indexer(store, config);
   let storeClosed = false;
@@ -85,11 +85,11 @@ test('local synthetic embedding provider moves pending observations to indexed a
   assert.equal(calls.length, 1);
   assert.equal(calls[0].path, '/v1/embeddings');
   assert.equal(calls[0].method, 'POST');
-  assert.equal(calls[0].authorization, `Bearer ${config.embeddingApiKey}`);
-  assert.deepEqual(calls[0].body, { model: config.embeddingModel, input: `Generated Application\n\n${event.ocrText}` });
+  assert.equal(calls[0].authorization, `Bearer ${config.apiKey}`);
+  assert.deepEqual(calls[0].body, { model: config.model, input: `Generated Application\n\n${event.ocrText}` });
   const row = store.db.prepare('SELECT embedding,embedding_model FROM captures WHERE id=?').get(event.id) as { embedding: string; embedding_model: string };
   assert.deepEqual(JSON.parse(row.embedding), [0.25, 0.5, 0.75]);
-  assert.equal(row.embedding_model, config.embeddingModel);
+  assert.equal(row.embedding_model, config.model);
 });
 
 test('hybrid search embeds the query and invokes both vector and lexical retrieval with the selected scope', async t => {
@@ -111,7 +111,7 @@ test('hybrid search embeds the query and invokes both vector and lexical retriev
   const scope = { query: 'needle', after: '2026-09-12T00:00:00Z', before: '2026-09-13T00:00:00Z', deviceId: semantic.deviceId, limit: 2 };
   const matches = await indexer.search(scope);
   assert.deepEqual(matches.map(record => record.id), [lexical.id, semantic.id]);
-  assert.deepEqual(vectorCalls, [[config.embeddingModel, scope]]);
+  assert.deepEqual(vectorCalls, [[config.model, scope]]);
   assert.deepEqual(lexicalCalls, [[scope],[scope]]);
   assert.equal(calls.at(-1)?.body.input, 'needle');
   assert.equal(new Set(matches.map(record => record.id)).size, matches.length);
@@ -201,7 +201,7 @@ test('close aborts an in-flight embedding, waits for the worker, and allows the 
 test('an unconfigured indexer keeps lexical queries available without contacting the provider', async t => {
   const { store, config, calls } = await fixture(t, () => ({ body: { data: [{ embedding: [1] }] } }));
   const event = capture('Generated offline lexical evidence.'); await store.ingest(event);
-  const indexer = new Indexer(store, { ...config, embeddingModel: '' });
+  const indexer = new Indexer(store, { ...config, model: '' });
   t.after(() => indexer.close());
   assert.equal(indexer.configured, false); await indexer.tick();
   const found = await indexer.search({ query: 'offline' });
@@ -220,7 +220,7 @@ test('rank fusion admits ordinary records alongside abundant file matches',async
  const {store,config}=await fixture(t,()=>({body:{data:[{embedding:[1,0]}]}}));
  const note=capture('fusion needle',{id:'11111111-1111-4111-8111-111111111111'});await store.ingest(note);
  const fileRecords=Array.from({length:20},(_,i)=>({...store.evidence([note.id])[0],id:`file-${i}`}));
- const indexer=new Indexer(store,{...config,embeddingModel:''},undefined,{search:()=>fileRecords} as any);t.after(()=>indexer.close());
+ const indexer=new Indexer(store,{...config,model:''},undefined,{search:()=>fileRecords} as any);t.after(()=>indexer.close());
  const result=await indexer.search({query:'needle',limit:3});
  assert.ok(result.some(r=>r.id===note.id));assert.ok(result.some(r=>r.id.startsWith('file-')));assert.equal(new Set(result.map(r=>r.id)).size,3);
 });

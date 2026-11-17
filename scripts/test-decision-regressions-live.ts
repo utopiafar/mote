@@ -7,12 +7,12 @@ import {join} from 'node:path';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import type {SourceItem} from '@mote/shared';
 
 const directory=await mkdtemp(join(tmpdir(),'mote-decisions-codex-'));
 const model=process.env.MOTE_TEST_CODEX_MODEL??'gpt-6.1-sol',token=randomBytes(32).toString('hex');
-const config:Config={dataKey:'',dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'low',modelMaxTokens:8192,agentTimeoutMs:300000,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
+const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:'',dataDir:directory,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:model,provider:'codex',protocol:'codex-app-server',reasoningEffort:'low',maxTokens:8192,agentTimeoutMs:300000,apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{enabled:false}}};
 const recordedAt='2026-01-01T10:00:00Z';
 const early='Generated owner decision for Project Cedar: Keep the npm monorepo. Clients only capture and upload; all ordinary understanding belongs on the central node. Treat these as persistent project constraints. A Friday shipping deadline is only a proposal. Do not publish before full regression passes.';
 const late='Generated owner correction for Project Cedar: The shipping deadline is Monday. Friday was rejected. No physical-device tests have been performed. Test data must be generated; never use real personal screenshots without consent. Keep the earlier monorepo and collector-only client constraints.';

@@ -9,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import {createAgent,type ContextReader,type QueryInput} from '@mote/agent';
 import type {CodingEvidence,QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
 import {StoreError} from '../src/store.js';
 import {AssistantUnderstandingReader} from '../src/assistant-understanding.js';
@@ -24,11 +24,11 @@ const toolSecret='PRIVATE_GENERATED_TOOL_BODY';
 const tokens=(inputTokens:number,outputTokens:number,complete=true):TokenUsage=>({measurement:'thread_cumulative',complete,inputTokens,outputTokens,totalTokens:inputTokens+outputTokens,requests:0,reportedRequests:0,cacheReadTokens:0,cacheWriteTokens:0});
 const usage=(node:Node)=>node.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt);
 const token='generated-coding-understanding-owner-token';
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-stub',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 function event(id:string,role:CodingEvidence['role'],text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
-async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false,options:Partial<Config>={}){
+async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false,options:Partial<ConfigurationPlatformOptions>={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
  const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');

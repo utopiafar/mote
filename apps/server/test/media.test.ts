@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {ContextReader} from '@mote/agent';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {Indexer} from '../src/indexer.js';
 import {buildApp} from '../src/app.js';
@@ -23,7 +23,7 @@ test('media is searchable original metadata, has a useful preview, and survives 
   for(const query of ['海边','narrator','Generated album','fixture.player'])assert.equal(store.search({query,source:'media'})[0]?.id,value.id);
   const preview=store.previews({source:'media'}).items[0];assert.deepEqual(preview.media,value.metadata.media);assert.match(preview.textPreview,/虚构海边故事/);assert.equal(preview.hasImage,false);assert.equal(preview.ocr.status,'not_applicable');
   assert.equal(store.stats().mediaEvents,1);assert.equal(store.stats().activityEvents,0);assert.equal(store.pending().length,0);assert.equal(store.retryIndex().queued,0);
-  const indexer=new Indexer(store,{embeddingModel:'generated',embeddingBaseUrl:'https://fixture.invalid',embeddingApiKey:''});t.after(()=>indexer.close());
+  const indexer=new Indexer(store,{model:'generated',baseUrl:'https://fixture.invalid',apiKey:''});t.after(()=>indexer.close());
   indexer.embed=async()=>{throw new Error('Media lexical retrieval must not invoke a model');};
   assert.equal((await indexer.search({source:'media',query:'海边'}))[0].id,value.id);
   await assert.rejects(store.ingest({...value,metadata:{...value.metadata,media:{status:'available',sessions:[session({title:'Changed'})]}}}),{statusCode:409});
@@ -115,7 +115,7 @@ test('media evidence references are bounded without truncating interval totals o
 
 test('media API allows full client reads and writes with explicit device filters and exposes a read-only agent reader',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-media-api-')),token='generated-media-owner-token';
-  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   let reader:ContextReader|undefined;
   const node=await buildApp(config,{createModelAgent:async(_settings,value)=>{reader=value;return {configured:false,query:async()=>{throw new Error('No live model');},close:async()=>{}};}});
   const {app}=node;

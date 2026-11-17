@@ -9,13 +9,13 @@ import {gzipSync} from 'node:zlib';
 import {uiPageText,type UiContentObject,type UiPageV3} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import {EvidenceArchive} from '../src/evidence-archive.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const at=(seconds:number)=>new Date(Date.parse('2026-10-10T00:00:00Z')+seconds*1000).toISOString();
 const token='generated-field-page-owner-token-000000';
 const headers={authorization:`Bearer ${token}`};
 const agent={configured:false,query:async()=>{throw Error('No live model in generated fixtures');},close:async()=>{}};
-function config(dir:string):Config{return {dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};}
+function config(dir:string):ConfigurationPlatformOptions{return {path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dir,dataKey:'32'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};}
 async function fixture(t:TestContext){
   const dir=mkdtempSync(join(tmpdir(),'mote-field-page-')),settings=config(dir);
   const result=await buildApp(settings,{agent,backgroundWorker:false});

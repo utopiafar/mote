@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {FeatureInventory} from '@mote/shared';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 
 const webSource=new URL('../src/',import.meta.url);
 
@@ -37,11 +37,11 @@ test('every declared Web HTTP requirement resolves against the real feature inve
   assert.ok(requirements.includes('http:GET:/api/materials/:id/read'));
   assert.ok(requirements.includes('http:POST:/api/owner-questions/:id/reply'));
   const directory=await mkdtemp(join(tmpdir(),'mote-web-feature-requirements-'));
-  const config:Config={dataDir:directory,token:'generated-web-feature-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-web-feature-owner-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const node=await buildApp(config,{backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   await node.app.ready();
-  const response=await node.app.inject({url:'/api/features',headers:{authorization:'Bearer '+config.token}});
+  const response=await node.app.inject({url:'/api/features',headers:{authorization:'Bearer '+config.privateCredential!.token}});
   assert.equal(response.statusCode,200,response.body);
   const inventory=response.json() as FeatureInventory;
   for(const requirement of requirements){

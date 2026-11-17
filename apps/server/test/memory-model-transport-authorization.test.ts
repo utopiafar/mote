@@ -12,7 +12,7 @@ import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {FileAttachments} from '../src/file-attachments.js';
 import {createModelAgent} from '../src/model-agent.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const mutations=['unchanged','deleted-original','owner-declaration','formal-input','after-admission'] as const;
 for(const adapter of ['http','codex'] as const)for(const mutation of mutations.filter(value=>adapter==='http'||value!=='after-admission'))test(`${adapter} Memory model transport revalidates a delivered seed after ${mutation}`,async t=>{
@@ -23,7 +23,7 @@ for(const adapter of ['http','codex'] as const)for(const mutation of mutations.f
   // repair or successful publication. No real provider is contacted.
   res.writeHead(401,{'Content-Type':'application/json'}).end('{"error":{"message":"Generated refusal"}}');
  });await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-provider',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const turns=join(directory,'generated-turns.ndjson'),executable=join(directory,'generated-codex.mjs');let hooksReceived=false;
  if(adapter==='codex'){
   writeFileSync(join(directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
@@ -71,7 +71,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
 });
 
 test('Memory transport guard checks all 4097 frozen anchors once per call and retains exact output/raw policy',async t=>{
- const directory=mkdtempSync(join(tmpdir(),'mote-memory-full-grant-')),config:Config={dataDir:directory,token:'generated-full-grant',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-unused',modelBaseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-full-grant-')),config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-full-grant',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-unused',baseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{throw Error('No model is authorized by this fixture');}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const id=randomUUID(),sourceId='generated-full-grant';node.sources.register({id:sourceId,name:'Generated full grant',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});
@@ -100,7 +100,7 @@ test('Memory transport guard checks all 4097 frozen anchors once per call and re
  const attached=node.memories.readEvidence([chunk])[0],attachedFingerprint={[chunk]:memoryEvidenceFingerprint(attached)};assert.equal(reader.processingEvidenceAllowed([chunk],attachedFingerprint,undefined),false,'the declared source route requires Formal Memory input rather than raw attachment text');
  const attachmentMaterial=node.materials.publish({id:materialId(sourceId,'generated-attachment-body'),kind:'mote.message',schemaVersion:1,title:'Generated attachment body',origin:{sourceId,externalId:'generated-attachment-body',deviceId:'generated'},members:[{id:child.captureId,kind:'capture',ref:'capture:'+child.captureId}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated attachment original',memberIds:[child.captureId]}],artifacts:[{key:'source-body',state:'ready',blockIds:['body']}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}}),attachmentPin=node.materials.input(attachmentMaterial.ref,['source-body'])!,attachmentRecords=node.memories.readEvidence(attachmentPin.evidenceIds),attachmentFingerprints=Object.fromEntries(attachmentRecords.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
  assert.equal(reader.processingEvidenceAllowed(attachmentPin.evidenceIds,attachmentFingerprints,[attachmentPin]),true);
- const removed=await node.app.inject({method:'DELETE',url:'/api/captures/'+parent.id,headers:{authorization:'Bearer '+config.token}});assert.equal(removed.statusCode,200);assert.equal(reader.processingEvidenceAllowed(attachmentPin.evidenceIds,attachmentFingerprints,[attachmentPin]),false,'a prior Formal attachment grant never survives deletion of its parent');
+ const removed=await node.app.inject({method:'DELETE',url:'/api/captures/'+parent.id,headers:{authorization:'Bearer '+config.privateCredential!.token}});assert.equal(removed.statusCode,200);assert.equal(reader.processingEvidenceAllowed(attachmentPin.evidenceIds,attachmentFingerprints,[attachmentPin]),false,'a prior Formal attachment grant never survives deletion of its parent');
 });
 
 test('HTTP Memory transport fences a context-only original actually disclosed by a tool before the next model request',async t=>{
@@ -111,7 +111,7 @@ test('HTTP Memory transport fences a context-only original actually disclosed by
   send({id:'generated-context-read',choices:[{index:0,delta:{role:'assistant',tool_calls:[{index:0,id:'generated-context-call',type:'function',function:{name:'context_evidence',arguments:JSON.stringify({id:contextId,offset:0,length:40})}}]},finish_reason:null}]});
   send({id:'generated-context-read',choices:[{index:0,delta:{},finish_reason:'tool_calls'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
  });await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-provider',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  node=await buildApp(config,{backgroundWorker:false});await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{await node.app.close();endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
  const sourceId='generated-context-transport';node.sources.register({id:sourceId,name:'Generated context transport',kind:'custom',deviceId:'generated',platform:'import'});
  const inputs=[] as {id:string;offset:number;length:number}[];

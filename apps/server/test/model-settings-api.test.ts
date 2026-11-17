@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelSettingsView, ModelSettingsInput } from '@mote/shared/models';
 import { buildApp } from '../src/app.js';
-import type { Config } from '../src/config.js';
+import type { ConfigurationPlatformOptions } from '../src/config.js';
 import type { ModelAgentFactory } from '../src/model-agent.js';
 import { testModelConnection } from '../src/model-agent.js';
 import {appCleanup} from './fixtures/app-cleanup.js';
@@ -14,11 +14,7 @@ import {appCleanup} from './fixtures/app-cleanup.js';
 const owner = 'synthetic-model-settings-owner-token';
 const headers = { authorization: `Bearer ${owner}` };
 const answer = (model: string) => ({ answer: model, citations: [], trace: [], runId: 'synthetic-run' });
-const config = (dataDir: string): Config => ({ dataDir, token: owner, tokenPath: 'fixture-only', host: '127.0.0.1', port: 47832,
-   maxExportBytes: 1_000_000,  insightIntervalHours: 0, allowedOrigins: [],
-  model: 'original-fixture', modelBaseUrl: 'https://model.example.invalid/v1', apiKey: 'synthetic-original-key',
-  modelProvider: 'custom', modelProtocol: 'openai-completions', modelReasoningEffort: 'auto', allowUnauthenticatedLocal: false,
-  embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: true });
+const config = (dataDir: string): ConfigurationPlatformOptions => ({path:(dataDir)+'/mote.yaml',privateCredential:{token:owner,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'original-fixture',baseUrl:'https://model.example.invalid/v1',apiKey:'synthetic-original-key',provider:'custom',protocol:'openai-completions',reasoningEffort:'auto',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}});
 function input(view: ModelSettingsView): ModelSettingsInput {
   const { apiKeyConfigured: _key, headersConfigured: _headers, extraBodyConfigured: _body, ...settings } = view.settings;
   return settings;
@@ -54,12 +50,13 @@ test('owner model saves apply to new queries while an existing query retains its
   const status = (await app.inject({ url: '/api/status', headers })).json();
   assert.equal(status.agent.model, 'next-fixture'); assert.equal(status.agent.protocol, 'openai-completions'); assert.equal(status.agent.maxTokens, 65536);
   const current = (await app.inject({ url: '/api/configuration', headers })).json();
-  const fields = current.groups.flatMap((group: any) => group.fields);
-  assert.equal(fields.find((field: any) => field.key === 'model').value, 'original-fixture','the configuration field describes the deployment profile saved in YAML');
-  const modelDomain=current.domains.find((domain:any)=>domain.id==='models');assert.equal(modelDomain.effective.defaults.chat,'primary');assert.equal(modelDomain.effective.profiles.find((profile:any)=>profile.id==='primary').settings.model,'next-fixture');
-  assert.equal(fields.find((field: any) => field.key === 'model').restartRequired, false);
-  assert.equal(fields.find((field: any) => field.key === 'model').source, 'config-file');
-  assert.equal(cfg.model, 'original-fixture', 'Hot settings must not mutate the caller configuration snapshot');
+  const modelDomain=current.domains.find((domain:any)=>domain.id==='models');
+  assert.equal(modelDomain.effective.deployment.model,'original-fixture','the configuration domain describes the deployment profile saved in YAML');
+  assert.equal(modelDomain.saved.deployment.model,'original-fixture');
+  assert.equal(modelDomain.effective.defaults.chat,'primary');assert.equal(modelDomain.effective.profiles.find((profile:any)=>profile.id==='primary').settings.model,'next-fixture');
+  assert.equal(modelDomain.fields.find((field:any)=>field.path==='deployment').effect,'next-request');
+  assert.equal(Object.hasOwn(current,'groups'),false);
+  assert.equal(cfg.initialDocument!.models.deployment.model, 'original-fixture', 'Hot settings must not mutate the caller configuration snapshot');
   finish(); const completed=(await pending).json();assert.equal(completed.answer, 'original-fixture');assert.equal(completed.configuration.model,'original-fixture');assert.ok(completed.configuration.fingerprint);assert.equal(completed.configuration.owner,'models');
   await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(closed, ['original-fixture']);
   for (const route of ['/api/model-settings', '/api/configuration', '/api/status', '/api/support-bundle', '/api/export']) {

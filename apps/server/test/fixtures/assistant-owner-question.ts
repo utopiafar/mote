@@ -8,7 +8,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import type {OwnerQuestion} from '@mote/shared';
 import {buildApp} from '../../src/app.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 
 export const ownerAnswer='Generated A10 exact owner answer: use the first option.';
 const goal='Generated A10 task goal',original='Generated A10 original: the choice is still unknown.';
@@ -48,10 +48,7 @@ export async function assistantQuestionFixture(t:TestContext){
   res.end('data: [DONE]\n\n');
  });
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir,dataKey:'72'.repeat(32),contentEncryptionEnabled:true,token:'generated-a10-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',
-  modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-a10-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'72'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  const build=async()=>{
   const node=await buildApp(config,{backgroundWorker:false});
   await node.app.ready();return node;

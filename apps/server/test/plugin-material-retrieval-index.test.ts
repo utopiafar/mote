@@ -13,10 +13,10 @@ import {EvidenceReader} from '../src/evidence-reader.js';
 import {centralServices} from '../src/plugins/central-contracts.js';
 import {createMaterialRetrievalIndex,createMaterialRetrievalIndexFactory,materialRetrievalIndexContribution,materialRetrievalIndexDeclaration,type MaterialRetrievalIndexBindings} from '../src/plugins/material-retrieval-index.js';
 
-const config={embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const embedding={model:'',baseUrl:'',apiKey:''};
 
 async function install(host:PluginHost,store:Store,materials:MaterialStore,executor:ExecutionEngine){
-  const platform=createMaterialRetrievalIndex({store,config,executor,materials});let bindings:MaterialRetrievalIndexBindings|undefined;
+  const platform=createMaterialRetrievalIndex({store,embedding,executor,materials});let bindings:MaterialRetrievalIndexBindings|undefined;
   const handle=await host.install({
     identity:{host:host.identity,packageId:'generated.material-retrieval-index',installationId:randomUUID(),instanceId:randomUUID(),activationId:randomUUID()},
     contributions:[materialRetrievalIndexDeclaration],factory:createMaterialRetrievalIndexFactory(platform,value=>{bindings=value;}),

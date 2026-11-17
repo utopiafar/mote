@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {PluginCenter} from '../src/plugin-center.js';
@@ -224,7 +224,7 @@ test('official Feishu session check requires the host lark binding even before a
 
 test('official Feishu session installs on the existing Lark account, archives selected chats and sends only through a confirmed action',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-feishu-session-journey-'));
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),syncIntervalMs:60000,mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),syncIntervalMs:60000,mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
   const fake=fakeLark();
   const networkCalls:string[]=[];
   const node=await buildApp(config,{backgroundWorker:false,connectorTesting:{lark:fake.runner,larkBinding:fake.binding,fetch:async url=>{networkCalls.push(String(url));throw new Error('No network request belongs in the Feishu session fixture');}},agent:{configured:false,async query(){throw Error('No model request belongs in the Feishu session fixture');},async close(){}}});

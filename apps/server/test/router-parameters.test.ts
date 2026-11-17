@@ -4,7 +4,7 @@ import {mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('production routing accepts generated composite work IDs and maximum source IDs',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-router-parameters-')),token='generated-router-owner-token';
@@ -12,7 +12,7 @@ test('production routing accepts generated composite work IDs and maximum source
  writeFileSync(join(web,'index.html'),'<!doctype html><title>Generated router fixture</title>');
  writeFileSync(join(web,'assets','fixture.js'),'/* Generated asset */');
  writeFileSync(join(web,'build-info.json'),JSON.stringify({version:JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version}));
- const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const node=await buildApp(config,{webRoot:web,agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token},sourceId='generated:'+ 's'.repeat(118);

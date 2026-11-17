@@ -10,7 +10,7 @@ import {createHash,randomBytes} from 'node:crypto';
 import {scanCodingAgent,type CodingProvider,type CodingCheckpoint} from '../apps/desktop/src/coding-agents.js';
 import {DEFAULT_SOURCE_OPTIONS} from '../apps/desktop/src/source-types.js';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codingConversationEvidence,type SourceItem} from '@mote/shared';
 import {CodexSession} from '../packages/agent/dist/codex-session.js';
 
@@ -18,7 +18,7 @@ assert.ok(process.argv.includes('--local-sample'),'Pass --local-sample after exp
 const live=process.argv.includes('--live'),home=homedir(),directory=await mkdtemp(join(tmpdir(),'mote-real-dialogue-'));
 await chmod(directory,0o700);
 const model='gpt-6.1-sol',token=randomBytes(32).toString('hex');
-const config:Config={dataKey:'',dataDir:join(directory,'vault'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'low',modelMaxTokens:8192,agentTimeoutMs:300000,modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:3};
+const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:'',dataDir:join(directory,'vault'),maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:3},models:{deployment:{model:model,provider:'codex',protocol:'codex-app-server',reasoningEffort:'low',maxTokens:8192,agentTimeoutMs:300000,apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{enabled:false}}};
 const report:Record<string,unknown>={startedAt:new Date().toISOString(),model,live,realCodingData:true,physicalDeviceChecks:false,originalDatabaseModified:false};
 const forbidden:string[]=[],samples:{provider:CodingProvider;files:string[]}[]=[];
 async function filesUnder(path:string):Promise<string[]>{const result:string[]=[];for(const entry of await readdir(path,{withFileTypes:true})){const p=join(path,entry.name);if(entry.isDirectory())result.push(...await filesUnder(p));else if(entry.isFile()&&entry.name.endsWith('.jsonl'))result.push(p);}return result;}

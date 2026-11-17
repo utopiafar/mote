@@ -1,7 +1,8 @@
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import type {Context} from '@deepseek-ai/cordis';
 import type {FastifyInstance} from 'fastify';
-import type {Config} from '../config.js';
+import {connectorsConfigDomain,serverConfigDomain,type ConfigurationBootstrap} from '../config.js';
+import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
 import type {Store} from '../store.js';
@@ -38,7 +39,8 @@ export interface ConnectorsAssemblyDependencies {
   readonly sourcePipelines:SourcePipelineRuntime;
   readonly materialOrganizers:MaterialOrganizerRuntime;
   readonly processing:ProcessingRuntime;
-  readonly config:Config;
+  readonly bootstrap:ConfigurationBootstrap;
+  readonly configService:ConfigService;
   readonly validOwnerBearer:(authorization:string|undefined)=>boolean;
   readonly connections:Connections;
   readonly authorizationPlatform:AuthorizationPlatform;
@@ -49,17 +51,18 @@ export interface ConnectorsAssemblyDependencies {
 /** The connector registry over the live app instance — MCP transport, OAuth
  * callbacks, owner routes and sync — plus its close hook. */
 export async function assembleConnectors(dependencies:ConnectorsAssemblyDependencies){
-  const {app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config,validOwnerBearer,connections,additionalManifests=[]}=dependencies;
+  const {app,resources,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,bootstrap,configService,validOwnerBearer,connections,additionalManifests=[]}=dependencies;
   const ownerAuthorization=(header:string|undefined)=>{if(validOwnerBearer(header))return true;const c=connections.authenticate(header);return !!c&&connections.isOwner(c);};
-  dependencies.authorizationPlatform.mcpOAuthRoutes(app,{directory:config.connectors?.directory||join(config.dataDir,'connectors'),publicUrl:config.configuration?.publicUrl??undefined});
+  const server=configService.current(serverConfigDomain),settings=configService.current(connectorsConfigDomain),connectorsSettings={...settings,directory:settings.directory?resolve(bootstrap.baseDir,settings.directory):join(bootstrap.dataDir,'connectors')};
+  dependencies.authorizationPlatform.mcpOAuthRoutes(app,{directory:connectorsSettings.directory,publicUrl:server.publicUrl||undefined});
   // Attached before Fastify listen: one host-owned table serves every installed
   // connector and selects the activation that registered each route/callback.
   const dispatcher=createDynamicHttpDispatcher({
     authorize:request=>ownerAuthorization(request.headers.authorization),
     mapError:error=>error instanceof ConnectorError?{status:error.statusCode,error:error.code}:error instanceof ZodError?{status:400,error:'connector_input_invalid'}:undefined,
   });
-  const connectorConfig={...config,publicUrl:config.configuration?.publicUrl??undefined};
-  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,config.connectors,resource)},dependencies.pluginStorage,dependencies.connectorTesting,additionalManifests,dispatcher);
+  const connectorConfig={dataDir:bootstrap.dataDir,token:bootstrap.owner.token,allowedOrigins:server.allowedOrigins,publicUrl:server.publicUrl||undefined,connectors:connectorsSettings};
+  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,configService.current(connectorsConfigDomain),resource)},dependencies.pluginStorage,dependencies.connectorTesting,additionalManifests,dispatcher);
   resources.defer(()=>connectors.close());
   return Object.freeze({connectors});
 }

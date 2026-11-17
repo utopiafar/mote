@@ -6,13 +6,13 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 
 const token='generated-material-reference-owner',headers={authorization:'Bearer '+token};
 async function fixture(t:TestContext,afterRead?:()=>Promise<void>,onClose?:()=>void){
  const directory=mkdtempSync(join(tmpdir(),'mote-material-reference-')),seen:QueryInput[]=[],readRefs:string[]=[];
- const config:Config={dataDir:directory,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const build=()=>buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{onClose?.();},query:async input=>{
   seen.push(input);let original:{id:string;capturedAt:string;appName?:string;ocrText:string}|undefined;
   if(input.anchorMaterialRef){

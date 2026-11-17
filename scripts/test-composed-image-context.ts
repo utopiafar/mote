@@ -15,7 +15,7 @@ import type {UsageReceipt} from '@mote/shared';
 import {startBridge} from '../packages/agent/dist/bridge.js';
 import {contextToolDefinitions} from '../packages/agent/dist/tool-contributions.js';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
@@ -79,10 +79,7 @@ globalThis.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?i
  // The Codex App Server uses its own stdio process; this runner never permits HTTP OCR or other fetches.
  if(url.hostname==='127.0.0.1')report.blockedLoopbackFetchAttempts++;else report.externalFetchAttempts++;
  throw Error('Composed-image harness forbids fetch: '+url.origin);};
-function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],
- model:live?'gpt-6-sol':'offline-composed-image',modelReasoningEffort:'max',modelProvider:live?'codex':'custom',modelProtocol:live?'codex-app-server':'openai-completions',modelBaseUrl:live?'':'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,
- embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:false,agentTraceEnabled:true,agentTimeoutMs:300000,
- codexBin:live?process.env.MOTE_CODEX_BIN:'/nonexistent-offline-composed-image-provider',codexHome:live?process.env.MOTE_CODEX_HOME:join(output,'unused-codex-home')};}
+function config(vault:string):ConfigurationPlatformOptions{return {path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:live?'gpt-6-sol':'offline-composed-image',reasoningEffort:'max',provider:live?'codex':'custom',protocol:live?'codex-app-server':'openai-completions',baseUrl:live?'':'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:live?process.env.MOTE_CODEX_BIN:'/nonexistent-offline-composed-image-provider',home:live?process.env.MOTE_CODEX_HOME:join(output,'unused-codex-home')}},diagnostics:{level:'warn',enabled:false,traceEnabled:true}}};}
 async function open(vault:string){assert.equal(node,undefined);currentVault=vault;
  node=await buildApp(config(vault),{backgroundWorker:false,...(live?{}:{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{report.stubModelCalls++;throw Error('Offline preflight must never call a model');}})})});
  bridgeToolNames.clear();for(const [name] of contextToolDefinitions({question:fixture.question,toolContributions:node.featureServices.archiveReader.contextTools?.()??[]}))bridgeToolNames.add(name);

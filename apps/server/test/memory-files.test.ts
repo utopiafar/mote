@@ -14,7 +14,7 @@ import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {memorySchema} from '../src/memory-schema.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ContextReader} from '@mote/agent';
 import {EvidenceReader} from '../src/evidence-reader.js';
 
@@ -104,7 +104,7 @@ test('source disappearance retains transcript evidence while a new predecessor r
 
 test('Memory API rejects raw source-item chunks while file evidence and deletion remain traceable',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-file-api-generated-'));
-  const config:Config={dataDir:directory,token:'synthetic-memory-file-api-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'synthetic-memory-file-api-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   let reader!:ContextReader;
   const node=await buildApp(config,{createModelAgent:async(_settings,value)=>{reader=value;return {configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})};}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -114,7 +114,7 @@ test('Memory API rejects raw source-item chunks while file evidence and deletion
     const id=randomUUID();ids.push(id);
     node.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,?,?,?,?)').run(id,first.artifactId,parent.id,index*3000,index*3000+1000,'合成转写片段 '+index,'{}');
   }
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   for(const payload of [{evidenceIds:[ids[0]],deviceId:'other'},{evidenceIds:[ids[0]],before:'2020-01-01T00:00:00Z'},{evidenceIds:[randomUUID()]}])assert.equal((await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload})).statusCode,409);
   const explicit=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[parent.id]}});
   assert.equal(explicit.statusCode,409,explicit.body);
@@ -129,13 +129,13 @@ test('Memory API rejects raw source-item chunks while file evidence and deletion
 
 test('full local indexes remain exact evidence, while manual raw Memory waits for Material admission',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-local-index-api-'));
- const config:Config={dataDir:directory,token:'generated-index-memory-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-index-memory-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})})});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  assert.equal(node.store.directory,directory);
  node.sources.register({id:'indexes',deviceId:'generated-device',name:'Generated indexes',kind:'local-files',platform:'macos',retention:'snapshot'});
  const text='Generated complete original evidence',descriptor={version:1,fileId:'generated-file',contentVersion:'a'.repeat(64),mode:'index',coverage:'full',parser:'utf8',status:'ready',totalCharacters:text.length,offset:0,length:text.length,allowRead:true};
  const full=await node.files.revision({sourceId:'indexes',item:{externalId:'full',revision:'v1',observedAt:new Date().toISOString(),title:'full.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:descriptor}},sizeBytes:100},()=>{});
- const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token,'accept-language':'en'},payload:{evidenceIds:[full.id]}});assert.equal(response.statusCode,409,response.body);
+ const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.privateCredential!.token,'accept-language':'en'},payload:{evidenceIds:[full.id]}});assert.equal(response.statusCode,409,response.body);
  const light=await node.files.revision({sourceId:'indexes',item:{externalId:'light',revision:'v1',observedAt:new Date().toISOString(),title:'light.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:{...descriptor,coverage:'lightweight',totalCharacters:500}}},sizeBytes:500},()=>{});
  assert.throws(()=>node.memoryPipeline.create({evidenceIds:[light.id]}),{statusCode:409});assert.throws(()=>node.memories.extract(fixtureMemoryResult(node.memories,result(light.id,text)),'fixture'),/Lightweight/);
  const saved=node.memories.extract(fixtureMemoryResult(node.memories,result(full.id,text)),'fixture').items[0];assert.equal(saved.evidence![0].fileIndex?.contentVersion,descriptor.contentVersion);assert.equal(saved.evidence![0].quote,text);
@@ -143,10 +143,10 @@ test('full local indexes remain exact evidence, while manual raw Memory waits fo
 
 test('manual Memory jobs honor the saved character budget without rewriting existing job ranges',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-manual-memory-budget-'));
- const config:Config={dataDir:directory,token:'generated-memory-budget-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-budget-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{throw Error('This structural test must not call a model');}})});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'};
+ const headers={authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'};
  async function budget(value:number){const settings=node.lifecycle.settings();settings.batchCharacters=value;const response=await node.app.inject({method:'PUT',url:'/api/memory-settings',headers,payload:{revision:node.configService.revision,settings}});assert.equal(response.statusCode,200,response.body);}
  async function create(){
   const id=randomUUID(),text='合成的完整笔记。'.repeat(75);

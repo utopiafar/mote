@@ -20,7 +20,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import type {QueryScope,WorkspaceRequest,WorkspaceView} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {materialId} from '../src/materials.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
@@ -93,7 +93,7 @@ const workbenchHeaders={authorization:'Bearer generated-workbench-owner'};
 const observedAt='2026-10-01T10:00:00Z';
 async function workbenchFixture(t:import('node:test').TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-workbench-'));
-  const config:Config={dataDir,token:'generated-workbench-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-workbench-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call');},close:async()=>{}}});
   await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   node.sources.register({id:'generated-workbench-a',name:'Generated workbench A',kind:'custom',deviceId:'generated-a',platform:'import'});

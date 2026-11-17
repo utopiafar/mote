@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('file CLI preview matches authenticated archive receipt and bytes above the 16 MiB shard boundary',async t=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-file-cli-'))),selected=join(root,'selected'),profile=join(root,'profile'),temporary=join(root,'temporary');
@@ -27,7 +27,7 @@ test('file CLI preview matches authenticated archive receipt and bytes above the
    }
   }finally{await handle.close();}
  }
- const token='generated-file-cli-owner',config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:MiB,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:'74'.repeat(32)};
+ const token='generated-file-cli-owner',config:ConfigurationPlatformOptions={path:(join(root,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'central'),maxExportBytes:MiB,contentEncryptionEnabled:true,dataKey:'74'.repeat(32)},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model authorized for generated CLI fixtures');},close:async()=>{}}});
  const requests:{url:string;authorization:string|undefined;version:string|string[]|undefined}[]=[];
  node.app.addHook('onRequest',async request=>{requests.push({url:request.url,authorization:request.headers.authorization,version:request.headers['x-mote-ingress-version']});});

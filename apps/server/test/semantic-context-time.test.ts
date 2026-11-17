@@ -11,7 +11,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {MemoryLifecycle,freezeSemanticContextTime,type LifecycleWindow} from '../src/memory-lifecycle.js';
 import {requestMemoryIntegration} from '../src/memory-integration.js';
 import {defaultMemoryIntegrationRecipe} from '../src/memory-integration-policy.js';
@@ -24,7 +24,7 @@ import {hostRun} from './fixtures/host-run.js';
 // Mechanical, independently generated text fixtures; all model calls are local stubs.
 const early='2001-01-02T03:04:05+08:00',later='2001-02-02T03:04:05+08:00',expiry='2001-03-01T00:00:00Z';
 const token='generated-semantic-clock-owner-token',headers={authorization:'Bearer '+token};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-stub',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-stub',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}});
 type Node=Awaited<ReturnType<typeof buildApp>>;
 const empty=(answer='Generated answer'):QueryResult=>({answer,citations:[],trace:[],runId:randomUUID()});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};

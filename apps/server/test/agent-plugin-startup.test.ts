@@ -13,7 +13,7 @@ import {AgentNotConfiguredError,type ContextReader,type QueryInput} from '@mote/
 import type {ModelSettings} from '@mote/shared/models';
 import {AgentRuntimeRegistry,type AgentRuntimeRegistryDependencies} from '../src/agent-runtime-registry.js';
 import {buildApp} from '../src/app.js';
-import {documentFromConfig,registerBuiltinDomains,type Config} from '../src/config.js';
+import {registerBuiltinDomains,type ConfigurationPlatformOptions} from '../src/config.js';
 import {ConfigService} from '../src/config-service.js';
 import {ConcurrencyGate} from '../src/concurrency.js';
 import {Store,StoreError} from '../src/store.js';
@@ -80,13 +80,14 @@ test('host shutdown cancels queued runtime work without waiting for an unrelated
   finally{release();await unrelated;gate.close();}
 });
 
-function profile(t:TestContext,overrides:Partial<Config>={}){
+function profile(t:TestContext,deployment:Partial<ModelSettings>={}){
   const root=mkdtempSync(join(tmpdir(),'mote-agent-startup-'));
-  const config:Config={dataDir:join(root,'data'),token:'generated-startup-owner-token',tokenPath:join(root,'owner.token'),host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
-  const configService=new ConfigService({path:join(root,'mote.yaml'),initialDocument:documentFromConfig(config),watch:false});registerBuiltinDomains(configService,config);
+  const config:ConfigurationPlatformOptions={path:(join(root,'data'))+'/mote.yaml',privateCredential:{token:'generated-startup-owner-token',tokenPath:join(root,'owner.token')},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+  Object.assign((config.initialDocument!.models as {deployment:object}).deployment,deployment);
+  const configService=new ConfigService({path:join(root,'mote.yaml'),initialDocument:config.initialDocument!,watch:false});registerBuiltinDomains(configService);
   const cleanup:Array<()=>unknown|Promise<unknown>>=[];
   t.after(async()=>{try{for(const close of cleanup)await close();}finally{await configService.close();rmSync(root,{recursive:true,force:true});}});
-  return {root,config,configService,own:(close:()=>unknown|Promise<unknown>)=>cleanup.unshift(close),headers:{authorization:`Bearer ${config.token}`}};
+  return {root,config,configService,own:(close:()=>unknown|Promise<unknown>)=>cleanup.unshift(close),headers:{authorization:`Bearer ${config.privateCredential!.token}`}};
 }
 
 test('normal buildApp rejects unauthenticated and unconfigured queries without publishing an empty success',async t=>{
@@ -100,9 +101,9 @@ test('normal buildApp rejects unauthenticated and unconfigured queries without p
 });
 
 test('runtime adapter startup failure rolls back buildApp resources and never publishes a running app',async t=>{
-  const f=profile(t,{model:settings.model,modelProvider:'custom',modelProtocol:'deepseek',modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey}),primary=Error('Generated private adapter startup failure');
+  const f=profile(t,{model:settings.model,provider:'custom',protocol:'deepseek',baseUrl:settings.baseUrl,apiKey:settings.apiKey}),primary=Error('Generated private adapter startup failure');
   await assert.rejects(buildApp(f.config,{configService:f.configService,backgroundWorker:false,createModelAgent:async()=>{throw primary;}}));
-  const reopened=new Store(f.config.dataDir);
+  const reopened=new Store(f.config.initialDocument!.storage.dataDir);
   try{assert.equal(reopened.stats().captures,0);if(reopened.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_turns'").get())assert.equal(reopened.db.prepare("SELECT count(*) n FROM conversation_turns WHERE json_extract(json,'$.result') IS NOT NULL").get()!.n,0);}
   finally{reopened.close();}
 });
@@ -126,7 +127,7 @@ test('selected A06 journey: owner HTTP query traverses default Host and real DSH
   });
   await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
   t.after(async()=>{provider.closeAllConnections();await new Promise<void>(resolve=>provider.close(()=>resolve()));});
-  const f=profile(t,{model:fixtureModel,modelProvider:'custom',modelProtocol:'deepseek',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}`,apiKey:settings.apiKey,modelRequestTimeoutMs:10000,agentTimeoutMs:20000});
+  const f=profile(t,{model:fixtureModel,provider:'custom',protocol:'deepseek',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}`,apiKey:settings.apiKey,modelRequestTimeoutMs:10000,agentTimeoutMs:20000});
   // No QueryAgent/factory override: use actual production build defaults.
   const node=await buildApp(f.config,{configService:f.configService,backgroundWorker:false});f.own(()=>node.app.close());
   await node.app.listen({host:'127.0.0.1',port:0});const url=`http://127.0.0.1:${(node.app.server.address() as AddressInfo).port}`;

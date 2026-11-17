@@ -52,7 +52,7 @@ export async function replayDataset(directory, { runDirectory, liveModel = false
         run = await mkdtemp(join(tmpdir(), 'mote-persona-run-'));
     const token = randomBytes(32).toString('hex'), vault = join(run, 'vault'), report = { startedAt: new Date().toISOString(), fixture: dataset.manifest.fixtureId, syntheticOnly: true, modelCallsEnabled: liveModel, importAnalysis: liveModel ? 'live-model' : 'generated-model-result-fixture', model: liveModel ? 'gpt-6.1-terra' : null, reasoningEffort: liveModel ? 'high' : null, serviceTier: liveModel ? 'default' : null, transport: 'running', semanticVerdict: 'not-tested', physicalDevicesTested: false, realCloudAccountsTested: false, asrTested: false, diarizationTested: false, captures: [], files: [], connectors: {}, checks: [], questions: [], notTested: ['native Mac/Android permissions and capture', 'real cloud authentication', 'ASR and speaker identity', 'file interpretation (originals retained; automatic processing disabled)', 'heavy E2E and scale', 'semantic verdict requires human review'] };
     const save = () => writeFile(join(run, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
-    const config = { dataDir: vault, token, tokenPath: join(run, 'owner-token'), host: '127.0.0.1', port: 0,  maxExportBytes: 50000000,  insightIntervalHours: 0, allowedOrigins: [], model: liveModel ? 'gpt-6.1-terra' : '', modelProvider: liveModel ? 'codex' : 'custom', modelProtocol: liveModel ? 'codex-app-server' : 'openai-completions', modelReasoningEffort: 'high', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', agentTimeoutMs: 300000, logLevel: 'warn', diagnosticsEnabled: true, agentTraceEnabled: liveModel, codexBin: process.env.MOTE_CODEX_BIN, codexHome: process.env.MOTE_CODEX_HOME };
+    const config = {path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(run, 'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:vault,maxExportBytes:50000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:liveModel ? 'gpt-6.1-terra' : '',provider:liveModel ? 'codex' : 'custom',protocol:liveModel ? 'codex-app-server' : 'openai-completions',reasoningEffort:'high',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:liveModel}}};
     const deps = { backgroundWorker: false, connectorTesting: { recordings: fixtureProviders(dataset) }, ...(!liveModel ? { prepareImport: fixtureImport, agent: { configured: false, close: async () => { }, query: async () => { throw Error('Offline replay must never invoke a model'); } } } : {}) };
     let node;
     const keys = new Map();
@@ -74,7 +74,7 @@ export async function replayDataset(directory, { runDirectory, liveModel = false
         return usage;
     }
     try {
-        await writeFile(config.tokenPath, token, { mode: 0o600, flag: 'wx' });
+        await writeFile(config.privateCredential.tokenPath, token, { mode: 0o600, flag: 'wx' });
         await save();
         await start();
         const denial = await node.app.inject({ method: 'POST', url: '/api/notes', payload: dataset.events[0].body });
@@ -288,7 +288,7 @@ export async function replayDataset(directory, { runDirectory, liveModel = false
         await save();
         if (serve) {
             const url = await node.app.listen({ host: '127.0.0.1', port: 0 });
-            await writeFile(join(run, 'connection.json'), JSON.stringify({ url, tokenFile: config.tokenPath }, null, 2), { mode: 0o600 });
+            await writeFile(join(run, 'connection.json'), JSON.stringify({ url, tokenFile: config.privateCredential.tokenPath }, null, 2), { mode: 0o600 });
             return { run, report, node, url, close: () => node.app.close() };
         }
         await node.app.close();

@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import {ProviderFailure,type AttributionContext} from '@mote/shared';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {ImageInterpretationError} from '../src/image-recipes.js';
 import {imageOutput} from '../src/evidence-image.js';
@@ -56,9 +56,9 @@ async function fixture(t:import('node:test').TestContext,options:{authorize?:boo
   // checks pixel inspection; the actual product consumer then publishes it.
   return {answer:JSON.stringify(result),citations:[],trace:[],runId:randomUUID()};
  }});
- const config:Config={dataDir:directory,token:'generated-local-image-contract-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-configured-image',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.example.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-local-image-contract-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-configured-image',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.example.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});
- const appNode=node,headers={authorization:`Bearer ${config.token}`};
+ const appNode=node,headers={authorization:`Bearer ${config.privateCredential!.token}`};
  const models=appNode.modelSettings.view();
  await appNode.modelSettings.updateDefaults({revision:models.revision,defaults:models.defaults,defaultModels:{file:'generated-configured-image',memory:'generated-memory-model',chat:'generated-chat-model'}});
  await appNode.processing.saveImageDefault({endpoint:new URL('/ocr',worker.url).toString()});

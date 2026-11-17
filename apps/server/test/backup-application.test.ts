@@ -9,7 +9,7 @@ import {serializeConfigDocument,readConfigDocument} from '@mote/shared/config-fi
 import {initialize,profilePaths,loadProfile,withProfileLock,backupProfile,restoreProfile,verifiedBackup} from '../../../scripts/profile-lib.mjs';
 import {cli,freePort,note} from '../../../scripts/profile-fixtures.mjs';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {applicationFixture,waitFor} from './fixtures/backup-application.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
 import {pluginMemoryBackup} from '../../../scripts/plugin-memory-backup.mjs';
@@ -19,7 +19,7 @@ async function restoredFixture(f:Awaited<ReturnType<typeof applicationFixture>>,
  const document=readConfigDocument(paths.configFile).savedDocument;document.storage.dataKey=key??source.env.MOTE_DATA_KEY;document.diagnostics.level='silent';
  if(assembly){document.models=source.document.models;document.dsh=source.document.dsh;}
  await writeFile(paths.configFile,serializeConfigDocument(document));const p=await loadProfile(paths);await withProfileLock(paths,()=>restoreProfile(p,backup));
- const node=await buildApp(configFromFile(paths.configFile),{backgroundWorker:false});f.addCleanup(()=>node.app.close());return {node,paths,p};
+ const node=await buildApp(configurationFromFile(paths.configFile),{backgroundWorker:false});f.addCleanup(()=>node.app.close());return {node,paths,p};
 }
 test('profile backup restores sealed original APP history, accepted state, original bytes and published Materials before an explicit owner resume',{timeout:120000},async t=>{
  const f=await applicationFixture(t);const first=await f.interact('GENERATED-BACKUP-APP-FIRST');assert.equal(first.status,'completed',JSON.stringify(first));assert.equal(f.requests.length,1);
@@ -36,7 +36,7 @@ test('profile backup restores sealed original APP history, accepted state, origi
  const targetPaths=profilePaths('test',join(f.root,'restored-profiles'));await initialize(targetPaths,{runtime:'native',port:String(await freePort())});
  const document=readConfigDocument(targetPaths.configFile).savedDocument;document.storage.dataKey=p.env.MOTE_DATA_KEY;await writeFile(targetPaths.configFile,serializeConfigDocument(document));let target=await loadProfile(targetPaths);
  await withProfileLock(targetPaths,()=>restoreProfile(target,backup));
- let restored=await buildApp(configFromFile(targetPaths.configFile),{backgroundWorker:false});f.addCleanup(async()=>{await restored.app.close();});
+ let restored=await buildApp(configurationFromFile(targetPaths.configFile),{backgroundWorker:false});f.addCleanup(async()=>{await restored.app.close();});
  assert.equal(f.requests.length,1,'restoration and startup do not run old APP input');
  assert.deepEqual(restored.archivedFiles.read(fileId.id),original);assert.deepEqual(restored.store.db.prepare("SELECT key,json,revision FROM plugin_instance_state WHERE key LIKE 'dsh-app/%/control'").all().map(row=>({...row})),before);
  const savedRead=await restored.app.inject({url:'/api/notes/'+saved.id,headers:{authorization:'Bearer '+target.env.MOTE_TOKEN}});assert.equal(savedRead.statusCode,200,savedRead.body);assert.equal(savedRead.json().ocrText,saved.text);
@@ -44,7 +44,7 @@ test('profile backup restores sealed original APP history, accepted state, origi
  // A new owner explicitly restores model/APP configuration; backup itself does
  // not import a token, model key or native capability grant into the new YAML.
  assert.equal(readConfigDocument(targetPaths.configFile).savedDocument.dsh?.profiles?.length??0,0);
- const explicit=readConfigDocument(targetPaths.configFile).savedDocument;explicit.models=p.document.models;explicit.dsh=p.document.dsh;await restored.app.close();await writeFile(targetPaths.configFile,serializeConfigDocument(explicit));restored=await buildApp(configFromFile(targetPaths.configFile),{backgroundWorker:false});
+ const explicit=readConfigDocument(targetPaths.configFile).savedDocument;explicit.models=p.document.models;explicit.dsh=p.document.dsh;await restored.app.close();await writeFile(targetPaths.configFile,serializeConfigDocument(explicit));restored=await buildApp(configurationFromFile(targetPaths.configFile),{backgroundWorker:false});
  const response=await restored.app.inject({method:'POST',url:'/api/conversations/messages',headers:{authorization:'Bearer '+target.env.MOTE_TOKEN},payload:{conversationId:f.conversationId,clientRequestId:randomUUID(),question:'GENERATED-BACKUP-APP-EXPLICIT-RESUME',modelProfileId:f.modelProfileId,scope:{kind:'all'}}});assert.equal(response.statusCode,202,response.body);
  let final:any;await waitFor(async()=>{final=(await restored.app.inject({url:'/api/conversations/'+f.conversationId+'/messages/'+response.json().id,headers:{authorization:'Bearer '+target.env.MOTE_TOKEN}})).json();return ['completed','failed','cancelled'].includes(final.status);},'restored explicit APP interaction');assert.equal(final.status,'completed',JSON.stringify(final));assert.equal(f.requests.length,2);assert.match(JSON.stringify(f.requests[1]),/GENERATED-BACKUP-APP-FIRST/);
 });

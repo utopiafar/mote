@@ -6,14 +6,14 @@ import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const owner='generated-first-data-owner';
 const headers={authorization:'Bearer '+owner,'x-mote-ingress-version':'2'};
 const old='2026-09-01T10:00:00.000Z';
 async function fixture(t:TestContext){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-first-device-data-'));
- const config:Config={dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:owner,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const start=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('First data does not require a model');},close:async()=>{}}});
  let node=await start();
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});

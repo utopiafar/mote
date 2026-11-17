@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {AssistantCardPublication} from '../src/assistant-cards.js';
 
 const all:QueryScope={kind:'all'};
@@ -15,10 +15,10 @@ const options={backgroundWorker:false,agent:{configured:false,query:async()=>{th
 async function fixture(t:import('node:test').TestContext,at='2026-11-13T13:50:00.000Z'){
  t.mock.timers.enable({apis:['Date'],now:new Date(at)});
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-notification-'));
- const config:Config={dataDir:directory,token:'generated-notification-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-notification-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  let node=await buildApp(config,options);
  t.after(async()=>{t.mock.timers.reset();await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const scopeQuery=(scope:QueryScope=all)=>new URLSearchParams({scope:JSON.stringify(scope)});
  const notifications=async(scope:QueryScope=all)=>{
   const response=await node.app.inject({url:'/api/assistant-notifications?'+scopeQuery(scope),headers});assert.equal(response.statusCode,200,response.body);return response.json().items as {id:string;revision:number;title:string;reason:string;eligibleAt:string;expiresAt:string}[];

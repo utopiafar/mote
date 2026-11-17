@@ -5,12 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ImportPreparation} from '../src/imports.js';
 
 for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const)test(`owner import retains model authority on ${scenario} without background approval`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-owner-authority-'));
- const config:Config={dataDir:directory,token:'generated-import-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-import-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-key',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let node:Awaited<ReturnType<typeof buildApp>>,calls=0;
  const dependencies={backgroundWorker:false,prepareImport:async(input:ImportPreparation)=>{
   calls++;
@@ -25,7 +25,7 @@ for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const
  }};
  node=await buildApp(config,dependencies);
  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const payload={instruction:'Generated owner context',files:[{name:'generated.custom',dataBase64:Buffer.from('Generated original').toString('base64')}]};
  const denied=await node.app.inject({method:'POST',url:'/api/imports',payload});assert.equal(denied.statusCode,401);
  let id:string;
@@ -56,7 +56,7 @@ for(const scenario of ['initial','retry-after-restart','unbound-retry'] as const
 
 test('an explicitly retried import reports queued while another import is using the worker',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-import-retry-queue-'));
- const config:Config={dataDir:directory,token:'generated-import-queue-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-import-queue-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let entered!:()=>void,release!:()=>void,failed=false;const blockerStarted=new Promise<void>(resolve=>entered=resolve),blocker=new Promise<void>(resolve=>release=resolve);
  const node=await buildApp(config,{backgroundWorker:false,prepareImport:async(input:ImportPreparation)=>{
   const source=readFileSync(input.inputPaths[0],'utf8');
@@ -65,7 +65,7 @@ test('an explicitly retried import reports queued while another import is using 
   writeFileSync(join(input.workspace,'records.jsonl'),JSON.stringify({item:{externalId:source,revision:'1',observedAt:'2026-01-01T00:00:00Z',kind:'file',layer:'original',text:source},evidencePaths:[input.inputPaths[0]],attachments:[]})+'\n');
   return {summary:'Generated preview'};
  }});await node.app.ready();t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const create=async(text:string)=>{const response=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from(text).toString('base64')}]}});assert.equal(response.statusCode,202);return response.json().id as string;};
  const target=await create('generated-target');await node.importServices.importTasks.get(target);assert.equal(node.imports.get(target).status,'failed');
  const occupying=await create('generated-blocker');await blockerStarted;

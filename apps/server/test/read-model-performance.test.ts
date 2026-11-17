@@ -61,14 +61,14 @@ test('semantic memory input is bounded to selected spans, with original exact-qu
  store.delete(record.id);assert.equal(memories.page({includeStale:true}).items.length,0);
 });
 test('query embedding has a short deadline and lexical evidence remains usable',async t=>{
- const store=fixture(t),record=note('Generated retrieval phrase');await store.ingest(record);const indexer=new Indexer(store,{embeddingModel:'fixture',embeddingBaseUrl:'http://127.0.0.1:1',embeddingApiKey:''});t.after(()=>indexer.close());
+ const store=fixture(t),record=note('Generated retrieval phrase');await store.ingest(record);const indexer=new Indexer(store,{model:'fixture',baseUrl:'http://127.0.0.1:1',apiKey:''});t.after(()=>indexer.close());
  let budget=0;indexer.embed=async(_text,timeout)=>{budget=timeout!;throw Error('generated timeout');};
  const result=await indexer.search({query:'retrieval'});assert.equal(budget,1200);assert.equal(result[0].id,record.id);assert.equal(result.retrieval.degraded,true);
 });
 test('interactive admission stays available while the background agent lane is saturated',async t=>{
  const {buildApp}=await import('../src/app.js');const dir=mkdtempSync(join(tmpdir(),'mote-interactive-lane-'));
  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
- const node=await buildApp({dataDir:dir,token:'synthetic-interactive-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1},{agent:{configured:true,close:async()=>{},query:async input=>{if(input.executionLane!=='interactive')await held;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}}});
+ const node=await buildApp({path:(dir)+'/mote.yaml',privateCredential:{token:'synthetic-interactive-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,agentConcurrency:1},models:{deployment:{model:'fixture',baseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{agent:{configured:true,close:async()=>{},query:async input=>{if(input.executionLane!=='interactive')await held;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID()};}}});
  t.after(async()=>{release();await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const {app,agent}=node;
  const background=withFixtureOwnerModelWork(node,()=>agent.query({question:'Generated background work'}));await new Promise(r=>setImmediate(r));
@@ -83,7 +83,7 @@ test('conversation revision prevents stale append after same-millisecond evidenc
 });
 test('semantic boundary grants actual bounded lengths for more than eight representatives',async t=>{
  const {buildApp}=await import('../src/app.js');const store=fixture(t);let ranges:{id:string;offset:number;length:number}[]=[];
- const runtime=await buildApp({dataDir:store.directory,token:'synthetic-semantic-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{store,agent:{configured:true,close:async()=>{},query:async input=>{ranges=input.evidenceRanges??[];return {answer:JSON.stringify({summary:'Generated ten short observations',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};}}});
+ const runtime=await buildApp({path:(store.directory)+'/mote.yaml',privateCredential:{token:'synthetic-semantic-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:store.directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',baseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{store,agent:{configured:true,close:async()=>{},query:async input=>{ranges=input.evidenceRanges??[];return {answer:JSON.stringify({summary:'Generated ten short observations',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};}}});
  try{
  await authorizeFixtureModels(runtime);
  const records=Array.from({length:10},(_,i)=>note('Generated short observation '+i));await store.ingestBatch(records);

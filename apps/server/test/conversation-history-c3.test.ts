@@ -6,11 +6,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
 const token='generated-c3-owner',headers={authorization:'Bearer '+token};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const answer=(text:string,ids:string[]=[])=>({answer:text,citations:ids.map(id=>({id,capturedAt:'2026-10-01T00:00:00Z',appName:'Generated',excerpt:'Generated excerpt'})),trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids}});
 const longAnswer='GENERATED_VISIBLE answer '+'.'.repeat(3999-'GENERATED_VISIBLE answer '.length)+'😀'+'.'.repeat(1002);
 

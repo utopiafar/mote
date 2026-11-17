@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {agentRuntimeReadiness,agentRuntimeStatusReceiptSchema} from '@mote/shared/agent-runtime-status';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {parseAgentRuntimeStatus} from '../../web/src/agent-runtime-status.js';
 import {readAgentRuntimeStatus} from '../../desktop/src/agent-runtime-status.js';
@@ -14,11 +14,7 @@ import {ConnectionError} from '../../desktop/src/connection.js';
 
 const owner='generated-runtime-status-owner';
 const secret='generated-runtime-status-secret-do-not-echo';
-const config=(dataDir:string):Config=>({dataDir,token:owner,tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:'generated-runtime-model',modelBaseUrl:'https://fixture.invalid/v1',apiKey:secret,modelProvider:'custom',
-  modelProtocol:'openai-completions',modelReasoningEffort:'auto',allowUnauthenticatedLocal:false,embeddingModel:'',
-  embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:owner,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-runtime-model',baseUrl:'https://fixture.invalid/v1',apiKey:secret,provider:'custom',protocol:'openai-completions',reasoningEffort:'auto',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}});
 const factory:ModelAgentFactory=async settings=>({configured:true,
   query:async()=>({answer:settings.model,citations:[],trace:[],runId:'generated-runtime-status-run'}),
   close:async()=>{}});
@@ -60,7 +56,7 @@ test('real configuration/status HTTP feeds the Web and Mac production parsers; a
 
 test('real unconfigured HTTP output stays readable without faking ready',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-runtime-unconfigured-'));
-  const node=await buildApp({...config(directory),model:'',modelBaseUrl:'',apiKey:''},{backgroundWorker:false});
+  const node=await buildApp(((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),model:'',baseUrl:'',apiKey:''}}}}))(config(directory)),{backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   const origin=await node.app.listen({host:'127.0.0.1',port:0});
   const response=await fetch(origin+'/api/agent-runtime-settings',{headers:{authorization:'Bearer '+owner}});

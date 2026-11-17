@@ -50,7 +50,7 @@ test('activity ingestion rejects any hidden content before persistence',async t=
 });
 
 test('activity has no embedding work while content indexes normally; query filters remain exact and paginated',async t=>{
-  const store=fixture(t,true),indexer=new Indexer(store,{embeddingBaseUrl:'https://synthetic.invalid/v1',embeddingApiKey:'',embeddingModel:'synthetic'});t.after(()=>indexer.close());
+  const store=fixture(t,true),indexer=new Indexer(store,{baseUrl:'https://synthetic.invalid/v1',apiKey:'',model:'synthetic'});t.after(()=>indexer.close());
   const ids:string[]=[];for(let i=0;i<3;i++){const value=event('activity',{capturedAt:at(15+i),metadata});ids.push(value.id);await store.ingest(value);}
   const content=event('screen',{appId:'synthetic.other',capturedAt:at(20)}),legacy=event('screen',{privacy:{excluded:false,redacted:false,mode:'none'}});await store.ingest(content);await store.ingest(legacy);
   const calls:string[]=[];t.mock.method(globalThis,'fetch',async(_url:unknown,input:RequestInit)=>{calls.push(JSON.parse(String(input.body)).input);return new Response(JSON.stringify({data:[{embedding:[1,0]}]}),{status:200});});

@@ -5,11 +5,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 test('Memory jobs paginate the whole queue with a stable tie-breaker and bounded summaries',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-page-')),token='generated-pagination-token';
-  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://generated.invalid',apiKey:'generated',embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',allowUnauthenticatedLocal:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',baseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{agent:{configured:true,close:async()=>{},query:async()=>{throw Error('This fixture must not call a model');}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const evidenceId=randomUUID();

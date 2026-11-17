@@ -8,16 +8,11 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
 
 const token='generated-dsh-receipt-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string,baseUrl:string):Config=>({
-  dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-  insightIntervalHours:0,allowedOrigins:[],model:'generated-dsh-model',modelProvider:'custom',
-  modelProtocol:'deepseek',modelBaseUrl:baseUrl,apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,
-  embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',agentTimeoutMs:20000,
-});
+const config=(dataDir:string,baseUrl:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-dsh-model',provider:'custom',protocol:'deepseek',baseUrl:baseUrl,apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,agentTimeoutMs:20000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}});
 
 async function until<T>(read:()=>T|undefined,label:string,timeoutMs=20000):Promise<T>{
   const deadline=Date.now()+timeoutMs;

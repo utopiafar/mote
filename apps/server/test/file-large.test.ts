@@ -12,7 +12,7 @@ import React from 'react';
 import {FILE_PART_BYTES,FILE_PART_RECEIPTS,filePartReceipts,type FilePartPage,type FileRevision} from '@mote/shared';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {SourceSync} from '../../desktop/src/source-sync.js';
 import {spoolOriginal} from '../../desktop/src/original-spool.js';
 import type {ScannedItem,SourceDefinition,SourceRequest} from '../../desktop/src/source-types.js';
@@ -27,7 +27,7 @@ async function digest(parts:AsyncIterable<Uint8Array>|Iterable<Uint8Array>){cons
 async function fixture(t:TestContext){
  const directory=await realpath(await mkdtemp(join(tmpdir(),'mote-large-original-'))),token='generated-large-original-owner',source:SourceDefinition={id:'generated-large-source',name:'Generated large source',kind:'local-files',deviceId:'generated-large-device',platform:'macos',retention:'archive',enabled:true};let data=join(directory,'data'),active=false,partZero=0,modelCalls=0;
  const config=join(directory,'mote.yaml');let node:Awaited<ReturnType<typeof buildApp>>,origin='';
- const start=async()=>{await writeFile(config,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:data},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});node=await buildApp(configFromFile(config),{backgroundWorker:false,agent:{configured:false,async query(){modelCalls++;throw Error('No model in large original fixture');},async close(){}}});node.app.addHook('onRequest',async req=>{if(req.method==='PUT'&&req.url.startsWith('/api/file-sync/v1/uploads/')&&req.url.endsWith('/parts/0'))partZero++;});origin=await node.app.listen({host:'127.0.0.1',port:0});active=true;};await start();
+ const start=async()=>{await writeFile(config,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:data},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});node=await buildApp(configurationFromFile(config),{backgroundWorker:false,agent:{configured:false,async query(){modelCalls++;throw Error('No model in large original fixture');},async close(){}}});node.app.addHook('onRequest',async req=>{if(req.method==='PUT'&&req.url.startsWith('/api/file-sync/v1/uploads/')&&req.url.endsWith('/parts/0'))partZero++;});origin=await node.app.listen({host:'127.0.0.1',port:0});active=true;};await start();
  const stop=async()=>{if(active){active=false;await node.app.close();}};t.after(async()=>{await stop();await rm(directory,{recursive:true,force:true});});
  const owner={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
  const raw=(path:string,init:RequestInit={},headers:Record<string,string>=owner)=>fetch(origin+path,{...init,headers:{...headers,...Object.fromEntries(new Headers(init.headers))}});

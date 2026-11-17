@@ -13,7 +13,7 @@ import {MemoryProviderError} from '../src/memory-provider-contract.js';
 import {retainFailureContext} from '../src/execution-failures.js';
 import {fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()});
 async function fixture(t:any){const directory=mkdtempSync(join(tmpdir(),'mote-recovery-policy-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});const record=await sources.upsert('generated',{externalId:'a',revision:'1',text:'Generated original that must retain its exact scope.',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original'});t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return {directory,store,memories,record};}
@@ -48,9 +48,9 @@ for(const phase of ['extract','review'] as const)test(`a terminal generic ${phas
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });
 test('HTTP retry rejects cancelled work during admission instead of swallowing rejection behind 202',async t=>{
- const dir=mkdtempSync(join(tmpdir(),'mote-retry-http-'));const config:Config={dataDir:dir,token:'generated-retry-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const dir=mkdtempSync(join(tmpdir(),'mote-retry-http-'));const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:'generated-retry-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>empty()}});t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
  node.sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});const record=await node.sources.upsert('generated',{externalId:'a',revision:'1',text:'Generated original.',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original'});
  await node.materialOrganizer.tick();const material=node.materials.list({sourceId:'generated'}).items[0];const job=node.memoryPipeline.create({evidenceIds:node.materials.evidenceIds(material.ref)});node.memoryPipeline.cancel(job.id);
- const response=await node.app.inject({method:'POST',url:'/api/memory-jobs/'+job.id+'/retry',headers:{authorization:'Bearer '+config.token}});assert.equal(response.statusCode,409,response.body);assert.equal(response.json().error,'conflict');assert.equal(node.memoryPipeline.get(job.id).status,'cancelled');
+ const response=await node.app.inject({method:'POST',url:'/api/memory-jobs/'+job.id+'/retry',headers:{authorization:'Bearer '+config.privateCredential!.token}});assert.equal(response.statusCode,409,response.body);assert.equal(response.json().error,'conflict');assert.equal(node.memoryPipeline.get(job.id).status,'cancelled');
 });

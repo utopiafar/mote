@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const SNAPSHOT_FILE=fileURLToPath(new URL('./fixtures/schema-fingerprint.json',import.meta.url));
 // Only additive changes or a deliberate backend_epoch reset may regenerate it:
@@ -174,13 +174,8 @@ export function updateSchemaSnapshot(path:string,previous:SchemaSnapshot|undefin
   renameSync(temporary,path);
 }
 
-function fixtureConfig(directory:string):Config{
-  return {
-    dataDir:directory,token:'generated-schema-fingerprint-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-    model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',
-    embeddingApiKey:'',diagnosticsEnabled:false,
-  };
+function fixtureConfig(directory:string):ConfigurationPlatformOptions{
+  return {path:(directory)+'/mote.yaml',privateCredential:{token:'generated-schema-fingerprint-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
 }
 
 function generatedSnapshot(backend_epoch:string,objects:SchemaObjectRow[]):SchemaSnapshot{

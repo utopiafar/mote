@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import {strToU8,zipSync} from 'fflate';
 import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {buildApp} from '../../src/app.js';
-import {configFromFile} from '../../src/config.js';
+import {configurationFromFile} from '../../src/config.js';
 import type {PluginManifest,PluginReleaseTransport} from '../../src/plugin-release.js';
 import {sha256} from '../../src/store.js';
 import {writeMessagesResponse} from '../../../../scripts/fixtures/messages-provider.js';
@@ -55,7 +55,7 @@ export async function applicationFixture(t:TestContext,options:{hook?:string|((r
   const initial=readConfigDocument(path).savedDocument;initial.server.token=owner;initial.storage.contentEncryptionEnabled=true;initial.storage.dataKey='57'.repeat(32);initial.diagnostics.level='silent';initial.execution.insightIntervalHours=0;initial.models={deployment:{provider:'deepseek',protocol:'deepseek',baseUrl:'http://127.0.0.1:'+(model.address() as {port:number}).port,model:'generated-native-model',apiKey:'generated-unused',maxTokens:1024,modelRequestTimeoutMs:10000,agentTimeoutMs:20000}};await writeFile(path,serializeConfigDocument(initial));
   let node:Awaited<ReturnType<typeof buildApp>>|undefined;let origin='';
   const api=async(input:any)=>{const response=await fetch(origin+input.url,{method:input.method??'GET',headers:{...input.headers,...(input.payload===undefined?{}:{'content-type':'application/json'})},...(input.payload===undefined?{}:{body:JSON.stringify(input.payload)})}),body=await response.text();return {statusCode:response.status,body,json:()=>JSON.parse(body)};};
-  const open=async()=>{node=await buildApp(configFromFile(path),{backgroundWorker:false});Object.defineProperty(node.pluginCenter.releases,'transport',{value:release.transport});origin=await node.app.listen({host:'127.0.0.1',port:initial.server.port});return node;};
+  const open=async()=>{node=await buildApp(configurationFromFile(path),{backgroundWorker:false});Object.defineProperty(node.pluginCenter.releases,'transport',{value:release.transport});origin=await node.app.listen({host:'127.0.0.1',port:initial.server.port});return node;};
   const restart=async()=>{await node?.app.close();return open();};const cleanups:Array<()=>Promise<void>|void>=[];
   t.after(async()=>{for(const close of [...cleanups].reverse())await close();await node?.app.close();const p=await loadProfile(paths);const managed=await nativeIdentity(p);if(managed.running&&managed.managed)await stopNative(p);model.closeAllConnections();await new Promise<void>(resolve=>model.close(()=>resolve()));await rm(root,{recursive:true,force:true});});
   await open();

@@ -6,11 +6,11 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 for(const transition of ['heartbeat','delete-before-followup','delete-during-query'] as const)test(`formal Ask aggregate lineage survives ${transition} with precise original and device scope`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-aggregate-query-')),token='generated-aggregate-owner',headers={authorization:'Bearer '+token},id=randomUUID();let node!:Awaited<ReturnType<typeof buildApp>>,calls=0,fixtureFailure:unknown;
- const cfg:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const cfg:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   calls++;const bridge=await startBridge(node.featureServices.archiveReader,input);
   try{

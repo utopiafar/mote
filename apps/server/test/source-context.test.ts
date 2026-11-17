@@ -16,7 +16,7 @@ import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {ContentStorageService} from '../src/content-storage.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const description='  Generated phone calls in which I am usually one participant.\nThe other speaker’s views are theirs; uncertain speakers stay unknown.  ';
 const item={externalId:'generated-call',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',title:'Generated conversation',text:'Generated speaker 1: I plan to walk. Generated speaker 2: I prefer staying in.'} as const;
@@ -162,9 +162,9 @@ test('private source descriptions follow encryption, restart and explicit bulk d
 });
 
 test('source context HTTP accepts paired owners, enforces version conflicts and rejects non-owner control-plane access',async t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-source-context-http-')),config:Config={dataDir:directory,token:'generated-owner-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'generated-static-read-mcp-token-123456789',mcpWriteEnabled:true,mcpWriteToken:'generated-static-write-mcp-token-123456789',mcpWriteSourceIds:['generated-api-source']}};
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-context-http-')),config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'generated-static-read-mcp-token-123456789',mcpWriteEnabled:true,mcpWriteToken:'generated-static-write-mcp-token-123456789',mcpWriteSourceIds:['generated-api-source']}}};
   const {app}=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model in generated fixtures');},close:async()=>{}}});t.after(async()=>{await app.close();rmSync(directory,{recursive:true,force:true});});
-  const owner={authorization:'Bearer '+config.token},invite=await app.inject({method:'POST',url:'/api/connections/invitations',headers:owner,payload:{serverUrl:'http://127.0.0.1:47832',label:'Generated Android'}});
+  const owner={authorization:'Bearer '+config.privateCredential!.token},invite=await app.inject({method:'POST',url:'/api/connections/invitations',headers:owner,payload:{serverUrl:'http://127.0.0.1:47832',label:'Generated Android'}});
   const redeem=await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invite.json().invitation.code,deviceId:'generated-android',deviceName:'Generated phone',platform:'android'}});assert.equal(redeem.statusCode,200);
   const paired={authorization:'Bearer '+redeem.json().token};assert.equal(redeem.json().scope,'owner');
   const source={id:'generated-api-source',name:'Generated calls',kind:'local-files',platform:'android',deviceId:'generated-android',retention:'archive'};

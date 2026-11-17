@@ -7,16 +7,14 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {captureSchema,uiPageText,type UiPageV3} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const token='generated-page-time-owner-token-000000';
 const headers={authorization:`Bearer ${token}`};
 const agent={configured:false,query:async()=>{throw Error('No live model in generated fixtures');},close:async()=>{}};
 async function fixture(t:TestContext){
   const dir=mkdtempSync(join(tmpdir(),'mote-page-time-'));
-  const config:Config={dataDir:dir,token,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,dataKey:'32'.repeat(32),
-    maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],
-    model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dir,dataKey:'32'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const result=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await result.app.close();rmSync(dir,{recursive:true,force:true});});
   return result;

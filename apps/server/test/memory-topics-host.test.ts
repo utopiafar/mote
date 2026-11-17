@@ -6,12 +6,12 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AgentResponseError,validateHostOutput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../src/automatic-topics.js';
 import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-planning.js';
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-topics-host-')),token='generated-topic-owner',headers={authorization:'Bearer '+token};
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let holdMemoryReview=false,interruptible=false,calls=0,checkTopicValidation=false,validatedTopics=0,hold:Promise<void>|undefined,entered:()=>void=()=>{},release:()=>void=()=>{};
  const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   if(input.question.startsWith(TOPIC_CLASSIFICATION_INSTRUCTION)){

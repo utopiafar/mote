@@ -13,7 +13,7 @@ import sharp from 'sharp';
 import {PluginHost} from '@mote/plugin-host';
 import {ProviderFailure,type Transcript,type UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {Store,sha256} from '../src/store.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
@@ -94,9 +94,8 @@ async function fixture(t:TestContext,options:{enabled?:boolean;authorize?:boolea
    return {answer:JSON.stringify(await response.json()),citations:[],trace:[],runId:randomUUID()};
   };return hooks?.runModel?hooks.runModel(run,input.signal):run();
  }});
- const config:Config={dataDir:join(directory,'data'),token:'generated-img03-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:options.cloudConfigured===false?'':'generated-file-cloud',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:cloudUrl+'/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent',llmConcurrency:1,
-  media:{modelDirectory:join(directory,'models'),python:'python3',workerToken:token,ocrEndpoint:localUrl+'/ocr',asrEndpoint:localUrl+'/transcribe',ocrPort:Number(new URL(localUrl).port),asrPort:Number(new URL(localUrl).port)}};
- node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node,headers={authorization:'Bearer '+config.token};
+ const config:ConfigurationPlatformOptions={path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:'generated-img03-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,llmConcurrency:1},models:{deployment:{model:options.cloudConfigured===false?'':'generated-file-cloud',provider:'custom',protocol:'openai-completions',baseUrl:cloudUrl+'/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'},media:{modelDirectory:join(directory,'models'),python:'python3',workerToken:token,ocrEndpoint:localUrl+'/ocr',asrEndpoint:localUrl+'/transcribe',ocrPort:Number(new URL(localUrl).port),asrPort:Number(new URL(localUrl).port)}}};
+ node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory});const central=node,headers={authorization:'Bearer '+config.privateCredential!.token};
  if(options.cloudConfigured!==false){const view=central.modelSettings.view();await central.modelSettings.updateDefaults({revision:view.revision,defaults:view.defaults,defaultModels:{file:'generated-file-cloud',memory:'generated-memory-cloud',chat:'generated-chat-cloud'}});}
  await central.processing.saveImageDefault({endpoint:cloudUrl+'/ocr'});
  central.processing.runtime.registry.get('image.http').process=async input=>{

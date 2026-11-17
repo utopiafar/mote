@@ -8,7 +8,7 @@ import {setTimeout as wait} from 'node:timers/promises';
 import type {QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult,type OperationDetail} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {SINGLE_PASS_PERSONAL_RECIPE} from '../src/memory-range-selection-policy.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
@@ -22,8 +22,8 @@ async function until(check:()=>boolean,tick?:()=>Promise<unknown>){const end=Dat
 // receipt claims, queue, shared Engine, private stages and publication are real.
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-memory-task-consumer-'));
- const config:Config={dataDir:directory,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-memory-consumer-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
- const headers={authorization:'Bearer '+config.token},calls:QueryInput[]=[],releases:Array<()=>void>=[],control:{hold?:(input:QueryInput)=>Promise<void>;failReview?:boolean}={};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-consumer-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',baseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
+ const headers={authorization:'Bearer '+config.privateCredential!.token},calls:QueryInput[]=[],releases:Array<()=>void>=[],control:{hold?:(input:QueryInput)=>Promise<void>;failReview?:boolean}={};
  let node:Awaited<ReturnType<typeof buildApp>>;
  const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured:true,async close(){},async query(input:QueryInput):Promise<QueryResult>{
   const topic=fixtureTopicResult(input);if(topic)return topic;

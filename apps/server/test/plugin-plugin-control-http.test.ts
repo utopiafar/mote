@@ -15,7 +15,7 @@ import {createPluginControlPlatform, pluginControlDeclaration, type TrustedPlugi
 import {registerPluginControlHttp} from '../src/plugins/plugin-control-http.js';
 import {featureInventory} from '../src/feature-inventory.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {packageStateLabel} from '../../../apps/web/src/plugins/plugin-center/plugin-center-presentation.js';
 
 const read = serviceContract<{read(): number}>('fixture.read', '1');
@@ -132,15 +132,10 @@ test('build control HTTP keeps owner auth, CAS and real restart/blocked facts', 
 
 test('feature inventory keeps the Web contract and content-hash revision', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'mote-c08-features-'));
-  const config: Config = {
-    dataDir: directory, token: 'generated-c08-owner', tokenPath: join(directory, 'owner-token'), host: '127.0.0.1', port: 0,
-    profile: 'test', tokenFromEnvironment: true,  maxExportBytes: 1024 * 1024,
-     insightIntervalHours: 0, allowedOrigins: [], model: '', modelBaseUrl: 'https://api.deepseek.com',
-    apiKey: '', allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-  };
+  const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:'generated-c08-owner',tokenPath:join(directory, 'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024 * 1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const node = await buildApp(config);
   t.after(async () => { await node.app.close(); rmSync(directory, {recursive: true, force: true}); });
-  const response = await node.app.inject({url: '/api/features', headers: {authorization: 'Bearer ' + config.token}});
+  const response = await node.app.inject({url: '/api/features', headers: {authorization: 'Bearer ' + config.privateCredential!.token}});
   assert.equal(response.statusCode, 200);
   const inventory = response.json();
   assert.equal(inventory.schemaVersion, 1);

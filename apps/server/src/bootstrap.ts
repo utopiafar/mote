@@ -2,11 +2,11 @@ import {randomUUID} from 'node:crypto';
 import {PluginHost,PluginHostError,type HostPluginContext,type HostScope} from '@mote/plugin-host';
 import {serviceContract,type ServiceBinding,type ServiceContract,type ServiceLease,type PluginLifecycle} from '@mote/plugin-api/contracts';
 import type {ManifestContribution,StateStore} from '@mote/plugin-api';
-import type {Config} from './config.js';
+import type {ConfigurationBootstrap} from './config.js';
 import type {ConfigService} from './config-service.js';
 import type {Store} from './store.js';
 import type {createVaultPlatformAssembly} from './plugins/vault-platform.js';
-import type {ConfigurationPlatform} from './plugins/configuration-platform.js';
+import type {ConfigurationPlatform,ConfigurationPlatformOptions} from './plugins/configuration-platform.js';
 import {c10IntegrationDeclaration} from './plugins/c10-integration.js';
 import {createObservabilityPlatformFactory,observabilityPlatformDeclaration,type ObservabilityPlatform,type ObservabilityPlatformOptions} from './plugins/observability-platform.js';
 import {defaultDistribution} from './distribution/default.js';
@@ -17,16 +17,17 @@ export type {CentralDomainPlugin} from './domain-activation.js';
 /** Assembly-private bridge for the existing product, not a plugin SDK service
  * bag. Storage and owner-authorization adapters stay raw foundation values; domain plugins acquire narrower services. */
 export interface FoundationValues {
-  configuration:{readonly config:Config;readonly service:ConfigService;readonly platform:ConfigurationPlatform};
+  configuration:{readonly bootstrap:ConfigurationBootstrap;readonly service:ConfigService;readonly platform:ConfigurationPlatform};
   storage:{readonly store:Store;readonly assembly:ReturnType<typeof createVaultPlatformAssembly>};
   authorization:{validOwnerBearer(authorization:string|undefined):boolean};
 }
 export interface FoundationInput {
-  readonly config:Config;
+  readonly configuration:ConfigurationPlatformOptions;
   readonly configService?:ConfigService;
   readonly store?:Store;
   readonly backgroundWorker?:boolean;
 }
+type ResolvedFoundationInput=FoundationInput & {readonly bootstrap:ConfigurationBootstrap;readonly configService:ConfigService};
 export type FoundationKind=keyof FoundationValues;
 export interface FoundationProvider<K extends FoundationKind=FoundationKind> {
   readonly kind:K;
@@ -35,7 +36,7 @@ export interface FoundationProvider<K extends FoundationKind=FoundationKind> {
   readonly contribution:ManifestContribution;
   /** Trusted build code owns acquired resources immediately through scope.defer.
    * Passing this registry is executable assembly authority, never user config. */
-  readonly create:(context:HostPluginContext,input:FoundationInput)=>Promise<FoundationValues[K]>|FoundationValues[K];
+  readonly create:(context:HostPluginContext,input:K extends 'configuration'?FoundationInput:ResolvedFoundationInput)=>Promise<FoundationValues[K]>|FoundationValues[K];
 }
 export interface CentralDistribution {
   readonly foundations:readonly ({[K in FoundationKind]:FoundationProvider<K>}[FoundationKind])[];
@@ -100,7 +101,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   const leases:{release():Promise<void>}[]=[],bindings:ServiceBinding[]=[];
   const domainActivations=createDomainActivations(host,plugins,features);
   const facts:{id:string;version:string}[]=[];
-  async function install<K extends FoundationKind>(kind:K,current:FoundationInput):Promise<ServiceLease<FoundationValues[K]>>{
+  async function install<K extends FoundationKind>(kind:K,current:K extends 'configuration'?FoundationInput:ResolvedFoundationInput):Promise<ServiceLease<FoundationValues[K]>>{
     const provider=selected.find(provider=>provider.kind===kind)! as FoundationProvider<K>;
     const contract:ServiceContract<FoundationValues[K]>=foundationContracts[kind];
     let binding:ServiceBinding|undefined;
@@ -116,7 +117,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   }
   try{
     const configuration=await install('configuration',input);
-    const current={...input,config:configuration.value.config,configService:configuration.value.service};
+    const current={...input,bootstrap:configuration.value.bootstrap,configService:configuration.value.service};
     const storage=await install('storage',current);
     const stateOwner=()=>{if(!storageOwner)throw new PluginHostError('dependency_unavailable');return storageOwner;};
     const pluginStorage=Object.freeze({
@@ -126,7 +127,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
     stateFor=scope=>pluginStorage.stateForScope(scope);
     const authorization=await install('authorization',current);
     let closing:Promise<void>|undefined,observability:{platform:ObservabilityPlatform;scope:HostScope}|undefined;
-    return Object.freeze({config:configuration.value.config,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,pluginStorage,
+    return Object.freeze({configurationBootstrap:configuration.value.bootstrap,configService:configuration.value.service,configurationPlatform:configuration.value.platform,store:storage.value.store,vault:storage.value.assembly,pluginStorage,
       authorization:authorization.value,features:Object.freeze(features),plugins:Object.freeze(plugins),host,get hostDependencies(){return Object.freeze([...facts]);},snapshot:()=>host.snapshot(),
       selectsPlugin:(id:string)=>plugins.some(plugin=>plugin.contribution.id===id),
       selectsFeature:(id:string)=>features.includes(id),

@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryAgent} from '../src/query-agent.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {defaultDistribution,storageProvider} from '../src/distribution/default.js';
@@ -19,11 +19,10 @@ const event={title:'Generated appointment',start:'2099-09-18T15:00:00Z',end:'209
 const inert:QueryAgent={configured:false,close:async()=>{},query:async()=>{throw Error('An unconfigured fixture cannot call a model');}};
 function fixture(t:TestContext,unblock=()=>{}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-actions-domain-')),nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
-  const config:Config={dataDir,token:'generated-actions-domain-owner',tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-    insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-actions-domain-owner',tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',baseUrl:'https://generated.invalid',apiKey:'generated',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   t.after(async()=>{unblock();try{for(const node of nodes.reverse())await node.app.close();}finally{rmSync(dataDir,{recursive:true,force:true});}});
   const build=async(options:Parameters<typeof buildApp>[1]={})=>{const node=await buildApp(config,{agent:inert,backgroundWorker:false,...options});nodes.push(node);return node;};
-  return {config,build,headers:{authorization:'Bearer '+config.token}};
+  return {config,build,headers:{authorization:'Bearer '+config.privateCredential!.token}};
 }
 async function http(node:Awaited<ReturnType<typeof buildApp>>,headers:{authorization:string}){
   const origin=await node.app.listen({host:'127.0.0.1',port:0});

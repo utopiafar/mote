@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {zstdDecompressSync} from 'node:zlib';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {estimateSerializedTokens} from '@mote/agent';
 import type {ModelDomain} from '@mote/shared/models';
 
@@ -46,8 +46,7 @@ async function fixture(t:TestContext,window=272000){
  writeFileSync(catalog,JSON.stringify({models:[{slug:'gpt-6.1-terra',display_name:'Generated Terra Fast catalog',description:'Generated fixture',model_messages:{instructions_template:'Generated fixture model instructions.'},default_reasoning_level:'medium',supported_reasoning_levels:[{effort:'medium',description:'Generated fixture'}],shell_type:'shell_command',visibility:'list',supported_in_api:true,priority:0,supports_reasoning_summary_parameter:true,support_verbosity:false,truncation_policy:{mode:'tokens',limit:10000},context_window:272000,effective_context_window_percent:95,experimental_supported_tools:[],service_tiers:[{id:'priority',name:'Fast',description:'Generated Fast capability'}],additional_speed_tiers:['fast']}]}),{mode:0o600});
  writeFileSync(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused-credential'}),{mode:0o600});
  writeFileSync(executable,`#!${process.execPath}\nimport {spawn} from 'node:child_process';\nconst args=process.argv.slice(2);const child=spawn(${JSON.stringify(fileURLToPath(new URL('../../../packages/agent/native/codex.mjs',import.meta.url)))},args[0]==='--mote-context-budget-version'?args:[...args,'-c',${JSON.stringify('openai_base_url='+JSON.stringify(origin+'/v1'))},'-c',${JSON.stringify('model_catalog_json='+JSON.stringify(catalog))}],{stdio:'inherit'});child.on('exit',code=>process.exit(code??1));process.on('SIGTERM',()=>child.kill('SIGTERM'));\n`,{mode:0o700});
- const config:Config={dataDir:join(root,'data'),token:'generated-budget-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],
-  modelProtocol:'codex-app-server',model:'gpt-6.1-terra',modelMaxTokens:65536,modelBaseUrl:'',apiKey:'',codexBin:executable,codexHome:root,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(join(root,'data'))+'/mote.yaml',privateCredential:{token:'generated-budget-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'data'),maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{protocol:'codex-app-server',model:'gpt-6.1-terra',maxTokens:65536,apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},codex:{executable:executable,home:root},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  node=await buildApp(config,{backgroundWorker:false});
  t.after(async()=>{await node.app.close();server.closeAllConnections();await new Promise<void>(done=>server.close(()=>done()));rmSync(root,{recursive:true,force:true});});
  await node.app.ready();
@@ -63,7 +62,7 @@ async function fixture(t:TestContext,window=272000){
   artifacts:[{key:'body',state:'ready',blockIds:Array.from({length:80},(_,i)=>'generated-'+i)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}},{expectedRevision:initial.revision});
  return {get node(){return node;},requests,material,originalId:id,setExpectedWindow(value:number){window=value;},holdCompletion(){let release!:()=>void;completionGate=new Promise<void>(done=>release=done);return release;},async restart(){
   const configuration={models:node.featureServices.configService.current<ModelDomain>('models'),conversations:node.featureServices.configService.current('conversations')};
-  await node.app.close();node=await buildApp({...config,configuration} as Config,{backgroundWorker:false});await node.app.ready();
+  await node.app.close();node=await buildApp({...config,configuration} as ConfigurationPlatformOptions,{backgroundWorker:false});await node.app.ready();
  }};
 }
 

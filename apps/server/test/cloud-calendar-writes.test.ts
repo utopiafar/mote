@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {OAuth2Client} from 'google-auth-library';
 import {centralCalendarPluginCapabilitySchema,type ActionConnectorChoice,type ActionGrant,type ActionPluginProvider,type PluginBuildView} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
@@ -212,12 +212,12 @@ function calendarGate(){
 }
 async function productionCalendarFixture(t:TestContext,kind:'google'|'lark'){
  const directory=await mkdtemp(join(tmpdir(),'mote-cloud-production-'+kind+'-'));
- const config:Config={dataDir:directory,token:ownerToken,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:ownerToken,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
  const state={write:false,account:'generated-lark-user',outcome:'ok' as 'ok'|'missing',requests:0,calls:[] as {calendarId:string;event:Record<string,unknown>;authorization?:string}[]};
  const gates:ReturnType<typeof calendarGate>[]=[],blocked:{preflight?:ReturnType<typeof calendarGate>;write?:ReturnType<typeof calendarGate>}={};
  const pause=async(phase:'preflight'|'write',signal?:AbortSignal)=>{const gate=blocked[phase];if(gate){delete blocked[phase];await gate.pause(signal);}};
  const google:GoogleDependencies={oauthFactory:()=>{
-  const oauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:config.connectors!.googleRedirectUri});
+  const oauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:config.initialDocument!.connectors!.googleRedirectUri});
   oauth.getToken=(async(options:{code?:string})=>{const write=options.code==='generated-write-code',identity=write?'write':options.code==='generated-other-read-code'?'other-read':'read';return {tokens:{refresh_token:'synthetic-'+identity+'-refresh-private',access_token:'synthetic-'+identity+'-access-private',scope:write?writeScope:readScope}};}) as any;
   oauth.getAccessToken=(async()=>{await pause('preflight');return {token:oauth.credentials.access_token};}) as any;return oauth;
  },fetch:(async(input,init)=>{

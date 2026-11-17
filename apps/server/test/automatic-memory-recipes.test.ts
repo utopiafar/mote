@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {memoryRecipeScope,MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
@@ -21,7 +21,7 @@ const body='I felt proud of finishing the prototype. For the prototype retry pat
 const understanding=(input:QueryInput)=>input.question.includes('FINAL UNIFIED RESPONSE CONTRACT:\nInterpret every supplied part');
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-auto-recipes-'));
-  const config:Config={dataKey:undefined,dataDir:directory,token:'generated-auto-recipes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-auto-recipes-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;invalidQuote?:boolean;deletionSame?:boolean;duringExtract?:(input:QueryInput)=>Promise<void>;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
   let node:Awaited<ReturnType<typeof buildApp>>;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
@@ -46,7 +46,7 @@ async function fixture(t:import('node:test').TestContext){
   }}};
   node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
   const configure=async(recipes:typeof personal[]|null,sourceId?:string)=>{
-    const r=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.token},payload:{recipes,...(sourceId?{sourceId}:{})}});
+    const r=await node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+config.privateCredential!.token},payload:{recipes,...(sourceId?{sourceId}:{})}});
     assert.equal(r.statusCode,200,r.body);return r.json();
   };
   const source=(id:string,isCoding=false)=>{node.sources.register({id,name:'Generated '+id,kind:isCoding?'coding-agent':'custom',deviceId:'fixture',platform:'import'});node.sourcePipelines.configure(id,{settleSeconds:0});};
@@ -62,7 +62,7 @@ async function fixture(t:import('node:test').TestContext){
 
 for(const selected of [personal,SINGLE_PASS_PERSONAL_RECIPE])for(const empty of [false,true])test(`owner selection runs ${selected.id} with ${empty?'empty':'selected'} output and truthful publication evidence`,async t=>{
   const f=await fixture(t);f.source('generated-selected');f.control.emptyResults=empty;
-  const catalog=await f.node.app.inject({url:'/api/memory-recipes',headers:{authorization:'Bearer '+f.config.token}});
+  const catalog=await f.node.app.inject({url:'/api/memory-recipes',headers:{authorization:'Bearer '+f.config.privateCredential!.token}});
   assert.equal(catalog.statusCode,200,catalog.body);
   assert.ok(catalog.json().items.some((item:any)=>item.id===SINGLE_PASS_PERSONAL_RECIPE.id&&item.review===null&&item.available));
   const view=await f.configure([selected],'generated-selected'),binding=view.items[0].binding;
@@ -135,7 +135,7 @@ for(const selected of [personal,SINGLE_PASS_PERSONAL_RECIPE])test(`${selected.id
 test('the selected direct recipe still checks applicable deletion intent without inventing semantic reviewer approval',async t=>{
   const f=await fixture(t);f.source('generated-deletion');await f.configure([SINGLE_PASS_PERSONAL_RECIPE],'generated-deletion');
   await f.add('generated-deletion','original');await f.publish();await f.run();
-  const first=f.jobs()[0],memory=f.node.memories.get(first.memoryIds[0]),headers={authorization:'Bearer '+f.config.token};
+  const first=f.jobs()[0],memory=f.node.memories.get(first.memoryIds[0]),headers={authorization:'Bearer '+f.config.privateCredential!.token};
   const removed=await f.node.app.inject({method:'DELETE',url:'/api/memories/'+memory.id,headers});assert.equal(removed.statusCode,200,removed.body);
   const before=f.calls.length,created=await f.node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:memory.evidenceIds,contextTime:'2026-09-02T00:00:00Z',recipes:[SINGLE_PASS_PERSONAL_RECIPE]}});
   assert.equal(created.statusCode,202,created.body);const job=await f.node.memoryPipeline.run(created.json().id);assert.equal(job.status,'completed');assert.equal(job.memoryIds.length,0);assert.equal(f.node.memories.list().length,0);
@@ -246,7 +246,7 @@ test('unavailable selected definitions preserve their pinned receipt and do not 
 
 test('automatic source jobs use the owner batch limit and keep existing ranges through setting changes and restart',async t=>{
   const f=await fixture(t);f.control.emptyResults=true;f.source('diary');f.source('coding-source',true);
-  const setBudget=async(batchCharacters:number)=>{const r=await f.node.app.inject({method:'PUT',url:'/api/memory-settings',headers:{authorization:'Bearer '+f.config.token},payload:{revision:f.node.configService.revision,settings:{...f.node.lifecycle.settings(),batchCharacters}}});assert.equal(r.statusCode,200,r.body);};
+  const setBudget=async(batchCharacters:number)=>{const r=await f.node.app.inject({method:'PUT',url:'/api/memory-settings',headers:{authorization:'Bearer '+f.config.privateCredential!.token},payload:{revision:f.node.configService.revision,settings:{...f.node.lifecycle.settings(),batchCharacters}}});assert.equal(r.statusCode,200,r.body);};
   await setBudget(257);const text='🍃'.repeat(700)+body;
   await f.add('diary','first',false,'1',text);await f.add('coding-source','first',true,'1',text);await f.publish();await f.queue();
   const jobs=f.jobs();assert.equal(jobs.length,1);assert.equal(jobs[0].automaticGrants?.length,2);
@@ -314,7 +314,7 @@ test('current defaults and source inheritance preserve denied receipts across re
   }
   await f.run();assert.equal(f.jobs().length,1);assert.equal(f.jobs()[0].automaticGrants?.length,2);assert.ok(f.jobs().every(job=>job.status==='completed'&&job.recipes![0].id===personal.id));
   for(const sourceId of [undefined,'diary']){
-    const response=await f.node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+f.config.token},payload:{recipes:[],...(sourceId?{sourceId}:{})}});
+    const response=await f.node.app.inject({method:'PUT',url:'/api/memory-recipe-settings',headers:{authorization:'Bearer '+f.config.privateCredential!.token},payload:{recipes:[],...(sourceId?{sourceId}:{})}});
     assert.equal(response.statusCode,400,'a new empty selection cannot disable continuous processing');
   }
 });

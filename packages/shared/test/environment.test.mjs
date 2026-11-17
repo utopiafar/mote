@@ -10,7 +10,7 @@ test('a selected YAML determines CLI connection settings and ordinary environmen
  const root=rootFor(t);mkdirSync(join(root,'dev'));writeFileSync(join(root,'.env'),'MOTE_TOKEN=legacy-secret');
  const file=join(root,'dev','mote.yaml');writeFileSync(file,serializeConfigDocument({version:1,revision:0,server:{profile:'dev',port:47842,token:'dev-only'},storage:{dataDir:'./vault'}}));
  const inherited={MOTE_CONFIG_FILE:file,MOTE_PORT:'47942',MOTE_TOKEN:'ambient'};
- const result=loadEnvironment(root,{env:inherited});assert.equal(result.baseDir,join(root,'dev'));assert.equal(result.env.MOTE_TOKEN,'dev-only');assert.equal(result.env.MOTE_PORT,'47842');assert.equal(result.env.MOTE_URL,'http://127.0.0.1:47842');
+ const result=loadEnvironment(root,{env:inherited});assert.equal(Object.hasOwn(result,'envFile'),false);assert.equal(result.configFile,file);assert.equal(result.baseDir,join(root,'dev'));assert.equal(result.env.MOTE_TOKEN,'dev-only');assert.equal(result.env.MOTE_PORT,'47842');assert.equal(result.env.MOTE_URL,'http://127.0.0.1:47842');
  assert.deepEqual(inherited,{MOTE_CONFIG_FILE:file,MOTE_PORT:'47942',MOTE_TOKEN:'ambient'});
  assert.throws(()=>loadEnvironment(root,{env:{MOTE_ENV_FILE:join(root,'old.env')}}),/unsupported/);
  assert.throws(()=>loadEnvironment(root,{env:{MOTE_CONFIG_FILE:''}}),/must name/);

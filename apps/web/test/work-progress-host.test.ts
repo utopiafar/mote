@@ -11,7 +11,7 @@ import {ProviderFailure,type WorkActivity} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
 import {materialId} from '../../server/src/materials.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from '../../server/test/fixtures/model-authorization.js';
 import {fixtureMemoryPlan,fixtureMemoryWorkResult} from '../../server/test/fixtures/memory-planning.js';
 import {Activity} from '../src/plugins/work/Activity.js';
@@ -25,7 +25,7 @@ async function until(read:()=>boolean,describe?:()=>unknown,advance?:()=>Promise
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-progress-host-')),token='generated-progress-owner',headers={authorization:'Bearer '+token};
- const config:Config={dataDir:directory,dataKey:'66'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:'66'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:2},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const research=gate(),review=gate(),control={failReview:true,holdResearch:true,holdReview:true},calls:{phase?:string;question:string}[]=[];let node:Awaited<ReturnType<typeof buildApp>>,queryId='',slowUnit='';
  const answer=(text='Generated response')=>({answer:text,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}});
  const boot=()=>buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{

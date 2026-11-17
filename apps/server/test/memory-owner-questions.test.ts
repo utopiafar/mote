@@ -58,14 +58,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import {fixtureMemoryPlan} from './fixtures/memory-planning.js';
 import type {MemoryFeedbackRequest} from '../src/memory-feedback.js';
 
 async function httpFixture(t:TestContext,sourceKind:'custom'|'upload'='custom'){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-questions-'));
- const config:Config={dataDir:directory,token:'generated-owner-question-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-owner-question-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  let heldAnalysis:{entered:boolean;promise:Promise<void>;release:()=>void}|undefined;
  let heldQuestionRead:{entered:Promise<void>;enter:()=>void;promise:Promise<void>;release:()=>void;onDraining?:()=>void}|undefined;
  const calls:QueryInput[]=[],anchors=new Map<string,string[]>(),control={replyDisposition:'resolved' as 'resolved'|'followup'|'unknown',ownerObservation:false,contextUnresolved:false};
@@ -106,7 +106,7 @@ async function httpFixture(t:TestContext,sourceKind:'custom'|'upload'='custom'){
  };
  let node=await open();await authorizeFixtureModels(node);
  const disable=async()=>{const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});};await disable();
- const api=(method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ const api=(method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  t.after(async()=>{heldAnalysis?.release();heldQuestionRead?.release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const add=async(externalId:string,text=original)=>{
   if(!node.sources.listSources().some(source=>source.id==='generated-dialogues')){const response=await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:sourceKind,deviceId:'generated',platform:'import',retention:'archive'});assert.equal(response.statusCode,200,response.body);}

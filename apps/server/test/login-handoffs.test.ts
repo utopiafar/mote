@@ -9,7 +9,7 @@ import {LoginHandoffs} from '../src/login-handoffs.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {buildApp, type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 const owner='generated-owner-login-fixture-token-123456789';
 const headers=(token=owner)=>({authorization:'Bearer '+token});
 const serverUrl='https://fixture.invalid';

@@ -10,9 +10,7 @@ const directory=process.argv[2];assert.ok(directory);
 const token=randomBytes(32).toString('hex'),headers={authorization:'Bearer '+token};
 const at='2026-11-13T08:00:00.000Z',text='Generated browser evidence: prepare the review after the owner chooses an option.';
 let evidenceId='',failure:unknown;
-const node=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,
- maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelMaxTokens:512,
- modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
+const node=await buildApp({path:(join(directory,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'central'),maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',maxTokens:512,baseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}},
  {backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   try{
    const citation={id:evidenceId,capturedAt:at,appName:'Generated browser source',excerpt:text};

@@ -10,7 +10,7 @@ import {build} from 'esbuild';
 import {zipSync,strToU8} from 'fflate';
 import {buildApp} from '../../src/app.js';
 import {sha256} from '../../src/store.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import type {PluginManifest,PluginReleaseTransport} from '../../src/plugin-release.js';
 import type {Api} from '../../../web/src/api';
 
@@ -40,7 +40,7 @@ export async function presentationDomainRelease(manifest:PluginManifest,body:str
  * caller owns close(); every restart reuses only this temporary profile. */
 export async function pluginPresentationFixture(webRoot?:string){
   const directory=await mkdtemp(join(tmpdir(),'mote-presentation-')),releases=new Map<string,PresentationRelease>();
-  const config:Config={dataDir:join(directory,'central'),token:'generated-presentation-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1e6,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(join(directory,'central'))+'/mote.yaml',privateCredential:{token:'generated-presentation-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'central'),maxExportBytes:1e6},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const transport:PluginReleaseTransport=async url=>{
     const item=[...releases.values()].find(value=>url.includes('/generated/'+value.manifest.id+'/'));assert.ok(item,'fixture accepts generated release URLs only');
     const base='https://github.com/generated/'+item.manifest.id+'/releases/download/v1/';
@@ -54,14 +54,14 @@ export async function pluginPresentationFixture(webRoot?:string){
     Object.defineProperty(runtime.pluginCenter.releases,'transport',{value:transport});return runtime;
   };
   let node=await start();
-  const response=(method:'GET'|'POST'|'PATCH',url:string,payload?:unknown,token=config.token)=>node.app.inject({method,url,headers:token?{authorization:'Bearer '+token}:{},...(payload===undefined?{}:{payload:payload as object})});
+  const response=(method:'GET'|'POST'|'PATCH',url:string,payload?:unknown,token=config.privateCredential!.token)=>node.app.inject({method,url,headers:token?{authorization:'Bearer '+token}:{},...(payload===undefined?{}:{payload:payload as object})});
   const request=async(method:'GET'|'POST'|'PATCH',url:string,payload?:unknown)=>{const reply=await response(method,url,payload);assert.ok(reply.statusCode<400,reply.body);return reply.json();};
   const install=async(item:PresentationRelease)=>{
     releases.set(item.manifest.id,item);
     const preview=await request('POST','/api/plugins/resolve',{repository:'generated/'+item.manifest.id,tag:'v1'}),id=item.manifest.id+'@'+preview.source.digest;
     await request('POST','/api/plugins/install',{...presentationCommand(node.pluginCenter.revision()),previewId:preview.id});
     await presentationUntil(()=>node.pluginCenter.view().packages.some(value=>value.id===id&&value.state==='installed'),'formal presentation artifact installs');
-    assert.equal(sha256(await readFile(join(config.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);return id;
+    assert.equal(sha256(await readFile(join(config.initialDocument!.storage.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);return id;
   };
   const configure=(packageId:string,id=randomUUID())=>request('POST','/api/plugin-instances',{...presentationCommand(node.pluginCenter.revision()),operationId:id,packageId,name:'Generated instance '+id.slice(0,8),scope:'default',configuration:{}});
   const action=(id:string,kind:'check'|'enable'|'disable')=>request('POST','/api/plugin-instances/'+id+'/'+kind,presentationCommand(node.pluginCenter.instanceView(id).revision));

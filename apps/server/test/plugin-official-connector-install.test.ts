@@ -12,7 +12,7 @@ import {GitHubPluginReleases,officialPluginLocalDirectory,type PluginReleaseTran
 import {PluginCenter} from '../src/plugin-center.js';
 import {OFFICIAL_PLUGIN_CATALOG,officialPluginCatalog} from '../src/official-plugin-catalog.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const repoRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
 const fixtureRoot=join(repoRoot,'test-fixtures/official-fixture-connector');
@@ -194,7 +194,7 @@ test('official local directory resolution confines realpaths to the repository a
 
 test('production HTTP resolve accepts only {repository, tag} and drives the in-repo fixture through the real connector host',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-official-http-')),owner='generated-official-owner-'+randomUUID();
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model request belongs in this fixture');},async close(){}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:'Bearer '+owner},githubCalls:string[]=[];

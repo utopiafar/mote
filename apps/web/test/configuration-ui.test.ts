@@ -27,26 +27,17 @@ async function fixture(t:any){
   return {root,d:dom.window.document};
 }
 function configuration(revision:number,savedSeconds=900):ServerConfiguration {
-  return {version:1,revision,configFile:'/generated/mote.yaml',profile:'test',runtime:'native',envFile:'/generated/mote.yaml',baseDir:'/generated',readOnly:false,restartRequired:savedSeconds!==300,description:'Generated fixture',storage:{dataDir:'/generated',sqlitePath:'/generated/mote.sqlite',assetDir:'/generated/files',logDir:'/generated/logs',kind:'local-directory',source:'/generated',mountPath:null,description:'Generated'},groups:[{id:'connectors',title:'Connectors',description:'Generated',fields:[
-    {key:'connectorSyncInterval',label:'Interval',description:'Generated',value:300,savedValue:savedSeconds,domain:'connectors',path:'syncIntervalMs',source:'config-file',effect:'restart',restartRequired:true},
-  ]}]};
+  return {version:1,revision,configFile:'/generated/mote.yaml',hostConfigFile:null,ownerCredential:{configured:true,source:'programmatic'},lastError:null,profile:'test',runtime:'native',baseDir:'/generated',readOnly:false,restartRequired:savedSeconds!==300,description:'Generated fixture',storage:{dataDir:'/generated',sqlitePath:'/generated/mote.sqlite',assetDir:'/generated/files',logDir:'/generated/logs',kind:'local-directory',source:'/generated',mountPath:null,description:'Generated'},domains:[{id:'connectors',saved:{syncIntervalMs:savedSeconds*1000},effective:{syncIntervalMs:300000},fields:[{path:'syncIntervalMs',effect:'restart'}],status:savedSeconds!==300?'restart-required':'applied'}]};
 }
 const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===label)!;
 
-test('effective configuration labels keep only file, default and derived sources',async t=>{
+test('effective configuration displays canonical field paths and effects without obsolete environment labels',async t=>{
   const {root,d}=await fixture(t);
-  const view:ServerConfiguration={...configuration(1),groups:[{id:'generated',title:'Generated',description:'Generated',fields:[
-    {key:'generatedFile',label:'Generated file',description:'Generated',value:'generated',source:'config-file',restartRequired:false},
-    {key:'generatedDefault',label:'Generated default',description:'Generated',value:'generated',source:'default',restartRequired:false},
-    {key:'generatedDerived',label:'Generated derived',description:'Generated',value:'generated',source:'derived',restartRequired:false},
-  ]}]};
+  const view:ServerConfiguration={...configuration(1),domains:[{id:'generated',saved:{immediate:1,request:2,restart:3},effective:{immediate:1,request:2,restart:3},status:'applied',fields:[{path:'immediate',effect:'immediate'},{path:'request',effect:'next-request'},{path:'restart',effect:'restart'}]}]};
   const api={request:async()=>view} as Api;
   await act(async()=>root.render(React.createElement(AdvancedConfiguration,{api,includeRuntime:false})));
-  const origin=(key:string)=>d.querySelector(`[data-config-key="${key}"] > div:nth-child(2) > small`)?.textContent;
-  assert.equal(origin('generatedFile'),'配置文件');
-  assert.equal(origin('generatedDefault'),'默认值');
-  assert.equal(origin('generatedDerived'),'根据部署计算');
-  assert.doesNotMatch(d.body.textContent!,/启动环境/);
+  for(const text of ['generated.immediate','立即生效','generated.request','后续请求生效','generated.restart','重启后生效'])assert.ok(d.body.textContent!.includes(text),text);
+  assert.doesNotMatch(d.body.textContent!,/启动环境|MOTE_|envFile|envVar/);
 });
 
 test('configuration page saves an edited field into the shared file with its original revision',async t=>{

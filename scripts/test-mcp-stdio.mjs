@@ -7,7 +7,7 @@ import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
 import {buildApp} from '../apps/server/dist/app.js';
 const root=await mkdtemp(join(tmpdir(),'mote-stdio-fixture-'));const owner=randomUUID()+randomUUID(),read=randomUUID()+randomUUID(),write=randomUUID()+randomUUID();
-const config={dataDir:join(root,'data'),token:owner,tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:2*1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(root,'secrets'),mcpEnabled:true,mcpReadToken:read,mcpWriteEnabled:true,mcpWriteToken:write,mcpWriteSourceIds:['stdio-fixture']}};
+const config={path:(join(root,'data'))+'/mote.yaml',privateCredential:{token:owner,tokenPath:'unused'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'data'),dataKey:undefined,maxExportBytes:2*1024*1024},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},connectors:{directory:join(root,'secrets'),mcpEnabled:true,mcpReadToken:read,mcpWriteEnabled:true,mcpWriteToken:write,mcpWriteSourceIds:['stdio-fixture']}}};
 const {app,sources,materialOrganizer}=await buildApp(config);const clients=[];
 try{
  sources.register({id:'stdio-fixture',name:'Synthetic stdio',kind:'mcp',deviceId:'fixture',platform:'import'});await app.listen({port:0,host:'127.0.0.1'});

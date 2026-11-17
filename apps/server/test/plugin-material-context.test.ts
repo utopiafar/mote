@@ -5,12 +5,10 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId,type MaterialDraft} from '../src/materials.js';
 
-const config=(dataDir:string):Config=>({dataDir,token:'generated-route-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-route-owner-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
 
 function draft(captureId:string):MaterialDraft{
   return {id:materialId('generated-route-source','item'),kind:'mote.note',schemaVersion:1,title:'Generated route material',

@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryStrategies} from '../src/memory-strategies.js';
@@ -33,7 +33,7 @@ async function fixture(t:any){
     for(const value of ${JSON.stringify(recipes)})disposers.push(ctx.memoryStrategies.registerRecipe(value));
   },close(){for(const dispose of disposers.reverse())dispose();}};}};`);
   const connectorManifest=(await import(pathToFileURL(modulePath).href)).default;
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:'generated-strategy-test-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'vault'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const calls:QueryInput[]=[],control:{failCoding:boolean;duringExtract?:()=>void;duringReview?:()=>void}={failCoding:false};
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
     const topic=fixtureTopicResult(input);if(topic)return topic;
@@ -64,7 +64,7 @@ async function fixture(t:any){
     return {id:ack.id,evidenceIds:node.materials.evidenceIds(material.ref),material};
   };
   const run=async(evidenceIds:string[],ids:string[])=>{
-    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id==='mote.personal-memory'?{id,version:'5'}:id==='mote.coding-memory'?{id,version:'3'}:ref(id))}});
+    const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.privateCredential!.token},payload:{contextTime,evidenceIds,recipes:ids.map(id=>id==='mote.personal-memory'?{id,version:'5'}:id==='mote.coding-memory'?{id,version:'3'}:ref(id))}});
     assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);
   };
   return {get node(){return node;},calls,control,add,run,async restart(changed=false){let selectedManifest=connectorManifest;if(changed){const selectedModule=join(directory,'changed-strategies.mjs');writeFileSync(selectedModule,readFileSync(modulePath,'utf8').replace('GENERATED_EXTRACTION_1','Changed generation'));selectedManifest=(await import(pathToFileURL(selectedModule).href)).default;}await node.app.close();node=await buildApp(config,{...nodeDependencies,connectorManifests:[selectedManifest]});await node.app.ready();await disable();},count:(phase:string)=>calls.filter(c=>(c.traceContext?.phase??'extract')===phase).length};

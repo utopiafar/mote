@@ -222,10 +222,10 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
   const {parseAnswer}=await import('@mote/agent');
   const directory=mkdtempSync(join(tmpdir(),'mote-source-http-'));
-  const config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture',host:'127.0.0.1',port:47832,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-fixture-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No online model');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const headers={authorization:'Bearer '+config.token};
+  const headers={authorization:'Bearer '+config.privateCredential!.token};
   assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'}})).statusCode,200);
   const upload=await node.app.inject({method:'POST',url:'/api/sources/coding/items/batch',headers,payload:{items:[item(1,'session','Fixture bridge proof'),item(2,'session','Second message')]}});assert.equal(upload.statusCode,200,upload.body);assert.equal(upload.json().receipts.length,2);
   await node.sourcePipelines.tick();
@@ -242,10 +242,10 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
 test('source batch accepts more than 500 items and long bodies/titles under the 32 MiB HTTP limit',async t=>{
   const {buildApp}=await import('../src/app.js');
   const directory=mkdtempSync(join(tmpdir(),'mote-source-batch-limit-'));
-  const config={dataDir:directory,token:'generated-batch-token',tokenPath:'fixture',host:'127.0.0.1',port:0,dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-batch-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const headers={authorization:'Bearer '+config.token};
+  const headers={authorization:'Bearer '+config.privateCredential!.token};
   assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'generated-batch',name:'Generated batch',kind:'custom',deviceId:'generated-device',platform:'import'}})).statusCode,200);
   const long={externalId:'batch-0',revision:'1',observedAt:'2026-09-24T01:00:00.000Z',title:'Generated title '.repeat(200),text:'Generated body '.repeat(12000),kind:'message',layer:'original'};
   const items=[long,...Array.from({length:500},(_,index)=>({externalId:`batch-${index+1}`,revision:'1',observedAt:'2026-09-24T01:00:00.000Z',title:`Generated item ${index+1}`,text:`Generated batch item ${index+1}`,kind:'message',layer:'original'}))];

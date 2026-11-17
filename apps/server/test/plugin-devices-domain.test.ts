@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {HostScope} from '@mote/plugin-host';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {defaultDistribution} from '../src/distribution/default.js';
 import {devicesSourcePlugin} from '../src/plugins/devices-domain.js';
 import {sha256} from '../src/store.js';
@@ -16,7 +16,7 @@ const beat=(depth=3)=>({deviceId:'generated-domain-phone',deviceName:'Generated 
 const note=()=>({id:randomUUID(),deviceId:'generated-domain-phone',deviceName:'Generated Devices phone',platform:'android',capturedAt:new Date().toISOString(),text:'Generated sibling note remains authorized'});
 async function fixture(t:TestContext,omitted?:'feature'|'plugin'|'both'){
  const root=await mkdtemp(join(tmpdir(),'mote-devices-domain-'));
- const config:Config={dataDir:root,token,tokenPath:'generated-devices-domain',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(root)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-devices-domain'},initialDocument:{version:1,revision:0,storage:{dataDir:root,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  let scope:HostScope|undefined,creates=0,starts=0,disposes=0,timers=0;const releases:(()=>void)[]=[];
  const tracked={...devicesSourcePlugin,activation:{...devicesSourcePlugin.activation!,async create(context:Parameters<NonNullable<typeof devicesSourcePlugin.activation>['create']>[0],bindings:Parameters<NonNullable<typeof devicesSourcePlugin.activation>['create']>[1]){
   creates++;if(omitted)throw Error('Unselected Devices factory ran');scope=context.scope;

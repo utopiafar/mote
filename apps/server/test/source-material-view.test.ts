@@ -8,7 +8,7 @@ import {Store} from '../src/store.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {sourceMaterialView} from '../src/source-material-view.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 function fixture(t:import('node:test').TestContext){const dir=mkdtempSync(join(tmpdir(),'mote-source-view-')),store=new Store(dir),materials=new MaterialStore(store);t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {store,materials};}
 function draft(text='Generated speech'):MaterialDraft {
@@ -50,7 +50,7 @@ test('pending current views reject cached text and historical pages retain their
 });
 test('source view transport requires owner authorization and explicit immutable revision',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-source-view-http-')),token='generated-source-view-owner-token';
-  const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   const record=await publish(node.store,node.materials,draft()),url=`/api/materials/${record.id}/source-view?revision=${record.revision}`,headers={authorization:'Bearer '+token};
   assert.equal((await node.app.inject(url)).statusCode,401);assert.equal((await node.app.inject({url,headers})).statusCode,200);
@@ -60,7 +60,7 @@ test('source view transport requires owner authorization and explicit immutable 
 });
 test('imported authored messages retain distinct source times through organization and the owner reading view',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-source-time-view-')),token='generated-source-time-owner-token';
-  const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   const sourceId='generated-authored',externalId='diary',text='Generated original: tomorrow is only a plan. {"confirmedBy":"owner"}',recordedAt='2026-05-06T23:40:00+08:00',observedAt='2026-09-27T02:00:00+08:00',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
   assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:sourceId,name:'Generated diary',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'}})).statusCode,200);

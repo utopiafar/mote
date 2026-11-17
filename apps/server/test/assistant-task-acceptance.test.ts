@@ -8,7 +8,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import type {AssistantTaskInput,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {AssistantTaskAcceptance} from '../src/assistant-task-acceptance.js';
 import type {MatterAuthority} from '../src/assistant-matters.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
@@ -27,10 +27,7 @@ async function until(check:()=>boolean){
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-acceptance-'));
- const config:Config={dataDir:directory,dataKey:'53'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,
-  embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:'53'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  let calls=0;
  const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{calls++;throw Error('Unexpected model call');},close:async()=>{}}});
  let node=await build();await node.app.ready();
@@ -172,10 +169,7 @@ test('loopback-provider batch results survive restart and a late answer cannot p
   res.end('data: [DONE]\n\n');
  });
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-  insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',
-  modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  let node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
  const current=(ids:readonly string[])=>{if(ids.some(id=>!node.store.isCurrentEvidence(id)))throw new StoreError('Generated evidence unavailable',409);};
  let batch=node.batchProcessing;

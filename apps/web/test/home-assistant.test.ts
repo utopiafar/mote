@@ -238,7 +238,7 @@ test('a late start response from a previous Api cannot change the replacement Ho
 
 test('real A3 HTTP pages, feedback and history reach Home; real A2 acceptance remains idempotent after a lost response',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-home-assistant-')),token='generated-home-assistant-owner',headers={authorization:'Bearer '+token};
- const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},
+ const node=await buildApp({path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}},
   {backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in Home fixture');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const {d,render}=await domFixture(t),cards=node.featureServices.assistantCards,scope={kind:'all' as const};
@@ -310,7 +310,7 @@ test('Home distinguishes an open owner question from background processing and l
 
 test('starting a small Home suggestion in a library over 1000 records uses its complete fixed evidence selection',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-home-large-suggestion-')),token='generated-large-home-owner',headers={authorization:'Bearer '+token};
- const node=await buildApp({dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'},{backgroundWorker:false});
+ const node=await buildApp({path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}},{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const ids:string[]=[];
  for(let index=0;index<1003;index++){

@@ -7,7 +7,7 @@ import {join,relative,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {contextJourneyCases,type ContextJourneyCase} from './fixtures/context-journey.js';
@@ -46,14 +46,9 @@ if(importRun){
   assert.equal(sha256(await readFile(join(vault,'mote.sqlite'))),hash);
   imported={sourceRun:source,sourceReportHash:sha256(bytes),sourceDatabaseHash:hash};
 }
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,
-  maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
-  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,
-  codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
-const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',model:config.model,reasoningEffort:'max',
+const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',model:config.initialDocument!.models.deployment.model,reasoningEffort:'max',
   priority:['functionality','performance','cost'],personalDataUsed:supplied.personalDataUsed,browserTested:false,physicalDevicesTested:false,
   mediaProcessingTested:false,agentDeadlineMs:300000,selected,
   head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim(),
@@ -178,7 +173,7 @@ async function runCase(fixture:ContextJourneyCase){
       assert.ok(memories.some(memory=>memory.admission?.layer==='memory'&&memory.evidenceIds.includes(ids[index])&&(!fixture.incremental||!memory.supersededBy)),`Required dated owner event ${index} was lost`);
     }
     const answer=await stage('question',()=>request('POST','/api/query',{question:fixture.question,deviceId,...queryScope,timeZone:'Asia/Shanghai'}));
-    result.answer=answer;assert.equal(answer.modelSelection.model,config.model);
+    result.answer=answer;assert.equal(answer.modelSelection.model,config.initialDocument!.models.deployment.model);
     const judgmentOriginals=imported?[...new Map([...originals,...node!.memories.readEvidence(answer.citations.map((c:{id:string})=>c.id))].map(o=>[o.id,o])).values()]:originals;
     result.judgmentOriginals=judgmentOriginals;
     const judgment=await stage('semantic-judgment',()=>node!.featureServices.queryAgent({
@@ -192,15 +187,15 @@ async function runCase(fixture:ContextJourneyCase){
   finally{result.durationMs=Date.now()-started;await save();progress('case-finished',{case:fixture.id,status:result.status,durationMs:result.durationMs});}
 }
 try{
-  await save();progress('catalog',{directory,model:config.model,reasoningEffort:'max'});
-  const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});
-  report.catalog=catalog.items.find(item=>item.id===config.model);
+  await save();progress('catalog',{directory,model:config.initialDocument!.models.deployment.model,reasoningEffort:'max'});
+  const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});
+  report.catalog=catalog.items.find(item=>item.id===config.initialDocument!.models.deployment.model);
   assert.ok((report.catalog as {reasoningEfforts?:string[]}|undefined)?.reasoningEfforts?.includes('max'),'Requested model/effort is not available');
   node=await buildApp(config);
   const settings=node.lifecycle.settings();
   for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;
   await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
-  assert.equal(node.modelSettings.current().model,config.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
+  assert.equal(node.modelSettings.current().model,config.initialDocument!.models.deployment.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
   for(const id of selected)await runCase(supplied.cases.find(c=>c.id===id)!);
   report.status=cases.every(c=>c.status==='passed')?'passed':'failed';
 }catch(error){report.status='failed';report.failure=error instanceof Error?error.message:String(error);process.exitCode=1;}

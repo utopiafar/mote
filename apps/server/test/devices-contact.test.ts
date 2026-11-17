@@ -5,15 +5,15 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp,type QueryAgent} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('No model calls in generated device tests');},close:async()=>{}};
 async function fixture(t:TestContext){
   const directory=await mkdtemp(join(tmpdir(),'mote-device-contact-'));
-  const config:Config={dataDir:directory,token:'generated-device-contact-owner-token',tokenPath:'generated-only',host:'127.0.0.1',port:0,profile:'test',maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-device-contact-owner-token',tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   const post=async(payload:unknown)=>{
     const response=await node.app.inject({method:'POST',url:'/api/devices/heartbeat',headers,payload});
     assert.equal(response.statusCode,200,response.body);

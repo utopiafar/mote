@@ -11,7 +11,7 @@ import sharp from 'sharp';
 import {ComposedImageDisclosure} from './composed-image-disclosure.js';
 import type {UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
@@ -45,7 +45,7 @@ await mkdir(directory,{mode:0o700});await writeFile(join(directory,'manifest.jso
 await cp(sourceVault,join(directory,'vault'),{recursive:true,errorOnExist:true,filter:path=>!['mote.sqlite','mote.sqlite-wal','mote.sqlite-shm','logs','token'].includes(basename(path))});
 const sourceDb=new DatabaseSync(sourceDatabase,{readOnly:true});try{assert.equal(sourceDb.prepare('PRAGMA quick_check').get()!.quick_check,'ok');await backup(sourceDb,join(directory,'vault','mote.sqlite'));}finally{sourceDb.close();}
 const dataDir=join(directory,'vault'),token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:manifest.queryTimeoutMs,codexBin:mode==='live'?process.env.MOTE_CODEX_BIN:'/nonexistent-offline-image-provider',codexHome:mode==='live'?process.env.MOTE_CODEX_HOME:join(directory,'unused-codex-home')};
+const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:dataDir,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:manifest.queryTimeoutMs},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:mode==='live'?process.env.MOTE_CODEX_BIN:'/nonexistent-offline-image-provider',home:mode==='live'?process.env.MOTE_CODEX_HOME:join(directory,'unused-codex-home')}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
 const report:Record<string,any>={status:'running',mode,startedAt:new Date().toISOString(),personalDataUsed:manifest.personalDataUsed,heldOut:false,model:'gpt-6-sol',reasoningEffort:'max',modelCalls:0,stubModelCalls:0,processorCalls:0,externalFetchAttempts:0,blockedLoopbackFetchAttempts:0,queryTimeoutMs:manifest.queryTimeoutMs,maximumQueries:1,imageDisclosureProtocol:manifest.imageDisclosureProtocol,maximumUniqueImagePayloads:manifest.imageDisclosureProtocol==='bounded-views'?4:1,automaticOuterRetries:0,semanticQualityAccepted:false,memoryGenerated:false,mediaProcessingTested:false,browserTested:false,physicalDeviceTested:false,sourceReportSha256:sha256(seedBytes),sourceDatabaseSha256,manifestSha256:sha256(manifestBytes),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()};
 report.codeHashes=Object.fromEntries(await Promise.all(['scripts/test-image-context-live.ts','scripts/composed-image-disclosure.ts','apps/server/src/evidence-image.ts','apps/server/src/evidence-reader.ts','apps/server/src/evidence-scope-record.ts','apps/server/src/file-raw-reader.ts','apps/server/src/app.ts','packages/agent/dist/bridge.js','packages/agent/dist/context-tools.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
@@ -67,7 +67,7 @@ globalThis.fetch=async(input,init)=>{
  throw Error('Image reuse harness forbids this fetch');
 };
 try{
- await save();if(mode==='live'){const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});assert.ok(catalog.items.find(m=>m.id==='gpt-6-sol')?.reasoningEfforts?.includes('max'));}
+ await save();if(mode==='live'){const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});assert.ok(catalog.items.find(m=>m.id==='gpt-6-sol')?.reasoningEfforts?.includes('max'));}
  node=await buildApp(config,{backgroundWorker:false,...(mode==='preflight'?{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{report.stubModelCalls++;throw Error('Preflight forbids model calls');}})}:{})});
  for(const row of node.store.db.prepare('SELECT id FROM model_usage').all())priorUsageIds.add(String(row.id));report.inheritedUsageReceipts=priorUsageIds.size;
  for(const [name] of contextToolDefinitions({question:manifest.question,toolContributions:node.featureServices.archiveReader.contextTools?.()??[]}))modelTools.add(name);

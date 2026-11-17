@@ -18,7 +18,7 @@ import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {ContentStorageService} from '../src/content-storage.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 
@@ -199,7 +199,7 @@ test('media intake and excerpt lineage preserve exact capture statements without
 
 test('HTTP import publishes a fully declared prefix before completion; restart does not grant it again',{timeout:60000},async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-import-context-http-'));
-  const config:Config={dataDir:directory,token:'generated-import-context-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:2_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-import-context-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   let node:Awaited<ReturnType<typeof buildApp>>,importId='',calls=0,reviewedPrefix=false,release!:()=>void;
   const paused=new Promise<void>(resolve=>release=resolve),prefix='  Generated exact owner context\n',instruction=prefix+'甲'.repeat(12000-prefix.length-2)+'  ',upsert=SourceStore.prototype.upsert;
   assert.equal(instruction.length,12000);
@@ -213,7 +213,7 @@ test('HTTP import publishes a fully declared prefix before completion; restart d
     return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:'generated-context-'+calls};
   }}};
   node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const headers={authorization:'Bearer '+config.token},created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{instruction,files:[{name:'generated.custom',dataBase64:Buffer.from(original.text).toString('base64')}]}});
+  const headers={authorization:'Bearer '+config.privateCredential!.token},created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{instruction,files:[{name:'generated.custom',dataBase64:Buffer.from(original.text).toString('base64')}]}});
   assert.equal(created.statusCode,202,created.body);importId=created.json().id;
   for(let i=0;i<200&&node.imports.get(importId).status!=='awaiting_confirmation';i++)await setTimeout(20);
   assert.equal(node.imports.get(importId).status,'awaiting_confirmation');

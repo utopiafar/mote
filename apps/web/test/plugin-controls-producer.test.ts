@@ -9,7 +9,7 @@ import {JSDOM} from 'jsdom';
 import type {PluginBuildView,MemoryBindingView} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import type {Api} from '../src/api.js';
 import {ApiError} from '../src/api.js';
 
@@ -24,7 +24,7 @@ const {sourcePluginForSetup}=await import('../src/plugins/sources/registry.js');
 
 test('the real Central response drives plugin switches, stopped-source guidance and the separate automatic-memory settings',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-plugin-web-contract-')),owner='generated-web-owner-'+randomUUID();
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:false}};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No models in the UI/HTTP contract');},async close(){}}});
   const writes:{path:string;body:unknown}[]=[];
   const api={request:async(path:string,init?:RequestInit)=>{

@@ -19,7 +19,7 @@ import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {ContentStorageService} from '../src/content-storage.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const at='2026-10-01T00:00:00Z',description='  Generated description: this note concerns one record only.\nExact owner wording.  ';
 const capture=(ownerDescription:string|undefined=description)=>captureSchema.parse({id:randomUUID(),deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',source:'note',durationMs:0,capturedAt:at,ocrText:'Generated original note',metadata:{version:1,observedAt:at,...(ownerDescription===undefined?{}:{ownerDescription})}});
@@ -118,7 +118,7 @@ test('portable backup and encryption retain exact record context and reject miss
 
 test('HTTP owner note reads private context while collector description attempts preserve ordinary capture capability',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-record-context-http-')),token='generated-owner-record-context-token',headers={authorization:`Bearer ${token}`};
-  const config:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const node=await buildApp(config,{backgroundWorker:false});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const input=capture(),{source:_,ocrText,privacy:__,durationMs:___,...identity}=input;
   const note={id:identity.id,deviceId:identity.deviceId,deviceName:identity.deviceName,platform:identity.platform,capturedAt:identity.capturedAt,text:ocrText,metadata:identity.metadata};

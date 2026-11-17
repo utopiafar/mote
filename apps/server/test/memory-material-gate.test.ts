@@ -14,7 +14,7 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const sourceId='generated-memory-source',externalId='generated-item';
 const body='Generated source item body with a project decision.';
@@ -82,10 +82,7 @@ test('a ready named source body admits partial Material anchor, then supersessio
 
 test('production manual Memory routes reject raw source items and raw model citations',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-route-gate-'));
-  const config:Config={dataDir:directory,token:'generated-memory-gate-token',tokenPath:'fixture',host:'127.0.0.1',port:0,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-    model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,
-    embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-gate-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',baseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   let raw='';
   const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>({
     answer:JSON.stringify({memories:[{title:'Generated decision',statement:`Generated decision [${raw}]`,
@@ -96,7 +93,7 @@ test('production manual Memory routes reject raw source items and raw model cita
   node.sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:'generated-device',platform:'import'});
   raw=(await node.sources.upsert(sourceId,{externalId,revision:'1',observedAt:'2026-09-20T00:00:00Z',kind:'message',layer:'original',text:body})).id;
   await node.materialOrganizer.tick();
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   const manual=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[raw]}});
   assert.equal(manual.statusCode,409,manual.body);
   const direct=await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}});

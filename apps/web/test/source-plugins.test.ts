@@ -9,7 +9,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import type {FeatureInventory,RecordingStatus,SourceConnection} from '@mote/shared';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import type {RecordingProvider} from '../../server/src/connectors/recordings.js';
 import type {Api} from '../src/api.js';
 import {webFeatures} from '../src/features/registry.js';
@@ -33,7 +33,7 @@ const source=(id:string,kind:string,enabled=true)=>({id,name:`Generated ${kind}`
 test('the source catalog consumes the real connector response for every source plugin',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-source-plugins-'));
   const readToken='generated-mcp-read-secret-reference',writeToken='generated-mcp-write-secret-reference';
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-source-plugins-owner-token',tokenPath:'generated-fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:readToken,mcpWriteEnabled:true,mcpWriteToken:writeToken,mcpWriteSourceIds:['generated-mcp']}};
+  const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:'generated-source-plugins-owner-token',tokenPath:'generated-fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'vault'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:readToken,mcpWriteEnabled:true,mcpWriteToken:writeToken,mcpWriteSourceIds:['generated-mcp']}}};
   const providerCalls:string[]=[],modelCalls:string[]=[],cliCalls:string[]=[];
   const providerFixture=(id:string):RecordingProvider=>{
     const unused=async(method:string):Promise<never>=>{providerCalls.push(id+':'+method);throw Error('No provider work belongs in generated source-plugin fixtures');};
@@ -56,7 +56,7 @@ test('the source catalog consumes the real connector response for every source p
     agent:{configured:false,query:async()=>{modelCalls.push('query');throw Error('No model is authorized for generated source-plugin fixtures');},close:async()=>{}},
   });
   await node.app.ready();
-  const headers={authorization:'Bearer '+config.token};
+  const headers={authorization:'Bearer '+config.privateCredential!.token};
   for(const item of [source('generated-gmail','gmail',false),source('generated-google','google-calendar'),source('generated-lark','lark-docs'),source('generated-recording','feishu.recordings'),source('generated-mcp','mcp')]){
     const created=await node.app.inject({method:'POST',url:'/api/sources',headers,payload:item});
     assert.equal(created.statusCode,200,created.body);

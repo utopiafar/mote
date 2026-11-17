@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
 import {SourceStore} from '../src/sources.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 
@@ -15,7 +15,7 @@ import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 // publication/Memory workers. All source content and model responses are generated.
 test('HTTP import of a thousand generated originals rolls through bounded background packages without planning',{timeout:780000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-background-import-'));
- const config:Config={dataDir:directory,token:'generated-background-import-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-background-import-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let extracts=0,reviews=0,planning=0,importId='',reviewBeforeImportComplete=false,releasePrefix!:()=>void,releaseTail!:()=>void;
  const prefixReviewed=new Promise<void>(resolve=>releasePrefix=resolve),priorCommitted=new Promise<void>(resolve=>releaseTail=resolve),upsert=SourceStore.prototype.upsert;
  // Pause the incoming stream after seven real receipts. The ordinary 5-second
@@ -35,7 +35,7 @@ test('HTTP import of a thousand generated originals rolls through bounded backgr
   return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:'generated-background-'+extracts+'-'+reviews};
  }}});await node.app.ready();await authorizeFixtureModels(node);
  t.after(async()=>{releasePrefix();releaseTail();await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
  const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from('Generated parser input').toString('base64')}]}});assert.equal(created.statusCode,202,created.body);
  const id=created.json().id;importId=id;
  for(let attempt=0;attempt<100;attempt++){if(node.imports.get(id).status==='awaiting_confirmation')break;await setTimeout(20);}

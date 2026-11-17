@@ -9,7 +9,7 @@ import sharp from 'sharp';
 import {FILE_PART_BYTES,type FileRevision} from '@mote/shared';
 import {sha256} from '../src/store.js';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {FILE_THUMBNAIL_MAX_CONCURRENT} from '../src/file-thumbnails.js';
 
@@ -33,7 +33,7 @@ async function upload(app:any,headers:any,input:FileRevision,bytes:Buffer){
 async function setup(t:any){
   const dir=mkdtempSync(join(tmpdir(),'mote-thumbs-')),configFile=join(dir,'mote.yaml');
   writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-thumbs-owner-token-1234567'},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
-  const config=configFromFile(configFile);
+  const config=configurationFromFile(configFile);
   const {app,connections,files}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error();},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${config.token}`};

@@ -11,7 +11,7 @@ import {strToU8, zipSync} from 'fflate';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import type {PluginManifest, PluginReleaseTransport} from '../src/plugin-release.js';
 import {sha256} from '../src/store.js';
 import {writeMessagesResponse} from '../../../scripts/fixtures/messages-provider.js';
@@ -61,7 +61,7 @@ async function applicationFixture(t:TestContext,options:{hook?:string|((root:str
   await new Promise<void>(resolve=>model.listen(0,'127.0.0.1',resolve));
   await writeFile(path,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:owner},storage:{dataDir:'vault',contentEncryptionEnabled:true},diagnostics:{level:'silent'},execution:{insightIntervalHours:0},models:{deployment:{provider:'deepseek',protocol:'deepseek',baseUrl:'http://127.0.0.1:'+(model.address() as {port:number}).port,model:'generated-native-model',apiKey:'generated-unused',maxTokens:1024,modelRequestTimeoutMs:10000,agentTimeoutMs:20000}}}));
   let node:Awaited<ReturnType<typeof buildApp>>|undefined;
-  const open=async()=>{node=await buildApp(configFromFile(path),{backgroundWorker:false});Object.defineProperty(node.pluginCenter.releases,'transport',{value:release.transport});return node;};
+  const open=async()=>{node=await buildApp(configurationFromFile(path),{backgroundWorker:false});Object.defineProperty(node.pluginCenter.releases,'transport',{value:release.transport});return node;};
   const restart=async()=>{await node?.app.close();return open();};
   t.after(async()=>{await node?.app.close();model.closeAllConnections();await new Promise<void>(resolve=>model.close(()=>resolve()));await rm(root,{recursive:true,force:true});});
   await open();

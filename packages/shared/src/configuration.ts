@@ -24,41 +24,15 @@ export interface ConfigServiceView {
   domains: ConfigDomainView[];
   lastError: {code: string; domain?: string} | null;
 }
-export type ConfigurationValue = string | number | boolean | string[] | null;
-export interface ConfigurationField {
-  key: string;
-  label: string;
-  value: ConfigurationValue;
-  description: string;
-  envVar?: string;
-  source: ConfigurationSource;
-  unit?: string;
-  visibility?: 'owner-path' | 'secret-status';
-  restartRequired: boolean;
-  domain?: string;
-  path?: string;
-  savedValue?: ConfigurationValue;
-  effect?: ConfigurationEffect;
-}
-export interface ConfigurationGroup {
-  id: string;
-  title: string;
-  description: string;
-  fields: ConfigurationField[];
-}
-export interface ServerConfiguration {
-  version: 1;
+export interface ServerConfiguration extends ConfigServiceView {
   profile: string;
   runtime: 'native' | 'docker' | 'unknown';
-  /** Host edit location when supplied; the deployment group also exposes the effective loaded file. */
-  envFile: string | null;
+  /** Optional host edit location, distinct from the loaded configFile. */
+  hostConfigFile: string | null;
+  ownerCredential:{configured:boolean;source:'configured-value'|'private-token-file'|'programmatic'};
   baseDir: string;
   readOnly: boolean;
   restartRequired: boolean;
-  revision?: number;
-  configFile?: string;
-  domains?: ConfigDomainView[];
-  lastError?: ConfigServiceView['lastError'];
   description: string;
   storage: {
     dataDir: string;
@@ -70,5 +44,4 @@ export interface ServerConfiguration {
     mountPath: string | null;
     description: string;
   };
-  groups: ConfigurationGroup[];
 }

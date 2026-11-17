@@ -10,7 +10,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {fixtureMemoryResult} from '../../server/test/fixtures/memory-result.js';
 import {createApi} from '../src/api.js';
 import {Memories} from '../src/plugins/memory/index.js';
@@ -29,7 +29,7 @@ async function fill(d:Document,selector:string,value:string){await act(async()=>
  * private temporary profile. No provider or user profile is consulted. */
 async function fixture(t:TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-u3-web-'));
-  const config:Config={dataDir,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected generated model call');},close:async()=>{}}});
   await node.app.ready();
   const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/assistant/memory',pretendToBeVisual:true}),d=dom.window.document;

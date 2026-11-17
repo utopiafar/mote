@@ -9,7 +9,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
 import type {FeatureInventory,RecordingStatus} from '@mote/shared';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import type {RecordingProvider} from '../../server/src/connectors/recordings.js';
 import {recordingManifest} from '../../server/src/plugins/recording-sources.js';
 import type {Api} from '../src/api.js';
@@ -31,7 +31,7 @@ test('production connector inventory opens built-in and third-party recording ca
     account:()=>generatedUnused('account'),discover:()=>generatedUnused('discover'),metadata:()=>generatedUnused('metadata'),
     transcript:()=>generatedUnused('transcript'),media:()=>generatedUnused('media'),
   }),{label:'Generated third-party recorder',setup:{description:'Generated setup fixture only'}});
-  const config:Config={dataDir:join(directory,'vault'),token:'generated-source-catalog-owner-token',tokenPath:'generated-fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(directory,'connectors')}};
+  const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:'generated-source-catalog-owner-token',tokenPath:'generated-fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'vault'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors')}}};
   const providerCalls:string[]=[],modelCalls:string[]=[],cliCalls:string[]=[];
   const providerFixture=(id:string):RecordingProvider=>{
     const unused=async(method:string):Promise<never>=>{providerCalls.push(id+':'+method);throw Error('No account or provider reads belong in generated discovery fixtures');};
@@ -60,7 +60,7 @@ test('production connector inventory opens built-in and third-party recording ca
     const method=(init?.method??'GET').toUpperCase(),record={method,path,status:0};
     requests.push(record);
     assert.equal(method,'GET','discovery and navigation cannot mutate a connector');
-    const response=await node!.app.inject({method:'GET',url:path,headers:{authorization:'Bearer '+config.token}});
+    const response=await node!.app.inject({method:'GET',url:path,headers:{authorization:'Bearer '+config.privateCredential!.token}});
     record.status=response.statusCode;
     assert.equal(response.statusCode,200,path+' '+response.body);
     return response.json() as T;

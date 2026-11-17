@@ -7,17 +7,17 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {FILE_PART_BYTES,noteCapture,noteSchema} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import type {TranscriptionProvider} from '../src/file-processing.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 async function fixture(t:TestContext,transcriptionProvider?:TranscriptionProvider,processAudio=false){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-ui-ia-context-'));
- const config:Config={dataDir,token:'generated-ui-ia-owner-token-1234567890',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-ui-ia-owner-token-1234567890',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
  const result=await buildApp(config,{backgroundWorker:false,transcriptionProvider,agent:{configured:false,query:async()=>{throw Error('No live model in generated fixture');},close:async()=>{}}});
  if(processAudio){const settings={...result.processing.view().settings,enabled:true,audioProcessor:'audio.http'};await result.processing.save({revision:result.processing.view().revision,settings,policy:fixtureFilePolicy(settings,result.processing.runtime.registry)});await authorizeFixtureModels(result);}
- t.after(async()=>{await result.app.close();rmSync(dataDir,{recursive:true,force:true});});return {...result,headers:{authorization:`Bearer ${config.token}`}};
+ t.after(async()=>{await result.app.close();rmSync(dataDir,{recursive:true,force:true});});return {...result,headers:{authorization:`Bearer ${config.privateCredential!.token}`}};
 }
 const when='2026-10-01T10:00:00.000Z';
 const note=(patch:Record<string,unknown>={})=>({id:randomUUID(),deviceId:'generated-owner-device',deviceName:'Generated device',platform:'android',capturedAt:when,text:'',...patch});
@@ -39,7 +39,7 @@ test('context tree and classifier disposers after app close never query the clos
 
 test('a real app restart without catalog changes preserves operation notifications and logical bytes',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-catalog-restart-'));
- const config:Config={dataDir,token:'generated-catalog-restart',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,agentTraceEnabled:false};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-catalog-restart',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent',enabled:false,traceEnabled:false}}};
  const dependencies={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model in generated restart fixture');},close:async()=>{}}};
  let node=await buildApp(config,dependencies);
  t.after(async()=>{try{await node.app.close();}finally{rmSync(dataDir,{recursive:true,force:true});}});

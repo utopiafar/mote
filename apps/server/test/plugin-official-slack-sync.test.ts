@@ -6,8 +6,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
-
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const readScopes='channels:read,groups:read,im:read,mpim:read,channels:history,groups:history,im:history,mpim:history,users:read';
 const epoch=Math.floor(Date.now()/1000)-90*86400;
@@ -38,7 +37,7 @@ function fakeSlack(){
 async function fixture(t:TestContext,transport=fakeSlack()){
  const root=mkdtempSync(join(tmpdir(),'mote-slack-sync-')),owner='generated-owner-'+randomUUID(),secret='GENERATED_SLACK_'+randomUUID().replaceAll('-','_');process.env[secret]='generated-only';
  const headers={authorization:'Bearer '+owner};
- const config:Config={dataDir:root,token:owner,tokenPath:join(root,'owner'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(root,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const config:ConfigurationPlatformOptions={path:(root)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(root,'owner')},initialDocument:{version:1,revision:0,storage:{dataDir:root,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(root,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
  const boot=()=>buildApp(config,{backgroundWorker:false,connectorTesting:{fetch:transport.fetch},agent:{configured:false,async query(){throw Error('No model in Slack sync fixture');},async close(){}}});
  let node=await boot();t.after(async()=>{await node.app.close();delete process.env[secret];rmSync(root,{recursive:true,force:true});});
  const wait=async(check:()=>boolean)=>{const end=Date.now()+10000;while(!check()){if(Date.now()>end)throw Error('Slack package lifecycle did not settle');await new Promise(resolve=>setTimeout(resolve,10));}};

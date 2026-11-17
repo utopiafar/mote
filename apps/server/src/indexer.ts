@@ -4,7 +4,7 @@ import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-e
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {sha256} from './store.js';
 import type {FileStore} from './files.js';
-import type { Config } from './config.js';
+import type {ModelDomain} from './model-settings.js';
 import type { Store, Range } from './store.js';
 import type { ServerDiagnostics } from './diagnostics.js';
 import { randomUUID } from 'node:crypto';
@@ -23,19 +23,19 @@ export class Indexer {
   private current?:Promise<void>;
   private closing=false;
   private abort=new AbortController();
-  private readonly fileEmbeddingConfiguration=()=>({configured:this.configured,model:this.config.embeddingModel});
+  private readonly fileEmbeddingConfiguration=()=>({configured:this.configured,model:this.embedding.model});
   readonly engine:ExecutionEngine;private owned:boolean;private unregister:(()=>Promise<void>)[]=[];private closePromise?:Promise<void>;private requests=new Set<Promise<unknown>>();
-  constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics,private files?:FileStore,private admission?:(input:{bytes:number;operationId?:string})=>{finish:(usage?:TokenUsage,failed?:boolean)=>void},private options:{executor?:ExecutionEngine;operationId?:()=>string|undefined;authorize?:<T>(evidenceId:string,signal:AbortSignal,task:(signal:AbortSignal)=>Promise<T>)=>Promise<T>;assertModel?:()=>void}={}) {
+  constructor(private store:Store,private embedding:Readonly<ModelDomain['embedding']>,private diagnostics?:ServerDiagnostics,private files?:FileStore,private admission?:(input:{bytes:number;operationId?:string})=>{finish:(usage?:TokenUsage,failed?:boolean)=>void},private options:{executor?:ExecutionEngine;operationId?:()=>string|undefined;authorize?:<T>(evidenceId:string,signal:AbortSignal,task:(signal:AbortSignal)=>Promise<T>)=>Promise<T>;assertModel?:()=>void}={}) {
     this.engine=options.executor??new ExecutionEngine(store);this.owned=!options.executor;
     if(files)files.embeddingConfiguration=this.fileEmbeddingConfiguration;
     for(const kind of ['capture','file'] as const)this.unregister.push(this.engine.register({kind:'embedding.'+kind,pool:'embedding',concurrency:()=>2,policy:EXECUTION_POLICIES.modelCall,timeoutMs:300000,
       validate:step=>this.valid(step),admit:()=>this.closing?new ExecutionFailure('blocked','indexer_closed'):!this.configured?new ExecutionFailure('blocked','embedding_not_configured'):undefined,
       execute:async(step,signal)=>{const combined=AbortSignal.any([signal,this.abort.signal]),task=(authorizedSignal:AbortSignal)=>withExecutionCancellation(authorizedSignal,async()=>{const text=this.inputText(step);return this.performEmbedding(text,45000,authorizedSignal,step.operationId);});return this.options.authorize?this.options.authorize(String(step.input.evidenceId),combined,task):task(combined);},
-      commit:(step,result)=>{const id=String(step.input.evidenceId);if(kind==='capture')this.store.indexed(id,result as number[],this.config.embeddingModel);else this.files!.indexed(id,result as number[],this.config.embeddingModel);},
+      commit:(step,result)=>{const id=String(step.input.evidenceId);if(kind==='capture')this.store.indexed(id,result as number[],this.embedding.model);else this.files!.indexed(id,result as number[],this.embedding.model);},
       project:step=>this.project(step),classify:error=>this.closing?new ExecutionFailure('waiting','interrupted'):new ExecutionFailure('permanent','embedding_invalid'),
     }));
   }
-  private modelFingerprint(){return sha256(JSON.stringify([this.config.embeddingModel,this.config.embeddingBaseUrl,this.config.embeddingApiKey]));}
+  private modelFingerprint(){return sha256(JSON.stringify([this.embedding.model,this.embedding.baseUrl,this.embedding.apiKey]));}
   private fileInput(id:string){if(!this.files?.isCurrentEvidence(id))return;const row=this.store.db.prepare('SELECT c.id,c.capture_id,c.text,c.metadata,c.start_ms,c.end_ms,v.revision FROM file_chunks c JOIN file_versions v ON v.capture_id=c.capture_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE c.id=?').get(id);if(!row)return;return {id,captureId:String(row.capture_id),text:String(row.text),fingerprint:sha256(JSON.stringify([row.capture_id,row.text,row.metadata,row.start_ms,row.end_ms,row.revision]))};}
   private valid(step:ExecutionStep){if(step.input.modelFingerprint!==this.modelFingerprint())return false;const id=String(step.input.evidenceId);return step.kind==='embedding.file'?this.fileInput(id)?.fingerprint===step.input.fingerprint:this.store.archive.fingerprint(id)===step.input.fingerprint;}
   private inputText(step:ExecutionStep){const id=String(step.input.evidenceId);if(step.kind==='embedding.file')return this.fileInput(id)!.text;const item=this.store.evidence([id])[0];return [item.appName,item.windowTitle,item.ocrText,...(item.mood===undefined?[]:[`User-provided mood: ${item.mood}`])].join('\n');}
@@ -54,7 +54,7 @@ export class Indexer {
   }
 
   retry(){const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{const result=this.store.retryIndex();for(const row of db.prepare("SELECT id FROM execution_steps WHERE kind IN ('embedding.capture','embedding.file') AND state!='running'").all())this.engine.retry(String(row.id),true);if(own)db.exec('COMMIT');return result;}catch(error){if(own)db.exec('ROLLBACK');throw error;}}
-  get configured() {return Boolean(this.config.embeddingModel&&this.config.embeddingBaseUrl);}
+  get configured() {return Boolean(this.embedding.model&&this.embedding.baseUrl);}
   private queryCache=new Map<string,{at:number;vector:number[]}>();
   embed(text:string,timeoutMs=45000,signal?:AbortSignal,operationId?:string):Promise<number[]> {
     if(this.closing)return Promise.reject(new Error('Indexer is closed'));
@@ -86,9 +86,9 @@ export class Indexer {
     return this.diagnostics?this.diagnostics.measure('index','embedding',task,()=>({count:1})):task();
   }
   private async requestEmbedding(text:string,timeoutMs:number,signal?:AbortSignal) {
-    const url=this.config.embeddingBaseUrl.replace(/\/$/,'')+'/embeddings';
+    const url=this.embedding.baseUrl.replace(/\/$/,'')+'/embeddings';
     let response:Response;
-    try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.config.embeddingApiKey?{Authorization:`Bearer ${this.config.embeddingApiKey}`}:{})},body:JSON.stringify({model:this.config.embeddingModel,input:text.slice(0,EMBEDDING_INPUT_CODE_UNITS)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
+    try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.embedding.apiKey?{Authorization:`Bearer ${this.embedding.apiKey}`}:{})},body:JSON.stringify({model:this.embedding.model,input:text.slice(0,EMBEDDING_INPUT_CODE_UNITS)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
     if(!response.ok){await response.body?.cancel();throw new EmbeddingError('embedding_http',response.status,response.headers.get('retry-after'));}
     let data:{data?:{embedding?:number[]}[];usage?:{prompt_tokens?:number;total_tokens?:number}};
     try {
@@ -115,7 +115,7 @@ export class Indexer {
   }
   private async run() {
     for(const item of this.store.pending(8)){const fingerprint=this.store.archive.fingerprint(item.id);if(fingerprint)this.enqueue('capture',item.id,item.id,fingerprint);}
-    for(const item of this.files?.pendingIndex(this.config.embeddingModel)??[]){const current=this.fileInput(item.id);if(current)this.enqueue('file',item.id,current.captureId,current.fingerprint);}
+    for(const item of this.files?.pendingIndex(this.embedding.model)??[]){const current=this.fileInput(item.id);if(current)this.enqueue('file',item.id,current.captureId,current.fingerprint);}
     const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('embedding.capture','embedding.file') AND state IN ('waiting','running') ORDER BY rowid LIMIT 200").all().map(row=>String(row.id));await this.engine.drain(ids);for(const id of ids)this.engine.project(id);
     const counts=this.store.indexCounts();this.diagnostics?.record('queue.snapshot',{pending:counts.pending,failed:counts.failed});
   }
@@ -133,10 +133,10 @@ export class Indexer {
       const signal=AbortSignal.any([controller.signal,this.abort.signal,...(args.signal?[args.signal]:[])]);
       let scanning=false;
       try{
-        const key=sha256(JSON.stringify([this.config.embeddingModel,this.config.embeddingBaseUrl,this.config.embeddingApiKey]))+"\n"+args.query,cached=this.queryCache.get(key);
+        const key=sha256(JSON.stringify([this.embedding.model,this.embedding.baseUrl,this.embedding.apiKey]))+"\n"+args.query,cached=this.queryCache.get(key);
         const vector=cached&&Date.now()-cached.at<60000?cached.vector:await this.embed(args.query,1200,signal);
         if(!cached||cached.vector!==vector){if(this.queryCache.size>=128)this.queryCache.delete(this.queryCache.keys().next().value!);this.queryCache.set(key,{at:Date.now(),vector});}
-        const captureQuery=this.store.vectorQuery(this.config.embeddingModel,args),fileQuery=this.files?.vectorQuery(this.config.embeddingModel,args);
+        const captureQuery=this.store.vectorQuery(this.embedding.model,args),fileQuery=this.files?.vectorQuery(this.embedding.model,args);
         scanning=true;
         const scans=await scanVectors({path:join(this.store.directory,'mote.sqlite'),queries:[captureQuery,...(fileQuery?[fileQuery]:[])],vector,limit:Math.max(1,Math.min(args.limit??50,200))},signal);
         signal.throwIfAborted();

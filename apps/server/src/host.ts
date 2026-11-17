@@ -58,8 +58,9 @@ import { existsSync,readFileSync } from 'node:fs';
 import { join,relative,sep } from 'node:path';
 import { z } from 'zod';
 import {installAgentReadTools} from './plugins/agent-read-tools.js';
-import { repositoryRoot,type Config } from './config.js';
+import { repositoryRoot,serverConfigDomain,modelsConfigDomain,pluginsConfigDomain,dshConfigDomain,connectorsConfigDomain } from './config.js';
 import {contributeDomainRoutes} from './plugins/domain-routes.js';
+import type {ConfigurationPlatformOptions} from './config.js';
 import { ConfigService,ConfigServiceError } from './config-service.js';
 import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
 import type {RequestAuthority} from './plugins/central-contracts.js';
@@ -112,18 +113,18 @@ import { UsageLedger } from './usage.js';
 export type {QueryAgent} from './query-agent.js';
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
 export type HostDependencies={distribution?:CentralDistribution;configService?:ConfigService;webRoot?:string;connectorTesting?:import('./connectors/index.js').ConnectorTestDependencies;connectorManifests?:readonly ConnectorManifest[];processingPlugins?:readonly Plugin[];semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareMediaRuntime?:MediaAssemblyDependencies['prepareMediaRuntime'];prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void};
-export async function buildHost(config:Config,dependencies?:HostDependencies) {
+export async function buildHost(configuration:ConfigurationPlatformOptions,dependencies?:HostDependencies) {
   const resources=new ServerResources();
   let startupApp:FastifyInstance|undefined;
   try{
-  const bootstrap=await bootstrapCentral({config:{...config},...(dependencies?.configService?{configService:dependencies.configService}:{}),...(dependencies?.store?{store:dependencies.store}:{}),...(dependencies?.backgroundWorker!==undefined?{backgroundWorker:dependencies.backgroundWorker}:{})},dependencies?.distribution);
+  const bootstrap=await bootstrapCentral({configuration,...(dependencies?.configService?{configService:dependencies.configService}:{}),...(dependencies?.store?{store:dependencies.store}:{}),...(dependencies?.backgroundWorker!==undefined?{backgroundWorker:dependencies.backgroundWorker}:{})},dependencies?.distribution);
   resources.defer(()=>bootstrap.close());
-  config=bootstrap.config;
-  const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store;
+  const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store,facts=bootstrap.configurationBootstrap;
+  const config=configService.current(serverConfigDomain),embedding=configService.current(modelsConfigDomain).embedding;
   let availableModelConnections=():ModelConnection[]=>[];
   const {authorizationPlatform,modelAuthorization,runtimeSettings,observabilityPlatform,observabilityScope,observabilityAssembly,diagnostics,executionObserver,eventLoop,usageLedger,softwareUpdate,executionPlatform,executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,assertModelPurpose,authorizeModelRequest,runModelFor,observeMemory,observeMemoryAsync}=await assemblePlatform({
     readFeatureInventory:()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()]),
-    bootstrap,config,store,resources,serverVersion,
+    bootstrap,store,resources,serverVersion,
     availableModelConnections:()=>availableModelConnections(),connections:dependencies?.connections,
     assertModelEvidence:input=>assertModelEvidence(input)});
   const {memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,memoryBindingControl,topics}=memoryInputs({store,configService});
@@ -134,7 +135,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   resources.defer(()=>backend.dispose());
   await backend;
   const {sourceRuntime,sourcePipelines,sources,filesPlatform,files,fileEvidence,fileRawReader,captureIntake,ingress,notesSource,modelAuthorizationHost,filesPlayback,codingFeature}=await assembleSources({bootstrap,store,materials,materialMemoryWork,executionPlatform,authorizationPlatform,diagnostics,resources});
-  const {mediaAssets,mediaPreparation}=assembleMedia({config,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
+  const {mediaAssets,mediaPreparation,media}=assembleMedia({bootstrap:facts,store,configService,resources,backgroundWorker:dependencies?.backgroundWorker,prepareMediaRuntime:dependencies?.prepareMediaRuntime});
   const admittedUsage=(...args:Parameters<UsageLedger['start']>)=>{
     let agentStarted=false,modelQueued=false,meter:ReturnType<typeof observabilityAssembly.admittedUsage>|undefined;
     const start=()=>meter??=observabilityAssembly.admittedUsage(...args);
@@ -157,14 +158,14 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     };
   };
   let catalogChangesEnabled=false;
-  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,setMaterialConsumerTick}=assembleMaterials({store,config,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
+  const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,setMaterialConsumerTick}=assembleMaterials({store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
   const assistantDrafts=new AssistantDrafts(conversations);
   const assistantMatters=new AssistantMatters(store);
   const assistantCards=new AssistantCards(store,evidenceReader);
   const assistantCommitments=new AssistantCommitments(store,evidenceReader);
-  const pluginControl=createPluginControlPlatform({store,executor,host:bootstrap.host,controlForScope:bootstrap.pluginStorage.controlForScope,releases:new GitHubPluginReleases(join(config.dataDir,'plugins','packages'))});
+  const pluginControl=createPluginControlPlatform({store,executor,host:bootstrap.host,controlForScope:bootstrap.pluginStorage.controlForScope,releases:new GitHubPluginReleases(join(facts.dataDir,'plugins','packages'))});
   const pluginControlHandle=await bootstrap.host.install({
     identity:{host:bootstrap.snapshot().host,packageId:'mote.plugin-control',installationId:'build:plugin-control@1.0.0',instanceId:'control',activationId:randomUUID()},
     contributions:[pluginControlDeclaration],factory:pluginControl.factory,
@@ -172,7 +173,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const pluginCenter=pluginControl.assembly;
   // Outbound packages never write through their own code. This host owns the
   // cursor, sandbox, sensitive-source filter and hand-edit conflict ledger.
-  pluginCenter.outboundHost=new OutboundExportHost({store,materials,repoRoot:repositoryRoot,dataDir:config.dataDir,
+  pluginCenter.outboundHost=new OutboundExportHost({store,materials,repoRoot:repositoryRoot,dataDir:facts.dataDir,
     sourceKind:sourceId=>{try{return sources.getSource(sourceId).kind;}catch{return undefined;}}});
   pluginCenter.resumeOutboundInstances();
   resources.beforeClose(()=>pluginControlHandle.close('shutdown'));
@@ -232,7 +233,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     currentContextTime:()=>modelContext.getStore()?.contextTime,
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs});
   let historyBeforeSeq:((workId:string)=>number|undefined)|undefined;
-  const historyRead=conversationHistoryReader({store,conversations,current:()=>modelContext.getStore(),assert:assertModelEvidence,cursorSecret:config.token,historyBeforeSeq:workId=>historyBeforeSeq?.(workId)});
+  const historyRead=conversationHistoryReader({store,conversations,current:()=>modelContext.getStore(),assert:assertModelEvidence,cursorSecret:facts.owner.token,historyBeforeSeq:workId=>historyBeforeSeq?.(workId)});
   const agentFeatures=await installAgentReadTools(backendContext,sourceScopedReader({...evidenceAgentReader,catalog:async args=>historyRead(args)??evidenceAgentReader.catalog?.(args)},querySources));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
@@ -272,8 +273,8 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     ...(baseReader.memories?{memories:observeRead('reader_memories',baseReader.memories)}:{}),
   };
   const {agent,factory,codex}=await assembleAgent({
-    config,resources,diagnostics,backendContext,configurationPlatform,configService,runtimeSettings,reader,modelAuthorizationHost,
-    createModelAgent:dependencies?.createModelAgent,nativeDshForProfile:id=>nativeDshSource(configService.current<DshConfiguration>('dsh'),id,configService.revision,reference=>pluginCenter.resolveNativeDshModule(reference),{store,sources,materials}),nativeDshModules:()=>pluginCenter.nativeDshModules(),validateNativeDshConfiguration:value=>pluginCenter.validateNativeDshConfiguration(value),authorization:modelAuthorization,admission:providerAdmission,
+    bootstrap:facts,resources,diagnostics,backendContext,configurationPlatform,configService,runtimeSettings,reader,modelAuthorizationHost,
+    createModelAgent:dependencies?.createModelAgent,nativeDshForProfile:id=>nativeDshSource(configService.current(dshConfigDomain),id,configService.revision,reference=>pluginCenter.resolveNativeDshModule(reference),{store,sources,materials}),nativeDshModules:()=>pluginCenter.nativeDshModules(),validateNativeDshConfiguration:value=>pluginCenter.validateNativeDshConfiguration(value),authorization:modelAuthorization,admission:providerAdmission,
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
     agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,providerAdmission,
     insightSettings:()=>lifecycle.settings().insights,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,delegatedSnapshot:()=>executor.poolSnapshot('delegated-agents'),wakeMemory:()=>memoryPipeline.wake(),
@@ -283,7 +284,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   let additionalModelConnections=():ModelConnection[]=>[];
   availableModelConnections=()=>{
     const models=[...modelSettings.profiles(),...MODEL_FEATURES.map(feature=>modelSettings.select(feature))].map(profile=>agentModelConnection({kind:'profile',id:profile.id},profile.settings));
-    if(config.embeddingModel&&config.embeddingBaseUrl)models.push(modelConnection('embedding:central',{model:config.embeddingModel,baseUrl:config.embeddingBaseUrl,apiKey:config.embeddingApiKey}));
+    if(embedding.model&&embedding.baseUrl)models.push(modelConnection('embedding:central',embedding));
     return [...new Map([...models,...additionalModelConnections()].map(connection=>[connection.id+'@'+connection.fingerprint,connection])).values()];
   };
   // Intake-only models belong to explicit media work, never to a general
@@ -363,13 +364,13 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   resources.beforeClose(()=>setMaterialConsumerTick(undefined));
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
-  const {workflows,processing,resolveFileModel,mediaModelAuthority,processingServices}=await assembleProcessing({bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,plugins:dependencies?.processingPlugins,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider,withMediaOwnerBatch,withMediaOwnerIntent});
+  const {workflows,processing,resolveFileModel,mediaModelAuthority,processingServices}=await assembleProcessing({bootstrap,store,media,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,plugins:dependencies?.processingPlugins,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage,transcriptionProvider:dependencies?.transcriptionProvider,withMediaOwnerBatch,withMediaOwnerIntent});
   pluginCenter.processingHost=createProcessingPluginHost(workflows,processing.runtime,()=>processingServices.port.phase==='active');
-  const localImages=assembleLocalImages({plugins:pluginCenter,mediaAssets,processing,config,usage:usageLedger});
+  const localImages=assembleLocalImages({plugins:pluginCenter,mediaAssets,processing,media,usage:usageLedger});
   const memoryConfiguration=(id?:string,model?:string)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);};
   const disposeCaptureMemoryIntake=installCaptureMemoryIntake(store,materialMemoryWork,input=>modelAuthorizationHost.capture(input));
   resources.defer(disposeCaptureMemoryIntake);
-  const {perception}=assemblePerception({store,config,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
+  const {perception}=assemblePerception({store,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
   additionalModelConnections=()=>[...processing.modelConnections(),...configService.current<ProcessingConfiguration>('processing').policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return query.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
@@ -475,7 +476,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const sourceIntegration=await startSourceIntegration();
   await prepareConnectionsRoutes(bootstrap,resources,{config,connections,connectionIdentity,serverVersion});
   const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,ownerCalendarAuthority:{conversations,assertContext:assertModelEvidence},queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
-  const {connectors}=await assembleConnectors({app,resources,pluginStorage:bootstrap.pluginStorage,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
+  const {connectors}=await assembleConnectors({app,resources,pluginStorage:bootstrap.pluginStorage,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,bootstrap:facts,configService,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
   // Built-in Google/Lark calendar writes stay deployment connectors: they reuse
@@ -523,10 +524,10 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     return (JSON.parse(String(row.json)).outputs as string[]).map(id=>({id,revision:String(store.archive.revision(id)!)}));
     });
   };
-  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,memoryPublicationService}=memoryRuntime({store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions:ownerQuestionServices.port,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(config.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),lifecycle:{automatic:dependencies?.backgroundWorker!==false,whenReady:task=>{app.addHook('onReady',async()=>{task();});},semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:workDomains.insights?.runs??false,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),replacements:dependencies?.memoryExtensions},availableModelConnections:()=>availableModelConnections(),queryAgent,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
+  const {memoryBindings,memoryAdapters,memoryPublication,memoryPipeline,memoryPhasePipeline,reviewExtraction,lifecycle,working,memoryIntegrationSettings,memoryTopics,memoryPublicationService}=memoryRuntime({store,resources,backendContext,configService,diagnostics,executor,usageLedger,memories,conversations,files,materials,materialMemoryWork,sourcePipelines,evidenceReader,contextTrees,memoryStrategies,memoryRecipeSettings,memoryStrategySettings,memoryAutomation,ownerQuestions:ownerQuestionServices.port,pluginCenter,modelAuthorization,modelAuthorizationHost,modelSettings,agent,runtimeSettings,codex,instancesDirectory:join(facts.dataDir,'plugins','instances'),runModelFor,memoryConfiguration,semanticContextTime:dependencies?.semanticContextTime,memoryBindingControl,topics,topicsCanPublish:()=>catalogChangesEnabled&&!serverLifecycle.isClosing(),lifecycle:{automatic:dependencies?.backgroundWorker!==false,whenReady:task=>{app.addHook('onReady',async()=>{task();});},semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:workDomains.insights?.runs??false,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),replacements:dependencies?.memoryExtensions},availableModelConnections:()=>availableModelConnections(),queryAgent,understand:understandConversation,assertModelEvidence,withQueryModelAuthority,query:input=>queryAgent(input,'query','memories')});
   memoryWorkingHost=working;memoryLifecycleHost=lifecycle;
 
-  const {imports,importServices}=assembleImports({store,resources,backendContext,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),evidenceReader,prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
+  const {imports,importServices}=assembleImports({store,resources,backendContext,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,importPythonPacks:configService.current(pluginsConfigDomain).importPythonPacks,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),evidenceReader,prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
   const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
   const {delegation,queryRuns,queryRunServices,metadata:queryMetadata}=await prepareQueryRuns({bootstrap,backendContext,resources,store,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working:queryWorking,
@@ -548,7 +549,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   }
   function systemStatus() {
     const profiles=modelSettings.profiles(),current=modelSettings.current(),unbounded=profiles.some(p=>p.settings.agentTimeoutMs===null),agentTimeouts=profiles.map(p=>p.settings.agentTimeoutMs).filter((value):value is number=>value!==null);
-    return {runtime:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,maintenance:maintenanceWorker?.snapshot()??null},profile:config.profile??'default',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:config.modelProtocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??DEFAULT_MODEL_MAX_TOKENS,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};
+    return {runtime:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,maintenance:maintenanceWorker?.snapshot()??null},profile:config.profile??'default',agent:{configured:agent.configured,provider:modelProvider(current.provider)?.name??current.provider,runtime:current.protocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:current.protocol,model:current.model||null,reasoningEffort:current.reasoningEffort,maxTokens:current.maxTokens,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:embedding.model||null},diagnostics:diagnostics.snapshot(),insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};
   }
 
 
@@ -591,7 +592,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
-  configService.setHandler<{syncIntervalMs:number}>('connectors',(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
+  configService.setHandler(connectorsConfigDomain,(next,previous)=>({apply:()=>{},publish:()=>connectors.configureSyncInterval(next.syncIntervalMs),rollback:()=>connectors.configureSyncInterval(previous.syncIntervalMs)}));
   const assistantNotifications=new AssistantNotifications(assistantCards,()=>configService.current<NotificationSettings>('notifications'));
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
@@ -614,7 +615,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   workDomains.contributeAssistantRoutes(backendContext,{store:assistantCards,notifications:assistantNotifications,workbench:assistantWorkbench,onboarding:assistantOnboarding,credential,assertRequestActive});
   const featureServices=Object.freeze({
     assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,assistantWorkbench,assistantOnboarding,
-    configService,runtimeSettings,config,availableModelConnections:()=>availableModelConnections(),assistantMatters,
+    configService,runtimeSettings,importPythonPacks:configService.current(pluginsConfigDomain).importPythonPacks,availableModelConnections:()=>availableModelConnections(),assistantMatters,
     executor,providerAdmission,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,serverVersion,
     sourcePipelines,sources,ingress,notesSource:notesSource.assemblyForRoutes(),files,fileEvidence,filesSource:{playback:filesPlayback},
     mediaAssets,mediaPreparation,materials,materialOrganizer,materialMemoryWork,indexer,evidenceReader,contextTrees,
@@ -656,7 +657,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   if(selected('mote.models'))routes.push(domain('mote.models'));
   if(selected('mote.processing'))routes.push(domain('mote.processing'));
   if(selected('mote.notes')&&bootstrap.selectsPlugin('notes-source'))routes.push(withAgentTools(notesFeature({assertRequestActive,connections,credential,diagnostics,files,ingress,notesSource:notesSource.assemblyForRoutes(),notesCapture})));
-  if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media:config.media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}));
+  if(selected('mote.media'))routes.push(domain('mote.media',(app,scope)=>{mediaPreparationFeature({connections,credential,mediaRange,store,mediaPreparation:()=>mediaPreparation}).mount(app,scope);mediaModelsFeature({mediaAssets,media,runtimeStatus:async role=>{const {runtimeReady,missingDependencies}=await mediaPreparation.status(role);return {runtimeReady,...(missingDependencies?{missingDependencies}:{})};}}).mount(app,scope);}));
   if(selected('mote.owner-questions'))routes.push(domain('mote.owner-questions'));
   if(selected('mote.memory'))routes.push(domain('mote.memory',app=>registerMemoryAssociationRoutes(app,assistantCommitments,request=>{assertRequestActive(request);if(credential(request))throw new StoreError('Owner access required',403);})));
   if(selected('mote.imports'))routes.push(domain('mote.imports'));

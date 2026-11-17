@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {memorySchema} from '../src/memory-schema.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 
@@ -21,7 +21,7 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
  const sourceScoped=restriction.startsWith('source');
  const directory=mkdtempSync(join(tmpdir(),'mote-query-scope-')),token='generated-query-scope-owner',headers={authorization:'Bearer '+token};
  let node!:Awaited<ReturnType<typeof buildApp>>,fixtureFailure:unknown;
- const cfg:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const cfg:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   if(sourceScoped){assert.equal(input.evidenceIds,undefined);assert.equal(input.processingEvidence,undefined);assert.doesNotMatch(JSON.stringify(input),/GENERATED_HIDDEN|GENERATED_VISIBLE_BODY/);}
   const bridge=await startBridge(node.featureServices.archiveReader,input);
@@ -89,7 +89,7 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
 test('time-scoped source pagination skips hidden rows without leaking their identities in cursors',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-source-pages-')),token='generated-source-pages-owner',headers={authorization:'Bearer '+token};
  let node!:Awaited<ReturnType<typeof buildApp>>,fixtureFailure:unknown;
- const cfg:Config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const cfg:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   const bridge=await startBridge(node.featureServices.archiveReader,input);
   try{

@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {estimateSerializedTokens} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {FileObservationReader} from '../src/file-observations.js';
 import {AssistantFollowup} from '../src/assistant-followup.js';
 import {sha256} from '../src/store.js';
@@ -59,9 +59,7 @@ async function journey(t:TestContext,interruption?:'restart'|'off'|'stop'|'exclu
   send({id:'generated-j2',choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
  })().catch(error=>{providerErrors.push(error);if(!res.headersSent)res.writeHead(500);res.end();});});
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,dataKey:'65'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,
-  insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,
-  embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:'65'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  let node:Awaited<ReturnType<typeof buildApp>>,base='',now=Date.now();
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false});

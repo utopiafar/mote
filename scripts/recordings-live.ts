@@ -6,7 +6,7 @@ import {resolve,join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {buildApp} from '../apps/server/src/app.js';
 import {createFeishuRecordings} from '../apps/server/src/connectors/lark-recordings.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import type {RecordingProvider} from '../apps/server/src/connectors/recordings.js';
 import type {ModelSettings} from '@mote/shared/models';
 import {createModelAgent} from '../apps/server/src/model-agent.js';
@@ -27,14 +27,14 @@ const chosen=discovered.ids[0]!,metadata=await actual.metadata(account,chosen,si
 const provider:RecordingProvider={...actual,discover:async(bound,window,abort)=>{
  const page=await actual.discover(bound,window,abort);return {ids:page.ids.includes(chosen)?[chosen]:[]};
 }};
-const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token:'local-live-validation-'+createHash('sha256').update(directory).digest('hex'),tokenPath:'private-validation',host:'127.0.0.1',port:0,maxExportBytes:512*1024*1024,insightIntervalHours:0,allowedOrigins:[],modelProvider:settings.provider,modelProtocol:settings.protocol,model:settings.model,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,modelReasoningEffort:settings.reasoningEffort,modelMaxTokens:settings.maxTokens,modelRequestTimeoutMs:settings.modelRequestTimeoutMs,agentTimeoutMs:settings.agentTimeoutMs,modelHeaders:settings.headers,modelExtraBody:settings.extraBody,allowUnauthenticatedLocal:settings.allowUnauthenticatedLocal,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};
+const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:'local-live-validation-'+createHash('sha256').update(directory).digest('hex'),tokenPath:'private-validation'},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:join(directory,'vault'),maxExportBytes:512*1024*1024},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{provider:settings.provider,protocol:settings.protocol,model:settings.model,baseUrl:settings.baseUrl,apiKey:settings.apiKey,reasoningEffort:settings.reasoningEffort,maxTokens:settings.maxTokens,modelRequestTimeoutMs:settings.modelRequestTimeoutMs,agentTimeoutMs:settings.agentTimeoutMs,headers:settings.headers,extraBody:settings.extraBody,allowUnauthenticatedLocal:settings.allowUnauthenticatedLocal},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};
 let calls=0;
 const node=await buildApp(config,{backgroundWorker:false,connectorTesting:{recordings:[provider]},createModelAgent:async(model,reader)=>{
  const runtime=await createModelAgent(model,reader);return {configured:runtime.configured,close:()=>runtime.close(),query:async input=>{calls++;console.log(JSON.stringify({stage:'model',phase:input.traceContext?.phase??input.skill,call:calls}));return runtime.query(input);}};
 }});
 const report:{[key:string]:unknown}={sampleCount:1,personalDataUsed:true,physicalDeviceTested:false,model:settings.model,modelProtocol:settings.protocol,discoveryHasMore:!!discovered.next,startedAt:new Date().toISOString()};
 try{
- await node.app.ready();const headers={authorization:'Bearer '+config.token};
+ await node.app.ready();const headers={authorization:'Bearer '+config.privateCredential!.token};
  const request=async(method:'GET'|'POST'|'PUT',suffix='',payload?:unknown)=>{const r=await node.app.inject({method,url:'/api/connectors/feishu-recordings'+suffix,headers,...(payload?{payload}:{})});assert.equal(r.statusCode,200);return r.json();};
  await request('POST','/connect');await request('PUT','/selection',{enabled:true,...range,autoSync:false,backupAudio:true});
  for(let n=0;n<100;n++){const rows=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'recording.feishu.%' AND state IN ('waiting','running') AND available_at<=? LIMIT 100").all(Date.now()) as {id:string}[];if(!rows.length)break;await node.executor.drain(rows.map(r=>r.id));}

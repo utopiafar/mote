@@ -21,16 +21,14 @@ import {plugins as workPlugins} from '../src/assembly/work.js';
 import {plugins as importPlugins} from '../src/assembly/imports.js';
 import type {CentralDistribution,CentralDomainPlugin,FoundationProvider} from '../src/bootstrap.js';
 import {Store} from '../src/store.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {FUNASR_PINS} from '../src/funasr-contract.js';
 
 function fixture(t:{after(fn:()=>void):void}){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-central-distribution-'));
   t.after(()=>rmSync(dataDir,{recursive:true,force:true}));
-  const config:Config={dataDir,token:'generated-central-distribution-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-    maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],
-    model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
-  return {config,headers:{authorization:`Bearer ${config.token}`}};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-central-distribution-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+  return {config,headers:{authorization:`Bearer ${config.privateCredential!.token}`}};
 }
 function note(){return {id:randomUUID(),deviceId:'generated-central-distribution-device',deviceName:'Generated central distribution fixture',platform:'android',capturedAt:'2026-11-02T12:00:00.000Z',text:'Generated original note retained across a reduced default composition.'};}
 const agent={configured:false,query:async()=>{throw Error('No model in central distribution fixture');},close:async()=>{}};
@@ -254,7 +252,7 @@ test('a failing declared domain releases accepted resources and permits the same
   assert.ok(preparedStore);assert.throws(()=>preparedStore!.stats(),'startup rollback must close the first vault');
   const reopened=await buildApp(config,{agent,backgroundWorker:false});t.after(()=>reopened.app.close());
   assert.ok(reopened.insightServices.available,'the real insight manager must reopen after rollback');
-  assert.equal((await reopened.app.inject({url:'/api/insight-runs',headers:{authorization:`Bearer ${config.token}`}})).statusCode,200);
+  assert.equal((await reopened.app.inject({url:'/api/insight-runs',headers:{authorization:`Bearer ${config.privateCredential!.token}`}})).statusCode,200);
 });
 
 test('an unavailable declared binding refuses startup before invoking its consumer factory',async t=>{
@@ -266,5 +264,5 @@ test('an unavailable declared binding refuses startup before invoking its consum
   const distribution:CentralDistribution={...defaultDistribution,features:[...defaultFeatures,'mote.generated-unbound-domain'],plugins:[...defaultPlugins,plugin]};
   await assert.rejects(buildApp(config,{agent,backgroundWorker:false,distribution}),{code:'dependency_unavailable'});
   assert.equal(created,0);
-  const reopened=new Store(config.dataDir);reopened.close();
+  const reopened=new Store(config.initialDocument!.storage.dataDir);reopened.close();
 });

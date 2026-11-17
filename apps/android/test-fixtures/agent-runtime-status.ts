@@ -7,7 +7,7 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {agentRuntimeReadiness,agentRuntimeStatusReceiptSchema} from '@mote/shared/agent-runtime-status';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import type {ModelAgentFactory} from '../../server/src/model-agent.js';
 import {parseAgentRuntimeStatus} from '../../web/src/agent-runtime-status.js';
 import {readAgentRuntimeStatus} from '../../desktop/src/agent-runtime-status.js';
@@ -25,10 +25,7 @@ const secret = 'generated-runtime-status-secret-do-not-echo';
 const receiptPath = join(directory, 'receipt.json');
 const badRevisionPath = join(directory, 'bad-revision.json');
 const unconfiguredPath = join(directory, 'unconfigured.json');
-const config: Config = {dataDir: join(directory, 'data'), token: owner, tokenPath: 'generated-only', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0, allowedOrigins: [],
-  model: 'generated-runtime-model', modelBaseUrl: 'https://fixture.invalid/v1', apiKey: secret, modelProvider: 'custom',
-  modelProtocol: 'openai-completions', modelReasoningEffort: 'auto', allowUnauthenticatedLocal: false, embeddingModel: '',
-  embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false};
+const config: ConfigurationPlatformOptions = {path:(join(directory, 'data'))+'/mote.yaml',privateCredential:{token:owner,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory, 'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-runtime-model',baseUrl:'https://fixture.invalid/v1',apiKey:secret,provider:'custom',protocol:'openai-completions',reasoningEffort:'auto',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
 const factory: ModelAgentFactory = async settings => ({configured: true,
   query: async () => ({answer: settings.model, citations: [], trace: [], runId: 'generated-runtime-status-run'}),
   close: async () => {}});
@@ -78,7 +75,7 @@ try {
 
   // The real unconfigured node keeps its default selection readable but never
   // projects ready on any production parser.
-  unconfigured = await buildApp({...config, dataDir: join(directory, 'data-unconfigured'), model: '', modelBaseUrl: '', apiKey: ''},
+  unconfigured = await buildApp(((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,path:(join(directory, 'data-unconfigured'))+'/mote.yaml',initialDocument:{...sourceInput.initialDocument!,storage:{...((sourceInput.initialDocument! as Record<string,unknown>)["storage"] as Record<string,unknown>),dataDir:join(directory, 'data-unconfigured')},models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),model:'',baseUrl:'',apiKey:''}}}}))(config),
     {backgroundWorker: false});
   const unconfiguredOrigin = await unconfigured.app.listen({host: '127.0.0.1', port: 0});
   const unconfiguredResponse = await fetch(unconfiguredOrigin + '/api/agent-runtime-settings', {headers: {authorization: 'Bearer ' + owner}});

@@ -150,12 +150,12 @@ test('file browsing honors source links and preserves a filename search while op
 
 test('real Central file projection reaches the existing reader from an isolated generated profile',async t=>{
  const {root,d}=await fixture(t);
- const [{mkdtempSync,writeFileSync,rmSync},{tmpdir},{join},{buildApp},{configFromFile},{serializeConfigDocument}]=await Promise.all([import('node:fs'),import('node:os'),import('node:path'),import('../../server/src/app'),import('../../server/src/config'),import('@mote/shared/config-file')]);
+ const [{mkdtempSync,writeFileSync,rmSync},{tmpdir},{join},{buildApp},{configurationFromFile},{serializeConfigDocument}]=await Promise.all([import('node:fs'),import('node:os'),import('node:path'),import('../../server/src/app'),import('../../server/src/config'),import('@mote/shared/config-file')]);
  const directory=mkdtempSync(join(tmpdir(),'mote-f10-web-')),configPath=join(directory,'mote.yaml');
  writeFileSync(configPath,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-f10-owner-token-1234567890'},storage:{dataDir:directory},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- const config=configFromFile(configPath),{app}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
+ const config=configurationFromFile(configPath),{app,bootstrap}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
  t.after(async()=>{await app.close();rmSync(directory,{recursive:true,force:true});});
- const headers={authorization:'Bearer '+config.token};
+ const headers={authorization:'Bearer '+bootstrap.configurationBootstrap.owner.token};
  const registered=await app.inject({method:'POST',url:'/api/sources',headers,payload:{...source,retention:'reference',createdAt:undefined,updatedAt:undefined}});assert.equal(registered.statusCode,200,registered.body);
  const ingested=await app.inject({method:'PUT',url:'/api/file-sync/v1/revisions',headers,payload:{sourceId:source.id,previousRevision:null,relativePath:'generated/report.txt',sizeBytes:24,item:{...projection().item,layer:'reference'}}});assert.equal(ingested.statusCode,200,ingested.body);
  const captureId=ingested.json().id,paths:string[]=[];

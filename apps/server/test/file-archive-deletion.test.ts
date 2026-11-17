@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {type FileRevision,FILE_PART_BYTES} from '@mote/shared';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../src/app.js';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {SourceSync} from '../../desktop/src/source-sync.js';
 import {sourceState} from '../../desktop/src/source-state-store.js';
@@ -15,7 +15,7 @@ import type {ScannedItem,SourceDefinition,SourceRequest} from '../../desktop/src
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-archive-deletion-')),token='generated-archive-deletion-owner',path=join(directory,'mote.yaml');
  await writeFile(path,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:join(directory,'data')},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
- const start=()=>buildApp(configFromFile(path),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in archive deletion fixture');},async close(){}}});
+ const start=()=>buildApp(configurationFromFile(path),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in archive deletion fixture');},async close(){}}});
  let node=await start(),origin=await node.app.listen({host:'127.0.0.1',port:0});
  const owner={authorization:'Bearer '+token,'x-mote-ingress-version':'2'},cleanup=new Set<()=>void>();
  t.after(async()=>{for(const release of cleanup)release();await node.app.close();await rm(directory,{recursive:true,force:true});});

@@ -10,7 +10,7 @@ import {gzipSync} from 'node:zlib';
 import {uiPageText,type CaptureInput,type UiPageV3} from '@mote/shared';
 import type {ContextRecord,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {uiPageCaptureSource} from '../src/capture-memory-intake.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
@@ -28,7 +28,7 @@ function record(kind:'article'|'product'='article',deviceId='generated-phone'):C
 }
 async function fixture(t:TestContext,history?:CaptureInput){
   const directory=mkdtempSync(join(tmpdir(),'mote-page-memory-'));
-  const config:Config={dataDir:directory,token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   if(history){const store=new Store(directory);await store.ingest(history);store.close();}
   const calls:{input:QueryInput;records:ContextRecord[]}[]=[],control:{empty?:boolean;review?:()=>Promise<void>}={};
   const dependencies={backgroundWorker:false,createModelAgent:async(_settings:unknown,reader:import('@mote/agent').ContextReader)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{

@@ -5,7 +5,7 @@ import type {FastifyInstance} from 'fastify';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import {DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
-import type {Config} from '../config.js';
+import {modelsConfigDomain,type ConfigurationBootstrap} from '../config.js';
 import type {ConfigService} from '../config-service.js';
 import type {ConcurrencyGate} from '../concurrency.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
@@ -21,7 +21,7 @@ import type {CentralDomainPlugin,bootstrapCentral} from '../bootstrap.js';
 import type {ConfigurationPlatform} from '../plugins/configuration-platform.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import {agentModelConnection} from '../model-authorization-host.js';
-import {applyModelSettings,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory,type ModelAgentIdentity} from '../model-agent.js';
+import {testModelConnection,type ModelAgentFactory,type ModelAgentIdentity} from '../model-agent.js';
 import type {AgentRuntimeRegistryDependencies} from '../agent-runtime-registry.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {agentRuntimeContribution,agentRuntimeDeclaration,agentRuntimeReplacement,createAgentRuntimeServices} from '../plugins/agent-runtime.js';
@@ -34,7 +34,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 ]);
 
 export interface AgentAssemblyDependencies extends Omit<AgentRuntimeRegistryDependencies,'codex'|'archiveImagesEnabled'|'retainSnapshot'|'releaseSnapshot'|'agentStarted'|'recordTiming'|'agentGate'|'interactiveGate'> {
-  readonly config:Config;
+  readonly bootstrap:ConfigurationBootstrap;
   readonly resources:ServerResources;
   readonly diagnostics:ServerDiagnostics;
   readonly backendContext:Context;
@@ -68,9 +68,9 @@ export interface AgentAssemblyDependencies extends Omit<AgentRuntimeRegistryDepe
  * model generation, the AGENT prepare/probe binding that publishes model
  * selection and the mote.models route table — including one close hook. */
 export async function assembleAgent(dependencies:AgentAssemblyDependencies){
-  const {config,resources,diagnostics}=dependencies;
+  const {bootstrap,resources,diagnostics}=dependencies;
   const services=createAgentRuntimeServices({
-    config,diagnostics,
+    bootstrap,diagnostics,
     agentGate:dependencies.agentGate,llmGate:dependencies.llmGate,interactiveGate:dependencies.interactiveGate,interactiveModelGate:dependencies.interactiveModelGate,
     onCloseError:()=>diagnostics.record('agent.failed',{category:'internal'},'error'),
     registry:{
@@ -91,13 +91,12 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
   resources.defer(()=>services.close());
   services.prepare();
   const runtime=services.agent,factory:ModelAgentFactory=runtime.factory,codex=services.codex;
-  let initialAgent=dependencies.agent?runtime.wrap(dependencies.agent,modelSettingsFromConfig(config),{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
+  let initialAgent=dependencies.agent?runtime.wrap(dependencies.agent,dependencies.configService.current(modelsConfigDomain).deployment,{kind:'profile',id:DEPLOYMENT_MODEL_PROFILE_ID}):undefined;
   await dependencies.configurationPlatform.bindModels({
     codex,
-    prepare:async (settings,profiles,defaultProfileId,previousSettings)=>{
+    prepare:async (_settings,profiles,defaultProfileId)=>{
       const initial=initialAgent;initialAgent=undefined;
-      return runtime.prepareModels(profiles,dependencies.reader,{defaultProfileId,initialAgent:initial,
-        activate:()=>applyModelSettings(config,settings),rollback:()=>applyModelSettings(config,previousSettings??settings)});
+      return runtime.prepareModels(profiles,dependencies.reader,{defaultProfileId,initialAgent:initial});
     },
     probe:settings=>testModelConnection(settings,async(selected,reader)=>{
       const id=randomUUID(),identity:ModelAgentIdentity={kind:'probe',id},candidate=await factory(selected,reader,undefined,identity),connection=agentModelConnection(identity,selected);

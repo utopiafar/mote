@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {AddressInfo} from 'node:net';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 
 // Deterministic generated provider replies exercise real Harness tools, not model quality.
 const directory=await mkdtemp(join(tmpdir(),'mote-media-e2e-'));
@@ -33,9 +33,9 @@ const fixture=createServer(async(req,res)=>{
   res.end('data: [DONE]\n\n');
 });
 await new Promise<void>(resolve=>fixture.listen(0,'127.0.0.1',resolve));
-const config:Config={dataDir:directory,token:'generated-fixture-only-credential',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'4a'.repeat(32),maxExportBytes:10000000,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(fixture.address() as AddressInfo).port}/v1`,apiKey:'generated-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-fixture-only-credential',tokenPath:'unused'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,contentEncryptionEnabled:true,dataKey:'4a'.repeat(32),maxExportBytes:10000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-provider',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(fixture.address() as AddressInfo).port}/v1`,apiKey:'generated-fixture',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
 const {app}=await buildApp(config,{backgroundWorker:false});
-const headers={authorization:`Bearer ${config.token}`};
+const headers={authorization:`Bearer ${config.privateCredential!.token}`};
 try {
   const session={sessionId:'generated-session',appId:'fixture.audio',appName:'Generated Audio',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'Generated chapter 7',artist:'Generated narrator'};
   const event={id,deviceId:'generated-phone',deviceName:'Generated Phone',platform:'android',capturedAt:at,durationMs:30000,appId:session.appId,appName:session.appName,source:'media',privacy:{collection:'content',mode:'none'},metadata:{version:1,observedAt:at,collector:{method:'media_session'},state:{screenLocked:true,screenInteractive:false},media:{status:'available',sessions:[session]}}};

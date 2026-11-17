@@ -1,6 +1,6 @@
 import { moteText } from './i18n.js';
 import {providerModels,codexModels} from './model-catalog.js';
-import { ConfigService, ConfigServiceError, type PreparedConfigChange } from './config-service.js';
+import { ConfigService, ConfigServiceError, type ConfigDomainReference, type PreparedConfigChange } from './config-service.js';
 import { z } from 'zod';
 import { validateModelOptions } from '@mote/agent';
 import {
@@ -85,6 +85,7 @@ export const modelDomainSchema = z.object({
   if(embedding.baseUrl)try{const u=new URL(embedding.baseUrl);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)throw Error();}catch{ctx.addIssue({code:'custom',path:['embedding','baseUrl'],message:'Invalid embedding endpoint'});}
 });
 export type ModelDomain=z.infer<typeof modelDomainSchema>;
+export const modelsConfigDomain=Object.freeze({id:'models',schema:modelDomainSchema}) satisfies ConfigDomainReference<typeof modelDomainSchema>;
 export const defaultModelDomain=():ModelDomain=>modelDomainSchema.parse({});
 
 const errors = {
@@ -149,7 +150,7 @@ export class ModelSettingsStore {
   private closing=false;
   private closed=false;
   constructor(private readonly options: ModelSettingsStoreOptions) {
-    options.configService.setHandler<ModelDomain>('models',async (next,previous)=>this.prepareDomain(next,previous));
+    options.configService.setHandler(modelsConfigDomain,async (next,previous)=>this.prepareDomain(next,previous));
   }
 
   private async prepareDomain(state:ModelDomain,previous:ModelDomain):Promise<PreparedConfigChange> {
@@ -170,7 +171,7 @@ export class ModelSettingsStore {
 
   private requireState(): ModelDomain {
     if (!this.initialized || this.closed) throw new ModelSettingsError('model_settings_unavailable');
-    try{return this.options.configService.current<ModelDomain>('models');}
+    try{return this.options.configService.current(modelsConfigDomain);}
     catch{throw new ModelSettingsError('model_settings_unavailable');}
   }
 
@@ -179,7 +180,7 @@ export class ModelSettingsStore {
       if(this.initialized)return this.view();
       try {await this.options.configService.initialize();}
       catch(error){throw this.configurationError(error);}
-      if(!this.initialized){const candidate=await this.prepare(this.options.configService.current<ModelDomain>('models'));candidate.activate();candidate.complete?.();this.initialized=true;}
+      if(!this.initialized){const candidate=await this.prepare(this.options.configService.current(modelsConfigDomain));candidate.activate();candidate.complete?.();this.initialized=true;}
       return this.view();
     });
   }

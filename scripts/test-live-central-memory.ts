@@ -8,9 +8,8 @@ import {parseEnv} from 'node:util';
 import assert from 'node:assert/strict';
 import {zipSync,strToU8} from 'fflate';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {createImportAgent} from '@mote/agent';
-import {modelSettingsFromConfig} from '../apps/server/src/model-agent.js';
 import {prepareImportInput} from '../apps/server/src/import-runtime.js';
 import {preparePrivateImportLaunch} from './private-import-runtime.js';
 import {createLiveModelRelay} from './live-model-relay.js';
@@ -30,21 +29,21 @@ const env=parseEnv(await readFile(resolve(option('--env-file')!),'utf8'));
 assert.ok(env.MOTE_MODEL_API_KEY?.trim(),'Selected env file has no model key');
 assert.equal(env.MOTE_MODEL_PROVIDER||'deepseek','deepseek','This runner targets the configured DeepSeek connection');
 assert.equal(new URL(env.MOTE_MODEL_BASE_URL||'https://api.deepseek.com').origin,'https://api.deepseek.com');
-const config:Config={dataDir:join(out,'data'),dataKey:undefined,token:randomUUID()+randomUUID(),tokenPath:'unused',profile:'test',host:'127.0.0.1',port:0,maxExportBytes:32*1024*1024,insightIntervalHours:0,allowedOrigins:[],model:env.MOTE_MODEL!,modelProvider:'deepseek',modelProtocol:'deepseek',modelBaseUrl:env.MOTE_MODEL_BASE_URL||'https://api.deepseek.com',apiKey:env.MOTE_MODEL_API_KEY!,allowUnauthenticatedLocal:false,modelReasoningEffort:'high',modelMaxTokens:8192,modelRequestTimeoutMs:300000,agentTimeoutMs:300000,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true,logLevel:'silent'};
+const config:ConfigurationPlatformOptions={path:(join(out,'data'))+'/mote.yaml',privateCredential:{token:randomUUID()+randomUUID(),tokenPath:'unused'},initialDocument:{version:1,revision:0,storage:{dataDir:join(out,'data'),dataKey:undefined,maxExportBytes:32*1024*1024},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:env.MOTE_MODEL!,provider:'deepseek',protocol:'deepseek',baseUrl:env.MOTE_MODEL_BASE_URL||'https://api.deepseek.com',apiKey:env.MOTE_MODEL_API_KEY!,allowUnauthenticatedLocal:false,reasoningEffort:'high',maxTokens:8192,modelRequestTimeoutMs:300000,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true,level:'silent'}}};
 const save=async(name:string,value:unknown)=>writeFile(join(out,name),JSON.stringify(value,null,2)+'\n',{mode:0o600});
-const report:any=args.includes('--resume')?JSON.parse(await readFile(join(out,'summary.json'),'utf8')):{model:config.model,provider:'deepseek',startedAt:new Date().toISOString(),generatedFixturesOnly:true,transport:'real HTTP to isolated loopback server; live Harness model connection',rounds:{}};
+const report:any=args.includes('--resume')?JSON.parse(await readFile(join(out,'summary.json'),'utf8')):{model:config.initialDocument!.models.deployment.model,provider:'deepseek',startedAt:new Date().toISOString(),generatedFixturesOnly:true,transport:'real HTTP to isolated loopback server; live Harness model connection',rounds:{}};
 assert.equal(report.generatedFixturesOnly,true,'Only resume this synthetic runner archive');
 await save('rubric.json',reviewRubric);
 const importLogBytes=new Map<string,number>();
-const relay=args.includes('--private-import')&&!args.includes('--read-only')?await createLiveModelRelay(config.apiKey!,config.model):undefined;
+const relay=args.includes('--private-import')&&!args.includes('--read-only')?await createLiveModelRelay(config.initialDocument!.models.deployment.apiKey!,config.initialDocument!.models.deployment.model):undefined;
 const observeImport=(workspace:string,event:unknown)=>{
   const id=basename(workspace),bytes=importLogBytes.get(id)??0;if(bytes>16*1024*1024)return;
-  let line=JSON.stringify({at:new Date().toISOString(),event}).replaceAll(config.apiKey!,'[redacted]').replaceAll(config.token,'[redacted]');if(relay)line=line.replaceAll(relay.apiKey,'[redacted]');line+='\n';
+  let line=JSON.stringify({at:new Date().toISOString(),event}).replaceAll(config.initialDocument!.models.deployment.apiKey!,'[redacted]').replaceAll(config.privateCredential!.token,'[redacted]');if(relay)line=line.replaceAll(relay.apiKey,'[redacted]');line+='\n';
   appendFileSync(join(out,`import-runtime-${id}.jsonl`),line,{mode:0o600});importLogBytes.set(id,bytes+Buffer.byteLength(line));
 };
 const node=await buildApp(config,{prepareImport:async input=>{
   if(!relay)throw Error('Import execution is disabled in read-only validation');
-  const runtime=createImportAgent({...modelSettingsFromConfig(config),baseUrl:relay.baseUrl,apiKey:relay.apiKey},async paths=>{
+  const runtime=createImportAgent({...node.modelSettings.current(),baseUrl:relay.baseUrl,apiKey:relay.apiKey},async paths=>{
     const launch=await preparePrivateImportLaunch({...paths,relayPort:relay.port});await writeFile(join(out,`import-policy-${basename(input.workspace)}.sb`),await readFile(launch.profilePath),{mode:0o600});return launch;
   });
   try{return await runtime.prepare(await prepareImportInput(input),event=>observeImport(input.workspace,event));}finally{await runtime.close();}
@@ -59,7 +58,7 @@ await node.app.listen({host:'127.0.0.1',port:0});
 const address=node.app.server.address();assert.ok(address&&typeof address==='object');
 const base=`http://127.0.0.1:${address.port}`;
 async function request(method:string,path:string,payload?:unknown){
-  const response=await fetch(base+path,{method,headers:{authorization:`Bearer ${config.token}`,...(payload===undefined?{}:{'content-type':'application/json'})},body:payload===undefined?undefined:JSON.stringify(payload),signal:AbortSignal.timeout(360000)});
+  const response=await fetch(base+path,{method,headers:{authorization:`Bearer ${config.privateCredential!.token}`,...(payload===undefined?{}:{'content-type':'application/json'})},body:payload===undefined?undefined:JSON.stringify(payload),signal:AbortSignal.timeout(360000)});
   const body=await response.json();return {status:response.status,body};
 }
 async function read(path:string){const result=await request('GET',path);assert.equal(result.status,200);return result.body as any;}
@@ -93,7 +92,7 @@ try{
       job=await poll('/api/imports/'+job.id,['awaiting_confirmation','importing']);await save(round.id+'-imported.json',job);assert.equal(job.status,'completed');
       const records=await Promise.all(job.captureIds.map((id:string)=>read('/api/captures/'+id)));await save(round.id+'-records.json',records);
       assert.deepEqual(records.map((r:any)=>r.provenance.externalId).sort(),[...round.expectedRecords.externalIds].sort());
-      for(const record of records){assert.ok(record.provenance.document.fileId);const original=await fetch(base+'/api/archived-files/'+record.provenance.document.fileId+'/content',{headers:{authorization:`Bearer ${config.token}`}});assert.equal(original.status,200);const expected=round.files.find(file=>file.name===basename(record.provenance.document.path));assert.ok(expected,'Original reference must resolve to a supplied fixture');assert.deepEqual(Buffer.from(await original.arrayBuffer()),Buffer.from(expected.text),'Archived original bytes changed');}
+      for(const record of records){assert.ok(record.provenance.document.fileId);const original=await fetch(base+'/api/archived-files/'+record.provenance.document.fileId+'/content',{headers:{authorization:`Bearer ${config.privateCredential!.token}`}});assert.equal(original.status,200);const expected=round.files.find(file=>file.name===basename(record.provenance.document.path));assert.ok(expected,'Original reference must resolve to a supplied fixture');assert.deepEqual(Buffer.from(await original.arrayBuffer()),Buffer.from(expected.text),'Archived original bytes changed');}
       result.imported=records.length;result.deviceId=records[0].deviceId;result.sourceId=job.sourceId;
       const currentItems=await read(`/api/sources/${job.sourceId}/items`);await save(round.id+'-source-items.json',currentItems);assert.equal(currentItems.items.length,round.expectedRecords.currentCount??round.expectedRecords.count);
       if(round.expectedRecords.currentRevision){const history=await read(`/api/sources/${job.sourceId}/history?externalId=${encodeURIComponent(round.expectedRecords.externalIds[0])}`);await save(round.id+'-history.json',history);assert.equal(history.items.length,round.expectedRecords.count);const current=await read(`/api/sources/${job.sourceId}/item?externalId=${encodeURIComponent(round.expectedRecords.externalIds[0])}`);assert.equal(current.item.revision,round.expectedRecords.currentRevision);}
@@ -124,7 +123,7 @@ try{
         await save(round.id+`-insight-${result.attempts.length}.json`,response);result.insight={status:response.status,durationMs:Date.now()-started,artifact:Boolean(body.artifact?.html),citations:body.citations?.length??0};await checkpoint();assert.equal(response.status,200);assert.ok(body.artifact?.html,'Insight omitted generated HTML');await writeFile(join(out,round.id+'-report.html'),body.artifact.html,{mode:0o600});
       }
       delete result.error;result.mechanicalChecks='pass';result.semanticReview='pending';progress(round.id,'round-completed',{records:result.imported,memories:result.memories});
-    }catch(error){result.error=String(error instanceof Error?error.message:error).replaceAll(config.apiKey,'[redacted]').slice(0,1500);result.mechanicalChecks='fail';progress(round.id,'round-failed',{error:result.error});}
+    }catch(error){result.error=String(error instanceof Error?error.message:error).replaceAll(config.initialDocument!.models.deployment.apiKey,'[redacted]').slice(0,1500);result.mechanicalChecks='fail';progress(round.id,'round-failed',{error:result.error});}
     await checkpoint();
   }
   if(args.includes('--mixed-query')){

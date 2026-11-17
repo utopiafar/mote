@@ -9,7 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {FILE_PART_BYTES,FILE_PART_RECEIPTS,filePartReceipts,noteCapture,type FilePartPage,type FileRevision} from '@mote/shared';
 import type {FastifyRequest} from 'fastify';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {LocalRateLimit,LocalRateLimitError,UploadHttpProtection} from '../src/local-rate-limits.js';
 import {sha256} from '../src/store.js';
 import {SourceSync} from '../../desktop/src/source-sync.js';
@@ -20,7 +20,7 @@ async function fixture(t:TestContext,options:{maxExportBytes?:number}={}){
   const directory=await mkdtemp(join(tmpdir(),'mote-local-rate-'));
   let now=Date.now(),modelCalls=0;
   t.mock.method(Date,'now',()=>now);
-  const config:Config={dataDir:directory,token:owner,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,profile:'test',maxExportBytes:options.maxExportBytes??1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:options.maxExportBytes??1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const boot=()=>buildApp(config,{backgroundWorker:false,prepareImport:async({workspace})=>{await writeFile(join(workspace,'records.jsonl'),'');return {summary:'Generated empty preparation without a model'};},agent:{configured:false,query:async()=>{modelCalls++;throw Error('No model in local HTTP admission tests');},close:async()=>{}}});
   let node=await boot(),origin='';
   const listen=async()=>{origin=await node.app.listen({host:'127.0.0.1',port:0});};

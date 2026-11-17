@@ -7,7 +7,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import {TaskRecords} from '../src/task-records.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
@@ -22,7 +22,7 @@ const reached=(signal:Promise<void>)=>Promise.race([signal,new Promise<never>((_
 async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Timed out waiting for generated batch state');}
 async function fixture(t:TestContext,model:(input:QueryInput,lease?:QueryRunLease)=>Promise<QueryResult>,configured=true){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-batch-'));
-  const config:Config={dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,token:'generated-batch-owner-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-batch-owner-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'43'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const build=()=>buildApp(config,{backgroundWorker:false,agent:{configured,query:model,close:async()=>{}}});
   let node=await build();
   let batch=node.batchProcessing;await node.app.ready();

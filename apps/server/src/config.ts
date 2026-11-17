@@ -3,11 +3,9 @@ import { resolve, join, isAbsolute, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import type { ConfigurationSource, ServerConfiguration } from '@mote/shared';
 import { conversationSettingsSchema } from '@mote/shared';
-import { modelProvider } from '@mote/shared/models';
 import { parseConfigDocument as parseYaml, readConfigDocument as readYaml, isConfigSecretPath, serializeConfigDocument } from '@mote/shared/config-file';
-import { modelDomainSchema, defaultModelDomain, type ModelDomain } from './model-settings.js';
+import { modelDomainSchema, modelsConfigDomain } from './model-settings.js';
 import { executionSettingsSchema, diagnosticsSettingsSchema } from './execution-settings.js';
 import { DEFAULT_MEDIA_OCR_ENDPOINT, DEFAULT_MEDIA_ASR_ENDPOINT, DEFAULT_MEDIA_LOCAL_IMAGE_ENDPOINT, type MediaConfiguration } from './media-configuration.js';
 import { processingConfigurationSchema, defaultProcessingConfiguration } from './processing-configuration.js';
@@ -17,11 +15,12 @@ import { actionsRuntimeSettingsSchema } from './actions-configuration.js';
 import { workflowConfigurationSchema } from './workflow-configuration.js';
 import { activityConfigurationSchema } from './activity-configuration.js';
 import { notificationSettingsSchema } from './notification-configuration.js';
-import { dshConfigurationSchema, validateDshModelProfiles, type DshConfiguration } from './dsh-configuration.js';
+import { dshConfigurationSchema, validateDshModelProfiles } from './dsh-configuration.js';
 import type { ConfigDomainReference, ConfigDomainRegistration, ConfigService } from './config-service.js';
 import { defaultLogMaxBytes, logRetentionFromDocument, LogRetentionError, MAX_LOG_FILE_BYTES, DEFAULT_LOG_RETENTION, type LogRetention, MiB } from './log-retention-config.mjs';
 
 export const repositoryRoot = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
+export type {ConfigurationPlatformOptions} from './plugins/configuration-platform.js';
 export type ConfigDocument = Record<string, unknown> & { version: 1; revision: number };
 export class ConfigError extends Error {
   constructor(readonly field: string, message = 'The selected configuration is missing, unreadable or invalid') {
@@ -108,37 +107,27 @@ export const mediaConfigSchema = z.object({
   localImagePort: port.default(9011),
 }).strict();
 
-export interface ConfigurationContext {
-  configFile: string | null;
-  /** Internal original document, including unexpanded credential references. Never return in an API. */
-  document?: ConfigDocument;
-  baseDir: string; hostConfigFile: string | null;
-  runtime: ServerConfiguration['runtime']; publicUrl: string | null;
-  storageKind: ServerConfiguration['storage']['kind']; storageSource: string | null; storageMount: string | null;
-  tunnelEnabled: boolean; tunnelProvider: string | null; tunnelProtocol: 'auto' | 'http2' | 'quic';
-  sources: Record<string, ConfigurationSource>;
+/** Private process facts derived from the one initialized configuration owner. */
+export interface ConfigurationBootstrap {
+  readonly configFile:string;
+  readonly baseDir:string;
+  readonly dataDir:string;
+  readonly owner:Readonly<{token:string;tokenPath:string;source:'configured-value'|'private-token-file'|'programmatic'}>;
 }
-interface LoadedConfig {
-  host: string; port: number; dataDir: string; profile: string; token: string; tokenPath: string; tokenFromEnvironment: boolean;
-  dataKey?: string; contentEncryptionEnabled: boolean;
-  modelProvider: string; modelProtocol: ModelDomain['deployment']['protocol']; modelHeaders: Record<string, string>; modelExtraBody: Record<string, unknown>;
-  modelReasoningEffort: ModelDomain['deployment']['reasoningEffort']; modelMaxTokens: number; modelRequestTimeoutMs: number | null; agentTimeoutMs: number | null;
-  model: string; modelBaseUrl: string; apiKey: string; allowUnauthenticatedLocal: boolean; codexBin?: string; codexHome?: string;
-  embeddingModel: string; embeddingBaseUrl: string; embeddingApiKey: string;
-  interactiveConcurrency: number; agentConcurrency: number; llmConcurrency: number; memoryConcurrency: number;
-  maxExportBytes: number; insightIntervalHours: number; allowedOrigins: string[];
-  connectors: z.infer<typeof connectorsConfigSchema>;
-  diagnosticsEnabled: boolean; diagnosticsDebug: boolean; agentTraceEnabled:boolean;agentTraceExpiresAt:number; logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
-  logDirectory: string; logMaxBytes:number;logMaxTotalBytes:number;logRetention:LogRetention;logMaxEntries:number;
-  importPythonPacks: ImportPythonPackConfig[];
-  dsh: DshConfiguration;
-  updateRepository: string; updateChannel: 'stable' | 'preview'; media: MediaConfiguration; configuration: ConfigurationContext;
-}
-type OptionalFields = 'interactiveConcurrency' | 'agentConcurrency' | 'llmConcurrency' | 'memoryConcurrency' | 'codexBin' | 'codexHome' | 'contentEncryptionEnabled' | 'importPythonPacks' | 'modelProvider' | 'modelProtocol' | 'modelHeaders' | 'modelExtraBody' | 'updateRepository' | 'updateChannel' | 'connectors' | 'configuration' | 'modelReasoningEffort' | 'modelMaxTokens' | 'modelRequestTimeoutMs' | 'agentTimeoutMs' | 'profile' | 'tokenFromEnvironment' | 'diagnosticsEnabled' | 'diagnosticsDebug' | 'agentTraceEnabled' | 'agentTraceExpiresAt' | 'logLevel' | 'logDirectory' | 'logMaxBytes' | 'logMaxTotalBytes' | 'logRetention' | 'logMaxEntries' | 'media';
-/** Existing buildApp fixtures can still supply a Config without writing configuration files. */
-export type Config = Omit<LoadedConfig, OptionalFields | 'dsh'> & Partial<Pick<LoadedConfig, OptionalFields | 'dsh'>> & { configService?: ConfigService };
 
 /** Registered schema identities shared with typed domain consumers. */
+export const serverConfigDomain = Object.freeze({id:'server',schema:serverConfigSchema}) satisfies ConfigDomainReference<typeof serverConfigSchema>;
+export const storageConfigDomain = Object.freeze({id:'storage',schema:storageConfigSchema}) satisfies ConfigDomainReference<typeof storageConfigSchema>;
+export const executionConfigDomain = Object.freeze({id:'execution',schema:executionConfigSchema}) satisfies ConfigDomainReference<typeof executionConfigSchema>;
+export const diagnosticsConfigDomain = Object.freeze({id:'diagnostics',schema:diagnosticsConfigSchema}) satisfies ConfigDomainReference<typeof diagnosticsConfigSchema>;
+export {modelsConfigDomain} from './model-settings.js';
+export const dshConfigDomain = Object.freeze({id:'dsh',schema:dshConfigurationSchema}) satisfies ConfigDomainReference<typeof dshConfigurationSchema>;
+export const connectorsConfigDomain = Object.freeze({id:'connectors',schema:connectorsConfigSchema}) satisfies ConfigDomainReference<typeof connectorsConfigSchema>;
+export const pluginsConfigDomain = Object.freeze({id:'plugins',schema:pluginsConfigSchema}) satisfies ConfigDomainReference<typeof pluginsConfigSchema>;
+export const updatesConfigDomain = Object.freeze({id:'updates',schema:updatesConfigSchema}) satisfies ConfigDomainReference<typeof updatesConfigSchema>;
+export const mediaConfigDomain = Object.freeze({id:'media',schema:mediaConfigSchema}) satisfies ConfigDomainReference<typeof mediaConfigSchema>;
+export const conversationsConfigDomain = Object.freeze({id:'conversations',schema:conversationSettingsSchema}) satisfies ConfigDomainReference<typeof conversationSettingsSchema>;
+export const notificationsConfigDomain = Object.freeze({id:'notifications',schema:notificationSettingsSchema}) satisfies ConfigDomainReference<typeof notificationSettingsSchema>;
 export const actionsConfigDomain = Object.freeze({id:'actions',schema:actionsRuntimeSettingsSchema}) satisfies ConfigDomainReference<typeof actionsRuntimeSettingsSchema>;
 export const perceptionConfigDomain = Object.freeze({id:'perception',schema:perceptionConfigurationSchema}) satisfies ConfigDomainReference<typeof perceptionConfigurationSchema>;
 export const processingConfigDomain = Object.freeze({id:'processing',schema:processingConfigurationSchema}) satisfies ConfigDomainReference<typeof processingConfigurationSchema>;
@@ -158,10 +147,9 @@ function processingWithDefaults(value: unknown, media?: Partial<MediaConfigurati
   const supplied = value as Record<string, unknown>, settings = supplied.settings;
   return { ...defaults, ...supplied, ...(settings && typeof settings === 'object' && !Array.isArray(settings) ? { settings: { ...defaults.settings, ...settings } } : {}) };
 }
-export function configDocumentDomains(config?: Config): ConfigDomainRegistration[] {
-  const seed = config ? documentFromConfig(config) : undefined;
+export function configDocumentDomains(): ConfigDomainRegistration[] {
   const definition = (id: string, schema: z.ZodTypeAny, restartRequired: boolean, explicit: ConfigDomainRegistration['fields'] = []): ConfigDomainRegistration => {
-    const defaultValue = seed?.[id] ?? (id === 'processing' ? defaultProcessingConfiguration(config?.media) : schema.parse({}));
+    const defaultValue = id === 'processing' ? defaultProcessingConfiguration() : schema.parse({});
     const fields = explicit.map(field => {
       const parent = explicit.filter(candidate => candidate.effect && field.path.startsWith(candidate.path + '.')).sort((a, b) => b.path.length - a.path.length)[0];
       return { ...field, effect: field.effect ?? parent?.effect ?? (restartRequired ? 'restart' : 'immediate') };
@@ -178,44 +166,44 @@ export function configDocumentDomains(config?: Config): ConfigDomainRegistration
     }
     metadata(defaultValue, '');
     return { id, schema, defaultValue, restartRequired, fields,
-      resolve: (value, document) => resolveDomainSecrets(id, id === 'processing' ? processingWithDefaults(value, config?.media)
-        : id === 'diagnostics' && value && typeof value === 'object' ? { debug:false, traceEnabled: config?.agentTraceEnabled ?? false, maxBytes: defaultLogMaxBytes((document?.server as { profile?: string } | undefined)?.profile ?? config?.profile), ...value } : value),
+      resolve: (value, document) => resolveDomainSecrets(id, id === 'processing' ? processingWithDefaults(value, mediaConfigSchema.parse(document?.media ?? {}))
+        : id === 'diagnostics' && value && typeof value === 'object' ? { debug:false, traceEnabled: false, maxBytes: defaultLogMaxBytes((document?.server as { profile?: string } | undefined)?.profile), ...value } : value),
     };
   };
   return [
-    definition('server', serverConfigSchema, true, [{ path: 'token', sensitive: true }, { path: 'hostConfigFile', effect: 'restart' }]),
-    definition('storage', storageConfigSchema, true, [{ path: 'dataKey', sensitive: true, effect: 'migration' }, { path: 'dataDir', effect: 'migration' }, { path: 'contentEncryptionEnabled', effect: 'immediate' }]),
-    definition('execution', executionConfigSchema, false, [
+    definition(serverConfigDomain.id, serverConfigDomain.schema, true, [{ path: 'token', sensitive: true }, { path: 'hostConfigFile', effect: 'restart' }]),
+    definition(storageConfigDomain.id, storageConfigDomain.schema, true, [{ path: 'dataKey', sensitive: true, effect: 'migration' }, { path: 'dataDir', effect: 'migration' }, { path: 'contentEncryptionEnabled', effect: 'immediate' }]),
+    definition(executionConfigDomain.id, executionConfigDomain.schema, false, [
       { path: 'interactiveConcurrency', effect: 'next-admission' }, { path: 'agentConcurrency', effect: 'next-admission' }, { path: 'llmConcurrency', effect: 'next-admission' }, { path: 'memoryConcurrency', effect: 'next-admission' }, { path: 'insightIntervalHours', effect: 'restart' },
     ]),
-    definition('diagnostics', diagnosticsConfigSchema, false, [
+    definition(diagnosticsConfigDomain.id, diagnosticsConfigDomain.schema, false, [
       { path: 'enabled', effect: 'immediate' }, { path: 'debug', effect: 'immediate' }, { path: 'traceEnabled', effect: 'immediate' }, {path:'traceExpiresAt',effect:'immediate'}, { path: 'level', effect: 'immediate' },
       { path: 'directory', effect: 'restart' }, { path: 'maxBytes', effect: 'restart' }, {path:'maxTotalBytes',effect:'restart'},{path:'retention',effect:'restart'}, { path: 'maxEntries', effect: 'restart' },
     ]),
-    definition('models', modelDomainSchema, false, [
+    definition(modelsConfigDomain.id, modelsConfigDomain.schema, false, [
       { path: 'deployment', effect: 'next-request' }, { path: 'profiles', effect: 'next-request' }, { path: 'defaults', effect: 'next-request' }, { path: 'defaultModels', effect: 'next-request' },
       { path: 'deployment.apiKey', sensitive: true }, { path: 'deployment.headers', sensitive: true }, { path: 'deployment.extraBody', sensitive: true },
       { path: 'profiles.*.settings.apiKey', sensitive: true }, { path: 'profiles.*.settings.headers', sensitive: true }, { path: 'profiles.*.settings.extraBody', sensitive: true },
       { path: 'embedding', effect: 'restart' }, { path: 'embedding.apiKey', sensitive: true }, { path: 'codex', effect: 'restart' },
     ]),
-    definition('dsh', dshConfigurationSchema, true, [{path: 'profiles', effect: 'restart'}]),
-    definition('connectors', connectorsConfigSchema, false, [
+    definition(dshConfigDomain.id, dshConfigDomain.schema, true, [{path: 'profiles', effect: 'restart'}]),
+    definition(connectorsConfigDomain.id, connectorsConfigDomain.schema, false, [
       { path: 'syncIntervalMs', effect: 'immediate' }, ...['directory', 'mcpEnabled', 'mcpReadToken', 'mcpWriteEnabled', 'mcpWriteToken', 'mcpWriteSourceIds', 'allowLocalMcp', 'googleClientId', 'googleClientSecret', 'googleRedirectUri'].map(path => ({ path, effect: 'restart' as const, ...(['mcpReadToken', 'mcpWriteToken', 'googleClientId', 'googleClientSecret'].includes(path) ? { sensitive: true } : {}) })),
     ]),
-    definition('plugins', pluginsConfigSchema, false, [{ path: 'importPythonPacks', effect: 'restart' }, { path: 'configuration', sensitive: true }]), definition('updates', updatesConfigSchema, true),
-    definition('media', mediaConfigSchema, true, [{ path: 'workerToken', sensitive: true }]),
+    definition(pluginsConfigDomain.id, pluginsConfigDomain.schema, false, [{ path: 'importPythonPacks', effect: 'restart' }, { path: 'configuration', sensitive: true }]), definition(updatesConfigDomain.id, updatesConfigDomain.schema, true),
+    definition(mediaConfigDomain.id, mediaConfigDomain.schema, true, [{ path: 'workerToken', sensitive: true }]),
     definition(processingConfigDomain.id, processingConfigDomain.schema, false, [{ path: 'settings.apiKey', sensitive: true }, { path: 'settings.localWorkerApiKey', sensitive: true }, { path: 'policy.services.*.apiKey', sensitive: true }, { path: 'settings', effect: 'next-request' }, { path: 'policy', effect: 'next-request' }]),
     definition(perceptionConfigDomain.id, perceptionConfigDomain.schema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'concurrency', effect: 'next-admission' }, { path: 'providerRevision', effect: 'next-request' }, { path: 'allowExternalProcessing', effect: 'next-request' }, { path: 'allowQueryImages', effect: 'next-request' }, { path: 'understandingEnabled', effect: 'next-request' }]),
     definition(memoryConfigDomain.id, memoryConfigDomain.schema, false, Object.keys(lifecycleSettingsSchema.parse({})).map(path => ({ path, effect: 'next-admission' as const }))),
-    definition('conversations', conversationSettingsSchema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
+    definition(conversationsConfigDomain.id, conversationsConfigDomain.schema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
     definition(actionsConfigDomain.id, actionsConfigDomain.schema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
     definition(activityConfigDomain.id, activityConfigDomain.schema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
-    definition('notifications', notificationSettingsSchema, false, [{path:'enabled',effect:'immediate'},{path:'timeZone',effect:'immediate'},{path:'quietHours',effect:'immediate'},{path:'minIntervalMinutes',effect:'immediate'}]),
+    definition(notificationsConfigDomain.id, notificationsConfigDomain.schema, false, [{path:'enabled',effect:'immediate'},{path:'timeZone',effect:'immediate'},{path:'quietHours',effect:'immediate'},{path:'minIntervalMinutes',effect:'immediate'}]),
     definition(workflowConfigDomain.id, workflowConfigDomain.schema, false, Object.keys(workflowConfigurationSchema.parse({})).flatMap(path => [{ path: `${path}.enabled`, effect: 'immediate' as const }, { path: `${path}.concurrency`, effect: 'next-admission' as const }])),
   ];
 }
-export function registerBuiltinDomains(service: ConfigService, config?: Config): void {
-  for (const domain of configDocumentDomains(config)) service.register(domain);
+export function registerBuiltinDomains(service: ConfigService, privateOwnerToken?: string): void {
+  for (const domain of configDocumentDomains()) service.register(domain);
   service.setNormalizer((raw, previous) => {
     const document = parseConfigDocument(serializeConfigDocument(raw as ConfigDocument));
     const diagnostics = document.diagnostics as z.infer<typeof diagnosticsConfigSchema>;
@@ -228,7 +216,7 @@ export function registerBuiltinDomains(service: ConfigService, config?: Config):
     }
     return document;
   });
-  service.setValidator(document => validateResolvedConfigDocument(document, config?.token));
+  service.setValidator(document => validateResolvedConfigDocument(document, privateOwnerToken));
 }
 
 /** Rules involving multiple domains must also run for API saves and external file reloads. */
@@ -286,80 +274,30 @@ export function resolveConfigDocument(document: ConfigDocument, env: NodeJS.Proc
   return parseYaml(serializeConfigDocument(saved), env).document as ConfigDocument;
 }
 
-/** The YAML document is the only source of ordinary server settings. */
-export interface ConfigLoadOptions { initializeCredentials?: boolean; resolvedDocument?: boolean }
-export function configFromFile(file?: string, options: ConfigLoadOptions = {}): LoadedConfig {
-  const selected = file ?? (process.env.MOTE_CONFIG_FILE || resolve(process.cwd(), 'mote.yaml'));
-  return configFromDocument(readConfigDocument(selected), selected, undefined, options);
+/** Select a real YAML source; ordinary environment values never override its domains. */
+export function configurationFromFile(file?:string):{path:string} {
+  const path=resolve(file ?? (process.env.MOTE_CONFIG_FILE || resolve(process.cwd(),'mote.yaml')));
+  // Retain explicit selection/file safety and validation before acquiring resources.
+  readConfigDocument(path);
+  return {path};
 }
-/** Reproject the exact initialized configuration before constructing resources, without rewriting credentials. */
-export function configFromDocument(document: ConfigDocument, file: string, privateCredential?: { token: string; tokenPath: string }, options: ConfigLoadOptions = {}): LoadedConfig {
-  const configFile = resolve(file), baseDir = dirname(configFile);
-  // Service.current() already contains effective credentials. Environment values remain literal after one expansion.
-  const effective = options.resolvedDocument ? normalizedDocument(structuredClone(document), structuredClone(document)) : resolveConfigDocument(document);
-  const server = serverConfigSchema.parse(effective.server), storage = storageConfigSchema.parse(effective.storage), execution = executionConfigSchema.parse(effective.execution);
-  const diagnostics = diagnosticsConfigSchema.parse({ debug: server.profile === 'dev', ...(effective.diagnostics as object), maxBytes: logRetentionFromDocument(effective).maxBytes });
-  const models = modelDomainSchema.parse(effective.models), plugins = pluginsConfigSchema.parse(effective.plugins), updates = updatesConfigSchema.parse(effective.updates);
-  const connectors = connectorsConfigSchema.parse(effective.connectors), media = mediaConfigSchema.parse(effective.media), model = models.deployment;
-  const initializeCredentials = options.initializeCredentials !== false;
-  const dataDir = resolve(baseDir, storage.dataDir), tokenPath = initializeCredentials && privateCredential ? privateCredential.tokenPath : join(dataDir, 'access-token');
-  const suppliedToken = server.token.trim();
-  let token = suppliedToken || (initializeCredentials ? privateCredential?.token : undefined) || '';
-  // Check credential conflicts before creating storage.
-  if (token && [connectors.mcpReadToken, connectors.mcpWriteToken].filter(Boolean).includes(token)) throw new ConfigError('connectors.mcpReadToken');
-  if (initializeCredentials && !token && existsSync(tokenPath)) {
-    try { token = readFileSync(tokenPath, 'utf8').trim(); } catch { throw new ConfigError('server.token'); }
-    if (token.length < 24 || /[\r\n\0]/.test(token)) throw new ConfigError('server.token');
-    if ([connectors.mcpReadToken, connectors.mcpWriteToken].filter(Boolean).includes(token)) throw new ConfigError('connectors.mcpReadToken');
+
+/** Resolve only bootstrap paths/owner identity, never project domain settings into a second store. */
+export function configurationBootstrap(service:ConfigService,privateCredential?:Readonly<{token:string;tokenPath:string;source?:ConfigurationBootstrap['owner']['source']}>):ConfigurationBootstrap {
+  const configFile=service.path,baseDir=dirname(configFile),server=service.current(serverConfigDomain),storage=service.current(storageConfigDomain),connectors=service.current(connectorsConfigDomain);
+  const dataDir=resolve(baseDir,storage.dataDir),tokenPath=privateCredential?.tokenPath??join(dataDir,'access-token');
+  const suppliedToken=server.token.trim();
+  let token=suppliedToken||privateCredential?.token||'';
+  const source=suppliedToken?'configured-value':privateCredential?.source??(privateCredential?'programmatic':'private-token-file');
+  const check=()=>{if(token&&[connectors.mcpReadToken,connectors.mcpWriteToken].filter(Boolean).includes(token))throw new ConfigError('connectors.mcpReadToken');};
+  check();
+  if(!token&&existsSync(tokenPath)) {
+    try{token=readFileSync(tokenPath,'utf8').trim();}catch{throw new ConfigError('server.token');}
+    if(token.length<24||/[\r\n\0]/.test(token))throw new ConfigError('server.token');
+    check();
   }
-  if (initializeCredentials && !privateCredential) mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  if (initializeCredentials && !token) { token = randomBytes(32).toString('hex'); writeFileSync(tokenPath, token + '\n', { mode: 0o600, flag: 'wx' }); }
-  const configuration: ConfigurationContext = {
-    configFile, baseDir, hostConfigFile: server.hostConfigFile || null, runtime: server.runtime,
-    publicUrl: server.publicUrl || null, storageKind: storage.kind === 'unknown' && server.runtime === 'native' ? 'local-directory' : storage.kind,
-    storageSource: storage.source || null, storageMount: storage.mount || null, tunnelEnabled: server.tunnelEnabled, tunnelProvider: server.tunnelProvider || null, tunnelProtocol: server.tunnelProtocol,
-    sources: Object.fromEntries(configDocumentDomains().map(domain => [domain.id, 'config-file'])) as Record<string, ConfigurationSource>,
-  };
-  Object.defineProperty(configuration, 'document', { value: document, enumerable: false });
-  return {
-    host: server.host, port: server.port, dataDir, profile: server.profile, token, tokenPath, tokenFromEnvironment: Boolean(suppliedToken), configuration,
-    dataKey: storage.dataKey || undefined, contentEncryptionEnabled: storage.contentEncryptionEnabled,
-    maxExportBytes: storage.maxExportBytes, allowedOrigins: server.allowedOrigins,
-    interactiveConcurrency: execution.interactiveConcurrency, agentConcurrency: execution.agentConcurrency, llmConcurrency: execution.llmConcurrency, memoryConcurrency: execution.memoryConcurrency, insightIntervalHours: execution.insightIntervalHours,
-    modelProvider: model.provider, modelProtocol: model.protocol, model: model.model, modelBaseUrl: model.baseUrl, apiKey: model.apiKey, allowUnauthenticatedLocal: model.allowUnauthenticatedLocal,
-    modelHeaders: model.headers, modelExtraBody: model.extraBody, modelReasoningEffort: model.reasoningEffort, modelMaxTokens: model.maxTokens, modelRequestTimeoutMs: model.modelRequestTimeoutMs, agentTimeoutMs: model.agentTimeoutMs,
-    codexBin: models.codex.executable, codexHome: models.codex.home ? resolve(baseDir, models.codex.home) : undefined,
-    embeddingModel: models.embedding.model, embeddingBaseUrl: models.embedding.baseUrl, embeddingApiKey: models.embedding.apiKey,
-    connectors: { ...connectors, directory: connectors.directory ? resolve(baseDir, connectors.directory) : join(dataDir, 'connectors') },
-    diagnosticsEnabled: diagnostics.enabled, diagnosticsDebug: diagnostics.debug, agentTraceEnabled:diagnostics.traceEnabled,agentTraceExpiresAt:diagnostics.traceExpiresAt,
-    logLevel: diagnostics.level, logDirectory: diagnostics.directory ? resolve(baseDir, diagnostics.directory) : join(dataDir, 'logs'), logMaxBytes: diagnostics.maxBytes, logMaxTotalBytes:diagnostics.maxTotalBytes,logRetention:diagnostics.retention, logMaxEntries: diagnostics.maxEntries,
-    importPythonPacks: plugins.importPythonPacks, dsh: dshConfigurationSchema.parse(effective.dsh),
-    updateRepository: updates.repository, updateChannel: updates.channel,
-    media: { ...media, modelDirectory: media.modelDirectory ? resolve(baseDir, media.modelDirectory) : join(dataDir, 'media-models') },
-  };
-}
-/** Synthetic/programmatic callers seed the same document without reading deployment files. */
-export function documentFromConfig(config: Config): ConfigDocument {
-  const models = defaultModelDomain(), defaults = models.deployment;
-  return {
-    version: 1, revision: 0,
-    server: serverConfigSchema.parse({ host: config.host, port: config.port, profile: config.profile ?? 'default', token: config.token.length >= 24 ? config.token : '', allowedOrigins: config.allowedOrigins,
-      runtime: config.configuration?.runtime ?? 'unknown', publicUrl: config.configuration?.publicUrl ?? '', hostConfigFile: config.configuration?.hostConfigFile ?? '',
-      tunnelEnabled: config.configuration?.tunnelEnabled ?? false, tunnelProvider: config.configuration?.tunnelProvider ?? '', tunnelProtocol: config.configuration?.tunnelProtocol ?? 'auto' }),
-    storage: storageConfigSchema.parse({ dataDir: config.dataDir, maxExportBytes: config.maxExportBytes, dataKey: config.dataKey ?? '', contentEncryptionEnabled: config.contentEncryptionEnabled ?? false,
-      kind: config.configuration?.storageKind ?? 'unknown', source: config.configuration?.storageSource ?? '', mount: config.configuration?.storageMount ?? '' }),
-    execution: executionConfigSchema.parse({ interactiveConcurrency: config.interactiveConcurrency, agentConcurrency: config.agentConcurrency, llmConcurrency: config.llmConcurrency, memoryConcurrency: config.memoryConcurrency, insightIntervalHours: config.insightIntervalHours }),
-    diagnostics: diagnosticsConfigSchema.parse({ enabled: config.diagnosticsEnabled, debug:config.diagnosticsDebug??false, traceEnabled:config.agentTraceEnabled??false,traceExpiresAt:config.agentTraceExpiresAt??(config.agentTraceEnabled?Date.now()+86400000:0), level: config.logLevel,
-      directory: config.logDirectory ?? '', maxBytes: config.logMaxBytes ?? defaultLogMaxBytes(config.profile), maxTotalBytes:config.logMaxTotalBytes,retention:config.logRetention, maxEntries: config.logMaxEntries }),
-    models: modelDomainSchema.parse({ ...models, deployment: { ...defaults, provider: config.modelProvider ?? defaults.provider, protocol: config.modelProtocol ?? defaults.protocol, baseUrl: config.modelBaseUrl || (config.modelProtocol === 'codex-app-server' ? '' : modelProvider(config.modelProvider ?? defaults.provider)?.baseUrl) || '', model: config.model, apiKey: config.apiKey,
-      reasoningEffort: config.modelReasoningEffort ?? defaults.reasoningEffort, maxTokens: config.modelMaxTokens ?? defaults.maxTokens, modelRequestTimeoutMs: config.modelRequestTimeoutMs === undefined ? config.modelProtocol === 'codex-app-server' ? null : defaults.modelRequestTimeoutMs : config.modelRequestTimeoutMs,
-      agentTimeoutMs: config.agentTimeoutMs === undefined ? config.modelProtocol === 'codex-app-server' ? null : defaults.agentTimeoutMs : config.agentTimeoutMs, allowUnauthenticatedLocal: config.allowUnauthenticatedLocal,
-      headers: config.modelHeaders ?? {}, extraBody: config.modelExtraBody ?? {}, ...(config.modelProtocol === 'codex-app-server' ? { serviceTier: 'default' } : {}) },
-      embedding: { model: config.embeddingModel, baseUrl: config.embeddingBaseUrl, apiKey: config.embeddingApiKey }, codex: { executable: config.codexBin, home: config.codexHome } }),
-    connectors: connectorsConfigSchema.parse(config.connectors ?? {}), dsh: dshConfigurationSchema.parse(config.dsh ?? {}),
-    plugins: pluginsConfigSchema.parse({ importPythonPacks: config.importPythonPacks }),
-    updates: updatesConfigSchema.parse({ repository: config.updateRepository, channel: config.updateChannel }), media: mediaConfigSchema.parse(config.media ?? {}),
-    processing: defaultProcessingConfiguration(config.media), perception: perceptionConfigurationSchema.parse({}), memory: lifecycleSettingsSchema.parse({}), conversations: conversationSettingsSchema.parse({}),
-    actions: actionsRuntimeSettingsSchema.parse({}), activity: activityConfigurationSchema.parse({}), notifications: notificationSettingsSchema.parse({}), workflows: workflowConfigurationSchema.parse({}),
-  };
+  if(!privateCredential)mkdirSync(dataDir,{recursive:true,mode:0o700});
+  if(!token){token=randomBytes(32).toString('hex');writeFileSync(tokenPath,token+'\n',{mode:0o600,flag:'wx'});}
+  service.setValidator(document=>validateResolvedConfigDocument(document,token));
+  return Object.freeze({configFile,baseDir,dataDir,owner:Object.freeze({token,tokenPath,source})});
 }

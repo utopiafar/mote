@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ConnectorHost} from '../src/connectors/registry.js';
 
 const externalSource = fileURLToPath(new URL('../../../examples/external-plugin/source.mjs', import.meta.url));
@@ -13,18 +13,12 @@ const externalManifest = (await import(pathToFileURL(externalSource).href)).defa
 const token = 'generated-state-owner-token';
 const headers = {authorization: `Bearer ${token}`};
 
-function config(dataDir: string): Config {
-  return {
-    dataDir, token, tokenPath: 'fixture-only', host: '127.0.0.1', port: 0,
-     maxExportBytes: 1_000_000,  insightIntervalHours: 0,
-    allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
-    embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-    connectors: {
+function config(dataDir: string): ConfigurationPlatformOptions {
+  return {path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{
       directory: join(dataDir, 'connectors'),
       mcpEnabled: false, mcpReadToken: '', mcpWriteEnabled: false, mcpWriteToken: '', mcpWriteSourceIds: [],
       googleClientId: '', googleClientSecret: '', googleRedirectUri: '', syncIntervalMs: 900_000, allowLocalMcp: false,
-    },
-  };
+    }}};
 }
 
 test('the external sample reads and writes host-bound state across restart and disable', async t => {

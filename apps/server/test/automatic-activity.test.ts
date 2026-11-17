@@ -10,7 +10,7 @@ import {uiPageText,type UiPageV3} from '@mote/shared';
 import {DEPLOYMENT_MODEL_PROFILE_ID} from '@mote/shared/models';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import {activityConfigDomain,type Config} from '../src/config.js';
+import {activityConfigDomain,type ConfigurationPlatformOptions} from '../src/config.js';
 import {parseConfigDocument,serializeConfigDocument} from '@mote/shared/config-file';
 
 const token='generated-automatic-activity-owner-token',headers={authorization:`Bearer ${token}`};
@@ -19,7 +19,7 @@ function observation(second=0){const at=new Date(Date.parse('2026-10-10T00:00:00
   return {id:randomUUID(),deviceId:'generated-phone',deviceName:'Generated phone',platform:'android',capturedAt:at,source:'ui_page',appId:'generated.store',appName:'Generated shop',durationMs:0,windowTitle:'',ocrText:uiPageText(page),metadata:{version:1,observedAt:at,collector:{method:'accessibility'},uiPage:page},privacy:{excluded:false,redacted:true,mode:'local',collection:'content'}};
 }
 async function fixture(t:TestContext){const dataDir=mkdtempSync(join(tmpdir(),'mote-automatic-activity-'));
-  const config:Config={dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const calls:QueryInput[]=[],control:{during?:()=>Promise<void>;invalidProof?:boolean;pixelReads:number}={pixelReads:0};
   const dependencies={backgroundWorker:false,createModelAgent:async(_settings:unknown,reader:ContextReader)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{
     if(input.directImages?.length){const image=await reader.readImage!({id:input.directImages[0].id});assert.ok(image.data);control.pixelReads++;return {answer:JSON.stringify({text:'Generated screenshot depicts an orange rectangle. Authorship is unknown.',regions:[]}),citations:[],trace:[],runId:randomUUID()};}

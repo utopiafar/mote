@@ -67,7 +67,7 @@ export async function memoryImageIntakeBoundary(directory:string,ocr:'text'|'emp
 
 /** Real authenticated upload, including revision CAS and content-object reuse. */
 export async function uploadMemoryImage(node:Node,bytes:Buffer,revision='1',previousRevision?:string,externalId='generated.png'){
- const headers={authorization:`Bearer ${node.featureServices.config.token}`};
+ const headers={authorization:`Bearer ${node.bootstrap.configurationBootstrap.owner.token}`};
  const begun=await node.app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:{sourceId:'generated-memory-image',...(previousRevision?{previousRevision}:{}),item:{externalId,revision,observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',mimeType:'image/png',title:'Generated image',text:'',document:{contentRole:'reference',timeBasis:'unknown'}},sha256:sha256(bytes),sizeBytes:bytes.length}});
  assert.equal(begun.statusCode,200,begun.body);const upload=begun.json();
  if(upload.ack)return String(upload.ack.id);

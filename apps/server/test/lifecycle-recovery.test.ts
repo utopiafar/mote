@@ -7,14 +7,14 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {ProviderFailure} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ProviderAdmission} from '../src/provider-admission.js';
 import {modelConfiguration} from '../src/model-configuration.js';
 
 const text='Generated semantic failure input.';
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-lifecycle-recovery-'));
-  const config:Config={dataDir:directory,token:'generated-lifecycle-recovery-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTimeoutMs:5000};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-lifecycle-recovery-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:5000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   let calls=0;
   // No provider is constructed or contacted; all source text is generated.
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{calls++;throw new ProviderFailure({category:'permanent',code:'generated_semantic_failure'});}}});
@@ -24,7 +24,7 @@ async function fixture(t:TestContext){
   const recordId=randomUUID();await node.store.ingest({id:recordId,deviceId:'fixture',deviceName:'Generated',platform:'import',capturedAt:'2026-09-27T00:00:00Z',source:'note',ocrText:text,durationMs:0});
   const save=(kind:'segment'|'semantic')=>{const id=kind==='segment'?'a'.repeat(64):'b'.repeat(64);node.store.archive.save(id,id,id,{kind,text,metadata:{complete:true,...(kind==='semantic'?{evidenceRanges:[{id:recordId,offset:0,length:text.length}]}:{})}},[{id:recordId,fingerprint:node.store.archive.fingerprint(recordId)!}],'fixture','1','fixture');return id;};
   const extraction=()=>node.lifecycle.view().extensions.find(extension=>extension.id==='extraction')!;
-  const owner={authorization:'Bearer '+config.token};
+  const owner={authorization:'Bearer '+config.privateCredential!.token};
   return {node,recordId,save,extraction,owner,calls:()=>calls};
 }
 

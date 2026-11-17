@@ -15,7 +15,7 @@ import {z} from 'zod';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryResult,UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
@@ -185,10 +185,7 @@ function save(){const value=json(report);saveChain=saveChain.then(async()=>{awai
 function progress(value:string,extra:Record<string,unknown>={}){console.log(JSON.stringify({stage:value,mode,...extra}));}
 function memories(){return node!.store.db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>JSON.parse(String(row.json)));}
 function evidenceIds():string[]{return report.records.flatMap((r:any)=>r.evidenceIds);}
-function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:preflight?'scenario-preflight-stub':fixture.model.model,modelReasoningEffort:fixture.model.reasoningEffort,modelProvider:preflight?'custom':fixture.model.provider,modelProtocol:preflight?'openai-completions':fixture.model.protocol,
-  modelBaseUrl:preflight?'http://127.0.0.1:1':'',apiKey:'',allowUnauthenticatedLocal:preflight,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:false,agentTraceEnabled:true,
-  agentTimeoutMs:limits.perCallTimeoutMs,codexBin:preflight?'/nonexistent-scenario-preflight-no-provider':process.env.MOTE_CODEX_BIN,codexHome:preflight?join(directory,'unused-codex-home'):process.env.MOTE_CODEX_HOME,memoryConcurrency:1};}
+function config(vault:string):ConfigurationPlatformOptions{return {path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:preflight?'scenario-preflight-stub':fixture.model.model,reasoningEffort:fixture.model.reasoningEffort,provider:preflight?'custom':fixture.model.provider,protocol:preflight?'openai-completions':fixture.model.protocol,baseUrl:preflight?'http://127.0.0.1:1':'',apiKey:'',allowUnauthenticatedLocal:preflight,agentTimeoutMs:limits.perCallTimeoutMs},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:preflight?'/nonexistent-scenario-preflight-no-provider':process.env.MOTE_CODEX_BIN,home:preflight?join(directory,'unused-codex-home'):process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:false,traceEnabled:true}}};}
 async function stub(reader:ContextReader,input:QueryInput):Promise<QueryResult>{
   assert.ok(preflight);assert.equal(input.contextTime,fixture.contextTime);
   const result={citations:[] as QueryResult['citations'],trace:[],runId:'stub-'+randomUUID()};

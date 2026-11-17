@@ -6,8 +6,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
-
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
 import {LARK_VERSION,larkArguments,type LarkCommand,type LarkRunner} from '../src/connectors/lark-cli.js';
 import {createLarkBinding,LARK_IM_READ_SCOPES} from '../src/connectors/lark-binding.js';
@@ -54,7 +53,7 @@ function fakeLark(){
 }
 async function fixture(t:TestContext,transport=fakeLark()){
  const root=mkdtempSync(join(tmpdir(),'mote-feishu-sync-')),owner='generated-owner-'+randomUUID(),headers={authorization:'Bearer '+owner};
- const config:Config={dataDir:root,token:owner,tokenPath:join(root,'owner'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxExportBytes:1024*1024,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',connectors:{directory:join(root,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}};
+ const config:ConfigurationPlatformOptions={path:(root)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(root,'owner')},initialDocument:{version:1,revision:0,storage:{dataDir:root,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(root,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
  let binding=createLarkBinding({runner:transport.runner});
  const boot=()=>buildApp(config,{backgroundWorker:false,connectorTesting:{lark:transport.runner,larkBinding:binding,fetch:async()=>{throw Error('No external network in Feishu sync fixture');}},agent:{configured:false,async query(){throw Error('No model in Feishu sync fixture');},async close(){}}});
  let node=await boot();

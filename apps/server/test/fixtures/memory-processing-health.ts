@@ -11,7 +11,7 @@ import {generatedMemoryOutput} from './memory-planning.js';
 // real organizers, Memory admission, extraction/review and publication fences;
 // only the external provider is replaced with generated responses.
 const directory=process.argv[2],recordings=8,segmentsPerRecording=296,notes=344;
-const config={dataDir:directory,token:'generated-memory-health-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1e6,insightIntervalHours:0,allowedOrigins:[],model:'generated',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,memoryConcurrency:3};
+const config={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-health-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1e6},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:3},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
 let modelCalls=0;
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   modelCalls++;process.send!({type:'model',modelCalls,phase:input.traceContext?.phase});await delay(100);

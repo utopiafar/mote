@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import {materialId} from '../src/materials.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelSettings,ModelSettingsView} from '@mote/shared/models';
 import type {QueryInput} from '@mote/agent';
 import {ConfigService} from '../src/config-service.js';
@@ -21,7 +21,7 @@ function configServiceFor(directory:string,deployment:ModelSettings){
 }
 test('profiles route each request and feature independently; credentials, restarts and deletes are scoped',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-profiles-'));
-  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const cfg:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'synthetic-profile-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:settings.model,provider:settings.provider,protocol:settings.protocol,baseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const seen:ModelSettings[]=[],calls:{model:string;skill?:string}[]=[];
   const factory=async (s:ModelSettings)=>{seen.push(s);return {configured:!!s.model,query:async(input:QueryInput)=>{calls.push({model:s.model,skill:input.skill});return {answer:input.responseMode==='memory-extraction'?generatedMemoryOutput(input):input.skill==='personal-insight'?JSON.stringify({title:'Generated model profile report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'fixture'};},close:async()=>{}};};
   let node=await buildApp(cfg,{createModelAgent:factory});
@@ -131,7 +131,7 @@ test('deployment is read-only; copies retain secrets server-side, stay independe
 
 test('module model overrides reach chat, insights, immediate memory and persisted memory batches',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-module-models-'));
-  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const cfg:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'synthetic-profile-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:settings.model,provider:settings.provider,protocol:settings.protocol,baseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const called:string[]=[];
   const node=await buildApp(cfg,{createModelAgent:async s=>({configured:true,query:async input=>{called.push(s.model);return {answer:input.responseMode==='memory-extraction'?generatedMemoryOutput(input):input.skill==='personal-insight'?JSON.stringify({title:'Generated module model report',markdown:s.model,html:`<p>${s.model}</p>`}):s.model,citations:[],trace:[],runId:'generated'};},close:async()=>{}})});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});

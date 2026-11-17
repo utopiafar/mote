@@ -14,7 +14,7 @@ import {estimateSerializedTokens} from '@mote/agent';
 import {createApi} from '../../web/src/api.js';
 import {AssistantDraftActions} from '../../web/src/plugins/ask/AssistantDraftActions.js';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 
@@ -54,10 +54,7 @@ test('J1 uploaded evidence reaches a clicked draft once after lost replies and a
   send({id:'generated-j1',choices:[{index:0,delta:{},finish_reason:finish}],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});res.end('data: [DONE]\n\n');
  });
  await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:dir,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'generated-fixture',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',
-  modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,modelMaxTokens:512,apiKey:'generated-only',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,maxTokens:512,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  let node:Awaited<ReturnType<typeof buildApp>>,central='';
  const start=async()=>{
   node=await buildApp(config,{backgroundWorker:false});

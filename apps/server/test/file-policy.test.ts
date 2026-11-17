@@ -17,9 +17,9 @@ import {createDefaultFilePolicy,parseFilePolicy} from '../src/file-policy.js';
 import {TURN_GROUP_PROMPT} from '../src/file-dialogue.js';
 import {installFileRecipes} from '../src/file-recipes.js';
 import {buildApp} from '../src/app.js';
-import {configFromDocument} from '../src/config.js';
+import {} from '../src/config.js';
 
-function fixtureConfig(directory:string){return configFromDocument({version:1,revision:0,storage:{dataDir:directory}},join(directory,'mote.yaml'));}
+function fixtureConfig(directory:string){return {path:join(directory,'mote.yaml'),initialDocument:{version:1,revision:0,storage:{dataDir:directory}}};}
 async function fixture(t:any){
  const dir=mkdtempSync(join(tmpdir(),'mote-policy-')),store=new Store(dir,{dataKey:'41'.repeat(32)}),sources=new SourceStore(store),files=new FileStore(store,sources),calls:ProcessorInput[]=[];
  for(const id of ['phone','nas'])sources.register({id,name:id,kind:'local-files',deviceId:id,platform:'android',retention:'archive'});
@@ -133,8 +133,8 @@ test('profile-specific summary uses its chosen model and no unrelated credential
 });
 
 test('owner policy routes support explicit policy and preview while query agent mutation is denied',async t=>{
- const dir=mkdtempSync(join(tmpdir(),'mote-policy-http-')),config={...fixtureConfig(dir),dataDir:dir,token:'generated-owner-policy-token',model:'',apiKey:'',logLevel:'silent' as const};const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(dir,{force:true,recursive:true});});
- const owner={authorization:'Bearer '+config.token},get=await node.app.inject({method:'GET',url:'/api/file-processing',headers:owner});assert.equal(get.statusCode,200);const body=get.json();const saved=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:owner,payload:{revision:body.revision,settings:body.settings,policy:body.policy}});assert.equal(saved.statusCode,200);
+ const dir=mkdtempSync(join(tmpdir(),'mote-policy-http-')),config={...fixtureConfig(dir),privateCredential:{token:'generated-owner-policy-token',tokenPath:'fixture'},initialDocument:{...fixtureConfig(dir).initialDocument,models:{deployment:{model:'',apiKey:'',protocol:'deepseek',reasoningEffort:'high'}},diagnostics:{level:'silent'}}};const node=await buildApp(config);t.after(async()=>{await node.app.close();rmSync(dir,{force:true,recursive:true});});
+ const owner={authorization:'Bearer '+config.privateCredential.token},get=await node.app.inject({method:'GET',url:'/api/file-processing',headers:owner});assert.equal(get.statusCode,200);const body=get.json();const saved=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:owner,payload:{revision:body.revision,settings:body.settings,policy:body.policy}});assert.equal(saved.statusCode,200);
  const match=await node.app.inject({method:'POST',url:'/api/file-processing/match',headers:owner,payload:{sourceId:'fixture',mimeType:'text/plain'}});assert.equal(match.statusCode,200);assert.equal(match.json().profile.processorId,'text.utf8');
  const {invitation}=node.connections.invite({serverUrl:'http://127.0.0.1:57569',label:'Generated',deviceId:'fixture'});const collector=await readAgentCredential(node.connections);
  for(const path of ['match','preview','reprocess']){const response=await node.app.inject({method:'POST',url:'/api/file-processing/'+path,headers:{authorization:'Bearer '+collector.token},payload:{}});assert.equal(response.statusCode,403);}

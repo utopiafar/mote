@@ -3,7 +3,7 @@ import {mkdir,readdir,readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import {buildApp} from '../../src/app.js';
-import {configFromFile} from '../../src/config.js';
+import {configurationFromFile} from '../../src/config.js';
 import {startServer} from '../../src/start-server.js';
 import {MemoryInputAuthorization} from '../../src/memory-input-authorization.js';
 import type {QueryAgent} from '../../src/query-agent.js';
@@ -30,7 +30,7 @@ if(mode==='seed'){
   await writeFile(join(webRoot,'build-info.json'),await readFile(new URL('../../package.json',import.meta.url),'utf8'));
   for(let index=0;index<175;index++)await writeFile(join(webRoot,'assets',`generated-${index}.js`),'/* Generated static startup asset */'.repeat(100));
  }
- const node=await buildApp(configFromFile(configFile),{backgroundWorker:false,webRoot,agent});
+ const node=await buildApp(configurationFromFile(configFile),{backgroundWorker:false,webRoot,agent});
  try{
   await node.app.ready();
   const grants=new MemoryInputAuthorization(node.store,()=>true,Date.now,node.memoryRecipeSettings);

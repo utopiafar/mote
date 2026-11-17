@@ -10,10 +10,10 @@ import {buildApp} from '../src/app.js';
 import {MEMORY_SKILL_VERSION} from '../src/memory.js';
 import {materialId} from '../src/materials.js';
 import {staticReportHtml} from '../src/insights.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
-const config=(dataDir:string):Config=>({dataDir,token:'synthetic-central-workflow-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'synthetic-central-workflow-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}});
 const original='合成记录：我准备下周验证观测方案。';
 async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
   const deadline=performance.now()+10_000;
@@ -38,7 +38,7 @@ test('legacy denied source history stays searchable and supports an explicit HTT
   await node.lifecycle.save({revision:node.configService.revision,settings});
   assert.equal(await node.sourcePipelines.drainMemory(node.memoryPipeline,true),0);assert.equal(calls,0);
   assert.equal(node.materials.list({query:'independently readable'}).items[0]?.id,material.id);
-  const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
+  const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.privateCredential!.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
   assert.equal(response.statusCode,202,response.body);
   const finished=await until(async()=>node.memoryPipeline.get(response.json().id),job=>job.status==='completed');
   assert.equal(finished.failedBatches,0);assert.equal(calls,2,'empty ranges still receive independent coverage review');
@@ -66,7 +66,7 @@ test('central UI APIs complete original import → exact Memory → cited static
     return {answer:JSON.stringify({title:'观测计划回顾',markdown:`有一条计划记录，完成情况未知。[${evidenceId}]`,html:`<!doctype html><html><head><style>body{color:#234;font-family:system-ui}.card{padding:24px}</style></head><body><section class="card"><h1>观测计划</h1><p>完成情况未知。[${evidenceId}]</p></section><script>top.fixtureUnsafe=true</script><img src="https://untrusted.invalid/tracker"><a href="https://untrusted.invalid">bad link</a><meta http-equiv="refresh" content="0;url=https://untrusted.invalid"></body></html>`}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
   }}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${cfg.token}`},request=(method:'GET'|'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`},request=(method:'GET'|'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
   assert.equal((await node.app.inject('/api/imports')).statusCode,401);
   const skills=(await request('GET','/api/skills')).json().items as {id:string}[];assert.ok(['coding-memory','memory-consolidation','working-memory','calendar-extraction'].every(id=>skills.some(skill=>skill.id===id)));
   const uploaded=await request('POST','/api/imports',{name:'合成通用资料',instruction:'导入原始日记',files:[{name:'journal.custom',dataBase64:Buffer.from(original).toString('base64')}]});
@@ -115,7 +115,7 @@ test('an import with historical revisions completes and extracts only the newly 
   },agent:{configured:true,close:async()=>{},query:async input=>{const topic=fixtureTopicResult(input);if(topic)return topic;seen.push(input);return {answer:JSON.stringify({summary:'Synthetic current revision',evidence:[]}),citations:[],trace:[],runId:randomUUID()};}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   await authorizeFixtureModels(node);
-  const headers={authorization:`Bearer ${cfg.token}`};
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
   const uploaded=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'history.json',dataBase64:Buffer.from('synthetic history').toString('base64')}]}});
   const id=uploaded.json().id;await until(async()=>node.imports.get(id),job=>job.status==='awaiting_confirmation');
   assert.equal((await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers})).statusCode,202);

@@ -7,12 +7,12 @@ import {join} from 'node:path';
 import sharp from 'sharp';
 import {formatEvidenceRef} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store} from '../src/store.js';
 import {parse} from 'yaml';
 
 const inactive={configured:false,query:async()=>{throw Error('No fixture model call authorized');},close:async()=>{}};
-const config=(dataDir:string):Config=>({dataDir,token:'generated-contract-owner',tokenPath:'generated',profile:'test',host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-contract-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:20_000_000},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://generated.invalid',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 
 test('fresh epoch 7 installs final schema and refuses an old epoch without changing its persisted rows',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-epoch4-contract-')),node=await buildApp(config(directory),{agent:inactive,backgroundWorker:false});

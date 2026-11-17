@@ -8,12 +8,12 @@ import sharp from 'sharp';
 import {originalEvidenceReceipt,parseAnswer,type QueryInput} from '@mote/agent';
 import type {SourceContextDeclaration} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {SourceContextStore} from '../src/source-context.js';
 import {withFixtureOwnerModelWork} from './fixtures/model-authorization.js';
 
 const token='generated-query-plugin-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const original={id:'00000000-0000-4000-8000-000000000301',deviceId:'generated-query-plugin-device',deviceName:'Generated fixture',platform:'import' as const,source:'note' as const,capturedAt:'2026-09-20T01:00:00Z',durationMs:0,ocrText:'Generated original: the sample project selected a durable query plugin.'};
 
 test('HTTP preparation feeds context, attachments and source pins through the Agent runtime into the conversation receipt',async t=>{

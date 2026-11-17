@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {centralCalendarPluginCapabilitySchema,messageSendPluginCapabilitySchema,type AssistantActionDraft,type ConnectorActionExecution,type ActionPluginProvider,type QueryScope} from '@mote/shared';
 import {buildApp} from '../../src/app.js';
-import type {Config} from '../../src/config.js';
+import type {ConfigurationPlatformOptions} from '../../src/config.js';
 import {TaskRecords} from '../../src/task-records.js';
 import {sha256} from '../../src/store.js';
 import {hostRun} from './host-run.js';
@@ -19,9 +19,7 @@ export const until=async(check:()=>boolean)=>{const end=Date.now()+10000;while(!
  * a controlled model and connector adapter. No third-party calls or profiles. */
 export async function assistantActionFixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-assistant-actions-')),token='generated-assistant-actions-owner',headers={authorization:'Bearer '+token};
- const config:Config={dataDir:directory,dataKey:'42'.repeat(32),contentEncryptionEnabled:true,token,tokenPath:'fixture',host:'127.0.0.1',port:0,
-  maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-only',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:'42'.repeat(32),contentEncryptionEnabled:true,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-only',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  let drafts:AssistantActionDraft[]=[],loseResponse=false,enabled=true;
  const calls:ConnectorActionExecution[]=[],sourceId='generated-actions-source';
  const calendar=centralCalendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'central-connector',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,completionInMoteOnly:true}});

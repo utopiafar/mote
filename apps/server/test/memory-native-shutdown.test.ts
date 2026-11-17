@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {zipSync,strToU8} from 'fflate';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {PluginReleaseTransport} from '../src/plugin-release.js';
 
 // Self-contained generated worker payload. The embedding request is the only
@@ -50,7 +50,7 @@ test('actual app.close reaches bounded worker shutdown while a public migration 
  const directory=await mkdtemp(join(tmpdir(),'mote-native-shutdown-')),owner='generated-native-shutdown-token',commit='a'.repeat(40),repository='generated-fixture/embedding-worker',tag='v1.0.0';let hang=false,entered!:()=>void,aborted=0;const embeddingEntered=new Promise<void>(resolve=>{entered=resolve;});
  const endpoint=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;if(hang){entered();req.once('aborted',()=>aborted++);res.once('close',()=>{if(!res.writableEnded)aborted++;});return;}const body=JSON.parse(raw),input=Array.isArray(body.input)?body.input:[body.input];res.setHeader('content-type','application/json');res.end(JSON.stringify({data:input.map((_:unknown,index:number)=>({object:'embedding',index,embedding:[1,0,0]})),model:'generated-transport'}));});
  await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
- const config:Config={dataDir:directory,token:owner,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}},nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
  const start=async()=>{const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model belongs in this transport/lifecycle fixture');},async close(){}}});nodes.push(node);await node.app.ready();return node;};
  t.after(async()=>{hang=false;endpoint.closeAllConnections();for(const node of nodes)await node.app.close().catch(()=>{});await new Promise<void>(resolve=>endpoint.close(()=>resolve()));await rm(directory,{recursive:true,force:true});});
  const node=await start();const archive=zipSync({'worker.mjs':strToU8(generatedWorker)}),manifest={schemaVersion:1,id:'generated.embedding-worker',name:'Generated embedding worker',version:'1.0.0',runtime:'worker',entry:'worker.mjs',archive:{asset:'worker.zip',sha256:createHash('sha256').update(archive).digest('hex')},capabilities:['engine'],configuration:[{id:'dataFile',label:'Generated data file',type:'text',required:true},{id:'embeddingUrl',label:'Generated embedding endpoint',type:'text',required:true},{id:'abortFile',label:'Generated abort marker',type:'text',required:true}],dependencies:[],access:['Generated fixture directory only']};

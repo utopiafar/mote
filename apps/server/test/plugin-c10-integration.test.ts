@@ -212,7 +212,7 @@ test('an interrupted source upload body releases its real C04 pin and scope list
 
 async function defaultFixture(t:TestContext){
   const dataDir=mkdtempSync(join(tmpdir(),'mote-c10-default-'));
-  const node=await buildApp({dataDir,token:ownerToken,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{
+  const node=await buildApp({path:(dataDir)+'/mote.yaml',privateCredential:{token:ownerToken,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}},{
     backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in C10 default fixture');},close:async()=>{}},
   });
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});

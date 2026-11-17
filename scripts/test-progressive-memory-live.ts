@@ -8,7 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {z} from 'zod';
 import {documentSchema} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import type {MemoryJobDetail} from '../apps/server/src/memory-pipeline.js';
@@ -51,9 +51,7 @@ if(report.ingressMode==='source')for(const record of manifest.records){const doc
 report.runnerHashes??=[];report.runnerHashes.push({at:new Date().toISOString(),hash:sha256(await readFile(join(repositoryRoot,'scripts/test-progressive-memory-live.ts'))),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',cwd:repositoryRoot}).trim(),
  agentFiles:Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','apps/server/src/memory-review-policy.ts','apps/server/src/memory-strategies.ts','apps/server/src/memory-strategy-contract.ts','apps/server/src/memory-pipeline.ts','packages/agent/skills/memory-strategy/SKILL.md','apps/server/src/materials.ts','apps/server/src/material-organizers.ts','apps/server/src/coding-source-plugin.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])))});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex'),deviceId='private-progressive-replay';
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
- model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
- diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 function progress(stage:string,data:Record<string,unknown>={}){console.log(JSON.stringify({stage,...data}));}
 async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
@@ -61,7 +59,7 @@ async function request(method:'GET'|'POST'|'PUT',url:string,payload?:unknown){co
 async function start(){
  node=await buildApp(config);const settings=node.lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
  if(requestedBatchCharacters!==undefined&&settings.batchCharacters!==requestedBatchCharacters){(report.batchBudgetChanges??=[]).push({at:new Date().toISOString(),from:settings.batchCharacters,to:requestedBatchCharacters,existingJobRangesUnchanged:true});settings.batchCharacters=requestedBatchCharacters;await request('PUT','/api/memory-settings',{revision:node.configService.revision,settings});}
- assert.equal(node.modelSettings.current().model,config.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
+ assert.equal(node.modelSettings.current().model,config.initialDocument!.models.deployment.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
  if(report.ingressMode==='source')await request('POST','/api/sources',{id:deviceId,name:'Private authored replay',kind:'custom',deviceId,platform:'import',retention:'archive'});
 }
 async function close(){const old=node;if(old){await save();await old.app.close();node=undefined;}}
@@ -93,7 +91,7 @@ function checkMemories(job:MemoryJobDetail){
 }
 try{
  report.status='running';delete report.failure;delete report.finishedAt;await save();progress('catalog',{directory});
- if(!ingressOnly){const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});report.catalog=catalog.items.find(item=>item.id===config.model);assert.ok(report.catalog?.reasoningEfforts?.includes('max'));}
+ if(!ingressOnly){const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});report.catalog=catalog.items.find(item=>item.id===config.initialDocument!.models.deployment.model);assert.ok(report.catalog?.reasoningEfforts?.includes('max'));}
  await start();
  let offset=0;
  for(const [index,count] of manifest.waves.entries()){

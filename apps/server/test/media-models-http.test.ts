@@ -11,7 +11,7 @@ import {fileURLToPath} from 'node:url';
 import Fastify from 'fastify';
 import {mediaAssetStatusSchema,mediaModelsViewSchema,mediaRoleSchema,type MediaRole} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {MEDIA_CATALOG,MediaAssets} from '../src/media-assets.js';
 import {mediaModelsFeature} from '../src/features/media.js';
 import {FUNASR_PROTOCOL} from '../src/funasr-contract.js';
@@ -37,11 +37,10 @@ test('actual authenticated model HTTP separates downloading, complete files and 
   const body=JSON.stringify(health);healthBytes.push(body);res.writeHead(200,{'content-type':'application/json'});res.end(body);
  });
  worker.listen(0,'127.0.0.1');await once(worker,'listening');const workerPort=(worker.address() as {port:number}).port;
- const config:Config={dataDir:join(directory,'archive'),token:'generated-models-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,configuration:{runtime:'docker'},
-  media:{modelDirectory:join(directory,'models'),workerToken:'generated-model-worker',ocrEndpoint:`http://127.0.0.1:${workerPort}/ocr`,asrEndpoint:`http://127.0.0.1:${workerPort}/transcribe`,ocrPort:workerPort,asrPort:workerPort,python:'python3'}};
+ const config:ConfigurationPlatformOptions={path:(join(directory,'archive'))+'/mote.yaml',privateCredential:{token:'generated-models-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'archive'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[],runtime:'docker'},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://example.invalid',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent',enabled:false},media:{modelDirectory:join(directory,'models'),workerToken:'generated-model-worker',ocrEndpoint:`http://127.0.0.1:${workerPort}/ocr`,asrEndpoint:`http://127.0.0.1:${workerPort}/transcribe`,ocrPort:workerPort,asrPort:workerPort,python:'python3'}}};
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{throw Error('Installing assets must not invoke a model');}})});
  t.after(async()=>{await node.app.close();worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));Object.assign(MEDIA_CATALOG,prior);await rm(directory,{recursive:true,force:true});});
- const url=await node.app.listen({host:'127.0.0.1',port:0}),headers={authorization:'Bearer '+config.token},originalFetch=fetch;
+ const url=await node.app.listen({host:'127.0.0.1',port:0}),headers={authorization:'Bearer '+config.privateCredential!.token},originalFetch=fetch;
  t.mock.method(globalThis,'fetch',(input:Parameters<typeof fetch>[0],init?:RequestInit)=>String(input).startsWith('https://fixture.invalid/')?originalFetch(`http://127.0.0.1:${workerPort}/model`,init):originalFetch(input,init));
  const view=async()=>{const response=await fetch(url+'/api/media-models',{headers});assert.equal(response.status,200);const bytes=await response.text();assert.equal(bytes.includes(directory),false);return mediaModelsViewSchema.parse(JSON.parse(bytes));};
  const post=async(path:string,auth=headers)=>fetch(url+path,{method:'POST',headers:{...auth,'content-type':'application/json'},body:'{}'});

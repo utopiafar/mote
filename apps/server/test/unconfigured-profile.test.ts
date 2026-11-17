@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {profilePaths,initialize} from '../../../scripts/profile-lib.mjs';
-import {configFromFile} from '../src/config.js';
+import {configurationFromFile} from '../src/config.js';
 import {buildApp} from '../src/app.js';
 import {createModelAgent as productionCreateModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
 import {appCleanup} from './fixtures/app-cleanup.js';
@@ -30,7 +30,7 @@ async function profile(t:TestContext){
   const cleanup=appCleanup(t,root);
   const paths=profilePaths('test',root);
   await initialize(paths);
-  const config=configFromFile(paths.configFile,{initializeCredentials:false});
+  const config=configurationFromFile(paths.configFile);
   assert.equal(config.model,'');
   assert.equal(config.embeddingModel,'');
   return {root,config,cleanup};

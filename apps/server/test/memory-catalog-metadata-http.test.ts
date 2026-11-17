@@ -11,7 +11,7 @@ import {createModelAgent} from '../src/model-agent.js';
 import {materialId,type MaterialDraft,type MaterialRecord} from '../src/materials.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {FileAttachments,fileAttachmentParent} from '../src/file-attachments.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 for(const adapter of ['http','codex'] as const)for(const mutation of ['unchanged','source-declaration','material-owner','deleted-context','unread-body'] as const)test(`${adapter} Memory catalog metadata fences ${mutation} before first model transport`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-catalog-metadata-')),token='generated-catalog-owner';
@@ -21,7 +21,7 @@ for(const adapter of ['http','codex'] as const)for(const mutation of ['unchanged
   assert.ok(!body.includes('memoryCatalogMetadata'),'the private host receipt is never provider input');
   res.writeHead(401,{'Content-Type':'application/json'}).end('{"error":{"message":"Generated refusal"}}');
  });await new Promise<void>(done=>endpoint.listen(0,'127.0.0.1',done));
- const config:Config={dataDir:directory,token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-only',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:`http://127.0.0.1:${(endpoint.address() as {port:number}).port}/v1`,apiKey:'generated-only',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const turns=join(directory,'turns.ndjson'),executable=join(directory,'generated-codex.mjs');
  if(adapter==='codex'){
   writeFileSync(join(directory,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
@@ -92,7 +92,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
 
 test('a complete 4097-member catalog receipt checks metadata without reading body payloads or granting quotes',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-catalog-metadata-full-'));
- const config:Config={dataDir:directory,token:'generated-catalog-full',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-unused',modelBaseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-catalog-full',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-unused',baseUrl:'https://generated.invalid',apiKey:'generated-unused',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async()=>{assert.fail('No model in a metadata fixture');}}});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const sourceId='generated-catalog-full',id=randomUUID();node.sources.register({id:sourceId,name:'Generated full catalog',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});

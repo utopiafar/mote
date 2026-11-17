@@ -6,13 +6,13 @@ import {join} from 'node:path';
 import {randomBytes,createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {RANGE_SELECTION_DAILY_RECIPE} from '../apps/server/src/memory-range-selection-policy.js';
 import {dailyEventFixtures} from '../apps/server/test/fixtures/daily-events.js';
 
 const output=await mkdtemp(join(tmpdir(),'mote-daily-events-live-')),token=randomBytes(32).toString('hex'),data=await dailyEventFixtures();
 const report:any={status:'running',personalDataUsed:false,physicalDevicesTested:false,realModel:true,ocr:'generated matching text fixture; not OCR quality validation',model:'gpt-6.1-sol',reasoningEffort:'high',calls:[],semanticQualityAccepted:false};
-const config:Config={dataKey:undefined,dataDir:join(output,'vault'),token,tokenPath:join(output,'token'),host:'127.0.0.1',port:0,maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:report.model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:300000,diagnosticsEnabled:true,agentTraceEnabled:false,logLevel:'warn',codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
+const config:ConfigurationPlatformOptions={path:(join(output,'vault'))+'/mote.yaml',privateCredential:{token:token,tokenPath:join(output,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:join(output,'vault'),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:report.model,provider:'codex',protocol:'codex-app-server',reasoningEffort:'high',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{enabled:true,traceEnabled:false,level:'warn'}}};
 const save=()=>writeFile(join(output,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 try{

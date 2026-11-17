@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {setImmediate as nextTurn,setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
@@ -31,7 +31,7 @@ const result=(id:string,quote?:{offset:number;quote:string})=>({answer:JSON.stri
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'});
 test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-unchanged-wake-'));
- const config:Config={dataDir:directory,token:'generated-memory-wake-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent',contentEncryptionEnabled:true,dataKey:randomBytes(32).toString('hex')};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-wake-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000,contentEncryptionEnabled:true,dataKey:randomBytes(32).toString('hex')},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  let calls=0;
  const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{calls++;throw Error('Unauthorized originals must not reach the model');}})});
  t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
@@ -174,7 +174,7 @@ test('a batch update rolled back with its transaction leaves no transition signa
 
 test('an owner reply rolled back inside its real reply transaction leaves no transition signal for an unchanged refresh',{timeout:30000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-rollback-'));
- const config:Config={dataDir:directory,token:'generated-owner-rollback-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-owner-rollback-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
   const plan=await fixtureMemoryPlan(input);if(plan)return plan;
@@ -186,7 +186,7 @@ test('an owner reply rolled back inside its real reply transaction leaves no tra
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  await node.app.ready();await authorizeFixtureModels(node);
  const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
- const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  assert.equal((await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
  const created=await api('PUT','/api/sources/generated-dialogues/items',{externalId:'dialogue',revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:'Speaker A: I felt pressured at work. Speaker B: Could you describe what happened? Speaker A: A colleague kept assigning my tasks.',document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});
  assert.equal(created.statusCode,200,created.body);
@@ -236,7 +236,7 @@ test('an owner reply rolled back inside its real reply transaction leaves no tra
 
 test('overlapping owner replies preserve the first committed batch transition when the second receipt rolls back',{timeout:30000},async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-overlap-'));
- const config:Config={dataDir:directory,token:'generated-owner-overlap-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,memoryConcurrency:1,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-owner-overlap-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const answers:Array<()=>void>=[];
  const generate=async(input:QueryInput):Promise<QueryResult>=>{
   const topic=fixtureTopicResult(input);if(topic)return topic;
@@ -250,7 +250,7 @@ test('overlapping owner replies preserve the first committed batch transition wh
  t.after(async()=>{try{await node.app.close();}finally{rmSync(directory,{recursive:true,force:true});}});
  await node.app.ready();await authorizeFixtureModels(node);
  const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
- const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'}});
+ const api=(method:'GET'|'POST'|'PUT',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  assert.equal((await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
  for(const externalId of ['first','second']){
   const created=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text:'Speaker A: I felt pressured at work. Speaker B: Could you describe what happened? Speaker A: A colleague kept assigning my tasks.',document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});

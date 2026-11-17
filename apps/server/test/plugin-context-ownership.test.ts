@@ -7,7 +7,7 @@ import type {Context} from '@deepseek-ai/cordis';
 import type {HostScope} from '@mote/plugin-host';
 import type {StateStore} from '@mote/plugin-api';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ConnectorManifest} from '../src/connectors/registry.js';
 
 const token='generated-context-owner',headers={authorization:'Bearer '+token};
@@ -18,11 +18,9 @@ async function bounded<T>(promise:Promise<T>):Promise<T>{
   try{return await Promise.race([promise,new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>reject(Error('Generated ownership event did not arrive')),5000);})]);}
   finally{clearTimeout(timer);}
 }
-function config(dataDir:string):Config{
-  return {dataDir,token,tokenPath:'generated-fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,
-    allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',
-    connectors:{directory:join(dataDir,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[],
-      googleClientId:'',googleClientSecret:'',googleRedirectUri:'',syncIntervalMs:900_000,allowLocalMcp:false}};
+function config(dataDir:string):ConfigurationPlatformOptions{
+  return {path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(dataDir,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[],
+      googleClientId:'',googleClientSecret:'',googleRedirectUri:'',syncIntervalMs:900_000,allowLocalMcp:false}}};
 }
 interface Activation {
   id:string;scope:HostScope;state:StateStore;child:Context;ticks:number;closed:number;released:number;childClosed:number;launches:number;

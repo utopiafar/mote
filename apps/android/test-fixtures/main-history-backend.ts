@@ -6,7 +6,7 @@ import {join,resolve} from 'node:path';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 
 // Generated main/wire-1 host for the real Android ASK and Activity readers.
 // A generated agent adapter supplies answers; stored turns, operations, paging
@@ -19,7 +19,7 @@ const agent={configured:true,close:async()=>{},query:async(_input:QueryInput)=>{
  modelCalls++;const index=(modelCalls-1)%21+1,number=String(index).padStart(2,'0');
  return {answer:`GENERATED_HISTORY_ANSWER_${generation}_${number}`,citations:[{id:original,capturedAt:observedAt,appName:'Generated Android history source',excerpt:`GENERATED_HISTORY_CITATION_${number}`}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[artifactId,original]}};
 }};
-const config:Config={dataDir:directory,token,tokenPath:'generated-fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
 const node=await buildApp(config,{backgroundWorker:false,agent});
 const address=await node.app.listen({host:'127.0.0.1',port:0});
 const headers={authorization:'Bearer '+token,'content-type':'application/json'};

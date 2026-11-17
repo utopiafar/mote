@@ -10,14 +10,15 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
 import {readAgentCredential} from './login-fixture.js';
-async function fixture(t:import('node:test').TestContext,factory:ModelAgentFactory,overrides:Partial<Config>={},limits?:ConstructorParameters<typeof Store>[1]){
+async function fixture(t:import('node:test').TestContext,factory:ModelAgentFactory,embedding:Partial<import('../src/model-settings.js').ModelDomain['embedding']>={},limits?:ConstructorParameters<typeof Store>[1]){
  const directory=await mkdtemp(join(tmpdir(),'mote-authorization-http-'));
- const config:Config={dataDir:directory,token:'generated-owner-only',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'https://fixture.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',...overrides};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-owner-only',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://fixture.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+ Object.assign((config.initialDocument!.models as {embedding:object}).embedding,embedding);
  let fixtureStore=limits?new Store(directory,limits):undefined;
- let node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory,store:fixtureStore});const headers={authorization:'Bearer '+config.token};
+ let node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory,store:fixtureStore});const headers={authorization:'Bearer '+config.privateCredential!.token};
  t.after(async()=>{await node.app.close();fixtureStore?.close();await rm(directory,{recursive:true,force:true});});
  return {get node(){return node;},headers,async restart(){await node.app.close();fixtureStore?.close();fixtureStore=limits?new Store(directory,limits):undefined;node=await buildApp(config,{backgroundWorker:false,createModelAgent:factory,store:fixtureStore});},
  async intake(text:string){const id=randomUUID();const response=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:{id,deviceId:'generated-device',deviceName:'Generated device',platform:'import',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:text}});assert.equal(response.statusCode,201,response.body);return id;},
@@ -201,7 +202,7 @@ test('assembled embedding transport requires the switch and stop fences its late
  const service=createServer(async(req,res)=>{const chunks:Buffer[]=[];for await(const part of req)chunks.push(Buffer.from(part));inputs.push(JSON.parse(Buffer.concat(chunks).toString()).input);if(hold){enter();await held;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{embedding:[1,0]}]}));});
  await new Promise<void>(resolve=>service.listen(0,'127.0.0.1',resolve));const address=service.address();assert.ok(address&&typeof address!=='string');
  t.after(async()=>{release();service.closeAllConnections();await new Promise<void>(resolve=>service.close(()=>resolve()));});
- const f=await fixture(t,async()=>({configured:true,close:async()=>{},query:async()=>{throw Error('No language model call expected');}}),{embeddingModel:'generated-vector',embeddingBaseUrl:'http://127.0.0.1:'+address.port,embeddingApiKey:'generated-vector-key'});
+ const f=await fixture(t,async()=>({configured:true,close:async()=>{},query:async()=>{throw Error('No language model call expected');}}),{model:'generated-vector',baseUrl:'http://127.0.0.1:'+address.port,apiKey:'generated-vector-key'});
  const old=await f.intake('Generated historical embedding');await f.node.indexer.tick();assert.equal(inputs.length,0);
  await f.command('on');const fresh=await f.intake('Generated approved embedding');await f.node.indexer.tick();assert.equal(inputs.length,1);assert.match(inputs[0],/Generated approved embedding/);
  f.node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind='embedding.capture' AND json_extract(input,'$.evidenceId')=?").run(old);await f.node.indexer.tick();assert.equal(inputs.length,2);assert.equal(f.node.store.db.prepare('SELECT index_status FROM captures WHERE id=?').get(old)!.index_status,'indexed','opening backfills the withheld embedding once');

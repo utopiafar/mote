@@ -8,7 +8,7 @@ import {randomUUID} from 'node:crypto';
 import Fastify from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {InsightRuns} from '../src/insight-runs.js';
 import {Store} from '../src/store.js';
@@ -17,8 +17,8 @@ import {hostRun} from './fixtures/host-run.js';
 import {defaultDistribution} from '../src/distribution/default.js';
 
 const headers={authorization:'Bearer generated-insight-plugin-owner'};
-function generatedConfig(dataDir:string,token=headers.authorization.slice(7)):Config{
-  return {dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,dataKey:'41'.repeat(32),maxExportBytes:10_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+function generatedConfig(dataDir:string,token=headers.authorization.slice(7)):ConfigurationPlatformOptions{
+  return {path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:'41'.repeat(32),maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
 }
 function profile(t:any){
   const directory=mkdtempSync(join(tmpdir(),'mote-insight-plugin-')),store=new Store(directory),executor=new ExecutionEngine(store),runs=new InsightRuns(store,{executor}),instances=[runs];

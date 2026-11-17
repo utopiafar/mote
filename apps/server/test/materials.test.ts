@@ -9,7 +9,7 @@ import {Store} from '../src/store.js';
 import {MaterialStore,materialId,materialManifestSchema,type MaterialDraft} from '../src/materials.js';
 import {buildApp} from '../src/app.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-formal-material-'));
@@ -202,15 +202,13 @@ test('changing only a block context invalidates its Memory, preserves other evid
 
 test('owner material API requires owner credential and serves only bounded reads',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-material-api-'));
-  const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,
-    dataKey:undefined,maxExportBytes:1_000_000,insightIntervalHours:0,
-    allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-fixture-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}};
   const {app,store}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('unused');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(directory,{recursive:true,force:true});});
   const materials=new MaterialStore(store),record=materials.publish(draft());
   assert.equal((await app.inject(`/api/materials/${record.id}`)).statusCode,401);
   assert.equal((await app.inject('/api/materials/status')).statusCode,401);
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`};
   const status=await app.inject({url:'/api/materials/status',headers});
   assert.equal(status.statusCode,200);assert.equal(typeof status.json().pendingChanges,'number');
   const read=await app.inject({url:`/api/materials/${record.id}/read?offset=10&length=7`,headers});

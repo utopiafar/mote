@@ -14,7 +14,7 @@ import {sourceItemSchema} from '@mote/shared';
 import type {QueryResult} from '@mote/shared';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
 import {archiveHash,sourceReceiptId} from '../apps/server/src/source-archive.js';
 import {defaultMemoryIntegrationRecipe} from '../apps/server/src/memory-integration-policy.js';
@@ -53,8 +53,7 @@ async function verifyFreeze(directory:string,expected:string){
   return {freezeSha256:expected,fileHashes:hashes};
 }
 async function lines(path:string){const text=await readFile(path,'utf8');check(text.endsWith('\n'),'ndjson_missing_final_lf');return text.slice(0,-1).split('\n').map(line=>({bytes:line+'\n',value:JSON.parse(line)}));}
-function config(vault:string):Config{return {dataDir:vault,dataKey:undefined,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:40_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model:'heldout-preparation-no-provider',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:true,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false,agentTraceEnabled:false,agentTimeoutMs:300000,memoryConcurrency:1,codexBin:'/nonexistent-heldout-no-provider',codexHome:join(output,'DO_NOT_OPEN','unused-codex-home')};}
+function config(vault:string):ConfigurationPlatformOptions{return {path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:vault,dataKey:undefined,maxExportBytes:40_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'heldout-preparation-no-provider',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:true,agentTimeoutMs:300000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:'/nonexistent-heldout-no-provider',home:join(output,'DO_NOT_OPEN','unused-codex-home')}},diagnostics:{level:'silent',enabled:false,traceEnabled:false}}};}
 async function open(vault:string,stub?:(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>,semanticContextTime?:()=>string){
   check(!node,'node_already_open');
   node=await buildApp(config(vault),{backgroundWorker:false,semanticContextTime,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{if(stub)return stub(reader,input);admissions++;throw new SafeFailure('provider_admission_forbidden');}})});

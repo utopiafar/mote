@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import type {Transcript} from '@mote/shared';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {Store,sha256} from '../src/store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import type {FileProcessor} from '../src/file-processors.js';
@@ -20,7 +20,7 @@ async function fixture(t:TestContext,processors:FileProcessor[]=[]){
  // This trusted plugin installs the test closures before startup validates
  // persisted processor settings, on both the first run and restart.
  const plugin=processors.length?{name:'generated-shutdown-processors',inject:['moteFileProcessors'],apply(ctx:any){for(const processor of processors)ctx.effect(()=>ctx.moteFileProcessors.register(processor));}}:undefined;
- const config:Config={dataDir:directory,token:'generated-shutdown-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-shutdown-token',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const nodes:Awaited<ReturnType<typeof buildApp>>[]=[];
  const start=async(agent?:import('../src/app.js').QueryAgent)=>{const node=await buildApp(config,{store,agent,...(plugin?{processingPlugins:[plugin]}:{})});nodes.push(node);await node.app.ready();return node;};
  t.after(async()=>{for(const node of nodes)await node.app.close();store.close();rmSync(directory,{recursive:true,force:true});});

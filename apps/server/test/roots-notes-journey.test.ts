@@ -8,18 +8,18 @@ import http from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {buildApp} from '../src/app.js';
 import {closeSourcePlatforms} from '../src/platform-close-order.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const note=(deviceId='generated-notes-device')=>({id:randomUUID(),deviceId,deviceName:'Generated notes device',platform:'android',capturedAt:'2026-11-03T00:00:00.000Z',text:'Generated ROOTS-2 note body'});
 
 test('real buildApp Notes journey uses one C10A ingress and C04 pin, then closes',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-'));
-  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-roots-notes-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots notes fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   assert.equal(node.featureServices.ingress,node.captureIntake.ingress);
   assert.equal(node.featureServices.files,node.filesPlatform.assemblyForRoutes().files);
-  const headers={authorization:`Bearer ${config.token}`},input=note();
+  const headers={authorization:`Bearer ${config.privateCredential!.token}`},input=note();
   const created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:input});
   assert.equal(created.statusCode,201,created.body);assert.equal(created.json().receipt.state,'received');
   const listed=await node.app.inject({url:'/api/notes',headers});assert.equal(listed.statusCode,200,listed.body);
@@ -38,7 +38,7 @@ test('real buildApp Notes journey uses one C10A ingress and C04 pin, then closes
 
 test('authorization startup failure clears the started FilesSource sweep timer',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-fail-')),connectors=join(dataDir,'connectors');mkdirSync(connectors,{recursive:true});writeFileSync(join(connectors,'client-connections.json'),'generated malformed json');
-  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-roots-notes-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const set=globalThis.setInterval,clear=globalThis.clearInterval,active=new Set<ReturnType<typeof setInterval>>();
   globalThis.setInterval=((fn:TimerHandler,ms?:number,...args:unknown[])=>{const timer=set(fn,ms,...args);active.add(timer);return timer;}) as typeof setInterval;
   globalThis.clearInterval=((timer?:ReturnType<typeof setInterval>)=>{if(timer)active.delete(timer);clear(timer);}) as typeof clearInterval;
@@ -50,13 +50,13 @@ test('authorization startup failure clears the started FilesSource sweep timer',
 
 test('an authenticated request aborted over a real socket releases its C04 pin',async t=>{
   const dataDir=mkdtempSync(join(tmpdir(),'mote-roots-notes-abort-'));
-  const config:Config={dataDir,token:'generated-roots-notes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-roots-notes-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in roots abort fixture');},close:async()=>{}}});
   t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
   await node.app.listen({host:'127.0.0.1',port:0});
   const {port}=node.app.server.address() as AddressInfo;
   let observed=false;
-  const client=http.request({host:'127.0.0.1',port,path:'/api/notes',method:'POST',headers:{authorization:`Bearer ${config.token}`,'content-type':'application/json','content-length':'512'}});
+  const client=http.request({host:'127.0.0.1',port,path:'/api/notes',method:'POST',headers:{authorization:`Bearer ${config.privateCredential!.token}`,'content-type':'application/json','content-length':'512'}});
   client.on('error',()=>{});
   client.write('{"id":"partial');
   for(let i=0;i<200&&!observed;i++){observed=node.liveRequestPins()>0;if(!observed)await new Promise(resolve=>setTimeout(resolve,10));}

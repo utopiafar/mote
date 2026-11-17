@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import sanitizeHtml from 'sanitize-html';
 import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
@@ -34,15 +34,10 @@ const reviewBytes=reviewPath?await readFile(external(reviewPath)):undefined;
 const previous=reviewBytes?JSON.parse(reviewBytes.toString('utf8')):undefined;
 if(previous){assert.equal(previous.sourceReportHash,sha256(sourceBytes));assert.equal(previous.sourceDatabaseHash,beforeHash);assert.equal(previous.model,'gpt-6-sol');assert.equal(previous.reasoningEffort,'max');}
 const token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,
- maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
- model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
- allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
- diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,
- codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const report:Record<string,any>={startedAt:new Date().toISOString(),status:'running',sourceRun:source,sourceReportHash:sha256(sourceBytes),sourceDatabaseHash:beforeHash,
- personalDataUsed:seed.personalDataUsed,model:config.model,reasoningEffort:'max',agentDeadlineMs:300000,browserTested:false,physicalDevicesTested:false,
+ personalDataUsed:seed.personalDataUsed,model:config.initialDocument!.models.deployment.model,reasoningEffort:'max',agentDeadlineMs:300000,browserTested:false,physicalDevicesTested:false,
  head:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim(),runnerHash:sha256(await readFile(new URL(import.meta.url))),
  memoriesRepublished:false,sourceRunUsageExcluded:true,...(reviewBytes?{reviewOnlyFrom:reviewPath,previousReportHash:sha256(reviewBytes)}:{}),cases:[]};
 async function save(){
@@ -56,12 +51,12 @@ async function request(method:'GET'|'POST',url:string,payload?:Record<string,unk
 }
 try{
  await save();progress('catalog',{directory});
- const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});
- assert.ok(catalog.items.find(item=>item.id===config.model)?.reasoningEfforts?.includes('max'));
+ const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});
+ assert.ok(catalog.items.find(item=>item.id===config.initialDocument!.models.deployment.model)?.reasoningEfforts?.includes('max'));
  node=await buildApp(config);
  const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;
  await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
- assert.equal(node.modelSettings.current().model,config.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
+ assert.equal(node.modelSettings.current().model,config.initialDocument!.models.deployment.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
  assert.equal(node.store.db.prepare('PRAGMA quick_check').get()!.quick_check,'ok');
  for(const item of manifest.cases){
   const sourceCase=seed.cases.find((c:{id:string})=>c.id===item.sourceCaseId),deviceId='generated-'+item.sourceCaseId;
@@ -74,7 +69,7 @@ try{
    const priorCase=previous?.cases.find((c:{id:string})=>c.id===item.sourceCaseId);
    if(previous){assert.ok(priorCase?.insight);assert.deepEqual(priorCase.originals,originals);assert.equal(priorCase.rubric,item.rubric);}
    const insight=priorCase?await stage('reuse-recorded-insight',async()=>priorCase.insight):await stage('insight',()=>request('POST','/api/insights',{deviceId,timeZone:'Asia/Shanghai',...(item.prompt?{prompt:item.prompt}:{})}));
-   result.insight=insight;assert.equal(insight.modelSelection.model,config.model);assert.ok(insight.artifact?.html,'Report mode did not produce an artifact');
+   result.insight=insight;assert.equal(insight.modelSelection.model,config.initialDocument!.models.deployment.model);assert.ok(insight.artifact?.html,'Report mode did not produce an artifact');
    if(!priorCase){const persisted=(await request('GET','/api/insights')).items.find((r:{runId:string})=>r.runId===insight.runId);assert.ok(persisted,'Insight did not persist');}
    for(const citation of insight.citations){
     const evidence=node.memories.readEvidence([citation.id]);

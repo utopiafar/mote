@@ -7,10 +7,10 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AgentYieldError} from '@mote/agent';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 const token='generated-lane-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-lane-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,agentConcurrency:1,llmConcurrency:1},models:{deployment:{model:'generated-lane-fixture',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:30000,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 async function until<T>(read:()=>T|undefined,describe?:()=>unknown):Promise<T>{for(let n=0;n<200;n++){const result=read();if(result!==undefined)return result;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated lane fixture did not settle'+(describe?': '+JSON.stringify(describe()):''));}
 
 function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){

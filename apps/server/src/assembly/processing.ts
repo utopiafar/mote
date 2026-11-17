@@ -1,4 +1,4 @@
-import {dirname,join} from 'node:path';
+import {dirname,join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import type {Context,Plugin} from '@deepseek-ai/cordis';
@@ -6,7 +6,8 @@ import type {ContextReader,QueryInput} from '@mote/agent';
 import type {QueryAgent} from '../query-agent.js';
 import type {CaptureRecord,TokenUsage,UsageReceipt} from '@mote/shared';
 import type {ModelSettings} from '@mote/shared/models';
-import type {Config} from '../config.js';
+import {mediaConfigDomain,serverConfigDomain,storageConfigDomain,type ConfigurationBootstrap} from '../config.js';
+import type {MediaConfiguration} from '../media-configuration.js';
 import type {ConfigService} from '../config-service.js';
 import type {ServerDiagnostics} from '../diagnostics.js';
 import type {ServerResources} from '../server-resources.js';
@@ -61,7 +62,7 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
 ]);
 
 export interface MediaAssemblyDependencies {
-  readonly config:Config;
+  readonly bootstrap:ConfigurationBootstrap;
   readonly store:Store;
   readonly configService:ConfigService;
   readonly resources:ServerResources;
@@ -72,21 +73,22 @@ export interface MediaAssemblyDependencies {
 /** Media assets remain available to the later processing assembly. C18B is
  * constructed here but prepared, started and closed only by its host factory. */
 export function assembleMedia(dependencies:MediaAssemblyDependencies){
-  const {config,store,configService,resources}=dependencies;
-  const mediaAssetsService=createMediaAssetsService({root:config.media?.modelDirectory??join(store.directory,'media-models')});
+  const {bootstrap,store,configService,resources}=dependencies;
+  const selected=configService.current(mediaConfigDomain),media={...selected,modelDirectory:selected.modelDirectory?resolve(bootstrap.baseDir,selected.modelDirectory):join(store.directory,'media-models')};
+  const mediaAssetsService=createMediaAssetsService({root:media.modelDirectory});
   resources.defer(()=>mediaAssetsService.close());
   mediaAssetsService.prepare();mediaAssetsService.start();
   const mediaAssets=mediaAssetsService.assetsForAssembly;
   // Runtime environments need the profile filesystem; model assets may live on
   // an external volume. Both roots remain private to this profile.
   const runtimeRoot=join(dirname(configService.path),'media-runtime');
-  const readiness=createOcrAsrReadiness({runtime:config.configuration?.runtime??'unknown',media:{modelDirectory:mediaAssets.root,python:'python3',ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',workerToken:'',...config.media},assets:mediaAssets,runtimeRoot,configService,backgroundWorker:dependencies.backgroundWorker,prepare:dependencies.prepareMediaRuntime});
+  const readiness=createOcrAsrReadiness({runtime:configService.current(serverConfigDomain).runtime,media,assets:mediaAssets,runtimeRoot,configService,backgroundWorker:dependencies.backgroundWorker,prepare:dependencies.prepareMediaRuntime});
   registerOcrAsrReadinessForAssembly(readiness,mediaAssets);resources.defer(()=>readiness.close());
-  return Object.freeze({mediaAssets,mediaPreparation:readiness.port});
+  return Object.freeze({mediaAssets,mediaPreparation:readiness.port,media});
 }
 
 /** Bind the existing optional intake plugin to the one control and media owner. */
-export function assembleLocalImages({plugins,mediaAssets,processing,config,usage}:{plugins:PluginCenter;mediaAssets:MediaAssets;processing:FileProcessing;config:Pick<Config,'media'>;usage:UsageLedger}){
+export function assembleLocalImages({plugins,mediaAssets,processing,media,usage}:{plugins:PluginCenter;mediaAssets:MediaAssets;processing:FileProcessing;media:MediaConfiguration;usage:UsageLedger}){
   const readiness=ocrAsrReadinessForAssembly(mediaAssets).port;
   const local=createLocalImageProcessing({
     desired:()=>plugins.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE)?.desired,
@@ -107,14 +109,14 @@ export function assembleLocalImages({plugins,mediaAssets,processing,config,usage
   plugins.registerBuild(local.build);
   if(!plugins.control.build(LOCAL_IMAGE_PROCESSING_INSTANCE))plugins.control.saveBuild({id:LOCAL_IMAGE_PROCESSING_INSTANCE,packageId:localImageProcessingSelection.packageId,
     installationId:randomUUID(),revision:1,desired:null,retired:false,observed:'stopped',blockers:[],operationId:'builtin-local-image'});
-  imageProcessingServiceForAssembly(processing).bindLocalImages({selection:local.selection,media:config.media,usage});
+  imageProcessingServiceForAssembly(processing).bindLocalImages({selection:local.selection,media,usage});
   return local.port;
 }
 
 export interface ProcessingAssemblyDependencies {
   readonly bootstrap:Awaited<ReturnType<typeof bootstrapCentral>>;
   readonly store:Store;
-  readonly config:Config;
+  readonly media:MediaConfiguration;
   readonly configService:ConfigService;
   readonly diagnostics:ServerDiagnostics;
   readonly executor:ExecutionEngine;
@@ -142,7 +144,7 @@ export interface ProcessingAssemblyDependencies {
 /** ProcessingRuntime, the media work authority and FileProcessing, plus their
  * close hooks. */
 export async function assembleProcessing(dependencies:ProcessingAssemblyDependencies){
-  const {bootstrap,store,config,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,withMediaOwnerBatch,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage}=dependencies;
+  const {bootstrap,store,media,configService,diagnostics,executor,backendContext,resources,materials,sourcePipelines,files,sourceContexts,mediaAssets,archivedFiles,evidenceReader,indexer,withMediaOwnerBatch,withMediaOwnerIntent,modelAuthorization,modelAuthorizationHost,modelSettings,factory,admittedUsage}=dependencies;
   const mediaModelAuthority:ModelProcessingAuthority=async(request,signal,task)=>{
     const original=captureModelIdentity(request.captureId);
     const execute=async(authorizedSignal:AbortSignal)=>{
@@ -206,7 +208,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
     store,files,configService,diagnostics,executor,backendContext,materials,sourcePipelines,mediaAssets,mediaPreparation:readiness.port,
     ...(dependencies.transcriptionProvider?{transcriptionProvider:dependencies.transcriptionProvider}:{}),
     ...(dependencies.plugins?.length?{plugins:dependencies.plugins}:{}),
-    ...(config.media?{media:config.media}:{}),modelAuthority:mediaModelAuthority,analyze:analyzeFile,analysisSnapshot:resolveFileModel,
+    media,modelAuthority:mediaModelAuthority,analyze:analyzeFile,analysisSnapshot:resolveFileModel,
     analysisRevision:()=>modelSettings.view().revision,semanticFingerprint,
   });
   let started:ProcessingServicesStarted|undefined;
@@ -218,7 +220,7 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   const {workflows,processing}=started!;
   const imageRoutes=createImageProcessingRoutes({withMediaOwnerBatch,withMediaOwnerIntent});
   const imageService=createImageProcessingService({
-    store,processing,executor,configService,materials,mediaAssets,media:config.media,modelAuthority:mediaModelAuthority,
+    store,processing,executor,configService,materials,mediaAssets,media,modelAuthority:mediaModelAuthority,
     modelSettings,resolveFileModel,factory,admittedUsage,diagnostics,
   });
   const imageHandle=await bootstrap.host.install({
@@ -230,14 +232,13 @@ export async function assembleProcessing(dependencies:ProcessingAssemblyDependen
   contributeDomainRoutes(backendContext,{'mote.media':imageRoutes});
   // The vault owns content storage and its storage transport; this assembly
   // only wires the already-prepared activation into the shared route table.
-  contributeDomainRoutes(backendContext,{'mote.storage':vaultStorageRoutes(()=>bootstrap.vault.contentStorage,{archivedFiles,config,diagnostics,evidenceReader,files,indexer,store})});
+  contributeDomainRoutes(backendContext,{'mote.storage':vaultStorageRoutes(()=>bootstrap.vault.contentStorage,{archivedFiles,config:{dataDir:store.directory,maxExportBytes:configService.current(storageConfigDomain).maxExportBytes},diagnostics,evidenceReader,files,indexer,store})});
   registerImageProcessingServiceForAssembly(imageService,processing);
   return Object.freeze({workflows,processing,resolveFileModel,mediaModelAuthority,processingServices:platform,imageProcessingService:imageService});
 }
 
 export interface PerceptionAssemblyDependencies {
   readonly store:Store;
-  readonly config:Pick<Config,'media'>;
   readonly configService:ConfigService;
   readonly executor:ExecutionEngine;
   readonly resources:ServerResources;

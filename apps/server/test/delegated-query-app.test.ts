@@ -8,12 +8,12 @@ import {AgentYieldError,originalEvidenceReceipt,parseAnswer,type QueryInput} fro
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ModelAgentFactory} from '../src/model-agent.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 
 const token='generated-delegation-app-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'generated-fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentConcurrency:1,llmConcurrency:1,agentTimeoutMs:30000});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,agentConcurrency:1,llmConcurrency:1},models:{deployment:{model:'generated-fixture',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:30000,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const scope={deviceId:'generated-selected-device',after:'2026-09-20T00:00:00Z',before:'2026-09-21T00:00:00Z',timeZone:'Asia/Shanghai'};
 const original={id:'00000000-0000-4000-8000-000000000101',deviceId:scope.deviceId,deviceName:'Generated fixture',platform:'import',source:'note' as const,capturedAt:'2026-09-20T01:00:00Z',durationMs:0,ocrText:'Generated original: the sample project chose a local archive.'};
 const plain=(answer='Generated answer'):QueryResult=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}});
@@ -28,7 +28,7 @@ function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
 // research products, shared execution and final conversation writes are real.
 async function researchFixture(t:TestContext,mode:'parallel'|'restart'|'cancel'|'revoke'){
  const directory=mkdtempSync(join(tmpdir(),'mote-research-consumer-')),sourceId='generated-research-source',concurrency=mode==='restart'?1:2,clientRequestId=randomUUID();
- const cfg:Config={...config(directory),dataKey:'65'.repeat(32),contentEncryptionEnabled:true,diagnosticsEnabled:false,interactiveConcurrency:concurrency,agentConcurrency:concurrency,llmConcurrency:concurrency};
+ const cfg:ConfigurationPlatformOptions={...config(directory),dataKey:'65'.repeat(32),contentEncryptionEnabled:true,diagnosticsEnabled:false,interactiveConcurrency:concurrency,agentConcurrency:concurrency,llmConcurrency:concurrency};
  const questions=['Inspect the generated decision','Inspect the generated constraint','Inspect the generated outcome'],texts=['Generated decision: keep the prototype archive local.','Generated constraint: retain the agreed project boundary.','Generated outcome: the prototype passed its scoped review.'];
  const originals:{id:string;text:string}[]=[],gates=questions.map(()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>release=resolve);return {promise,release};});
  let node:Awaited<ReturnType<typeof buildApp>>,id='',conversationId='',generation=0,fragments=0,active=0,maxActive=0;

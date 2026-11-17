@@ -1,5 +1,6 @@
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import type {Config} from '../config.js';
+import type {serverConfigSchema} from '../config.js';
+import type {z} from 'zod';
 import type {ConnectionCredential,Connections} from '../connections.js';
 import type {FeatureRoute} from './index.js';
 import {randomUUID} from 'node:crypto';
@@ -9,7 +10,7 @@ import type {bootstrapCentral,CentralDomainPlugin} from '../bootstrap.js';
 import type {ServerResources} from '../server-resources.js';
 
 export interface ConnectionsFeatureDependencies {
-  readonly config:Config;
+  readonly config:Pick<z.output<typeof serverConfigSchema>,'profile'>;
   readonly connections:Connections;
   readonly connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined;
   readonly serverVersion:string;

@@ -7,7 +7,7 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zipSync, strToU8} from 'fflate';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {GitHubPluginReleases} from '../../server/src/plugin-release.js';
 import {sha256} from '../../server/src/store.js';
 
@@ -18,11 +18,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 assert.deepEqual(process.argv.slice(2), [], 'This case accepts no arguments');
 const directory = await mkdtemp(join(tmpdir(), 'mote-plugin-control-native-'));
 const token = randomBytes(32).toString('hex');
-const config: Config = {
-  dataDir: directory, token, tokenPath: 'generated-only', host: '127.0.0.1', port: 0, maxExportBytes: 10_000_000, insightIntervalHours: 0,
-  allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
-  embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-};
+const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
 let central: Awaited<ReturnType<typeof buildApp>> | undefined;
 let child: ChildProcess | undefined;
 let interrupted = false;

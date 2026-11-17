@@ -12,7 +12,7 @@ import {zipSync,strToU8,unzipSync} from 'fflate';
 import {serviceContract,type ServiceBinding} from '@mote/plugin-api/contracts';
 import {PluginHostError} from '@mote/plugin-host';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/store.js';
 import type {PluginManifest,PluginReleaseTransport} from '../src/plugin-release.js';
 
@@ -60,7 +60,7 @@ const consumer=String.raw`
 
 async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-production-domain-')),controlFile=join(directory,'control.json');await writeFile(controlFile,'{}');
- const releases=new Map<string,Release>(),config:Config={dataDir:join(directory,'data'),token:'generated-domain-owner',tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ const releases=new Map<string,Release>(),config:ConfigurationPlatformOptions={path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:'generated-domain-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const transport:PluginReleaseTransport=async url=>{
   const item=[...releases.values()].find(value=>url.includes('/generated/'+value.manifest.id+'/'));assert.ok(item,'only generated release transport is used');
   const base='https://github.com/generated/'+item.manifest.id+'/releases/download/v1/';
@@ -70,8 +70,8 @@ async function fixture(t:TestContext){
  };
  const start=async()=>{const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async close(){},async query(){throw Error('No model calls in domain fixture');}}});Object.defineProperty(node.pluginCenter.releases,'transport',{value:transport});return node;};
  let node=await start();t.after(async()=>{await writeFile(controlFile,'{}');await node.app.close();await rm(directory,{recursive:true,force:true});});
- const request=async(method:'GET'|'POST'|'PATCH',url:string,payload?:unknown)=>{const response=await node.app.inject({method,url,headers:{authorization:'Bearer '+config.token},...(payload===undefined?{}:{payload:payload as object})});assert.ok(response.statusCode<400,response.body);return response.json();};
- const install=async(item:Release)=>{releases.set(item.manifest.id,item);const preview=await request('POST','/api/plugins/resolve',{repository:'generated/'+item.manifest.id,tag:'v1'}),id=item.manifest.id+'@'+preview.source.digest;await request('POST','/api/plugins/install',{...command(node.pluginCenter.revision()),previewId:preview.id});await until(()=>node.pluginCenter.view().packages.some(value=>value.id===id&&value.state==='installed'),'formal domain archive installs');assert.equal(sha256(await readFile(join(config.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);return id;};
+ const request=async(method:'GET'|'POST'|'PATCH',url:string,payload?:unknown)=>{const response=await node.app.inject({method,url,headers:{authorization:'Bearer '+config.privateCredential!.token},...(payload===undefined?{}:{payload:payload as object})});assert.ok(response.statusCode<400,response.body);return response.json();};
+ const install=async(item:Release)=>{releases.set(item.manifest.id,item);const preview=await request('POST','/api/plugins/resolve',{repository:'generated/'+item.manifest.id,tag:'v1'}),id=item.manifest.id+'@'+preview.source.digest;await request('POST','/api/plugins/install',{...command(node.pluginCenter.revision()),previewId:preview.id});await until(()=>node.pluginCenter.view().packages.some(value=>value.id===id&&value.state==='installed'),'formal domain archive installs');assert.equal(sha256(await readFile(join(config.initialDocument!.storage.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);return id;};
  const configure=async(packageId:string,mode='normal',id?:string,operationId=randomUUID())=>{const fields=node.pluginCenter.view().packages.find(value=>value.id===packageId)!.configurationSchema!;return request(id?'PATCH':'POST','/api/plugin-instances'+(id?'/'+id:''),{...command(id?node.pluginCenter.instanceView(id).revision:node.pluginCenter.revision()),operationId,...(id?{}:{packageId}),name:'Generated '+mode,scope:'default',configuration:Object.fromEntries(Object.entries({mode,controlFile}).filter(([key])=>fields.some(value=>value.id===key)))});};
  const action=(id:string,kind:'check'|'enable'|'disable')=>request('POST','/api/plugin-instances/'+id+'/'+kind,command(node.pluginCenter.instanceView(id).revision));
  const settle=async(id:string)=>{await until(()=>node.pluginCenter.instanceView(id).observed!=='checking','domain operation settles');return node.pluginCenter.instanceView(id);};

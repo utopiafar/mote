@@ -13,7 +13,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {execFileSync} from 'node:child_process';
 import {z} from 'zod';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {createLarkRunner,larkJson,type LarkRunner} from '../apps/server/src/connectors/lark-cli.js';
@@ -56,12 +56,7 @@ const report:Record<string,any>={status:'running',startedAt:new Date().toISOStri
   generatedDocuments:true,realFeishu:true,realModel:true,physicalDevicesTested:false,
   contentBoundary:'Only the explicit generated test folder and generated document allowlist; no global search or unrelated document bodies',
   head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),manifest,calls:[],transport:[],cases:[],authorizations:[]};
-const config:Config={dataDir:join(output,'vault'),token,tokenPath:join(output,'token'),host:'127.0.0.1',port:0,
-  maxExportBytes:20_000_000,insightIntervalHours:0,allowedOrigins:[],
-  model,modelProvider:'codex',modelProtocol:'codex-app-server',modelReasoningEffort:'high',modelBaseUrl:'',apiKey:'',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',agentTimeoutMs:300000,
-  diagnosticsEnabled:true,agentTraceEnabled:true,logLevel:'warn',memoryConcurrency:2,
-  codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
+const config:ConfigurationPlatformOptions={path:(join(output,'vault'))+'/mote.yaml',privateCredential:{token:token,tokenPath:join(output,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:join(output,'vault'),maxExportBytes:20_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:2},models:{deployment:{model:model,provider:'codex',protocol:'codex-app-server',reasoningEffort:'high',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:300000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{enabled:true,traceEnabled:true,level:'warn'}}};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined,authorization=0;
 const allowedDocuments=new Map(manifest.documents.map(item=>[item.documentId,item]));
 const privateIdentifiers=new Set<string>();
@@ -73,7 +68,7 @@ async function waitControl(name:string,signal?:AbortSignal){
 }
 // Deterministic privacy boundary, not semantic classification. The sole real
 // runner uses the same dedicated profile and pinned installation as production.
-const actual=createLarkRunner(join(config.dataDir,'connectors'),{localProfile:existingProfile});
+const actual=createLarkRunner(join(config.initialDocument!.storage.dataDir,'connectors'),{localProfile:existingProfile});
 const guarded:LarkRunner=async(command,options={})=>{
   const startedAt=Date.now();const entry:Record<string,any>={kind:command.kind,startedAt,status:'running'};report.transport.push(entry);
   try{
@@ -157,13 +152,13 @@ async function open(initialize=false){
   await node.app.ready();
 }
 try{
-  progress('starting',{output,model});await save();assert.ok((await codexModels(undefined,{executable:config.codexBin,home:config.codexHome})).items.some(item=>item.id===model&&item.reasoningEfforts?.includes('high')));
+  progress('starting',{output,model});await save();assert.ok((await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home})).items.some(item=>item.id===model&&item.reasoningEfforts?.includes('high')));
   await open(true);
   await request('POST','/api/connectors/lark/install');report.install=await connectorDone();
   if(existingProfile){
     const identity=z.object({appId:z.string().min(1),identities:z.object({user:z.object({available:z.literal(true),openId:z.string().min(1)})})}).passthrough().parse(larkJson(await guarded({kind:'status'})));
     await node!.app.close();node=undefined;
-    const directory=join(config.dataDir,'connectors');await mkdir(directory,{recursive:true,mode:0o700});await chmod(directory,0o700);
+    const directory=join(config.initialDocument!.storage.dataDir,'connectors');await mkdir(directory,{recursive:true,mode:0o700});await chmod(directory,0o700);
     const selection={documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false,documentDiscovery:{created:false,edited:false,opened:false,firstSyncDays:30},folders:[],wikiRoots:[],excludedDocuments:[]};
     await writeFile(join(directory,'lark.json'),JSON.stringify({version:1,enabled:true,account:createHash('sha256').update(identity.appId+':'+identity.identities.user.openId).digest('hex'),selection},null,2)+'\n',{mode:0o600});
     report.applicationSetup={method:'reused-existing-user-profile',isolatedProfile:false,userCredentialsCopied:false,sharedCliConfiguration:true,sharedCredentialStore:true};
@@ -178,7 +173,7 @@ try{
     }else{
       // The pinned CLI's supported keychain reference reuses application setup
       // without decrypting/exporting its secret or copying an existing user login.
-      const directory=join(config.dataDir,'connectors','lark-runtime','config');await mkdir(directory,{recursive:true,mode:0o700});await chmod(directory,0o700);
+      const directory=join(config.initialDocument!.storage.dataDir,'connectors','lark-runtime','config');await mkdir(directory,{recursive:true,mode:0o700});await chmod(directory,0o700);
       await writeFile(join(directory,'config.json'),JSON.stringify({apps:[{appId:credentials.appId,appSecret:credentials.secret,brand:credentials.brand,lang:'zh',users:[]}]},null,2)+'\n',{mode:0o600});
       report.applicationSetup={method:'reused-application-keychain-reference',isolatedProfile:true,userCredentialsCopied:false};
       report.configure=await request('POST','/api/connectors/lark/check');assert.ok(report.configure.configured,'Supported application reference was not accepted');assert.equal(report.configure.connected,false,'Fresh test profile must have no existing user login');

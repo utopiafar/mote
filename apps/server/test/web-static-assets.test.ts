@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {brotliCompressSync,gzipSync,constants} from 'node:zlib';
 import {buildApp} from '../src/app.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 async function fixture(t:TestContext,mismatch=false){
  const dir=mkdtempSync(join(tmpdir(),'mote-web-assets-')),token='generated-web-owner-token';
@@ -17,7 +17,7 @@ async function fixture(t:TestContext,mismatch=false){
   writeFileSync(path,content.plain);writeFileSync(path+'.br',content.br);writeFileSync(path+'.gz',content.gzip);
  }
  writeFileSync(join(web,'build-info.json'),JSON.stringify({version:mismatch?'generated-mismatch':JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version}));
- const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,agentTraceEnabled:false,logLevel:'silent'};
+ const config:ConfigurationPlatformOptions={path:(dir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
  const node=await buildApp(config,{webRoot:web,backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});
  t.after(async()=>{try{await node.app.close();}finally{rmSync(dir,{recursive:true,force:true});}});
  return {node,assets,index,headers:{authorization:'Bearer '+token}};

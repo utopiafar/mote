@@ -8,7 +8,7 @@ import type {QueryInput} from '@mote/agent';
 import type {CaptureRecord} from '@mote/shared';
 import {startBridge} from '../packages/agent/src/bridge.js';
 import {buildApp} from '../apps/server/src/app.js';
-import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {repositoryRoot,type ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 import {codexModels} from '../apps/server/src/model-catalog.js';
 import {memoryEvidenceFingerprint,MemoryOutputValidationError} from '../apps/server/src/memory.js';
 import {memoryProfile} from '../apps/server/src/memory-profiles.js';
@@ -35,22 +35,20 @@ if(reviewSource){assert.equal(reviewSource.status,'diagnostic_completed');assert
 await mkdir(directory,{mode:0o700});await writeFile(join(directory,'source-report.json'),sourceBytes,{mode:0o600,flag:'wx'});
 await writeFile(join(directory,'source-context.json'),JSON.stringify(baseline,null,2)+'\n',{mode:0o600,flag:'wx'});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex');
-const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],
- model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
- diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:reviewSource?300000:600000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,memoryConcurrency:1};
+const config:ConfigurationPlatformOptions={path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataKey:undefined,dataDir:vault,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'gpt-6-sol',reasoningEffort:'max',provider:'codex',protocol:'codex-app-server',apiKey:'',allowUnauthenticatedLocal:false,agentTimeoutMs:reviewSource?300000:600000},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME}},diagnostics:{level:'warn',enabled:true,traceEnabled:true}}};
 const report:any={status:'running',startedAt:new Date().toISOString(),sourceRun:source,sourceReportHash:sha256(sourceBytes),sourceContextHash:sha256(JSON.stringify(baseline)),manifestHash:sha256(manifestBytes),
- personalDataUsed:prior.personalDataUsed,diagnosticOnly:true,baselineAgentDeadlineMs:300000,diagnosticAgentDeadlineMs:config.agentTimeoutMs,model:config.model,reasoningEffort:'max',
+ personalDataUsed:prior.personalDataUsed,diagnosticOnly:true,baselineAgentDeadlineMs:300000,diagnosticAgentDeadlineMs:config.initialDocument!.models.deployment.agentTimeoutMs,model:config.initialDocument!.models.deployment.model,reasoningEffort:'max',
  originalDeadlineAccepted:false,performanceAccepted:false,semanticQualityAccepted:false,reviewTested:false,fullReplayTested:false,ordinaryQueryTested:false,memoriesPublished:false,
  contextTime:job.createdAt,sourceBatchId:batch.id,sourceRanges:ranges,originals,baselineContextMetrics:baseline.trace.payload.metrics,otherIsolatedWorkMayBeConcurrent:true,
  mode:reviewSource?'review':'extraction',extractionRepeated:false,...(reviewBytes?{reviewSourceHash:sha256(reviewBytes),draftRunId:reviewSource.result.runId}:{})};
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 async function save(){if(node)report.usage=node.observabilityAssembly.usage.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);await writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
 try{
- await save();const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});assert.ok(catalog.items.find(m=>m.id===config.model)?.reasoningEfforts?.includes('max'));
+ await save();const catalog=await codexModels(undefined,{executable:config.initialDocument!.models.codex.executable,home:config.initialDocument!.models.codex.home});assert.ok(catalog.items.find(m=>m.id===config.initialDocument!.models.deployment.model)?.reasoningEfforts?.includes('max'));
  report.runtimeHashes=Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','scripts/diagnose-memory-deadline-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
  for(const [path,hash] of Object.entries(prior.runnerHashes.at(-1).agentFiles??{}))assert.equal(report.runtimeHashes[path],hash,'Keep the latest failed replay code unchanged');
  node=await buildApp(config);const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});await node.app.ready();
- assert.equal(node.modelSettings.select('memory').settings.agentTimeoutMs,config.agentTimeoutMs);
+ assert.equal(node.modelSettings.select('memory').settings.agentTimeoutMs,config.initialDocument!.models.deployment.agentTimeoutMs);
  for(const original of originals){
   const response:{statusCode:number;body:string}=await node.app.inject({method:'POST',url:'/api/notes',headers:{authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'},payload:{id:original.id,deviceId:'private-progressive-replay',deviceName:'Private authored replay',platform:'import',capturedAt:original.at,text:original.text}});
   assert.equal(response.statusCode,201,response.body);const record:CaptureRecord=node.memories.readEvidence([original.id])[0];assert.equal(record.ocrText,original.text);
@@ -65,11 +63,11 @@ try{
  const expectedFingerprints=Object.fromEntries(ids.map(id=>[id,memoryEvidenceFingerprint(node!.memories.readEvidence([id])[0])]));
  const input:QueryInput={contextTime:job.createdAt,executionLane:'background',language:'zh-CN',question:profile.prompt,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:ids,evidenceRanges:ranges,timeZone:job.timeZone,
   traceContext:{operationId:'deadline-diagnostic:'+randomUUID(),phase:'extract'},
-  validateOutput:result=>{try{node!.memories.extract(result,config.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});}catch(error){if(error instanceof MemoryOutputValidationError)return {code:error.code,feedback:error.repairInstruction};throw error;}},
+  validateOutput:result=>{try{node!.memories.extract(result,config.initialDocument!.models.deployment.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});}catch(error){if(error instanceof MemoryOutputValidationError)return {code:error.code,feedback:error.repairInstruction};throw error;}},
   onProgress:event=>console.log(JSON.stringify({stage:event.stage,at:new Date().toISOString()}))};
  await save();const started=Date.now();
  try{if(reviewSource){
-   node.memories.extract(reviewSource.result,config.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});
+   node.memories.extract(reviewSource.result,config.initialDocument!.models.deployment.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});
    report.result=await reviewMemory(input,reviewSource.result,
     reviewInput=>node!.featureServices.queryAgent(reviewInput,'query','memories'),{
      deletions:node.memories.deletions,
@@ -78,7 +76,7 @@ try{
    assert.equal(report.reviewReceipt?.decision,'independent');
   }else{report.result=await node.featureServices.queryAgent(input,'query','memories');report.extractionDurationMs=Date.now()-started;}}
  finally{report.observedDurationMs=Date.now()-started;}
- node.memories.extract(report.result,config.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});
+ node.memories.extract(report.result,config.initialDocument!.models.deployment.model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints,validateOnly:true});
  assert.equal(node.store.db.prepare('SELECT count(*) AS n FROM memories').get()!.n,0,'Diagnostic must not save or publish Memory');
  report.proposalCount=JSON.parse(report.result.answer).memories.length;report.status='diagnostic_completed';
 }catch(error){report.status='diagnostic_failed';report.failure=error instanceof Error?error.message:String(error);process.exitCode=1;}

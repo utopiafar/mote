@@ -18,11 +18,11 @@ import {ActiveExecutionBudget} from '../../../packages/agent/dist/active-budget.
 import type {ContextReader} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
 import type {QueryAgent} from '../src/query-agent.js';
-import type {Config} from '../src/config.js';
+import type {ConfigurationPlatformOptions} from '../src/config.js';
 
 type HostEvent=Parameters<NonNullable<QueryInput['onHostRunEvent']>>[0];
 const token='generated-run-accounting-owner',headers={authorization:`Bearer ${token}`};
-const config=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 const answer=()=>({answer:'Generated accounting answer',citations:[],trace:[],runId:randomUUID()});
 const identity=(runId:string)=>({runId,runtime:{id:'generated-runtime',revision:1,profileId:'generated-profile',profileRevision:1,assemblyFingerprint:'generated-fingerprint'},model:{modelId:'generated-model',modelRevision:1,profileId:'generated-profile',profileRevision:1,transport:'generated'}});
 const usageEvent=(runId:string,inputTokens=10):HostEvent=>({identity:identity(runId),attemptId:'attempt-1',event:{type:'usage',usage:{requests:1,reportedRequests:1,inputTokens,outputTokens:5,totalTokens:inputTokens+5,cacheReadTokens:0,cacheWriteTokens:0}}});

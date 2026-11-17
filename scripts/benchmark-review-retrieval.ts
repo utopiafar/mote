@@ -6,13 +6,13 @@ import {randomUUID} from 'node:crypto';
 import {createServer} from 'node:http';
 import assert from 'node:assert/strict';
 import {buildApp} from '../apps/server/src/app.js';
-import type {Config} from '../apps/server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 
 const directory=await mkdtemp(join(tmpdir(),'mote-review-retrieval-'));
 const token='generated-retrieval-benchmark-token';let dimensions=768;
 const provider=createServer(async(req,res)=>{for await(const _chunk of req){};res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{embedding:Array.from({length:dimensions},(_,i)=>i===0?1:0)}]}));});
 await new Promise<void>(resolve=>provider.listen(0,'127.0.0.1',resolve));
-const config:Config={dataDir:directory,token,tokenPath:'generated',dataKey:undefined,host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'generated',embeddingBaseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}`,embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'generated',baseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}`,apiKey:''}}}};
 const fixture=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No live model in this benchmark');},close:async()=>{}}});
 const {store,app,indexer}=fixture,rows=9000,reports:unknown[]=[];
 const record=(n:number)=>({id:randomUUID(),deviceId:'generated-persona',deviceName:'Generated Persona',platform:'import',source:'note',durationMs:0,capturedAt:new Date(Date.parse('2026-07-01')+Math.floor(n/200)*86400000+n%200*60000).toISOString(),ocrText:`Generated record ${n}; retrieval responsiveness fixture.`});
