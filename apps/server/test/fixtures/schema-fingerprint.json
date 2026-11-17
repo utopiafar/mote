@@ -712,6 +712,11 @@
       "fingerprint": "dfca868e707fdc82f521699c0ea3c28a512a387ee8b3c21a27e21314b1002a48"
     },
     {
+      "type": "index",
+      "name": "assistant_change_work_task",
+      "fingerprint": "b7ce11495fa4c79efd2aaa1dc66d16b7397d4cf7589446cea3534a6e107eb04c"
+    },
+    {
       "type": "table",
       "name": "assistant_commitment_context",
       "fingerprint": "6f91063a2576513884a5696c0b6222974a1d5ab26e893124e8092bf22b678dd6"
@@ -1610,6 +1615,11 @@
       "type": "table",
       "name": "file_summary_pages",
       "fingerprint": "ecec9a174873f3fbf4b008f0f357cd4a468ed562d3e15a0f98e17c85b7bbae9e"
+    },
+    {
+      "type": "table",
+      "name": "file_upload_scopes",
+      "fingerprint": "942a113e4deabae4767ca82d6f7f29844f6f6cda04b10e895d3e6602b342a8e9"
     },
     {
       "type": "table",
@@ -4802,6 +4812,11 @@
       "fingerprint": "166dbfeda5fdb3e69f201b03ba2865051a22e4682f9f22fa0bd0e7aafe9b2b59"
     },
     {
+      "type": "index",
+      "name": "memories_context_priority",
+      "fingerprint": "0a01c335fefa3fac0f402401f3618e8a8eff4a3c83aa7ad1da016d868a795235"
+    },
+    {
       "type": "table",
       "name": "memories_fts",
       "fingerprint": "c0167178c5a457dff2cd4ca4a2b8658f994cfb0e05a4f58e6995189274b64c45"
@@ -4939,7 +4954,7 @@
     {
       "type": "trigger",
       "name": "memory_deletion_anchor_removed",
-      "fingerprint": "c4f95a998a6adec7844e0b8a11ed178c382ecc2d4f3b8afe6b8abf2a7ce3ba4d"
+      "fingerprint": "3b9253a3db6d0b034a83569c2b5b83965a0e50dc68908be0e79ad8c9c8870a8a"
     },
     {
       "type": "table",
@@ -4954,7 +4969,7 @@
     {
       "type": "trigger",
       "name": "memory_deletion_original_removed",
-      "fingerprint": "ec4f594c2e684b2bcd1abdb0c1e08be2b22f17cda906a2142e10c33ef6686694"
+      "fingerprint": "e89a55a24bcd79cb31e8db7f1fa5a278518d90a4ad632ccb7373a1088fba5238"
     },
     {
       "type": "table",
@@ -5034,7 +5049,7 @@
     {
       "type": "trigger",
       "name": "memory_evidence_removed",
-      "fingerprint": "ac0c32a8623bcce39e391280ce852d5e9a911108caa92aa94a1075123bc6d719"
+      "fingerprint": "9948b63f54d69fa927bf0c1f59c6c19f405994f74ebd91b3f956845847a4abef"
     },
     {
       "type": "table",
@@ -5125,6 +5140,11 @@
       "type": "table",
       "name": "memory_lifecycle_state",
       "fingerprint": "56a1d2a96b0c046481e8450eb77f274bab17f08d5f13141987891295044c8bda"
+    },
+    {
+      "type": "trigger",
+      "name": "memory_original_release_card_removed",
+      "fingerprint": "6a0d0640d02b72b2ec7e8b19bed8a9ab5a5946a5fd4c02a0c56ce5c73cc5c702"
     },
     {
       "type": "trigger",
