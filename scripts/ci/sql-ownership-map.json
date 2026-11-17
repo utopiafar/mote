@@ -1,0 +1,910 @@
+{
+ "owners": [
+  {
+   "declaration": "vaultSchemaInstallation",
+   "owner": "vault",
+   "fn": "vaultSchema",
+   "file": "apps/server/src/vault-schema.ts"
+  },
+  {
+   "declaration": "captureSchemaInstallation",
+   "owner": "capture",
+   "fn": "captureSchema",
+   "file": "apps/server/src/capture-schema.ts"
+  },
+  {
+   "declaration": "captureProjectionSchemaInstallation",
+   "owner": "capture-projections",
+   "fn": "captureProjectionSchema",
+   "file": "apps/server/src/capture-schema.ts"
+  },
+  {
+   "declaration": "perceptionSchemaInstallation",
+   "owner": "perception",
+   "fn": "perceptionSchema",
+   "file": "apps/server/src/perception-schema.ts"
+  },
+  {
+   "declaration": "sourceSchemaInstallation",
+   "owner": "source",
+   "fn": "sourceSchema",
+   "file": "apps/server/src/source-schema.ts"
+  },
+  {
+   "declaration": "fileSchemaInstallation",
+   "owner": "file",
+   "fn": "fileSchema",
+   "file": "apps/server/src/file-schema.ts"
+  },
+  {
+   "declaration": "memoryStorageSchemaInstallation",
+   "owner": "memory",
+   "fn": "memoryStorageSchema",
+   "file": "apps/server/src/memory-storage-schema.ts"
+  },
+  {
+   "declaration": "conversationSchemaInstallation",
+   "owner": "conversation",
+   "fn": "conversationSchema",
+   "file": "apps/server/src/conversation-schema.ts"
+  },
+  {
+   "declaration": "insightSchemaInstallation",
+   "owner": "insight",
+   "fn": "insightSchema",
+   "file": "apps/server/src/insight-schema.ts"
+  },
+  {
+   "declaration": "todoSchemaInstallation",
+   "owner": "todo",
+   "fn": "ensureTodoSchema",
+   "file": "apps/server/src/todo-schema.ts"
+  },
+  {
+   "declaration": "captureReadModelsSchemaInstallation",
+   "owner": "capture-read-models",
+   "fn": "initializeReadModels",
+   "file": "apps/server/src/read-models.ts"
+  },
+  {
+   "declaration": "sourceCatalogSchemaInstallation",
+   "owner": "source-catalog",
+   "fn": "initializeSourceCatalog",
+   "file": "apps/server/src/source-catalog.ts"
+  },
+  {
+   "declaration": "materialSchemaInstallation",
+   "owner": "material",
+   "fn": "materialSchema",
+   "file": "apps/server/src/material-schema.ts"
+  },
+  {
+   "declaration": "materialCatalogSchemaInstallation",
+   "owner": "material-catalog",
+   "fn": "materialCatalogSchema",
+   "file": "apps/server/src/material-catalog.ts"
+  },
+  {
+   "declaration": "executionSchemaInstallation",
+   "owner": "execution",
+   "fn": "executionSchema",
+   "file": "apps/server/src/execution-schema.ts"
+  },
+  {
+   "declaration": "operationProjectionSchemaInstallation",
+   "owner": "operation-projection",
+   "fn": "operationProjectionSchema",
+   "file": "apps/server/src/operation-projection.ts",
+   "callPaths": [
+    [
+     "operationProjectionSchemaInstallation",
+     "operationProjectionSchema"
+    ],
+    [
+     "operationProjectionSchemaInstallation",
+     "operationProjectionSchema",
+     "installOperationHierarchy"
+    ]
+   ]
+  },
+  {
+   "declaration": "taskRecordsSchemaInstallation",
+   "owner": "task-records",
+   "fn": "taskRecordsSchema",
+   "file": "apps/server/src/task-records.ts"
+  },
+  {
+   "declaration": "taskEvidenceSchemaInstallation",
+   "owner": "task-evidence",
+   "fn": "taskEvidenceSchema",
+   "file": "apps/server/src/task-evidence.ts"
+  },
+  {
+   "declaration": "runExecutionSchemaInstallation",
+   "owner": "run-execution",
+   "fn": "runExecutionSchema",
+   "file": "apps/server/src/run-execution.ts"
+  },
+  {
+   "declaration": "memorySearchSchemaInstallation",
+   "owner": "memory-search",
+   "fn": "memorySearchSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/memory-search-schema.ts",
+   "callPaths": [
+    [
+     "memorySearchSchemaInstallation",
+     "memorySearchSchemaInstallation.install"
+    ],
+    [
+     "memorySearchSchemaInstallation",
+     "memorySearchSchemaInstallation.install",
+     "memoryIndex"
+    ],
+    [
+     "memorySearchSchemaInstallation",
+     "memorySearchSchemaInstallation.install",
+     "memoryCatalog"
+    ]
+   ]
+  },
+  {
+   "declaration": "gmailStateSchemaInstallation",
+   "owner": "gmail-sync",
+   "fn": "gmailStateSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/gmail-state.ts"
+  },
+  {
+   "declaration": "larkStateSchemaInstallation",
+   "owner": "lark-document-sync",
+   "fn": "larkStateSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/lark-state.ts"
+  },
+  {
+   "declaration": "mcpStateSchemaInstallation",
+   "owner": "mcp-import",
+   "fn": "mcpStateSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/mcp-import-state.ts"
+  },
+  {
+   "declaration": "recordingMediaSchemaInstallation",
+   "owner": "recording-media",
+   "fn": "recordingMediaSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/recording-state.ts"
+  },
+  {
+   "declaration": "recordingSyncSchemaInstallation",
+   "owner": "recording-sync",
+   "fn": "recordingSyncSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/connectors/recording-state.ts"
+  },
+  {
+   "declaration": "assistantTaskRuntimeSchemaInstallation",
+   "owner": "assistant-task-runtime",
+   "fn": "assistantTaskRuntimeSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/assistant-task-runtime-schema.ts"
+  },
+  {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "declaration": "ActivityMemoryIndex.constructor",
+   "feature": "mote.activity",
+   "activationFile": "apps/server/src/plugins/activity-services.ts",
+   "activation": "activityServicesPlugin",
+   "objects": [
+    {
+     "type": "table",
+     "name": "activity_memory_jobs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_continuations"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_continuation_roots"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_jobs_recent"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_jobs_import"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_sources"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_source_jobs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_source_nodes"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_source_links"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_batches"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_batch_jobs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_items"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_item_keys"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_coverage"
+    },
+    {
+     "type": "index",
+     "name": "activity_memory_coverage_refs"
+    },
+    {
+     "type": "table",
+     "name": "activity_memory_outputs"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_source_insert"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_source_delete"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_insert"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_items_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_outputs_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_sources_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_job_delete"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_continuation_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_insert"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_outputs_update"
+    },
+    {
+     "type": "trigger",
+     "name": "activity_memory_batch_delete"
+    }
+   ]
+  },
+  {
+   "owner": "conversation-turn-storage",
+   "file": "apps/server/src/conversations.ts",
+   "declaration": "Conversations.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/plugins/conversations.ts#createConversations",
+    "Conversations.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "conversation_turns"
+    },
+    {
+     "type": "index",
+     "name": "conversation_turns_client_request"
+    }
+   ]
+  },
+  {
+   "owner": "query-run-storage",
+   "file": "apps/server/src/delegated-query-runs.ts",
+   "declaration": "DelegatedQueryRuns.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/plugins/query-runs.ts#createQueryRunsPlatform",
+    "DelegatedQueryRuns.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "query_runs"
+    }
+   ]
+  },
+  {
+   "owner": "assistant-task-storage",
+   "file": "apps/server/src/assistant-tasks.ts",
+   "declaration": "AssistantTasks.constructor",
+   "construction": true,
+   "callPath": [
+    "apps/server/src/host.ts#buildHost",
+    "AssistantTasks.constructor"
+   ],
+   "objects": [
+    {
+     "type": "table",
+     "name": "assistant_task_scopes"
+    },
+    {
+     "type": "table",
+     "name": "assistant_task_turns"
+    },
+    {
+     "type": "index",
+     "name": "assistant_task_turns_turn"
+    },
+    {
+     "type": "trigger",
+     "name": "assistant_task_scope_stale"
+    },
+    {
+     "type": "trigger",
+     "name": "assistant_task_turn_deleted"
+    }
+   ]
+  }
+ ],
+ "tables": {
+  "activity_memory_batches": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_continuations": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_coverage": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_items": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_jobs": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_outputs": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_source_links": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_source_nodes": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "activity_memory_sources": {
+   "owner": "activity-memory-projection",
+   "file": "apps/server/src/activity-memory-index.ts",
+   "installer": "ActivityMemoryIndex.constructor"
+  },
+  "assistant_task_runtime": {
+   "owner": "assistant-task-runtime",
+   "file": "apps/server/src/assistant-task-runtime-schema.ts",
+   "installer": "assistantTaskRuntimeSchemaInstallation"
+  },
+  "assistant_task_scopes": {
+   "owner": "assistant-task-storage",
+   "file": "apps/server/src/assistant-tasks.ts",
+   "construction": "AssistantTasks.constructor"
+  },
+  "assistant_task_turns": {
+   "owner": "assistant-task-storage",
+   "file": "apps/server/src/assistant-tasks.ts",
+   "construction": "AssistantTasks.constructor"
+  },
+  "blob_counts": {
+   "owner": "capture-read-models",
+   "file": "apps/server/src/read-models.ts",
+   "installer": "captureReadModelsSchemaInstallation"
+  },
+  "blobs": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "capture_counts": {
+   "owner": "capture-read-models",
+   "file": "apps/server/src/read-models.ts",
+   "installer": "captureReadModelsSchemaInstallation"
+  },
+  "capture_gallery": {
+   "owner": "capture-projections",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureProjectionSchemaInstallation"
+  },
+  "capture_ocr_receipts": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "captures": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "captures_fts": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "captures_trigram": {
+   "owner": "capture-projections",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureProjectionSchemaInstallation"
+  },
+  "changes": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "conversation_retired_roots": {
+   "owner": "conversation",
+   "file": "apps/server/src/conversation-schema.ts",
+   "installer": "conversationSchemaInstallation"
+  },
+  "conversation_retired_turn_roots": {
+   "owner": "conversation",
+   "file": "apps/server/src/conversation-schema.ts",
+   "installer": "conversationSchemaInstallation"
+  },
+  "conversation_turns": {
+   "owner": "conversation-turn-storage",
+   "file": "apps/server/src/conversations.ts",
+   "construction": "Conversations.constructor"
+  },
+  "conversations": {
+   "owner": "conversation",
+   "file": "apps/server/src/conversation-schema.ts",
+   "installer": "conversationSchemaInstallation"
+  },
+  "devices": {
+   "owner": "capture",
+   "file": "apps/server/src/capture-schema.ts",
+   "installer": "captureSchemaInstallation"
+  },
+  "execution_cancellation_aliases": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_dependencies": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_failures": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_fairness": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_operation_steps": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_resources": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_sequence": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "execution_steps": {
+   "owner": "execution",
+   "file": "apps/server/src/execution-schema.ts",
+   "installer": "executionSchemaInstallation"
+  },
+  "file_artifacts": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_assets": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_chunks": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_chunks_fts": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_chunks_trigram": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_evidence_links": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_forgotten": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_heads": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_jobs": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_objects": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_parts": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_reviews": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_snapshot_index": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_snapshot_inputs": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_snapshot_text": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_steps": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_upload_scopes": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_uploads": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_usage": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "file_versions": {
+   "owner": "file",
+   "file": "apps/server/src/file-schema.ts",
+   "installer": "fileSchemaInstallation"
+  },
+  "gmail_sync_members": {
+   "owner": "gmail-sync",
+   "file": "apps/server/src/connectors/gmail-state.ts",
+   "installer": "gmailStateSchemaInstallation"
+  },
+  "insights": {
+   "owner": "insight",
+   "file": "apps/server/src/insight-schema.ts",
+   "installer": "insightSchemaInstallation"
+  },
+  "lark_document_sync": {
+   "owner": "lark-document-sync",
+   "file": "apps/server/src/connectors/lark-state.ts",
+   "installer": "larkStateSchemaInstallation"
+  },
+  "material_block_payloads": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_block_versions": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_blocks": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_catalog_generation": {
+   "owner": "material-catalog",
+   "file": "apps/server/src/material-catalog.ts",
+   "installer": "materialCatalogSchemaInstallation"
+  },
+  "material_coding_snapshots": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_evidence": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_evidence_context": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_evidence_dependencies": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_fts": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_fts_blocks": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_heads": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_index_garbage": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_index_requests": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_members": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_owner_declarations": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_revisions": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "material_searchable": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
+  "mcp_import_manifests": {
+   "owner": "mcp-import",
+   "file": "apps/server/src/connectors/mcp-import-state.ts",
+   "installer": "mcpStateSchemaInstallation"
+  },
+  "memories": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memories_fts": {
+   "owner": "memory-search",
+   "file": "apps/server/src/memory-search-schema.ts",
+   "installer": "memorySearchSchemaInstallation"
+  },
+  "memory_batch_dependencies": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_batches": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_catalog": {
+   "owner": "memory-search",
+   "file": "apps/server/src/memory-search-schema.ts",
+   "installer": "memorySearchSchemaInstallation"
+  },
+  "memory_checkpoints": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_dependencies": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_jobs": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_provider_evidence_revocations": {
+   "owner": "memory",
+   "file": "apps/server/src/memory-storage-schema.ts",
+   "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_scopes": {
+   "owner": "memory-search",
+   "file": "apps/server/src/memory-search-schema.ts",
+   "installer": "memorySearchSchemaInstallation"
+  },
+  "operation_changes": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "operation_generations": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "operation_parents": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "operation_progress": {
+   "owner": "operation-projection",
+   "file": "apps/server/src/operation-projection.ts",
+   "installer": "operationProjectionSchemaInstallation"
+  },
+  "perception_jobs": {
+   "owner": "perception",
+   "file": "apps/server/src/perception-schema.ts",
+   "installer": "perceptionSchemaInstallation"
+  },
+  "perception_results": {
+   "owner": "perception",
+   "file": "apps/server/src/perception-schema.ts",
+   "installer": "perceptionSchemaInstallation"
+  },
+  "query_runs": {
+   "owner": "query-run-storage",
+   "file": "apps/server/src/delegated-query-runs.ts",
+   "construction": "DelegatedQueryRuns.constructor"
+  },
+  "recording_cursors": {
+   "owner": "recording-sync",
+   "file": "apps/server/src/connectors/recording-state.ts",
+   "installer": "recordingSyncSchemaInstallation"
+  },
+  "recording_exports": {
+   "owner": "recording-sync",
+   "file": "apps/server/src/connectors/recording-state.ts",
+   "installer": "recordingSyncSchemaInstallation"
+  },
+  "recording_media": {
+   "owner": "recording-media",
+   "file": "apps/server/src/connectors/recording-state.ts",
+   "installer": "recordingMediaSchemaInstallation"
+  },
+  "run_execution_owners": {
+   "owner": "run-execution",
+   "file": "apps/server/src/run-execution.ts",
+   "installer": "runExecutionSchemaInstallation"
+  },
+  "settings": {
+   "owner": "vault",
+   "file": "apps/server/src/vault-schema.ts",
+   "installer": "vaultSchemaInstallation"
+  },
+  "source_catalog": {
+   "owner": "source-catalog",
+   "file": "apps/server/src/source-catalog.ts",
+   "installer": "sourceCatalogSchemaInstallation"
+  },
+  "source_connections": {
+   "owner": "source",
+   "file": "apps/server/src/source-schema.ts",
+   "installer": "sourceSchemaInstallation"
+  },
+  "source_heads": {
+   "owner": "source",
+   "file": "apps/server/src/source-schema.ts",
+   "installer": "sourceSchemaInstallation"
+  },
+  "source_versions": {
+   "owner": "source",
+   "file": "apps/server/src/source-schema.ts",
+   "installer": "sourceSchemaInstallation"
+  },
+  "task_evidence": {
+   "owner": "task-evidence",
+   "file": "apps/server/src/task-evidence.ts",
+   "installer": "taskEvidenceSchemaInstallation"
+  },
+  "task_records": {
+   "owner": "task-records",
+   "file": "apps/server/src/task-records.ts",
+   "installer": "taskRecordsSchemaInstallation"
+  },
+  "todos": {
+   "owner": "todo",
+   "file": "apps/server/src/todo-schema.ts",
+   "installer": "todoSchemaInstallation"
+  }
+ }
+}
