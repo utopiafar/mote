@@ -3,6 +3,8 @@ import {z} from 'zod';
 import {createHash} from 'node:crypto';
 import type {AttributionContext} from '@mote/shared';
 import {StoreError,type Store} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {importAttributionSchemaInstallation} from './import-schema.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {importAttributionDeclarationSchema as declarationSchema,portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution-contract.js';
 export {portableImportAttributionSchema,type PortableImportAttribution} from './import-attribution-contract.js';
@@ -18,17 +20,7 @@ export class ImportAttributionStore {
   // Compiled SQL only: all() still resolves current bindings and lineage on every call.
   private identitiesStatement?:StatementSync;
   constructor(private readonly store:Store){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS import_owner_declarations(
-      id TEXT NOT NULL,version INTEGER NOT NULL,source_id TEXT NOT NULL,fingerprint TEXT NOT NULL,json TEXT NOT NULL,
-      PRIMARY KEY(id,version));
-      CREATE TABLE IF NOT EXISTS capture_import_declarations(
-      capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,id TEXT NOT NULL,version INTEGER NOT NULL,
-      FOREIGN KEY(id,version) REFERENCES import_owner_declarations(id,version));
-      CREATE INDEX IF NOT EXISTS capture_import_declarations_parent ON capture_import_declarations(id,version);
-      CREATE TRIGGER IF NOT EXISTS capture_import_declaration_removed AFTER DELETE ON capture_import_declarations BEGIN
-        DELETE FROM import_owner_declarations WHERE id=old.id AND version=old.version AND NOT EXISTS
-          (SELECT 1 FROM capture_import_declarations c WHERE c.id=old.id AND c.version=old.version);
-      END;`);
+    installSchemaPlan(store.db,[importAttributionSchemaInstallation]);
     if(store.contentEncryption.enabled){
       const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');
       try{

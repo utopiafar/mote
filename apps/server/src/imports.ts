@@ -17,6 +17,8 @@ import {ArchivedFileStore,MAX_FILE_BYTES,archiveRelativePath} from './archived-f
 import {privateDirectory,privateFile} from './private-storage.js';
 import {SourceStore} from './sources.js';
 import {Store,StoreError,sha256} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {importIntakeOverridesSchemaInstallation,importJobsSchemaInstallation,importCreateRequestsSchemaInstallation} from './import-schema.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionStep} from './execution-engine.js';
 import {executionEnvelope} from '@mote/shared/execution';
 import {linkOperationParent} from './operation-projection.js';
@@ -72,9 +74,9 @@ export class ImportStore {
     this.attribution=new ImportAttributionStore(store);
     this.intake=runtime.intake??new ImportIntakeRegistry();if(!runtime.intake)installImportIntake(this.intake);
     const directory=join(store.directory,'imports');privateDirectory(directory);this.directory=realpathSync(directory);
-    store.db.exec('CREATE TABLE IF NOT EXISTS image_intake_overrides(capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,profile_id TEXT NOT NULL)');
-    store.db.exec('CREATE TABLE IF NOT EXISTS import_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL)');
-    store.db.exec('CREATE TABLE IF NOT EXISTS import_create_requests(request_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,job_id TEXT NOT NULL)');
+    installSchemaPlan(store.db,[importIntakeOverridesSchemaInstallation]);
+    installSchemaPlan(store.db,[importJobsSchemaInstallation]);
+    installSchemaPlan(store.db,[importCreateRequestsSchemaInstallation]);
     this.ownsExecutor=!runtime.executor;this.executor=runtime.executor??new ExecutionEngine(store);
     for(const phase of ['prepare','commit'] as const)this.unregister.push(this.executor.register({kind:`imports.${phase}`,pool:'imports',concurrency:()=>1,policy:EXECUTION_POLICIES.orchestration,maxAttempts:1,validate:step=>{
       const row=store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(String(step.input.jobId)) as {json:string}|undefined;

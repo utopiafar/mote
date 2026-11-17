@@ -7,6 +7,8 @@ export const installations={
  'perception-schema.ts':['perceptionSchemaInstallation'],
  'source-schema.ts':['sourceSchemaInstallation'],
  'file-schema.ts':['fileSchemaInstallation'],
+ 'file-processing-schema.ts':['fileProcessingMediaIntentsSchemaInstallation','fileDiarizationOverridesSchemaInstallation','fileConfigurationSnapshotsSchemaInstallation','fileProcessorWaitsSchemaInstallation','fileSummaryPagesSchemaInstallation','fileSemanticWithdrawalsSchemaInstallation','mediaExecutionCallsSchemaInstallation'],
+ 'import-schema.ts':['importUploadsSchemaInstallation','importAttributionSchemaInstallation','importIntakeOverridesSchemaInstallation','importJobsSchemaInstallation','importCreateRequestsSchemaInstallation'],
  'memory-storage-schema.ts':['memoryStorageSchemaInstallation'],
  'conversation-schema.ts':['conversationSchemaInstallation'],
  'insight-schema.ts':['insightSchemaInstallation'],
@@ -1451,6 +1453,31 @@ export const schemaMaintenance=[
 
 /** Scope witnesses preserve existing unresolved access debt when its table owner becomes known. They are not grants. */
 export const retainedClassificationScopes=[
+ // The portable Material export already read these import declarations before
+ // the import owner existed. Keep the exact unresolved reads as debt rather
+ // than turning the new table owner into a cross-owner grant.
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-portable.ts",
+  "to": "capture_import_declarations",
+  "kind": "read",
+  "symbol": "55e847dc44b3999d331aa725573531fabd46c710080332a2bdee41d0374f7354",
+  "scope": "exportPortableMaterials",
+  "scopeFingerprint": "d2c17a00575b5ae5ba932c51364e2830442ef3f5e3d5abde4d4e9306c00105e5",
+  "operation": "read",
+  "completeSql": true
+ },
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-portable.ts",
+  "to": "import_owner_declarations",
+  "kind": "read",
+  "symbol": "0d51c79fb1a122d191ea2177fd8b68ec1b38026c20e3946d5524307c80536ad1",
+  "scope": "portableMaterialEstimate",
+  "scopeFingerprint": "6476a4b2469e481d21325287e2b67b452f4c9dd3d57a9652358b92b13e631dff",
+  "operation": "read",
+  "completeSql": true
+ },
  // Keep the original Material-forget DELETE as exact unresolved write debt;
  // knowing its target owner does not grant this trigger any new write access.
  {

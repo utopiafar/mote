@@ -4,6 +4,8 @@ import {rm} from 'node:fs/promises';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
 import {Store,StoreError,sha256} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {importUploadsSchemaInstallation} from './import-schema.js';
 import {ArchivedFileStore,archiveRelativePath} from './archived-files.js';
 import {FILE_MAX_BYTES,FILE_PART_RECEIPTS} from '@mote/shared';
 import {privateDirectory} from './private-storage.js';
@@ -14,7 +16,7 @@ type Manifest=z.infer<typeof manifestSchema>&{id:string;fileId?:string};
 /** Bounded binary upload. Each acknowledged part is durable and checksum checked on replay. */
 export class ImportUploads {
  private directory:string;private pending=new Map<string,Promise<unknown>>();private closing=new AbortController();private closed=false;private closingTask?:Promise<void>;
- constructor(private store:Store,private files:ArchivedFileStore){this.directory=join(store.directory,'import-uploads');privateDirectory(this.directory);store.db.exec('CREATE TABLE IF NOT EXISTS import_uploads(id TEXT PRIMARY KEY,expires INTEGER NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS import_upload_parts(upload_id TEXT NOT NULL REFERENCES import_uploads(id) ON DELETE CASCADE,part INTEGER NOT NULL,bytes INTEGER NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(upload_id,part))');}
+ constructor(private store:Store,private files:ArchivedFileStore){this.directory=join(store.directory,'import-uploads');privateDirectory(this.directory);installSchemaPlan(store.db,[importUploadsSchemaInstallation]);}
  private assertOpen(){if(this.closed)throw new StoreError('Import uploads are closed',503);}
  // The existing expires column no longer controls upload retention. A part ACK
  // can be the owner's only durable input until the complete archive is saved.
