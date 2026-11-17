@@ -25,7 +25,11 @@ function lifecycleEvents(id:string,value:WorkState,createdAt:string,updatedAt:st
 /** Reads execution and product receipts. It neither reads original content nor makes semantic decisions. */
 export class ActivityProjection {
  private memoryIndex:ActivityMemoryIndex;
- constructor(private store:Store,private operations:Operations,private options:{delegation?:ActivityDelegationReader}={}){this.memoryIndex=new ActivityMemoryIndex(store);if(this.has('delegation_works'))this.store.db.exec("CREATE INDEX IF NOT EXISTS activity_delegation_recent ON delegation_works(json_extract(json,'$.updatedAt') DESC,id)");}
+ constructor(private store:Store,private operations:Operations,private options:{delegation?:ActivityDelegationReader}={}){this.memoryIndex=new ActivityMemoryIndex(store);this.installDelegationIndex();}
+ /** QueryRuns keeps its normal later startup. Finish this read index only
+  * after its formal metadata lease is available, before the route listens. */
+ prepareDelegation(){void this.options.delegation;this.installDelegationIndex();}
+ private installDelegationIndex(){if(this.has('delegation_works'))this.store.db.exec("CREATE INDEX IF NOT EXISTS activity_delegation_recent ON delegation_works(json_extract(json,'$.updatedAt') DESC,id)");}
  close(){this.memoryIndex.close();}
  private has(table:string){return Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));}
  private json<T>(table:string,id:string):T|undefined {if(!this.has(table))return;const row=this.store.db.prepare(`SELECT json FROM ${table} WHERE id=?`).get(id);return row?JSON.parse(String(row.json)) as T:undefined;}

@@ -159,6 +159,7 @@ export function createActivityServices(dependencies:ActivityServicesDependencies
         child.addHook('onRequest',async(_request,reply)=>{
           if(phase!=='active')return reply.code(503).send({error:'feature_unavailable'});
         });
+        prepared().projection.prepareDelegation();
         registerActivity(child,prepared().projection,dependencies.isCollector);
         registerOperations(child,dependencies.operations,dependencies.isCollector);
         child.get('/api/processing/activity',async()=>prepared().automatic.view());
