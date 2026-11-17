@@ -20,6 +20,7 @@ import {AssistantTaskResults} from '../src/plugins/ask/AssistantTaskResults';
 import {OwnerQuestionConversation} from '../src/plugins/memory/OwnerQuestions';
 import {featuresReady} from '../src/features/bootstrap';
 import {ownerQuestionRoute} from '../src/owner-question-route';
+import {currentInstructionFixture} from '../../server/test/fixtures/current-owner-instruction';
 
 configureLocale(()=> 'zh-CN');
 const token='generated-task-web-contract',headers={authorization:'Bearer '+token};
@@ -84,4 +85,20 @@ test('the actual assistant question projection reaches the existing inbox and re
   await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(taskId)?.state==='succeeded');});
  assert.match(d.body.textContent!,/回答已记录/);assert.doesNotMatch(d.body.textContent!,/成果审核完成后才会保存/);
  assert.equal((await f.read(taskId)).result.answer,'Generated continued task result');
+});
+
+
+test('a real current-owner instruction response shows its automatic Task result without another start control',async t=>{
+ const f=await currentInstructionFixture(t),admitted=await f.post(),message=await f.settled(admitted.message.id),taskId=await f.taskFor(message.id);
+ assert.equal(message.status,'completed');await until(()=>f.task(taskId).state==='succeeded');
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/ask'}),prior=new Map<string,PropertyDescriptor|undefined>();
+ for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){
+  prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});
+ }
+ const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}});
+ const paths:string[]=[],api={request:async(path:string)=>{paths.push(path);const response=await f.api('GET',path);assert.equal(response.statusCode,200,response.body);return response.json();}} as Api;
+ await act(async()=>root.render(React.createElement(AssistantDraftActions,{api,conversationId:f.conversationId,turnId:message.id,draft:message.result!.draft!,onOpen:()=>{},renderAnswer:(answer,open)=>React.createElement(AnswerView,{answer,onOpen:open,compact:true})})));
+ assert.ok(paths.some(path=>path.includes(`/messages/${message.id}/assistant-tasks?`)));assert.match(dom.window.document.body.textContent!,/Generated current-input task result/);assert.match(dom.window.document.body.textContent!,/已完成/);
+ assert.equal(dom.window.document.querySelector('.assistant-draft-actions'),null);assert.equal(dom.window.document.querySelector('textarea'),null);assert.doesNotMatch(dom.window.document.body.textContent!,/任务服务尚未接通|这份草稿可以修改后再开始/);
+ assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.task'").get()!.n,1);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM captures').get()!.n,0);
 });

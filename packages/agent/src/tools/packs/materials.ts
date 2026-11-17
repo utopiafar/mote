@@ -5,7 +5,7 @@ import {defineToolDescriptor, toolContractError, type ToolDescriptor, type ToolF
 import type {HostSessionPort} from '../host-session.js';
 import type {ContextRange, ContextRecord} from '../../context-contracts.js';
 
-/** Immutable run facts supplied by parent A08; never a grant or a reader. */
+/** Immutable run facts supplied by the parent Host tool session; never a grant or a reader. */
 export interface ReadPackInputs {
   readonly timeZone?: string;
 }

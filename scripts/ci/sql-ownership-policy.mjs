@@ -26,13 +26,23 @@ export const installations={
  'connectors/recording-state.ts':['recordingMediaSchemaInstallation','recordingSyncSchemaInstallation'],
  'assistant-task-runtime-schema.ts':['assistantTaskRuntimeSchemaInstallation'],
  'memory-input-plans-schema.ts':['memoryInputPlansSchemaInstallation'],
+ 'memory-input-authorization.ts':['memoryInputAuthorizationSchemaInstallation'],
+ 'memory-extraction-drafts.ts':['memoryExtractionDraftsSchemaInstallation'],
+ 'memory-phase-outputs.ts':['memoryPhaseOutputsSchemaInstallation'],
+ 'plugins/plugin-control-store.ts':['pluginControlSchemaInstallation'],
+ 'plugins/instance-state.ts':['instanceStateSchemaInstallation'],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
  * has its declared owner inside its function; other functions use this mapping.
  * A new file never inherits access merely from a filename prefix or directory. */
 export const consumers={
+ 'plugins/plugin-control-store.ts':'plugin-control',
+ 'plugins/instance-state.ts':'plugin-instance-state',
  'assistant-task-steering.ts':'assistant-task-runtime',
+ 'memory-input-authorization.ts':'memory-input-authorization',
+ 'memory-extraction-drafts.ts':'memory-extraction-drafts',
+ 'memory-phase-outputs.ts':'memory-phase-outputs',
  'evidence-store.ts':'capture',
  'capture-browser.ts':'capture',
  'capture-context.ts':'capture',
@@ -88,6 +98,22 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "execution_steps",
+  "symbol": "2e1128caba8c3b159f4b649b774acea3a41b23ad0d4873acd83a505bcd8ff366",
+  "scope": "MemoryPhaseOutputs.retryReview",
+  "scopeFingerprint": "d6a8c82c865d67b99ea3585950f8543cc4b2e2e80ae658dc02daf145af61105e",
+  "reason": "Select only saved Memory review step IDs for this batch before removing the owned phase output and retrying through ExecutionEngine."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "execution_steps",
+  "symbol": "89fc8681b552931e4612f37ff4c1049c74cf625114a7e87a0b61c1619176dc4d",
+  "scope": "MemoryPhaseOutputs.retryFailed",
+  "scopeFingerprint": "7c30bd5a6554bc02f7f726e6952775c22e757a00ce0a8610735b6a6fb73b0d0d",
+  "reason": "Select only failed or blocked Memory phase step IDs for this exact batch and generation before retrying through ExecutionEngine."
+ },
  {
   "from": "apps/server/src/assistant-task-steering.ts",
   "to": "execution_steps",
@@ -253,6 +279,14 @@ export const sharedReads=[
   "scope": "AssistantTaskSteering.amendments",
   "scopeFingerprint": "01a52b68362dfd69df721a5cf7926532c4d04a34449006fcd2a4034934d2da43",
   "reason": "Check the original accepted supplement request hash against its saved QueryRun receipt."
+ },
+ {
+  "from": "apps/server/src/plugins/instance-state.ts",
+  "to": "source_connections",
+  "symbol": "2f759e3921782b241e17e54714ba24586a9886226de682df0ac51b78062f8365",
+  "scope": "InstanceState.write",
+  "scopeFingerprint": "50cd8ec210a04e376136ad146c42d2244486a73ad5d8d2627f23862c9ba83b65",
+  "reason": "Fence the existing conditional instance-state CAS against its exact enabled Source connection, permitted source kind and sync scope version in the same write transaction."
  }
 ];
 
@@ -279,8 +313,175 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputPlansSchemaInstallation'];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation'];
 export const schemaMaintenance=[
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_batch_dependencies",
+  "kind": "observe",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_batches",
+  "kind": "observe",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_batches",
+  "kind": "read",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-extraction-drafts.ts",
+  "to": "memory_jobs",
+  "kind": "observe",
+  "symbol": "02fd4cfa94a222515cbef223917abacd8c109e94f95411dd0172b88bf835602c",
+  "statementFingerprint": "a8f8156a0c0bd4690e80c0a6f8061d50563246b4c35d609a4f165b3657734a13",
+  "installer": "memoryExtractionDraftsSchemaInstallation",
+  "callPath": [
+   "memoryExtractionDraftsSchemaInstallation",
+   "memoryExtractionDraftsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs"
+  ],
+  "reason": "Install the existing Memory draft retirement triggers: observe Memory batch/job/dependency lifecycle and read only batch IDs while deleting this owner's private drafts."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_batch_dependencies",
+  "kind": "observe",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_batches",
+  "kind": "observe",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_batches",
+  "kind": "read",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_jobs",
+  "kind": "observe",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
+ {
+  "from": "apps/server/src/memory-phase-outputs.ts",
+  "to": "memory_jobs",
+  "kind": "read",
+  "symbol": "cd9253b956d2323f5fabc8fe8c80cce0b53f5bddd075788fad67cbddbbfd9753",
+  "statementFingerprint": "e56e8d7b50759181c1449b0c952255dcc2b95716dfe97087359a5dbd91d0bd0a",
+  "installer": "memoryPhaseOutputsSchemaInstallation",
+  "callPath": [
+   "memoryPhaseOutputsSchemaInstallation",
+   "memoryPhaseOutputsSchema"
+  ],
+  "sourceRelations": [
+   "memory_batch_dependencies",
+   "memory_batches",
+   "memory_jobs",
+   "memory_phase_outputs"
+  ],
+  "reason": "Install the existing Memory phase checkpoint retirement and late-insert fence: observe Memory batch/job/dependency lifecycle and read current batch/job state while changing only this owner's phase outputs."
+ },
  {
   "from": "apps/server/src/operation-projection.ts",
   "to": "execution_operation_steps",
@@ -834,6 +1035,19 @@ export const schemaMaintenance=[
 
 /** Scope witnesses preserve existing unresolved access debt when its table owner becomes known. They are not grants. */
 export const retainedClassificationScopes=[
+ // Keep the original Material-forget DELETE as exact unresolved write debt;
+ // knowing its target owner does not grant this trigger any new write access.
+ {
+  "rule": "sql-uncovered-table",
+  "from": "apps/server/src/material-memory-work.ts",
+  "to": "memory_input_authorizations",
+  "kind": "write",
+  "symbol": "4519c685db0ff9e34515bd3054321837fdf0d9477526b80d152e1145d1b7b548",
+  "scope": "MaterialMemoryWork.constructor",
+  "scopeFingerprint": "2220edebc9aa3497c04ff01e2b53d46e6d96ca81904b97ea16b36b758991ddbe",
+  "operation": "delete",
+  "completeSql": true
+ },
  {
   "from": "apps/server/src/file-processing.ts",
   "to": "execution_operation_steps",
@@ -1263,11 +1477,11 @@ export const nonSqlCalls=[
   "entryType": "AssistantTaskQuestions",
   "definitionFile": "apps/server/src/assistant-task-questions.ts",
   "occurrence": 1,
-  "moduleFingerprint": "12bfddc3fb7eaf7d1d30af5a88ee06415dbfb86e7c03457c7a35ae84db28c800",
-  "scopeFingerprint": "e338633cf97c5f0616a6dc895eef9ec7a600730df58bffc28580c282a7a13b31",
+  "moduleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "scopeFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "callFingerprint": "3d906b2269f1ad4ee39e3c5161d750d5f20bab1ccac157f6b30bc6d8ad1663cc",
   "bindingFingerprint": "2d05845989f54f3e2c061756d456fbc2b7c19054c00fbd8549f74b294877cf4c",
-  "assignmentFingerprint": "80c8c1d5a0eba12c2d4f4f40f801ccea705053dfc27143d4388efe74bf0c9610",
+  "assignmentFingerprint": "e30ea9bd2415ba9abdc28b809cc47c018cb799506b2c67923c3706231c4b14a3",
   "importFingerprint": "91c632ad6f9ebcd86c2183a7d687309531b2c04f4e2d976be04799cb9366e3c9",
   "definitionModuleFingerprint": "6aa34bb3950e19a727e66805433262b774bc8be519e04cb0b60081c2a15a8810",
   "definitionFingerprint": "b65951dae7702e66406f51295ffe91f152a42b347de0d9257558ce8fc46f1289",
@@ -1283,8 +1497,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTaskSteering",
   "definitionFile": "apps/server/src/assistant-task-steering.ts",
   "occurrence": 1,
-  "moduleFingerprint": "12bfddc3fb7eaf7d1d30af5a88ee06415dbfb86e7c03457c7a35ae84db28c800",
-  "scopeFingerprint": "e338633cf97c5f0616a6dc895eef9ec7a600730df58bffc28580c282a7a13b31",
+  "moduleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "scopeFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "callFingerprint": "1a8498f52fc1e958977fa07a005043d951c0beddeb51997bfa9b2eb241ad7507",
   "bindingFingerprint": "61cf8fed3926ae5cd5698e04777fd48667042dccb961ed0470425f89c0b22f8a",
   "assignmentFingerprint": "40acd4e8a4e63ee3ce8741171a182adb1c7fe024aba9c5ec1d640ccd426fef72",
@@ -1309,8 +1523,8 @@ export const nonSqlCalls=[
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
   "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05",
-  "definitionModuleFingerprint": "12bfddc3fb7eaf7d1d30af5a88ee06415dbfb86e7c03457c7a35ae84db28c800",
-  "definitionFingerprint": "e338633cf97c5f0616a6dc895eef9ec7a600730df58bffc28580c282a7a13b31",
+  "definitionModuleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "definitionFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "reason": "Exact imported Task adapter prepares a QueryInput through its statically bound class method; the call is not a SQLite statement."
  }
 ];
@@ -1370,7 +1584,7 @@ export const storageConstructions=[
   "owner": "assistant-task-storage",
   "file": "assistant-tasks.ts",
   "scope": "AssistantTasks.constructor",
-  "scopeFingerprint": "945d47677833cb6f576a9db01a764882f8e4ea349d7b532654c955e71f36cb13",
+  "scopeFingerprint": "311c90e384f6f263a25fb3cc69cf9a3eb6f9a236e7c24477060d850a4cdcbd00",
   "statementFingerprint": "7241408afabccd57333b9782790ad9549a6b2ab234853b3d5f9ab1f6651c667f",
   "sqlFingerprint": "22c21d3bf441b58d3edae8ac255f03f580428a4e8f81d0e21f720a954465715a",
   "calls": [
