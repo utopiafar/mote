@@ -186,6 +186,28 @@ test('the real workflow settings HTTP entry point persists YAML and rejects a st
   const stale=await node.app.inject({method:'PUT',url:'/api/processing/settings',headers,payload:{revision:baseline.revision,settings:baseline.settings}});assert.equal(stale.statusCode,409);
 });
 
+test('owner HTTP workflow saves use the typed domain reference, leave invalid input unchanged and survive restart',async t=>{
+  const {buildApp}=await import('../src/app.js'),directory=await mkdtemp(join(tmpdir(),'mote-workflow-typed-')),token='generated-workflow-owner-token',headers={authorization:`Bearer ${token}`};
+  const config={dataDir:directory,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'https://generated.invalid/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+  const dependencies={backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No live model access');},close:async()=>{}}};
+  let node=await buildApp(config,dependencies);
+  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+  const read=await node.app.inject({url:'/api/processing',headers});assert.equal(read.statusCode,200);const baseline=read.json();
+  assert.deepEqual(node.workflows.settings(),baseline.settings);
+  const settings={...baseline.settings,semantic:{concurrency:3,enabled:false}};
+  const saved=await node.app.inject({method:'PUT',url:'/api/processing/settings',headers,payload:{revision:baseline.revision,settings}});
+  assert.equal(saved.statusCode,200,saved.body);assert.deepEqual(node.workflows.settings().semantic,settings.semantic);
+  assert.equal(parse(await readFile(node.configService.path,'utf8')).workflows.semantic.concurrency,3);
+  const invalid=await node.app.inject({method:'PUT',url:'/api/processing/settings',headers,payload:{revision:saved.json().revision,settings:{...settings,semantic:{...settings.semantic,dailyCalls:1}}}});
+  assert.equal(invalid.statusCode,400,invalid.body);
+  assert.deepEqual(node.workflows.settings().semantic,settings.semantic);
+  assert.equal(parse(await readFile(node.configService.path,'utf8')).workflows.semantic.concurrency,3);
+  const unchanged=(await node.app.inject({url:'/api/processing',headers})).json();assert.equal(unchanged.revision,saved.json().revision);assert.deepEqual(unchanged.settings.semantic,settings.semantic);
+  await node.app.close();node=await buildApp(config,dependencies);
+  assert.deepEqual(node.workflows.settings().semantic,settings.semantic);
+  const restarted=(await node.app.inject({url:'/api/processing',headers})).json();assert.equal(restarted.revision,saved.json().revision);assert.deepEqual(restarted.settings.semantic,settings.semantic);
+});
+
 test('revoking remote image processing fences a held OCR result and does not grant historical reruns',async t=>{
   const f=await fixture(t),view=f.images.view();
   await f.images.save({revision:view.revision,settings:{...view.settings,allowExternalProcessing:true,understandingEnabled:false,ocrEndpoint:'https://generated.example.invalid/ocr'}});
