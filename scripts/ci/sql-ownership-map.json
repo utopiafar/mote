@@ -1,6 +1,13 @@
 {
  "owners": [
   {
+   "declaration": "actionCapabilitiesSchemaInstallation",
+   "owner": "action-capabilities",
+   "fn": "actionCapabilitiesSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/action-capabilities-schema.ts"
+  },
+  {
    "declaration": "processorAdmissionSchemaInstallation",
    "owner": "processor-admission",
    "fn": "processorAdmissionSchema",
@@ -637,12 +644,12 @@
   },
   {
    "owner": "conversation-turn-storage",
-   "file": "apps/server/src/conversations.ts",
-   "declaration": "Conversations.constructor",
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "declaration": "ConversationTurnStorage.constructor",
    "construction": true,
    "callPath": [
-    "apps/server/src/plugins/conversations.ts#createConversations",
-    "Conversations.constructor"
+    "apps/server/src/chat-storage-schema.ts#conversationTurnsSchemaInstallation.install",
+    "ConversationTurnStorage.constructor"
    ],
    "objects": [
     {
@@ -657,12 +664,12 @@
   },
   {
    "owner": "query-run-storage",
-   "file": "apps/server/src/delegated-query-runs.ts",
-   "declaration": "DelegatedQueryRuns.constructor",
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "declaration": "QueryRunStorage.constructor",
    "construction": true,
    "callPath": [
-    "apps/server/src/plugins/query-runs.ts#createQueryRunsPlatform",
-    "DelegatedQueryRuns.constructor"
+    "apps/server/src/chat-storage-schema.ts#queryRunSchemaInstallation.install",
+    "QueryRunStorage.constructor"
    ],
    "objects": [
     {
@@ -673,12 +680,12 @@
   },
   {
    "owner": "assistant-task-storage",
-   "file": "apps/server/src/assistant-tasks.ts",
-   "declaration": "AssistantTasks.constructor",
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "declaration": "AssistantTaskStorage.constructor",
    "construction": true,
    "callPath": [
-    "apps/server/src/host.ts#buildHost",
-    "AssistantTasks.constructor"
+    "apps/server/src/chat-storage-schema.ts#assistantTaskStorageSchemaInstallation.install",
+    "AssistantTaskStorage.constructor"
    ],
    "objects": [
     {
@@ -773,10 +780,30 @@
   }
  ],
  "tables": {
+  "action_capability_commands": {
+   "owner": "action-capabilities",
+   "file": "apps/server/src/action-capabilities-schema.ts",
+   "installer": "actionCapabilitiesSchemaInstallation"
+  },
+  "action_capability_drafts": {
+   "owner": "action-capabilities",
+   "file": "apps/server/src/action-capabilities-schema.ts",
+   "installer": "actionCapabilitiesSchemaInstallation"
+  },
+  "action_capability_grants": {
+   "owner": "action-capabilities",
+   "file": "apps/server/src/action-capabilities-schema.ts",
+   "installer": "actionCapabilitiesSchemaInstallation"
+  },
   "action_chunk_changes": {
    "owner": "actions",
    "file": "apps/server/src/actions-schema.ts",
    "installer": "actionsSchemaInstallation"
+  },
+  "action_device_capabilities": {
+   "owner": "action-capabilities",
+   "file": "apps/server/src/action-capabilities-schema.ts",
+   "installer": "actionCapabilitiesSchemaInstallation"
   },
   "action_jobs": {
    "owner": "actions",
@@ -885,13 +912,13 @@
   },
   "assistant_task_scopes": {
    "owner": "assistant-task-storage",
-   "file": "apps/server/src/assistant-tasks.ts",
-   "construction": "AssistantTasks.constructor"
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "construction": "AssistantTaskStorage.constructor"
   },
   "assistant_task_turns": {
    "owner": "assistant-task-storage",
-   "file": "apps/server/src/assistant-tasks.ts",
-   "construction": "AssistantTasks.constructor"
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "construction": "AssistantTaskStorage.constructor"
   },
   "background_model_authorization": {
    "owner": "background-model-authorization",
@@ -990,8 +1017,8 @@
   },
   "conversation_turns": {
    "owner": "conversation-turn-storage",
-   "file": "apps/server/src/conversations.ts",
-   "construction": "Conversations.constructor"
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "construction": "ConversationTurnStorage.constructor"
   },
   "conversations": {
    "owner": "conversation",
@@ -1640,8 +1667,8 @@
   },
   "query_runs": {
    "owner": "query-run-storage",
-   "file": "apps/server/src/delegated-query-runs.ts",
-   "construction": "DelegatedQueryRuns.constructor"
+   "file": "apps/server/src/chat-storage-schema.ts",
+   "construction": "QueryRunStorage.constructor"
   },
   "record_context_declarations": {
    "owner": "record-context",

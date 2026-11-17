@@ -1,3 +1,4 @@
+import {assistantTaskStorageSchemaInstallation} from './chat-storage-schema.js';
 import {isDeepStrictEqual} from 'node:util';
 import type {QueryInput} from '@mote/agent';
 import {assistantTaskRecordSchema,assistantTaskOutputSchema,actionEvidenceText,formatEvidenceRef,type AssistantTaskInput,type CaptureRecord,type QueryResult,type QueryScope,type WorkState} from '@mote/shared';
@@ -49,19 +50,7 @@ export class AssistantTasks implements BatchProductProjection {
    accepted:(task,request,ids)=>{this.saveScope(task,request.scope,this.discover(request.scope,false,true).snapshot);
     const dependencies=taskEvidenceIds(store,{version:1,complete:true,ids});this.assertCurrent(dependencies);addTaskEvidence(store,task.id,dependencies);},
   });
-  store.db.exec(`CREATE TABLE IF NOT EXISTS assistant_task_scopes(
-   task_id TEXT PRIMARY KEY REFERENCES task_records(id) ON DELETE CASCADE,scope_hash TEXT NOT NULL,snapshot_json TEXT);
-   CREATE TABLE IF NOT EXISTS assistant_task_turns(
-   task_id TEXT PRIMARY KEY REFERENCES task_records(id) ON DELETE CASCADE,
-   conversation_id TEXT NOT NULL,turn_id TEXT NOT NULL,scope_hash TEXT NOT NULL,draft_revision INTEGER NOT NULL,
-   UNIQUE(conversation_id,turn_id,draft_revision));
-   CREATE INDEX IF NOT EXISTS assistant_task_turns_turn ON assistant_task_turns(conversation_id,turn_id);
-   CREATE TRIGGER IF NOT EXISTS assistant_task_scope_stale AFTER UPDATE OF state ON task_records WHEN new.state='stale' AND old.state!='stale' BEGIN
-    UPDATE assistant_task_scopes SET snapshot_json=NULL WHERE task_id=new.id;
-   END;
-   CREATE TRIGGER IF NOT EXISTS assistant_task_turn_deleted BEFORE DELETE ON conversation_turns BEGIN
-    ${retireTaskRecordsSql('SELECT task_id FROM assistant_task_turns WHERE turn_id=old.id AND conversation_id=old.conversation_id')}
-   END;`);
+  installSchemaPlan(store.db,[assistantTaskStorageSchemaInstallation]);
   store.registerStorage('assistant-task-turns',{
    assistant_task_turns:'length(CAST(task_id AS BLOB))+length(CAST(conversation_id AS BLOB))+length(CAST(turn_id AS BLOB))+length(CAST(scope_hash AS BLOB))+96',
    assistant_task_scopes:'length(CAST(task_id AS BLOB))+length(CAST(scope_hash AS BLOB))+coalesce(length(CAST(snapshot_json AS BLOB)),0)+96',

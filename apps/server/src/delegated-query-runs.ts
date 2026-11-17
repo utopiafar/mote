@@ -1,3 +1,5 @@
+import {queryRunSchemaInstallation} from './chat-storage-schema.js';
+import {installSchemaPlan} from './schema-installation.js';
 import {sanitizeFailureDiagnostics} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {AgentYieldError,AgentTimeoutError,type AgentProgress,type QueryInput} from '@mote/agent';
@@ -45,7 +47,7 @@ export class DelegatedQueryRuns {
   private stopped=false;
   private interrupted=false;
   constructor(private store:Store,readonly runtime:DelegationRuntime,private callbacks:QueryCallbacks){
-    store.db.exec('CREATE TABLE IF NOT EXISTS query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
+    installSchemaPlan(store.db,[queryRunSchemaInstallation]);
     store.installContextHistoryInvalidation();
     createAgentDelegationPlugin(runtime,{
       timeoutMs:input=>(input as SavedInput).executionTimeoutMs??null,

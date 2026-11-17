@@ -1,6 +1,7 @@
 /** Only production installers already registered on main belong here. Add an
  * installer after its domain registration lands, then remove its uncovered debt. */
 export const installations={
+ 'action-capabilities-schema.ts':['actionCapabilitiesSchemaInstallation'],
  'admission-schema.ts':['processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation'],
  'vault-schema.ts':['vaultSchemaInstallation'],
  'capture-schema.ts':['captureSchemaInstallation','captureProjectionSchemaInstallation'],
@@ -135,6 +136,7 @@ export const consumerScopes={
   'projectMemoryLifecycleSettings':'memory-lifecycle',
   'storedMemoryLifecycleSettings':'memory-lifecycle',
  },
+ 'plugins/action-capabilities.ts':{'ActionCapabilities.command':'action-capabilities','ActionCapabilities.declare':'action-capabilities','ActionCapabilities.declarations':'action-capabilities','ActionCapabilities.inventory':'action-capabilities','ActionCapabilities.saveDraft':'action-capabilities','ActionCapabilities.revokeDraft':'action-capabilities','ActionCapabilities.grants':'action-capabilities','ActionCapabilities.revokeGrant':'action-capabilities'},
  'actions.ts':{'Actions.proposeCurrentCalendar':'actions','Actions.connectorClaim':'actions','Actions.discover':'actions'},
  'processor-admission.ts':{
   'ProcessorAdmission.check':'processor-admission',
@@ -607,7 +609,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation","pluginReleasePreviewsSchemaInstallation","developerAccessSchemaInstallation","outboundExportSchemaInstallation","delegationJournalSchemaInstallation","delegationSourceContextSchemaInstallation","materialSchemaInstallation","assetSchemaInstallation","archivedFilesSchemaInstallation","evidenceMaterialLineageSchemaInstallation","assetSnapshotInputsReferencesInstallation","assetSnapshotTextReferencesInstallation","assetFileVersionsReferencesInstallation","assetFileAssetsReferencesInstallation","assetCaptureReferencesInstallation","assetArchivedFilesReferencesInstallation","evidenceDependenciesWithoutMaterialsInstallation","evidenceDependenciesWithMaterialsInstallation","insightRunsSchemaInstallation","recordContextSchemaInstallation","memoryBindingSchemaInstallation"];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation","pluginReleasePreviewsSchemaInstallation","developerAccessSchemaInstallation","outboundExportSchemaInstallation","delegationJournalSchemaInstallation","delegationSourceContextSchemaInstallation","materialSchemaInstallation","assetSchemaInstallation","archivedFilesSchemaInstallation","evidenceMaterialLineageSchemaInstallation","assetSnapshotInputsReferencesInstallation","assetSnapshotTextReferencesInstallation","assetFileVersionsReferencesInstallation","assetFileAssetsReferencesInstallation","assetCaptureReferencesInstallation","assetArchivedFilesReferencesInstallation","evidenceDependenciesWithoutMaterialsInstallation","evidenceDependenciesWithMaterialsInstallation","insightRunsSchemaInstallation","recordContextSchemaInstallation","memoryBindingSchemaInstallation",'actionCapabilitiesSchemaInstallation'];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",
@@ -1273,15 +1275,15 @@ export const schemaMaintenance=[
  },
  {
   "rule": "sql-schema-maintenance",
-  "from": "apps/server/src/assistant-tasks.ts",
+  "from": "apps/server/src/chat-storage-schema.ts",
   "to": "conversation_turns",
   "kind": "observe",
   "symbol": "22c21d3bf441b58d3edae8ac255f03f580428a4e8f81d0e21f720a954465715a",
   "statementFingerprint": "7241408afabccd57333b9782790ad9549a6b2ab234853b3d5f9ab1f6651c667f",
-  "installer": "AssistantTasks.constructor",
+  "installer": "AssistantTaskStorage.constructor",
   "callPath": [
-   "apps/server/src/host.ts#buildHost",
-   "AssistantTasks.constructor"
+   "apps/server/src/chat-storage-schema.ts#assistantTaskStorageSchemaInstallation.install",
+   "AssistantTaskStorage.constructor"
   ],
   "sourceRelations": [
    "conversation_turns",
@@ -1291,15 +1293,15 @@ export const schemaMaintenance=[
  },
  {
   "rule": "sql-schema-maintenance",
-  "from": "apps/server/src/assistant-tasks.ts",
+  "from": "apps/server/src/chat-storage-schema.ts",
   "to": "task_records",
   "kind": "observe",
   "symbol": "22c21d3bf441b58d3edae8ac255f03f580428a4e8f81d0e21f720a954465715a",
   "statementFingerprint": "7241408afabccd57333b9782790ad9549a6b2ab234853b3d5f9ab1f6651c667f",
-  "installer": "AssistantTasks.constructor",
+  "installer": "AssistantTaskStorage.constructor",
   "callPath": [
-   "apps/server/src/host.ts#buildHost",
-   "AssistantTasks.constructor"
+   "apps/server/src/chat-storage-schema.ts#assistantTaskStorageSchemaInstallation.install",
+   "AssistantTaskStorage.constructor"
   ],
   "sourceRelations": [
    "conversation_turns",
@@ -1309,15 +1311,15 @@ export const schemaMaintenance=[
  },
  {
   "rule": "sql-schema-maintenance",
-  "from": "apps/server/src/assistant-tasks.ts",
+  "from": "apps/server/src/chat-storage-schema.ts",
   "to": "task_records",
   "kind": "update",
   "symbol": "22c21d3bf441b58d3edae8ac255f03f580428a4e8f81d0e21f720a954465715a",
   "statementFingerprint": "7241408afabccd57333b9782790ad9549a6b2ab234853b3d5f9ab1f6651c667f",
-  "installer": "AssistantTasks.constructor",
+  "installer": "AssistantTaskStorage.constructor",
   "callPath": [
-   "apps/server/src/host.ts#buildHost",
-   "AssistantTasks.constructor"
+   "apps/server/src/chat-storage-schema.ts#assistantTaskStorageSchemaInstallation.install",
+   "AssistantTaskStorage.constructor"
   ],
   "sourceRelations": [
    "conversation_turns",
@@ -1847,7 +1849,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "conversation-turn-storage",
-  "constructionFingerprint": "ac34f4953f68f881df1ed1eea533cccd0fd609dfe664b5f622694da4d920b361"
+  "constructionFingerprint": "a3370f7fd36de943baa47b12eec02ba38434c7afaebbdc4ab759f8a8b668941a"
  },
  {
   "rule": "sql-unproved-relation",
@@ -1861,7 +1863,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "conversation-turn-storage",
-  "constructionFingerprint": "ac34f4953f68f881df1ed1eea533cccd0fd609dfe664b5f622694da4d920b361"
+  "constructionFingerprint": "a3370f7fd36de943baa47b12eec02ba38434c7afaebbdc4ab759f8a8b668941a"
  },
  {
   "rule": "sql-unproved-relation",
@@ -1875,7 +1877,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "conversation-turn-storage",
-  "constructionFingerprint": "ac34f4953f68f881df1ed1eea533cccd0fd609dfe664b5f622694da4d920b361"
+  "constructionFingerprint": "a3370f7fd36de943baa47b12eec02ba38434c7afaebbdc4ab759f8a8b668941a"
  },
  {
   "rule": "sql-unproved-relation",
@@ -1889,7 +1891,7 @@ export const retainedClassificationScopes=[
   "completeSql": false,
   "classification": "write-unproved-pending",
   "targetOwner": "query-run-storage",
-  "constructionFingerprint": "3e00d98ef0ac2640ea837f7562561477554e367e696e1d2b655e6eda04866902"
+  "constructionFingerprint": "0b0b40b5b633f69ac9b0753705f6c42174104b0a020e9e47aaa8f6fad1e1dc7e"
  },
  {
   "rule": "sql-uncovered-table",
@@ -2004,7 +2006,7 @@ export const nonSqlCalls=[
   "entryType": "AssistantTaskQuestions",
   "definitionFile": "apps/server/src/assistant-task-questions.ts",
   "occurrence": 1,
-  "moduleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "moduleFingerprint": "1d531ba3da322e8bc5e76e5d386a781bcd4cebb80a51ddf0da2b490ded038c21",
   "scopeFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "callFingerprint": "3d906b2269f1ad4ee39e3c5161d750d5f20bab1ccac157f6b30bc6d8ad1663cc",
   "bindingFingerprint": "2d05845989f54f3e2c061756d456fbc2b7c19054c00fbd8549f74b294877cf4c",
@@ -2024,7 +2026,7 @@ export const nonSqlCalls=[
   "entryType": "AssistantTaskSteering",
   "definitionFile": "apps/server/src/assistant-task-steering.ts",
   "occurrence": 1,
-  "moduleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "moduleFingerprint": "1d531ba3da322e8bc5e76e5d386a781bcd4cebb80a51ddf0da2b490ded038c21",
   "scopeFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "callFingerprint": "1a8498f52fc1e958977fa07a005043d951c0beddeb51997bfa9b2eb241ad7507",
   "bindingFingerprint": "61cf8fed3926ae5cd5698e04777fd48667042dccb961ed0470425f89c0b22f8a",
@@ -2050,7 +2052,7 @@ export const nonSqlCalls=[
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
   "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05",
-  "definitionModuleFingerprint": "4f41415d433bcaf5c4898077c2f7b83e7e37a64cd8f704965ee625a9ae7f8ae7",
+  "definitionModuleFingerprint": "1d531ba3da322e8bc5e76e5d386a781bcd4cebb80a51ddf0da2b490ded038c21",
   "definitionFingerprint": "94f1d4ce571c3d0d412b5fced7cded68fdc47b21b999bdb7237578209e7f4b1c",
   "reason": "Exact imported Task adapter prepares a QueryInput through its statically bound class method; the call is not a SQLite statement."
  }
@@ -2059,11 +2061,11 @@ export const nonSqlCalls=[
 /** Existing construction claims are separate from formal SchemaInstallation owners. */
 export const importedHelpers=[
  {
-  "from": "apps/server/src/assistant-tasks.ts",
-  "scope": "AssistantTasks.constructor",
+  "from": "apps/server/src/chat-storage-schema.ts",
+  "scope": "AssistantTaskStorage.constructor",
   "name": "retireTaskRecordsSql",
   "definitionFile": "apps/server/src/task-evidence.ts",
-  "importFingerprint": "0a8d6d050a8c11b626663efcfaa80307447f96813fffc41432b3a5cf1b65e9c1",
+  "importFingerprint": "78c693fc749b9a91d202cc9127cf46122227deb149e0452a1a0147bfd6f7de7d",
   "definitionModuleFingerprint": "0e5b1904d581a4d7201ddcc1477caef5b22ff51cb569b89a81c5fe8ec4a854fd",
   "definitionFingerprint": "5766030cc8f3da30e11feef88294493278724ff72f915de19eebbfd74dcfa02f",
   "callFingerprint": "ce0fa4e1dbee71c6501b0713390f072d64dfbcb340c0658b8ea83b9bc881ac67",
@@ -2073,56 +2075,56 @@ export const importedHelpers=[
 export const storageConstructions=[
  {
   "owner": "conversation-turn-storage",
-  "file": "conversations.ts",
-  "scope": "Conversations.constructor",
-  "scopeFingerprint": "e167ad52f735fc4d4ac11c1a7f7d4291b7b4e161be115fff12feaf0034cade96",
+  "file": "chat-storage-schema.ts",
+  "scope": "ConversationTurnStorage.constructor",
+  "scopeFingerprint": "62aa1e7fabf43508ed4ec04fd3d80f6be461ed84ebea5c0bbcd120ef2e06f8e3",
   "statementFingerprint": "34dc14d97f7033b8bbe77138838d5e170d8a9e944733c3ea31f85b39c9d06e22",
   "sqlFingerprint": "8035dc47ba89154593130d6fad082d1e7223f1cc73083bf0bce6f7551c8a98ed",
   "calls": [
    {
-    "from": "apps/server/src/plugins/conversations.ts",
-    "scope": "createConversations",
-    "scopeFingerprint": "39c02c254bf1b3942cbef7fd751c5fc1bcc96d392a9a2254f328fc70bec2fb6b",
-    "callFingerprint": "33f6346366823a218e13462722baab5f2ccecd3ff832d0ac6eb8b0d60a280f0c",
-    "importFingerprint": "06e1d623b7647c3fe48de03bfa7612f491182f035c20b75bdeee7def250b2e30"
-   }
+    "from": "apps/server/src/chat-storage-schema.ts",
+    "scope": "conversationTurnsSchemaInstallation.install",
+    "scopeFingerprint": "81c8c9bd328b6f9e4ce14ea919cc2cc65cafb325ee4c1c4b02bd1c8beed05477",
+    "callFingerprint": "0ccea4cff5629708cace77f160d06154eefc4ed283f4d07ae4673a65a7ad8d40",
+    "declarationFingerprint": "c802e3144a78e5beacbf09b0e5e2c9e44f700e4ccb1d2a392d7a07a7a972a04b"
+  }
   ],
-  "reason": "Existing exact constructor DDL and production construction path; H5 installer migration remains pending."
+  "reason": "Exact original DDL-only helper invoked by conversationTurnsSchemaInstallation at the original consumer construction stage."
  },
  {
   "owner": "query-run-storage",
-  "file": "delegated-query-runs.ts",
-  "scope": "DelegatedQueryRuns.constructor",
-  "scopeFingerprint": "3be06c77794f3bd1dcbb914c0eb1cf8df0b6912eeb4a6c1bba4d26d487c9a76e",
+  "file": "chat-storage-schema.ts",
+  "scope": "QueryRunStorage.constructor",
+  "scopeFingerprint": "83a0a69a83973f4a4c215cc36736d1162efba403e6cfa6e2eef3688661db7974",
   "statementFingerprint": "723e8df86dd441990b9c07d808e4b90688b0a97c609260080f58a7c574ed8082",
   "sqlFingerprint": "c981996000b54780c85af51a3f56feb414bd8f405e5b521ec94bbb0b999ba46d",
   "calls": [
    {
-    "from": "apps/server/src/plugins/query-runs.ts",
-    "scope": "createQueryRunsPlatform",
-    "scopeFingerprint": "f12f1f765bdf43d79c5b0fa4f77c02c8bbb85a4d79b8d78e6ab0de7ceb72711b",
-    "callFingerprint": "249b48994d475a9a183939fad7736d8c7ea5f30ae1c260e1ccd21db59f71f1b7",
-    "importFingerprint": "4e0f5e207113b5f1cf953eb88dd3b570947025ff999567c8eb1734b45c296025"
-   }
+    "from": "apps/server/src/chat-storage-schema.ts",
+    "scope": "queryRunSchemaInstallation.install",
+    "scopeFingerprint": "1c2e1ba334458c10a52852d41e172ac1459cf0ee8ae1b048594eec3381387e53",
+    "callFingerprint": "1b36ff134711c865ec61598291d3e826124d1a7e458e8964b102f8e183289ae1",
+    "declarationFingerprint": "58ec814df0e68649c843a2f173c02ab04b660788803cbf8e86e64754e73b2281"
+  }
   ],
-  "reason": "Existing exact constructor DDL and production construction path; H5 installer migration remains pending."
+  "reason": "Exact original DDL-only helper invoked by queryRunSchemaInstallation at the original consumer construction stage."
  },
  {
   "owner": "assistant-task-storage",
-  "file": "assistant-tasks.ts",
-  "scope": "AssistantTasks.constructor",
-  "scopeFingerprint": "311c90e384f6f263a25fb3cc69cf9a3eb6f9a236e7c24477060d850a4cdcbd00",
+  "file": "chat-storage-schema.ts",
+  "scope": "AssistantTaskStorage.constructor",
+  "scopeFingerprint": "d860c25328b9d2b8ed909b4ec3b6c7cfc0ee954b6fa58d9971e7146340a56736",
   "statementFingerprint": "7241408afabccd57333b9782790ad9549a6b2ab234853b3d5f9ab1f6651c667f",
   "sqlFingerprint": "22c21d3bf441b58d3edae8ac255f03f580428a4e8f81d0e21f720a954465715a",
   "calls": [
    {
-    "from": "apps/server/src/host.ts",
-    "scope": "buildHost",
-    "scopeFingerprint": "258295bb5073a8969d978ef8bf0328f82bcf6e604f04e7fe4f05f252a048cb4a",
-    "callFingerprint": "3104364775643689599971ecfdccf278aa2c597fd6bed3e7756bef6ea52d3ac1",
-    "importFingerprint": "2ea0a997a5352c58cc652eeb49a1073b2cafef6aca8d1d603f16e5aaebcd0e05"
-   }
+    "from": "apps/server/src/chat-storage-schema.ts",
+    "scope": "assistantTaskStorageSchemaInstallation.install",
+    "scopeFingerprint": "8875c71dd5a81eb10056aa75a66e4e81e51bbcaaf7adcfdfb099d3e5d5c135c6",
+    "callFingerprint": "3aeab8642d7cc834211c72dd20500ab68d72462c8a4d4032e6efaa2d8215b5eb",
+    "declarationFingerprint": "94b53b33d53d488ce5885d732b1cefa60b1052e0ce28132a0a3fdb6964845514"
+  }
   ],
-  "reason": "Existing exact constructor DDL and production construction path; H5 installer migration remains pending."
+  "reason": "Exact original DDL-only helper invoked by assistantTaskStorageSchemaInstallation at the original consumer construction stage."
  }
 ,{"owner":"material","file":"material-organizers.ts","scope":"MaterialOrganizerRuntime.constructor","scopeFingerprint":"35e84d4c3067b9b336c1aaf1269a5c1d590086177399530b9a35fb9f65085785","statementFingerprint":"760f84b827b8766cb65d46c2a7bf74627a5bea88837fae0940bb4cd087d8014d","sqlFingerprint":"ccba42261fb838f35661c9e9469d52441d4256560e71ed62a891e7574cdc2ef3","calls":[{"from":"apps/server/src/plugins/material-organizer-service.ts","scope":"createMaterialOrganizerService","scopeFingerprint":"c6ff0f22fe689b748c5a022113be2210c5ef937bbd3f69a405e6d0326c453be9","callFingerprint":"b0b856702c10782d0f59a812e60f453b0a7e69a070da4dae02568189880f19d7","importFingerprint":"f9d0862611d40c1b72de2ac0774e1ce96d2e426970797dae2fd5f628028d50b5"}],"reason":"Exact existing Material organizer constructor DDL and its sole production construction call; only this schema statement is proved, while the constructor runtime cursor write and other scopes retain their current classification."}];

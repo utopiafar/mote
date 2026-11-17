@@ -7,6 +7,20 @@ import type {ManagedCalendar} from './managed-calendar.js';
 import type {TodoStore} from './todos.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {sha256,StoreError,type Store} from './store.js';
+import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
+
+/** This constructor only installs links and their storage meter. Keep its
+ * dynamic retirement SQL intact inside the domain installation boundary. */
+export function createAssistantActions(...args:ConstructorParameters<typeof AssistantActions>){
+ let adapter!:AssistantActions;
+ const installation={owner:'actions',requires:[],prerequisites:[
+  {owner:'task-records',objects:[{type:'table',name:'task_records'}]},
+  {owner:'actions',objects:[{type:'table',name:'action_proposals'}]},
+  {owner:'todo',objects:[{type:'table',name:'todos'}]},
+ ],install(){adapter=new AssistantActions(...args);}} as const satisfies SchemaInstallation;
+ installSchemaPlan(args[0].db,[installation]);
+ return adapter;
+}
 
 /** Links only: Todos and Actions remain the sole state/receipt authorities.
  * No model callback can reach command(), and this adapter has no sender. */
