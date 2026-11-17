@@ -284,6 +284,13 @@
    "file": "apps/server/src/processing-runtime-schema.ts"
   },
   {
+   "declaration": "backgroundModelAuthorizationSchemaInstallation",
+   "owner": "background-model-authorization",
+   "fn": "backgroundModelAuthorizationSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/background-model-authorization-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -568,6 +575,36 @@
    "owner": "assistant-task-storage",
    "file": "apps/server/src/assistant-tasks.ts",
    "construction": "AssistantTasks.constructor"
+  },
+  "background_model_authorization": {
+   "owner": "background-model-authorization",
+   "file": "apps/server/src/background-model-authorization-schema.ts",
+   "installer": "backgroundModelAuthorizationSchemaInstallation"
+  },
+  "background_model_lineage": {
+   "owner": "background-model-authorization",
+   "file": "apps/server/src/background-model-authorization-schema.ts",
+   "installer": "backgroundModelAuthorizationSchemaInstallation"
+  },
+  "background_model_receipts": {
+   "owner": "background-model-authorization",
+   "file": "apps/server/src/background-model-authorization-schema.ts",
+   "installer": "backgroundModelAuthorizationSchemaInstallation"
+  },
+  "background_model_step_authority": {
+   "owner": "background-model-authorization",
+   "file": "apps/server/src/background-model-authorization-schema.ts",
+   "installer": "backgroundModelAuthorizationSchemaInstallation"
+  },
+  "background_model_trigger_claims": {
+   "owner": "background-model-authorization",
+   "file": "apps/server/src/background-model-authorization-schema.ts",
+   "installer": "backgroundModelAuthorizationSchemaInstallation"
+  },
+  "background_model_work": {
+   "owner": "background-model-authorization",
+   "file": "apps/server/src/background-model-authorization-schema.ts",
+   "installer": "backgroundModelAuthorizationSchemaInstallation"
   },
   "blob_counts": {
    "owner": "capture-read-models",

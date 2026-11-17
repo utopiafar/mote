@@ -4,6 +4,8 @@ import {z} from 'zod';
 import {ProviderFailure} from '@mote/shared';
 import {sha256,StoreError,type Store} from './store.js';
 import type {ExecutionStep} from './execution-engine.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {backgroundModelAuthorizationSchemaInstallation} from './background-model-authorization-schema.js';
 
 /** Host identities only. None of these values grants access to an original;
  * every consumer must also enforce its existing source and privacy authority. */
@@ -51,16 +53,7 @@ export class BackgroundModelAuthorization {
     return ()=>{if(this.stopBatches===stop)this.stopBatches=undefined;};
   }
   constructor(private readonly store:Store,private readonly available:()=>ModelConnection[]){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS background_model_authorization(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS background_model_receipts(seq INTEGER PRIMARY KEY AUTOINCREMENT,identity TEXT NOT NULL UNIQUE,source_id TEXT NOT NULL,eligible INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS background_model_lineage(identity TEXT NOT NULL,original TEXT NOT NULL,PRIMARY KEY(identity,original));
-      CREATE TABLE IF NOT EXISTS background_model_work(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS background_model_trigger_claims(original TEXT NOT NULL,purpose TEXT NOT NULL,work_id TEXT NOT NULL REFERENCES background_model_work(id),PRIMARY KEY(original,purpose));
-      CREATE TABLE IF NOT EXISTS background_model_step_authority(step_id TEXT PRIMARY KEY,work_id TEXT NOT NULL REFERENCES background_model_work(id));`);
-    if(!store.db.prepare('SELECT 1 FROM background_model_authorization WHERE id=1').get()){
-      const json=JSON.stringify({revision:0,state:'off',excludedSourceIds:[]} satisfies State);
-      store.db.prepare('INSERT INTO background_model_authorization VALUES(1,?)').run(json);
-    }
+    installSchemaPlan(store.db,[backgroundModelAuthorizationSchemaInstallation]);
   }
   private state():State{if(this.closed)throw pending();return JSON.parse(String(this.store.db.prepare('SELECT json FROM background_model_authorization WHERE id=1').get()!.json));}
   view():ModelAuthorityView{const {lastOperation:_,lastCommand:__,...view}=this.state();return view;}
