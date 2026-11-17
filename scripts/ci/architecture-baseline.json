@@ -46,14 +46,6 @@
   },
   {
     "rule": "comment-card-number",
-    "from": "apps/server/src/memory-pipeline.ts",
-    "to": "C24",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
     "from": "apps/server/src/plugins/devices-source.ts",
     "to": "C01",
     "kind": "comment",
@@ -74,38 +66,6 @@
     "to": "H04",
     "kind": "comment",
     "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/observability-platform.ts",
-    "to": "C06",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/observability-platform.ts",
-    "to": "H03",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/observability-platform.ts",
-    "to": "H04",
-    "kind": "comment",
-    "symbol": "count:1",
-    "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
-  },
-  {
-    "rule": "comment-card-number",
-    "from": "apps/server/src/plugins/observability-platform.ts",
-    "to": "H05",
-    "kind": "comment",
-    "symbol": "count:2",
     "reason": "Existing comment names a plan card; the repository-wide comment rewrite removes it."
   },
   {
