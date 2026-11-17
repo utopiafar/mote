@@ -30,7 +30,7 @@ import {assembleAgent} from './assembly/agent.js';
 import {nativeDshSource} from './dsh-native.js';
 import type {DshConfiguration} from './dsh-configuration.js';
 import {prepareConversations,prepareQueryRuntime,prepareQueryRuns} from './assembly/query.js';
-import {workInputs,prepareWorkDomains,assembleActivity} from './assembly/work.js';
+import {workInputs,prepareWorkDomains} from './assembly/work.js';
 import {assembleImports} from './assembly/imports.js';
 import {assembleConnectors} from './assembly/connectors.js';
 import type {ConnectorManifest} from './connectors/registry.js';
@@ -462,7 +462,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // child app inherits owner-facing validation/conflict mapping (not Fastify's
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
-  const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
+  const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
   const {connectors}=await assembleConnectors({app,resources,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
@@ -517,7 +517,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const {imports,importServices}=assembleImports({store,resources,backendContext,diagnostics,lifecycle:serverLifecycle,archivedFiles,sources,executor,processing,files,config,agent,modelSettings,modelAuthorization,authorizeModelRequest,runModelFor,codex,admittedUsage,agentGate,modelOperation,providerAdmission,availableModelConnections:()=>availableModelConnections(),evidenceReader,prepareImport:dependencies?.prepareImport,observeImport:dependencies?.observeImport});
   const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
 
-  const {delegation,queryRuns,queryRunServices}=await prepareQueryRuns({bootstrap,backendContext,resources,store,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working:queryWorking,
+  const {delegation,queryRuns,queryRunServices,metadata:queryMetadata}=await prepareQueryRuns({bootstrap,backendContext,resources,store,executor,executionObserver,runtimeSettings,evidenceReader,sourceContexts,assertModelEvidence,files,conversations,working:queryWorking,
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
     semanticContextTime:dependencies?.semanticContextTime,usageLedger,
     modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),assistantDrafts,assistantTasks,
@@ -575,7 +575,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // C02 stops the worker before content accessors; DB remains alive until every
   // other root consumer has closed and bootstrap releases the vault last.
   resources.defer(()=>bootstrap.vault.stopAccessors());
-  const {activity,automaticActivity,activityServices}=assembleActivity({store,resources,operations:executionPlatform.assembly.operations,delegation,materials,executor,configService,modelSettings,agent,workflows,queryAgent,backendContext,isCollector:request=>Boolean(credential(request)),archiveReader,diagnostics,evidenceReader});
   const applyExecution=(value:ExecutionSettingsValue)=>executionPlatform.refreshSettings(executionSettingsSchema.strip().parse(value));
   configService.setHandler<ExecutionSettingsValue>('execution',(next,previous)=>({apply:()=>{},publish:()=>applyExecution(next),rollback:()=>{applyExecution(previous);memoryPipeline.wake();},complete:()=>memoryPipeline.wake()}));
   configService.setHandler<DiagnosticsSettingsValue>('diagnostics',next=>diagnostics.prepareConfiguration(diagnosticsSettingsSchema.strip().parse(next)));
@@ -630,7 +629,6 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const withAgentTools=(route:FeatureRoute):FeatureRoute=>({...route,mount:(app,scope)=>{route.mount(app,scope);scope.defer(()=>agentFeatures.dispose(route.id));}});
   const domain=(id:string,extra?:(app:FastifyInstance,scope:import('./features/index.js').FeatureScope)=>void):FeatureRoute=>withAgentTools({id,mount:(app,scope)=>{domainRoutes[id]?.mount(app,scope);extra?.(app,scope);}});
   const notesCapture:NotesCapture={authority:authorizationPlatform,route:{request:(request:FastifyRequest)=>pins.get(request)},intake:captureIntake.ports.captureIntake};
-  if(selected('mote.activity'))routes.push(domain('mote.activity'));
   if(selected('mote.files'))routes.push(withAgentTools(filesFeature({withMediaOwnerBatch,withMediaOwnerIntent,processing,ingress,sourceOwner,credential,evidenceReader,diagnostics,setPlaybackAuthorization:authorize=>{playbackAuthorization=authorize;},filesSource:{playback:filesPlayback}})));
   if(selected('mote.connections'))routes.push(withAgentTools(connectionsFeature({config,connections,connectionIdentity,serverVersion})));
   if(selected('mote.connections'))routes.push(developerAccessFeature({host:developerAccess,credential,connectionIdentity}));
@@ -654,17 +652,16 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     const order=bootstrap.features.indexOf(route.id),at=routes.findIndex(entry=>bootstrap.features.indexOf(entry.id)>order);
     routes.splice(at<0?routes.length:at,0,domain(route.id,(app,scope)=>route.mount(app,scope)));
   }
-  if(selected('mote.agent-view'))routes.push(domain('mote.agent-view'));
   if(selected('mote.features'))routes.push(inventoryFeature(()=>bootstrap.featureInventory([...featureRoutes.contributions(),...agentFeatures.contributions(),...connectors.contributions()])));
   await installFeatureRoutes(featureRoutes,routes);
   resources.defer(()=>memoryTopics.close());
   await configurationPlatform.start();
   diagnostics.record('server.started');
-  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,activityServices,memoryPublication,memoryPhasePipeline,resources,diagnostics});
+  installServerLifecycleHooks(app,{lifecycle:serverLifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,memoryPublication,memoryPhasePipeline,resources,diagnostics});
   // Rebuilding built-in registrations before readers exist is not a change.
   // Shutdown disables notifications before any registration is disposed.
   catalogChangesEnabled=true;
-  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,assistantRoutines,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,automaticActivity,configService,featureServices,featureRoutes,get insightServices(){return workDomains.insightServices;},materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,get actions(){return workDomains.actions;},get actionsServices(){return workDomains.actionsServices;},store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,get insightRuns(){return workDomains.insightRuns;},lifecycle,working,activity,activityServices,conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
+  return {app,bootstrap,batchProcessing,assistantTasks,assistantChanges,assistantRoutines,sourceIntegration,startSourceIntegration,configurationPlatform,observabilityPlatform,observabilityScope,observabilityAssembly,executionPlatform,authorizationPlatform,captureIntake,liveRequestPins:()=>liveRequestPins,filesPlatform,sourceRuntime,notesSource,evidenceContext,modelAuthorization,modelAuthorizationHost,get automaticActivity(){return workDomains.automaticActivity;},configService,featureServices,featureRoutes,get insightServices(){return workDomains.insightServices;},materialContext,pluginCenter,memoryBindings,memoryAdapters,memoryPublication,memoryPublicationService,memoryAutomation,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,memoryStrategySettings,processingServices,sourcePipelines,executor,workflows,perception,get actions(){return workDomains.actions;},get actionsServices(){return workDomains.actionsServices;},store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,importServices,memoryPipeline,indexer,agent,diagnostics,connections,developerAccess,modelSettings,get insightRuns(){return workDomains.insightRuns;},lifecycle,working,get activity(){return workDomains.activity;},get activityServices(){return workDomains.activityServices;},conversations,assistantDrafts,delegation,queryRuns,queryRunServices,queryServices:queryRuntimeServices,query};
   }catch(error){
     const failures:unknown[]=[];
     await resources.stop();

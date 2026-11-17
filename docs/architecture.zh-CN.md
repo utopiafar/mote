@@ -30,6 +30,8 @@ flowchart LR
 
 中央装配入口为 [host.ts](../apps/server/src/host.ts)；具体领域与插件从现有 assembly、features 和 plugins 接入。扩展复用现有 SDK、模型与任务基础，接口和实现按实际需求迭代。
 
+Activity通过可执行的[activity-services声明](../apps/server/src/plugins/activity-services.ts)和现有PluginHost领域装载器启用；同时选中feature与plugin时才打开投影、后续采集hook、自动理解handler及轮询。未选不创建这些资源，Memory、Query与执行事实仍归各自所有者。13条Activity Memory订阅改为当前连接拥有的SQLite TEMP触发器，关闭即撤回，重新选中只从原任务事实重建可丢弃投影。打开旧profile时先撤回已知的持久Activity订阅，保留历史表和原有产品。Agent View有独立只读声明；Activity通过当前QueryRuns元数据lease读取委派工作，不接收私有payload或回答。其他领域装配与私有持久化适配仍为后续范围。
+
 ## 技术底座
 
 - Central 使用 Node.js / TypeScript 与 Fastify，Web 使用 React；Mac 使用 Electron 与原生辅助程序，Android 使用 Kotlin 原生客户端。
