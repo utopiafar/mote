@@ -16,6 +16,7 @@ import {MaterialStore} from '../src/materials.js';
 import {Operations} from '../src/operations.js';
 import {Store} from '../src/store.js';
 import {UsageLedger} from '../src/usage.js';
+import {createAgentViewServices,type AgentViewRouteDependencies} from '../src/plugins/agent-view-routes.js';
 import {createActivityServices,createActivityServicesFactory,activityServicesContribution,type ActivityServicesDependencies} from '../src/plugins/activity-services.js';
 
 const at='2026-11-04T10:00:00.000Z';
@@ -35,22 +36,17 @@ function configuration(initial:Partial<ActivityConfiguration>={}):ConfigService 
     },
   } as unknown as ConfigService;
 }
-function fixture(t:TestContext){
+function fixture(t:TestContext,beforeClose?:()=>Promise<void>){
   const directory=mkdtempSync(join(tmpdir(),'mote-activity-services-')),store=new Store(directory),engine=new ExecutionEngine(store),operations=new Operations(store),materials=new MaterialStore(store);
-  const counts={registrations:0,releases:0};
+  const counts={registrations:0,releases:0},diagnostics=new ServerDiagnostics({directory,enabled:false});
   const register=engine.register.bind(engine);
   engine.register=(handler:ExecutionHandler)=>{counts.registrations++;const release=register(handler);return async()=>{await release();counts.releases++;};};
-  t.after(async()=>{await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
-  return {store,engine,operations,materials,counts};
+  t.after(async()=>{await beforeClose?.();await diagnostics.close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  return {store,engine,operations,materials,counts,diagnostics};
 }
 function dependencies(f:ReturnType<typeof fixture>,calls:QueryInput[],options:{during?:()=>Promise<void>}={}):ActivityServicesDependencies{
   return {
     store:f.store,operations:f.operations,materials:f.materials,executor:f.engine,config:configuration(),isCollector:()=>false,pollIntervalMs:60_000,
-    agentView:{
-      archiveReader:{} as unknown as ContextReader,
-      diagnostics:{snapshot:()=>({lastSeq:0,agentTrace:{enabled:false}}),events:()=>({items:[],nextSeq:0,oldestSeq:null})},
-      evidenceReader:{artifact:()=>undefined},
-    },
     options:{
       query:async(input:QueryInput):Promise<QueryResult>=>{
         calls.push(input);await options.during?.();
@@ -63,6 +59,11 @@ function dependencies(f:ReturnType<typeof fixture>,calls:QueryInput[],options:{d
     },
   };
 }
+function viewDependencies(f:ReturnType<typeof fixture>):AgentViewRouteDependencies{return {
+  archiveReader:{} as unknown as ContextReader,
+  diagnostics:f.diagnostics,
+  evidenceReader:{artifact:()=>undefined},
+};}
 function services(f:ReturnType<typeof fixture>,calls:QueryInput[],options:{during?:()=>Promise<void>}={}){
   return createActivityServices(dependencies(f,calls,options));
 }
@@ -70,17 +71,17 @@ test('repeated stop and start keeps one poll, one handler and one set of durable
   const f=fixture(t),calls:QueryInput[]=[],service=services(f,calls);
   const originalSetInterval=globalThis.setInterval,originalClearInterval=globalThis.clearInterval,polls=new Set<ReturnType<typeof setInterval>>();
   let timers=0,cleared=0;
-  globalThis.setInterval=((handler:TimerHandler,timeout?:number,...args:unknown[])=>{const handle=originalSetInterval(handler,timeout,...args);if(timeout===60_000){timers++;polls.add(handle);}return handle;}) as typeof setInterval;
+  globalThis.setInterval=((handler:TimerHandler,timeout?:number,...args:unknown[])=>{const handle=originalSetInterval(handler,timeout,...args);if(timeout===60_000){timers++;polls.add(handle as unknown as ReturnType<typeof setInterval>);}return handle;}) as typeof setInterval;
   globalThis.clearInterval=((handle:ReturnType<typeof setInterval>)=>{if(polls.delete(handle))cleared++;return originalClearInterval(handle);}) as typeof clearInterval;
   t.after(()=>{globalThis.setInterval=originalSetInterval;globalThis.clearInterval=originalClearInterval;});
   service.prepare();service.start();service.start();
   assert.equal(timers,1,'an active start never creates a second poll');
   assert.equal(f.counts.registrations,1);
-  const app=Fastify();app.setErrorHandler((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));t.after(()=>app.close());
-  service.routes(app);service.agentViewRoutes(app);await app.ready();
+  const app=Fastify();app.setErrorHandler<Error>((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));t.after(()=>app.close());
+  service.routes(app);const view=createAgentViewServices(viewDependencies(f));view.prepare();view.start();view.routes(app);await app.ready();
   assert.equal((await app.inject({url:'/api/work-activity'})).statusCode,200);
   assert.equal((await app.inject({url:'/api/processing/activity'})).statusCode,200);
-  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,200,'the Agent view is part of the activity route table');
+  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,200,'the Agent view has its own read-only route owner');
   const first=screen();await f.store.ingest(first);
   const steps=()=>Number(f.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='activity.understand'").get()!.n);
   assert.equal(steps(),1);
@@ -88,7 +89,8 @@ test('repeated stop and start keeps one poll, one handler and one set of durable
   service.quiesce('shutdown');
   assert.equal(cleared,1,'quiesce stops the poll');
   assert.equal((await app.inject({url:'/api/work-activity'})).statusCode,503);
-  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,503);
+  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,200,'stopping Activity leaves the independent Agent view usable');
+  view.quiesce();assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,503,'the read-only view still has its own activation fence');
   assert.equal((await app.inject({method:'PUT',url:'/api/processing/activity',payload:{revision:4,settings:{enabled:true,modelProfileId:profile}}})).statusCode,503);
   const ignored=screen();await f.store.ingest(ignored);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM activity_intake_receipts WHERE capture_id=?').get(ignored.id)!.n,0,'quiesce stops prospective admission');
@@ -98,7 +100,8 @@ test('repeated stop and start keeps one poll, one handler and one set of durable
   assert.equal(f.counts.registrations,2);assert.equal(f.counts.releases,1);
   assert.equal(timers,2,'a fresh activation starts exactly one replacement poll');
   assert.equal((await app.inject({url:'/api/work-activity'})).statusCode,200,'the same route table resumes without remounting');
-  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,200,'the Agent view resumes on the same activity activation');
+  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,503,'restarting Activity cannot re-enable the Agent view');
+  view.start();assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,200);
   assert.equal((await app.inject({method:'PUT',url:'/api/processing/activity',payload:{revision:4,settings:{enabled:true,modelProfileId:profile}}})).statusCode,200);
   const second=screen();await f.store.ingest(second);
   assert.equal(steps(),2,'only the new capture adds a durable activity task');
@@ -157,10 +160,10 @@ test('the Agent view reads only actual execution traces with status, time, meter
   const diagnostics=new ServerDiagnostics({directory,traceEnabled:true});
   t.after(async()=>{await diagnostics.close();rmSync(directory,{recursive:true,force:true});});
   await diagnostics.init();
-  const base=dependencies(f,calls),service=createActivityServices({...base,agentView:{...base.agentView,diagnostics}});
+  const service=createAgentViewServices({...viewDependencies(f),diagnostics});
   service.prepare();service.start();
-  const app=Fastify();app.setErrorHandler((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));
-  t.after(()=>app.close());service.agentViewRoutes(app);await app.ready();
+  const app=Fastify();app.setErrorHandler<Error>((error,_request,reply)=>reply.code(error.name==='ZodError'?400:(error as {statusCode?:number}).statusCode??500).send({error:error.message}));
+  t.after(()=>app.close());service.routes(app);await app.ready();
   // A declared execution step that has not run is not a recorded Agent run.
   f.engine.register({kind:'fixture.declared',pool:'fixture.declared',concurrency:()=>1,validate:()=>true,execute:async()=>({generated:true}),commit:()=>{}});
   f.engine.enqueue('workflow:generated-declared','fixture.declared',{generated:true});
@@ -205,11 +208,76 @@ test('the host factory owns the same activity service and defers its disposal',a
   assert.equal(activityServicesContribution.id,'activity-services');
   const lifecycle=createActivityServicesFactory(dependencies(f,calls))({scope:{defer:(dispose:()=>unknown)=>deferred.push(dispose)}} as unknown as HostPluginContext);
   lifecycle.prepare();lifecycle.start();
-  const app=Fastify();t.after(()=>app.close());lifecycle.routes(app);lifecycle.agentViewRoutes(app);await app.ready();
+  const app=Fastify();t.after(()=>app.close());lifecycle.routes(app);await app.ready();
   assert.equal((await app.inject({url:'/api/work-activity'})).statusCode,200);
-  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,200);
+  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,404,'the activity factory mounts only its own domain');
   await lifecycle.dispose();
   assert.equal(deferred.length,1);
   assert.equal((await app.inject({url:'/api/work-activity'})).statusCode,503,'disposing the activation fences the mounted route');
-  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,503,'the Agent view shares the same activation fence');
+  assert.equal((await app.inject({url:'/api/agent-view/runs'})).statusCode,404);
+});
+
+test('a second Activity owner on the same connection cannot replace the live subscriptions and a stopped owner can release them for its successor',async t=>{
+  let first:ReturnType<typeof services>|undefined,second:ReturnType<typeof services>|undefined;
+  const f=fixture(t,async()=>{await first?.close();await second?.close();}),calls:QueryInput[]=[];first=services(f,calls);second=services(f,calls);
+  first.prepare();first.start();
+  const subscriptions=f.store.db.prepare("SELECT name,sql FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*' ORDER BY name").all();assert.equal(subscriptions.length,13);
+  assert.throws(()=>second.prepare(),{statusCode:409});
+  assert.deepEqual(f.store.db.prepare("SELECT name,sql FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*' ORDER BY name").all(),subscriptions);
+  assert.deepEqual(f.counts,{registrations:1,releases:0});
+  await f.store.ingest(screen());await first.tick();assert.equal(calls.length,1);
+  await first.stop('disabled');second.prepare();second.start();
+  await first.close();
+  assert.equal(f.store.db.prepare("SELECT count(*) n FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*'").get()!.n,13,'late disposal of the previous owner leaves its successor intact');
+  await f.store.ingest(screen());await second.tick();assert.equal(calls.length,2);assert.deepEqual(f.counts,{registrations:2,releases:1});
+});
+
+test('concurrent and reentrant stops share the real drain before restart, and the next activation owns a fresh stop',{timeout:15000},async t=>{
+  const gates=Array.from({length:2},()=>{let enter!:()=>void,release!:()=>void;return {entered:new Promise<void>(resolve=>enter=resolve),held:new Promise<void>(resolve=>release=resolve),enter:()=>enter(),release:()=>release()};});
+  let service:ReturnType<typeof services>|undefined;
+  const work:Promise<unknown>[]=[],reentered:Promise<void>[]=[],calls:QueryInput[]=[];
+  const f=fixture(t,async()=>{gates.forEach(gate=>gate.release());await Promise.allSettled(work);await service?.close();});
+  service=services(f,calls,{during:async()=>{const gate=gates[calls.length-1];if(gate){gate.enter();await gate.held;}}});
+  service.prepare();service.start();
+  const automatic=service.automaticActivity,stop=automatic.stop.bind(automatic),close=automatic.close.bind(automatic);let closes=0;
+  automatic.stop=()=>{reentered.push(service!.stop('disabled') as Promise<void>);stop();};
+  automatic.close=()=>{closes++;return close();};
+  const subscriptions=()=>Number(f.store.db.prepare("SELECT count(*) n FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*'").get()!.n);
+  await f.store.ingest(screen());const firstTick=service.tick();work.push(firstTick);await gates[0].entered;
+  const first=service.stop('disabled') as Promise<void>,second=service.stop('disabled') as Promise<void>;work.push(first,second);
+  assert.equal(first,second,'every caller joins the published physical drain');
+  assert.ok(reentered.length>0);assert.ok(reentered.every(operation=>operation===first),'synchronous cleanup reentry observes the same already-published barrier');
+  assert.equal(calls[0].signal?.aborted,true);assert.throws(()=>service!.start(),{statusCode:503});
+  assert.equal(await Promise.race([second.then(()=>'stopped'),new Promise<string>(resolve=>setImmediate(()=>resolve('draining')))]),'draining','stop cannot finish while its actual old model is held');
+  gates[0].release();await Promise.all([firstTick,first,second]);
+  assert.equal(closes,1);assert.equal(f.materials.list({kind:'mote.activity'}).items.length,0,'the late old model cannot publish');
+  assert.deepEqual(f.counts,{registrations:1,releases:1});
+  service.start();assert.equal(subscriptions(),13);assert.ok(service.activity);
+  await f.store.ingest(screen());const secondTick=service.tick();work.push(secondTick);await gates[1].entered;
+  const third=service.stop('disabled') as Promise<void>,fourth=service.stop('disabled') as Promise<void>;work.push(third,fourth);
+  assert.notEqual(third,first,'a restarted activation has a fresh physical stop operation');assert.equal(third,fourth);
+  assert.equal(await Promise.race([fourth.then(()=>'stopped'),new Promise<string>(resolve=>setImmediate(()=>resolve('draining')))]),'draining','the fresh stop does not reuse the prior resolved promise');
+  gates[1].release();await Promise.all([secondTick,third,fourth]);
+  assert.equal(f.materials.list({kind:'mote.activity'}).items.length,0);assert.deepEqual(f.counts,{registrations:2,releases:2});
+  service.start();assert.equal(subscriptions(),13);assert.ok(service.activity,'the explicit successor remains current after both older drains');
+});
+
+test('close is published before synchronous cleanup reentry and retains the actual cleanup failure once',{timeout:15000},async t=>{
+  const failure=Error('Generated Activity unregister failure'),calls:QueryInput[]=[],reentered:Promise<void>[]=[],reenteredStops:Promise<void>[]=[];
+  const contains=(error:unknown):boolean=>error===failure||error instanceof AggregateError&&error.errors.some(contains);
+  let service:ReturnType<typeof services>|undefined;let observed=false;
+  const f=fixture(t,async()=>{if(service&&!observed)await service.close().catch(()=>{});});service=services(f,calls);service.prepare();service.start();
+  const automatic=service.automaticActivity,close=automatic.close.bind(automatic);let closes=0;
+  automatic.close=()=>{
+    closes++;reentered.push(service!.close());reenteredStops.push(service!.stop('disabled') as Promise<void>);
+    return close().then(()=>{throw failure;});
+  };
+  const first=service.close(),second=service.close(),disposed=service.dispose() as Promise<void>;
+  assert.equal(second,first);assert.equal(disposed,first);assert.equal(reentered[0],first,'a synchronous disposer sees the cached close before it can reenter');
+  assert.equal(reenteredStops.length,1);
+  await assert.rejects(first,contains);await assert.rejects(second,contains);await assert.rejects(disposed,contains);await assert.rejects(reenteredStops[0],contains);
+  assert.equal(service.close(),first);await assert.rejects(service.stop('disabled') as Promise<void>,contains);observed=true;
+  assert.equal(closes,1,'the failing physical cleanup never runs twice');assert.deepEqual(f.counts,{registrations:1,releases:1});
+  assert.equal(f.store.db.prepare("SELECT count(*) n FROM sqlite_temp_master WHERE type='trigger' AND name GLOB 'activity_memory_*'").get()!.n,0);
+  assert.throws(()=>service!.activity,{statusCode:503});assert.throws(()=>service!.start(),{statusCode:503});
 });

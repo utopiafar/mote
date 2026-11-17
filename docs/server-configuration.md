@@ -48,6 +48,16 @@ storage:
 
 完整字段、默认值和生效元数据以[配置注册](../apps/server/src/config.ts)和已认证配置视图为准。
 
+### 宿主登记的插件领域输入
+
+Server 内现有 [ConfigurationPlatform](../apps/server/src/plugins/configuration-platform.ts) 的 `registerDomain` 与 `ConfigService.registerPlugin` 要求注册方显式提供 `updatePaths`。它声明接受的原始输入路径，不从 Zod 内部结构、默认值或变换后的输出猜测；这不是新增的外部 SDK 导出。字段值、跨字段约束和完整有效候选仍由原 schema 校验，`fields` 继续表达原有字段元数据、敏感性与生效方式。
+
+路径采用现有点分段写法，例如 `['enabled', 'nested.label', 'profiles.*.limit']`。中间的 `*` 匹配一个对象键或数组成员；末尾 `*` 明确开放该值的整个子树，例如 `headers.*` 或 `options.*`，不能用它代替本应关闭的嵌套对象字段声明。字面路径只允许该输入和通向它的容器，不开放其他后代。记录键可含点，由其父级通配符匹配；数组仍只接受正常索引。
+
+分支输入可提供 `(input: unknown) => readonly string[]`，从完整、尚未解析的原始候选选择该分支的路径，不能把不同 union 分支的路径合并开放。选择函数只读候选数据，保持确定性，不调用 schema、resolver 或产生副作用；完整替换使用现有 `replace` 操作删除旧分支键，增量 `update` 保留合并语义。
+
+API 编辑和文件重载先检查声明的原始路径，再进入 resolver、raw validator、preprocess/transform 与事务。未知路径不会进入这些回调。可选 `rawInputSchema` 仍用于独立输入验证及输入类型；它的默认值和变换结果不写入 YAML，原 schema 的输出也不反向覆盖输入。当前合同不再通过 Zod `_def` 判断预处理器是否透明：没有路径声明的公共注册会拒绝；声明完整时，opaque 预处理器同样受输入路径和完整 schema 校验。原 revision、凭据引用、prepare/publish、应用失败状态和 restart 字段规则保持不变。
+
 ## 任务快照与权限
 
 revision是编辑版本，不是所有任务的内容版本。文件处理依实际服务、参数、处理器及输入生成指纹；相关变化拒绝旧结果，无关预设变化不使任务失效。已完成结果不因改设置自动重做，需显式重处理。

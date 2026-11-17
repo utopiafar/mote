@@ -49,7 +49,7 @@ export function createDomainActivations(host:PluginHost,plugins:readonly Central
         if(errors.length)throw new AggregateError(errors,message);
       };
       let quiescing:Promise<void>|undefined,closing:Promise<void>|undefined;
-      const quiesce=()=>closing??(quiescing??=visitHandles(handle=>handle.quiesce('shutdown'),'Domain quiescence failed'));
+      const quiesce=()=>closing??(quiescing??=visitHandles(handle=>handle.signal.aborted?Promise.resolve():handle.quiesce('shutdown'),'Domain quiescence failed'));
       const close=()=>closing??=(async()=>{
         const errors:unknown[]=[];
         // Finish an accepted pass before disposal makes its remaining provider

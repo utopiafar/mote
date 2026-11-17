@@ -6,7 +6,7 @@ import {centralServices} from '../plugins/central-contracts.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {createConversations,createConversationsFactory,createConversationRoutes,conversationsContribution,conversationsDeclaration,conversationsReplacement,type ConversationsBindings} from '../plugins/conversations.js';
 import {createQueryRuntimeFactory,createQueryRuntimePlatform,queryRuntimeContribution,queryRuntimeDeclaration,queryRuntimeReplacement,type QueryRuntimeDependencies,type QueryRuntimeServices,type QueryRuntimeStarted} from '../plugins/query-runtime.js';
-import {createQueryRunsFactory,createQueryRunsPlatform,queryRunsContribution,queryRunsDeclaration,queryRunsReplacement,type QueryRunDependencies,type QueryRunsStarted} from '../plugins/query-runs.js';
+import {createQueryRunsFactory,createQueryRunsPlatform,queryRunsContribution,queryRunsDeclaration,queryRunsReplacement,queryWorkMetadataContract,type QueryRunDependencies,type QueryRunsStarted} from '../plugins/query-runs.js';
 import {registerQueryRunRoutes} from '../features/ask/query-runs.js';
 import {registerAssistantCommandRoutes} from '../features/ask/assistant-commands.js';
 import type {AssistantDrafts} from '../assistant-drafts.js';
@@ -96,5 +96,7 @@ export async function prepareQueryRuns(dependencies:QueryRunsAssemblyDependencie
     conversations:dependencies.conversations,conversationQueue:()=>platform.conversationQueue,
   })}});
   contributeDomainRoutes(dependencies.backendContext,{'mote.ask':{mount:(app:FastifyInstance)=>registerAssistantCommandRoutes(app,dependencies.assistantDrafts,dependencies.assistantTasks,dependencies.assistantOwner,dependencies.assistantRoutines)}});
-  return Object.freeze({delegation:started!.delegation,queryRuns:started!.queryRuns,queryRunServices:platform});
+  const metadata=await dependencies.bootstrap.host.acquire(queryWorkMetadataContract,started!.metadata);
+  dependencies.resources.defer(()=>metadata.release());
+  return Object.freeze({delegation:started!.delegation,queryRuns:started!.queryRuns,queryRunServices:platform,metadata});
 }

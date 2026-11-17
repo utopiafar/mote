@@ -117,29 +117,9 @@
       "fingerprint": "865b3cd66e94248b7cfcd995711deda3c152397147eded9e4a6ea9742e1a8981"
     },
     {
-      "type": "trigger",
-      "name": "activity_memory_batch_delete",
-      "fingerprint": "3e5ed3717c2b2ebfbf11382971af68485ea068d29367e413d2082d6fdde24348"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_batch_insert",
-      "fingerprint": "a550dc1b6b2d8114e96e6fb5e6827fc817b576d7de1236d582646988511e1c74"
-    },
-    {
       "type": "index",
       "name": "activity_memory_batch_jobs",
       "fingerprint": "c238a1c9c1834cd66568e0379d50c7483bc93806e0d4f336df1dba8ebd419cbc"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_batch_outputs_update",
-      "fingerprint": "d19ae4ad15dfa8a35d382ce1fa8bb0b19696b1111b039d19519ee39fbe83f07e"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_batch_update",
-      "fingerprint": "2050ad2028b5502b9066c34428d8aab4005aeb2533f02949c9a6f8c3b125e9cf"
     },
     {
       "type": "table",
@@ -150,11 +130,6 @@
       "type": "index",
       "name": "activity_memory_continuation_roots",
       "fingerprint": "64f1551c37e92f600b70bb8aa8e74fc83fabd15967ac04fea72ff88f803599b7"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_continuation_update",
-      "fingerprint": "d5b246328d0d6155fdc9bf7bd1e3d33d44de52819a1d0fc46a2b7d8b6d2af9f6"
     },
     {
       "type": "table",
@@ -182,31 +157,6 @@
       "fingerprint": "f6403375867836e6adc4ad4999c2f39b431ceaf4aef824ca64a63e3274ada9c1"
     },
     {
-      "type": "trigger",
-      "name": "activity_memory_items_update",
-      "fingerprint": "32b115b3491ea1c5b68e7d78ffb27c86333e641f92c4f8a22f3bf0dcb9ad9a5f"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_job_delete",
-      "fingerprint": "660eefea78bf506afa4d13329db3be75dad75bc56a8b0269bf0d587c9b24207f"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_job_insert",
-      "fingerprint": "99582006170e8e011fc38385efac2d26ec1f83de89dde298107f1d96c321ed02"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_job_sources_update",
-      "fingerprint": "4433a8b4e9d2c24a6ebbf465515338194536e475c7ca06f9daa768d8e7141114"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_job_update",
-      "fingerprint": "58aa926eb15c8d1e80c4a5b6880d16ce2bd549b3370408b5ea15a3b2869a0a4d"
-    },
-    {
       "type": "table",
       "name": "activity_memory_jobs",
       "fingerprint": "c32e95b9cda20fa4e3634e65fdc45733b0802d42f98268c4962bc3a96acd75bc"
@@ -225,21 +175,6 @@
       "type": "table",
       "name": "activity_memory_outputs",
       "fingerprint": "dfaff62bf1162a3b0957c685221119417961c89f99237ae8134a6546827495ee"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_outputs_update",
-      "fingerprint": "8fb6c8d31b2e02d7c6d9043953d7625b7559bbc1717e6da50a46ed82147bce43"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_source_delete",
-      "fingerprint": "5f0c27e808bcefeb3652876f7638d371f62499d084f5b573462605e04b5a964e"
-    },
-    {
-      "type": "trigger",
-      "name": "activity_memory_source_insert",
-      "fingerprint": "07d3f25a24d25d12b1d8aa3ffd6b079aaa458a4e8db5a7b1368919afb9918f5f"
     },
     {
       "type": "index",

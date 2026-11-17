@@ -20,7 +20,7 @@ import {advancedBrowser} from '../../web/test/advanced-web-contract.js';
 import {ImportQueue} from '../../web/src/plugins/intake/import-queue.js';
 import {ImportQueueDetail} from '../../web/src/plugins/intake/ImportQueueEntry.js';
 import {createApi,ApiError} from '../../web/src/api.js';
-import {verifiedBackup,restoreProfile} from '../../../scripts/profile-lib.mjs';
+import {verifiedBackup,restoreProfile,repository} from '../../../scripts/profile-lib.mjs';
 
 const run=promisify(execFile),PART=FILE_PART_BYTES;
 async function digest(parts:AsyncIterable<Uint8Array>|Iterable<Uint8Array>){const hash=createHash('sha256');let size=0;for await(const part of parts){size+=part.length;hash.update(part);}return {size,sha256:hash.digest('hex')};}
@@ -91,6 +91,6 @@ test('one real original above 512 MiB survives Desktop resume, both archive entr
  }finally{queue?.close();await browser.close();}
  assert.ok((await readdir(join(f.node.store.assets.directory,expected.sha256))).every(name=>/^\d+\.(plain|aes)$/.test(name)),'worker metadata is not part of the persistent asset format');assert.equal((await stat(sourcePath)).size,size);assert.equal(f.modelCalls,0);
  const data=f.data,backup=join(f.directory,'backup'),restored=join(f.directory,'restored');await f.stop();
- await run(process.execPath,[fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',data,'--out',backup],{timeout:30000});await verifiedBackup(backup);await restoreProfile({meta:{runtime:'native'},dataDir:restored,processFile:join(f.directory,'absent-process.json')},backup);await f.restart(restored);
+ await run(process.execPath,[fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',data,'--out',backup],{timeout:30000});await verifiedBackup(backup);await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:restored,processFile:join(f.directory,'absent-process.json')},backup);await f.restart(restored);
  const response=await f.raw('/api/files/'+archived.captureId+'/content');assert.equal(response.status,200);assert.deepEqual(await digest(response.body!),expected);assert.equal(f.modelCalls,0);
 });

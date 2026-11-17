@@ -225,7 +225,7 @@ async function profileBackupRestore(checks: Check[]) {
     assert.equal(stopped.code, 0);
 
     command(process.execPath, ['--import', 'tsx', 'scripts/backup.ts', '--data', first.dataDir, '--out', snapshot]);
-    const restore = `import {restoreProfile} from ${JSON.stringify(pathToFileURL(join(repository, 'scripts/profile-lib.mjs')).href)};await restoreProfile({meta:{runtime:'native'},dataDir:${JSON.stringify(restoredData)},processFile:${JSON.stringify(join(work, 'absent-process'))}},${JSON.stringify(snapshot)});`;
+    const restore = `import {restoreProfile,repository} from ${JSON.stringify(pathToFileURL(join(repository, 'scripts/profile-lib.mjs')).href)};await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:${JSON.stringify(restoredData)},processFile:${JSON.stringify(join(work, 'absent-process'))}},${JSON.stringify(snapshot)});`;
     command(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', restore]);
 
     second = await createPrivateProcess({dataDir: restoredData, healthTimeoutMs: 30000});

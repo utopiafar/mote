@@ -14,7 +14,7 @@ import {FileStore} from '../src/files.js';
 import {SourceStore} from '../src/sources.js';
 import {SourceArchive,archiveHash} from '../src/source-archive.js';
 import {ImportStore,type ImportPreparation} from '../src/imports.js';
-import {restoreProfile,verifiedBackup} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,verifiedBackup,repository} from '../../../scripts/profile-lib.mjs';
 
 const backupScript=fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url));
 const takeBackup=(source:string,snapshot:string)=>execFileSync(process.execPath,[backupScript,'--data',source,'--out',snapshot],{stdio:'pipe'});
@@ -29,7 +29,7 @@ test('restored import rebases all paths and replays a partial import without los
  const partial=await imports.confirm(job.id);assert.equal(partial.progress.processed,1);const oldWorkspace=join(originalDirectory,'imports',job.id);writeFileSync(join(oldWorkspace,'generated-secret-script.mjs'),'synthetic original marker');
  const completed=await imports.create({files:[{name:'completed.txt',dataBase64:Buffer.from('another synthetic source').toString('base64')}]});await imports.prepare(completed.id);await imports.confirm(completed.id);
  execFileSync(process.execPath,[fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',originalDirectory,'--out',snapshot]);
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process.json')},snapshot);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'missing-process.json')},snapshot);
  restored=new Store(target,{dataKey:'ab'.repeat(32)});const resumedIds:string[][]=[];
  const resumed=new ImportStore(restored,new ArchivedFileStore(restored),new SourceStore(restored),{prepare:async input=>{assert.ok(input.workspace.startsWith(target+'/imports/'));assert.ok(input.inputPaths.every(path=>path.startsWith(target+'/imports/')));assert.equal(readFileSync(input.inputPaths[0],'utf8'),'synthetic source');return parser(input);},onImported:async ids=>{resumedIds.push(ids);return {memoryJobId:'resumed-memory'};}});
  cleanup.push(()=>resumed.stop());const restoredJob=resumed.get(job.id);assert.equal(restoredJob.status,'queued');assert.equal(restoredJob.processingStatus,'archived');assert.equal(restoredJob.progress.processed,0);assert.deepEqual(restoredJob.captureIds,partial.captureIds);await assert.rejects(resumed.confirm(job.id),{statusCode:409});
@@ -56,7 +56,7 @@ test('current backups omit the retired empty blob directory and native snapshots
  assert.equal(existsSync(join(snapshot,'blobs')),false);
  assert.equal(Object.keys(manifest.checksums).some(name=>/hindsight/i.test(name)),false);
  assert.equal(manifest.checksums[providerFile],sha256(providerBody));
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process.json')},snapshot);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'missing-process.json')},snapshot);
  const verify=(store:Store)=>{assert.equal(new ArchivedFileStore(store).read(file.id).toString(),'Generated backup roundtrip');assert.equal(new SourceStore(store).history('generated-backup-source','generated-note')[0]?.captureId,retained.id);assert.equal(readFileSync(join(target,providerFile),'utf8'),providerBody);};
  restored=new Store(target);verify(restored);restored.close();restored=undefined;
  reopened=new Store(target);verify(reopened);
@@ -95,7 +95,7 @@ for(const mode of ['plain','encrypted','mixed'] as const)test(`${mode} backup re
  assert.match(manifest.note,/content-key/);assert.match(manifest.note,/MOTE_DATA_KEY/);
  // Backups preserve the selected stored bytes, never decode/re-encode or need the key.
  for(const path of Object.keys(manifest.checksums).filter(path=>path.startsWith('files/')))assert.deepEqual(readFileSync(join(snapshot,path)),readFileSync(join(source,path)));
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'none')},snapshot);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'none')},snapshot);
  restored=new Store(target,{dataKey:key});const restoredSources=new SourceStore(restored),restoredArchived=new ArchivedFileStore(restored),restoredFiles=new FileStore(restored,restoredSources),restoredImports=new ImportStore(restored,restoredArchived,restoredSources);
  cleanup.push(()=>restoredImports.stop());assert.equal(restoredArchived.read(imported.files[0].id).toString('utf8'),'Synthetic imported original');assert.equal(restoredImports.get(imported.id).status,'queued');
  if(plainOriginal)assert.equal(restoredArchived.read(plainOriginal.id).toString(),'Generated plaintext after opt-out');
@@ -113,7 +113,7 @@ test('a generated content-key stays separate from backups and restores encrypted
  original.contentEncryption.setEnabled(false);takeBackup(source,snapshot);
  const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8'));
  assert.equal(existsSync(join(snapshot,'content-key')),false);assert.equal(Object.hasOwn(manifest.checksums,'content-key'),false);
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'none')},snapshot);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'none')},snapshot);
  assert.throws(()=>new Store(target),/key mismatch/);
  copyFileSync(join(source,'content-key'),join(target,'content-key'));
  restored=new Store(target);assert.equal(restored.contentEncryption.enabled,false);
@@ -141,7 +141,7 @@ test('format-aware backups reject unsafe preferred variants and remove incomplet
 test('restore format allowlist rejects traversal, credentials, unsupported suffixes and linked files',async t=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-backup-manifest-'))),hash='ab'.repeat(32),database=Buffer.from('Generated manifest validation fixture');
  t.after(()=>rmSync(root,{recursive:true,force:true}));writeFileSync(join(root,'mote.sqlite'),database);
- for(const name of [`files/${hash}.plain/../content-key`,`files/${hash}.aes.tmp`,`blobs/${hash}.plain`,`blobs/${hash}`,`files/${hash}.plain`,`files/objects/${hash}/0`,`files/objects/${hash}/128.aes`,`files/objects/${hash}/00.plain`,`source-archive/${hash}/manifest.plain`,'content-key']){
+ for(const name of [`files/${hash}.plain/../content-key`,`files/${hash}.aes.tmp`,`blobs/${hash}.plain`,`blobs/${hash}`,`files/${hash}.plain`,`files/objects/${hash}/0`,`files/objects/${hash}/9007199254740992.aes`,`files/objects/${hash}/00.plain`,`source-archive/${hash}/manifest.plain`,'content-key']){
    writeFileSync(join(root,'backup-manifest.json'),JSON.stringify({version:1,storageEpoch:7,checksums:{'mote.sqlite':sha256(database),[name]:sha256(database)}}));
    await assert.rejects(verifiedBackup(root),/Unsafe backup manifest entry/);
  }
@@ -181,7 +181,7 @@ for(const encrypted of [false,true])test(`${encrypted?'encrypted':'plain'} curre
  original.db.exec('BEGIN IMMEDIATE');archive.receive(sourceId,items,[group]);original.db.exec('COMMIT');
  takeBackup(source,snapshot);const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8')),name=`source-archive/${archiveHash(sourceId)}/${archiveHash(items)}${encrypted?'.aes':'.plain'}`;
  assert.equal(manifest.storageEpoch,7);assert.ok(Object.hasOwn(manifest.checksums,name));assert.deepEqual(readFileSync(join(snapshot,name)),readFileSync(join(source,name)));
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'none')},snapshot);restored=new Store(target,{dataKey:key});
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'none')},snapshot);restored=new Store(target,{dataKey:key});
  assert.deepEqual(new SourceArchive(restored).currentSnapshot(sourceId,group),archive.currentSnapshot(sourceId,group));
 });
 
@@ -193,9 +193,9 @@ test('backup rejects retired source archive manifests and restores reject a miss
  for(const storageEpoch of [undefined,2,6]){writeFileSync(join(snapshot,'backup-manifest.json'),JSON.stringify({...manifest,storageEpoch}));await assert.rejects(verifiedBackup(snapshot),/Unsupported backup storage epoch/);}
  const oldTarget=join(root,'old-epoch-target');mkdirSync(oldTarget);
  writeFileSync(join(snapshot,'backup-manifest.json'),JSON.stringify({...manifest,storageEpoch:6}));
- await assert.rejects(restoreProfile({meta:{runtime:'native'},dataDir:oldTarget,processFile:join(root,'none')},snapshot),/Unsupported backup storage epoch/);
+ await assert.rejects(restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:oldTarget,processFile:join(root,'none')},snapshot),/Unsupported backup storage epoch/);
  assert.deepEqual(readdirSync(oldTarget),[]);
  const db=new DatabaseSync(join(snapshot,'mote.sqlite'));db.prepare("UPDATE settings SET value='2' WHERE key='backend_epoch'").run();db.close();
  writeFileSync(join(snapshot,'backup-manifest.json'),JSON.stringify({...manifest,checksums:{...manifest.checksums,'mote.sqlite':sha256(readFileSync(join(snapshot,'mote.sqlite')))}}));
- const target=join(root,'untouched');mkdirSync(target);await assert.rejects(restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'none')},snapshot),/Unsupported backup database epoch/);assert.equal(existsSync(join(target,'mote.sqlite')),false);
+ const target=join(root,'untouched');mkdirSync(target);await assert.rejects(restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'none')},snapshot),/Unsupported backup database epoch/);assert.equal(existsSync(join(target,'mote.sqlite')),false);
 });
