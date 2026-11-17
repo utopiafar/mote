@@ -413,6 +413,13 @@
    "file": "apps/server/src/auxiliary-state-schema.ts"
   },
   {
+   "declaration": "memoryBindingSchemaInstallation",
+   "owner": "memory-binding",
+   "fn": "memoryBindingSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/memory-binding-schema.ts"
+  },
+  {
    "owner": "activity-memory-projection",
    "file": "apps/server/src/activity-memory-index.ts",
    "declaration": "ActivityMemoryIndex.constructor",
@@ -1251,6 +1258,11 @@
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
   },
+  "memory_binding_commands": {
+   "owner": "memory-binding",
+   "file": "apps/server/src/memory-binding-schema.ts",
+   "installer": "memoryBindingSchemaInstallation"
+  },
   "memory_catalog": {
    "owner": "memory-search",
    "file": "apps/server/src/memory-search-schema.ts",
@@ -1291,6 +1303,16 @@
    "file": "apps/server/src/memory-phase-outputs.ts",
    "installer": "memoryPhaseOutputsSchemaInstallation"
   },
+  "memory_plan_binding": {
+   "owner": "memory-binding",
+   "file": "apps/server/src/memory-binding-schema.ts",
+   "installer": "memoryBindingSchemaInstallation"
+  },
+  "memory_preparation": {
+   "owner": "memory-binding",
+   "file": "apps/server/src/memory-binding-schema.ts",
+   "installer": "memoryBindingSchemaInstallation"
+  },
   "memory_provider_configurations": {
    "owner": "memory-provider-configurations",
    "file": "apps/server/src/memory-settings-schema.ts",
@@ -1300,6 +1322,11 @@
    "owner": "memory",
    "file": "apps/server/src/memory-storage-schema.ts",
    "installer": "memoryStorageSchemaInstallation"
+  },
+  "memory_provider_receipts": {
+   "owner": "memory-binding",
+   "file": "apps/server/src/memory-binding-schema.ts",
+   "installer": "memoryBindingSchemaInstallation"
   },
   "memory_recipe_settings": {
    "owner": "memory-recipe-settings",

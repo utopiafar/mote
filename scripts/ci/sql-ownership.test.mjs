@@ -135,7 +135,7 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,67);assert.equal(Object.keys(result.tables).length,170);
+ assert.equal(result.owners.length,68);assert.equal(Object.keys(result.tables).length,174);
  assert.equal(result.tables.insight_runs.owner,'insight-runs');assert.equal(result.tables.record_context_declarations.owner,'record-context');
  assert.ok(result.coveredFiles.includes('apps/server/src/insight-runs.ts'));assert.ok(result.uncoveredFiles.includes('apps/server/src/insight-runs.ts'),'insight runtime keeps its cross-owner reads pending');
  assert.ok(result.coveredFiles.includes('apps/server/src/record-context.ts'));assert.ok(!result.uncoveredFiles.includes('apps/server/src/record-context.ts'));

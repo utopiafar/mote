@@ -1,4 +1,6 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {memoryBindingSchemaInstallation} from './memory-binding-schema.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {MemoryBindingView,MemoryModuleBinding,MemoryPlanView,MemoryPreparationView} from '@mote/shared';
@@ -29,10 +31,7 @@ export class MemoryBindings {
   pendingTail:()=>number=()=>0;
   onReleased?:()=>void;
   constructor(readonly store:Store,readonly memories:MemoryStore,readonly automation:MemoryAutomation,readonly plugins:PluginCenter,readonly executor:ExecutionEngine){
-    store.db.exec(`CREATE TABLE IF NOT EXISTS memory_plan_binding(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memory_preparation(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memory_binding_commands(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS memory_provider_receipts(id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+    installSchemaPlan(store.db,[memoryBindingSchemaInstallation]);
     store.registerStorage('memory-control',{
       memory_plan_binding:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
       memory_preparation:'length(CAST(json AS BLOB))+length(CAST(id AS BLOB))+128',
