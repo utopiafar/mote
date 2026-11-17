@@ -67,6 +67,11 @@ export function AssistantDraftActions({api,conversationId,turnId,draft,renderAns
       else setError(moteText('草稿提交失败，请重试。'));
     }finally{setBusy(false);}
   };
+  if(draft.input==='current-instruction')return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>
+    <p>{draft.goal}</p>
+    {renderAnswer&&onOpen&&<AssistantTaskResults api={api} conversationId={conversationId} turnId={turnId} scope={draft.scope}
+      refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found}/>}
+  </section>;
   return <section className="assistant-draft" aria-label={moteText('建议的下一步')} aria-busy={busy}>
     <div className="assistant-draft-heading"><Sparkles size={14}/><strong>{moteText('建议的下一步')}</strong></div>
     <p>{moteText('这份草稿可以修改后再开始。')}</p>
