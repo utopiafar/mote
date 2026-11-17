@@ -6,6 +6,8 @@ import {z} from 'zod';
 import {moteText} from './i18n.js';
 import {PrivateFile} from './connectors/private-file.js';
 import type {Store} from './store.js';
+import {installSchemaPlan} from './schema-installation.js';
+import {developerAccessSchemaInstallation} from './plugin-surface-schema.js';
 import type {Connections,ConnectionCredential} from './connections.js';
 import type {MaterialPublicationEvent} from './materials.js';
 
@@ -119,18 +121,7 @@ export class DeveloperAccessHost {
   constructor(private readonly options:{store:Store;connections:Connections;clock?:()=>number;requestTimeoutMs?:number;file?:PrivateFile<Saved>}){
     this.clock=options.clock??Date.now;this.requestTimeoutMs=options.requestTimeoutMs??5000;
     this.file=options.file??new PrivateFile<Saved>(join(options.store.directory,'connectors'),'developer-webhooks.json');
-    options.store.db.exec(`CREATE TABLE IF NOT EXISTS developer_events(
-      sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,event TEXT NOT NULL,source_id TEXT NOT NULL,
-      material_id TEXT NOT NULL,revision TEXT NOT NULL,material_kind TEXT NOT NULL,device_id TEXT,
-      occurred_at TEXT NOT NULL,created_at TEXT NOT NULL,payload TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS developer_events_source ON developer_events(source_id,sequence);
-      CREATE INDEX IF NOT EXISTS developer_events_type ON developer_events(event,sequence);
-      CREATE TABLE IF NOT EXISTS developer_deliveries(
-      id TEXT PRIMARY KEY,event_id TEXT NOT NULL,event_sequence INTEGER NOT NULL,endpoint_id TEXT NOT NULL,
-      status TEXT NOT NULL,attempts INTEGER NOT NULL,next_attempt_at INTEGER NOT NULL,http_status INTEGER,
-      last_error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(event_id,endpoint_id));
-      CREATE INDEX IF NOT EXISTS developer_deliveries_pending ON developer_deliveries(status,next_attempt_at,created_at);
-      CREATE INDEX IF NOT EXISTS developer_deliveries_endpoint ON developer_deliveries(endpoint_id,created_at DESC);`);
+    installSchemaPlan(options.store.db,[developerAccessSchemaInstallation]);
     options.store.registerStorage('developer-access',{
       developer_events:"length(CAST(id AS BLOB))+length(CAST(event AS BLOB))+length(CAST(source_id AS BLOB))+length(CAST(material_id AS BLOB))+length(CAST(revision AS BLOB))+length(CAST(material_kind AS BLOB))+length(CAST(COALESCE(device_id,'') AS BLOB))+length(CAST(occurred_at AS BLOB))+length(CAST(created_at AS BLOB))+length(CAST(payload AS BLOB))+256",
       developer_deliveries:"length(CAST(id AS BLOB))+length(CAST(event_id AS BLOB))+length(CAST(endpoint_id AS BLOB))+length(CAST(status AS BLOB))+length(CAST(COALESCE(last_error,'') AS BLOB))+length(CAST(created_at AS BLOB))+length(CAST(updated_at AS BLOB))+160",

@@ -2,13 +2,14 @@ import {randomUUID} from 'node:crypto';
 import {existsSync,lstatSync,mkdirSync,readFileSync,realpathSync,renameSync,rmSync,statSync,writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
+import type {DatabaseSync} from 'node:sqlite';
 import type {MaterialRecord,MaterialStore} from '../materials.js';
 import {StoreError,sha256} from '../store.js';
+import {installSchemaPlan} from '../schema-installation.js';
+import {outboundExportSchemaInstallation} from '../plugin-surface-schema.js';
 import type {OutboundExportDescriptor} from './service-plugin-loader.js';
 
-type OutboundStatement={run(...values:unknown[]):unknown;get(...values:unknown[]):unknown;all(...values:unknown[]):unknown[]};
-type OutboundDatabase={exec(sql:string):void;prepare(sql:string):OutboundStatement};
-type OutboundStore={readonly db:OutboundDatabase;registerStorage(plugin:string,meters:Readonly<Record<string,string>>):void};
+type OutboundStore={readonly db:DatabaseSync;registerStorage(plugin:string,meters:Readonly<Record<string,string>>):void};
 
 /** Screenshots and Coding Agent transcripts keep their existing Central
  * exposure restriction. An outbound package cannot widen that policy. */
@@ -73,12 +74,7 @@ export class OutboundExportHost {
   constructor(private readonly dependencies:OutboundExportHostDependencies){
     this.home=dependencies.home??homedir();
     const {store}=dependencies;
-    store.db.exec(`CREATE TABLE IF NOT EXISTS outbound_export_items(
-      instance_id TEXT NOT NULL,material_id TEXT NOT NULL,relative_path TEXT NOT NULL,
-      revision TEXT,content_hash TEXT,state TEXT NOT NULL,conflict_hash TEXT,conflict_at TEXT,updated_at TEXT NOT NULL,
-      PRIMARY KEY(instance_id,material_id));
-      CREATE TABLE IF NOT EXISTS outbound_export_instances(
-      instance_id TEXT PRIMARY KEY,last_sync_at TEXT,last_error TEXT);`);
+    installSchemaPlan(store.db,[outboundExportSchemaInstallation]);
     store.registerStorage('outbound-export',{
       outbound_export_items:"length(CAST(instance_id AS BLOB))+length(CAST(material_id AS BLOB))+length(CAST(relative_path AS BLOB))+length(CAST(COALESCE(revision,'') AS BLOB))+length(CAST(COALESCE(content_hash,'') AS BLOB))+length(CAST(COALESCE(conflict_hash,'') AS BLOB))+length(CAST(updated_at AS BLOB))+128",
       outbound_export_instances:"length(CAST(instance_id AS BLOB))+length(CAST(COALESCE(last_sync_at,'') AS BLOB))+length(CAST(COALESCE(last_error,'') AS BLOB))+64",

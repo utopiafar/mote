@@ -36,6 +36,11 @@ export const installations={
  'actions-schema.ts':['actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation'],
  'processing-runtime-schema.ts':['processingRuntimeSchemaInstallation'],
  "background-model-authorization-schema.ts":["backgroundModelAuthorizationSchemaInstallation"],
+ "plugin-surface-schema.ts":[
+ "pluginReleasePreviewsSchemaInstallation",
+ "developerAccessSchemaInstallation",
+ "outboundExportSchemaInstallation"
+],
 };
 
 /** Exact consumer boundaries, reviewed against the existing modules. An installer
@@ -83,10 +88,12 @@ export const consumers={
  'material-memory-work.ts':'material',
  'material-consumers.ts':'material',
  'material-organizers.ts':'material',
+ "plugin-center.ts":"plugin-release-previews",
+ "plugins/outbound-export-host.ts":"outbound-export",
 };
 
-/** These Task adapter methods belong to the formal runtime marker owner. The
- * older Task schema and other consumers in the same file remain pending. */
+/** These exact method scopes belong to the named formal owner. Other
+ * statements in the same file remain pending. */
 export const consumerScopes={
  'processor-admission.ts':{
   'ProcessorAdmission.check':'processor-admission',
@@ -166,6 +173,15 @@ export const consumerScopes={
  "BackgroundModelAuthorization.stepAuthority": "background-model-authorization",
  "BackgroundModelAuthorization.assertStep": "background-model-authorization",
  "BackgroundModelAuthorization.runStep": "background-model-authorization"
+},
+ "developer-access.ts":{
+ "DeveloperAccessHost.init": "developer-access",
+ "DeveloperAccessHost.deliveries": "developer-access",
+ "DeveloperAccessHost.deliverDue": "developer-access",
+ "DeveloperAccessHost.attempt": "developer-access",
+ "DeveloperAccessHost.failDelivery": "developer-access",
+ "DeveloperAccessHost.failPending": "developer-access",
+ "DeveloperAccessHost.prune": "developer-access"
 },
 };
 
@@ -475,7 +491,7 @@ export const sharedObservations=[
 ];
 
 /** Only these formally registered installers use the bounded schema helper proof. */
-export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation"];
+export const finiteInstallations=['executionSchemaInstallation','operationProjectionSchemaInstallation','taskRecordsSchemaInstallation','taskEvidenceSchemaInstallation','runExecutionSchemaInstallation','memorySearchSchemaInstallation','gmailStateSchemaInstallation','larkStateSchemaInstallation','mcpStateSchemaInstallation','recordingMediaSchemaInstallation','recordingSyncSchemaInstallation','assistantTaskRuntimeSchemaInstallation','sourceArchiveSchemaInstallation','sourceContextSchemaInstallation','sourcePipelineSchemaInstallation','memoryInputAuthorizationSchemaInstallation','memoryExtractionDraftsSchemaInstallation','memoryPhaseOutputsSchemaInstallation','pluginControlSchemaInstallation','instanceStateSchemaInstallation','memoryInputPlansSchemaInstallation','actionsSchemaInstallation','actionsExecutionSchemaInstallation','actionsRetirementSchemaInstallation','processingRuntimeSchemaInstallation','processorAdmissionSchemaInstallation','providerAdmissionSchemaInstallation',"backgroundModelAuthorizationSchemaInstallation","pluginReleasePreviewsSchemaInstallation","developerAccessSchemaInstallation","outboundExportSchemaInstallation"];
 export const schemaMaintenance=[
  {
   "from": "apps/server/src/memory-extraction-drafts.ts",
