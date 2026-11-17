@@ -7,7 +7,7 @@ import {checkArchitecture} from './architecture.mjs';
 import {affectedComponents} from '../release/affected-components.mjs';
 import {selectScopes,automaticTasks} from './select.mjs';
 
-/** Generated source trees use the merged H07 scanner and workspace exports. */
+/** Generated source trees use the merged architecture scanner and workspace exports. */
 function fixture(t){
   const root=mkdtempSync(join(tmpdir(),'mote-native-plugin-contracts-'));
   t.after(()=>rmSync(root,{recursive:true,force:true}));

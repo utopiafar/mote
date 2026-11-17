@@ -1,4 +1,4 @@
-/** Generated J5 data only; never reads an existing profile or calls a model. */
+/** Generated conversation-origin data only; never reads an existing profile or calls a model. */
 import {buildApp} from '../../apps/server/src/app.js';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';import {randomUUID} from 'node:crypto';
 const dir=mkdtempSync(join(tmpdir(),'mote-j5-'));const token=randomUUID()+randomUUID();let failNote=false,denyOrigin=false;
