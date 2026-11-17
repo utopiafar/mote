@@ -24,6 +24,9 @@ export interface QueryRequest {
   assistantDraft?: true;
   /** Host-bound live owner message, never inferred from captured content. */
   assistantCurrentInstruction?: true;
+  /** Host-offered opaque targets for a single current-owner calendar proposal.
+   * These labels grant no writes; only the Host can accept its exact payload. */
+  ownerActionTargets?:readonly {id:string;name:string;kind:'calendar.create'}[];
   after?: string;
   before?: string;
   deviceId?: string;

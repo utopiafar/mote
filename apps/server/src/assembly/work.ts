@@ -95,6 +95,7 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
     actionsInput=createActionsServiceInputs({
       store:actionInputs.store,files:actionInputs.files,sources:actionInputs.sources,connections:actionInputs.connections,executor:actionInputs.executor,
       configService:actionInputs.configService,semanticArtifacts:actionInputs.semanticArtifacts,assistantTasks:actionInputs.assistantTasks,
+      ownerCalendarAuthority:actionInputs.ownerCalendarAuthority,
       readEvidence:ids=>actionInputs.evidenceReader.memories.readEvidence(ids),currentEvidence:id=>actionInputs.evidenceReader.memories.isCurrentEvidence(id),
       actionProviders:()=>actionInputs.pluginCenter.actionProviders(),connectorAction:input=>actionInputs.pluginCenter.executeConnectorAction(input),
       query:input=>actionInputs.queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),configured:()=>actionInputs.agent.configured,
@@ -144,6 +145,7 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
 }
 
 export interface ActionsAssemblyDependencies {
+  readonly ownerCalendarAuthority?:import('../owner-calendar-instructions.js').OwnerCalendarAuthority;
   readonly store:Store;
   readonly assistantTasks:import('../assistant-tasks.js').AssistantTasks;
   readonly evidenceReader:EvidenceReader;

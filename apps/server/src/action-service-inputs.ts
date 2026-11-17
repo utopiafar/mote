@@ -7,6 +7,7 @@ import {registerActionCapabilityRoutes} from './plugins/action-capability-routes
 import {ManagedCalendar} from './managed-calendar.js';
 import {TodoStore,registerTodoRoutes} from './todos.js';
 import {AssistantActions,registerAssistantActionRoutes} from './assistant-actions.js';
+import {OwnerCalendarInstructions,type OwnerCalendarAuthority} from './owner-calendar-instructions.js';
 import {StoreError,type Store} from './store.js';
 import type {ActionsDomain,ActionsServicesInputs} from './plugins/actions-services.js';
 import type {FileStore} from './files.js';
@@ -28,6 +29,7 @@ export interface ActionsInputDependencies {
   readonly readEvidence?:(ids:string[])=>CaptureRecord[];readonly currentEvidence?:(id:string)=>boolean;
   readonly semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
   readonly configService?:ConfigService;
+  readonly ownerCalendarAuthority?:OwnerCalendarAuthority;
   readonly authorization:{credential:(request:FastifyRequest)=>ConnectionCredential|undefined;connectionIdentity:(request:FastifyRequest)=>ConnectionCredential|undefined};
 }
 
@@ -46,13 +48,14 @@ export function createActionsServiceInputs(deps:ActionsInputDependencies){
     })();
     try{
       if(deps.store.db.isTransaction)throw new StoreError('Actions services preparation requires an idle vault transaction',503);
-      let capabilities:ActionCapabilities|undefined,assistant:AssistantActions|undefined;
+      let capabilities:ActionCapabilities|undefined,assistant:AssistantActions|undefined,ownerCalendar:OwnerCalendarInstructions|undefined;
       actions=new Actions(deps.store,deps.files,deps.query,deps.configured,{executor:deps.executor,semanticArtifacts:deps.semanticArtifacts,configService:deps.configService,
         connectorTargets:()=>capabilities?.centralConnectors()??[],messageSendAuthorized:target=>capabilities?.messageSendGranted(target)??false,
-        proposalCurrent:id=>assistant?.current(id)??true,readEvidence:deps.readEvidence,currentEvidence:deps.currentEvidence});
+        proposalCurrent:id=>assistant?.current(id)??true,ownerInstructionCurrent:action=>ownerCalendar?.current(action)??false,readEvidence:deps.readEvidence,currentEvidence:deps.currentEvidence});
       const current=actions,todos=new TodoStore(deps.store,id=>assistant?.currentTodo(id)??true);
       capabilities=new ActionCapabilities(deps.store,deps.sources,deps.connections,deps.actionProviders);
       const currentCapabilities=capabilities,managed=new ManagedCalendar(deps.store,current,currentCapabilities,deps.connections,deps.connectorAction);
+      if(deps.ownerCalendarAuthority){ownerCalendar=new OwnerCalendarInstructions(deps.store,current,deps.ownerCalendarAuthority,target=>currentCapabilities.resolveCentralTarget(target)?.identity);ownerCalendar.recover();}
       if(deps.assistantTasks)assistant=new AssistantActions(deps.store,deps.assistantTasks,current,todos,managed);
       const tickManaged=()=>{
         if(closed)return Promise.resolve();
@@ -60,6 +63,15 @@ export function createActionsServiceInputs(deps:ActionsInputDependencies){
       };
       assemblyActions=current;
       return Object.freeze({
+        ...(ownerCalendar?{ownerCalendar:{
+          offerOwnerCalendar:ownerCalendar.offer.bind(ownerCalendar),proposeOwnerCalendar:ownerCalendar.propose.bind(ownerCalendar),acceptOwnerCalendar:ownerCalendar.accept.bind(ownerCalendar),
+          wakeOwnerCalendar(id:string){
+            // This callback may be requested inside the query transaction. It
+            // reads the durable accepted receipt only after that synchronous
+            // transaction returned; rollback leaves no executable Action.
+            queueMicrotask(()=>{if(!closed&&!deps.store.db.isTransaction&&ownerCalendar!.accepted(id))void tickManaged().catch(()=>{});});
+          },
+        }}:{}),
         async tick(){if(closed)throw new StoreError('Actions services are unavailable',503);await current.tick();if(!closed)await tickManaged();},
         routes(app:FastifyInstance){
           registerActions(app,current,deps.connections,deps.authorization.credential,()=>{void tickManaged().catch(()=>{});},request=>{const identity=deps.authorization.connectionIdentity(request);return !identity||deps.connections.isOwner(identity);});

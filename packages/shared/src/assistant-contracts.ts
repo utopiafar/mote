@@ -4,7 +4,7 @@ import {evidenceDependenciesSchema} from './evidence-dependencies.js';
 import {queryScopeSchema} from './query-scope.js';
 import {provenanceSchema} from './sources.js';
 import {sourceContextDeclarationSchema} from './material-context.js';
-import {actionProposalTargetSchema,calendarDraftSchema,messageSendDraftSchema,todoInputSchema,type ActionProposalTarget,type ActionStatus} from './actions.js';
+import {actionProposalTargetSchema,calendarDraftSchema,calendarEventSchema,messageSendDraftSchema,todoInputSchema,type ActionProposalTarget,type ActionStatus} from './actions.js';
 
 const uuid=z.string().uuid();
 const revision=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -61,8 +61,12 @@ export type AssistantTaskRecord=z.infer<typeof assistantTaskRecordSchema>;
 
 /** A model may propose a goal, never an identity, scope, permission or effect.
  * The host binds the remaining fields after validating the current answer. */
-export const assistantDraftProposalSchema=z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict();
+export const currentCalendarProposalSchema=z.object({goal:ownerText,input:z.literal('current-action'),action:z.object({kind:z.literal('calendar.create'),event:calendarEventSchema,targetId:uuid}).strict()}).strict();
+export type CurrentCalendarProposal=z.infer<typeof currentCalendarProposalSchema>;
+export const assistantDraftProposalSchema=z.union([z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict(),currentCalendarProposalSchema]);
 export type AssistantDraftProposal=z.infer<typeof assistantDraftProposalSchema>;
+/** A Host-issued link to the existing Action receipt, never an authorization. */
+export type CurrentActionReference={id:string;kind:'calendar.create'};
 
 /** Commands the host can offer for a validated draft. The model never chooses
  * these; they are computed from the handlers installed by the product host. */

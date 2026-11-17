@@ -81,6 +81,7 @@ export interface QueryRunDependencies {
   readonly availableModelConnections:()=>ModelConnection[];
   /** Synchronous Host handoff in the accepted query's actual commit transaction. */
   readonly acceptCurrentInstruction?:(messageId:string,model:CurrentInstructionModel)=>unknown;
+  readonly ownerActions?:()=>import('../owner-calendar-instructions.js').OwnerCalendarPort|undefined;
   readonly taskSteering?:Pick<AssistantTaskSteering,'candidates'|'apply'|'cancel'>;
 }
 
@@ -205,6 +206,14 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
             ...(message.scope.after?{after:message.scope.after}:{}),...(message.scope.before?{before:message.scope.before}:{}),
             ...(message.scope.deviceId?{deviceId:message.scope.deviceId}:{}),...(message.scope.timeZone?{timeZone:message.scope.timeZone}:{})}}}:{})}:result;
         conversations.complete(message.id,stored,{expectedVersion:message.version});
+        if(stored.currentAction){
+          const ownerActions=dependencies.ownerActions?.();if(!ownerActions||!prepared.modelProfileId||!prepared.modelOverride||!stored.configuration)throw new StoreError('Current owner Action handoff is unavailable',409);
+          const profile=modelSettings.select('chat',prepared.modelProfileId),settings={...profile.settings,model:prepared.modelOverride};
+          if(!pinnedConfigurationCurrent(prepared,saved.configurationFingerprint!)||stored.configuration.fingerprint!==saved.configurationFingerprint)throw new StoreError('Current owner Action model selection changed',409);
+          modelAuthorizationHost.control.assertCurrent(agentModelConnection({kind:'profile',id:profile.id},settings));
+          ownerActions.acceptOwnerCalendar(message.id,stored.currentAction,stored.runId);
+          ownerActions.wakeOwnerCalendar(stored.currentAction.id);
+        }
         if(stored.draft?.input==='current-instruction'){
           if(!dependencies.acceptCurrentInstruction||!prepared.modelProfileId||!prepared.modelOverride||!stored.configuration)throw new StoreError('Current instruction handoff is unavailable',409);
           const profile=modelSettings.select('chat',prepared.modelProfileId),settings={...profile.settings,model:prepared.modelOverride};

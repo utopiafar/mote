@@ -4,11 +4,13 @@ import type {HostPluginContext} from '@mote/plugin-host';
 import type {FastifyInstance} from 'fastify';
 import type {CentralDomainPlugin} from '../domain-activation.js';
 import {StoreError} from '../store.js';
+import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
 
 /** The input grants one concrete domain factory, never a Store, SQL connection,
  * engine or mutable collection of host services. Resources open only when the
  * selected activation prepares. */
 export interface ActionsDomain {
+  readonly ownerCalendar?:OwnerCalendarPort;
   tick():Promise<void>;
   routes(app:FastifyInstance):void;
   close():Promise<void>;
@@ -51,7 +53,12 @@ export function createActionsServices(inputs:ActionsServicesInputs){
     if(phase!=='active'||!domain)throw unavailable();
     return inflight??=domain.tick().finally(()=>{inflight=undefined;});
   };
+  const ownerCalendar=()=>{if(phase!=='active'||!domain?.ownerCalendar)throw unavailable();return domain.ownerCalendar;};
   return Object.freeze({
+    offerOwnerCalendar:(...args:Parameters<OwnerCalendarPort['offerOwnerCalendar']>)=>ownerCalendar().offerOwnerCalendar(...args),
+    proposeOwnerCalendar:(...args:Parameters<OwnerCalendarPort['proposeOwnerCalendar']>)=>ownerCalendar().proposeOwnerCalendar(...args),
+    acceptOwnerCalendar:(...args:Parameters<OwnerCalendarPort['acceptOwnerCalendar']>)=>ownerCalendar().acceptOwnerCalendar(...args),
+    wakeOwnerCalendar:(...args:Parameters<OwnerCalendarPort['wakeOwnerCalendar']>)=>ownerCalendar().wakeOwnerCalendar(...args),
     async prepare(){
       if(phase!=='created')throw unavailable();
       try{domain=await inputs.open();phase='prepared';}

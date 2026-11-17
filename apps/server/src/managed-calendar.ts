@@ -95,7 +95,7 @@ export class ManagedCalendar {
   const choice:ActionConnectorChoice|undefined=this.capabilities.centralConnectors().find(value=>this.sameTarget(value.target,target));
   if(!choice)return;
   let claimed:ActionProposal;
-  try{claimed=this.actions.connectorClaim(action.id,operationId);}catch{return;}
+  try{const claim=this.actions.connectorClaim(action.id,operationId);if(!claim.mutationAllowed)return;claimed=claim;}catch{return;}
   try{
    const externalId=action.related?.externalId??action.externalId;
    const receipt=await this.connectorAction({target,request:{capability:choice.capability,operationId,input:{kind:action.kind,event:action.event,target,...(action.message?{message:action.message}:{}),actionId:action.id,...(externalId?{externalId}:{})}}});

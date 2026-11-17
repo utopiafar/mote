@@ -124,6 +124,7 @@ export interface Answer {
   modelSelection?: import("@mote/shared/models").ModelSelection;
   usage?:import('@mote/shared').UsageReceipt;
   draft?:import('@mote/shared').AssistantDraft;
+  currentAction?:import('@mote/shared').CurrentActionReference;
   answer: string;
   runId: string;
   citations: {

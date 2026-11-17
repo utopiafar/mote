@@ -301,6 +301,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   const {queryServices:queryRuntimeServices,query}=await prepareQueryRuntime({
     bootstrap,resources,store,lifecycle:serverLifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,
     executor,agentGate,modelSettings,agent,observabilityAssembly,modelEvidenceAuthority,assertModelEvidence,sourceContexts,assistantDrafts,conversations,
+    ownerActions:()=>bootstrap.selectsFeature('mote.actions')?workDomains.actionsServices:undefined,
   });
   let assistantTasks:AssistantTasks|undefined;
   let assistantFollowup:AssistantFollowup|undefined;
@@ -473,7 +474,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
   // default 500 serializer).
   const sourceIntegration=await startSourceIntegration();
   await prepareConnectionsRoutes(bootstrap,resources,{config,connections,connectionIdentity,serverVersion});
-  const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
+  const workDomains=await prepareWorkDomains({bootstrap,store,resources,executor,evidenceReader,query:query.insight,modelAuthorization:modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),agent,modelSettings,isClosing:()=>serverLifecycle.isClosing(),diagnostics,activity:{store,operations:executionPlatform.assembly.operations,materials,executor,configService,modelSettings,agent,query:input=>query.queryAgent(input,'query','activity'),lane:()=>workflows.settings().semantic,delegation:()=>queryMetadata.value,isCollector:request=>Boolean(credential(request)),agentView:{archiveReader,diagnostics,evidenceReader}},actions:{store,files,agent,executor,configService,semanticArtifacts,sources,connections,pluginCenter,credential,connectionIdentity,assistantTasks,evidenceReader,ownerCalendarAuthority:{conversations,assertContext:assertModelEvidence},queryAgent:(input,operation,moduleId,usageOwner)=>query.queryAgent(input,operation,moduleId,usageOwner)}});
   const {connectors}=await assembleConnectors({app,resources,backendContext,memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,validOwnerBearer:header=>validBearer({headers:{authorization:header}}),connections,authorizationPlatform,connectorTesting:dependencies?.connectorTesting,additionalManifests:dependencies?.connectorManifests});
   // Official connector packages install through Plugin Center into this live host.
   pluginCenter.connectorHost=connectors;
@@ -532,6 +533,7 @@ export async function buildHost(config:Config,dependencies?:HostDependencies) {
     lifecycleSettings:queryLifecycleSettings,archiveReader,agent,modelEvidenceAuthority,modelSettings,queryRuntime:()=>queryRuntimeServices.runtime,
     semanticContextTime:dependencies?.semanticContextTime,usageLedger,
     modelAuthorizationHost,availableModelConnections:()=>availableModelConnections(),assistantDrafts,assistantTasks,
+    ownerActions:()=>bootstrap.selectsFeature('mote.actions')?workDomains.actionsServices:undefined,
     assistantRoutines,assistantOwner:req=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);}});
   historyBeforeSeq=workId=>queryRunServices.delegation.journal.payload<import('./plugins/query-preparation.js').SavedQuery>(workId).historyBeforeSeq;
   memoryPhasePipeline.attachDelegation({runtime:delegation,work:materialMemoryWork,sourcePipelines,configuration:()=>memoryConfiguration(),allowCandidate:(candidate,input)=>evidenceReader.materialAllowedForMemory(candidate.ref,new EvidenceExposurePolicy(),input.required),query:input=>queryAgent(input,'query','memories'),sample:async(candidate,offset,length)=>{
