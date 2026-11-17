@@ -431,11 +431,27 @@ export class SourcePipelineRuntime {
   status(){return {pipelines:this.registry.list(),work:this.store.db.prepare('SELECT state,count(*) count FROM source_pipeline_work GROUP BY state').all()};}
   close(){
     if(this.closing)return this.closing;this.stopped=true;this.accepting=false;
+    let resolve!:()=>void,reject!:(error:unknown)=>void;
+    this.closing=new Promise<void>((done,failed)=>{resolve=done;reject=failed;});
     // Remove receipt/model admission and the local execution lease before waiting
-    // for readers or plugin startup. Retain all archive checkpoints and jobs.
-    const unregister=this.unregisterHandler(),resources=this.initializing?this.resources.close():undefined;
+    // for readers or plugin startup. Publish close before invoking either resource.
+    // Retain all archive checkpoints and jobs, and keep later cleanup failures
+    // from replacing the first failure or escaping as unhandled rejections.
+    let unregister:Promise<void>,resources:Promise<void>|undefined;
+    try{unregister=Promise.resolve(this.unregisterHandler());}catch(error){unregister=Promise.reject(error);}
+    if(this.initializing)try{resources=Promise.resolve(this.resources.close());}catch(error){resources=Promise.reject(error);}
+    void unregister.catch(()=>{});
     void resources?.catch(()=>{});
-    this.closing=(async()=>{await this.ready.catch(()=>{});try{await unregister;await Promise.allSettled([...this.tasks]);}finally{try{if(this.ownsEngine)await this.engine.close();}finally{await (resources??this.resources.close());}}})();return this.closing;
+    void (async()=>{
+      const errors:unknown[]=[];await this.ready.catch(()=>{});
+      try{await unregister;}catch(error){errors.push(error);}
+      await Promise.allSettled([...this.tasks]);
+      try{if(this.ownsEngine)await this.engine.close();}catch(error){errors.push(error);}
+      try{await (resources??this.resources.close());}catch(error){errors.push(error);}
+      if(errors.length===1)throw errors[0];
+      if(errors.length)throw new AggregateError(errors,'Source pipeline disposal failed',{cause:errors[0]});
+    })().then(resolve,reject);
+    return this.closing;
   }
 }
 

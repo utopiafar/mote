@@ -1,6 +1,6 @@
 import type {Plugin} from '@deepseek-ai/cordis';
 import type {ManifestContribution} from '@mote/plugin-api';
-import type {PluginLifecycle,StopReason} from '@mote/plugin-api/contracts';
+import type {PluginLifecycle} from '@mote/plugin-api/contracts';
 import type {HostPluginContext,HostScope} from '@mote/plugin-host';
 import {StoreError,type Store} from '../store.js';
 import type {MaterialStore} from '../materials.js';
@@ -31,32 +31,38 @@ export function openSourceStore(store:Store,pipelines:SourcePipelineRuntime){ret
 
 export function createSourceRuntime(options:SourceRuntimeOptions,dependencies:SourceRuntimeDependencies){
   const plugins=[...(options.plugins??[])];
-  let phase:'created'|'preparing'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
+  // The host orders lifecycle calls. Locally, preparation exposes a read bridge
+  // and admission is one-way: quiesce needs a fresh activation to admit again.
+  let prepared=false,admission:boolean|undefined;
   let runtime:SourcePipelineRuntime|undefined,handlers:ReturnType<ExecutionPlatform['handlersForAssembly']>|undefined,closing:Promise<void>|undefined;
   function close(){
-    if(closing)return closing;phase='stopped';
+    if(closing)return closing;admission=false;
+    let resolve!:()=>void,reject!:(error:unknown)=>void;
+    closing=new Promise<void>((done,failed)=>{resolve=done;reject=failed;});
+    // Publish the terminal promise before a disposer can reenter or throw.
     // Runtime.close fences synchronously before it starts its local reader drain.
-    const tasks=[runtime?.close(),handlers?.close()].filter((task):task is Promise<void>=>Boolean(task));
-    closing=Promise.allSettled(tasks).then(results=>{phase='disposed';const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);if(errors.length)throw new AggregateError(errors,'Source runtime disposal failed');});return closing;
+    const tasks=[()=>runtime?.close(),()=>handlers?.close()].map(dispose=>{try{return Promise.resolve(dispose());}catch(error){return Promise.reject(error);}});
+    void Promise.allSettled(tasks).then(results=>{const errors=results.flatMap(result=>result.status==='rejected'?[result.reason]:[]);if(errors.length)throw new AggregateError(errors,'Source runtime disposal failed',{cause:errors[0]});}).then(resolve,reject);
+    return closing;
   }
   return Object.freeze({
     async prepare(scope:HostScope){
-      if(phase!=='created')throw unavailable();phase='preparing';
+      if(runtime||handlers||closing)throw unavailable();
       try{
         scope.assertCurrent();const engine=dependencies.execution.assembly.executor;
         if(!dependencies.memoryWork)throw new StoreError('Shared source memory receipts are required',503);
         if(engine.store!==dependencies.store||dependencies.materials.store!==dependencies.store)throw new StoreError('Source runtime repository mismatch',503);
         handlers=dependencies.execution.handlersForAssembly(scope);
         runtime=new SourcePipelineRuntime(dependencies.store,dependencies.materials,plugins,scope,engine,dependencies.memoryWork,handlers);
-        runtime.quiesce();await runtime.ready;scope.assertCurrent();if(phase!=='preparing')throw unavailable();phase='prepared';
+        runtime.quiesce();await runtime.ready;scope.assertCurrent();if(closing)throw unavailable();prepared=true;
       }catch(error){try{await close();}catch(cleanup){throw new AggregateError([error,cleanup],'Source runtime preparation and cleanup failed',{cause:error});}throw error;}
     },
-    start(){if(phase!=='prepared')throw unavailable();runtime!.start();phase='active';},
-    quiesce(_reason?:StopReason){if(phase==='active'){phase='quiescing';runtime!.quiesce();handlers!.quiesce();}},
-    stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,
+    start(){if(!prepared||closing||admission!==undefined)throw unavailable();runtime!.start();admission=true;},
+    quiesce(){if(admission){admission=false;runtime!.quiesce();handlers!.quiesce();}},
+    close,
     /** Trusted root creates SourceStore with this exact runtime; C04 binds its
      * actual sourceIntake to that SourceStore. Never publish this bridge. */
-    get runtimeForAssembly(){if(!runtime||!['prepared','active','quiescing'].includes(phase))throw unavailable();return runtime;},
+    get runtimeForAssembly(){if(!runtime||!prepared||closing)throw unavailable();return runtime;},
   });
 }
 export type SourceRuntime=ReturnType<typeof createSourceRuntime>;
@@ -64,6 +70,6 @@ export function createSourceRuntimeFactory(platform:SourceRuntime){
   return (context:HostPluginContext):PluginLifecycle=>{
     const abort=()=>{void platform.close().catch(()=>{});};context.scope.signal.addEventListener('abort',abort,{once:true});
     context.scope.defer(async()=>{try{await platform.close();}finally{context.scope.signal.removeEventListener('abort',abort);}});
-    return {prepare:()=>platform.prepare(context.scope),start:platform.start,quiesce:platform.quiesce,stop:platform.stop,dispose:platform.close};
+    return {prepare:()=>platform.prepare(context.scope),start:platform.start,quiesce:platform.quiesce,stop:platform.close,dispose:platform.close};
   };
 }
