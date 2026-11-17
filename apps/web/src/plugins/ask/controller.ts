@@ -18,7 +18,7 @@ export interface AskControllerOptions {
   readonly retryMs?:number;
 }
 
-/** Owns the in-flight query run poller. Polling is gated by the U02 view
+/** Owns the in-flight query run poller. Polling is gated by the shared view
  * lifetime: hiding the page aborts the current read and clears the timer, and
  * returning issues one fresh read before the normal cadence resumes. Every
  * request carries the controller's abort signal, so a late response after an

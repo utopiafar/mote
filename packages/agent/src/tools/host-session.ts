@@ -13,7 +13,7 @@ export type HostReadOperation=
 export type HostReadArguments<K extends HostReadOperation>=Parameters<NonNullable<ContextReader[K]>>;
 export type HostReadResult<K extends HostReadOperation>=Awaited<ReturnType<NonNullable<ContextReader[K]>>>;
 
-/** Parent A08 binds one port to one selected descriptor and one staged call.
+/** The parent Host tool session binds one port to one selected descriptor and one staged call.
  * A pack gets no reader/store, mutable discovery state, grant table, ledger,
  * image quota/cache, sender, confirm or discard. Result IDs are untrusted;
  * only the parent's actual read/delivery lifecycle can grant citations.
@@ -22,7 +22,7 @@ export type HostReadResult<K extends HostReadOperation>=Awaited<ReturnType<NonNu
  * the current task/scope/grants before I/O and after await, before disclosure.
  * Operation declarations describe requirements; they never grant authority.
  * A frozen snapshot does not exempt an old call from revocation/unload.
- * This port does not alter A01 HostToolPort's attempt-bound sender contract. */
+ * This port does not alter HostToolPort's attempt-bound sender contract. */
 export interface HostSessionPort {
   readonly tool:RuntimeToolIdentity;
   /** Effective scope for this call, normalized/clamped by Host (including limit). */
