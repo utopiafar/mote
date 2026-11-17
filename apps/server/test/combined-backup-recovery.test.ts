@@ -18,7 +18,7 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {Operations} from '../src/operations.js';
 import {InsightRuns} from '../src/insight-runs.js';
-import {restoreProfile,verifiedBackup} from '../../../scripts/profile-lib.mjs';
+import {restoreProfile,verifiedBackup,repository} from '../../../scripts/profile-lib.mjs';
 const backupScript=fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url));
 const takeBackup=(source:string,out:string)=>execFileSync(process.execPath,[backupScript,'--data',source,'--out',out],{stdio:'pipe'});
 const empty=()=>({answer:JSON.stringify({memories:[]}),citations:[],trace:[],runId:randomUUID()});
@@ -70,7 +70,7 @@ test('current epoch 7 backup restores original identities, Memory history and in
  const completeImportSteps=original.db.prepare("SELECT id,attempts,state FROM execution_steps WHERE operation_id=?").all('import:'+completed.id);
  const history=sources.history('generated-source','generated-note').map(row=>({id:row.captureId,revision:row.revision}));
  takeBackup(source,snapshot);await verifiedBackup(snapshot);
- await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process')},snapshot);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:target,processFile:join(root,'missing-process')},snapshot);
  const restored=new Store(target,{dataKey:key});stores.push(restored);const restoredSources=new SourceStore(restored),restoredFiles=new ArchivedFileStore(restored),restoredMemory=new MemoryStore(restored),executor=new ExecutionEngine(restored);engines.push(executor);
  assert.equal(restored.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()!.value,'7');assert.equal(restored.db.prepare('PRAGMA user_version').get()!.user_version,7);
  assert.deepEqual(restoredFiles.read(legacy.id),bytes);assert.equal(sha256(restoredFiles.read(legacy.id)),legacy.hash);assert.deepEqual(restoredSources.history('generated-source','generated-note').map(row=>({id:row.captureId,revision:row.revision})),history);
@@ -89,7 +89,7 @@ test('current epoch 7 backup restores original identities, Memory history and in
  assert.equal((await resumedPipeline.retry(memoryJob.id)).status,'completed');assert.deepEqual(offsets,[256,512]);assert.equal(new Operations(restored).detail('memory:'+memoryJob.id).operation.state,'succeeded');
  assert.equal(new Operations(restored).detail('import:'+completed.id).operation.state,'succeeded');
  // Restore an earlier current snapshot into a separate empty destination.
- await restoreProfile({meta:{runtime:'native'},dataDir:rollback,processFile:join(root,'missing-process')},before);
+ await restoreProfile({meta:{runtime:'native',release:repository},env:{},dataDir:rollback,processFile:join(root,'missing-process')},before);
  const raw=new DatabaseSync(join(rollback,'mote.sqlite'));assert.equal(raw.prepare("SELECT name FROM sqlite_master WHERE name='execution_steps'").get(),undefined);assert.equal(String(raw.prepare('SELECT json FROM memories WHERE id=?').get(prior.id)!.json),preMemory);raw.close();
  const rolledBack=new Store(rollback,{dataKey:key});stores.push(rolledBack);assert.deepEqual(new ArchivedFileStore(rolledBack).read(legacy.id),bytes);assert.equal(new SourceStore(rolledBack).history('generated-source','generated-note').length,2);assert.equal(new MemoryStore(rolledBack).get(prior.id).supersededBy,undefined);
  assert.ok(first.id!==current.id);assert.equal(readFileSync(join(before,'backup-manifest.json'),'utf8').includes(legacy.hash),true);

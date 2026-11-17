@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import {safePluginBackupPath} from './plugin-memory-backup.mjs';
+import {safeNativeApplicationBackupPath,nativeApplicationBackup} from './native-application-backup.mjs';
 import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 import { logRetentionFromDocument, MiB } from '../apps/server/src/log-retention-config.mjs';
 import {dockerImageVariant,parseDockerMediaWorkers,dockerMediaSelection,assertDockerMediaSelection,assertDockerMediaRuntime,dockerMediaRoles} from './docker-media.mjs';
@@ -479,22 +480,43 @@ export async function backupProfile(p, out) {
       // A stopped container's PID namespace is unrelated to host PIDs. Remove only the copied lock.
       await rm(join(stage, 'server.pid'), { force: true }); source = stage;
     }
-    await execute(process.execPath, [join(repository, 'scripts/backup.ts'), '--data', source, '--out', destination], { env: isolatedEnvironment(p) });
+    await execute(process.execPath, [join(repository, 'scripts/backup.ts'), '--data', source, '--out', destination,'--profile-lock',join(await realpath(p.directory),'lifecycle.lock')], { env: isolatedEnvironment(p,{...(p.env.MOTE_DATA_KEY?{MOTE_DATA_KEY:p.env.MOTE_DATA_KEY}:{}),...(process.env.MOTE_DEPLOY_DOCKER_CLI==='1'?{MOTE_DEPLOY_DOCKER_CLI:'1'}:{})}) });
     return destination;
   } finally { if (stage) await rm(stage, { recursive: true, force: true }); }
 }
 async function sha(path) { const hash = createHash('sha256'); for await (const chunk of createReadStream(path)) hash.update(chunk); return hash.digest('hex'); }
-export async function verifiedBackup(backup) {
-  const directory = await realpath(resolve(backup));
+/** The original content key stays outside the archive. Only the profile owner
+ * reads this fixed private file; it is never printed or passed as an argument. */
+export async function profileContentKey(p){
+  if(p.env.MOTE_DATA_KEY){if(!/^[a-f0-9]{64}$/i.test(p.env.MOTE_DATA_KEY))throw Error('Invalid original content key');return p.env.MOTE_DATA_KEY;}
+  let path,temporary;
+  try{
+    if(p.meta.runtime==='docker'){
+      const ids=(await execute('docker',['ps','--all','--quiet','--no-trunc','--filter','label=com.docker.compose.project='+p.project,'--filter','label=com.docker.compose.service=mote'],{capture:true})).split(/\s+/).filter(Boolean);
+      if(!ids.length)return;if(ids.length!==1||!/^[a-f0-9]{64}$/.test(ids[0]))throw Error('Cannot identify the profile content-key owner');
+      const generated=join(await realpath(p.directory),'generated'),folder=await lstat(generated);if(!folder.isDirectory()||folder.isSymbolicLink()||await realpath(generated)!==generated)throw Error('Profile generated directory must be an ordinary directory');
+      temporary=join(generated,'.backup-key-'+randomUUID());path=temporary;
+      try{await execute('docker',['cp',ids[0]+':/data/content-key',path],{capture:true});}
+      catch(error){if(/Could not find the file \/data\/content-key|No such file or directory/.test(error.message))return;throw error;}
+    }else path=join(await realpath(p.dataDir),'content-key');
+    const info=await lstat(path);if(!info.isFile()||info.nlink!==1||(info.mode&0o077)!==0||process.getuid&&info.uid!==process.getuid()||await realpath(path)!==path)throw Error('Original content key must be a private owned regular file');
+    const value=(await readFile(path,'utf8')).trim();if(!/^[a-f0-9]{64}$/i.test(value))throw Error('Invalid original content key');return value;
+  }catch(error){if(error.code==='ENOENT')return;throw error;}
+  finally{if(temporary)await rm(temporary,{force:true});}
+}
+export async function verifiedBackup(backup,{dataKey}={}) {
+  const requested=resolve(backup),rootInfo=await lstat(requested);if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink())throw Error('Backup root must be an ordinary directory');
+  const directory = await realpath(requested);
   const manifestPath = join(directory, 'backup-manifest.json');
-  if ((await stat(manifestPath)).size > 16 * 1024 * 1024) throw Error('Backup manifest exceeds 16 MiB');
+  const manifestInfo=await lstat(manifestPath);if(!manifestInfo.isFile()||manifestInfo.isSymbolicLink()||manifestInfo.nlink!==1||await realpath(manifestPath)!==manifestPath)throw Error('Backup manifest links and special files are not allowed');
+  if (manifestInfo.size > 16 * 1024 * 1024) throw Error('Backup manifest exceeds 16 MiB');
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
   if (manifest.storageEpoch !== 7) throw Error('Unsupported backup storage epoch; restore older backups with their matching older binary');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
     const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]*)(?:\.plain|\.aes)$/.exec(name);
     const sourceBatch=/^source-archive\/[a-f0-9]{64}\/[a-f0-9]{64}(?:\.plain|\.aes)$/.test(name);
-    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number.isSafeInteger(Number(part[1])) && Number.isSafeInteger(Number(part[1])*4*1024*1024)) || safePluginBackupPath(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    if (!(name === 'mote.sqlite' || sourceBatch || (part && Number.isSafeInteger(Number(part[1])) && Number.isSafeInteger(Number(part[1])*4*1024*1024)) || safePluginBackupPath(name)||safeNativeApplicationBackupPath(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
     const info = await lstat(join(directory, name));
     if (!info.isFile() || info.nlink !== 1 || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
@@ -516,11 +538,15 @@ export async function verifiedBackup(backup) {
       const part=/^files\/objects\/([a-f0-9]{64})\/(0|[1-9][0-9]*)(?:\.plain|\.aes)$/.exec(name);if(!part)continue;
       const asset=selected.get(part[1]);if(!asset||Number(part[2])>=asset.parts)throw Error('Backup contains an undeclared asset part');
     }
+    const nativeApplications=await nativeApplicationBackup(directory,db,{dataKey});
+    if(nativeApplications.controls.some(row=>row.value.writer!==undefined)||nativeApplications.paths.some(path=>!Object.hasOwn(manifest.checksums,path))||Object.keys(manifest.checksums).some(path=>safeNativeApplicationBackupPath(path)&&!nativeApplications.paths.includes(path)))throw Error('Backup native application files do not match their retained control facts');
   } finally { db.close(); }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };
 }
-export async function restoreProfile(p, backup) {
-  const checked = await verifiedBackup(backup);
+export async function restoreProfile(p, backup,{dataKey}={}) {
+  await assertDeploymentCompatible(p);
+  dataKey??=await profileContentKey(p);
+  const checked = await verifiedBackup(backup,{dataKey});
   const stage = join(p.meta.runtime === 'native' ? dirname(p.dataDir) : p.directory, `.mote-restore-${randomUUID()}`); await mkdir(join(stage, 'blobs'), { recursive: true, mode: 0o700 });
   let restored=false;
   try {

@@ -1,7 +1,7 @@
 import { rename, stat, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { compose, startNative, stopNative, nativeIdentity, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, updateProfileConfiguration, assertDeploymentCompatible, deploymentProbe } from './profile-lib.mjs';
+import { compose, startNative, stopNative, nativeIdentity, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, updateProfileConfiguration, assertDeploymentCompatible, deploymentProbe,profileContentKey } from './profile-lib.mjs';
 import { preserveConnectorState, restoreConnectorState } from './update-private.mjs';
 import {dockerImageVariant,assertDockerMediaRuntime} from './docker-media.mjs';
 
@@ -11,8 +11,8 @@ export async function stopProfile(p) { return p.meta.runtime === 'docker' ? comp
 export async function changeProfileDeployment(p, options = {}) {
   const { rollback = false, prepared } = options;
   if (rollback && (!options.restoreData || !p.meta.previous?.backup)) throw Error('Rollback restores the pre-upgrade snapshot and preserves current data separately. Review profile.json previous.backup, then use --restore-data');
-  let next;
-  if (rollback) { next = p.meta.previous; await verifiedBackup(next.backup); }
+  let next,dataKey;
+  if (rollback) { next = p.meta.previous;dataKey=await profileContentKey(p);await verifiedBackup(next.backup,{dataKey}); }
   else if (prepared) next = prepared;
   else if (p.meta.runtime === 'native') {
     if (!options.release) throw Error('Native upgrade requires --release pointing to a separately built, immutable checkout');
@@ -57,7 +57,7 @@ export async function changeProfileDeployment(p, options = {}) {
     if (!next.releaseTag) delete p.meta.releaseTag;
     if (rollbackVolume) await updateProfileConfiguration(p, document => { document.storage.source = rollbackVolume; });
     await atomicJson(p.metaFile, p.meta);
-    if (rollback) { await restoreProfile(p, next.backup); await restoreConnectorState(p, privateConnectors); }
+    if (rollback) { await restoreProfile(p, next.backup,{dataKey}); await restoreConnectorState(p, privateConnectors); }
     // Failure retains the snapshot and selection record. Never automatically run old code on migrated data.
     const started = await startProfile(p);
     if (prepared?.releaseVersion) {
