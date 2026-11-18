@@ -59,6 +59,12 @@ COPY deploy/empty.env ./deploy/empty.env
 COPY packages/shared/src/config-file.ts ./packages/shared/src/config-file.ts
 COPY apps/server/src/log-retention-config.mjs ./apps/server/src/log-retention-config.mjs
 RUN mkdir -p /data /models && chown node:node /data /models
+# Plugin Center resolves pinned releases from these files relative to /app.
+# Copy only the public catalog manifests and declared entrypoints.
+COPY official-plugins/feishu-session/mote-plugin.json official-plugins/feishu-session/plugin.mjs ./official-plugins/feishu-session/
+COPY official-plugins/markdown-export/mote-plugin.json official-plugins/markdown-export/plugin.mjs ./official-plugins/markdown-export/
+COPY official-plugins/notion/mote-plugin.json official-plugins/notion/plugin.mjs ./official-plugins/notion/
+COPY official-plugins/slack/mote-plugin.json official-plugins/slack/plugin.mjs ./official-plugins/slack/
 USER node
 VOLUME ["/data"]
 EXPOSE 47832
