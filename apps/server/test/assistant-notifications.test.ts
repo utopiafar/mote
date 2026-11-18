@@ -36,6 +36,16 @@ async function fixture(t:import('node:test').TestContext,at='2026-11-13T13:50:00
  return {get node(){return node;},headers,scopeQuery,notifications,setPreferences,capture,publication,publish,feedback,setTime,restart:async()=>{await node.app.close();node=await buildApp(config,options);}};
 }
 
+test('a reminder uses current card visibility without preparing a suggestion task',async t=>{
+ const f=await fixture(t,'2026-11-13T10:00:00.000Z'),original=await f.capture('Generated evidence');
+ const card=f.publish(f.publication(randomUUID(),original)),cards=f.node.featureServices.assistantCards;
+ const taskInput=t.mock.method(cards as unknown as {taskInput:(...args:unknown[])=>unknown},'taskInput');
+ assert.equal((await f.notifications())[0].id,card.id);
+ assert.equal(taskInput.mock.callCount(),0);
+ assert.deepEqual(cards.page({scope:all}).items[0].taskScope,{kind:'selection',evidenceIds:[original]});
+ assert.equal(taskInput.mock.callCount(),1);
+});
+
 test('quiet hours cross midnight and the frequency limit suppresses closely spaced proposals',async t=>{
  const f=await fixture(t),original=await f.capture('Generated evidence');
  await f.setPreferences({enabled:true,timeZone:'Asia/Shanghai',quietHours:{start:'22:00',end:'07:00'},minIntervalMinutes:60});

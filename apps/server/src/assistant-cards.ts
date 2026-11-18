@@ -42,6 +42,8 @@ type VersionRow={seq:number;card_id:string;version:string;request_hash:string;st
 type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'>&{historicalEvidenceIds?:string[]};
 type VisibleVersion={snapshot:VersionRow;body:Body;ids:string[]};
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
+type NotificationCandidate={id:string;revision:number;title:string;reason:string;state:CardRow['state'];readAt:string|null;
+ feedback:{action:FeedbackRow['action'];until?:string;createdAt:string}[];origin:string;currentVersionAt:string};
 
 /** Only the domain caller chooses object identity and semantic updates. This
  * store handles conditional publication and disclosure; it never generates a
@@ -53,8 +55,6 @@ export class AssistantCards {
   try{const result=run();this.store.db.exec('RELEASE assistant_cards_write');return result;}
   catch(error){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK TO assistant_cards_write; RELEASE assistant_cards_write');}throw error;}
  }
- /** Keep a multi-page derived read on one SQLite snapshot. */
- readSnapshot<T>(read:()=>T):T{return this.transaction(read);}
  private row(id:string):CardRow{
   const row=this.store.db.prepare('SELECT * FROM assistant_cards WHERE id=?').get(uuid.parse(id)) as CardRow|undefined;
   if(!row)throw new StoreError('Assistant card not found',404);return row;
@@ -100,9 +100,11 @@ export class AssistantCards {
   return decodeMemoryPrivate<Body>(this.store,row.private_json);
  }
  private publicBody(body:Body){const {historicalEvidenceIds:_,...visible}=body;return visible;}
- private visibleVersion(row:VersionRow,scope:QueryScope):VisibleVersion|undefined{
+ private visibleVersion(row:VersionRow,scope:QueryScope,requireReminder=false):VisibleVersion|undefined{
   if(!row.private_json)return;
-  const body=this.payload(row),pins=body.sourceContextDependencies??[],historical=new Set(body.historicalEvidenceIds??[]),ids=this.ids(row.card_id,row.version);
+  const body=this.payload(row);
+  if(requireReminder&&!body.reminderReason)return;
+  const pins=body.sourceContextDependencies??[],historical=new Set(body.historicalEvidenceIds??[]),ids=this.ids(row.card_id,row.version);
   const sources=pins.map(pin=>pin.sourceId);
   if(!this.valid(ids.filter(id=>!historical.has(id)),scope,Boolean(row.stale),sources)||
    historical.size&&!this.valid([...historical],scope,true,sources)||
@@ -187,30 +189,38 @@ export class AssistantCards {
  get(id:string,rawScope:QueryScope){return this.transaction(()=>this.view(this.row(id),queryScopeSchema.parse(rawScope)));}
  /** Find when the current run of reminder proposals began. An inaccessible
   * previous version cannot be used to infer a new reminder. */
- notificationTiming(id:string,rawScope:QueryScope){
-  return this.transaction(()=>{
-   const scope=queryScopeSchema.parse(rawScope),row=this.row(id),{snapshot:current,body}=this.current(row,scope);
-   if(!body.reminderReason)return null;
-   let origin=current.created_at,before=current.seq;
-   for(;;){
-    const versions=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT 100').all(id,before) as VersionRow[];
-    if(!versions.length)break;
-    for(const previous of versions){
-     const visible=this.visibleVersion(previous,scope);if(!visible)return null;
-     if(!visible.body.reminderReason)return {origin,currentVersionAt:current.created_at};
-     origin=previous.created_at;before=previous.seq;
-    }
+ private notificationTiming(id:string,scope:QueryScope,current:VersionRow){
+  let origin=current.created_at,before=current.seq;
+  for(;;){
+   const versions=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT 100').all(id,before) as VersionRow[];
+   if(!versions.length)break;
+   for(const previous of versions){
+    const visible=this.visibleVersion(previous,scope);if(!visible)return null;
+    if(!visible.body.reminderReason)return {origin,currentVersionAt:current.created_at};
+    origin=previous.created_at;before=previous.seq;
    }
-   return {origin,currentVersionAt:current.created_at};
-  });
+  }
+  return {origin,currentVersionAt:current.created_at};
  }
- /** A hidden historical reminder decision must not accidentally become an
-  * authorization to remind again. Do not disclose the hidden feedback itself. */
- notificationFeedbackVisible(id:string,rawScope:QueryScope){
+ /** Freeze reminder eligibility and its feedback on one read snapshot. The
+  * read never needs a suggestion's separate task-input authorization. */
+ notificationCandidates(rawScope:QueryScope):NotificationCandidate[]{
+  const scope=queryScopeSchema.parse(rawScope);
   return this.transaction(()=>{
-   const card=this.view(this.row(id),queryScopeSchema.parse(rawScope));
-   const total=this.store.db.prepare("SELECT count(*) AS n FROM assistant_card_feedback WHERE card_id=? AND action IN ('later','ignore','never_remind')").get(id) as {n:number};
-   return total.n===card.feedback.filter(entry=>entry.action==='later'||entry.action==='ignore'||entry.action==='never_remind').length;
+   const candidates:NotificationCandidate[]=[];
+   const decisionCount=this.store.db.prepare("SELECT count(*) AS n FROM assistant_card_feedback WHERE card_id=? AND action IN ('later','ignore','never_remind')");
+   for(const row of this.feedRows(Number.MAX_SAFE_INTEGER,100)){
+    const snapshot=this.versionRow(row.id,row.current_version);
+    const visible=snapshot&&this.visibleVersion(snapshot,scope,true),reason=visible?.body.reminderReason;
+    if(!visible||!reason)continue;
+    const timing=this.notificationTiming(row.id,scope,visible.snapshot);
+    if(!timing)continue;
+    const feedback=this.visibleFeedback(row.id,scope).map(({item})=>item).filter(({action})=>action==='later'||action==='ignore'||action==='never_remind');
+    // A hidden decision cannot authorize another reminder.
+    if(decisionCount.get(row.id)?.n!==feedback.length)continue;
+    candidates.push({id:row.id,revision:row.revision,title:visible.body.title,reason,state:row.state,readAt:row.read_at,feedback,...timing});
+   }
+   return candidates;
   });
  }
  feedback(id:string,raw:AssistantCardFeedback,rawScope:QueryScope){
@@ -296,21 +306,24 @@ export class AssistantCards {
    for(const row of rows){if(this.visibleVersion(row,scope))return true;before=row.seq;}
   }
  }
+ private *feedRows(before:number,batch:number){
+  for(;;){
+   const rows=this.store.db.prepare("SELECT * FROM assistant_cards WHERE seq<? AND state!='stale' ORDER BY seq DESC LIMIT ?").all(before,batch) as CardRow[];
+   for(const row of rows)yield row;
+   if(rows.length<batch)return;
+   before=rows.at(-1)!.seq;
+  }
+ }
  page(args:{scope:QueryScope;limit?:number;cursor?:string}){
   const selected=z.object({scope:queryScopeSchema,limit:z.number().int().min(1).max(100).default(30),cursor:z.string().max(1000).optional()}).strict().parse(args);
   return this.transaction(()=>{
    let before=Number.MAX_SAFE_INTEGER;
    if(selected.cursor)before=this.cursorRow(selected.cursor,selected.scope).seq;
    const found:ReturnType<AssistantCards['view']>[]=[],batch=Math.max(30,selected.limit+1);
-   while(found.length<=selected.limit){
-    const rows=this.store.db.prepare("SELECT * FROM assistant_cards WHERE seq<? AND state!='stale' ORDER BY seq DESC LIMIT ?").all(before,batch) as CardRow[];
-    if(!rows.length)break;
-    for(const row of rows){
-     before=row.seq;const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,selected.scope);
-     if(visible)found.push(this.view(row,selected.scope,visible));
-     if(found.length>selected.limit)break;
-    }
-    if(found.length>selected.limit||rows.length<batch)break;
+   for(const row of this.feedRows(before,batch)){
+    const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,selected.scope);
+    if(visible)found.push(this.view(row,selected.scope,visible));
+    if(found.length>selected.limit)break;
    }
    const items=found.slice(0,selected.limit),last=items.at(-1);
    return {items,nextCursor:found.length>selected.limit&&last?this.cursor(selected.scope,last.id):null};

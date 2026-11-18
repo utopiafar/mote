@@ -4,7 +4,7 @@ import type {AssistantCards} from './assistant-cards.js';
 import {notificationSettingsSchema,type NotificationSettings} from './notification-configuration.js';
 import {resolveRoutineWallClock} from './routines-time.js';
 
-type Card=ReturnType<AssistantCards['page']>['items'][number];
+type Card=ReturnType<AssistantCards['notificationCandidates']>[number];
 const MAX_AGE_MS=24*60*60*1000;
 
 /** Use the same gap/overlap resolution as routine occurrences. A quiet window
@@ -27,35 +27,24 @@ function quietEnd(at:number,settings:NotificationSettings):number|undefined {
 export class AssistantNotifications {
  constructor(private readonly cards:AssistantCards,private readonly settings:()=>NotificationSettings,private readonly now=()=>Date.now()){}
  snapshot(scope:QueryScope){
-  return this.cards.readSnapshot(()=>this.project(scope));
- }
- private project(scope:QueryScope){
   const settings=notificationSettingsSchema.parse(this.settings()),now=this.now();
   if(!settings.enabled||quietEnd(now,settings)!==undefined)return {items:[]};
   const candidates:{card:Card;at:number;proposedAt:number;blocked:boolean}[]=[];
-  let cursor:string|undefined;
-  do{
-   const page=this.cards.page({scope,limit:100,cursor});
-   for(const card of page.items){
-    if(!card.reminderReason)continue;
-    const timing=this.cards.notificationTiming(card.id,scope);
-    if(!timing||!this.cards.notificationFeedbackVisible(card.id,scope))continue;
-    const origin=Date.parse(timing.origin),laters=card.feedback.filter(value=>value.action==='later');
-    const stop=card.feedback.filter(value=>value.action==='ignore'||value.action==='never_remind');
-    const episodes=[{at:origin,next:laters[0]?.createdAt,active:laters.length===0},...laters.flatMap((later,index)=>later.until?[{
-     at:Math.max(origin,Date.parse(later.createdAt),Date.parse(later.until)),next:laters[index+1]?.createdAt,active:index===laters.length-1,
-    }]:[])];
-    for(const episode of episodes){
-     const ready=quietEnd(episode.at,settings)??episode.at;
-     // A decision made before a future due time prevents that occurrence;
-     // a decision made after it retains the reservation for rate limiting.
-     if(ready>now||episode.next&&ready>Date.parse(episode.next)||card.readAt&&Date.parse(card.readAt)<ready||
-      stop.some(value=>Date.parse(value.createdAt)<ready)||card.state==='resolved'&&Date.parse(timing.currentVersionAt)<ready)continue;
-     candidates.push({card,at:ready,proposedAt:episode.at,blocked:!episode.active||card.state!=='open'||card.readAt!==null||stop.length>0});
-    }
+  for(const card of this.cards.notificationCandidates(scope)){
+   const origin=Date.parse(card.origin),laters=card.feedback.filter(value=>value.action==='later');
+   const stop=card.feedback.filter(value=>value.action==='ignore'||value.action==='never_remind');
+   const episodes=[{at:origin,next:laters[0]?.createdAt,active:laters.length===0},...laters.flatMap((later,index)=>later.until?[{
+    at:Math.max(origin,Date.parse(later.createdAt),Date.parse(later.until)),next:laters[index+1]?.createdAt,active:index===laters.length-1,
+   }]:[])];
+   for(const episode of episodes){
+    const ready=quietEnd(episode.at,settings)??episode.at;
+    // A decision made before a future due time prevents that occurrence;
+    // a decision made after it retains the reservation for rate limiting.
+    if(ready>now||episode.next&&ready>Date.parse(episode.next)||card.readAt&&Date.parse(card.readAt)<ready||
+     stop.some(value=>Date.parse(value.createdAt)<ready)||card.state==='resolved'&&Date.parse(card.currentVersionAt)<ready)continue;
+    candidates.push({card,at:ready,proposedAt:episode.at,blocked:!episode.active||card.state!=='open'||card.readAt!==null||stop.length>0});
    }
-   cursor=page.nextCursor??undefined;
-  }while(cursor);
+  }
   // Equal due times (e.g. a quiet window ending) coalesce to the most recent
   // proposal. Reservations come from current cards, including read/resolved ones;
   // polling never writes a delivery record or consumes an unread item.
@@ -68,7 +57,7 @@ export class AssistantNotifications {
   // resurfacing after a newer one was read or withdrawn while offline.
   const expires=latest.at+Math.min(interval,MAX_AGE_MS);
   if(now>=expires)return {items:[]};
-  return {items:[{id:latest.card.id,revision:latest.card.revision,title:latest.card.title,reason:latest.card.reminderReason!,
+  return {items:[{id:latest.card.id,revision:latest.card.revision,title:latest.card.title,reason:latest.card.reason,
    eligibleAt:new Date(latest.at).toISOString(),expiresAt:new Date(expires).toISOString()}]};
  }
 }
