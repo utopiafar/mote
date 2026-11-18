@@ -74,10 +74,14 @@ export async function launchCodexAppServer(options: CodexLaunchOptions = {}): Pr
       MOTE_NATIVE_CONTEXT_WINDOW: String(options.contextWindow ?? CODEX_CONSERVATIVE_CONTEXT_WINDOW)};
     // Never silently run an installed CLI without the physical send gate. Probe
     // before linking credentials; it does not read personal configuration.
+    const probeDeadline = AbortSignal.timeout(5000);
     try {
-      const {stdout} = await execFileAsync(command, [...prefix, '--mote-context-budget-version'], {env, cwd, timeout: 5000, maxBuffer: 1024});
+      const {stdout} = await execFileAsync(command, [...prefix, '--mote-context-budget-version'], {env, cwd, signal: probeDeadline, maxBuffer: 1024});
       if (stdout.trim() !== CODEX_BUDGET_VERSION) throw new Error('Unsupported native budget');
-    } catch {
+    } catch (error) {
+      if (probeDeadline.aborted && error instanceof Error && error.name === 'AbortError') {
+        throw new AgentProviderError({category: 'transient', code: 'provider_timeout', executionStarted: false}, {source: 'runtime', stage: 'startup', code: 'ETIMEDOUT', modelId: options.model});
+      }
       // The probe runs before credentials are linked or App Server starts;
       // this failure cannot represent an issued model request.
       throw new AgentProviderError({category: 'permanent', code: 'processing_limit', executionStarted: false}, {source: 'runtime', stage: 'startup', code: 'native_budget_unavailable', modelId: options.model});
