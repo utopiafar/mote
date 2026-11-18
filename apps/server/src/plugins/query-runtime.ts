@@ -3,8 +3,8 @@ import {ConversationRuntimeControls} from '../conversation-runtime-controls.js';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
-import {AgentNotConfiguredError,AgentYieldError,prepareTaskContext,type AgentProgress,type AgentTraceEvent,type QueryInput} from '@mote/agent';
-import {ProviderFailure,errorDiagnostics,type ConversationSettings,type InsightSnapshot,type QueryResult} from '@mote/shared';
+import {AgentNotConfiguredError,AgentYieldError,prepareTaskContext,type AgentProgress,type AgentTraceEvent,type ContextReader,type QueryInput} from '@mote/agent';
+import {ProviderFailure,errorDiagnostics,type AssistantDraftProposal,type ConversationSettings,type InsightSnapshot,type QueryResult} from '@mote/shared';
 import type {QueryScope as ReaderQueryScope} from '../query-scope.js';
 import type {DelegationRuntime} from '../delegation-runtime.js';
 import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
@@ -29,7 +29,7 @@ import type {ConcurrencyGate} from '../concurrency.js';
 import type {ModelSettingsStore} from '../model-settings.js';
 import type {AgentRuntimeRegistry} from '../agent-runtime-registry.js';
 import type {BackgroundModelAuthorization,AutomaticModelPurpose} from '../background-model-authorization.js';
-import {sourceModelIdentity} from '../model-authorization-host.js';
+import {agentModelConnection,sourceModelIdentity} from '../model-authorization-host.js';
 import type {ModelAuthorizationHost} from '../model-authorization-host.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
 import type {SourceContextStore} from '../source-context.js';
@@ -41,6 +41,9 @@ import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
 import {createOwnerCalendarControl} from '../owner-calendar-control.js';
 import {centralServices,type QueryDomain} from './central-contracts.js';
 import {nativeApplicationContext} from '../dsh-application-context.js';
+import {openingMemoryContext} from '../opening-memory.js';
+import {canonicalRecipeJson} from '../recipe-contract.js';
+import type {ExternalCalendarReview} from '../external-calendar-contract.js';
 
 /** This owner keeps admitted model runs and the insight entry. Routes and preparation
  * are contributed by the same query domain activation. */
@@ -61,7 +64,7 @@ export interface QueryRuntimeDependencies {
   readonly lifecycle:ServerLifecycle;
   readonly diagnostics:ServerDiagnostics;
   readonly modelAuthorization:Pick<BackgroundModelAuthorization,'bindCurrentStep'|'assertCurrent'>;
-  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'automatic'|'evidenceTriggers'|'queryTriggers'>;
+  readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'automatic'|'evidenceTriggers'|'queryTriggers'|'manual'>;
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
   readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
@@ -74,6 +77,7 @@ export interface QueryRuntimeDependencies {
   readonly conversations:Pick<Conversations,'assertHistoryContext'|'historyOriginalDependencies'|'message'|'messageForRun'>;
   readonly assistantDrafts:Pick<AssistantDrafts,'capabilities'|'issue'>;
   readonly ownerActions?:()=>OwnerCalendarPort|undefined;
+  readonly calendarReviewReader:Pick<ContextReader,'memories'>;
 }
 
 export interface QueryRuntime {
@@ -81,6 +85,7 @@ export interface QueryRuntime {
   readonly activeQueries:ReadonlySet<Promise<QueryResult>>;
   withQueryModelAuthority:<T>(input:QueryInput,moduleId:string,task:(signal:AbortSignal)=>Promise<T>)=>Promise<T>;
   queryAgent:(input:QueryInput,operation?:'query'|'insight',moduleId?:string,usageOwner?:'query'|'caller')=>Promise<QueryResult>;
+  readonly reviewExternalCalendar:ExternalCalendarReview;
   insight:(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId?:string,snapshot?:InsightSnapshot)=>Promise<ReturnType<typeof insightResult>>;
   /** Settle every accepted model run before the owning activation is released. */
   close():Promise<void>;
@@ -115,7 +120,33 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
   function queryAgent(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query') {
     return withQueryModelAuthority(input,moduleId,signal=>queryAgentAuthorized({...input,signal},operation,moduleId,usageOwner));
   }
-  function queryAgentAuthorized(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query') {
+  const reviewExternalCalendar:ExternalCalendarReview=async input=>{
+    if(!agent.configured)throw new AgentNotConfiguredError();
+    input.assertCurrent();
+    const profile=modelSettings.select('chat'),operationId='external-calendar:'+randomUUID(),targetId=randomUUID();
+    const connection=agentModelConnection({kind:'profile',id:profile.id},profile.settings);
+    return modelAuthorizationHost.manual(operationId,[connection],async signal=>{
+      const contextTime=new Date().toISOString();
+      const opening=await openingMemoryContext(dependencies.calendarReviewReader,input.instruction,{contextTime});
+      signal.throwIfAborted();
+      input.assertCurrent();
+      const context={openingMemories:opening.leads,contextEvidenceDependencies:opening.evidenceDependencies};
+      let accepted=false;
+      await queryAgentAuthorized({
+        question:input.instruction,executionLane:'interactive',contextTime,...context,signal,traceContext:{operationId},
+        modelProfileId:profile.id,modelOverride:profile.settings.model,
+        modelBudget:queryModelBudget(profile.settings.maxTokens,dependencies.conversationSettings().context),
+        assistantDraft:true,assistantCurrentInstruction:true,hostToolSelection:[],
+        ownerActionTargets:[{id:targetId,name:input.calendarName,kind:'calendar.create'}],
+        externalCalendarCandidate:input.event,assertContextAuthority:input.assertCurrent,
+      },'query','actions','query',proposal=>{
+        accepted=proposal?.input==='current-action'&&proposal.action.kind==='calendar.create'&&proposal.action.targetId===targetId&&
+          canonicalRecipeJson(proposal.action.event)===canonicalRecipeJson(input.event);
+      });
+      return accepted?context:undefined;
+    },input.signal);
+  };
+  function queryAgentAuthorized(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations',usageOwner:'query'|'caller'='query',externalCalendarReview?:(proposal:AssistantDraftProposal|undefined)=>void) {
     if(lifecycle.isClosing())throw new StoreError('Central node is shutting down',503);
     input=pinProcessingEvidence(input);
     if(input.skill==='personal-insight'&&!input.validateOutput)input={...input,validateOutput:validateInsightOutput};
@@ -284,11 +315,13 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       const completedUsage=runState.mode==='host'?hostReceipt:undefined;
       // A semantic model proposal becomes a host-bound draft only inside this
       // ordinary conversation answer. The proposal itself is never persisted.
-      const {draftProposal,currentAction:_untrustedAction,...answerResult}=result as QueryResult & {draftProposal?:import('@mote/shared').AssistantDraftProposal};
+      const {draftProposal,currentAction:_untrustedAction,...answerResult}=result as QueryResult & {draftProposal?:AssistantDraftProposal};
       const proposal=calendarControl?.resolve(draftProposal)??draftProposal;
       let draft:import('@mote/shared').AssistantDraft|undefined;
       let currentAction:import('@mote/shared').CurrentActionReference|undefined;
-      if(proposal?.input==='current-action'){
+      if(externalCalendarReview){
+        externalCalendarReview(proposal);
+      }else if(proposal?.input==='current-action'){
         const operation=input.traceContext?.operationId,message=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
         if(!ownerActions||!input.assistantCurrentInstruction||message?.status!=='running'||message.question.trim()!==input.question)throw new StoreError('A current owner message is required for this Action proposal',409);
         currentAction=ownerActions.proposeOwnerCalendar(message.id,proposal,result.runId);
@@ -325,7 +358,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
   const close=async()=>{await Promise.allSettled([...activeQueries]);};
-  return Object.freeze({activeQueries,controls,withQueryModelAuthority,queryAgent,insight,close});
+  return Object.freeze({activeQueries,controls,withQueryModelAuthority,queryAgent,reviewExternalCalendar,insight,close});
 }
 
 const unavailable=()=>new StoreError('Query runtime is unavailable',503);
@@ -334,6 +367,7 @@ export interface QueryRuntimePlatform extends Omit<PluginLifecycle,'start'> {
   /** Stable facade; a later activation services the same routes and port. */
   readonly query:QueryDomain;
   readonly runtime:QueryRuntime;
+  readonly reviewExternalCalendar:ExternalCalendarReview;
   start():void;
   quiesce(reason?:StopReason):void;
   stop(reason?:StopReason):Promise<void>;
@@ -378,6 +412,7 @@ export function createQueryRuntimePlatform(dependencies:QueryRuntimeDependencies
   })();
   return Object.freeze({
     query,
+    reviewExternalCalendar:(input:Parameters<ExternalCalendarReview>[0])=>active().reviewExternalCalendar(input),
     get runtime(){return read();},
     prepare(){
       if(phase!=='created')throw unavailable();

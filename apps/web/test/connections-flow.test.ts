@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {configureLocale,getLocale} from '@mote/shared/i18n';
+import {centralCalendarPluginCapabilitySchema} from '@mote/shared';
 import {buildApp} from '../../server/src/app';
 import {Connections} from '../src/plugins/sources/Connections';
 import {ApiError,type Api} from '../src/api';
@@ -26,6 +27,11 @@ test('real owner credentials remain separate, generation is one-time, and cancel
  const directory=await mkdtemp(join(tmpdir(),'mote-access-ui-')),token=randomUUID()+randomUUID();
  const node=await buildApp({path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1e6},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},connectors:{directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'generated-static-read-token-only-12345',mcpWriteEnabled:true,mcpWriteToken:'generated-static-write-token-only-12345',mcpWriteSourceIds:['generated-source']}}},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in connection UI');},close:async()=>{}}});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+ const capability=centralCalendarPluginCapabilitySchema.parse({id:'calendar.manage',version:1,inputSchema:'calendar.event.v1',outputSchema:'calendar.receipt.v1',operations:['calendar.create','calendar.update','calendar.cancel','calendar.complete'],executionLocation:'central-connector',risk:'calendar-write',constraints:{writableCalendar:true,completeEvent:true,currentEvidence:true,unexpiredCreatesAndUpdates:true,noParticipants:true,existingMoteEventsOnly:true,completionInMoteOnly:true}});
+ const identity={packageId:'generated.calendar',instanceId:'generated-calendar',instanceRevision:1,releaseDigest:'a'.repeat(64),capabilityDigest:'b'.repeat(64)};
+ node.pluginCenter.builtinActions={providers:()=>['A','B'].map(id=>({connectorId:'generated-calendar',provider:{
+  name:'Generated calendar '+id,calendarId:'generated-'+id,capability,identity,
+ }})),async execute(){throw Error('Issuing credentials must not write a calendar event');}};
  const headers={authorization:'Bearer '+token};
  const make=async(label:string,access='read')=>{const r=await node.app.inject({method:'POST',url:'/api/connections/mcp',headers,payload:{label,access,serverUrl:'https://generated.invalid'}});assert.equal(r.statusCode,200);return r.json();};
  const first=await make('Generated read Agent'),writer=await make('Generated write Agent','write'),revoked=await make('Generated old Agent');
@@ -50,6 +56,35 @@ test('real owner credentials remain separate, generation is one-time, and cancel
  await act(async()=>{location.hash='#/connections/access?connection='+first.credential.id;window.dispatchEvent(new window.HashChangeEvent('hashchange'));});assert.equal(d.querySelector('h1')!.textContent,'Generated read Agent');assert.ok(!d.body.textContent!.includes(first.config.mcpServers.mote.headers.Authorization));
  await act(async()=>button(d,'撤销连接').click());assert.ok(d.querySelector('[role="dialog"]'));await act(async()=>button(d,'取消').click());assert.equal(writes.filter(w=>w.path.endsWith(first.credential.id)).length,0);
  await act(async()=>button(d,'撤销连接').click());await act(async()=>button(d,'确认撤销').click());await until(()=>!d.querySelector('[role="dialog"]'));assert.equal(writes.filter(w=>w.path.endsWith(first.credential.id)).length,1);assert.equal(node.connections.authenticate(first.config.mcpServers.mote.headers.Authorization),undefined);assert.ok(node.connections.authenticate(writer.config.mcpServers.mote.headers.Authorization));
+ await act(async()=>button(d,'AI 接入').click());
+ await act(async()=>button(d,'新建连接').click());
+ await until(()=>!!d.querySelector('option[value="calendar"]'));
+ const select=async(element:HTMLSelectElement,value:string)=>act(async()=>{element.value=value;element.dispatchEvent(new window.Event('change',{bubbles:true}));});
+ await select(d.querySelector<HTMLSelectElement>('[aria-label="MCP 访问权限"]')!,'calendar');
+ assert.equal(button(d,'生成 MCP 配置').disabled,true,'the owner must select a specific calendar');
+ const picker=d.querySelector<HTMLSelectElement>('select[required]')!;
+ assert.equal(picker.options.length,3);
+ await select(picker,picker.options[2].value);
+ await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ await until(()=>!!d.querySelector('[aria-label="Codex 配置"]'));
+ const calendarConfig=JSON.parse(d.querySelector<HTMLTextAreaElement>('[aria-label="MCP JSON"]')!.value);
+ const bearer=calendarConfig.mcpServers.mote.headers.Authorization;
+ const toml=d.querySelector<HTMLTextAreaElement>('[aria-label="Codex 配置"]')!.value;
+ assert.match(toml,/\[mcp_servers\.mote_calendar\]/);
+ assert.ok(toml.includes('http_headers = { Authorization = '+JSON.stringify(bearer)+' }'));
+ assert.equal(d.querySelector('[aria-label="OAuth MCP 服务地址"]'),null);
+ const calendarWrite=writes.filter(request=>request.path==='/api/connections/mcp/calendar');
+ assert.equal(calendarWrite.length,1);
+ assert.equal((calendarWrite[0].body as {target:{calendarId:string}}).target.calendarId,'generated-B');
+ await act(async()=>button(d,'已保存，隐藏凭据').click());
+ assert.match(d.querySelector('.access-properties')!.textContent!,/Generated calendar B/);
+ assert.ok(!d.body.textContent!.includes(bearer));
+ assert.equal(d.querySelector('[aria-label="Codex 配置"]'),null);
+ await act(async()=>button(d,'撤销连接').click());
+ await act(async()=>button(d,'确认撤销').click());
+ await until(()=>!d.querySelector('[role="dialog"]'));
+ assert.equal(node.connections.authenticate(bearer),undefined);
+ assert.ok(node.connections.authenticate(writer.config.mcpServers.mote.headers.Authorization));
  denied=true;await act(async()=>resources(api).invalidate(k=>k==='/api/connections'));assert.match(d.body.textContent!,/Generated owner revoked/);assert.doesNotMatch(d.body.textContent!,/Generated read Agent|Generated write Agent/);
 });
 

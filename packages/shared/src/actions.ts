@@ -36,7 +36,8 @@ export interface ConnectorActionReceipt {status:'succeeded'|'uncertain';external
 export interface ActionRelation {operationId?:string;actionId:string;version:number;status:ActionStatus;event:CalendarDraft;target?:ActionProposalTarget;externalId?:string}
 export type ManagedActionState='waiting_device'|'executing'|'cancel_requested'|'cancelled'|'succeeded'|'uncertain';
 export interface ManagedAction {cancelRequestedAt?:string;grantId:string;grantRevision:number;connectionId:string;state:ManagedActionState}
-export interface ActionProposal {ownerInstruction?:{conversationId:string;messageId:string};cancelRequestedAt?:string;managed?:ManagedAction;id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;message?:MessageSendDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:ActionProposalTarget;externalId?:string;error?:string}
+export interface ExternalCalendarOrigin {connectionId:string;requestId:string}
+export interface ActionProposal {ownerInstruction?:{conversationId:string;messageId:string};externalCalendar?:ExternalCalendarOrigin;cancelRequestedAt?:string;managed?:ManagedAction;id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;message?:MessageSendDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:ActionProposalTarget;externalId?:string;error?:string}
 export interface ActionSettings {enabled:boolean;timeZone:string;reviewDeviceIds:string[]}
 export interface ActionTarget {deviceId:string;deviceName:string;calendars:CalendarChoice[];updatedAt:string}
 export const moteActionMarker=(id:string)=>`[Mote:${z.string().uuid().parse(id)}]`;

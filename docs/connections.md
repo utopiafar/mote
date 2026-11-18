@@ -108,6 +108,45 @@ Content-Type: application/json
 
 需要本地stdio的客户端可按[连接器文档](connectors.md)配置桥接：将中央下载的`mote-mcp.json`放到私有位置，在macOS/Linux执行`chmod 600 /绝对路径/mote-mcp.json`，再使用`node scripts/mcp-stdio.mjs --connection /绝对路径/mote-mcp.json`。桥接只接受当前`mcpServers.mote` HTTP配置，拒绝旧的`{url,token}`文件，不执行JSON中的`command`或`args`。
 
+### 外部 Codex 创建日程
+
+1. 在中央启用 MCP 并设置好对话模型。在「来源」中连接云日历，选择一个自己有写权限的日历，再授权连接器写入。已有写授权的飞书连接会在启动时向飞书核验缺失的日历角色，之后的连接检查或同步可重试核验。
+2. 打开「来源 → AI 接入 → 新建连接」，在「访问权限」中选「创建日程」，选定一个日历并生成配置。此步骤将一个独立凭据绑定到该日历。每个需要独立撤销的客户端使用自己的连接。
+3. 点击「复制 Codex 配置」，把生成的 TOML 粘贴到用户级 `~/.codex/config.toml`。这段配置含一次性展示的完整 Bearer 凭据，应存放在自己的配置中。重新启动 Codex，用 `codex mcp list` 或交互会话的 `/mcp` 查找 `mote_calendar`。在同一台电脑可用本机回环地址，远程连接使用可访问的 HTTPS 地址。
+4. 在 Codex 中明确要求实际创建一条日程，例如「请现在通过 Mote 在已授权的日历创建『项目评审』。时间是 2031 年 5 月 8 日 14:00 到 15:00，Asia/Shanghai，地点为评审室。」首次选择目标并签发凭据后，满足当前指令、有效 Memory 和日历权限的请求直接进入 Actions。
+5. 在「AI 接入」打开连接详情即可撤销。撤销阻止后续请求和未领取的写入。已经领取的请求仍以「待办与日程」中的原 Action 回执为准。
+
+也可以把独立 token 放进启动 Codex 的环境变量 `MOTE_CALENDAR_TOKEN`。变量值取自生成的 `Authorization` 字段，去掉 `Bearer ` 前缀。对应 TOML 如下。
+
+```toml
+[mcp_servers.mote_calendar]
+url = "https://mote.example.com/mcp"
+bearer_token_env_var = "MOTE_CALENDAR_TOKEN"
+tool_timeout_sec = 120
+```
+
+日历凭据的工具清单如下。
+
+| 工具 | 用途 |
+| --- | --- |
+| `mote_calendar_target` | 查看该连接的日历名称和当前可用状态。 |
+| `mote_calendar_create` | 提交 `{requestId,instruction,event}`。用同一个 UUID 标识当次请求，`instruction` 原样传入最新用户消息，`event` 包含 `title,start,end,timeZone,allDay,location,description`。定时日程使用带偏移的时间戳，全天日程使用日期，结束日独占，地点或备注可用空字符串。 |
+| `mote_calendar_receipt` | 按 `{requestId}` 查询该连接提交的原 Action 回执。 |
+
+中央使用自己的对话模型，按现有当前指令和有效 Memory 语义校验候选日程，再检查连接与目标权限。连接只授予在所选日历创建事件和查询本连接的回执。需要检索归档或写回资料时另行签发对应凭据。将此连接交给会原样传递当前用户消息的可信客户端。MCP Bearer 认证客户端身份，消息的用户角色由客户端提供。
+
+`approved` 表示已受理，`executing` 表示已领取，只有 `succeeded` 和供应方事件 ID 能确认写入。`stale` 表示执行前条件已失效。`uncertain` 表示写入结果待核实，应在原日历核查。断线或超时时先用相同 `requestId` 查回执；中央尚无回执时，可以重发完全相同的请求。更换 UUID 或连接会被视为新请求。
+
+所有者 API 为 `GET /api/connections/mcp/calendar` 列出可选目标，以及 `POST /api/connections/mcp/calendar` 用 `{serverUrl,label,target}` 签发凭据。取列表中的完整 `target`，响应沿用 `{credential,config}`。撤销沿用 `DELETE /api/connections/:id`。这些管理路由使用所有者会话。
+
+在仓库根目录可运行下列测试。它使用临时配置、回环 HTTP、生成的模型响应和日历回执。设置 `MOTE_CALENDAR_TEST_CODEX` 还会启动对应的本机 Codex App Server，验证工具发现、提交和回执查询。
+
+```sh
+npm run build:libs
+MOTE_CALENDAR_TEST_CODEX="$(command -v codex)" npm run test:file -w @mote/server -- test/mcp-calendar-actions.test.ts
+npm run test:file -w @mote/web -- test/connections-flow.test.ts
+```
+
 ## 持久性与边界
 
 独立凭据仅以随机 token 的 SHA-256 和权限元数据保存在 `data/connectors/client-connections.json`，目录权限 700、文件权限 600。与现有连接器凭据一样，它不包含在可携带的资料导出中；部署回退会通过私有连接器移交保持当前凭据和撤销状态。凭据数量和撤销历史数量不作为配对门槛；凭据文件仍限制在 2 MiB，并为已发凭据的撤销标记预留空间。达到字节容量时拒绝新增，既有凭据仍可读取和撤销。

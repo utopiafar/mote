@@ -27,6 +27,8 @@ export interface QueryRequest {
   /** Host-offered opaque targets for a single current-owner calendar proposal.
    * These labels grant no writes; only the Host can accept its exact payload. */
   ownerActionTargets?:readonly {id:string;name:string;kind:import('@mote/shared').CurrentActionReference['kind'];event?:import('@mote/shared').CurrentCalendarProposal['action']['event']}[];
+  /** Host-only candidate from a separately authorized external calendar client. */
+  externalCalendarCandidate?:import('@mote/shared').CalendarDraft;
   after?: string;
   before?: string;
   deviceId?: string;

@@ -30,6 +30,7 @@ export interface McpContext {
  allowedOrigins:string[];
  publicUrl?:string;
  authorizeCredential?:ConnectorContext['mcpAuthorization'];
+ calendar?:ConnectorContext['mcpCalendar'];
 }
 /** Composition resolves implementations once. Each MCP server receives only
  * its read or write audience, never the owner token or the global Store. */
@@ -52,7 +53,7 @@ export function mcpContext(context:ConnectorContext):McpContext {
  const configuration=()=>{
   const options=config.connectors;return {mcpEnabled:options?.mcpEnabled,mcpReadToken:options?.mcpReadToken,mcpWriteEnabled:options?.mcpWriteEnabled,mcpWriteToken:options?.mcpWriteToken,mcpWriteSourceIds:options?.mcpWriteSourceIds};
  };
- return {read,write:{putItem:sources.upsert.bind(sources)},configuration,allowedOrigins:config.allowedOrigins,...(config.publicUrl?{publicUrl:config.publicUrl}:{}),authorizeCredential:context.mcpAuthorization};
+ return {read,write:{putItem:sources.upsert.bind(sources)},configuration,allowedOrigins:config.allowedOrigins,...(config.publicUrl?{publicUrl:config.publicUrl}:{}),authorizeCredential:context.mcpAuthorization,calendar:context.mcpCalendar};
 }
 export interface RemoteMcpContext {
  allowLocal():boolean|undefined;

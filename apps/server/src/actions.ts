@@ -36,7 +36,7 @@ export class Actions {
   readonly engine:ExecutionEngine;private owned:boolean;private unregister:()=>Promise<void>;private closing?:Promise<void>;
   private runtimeSettings:ActionsRuntimeSettings;
   private settingsTail:Promise<void>=Promise.resolve();
-  constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;ownerInstructionCurrent?:(action:ActionProposal)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
+  constructor(readonly store:Store,private files:FileStore,private query:(input:QueryInput)=>Promise<QueryResult>,private configured:()=>boolean,private options:{executor?:ExecutionEngine;semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;configService?:ConfigService;connectorTargets?:()=>ActionConnectorChoice[];messageSendAuthorized?:(target:CentralConnectorActionTarget)=>boolean;proposalCurrent?:(id:string)=>boolean;ownerInstructionCurrent?:(action:ActionProposal)=>boolean;externalCalendarCurrent?:(action:ActionProposal)=>boolean;readEvidence?:(ids:string[])=>CaptureRecord[];currentEvidence?:(id:string)=>boolean}={}){
     this.runtimeSettings=options.configService?.current(actionsConfigDomain)??actionsRuntimeSettingsSchema.parse({});
     installSchemaPlan(store.db,[actionsSchemaInstallation]);
     this.engine=options.executor??new ExecutionEngine(store);this.owned=!options.executor;
@@ -126,9 +126,14 @@ export class Actions {
   private save(a:ActionProposal){a.updatedAt=new Date().toISOString();this.store.db.prepare('INSERT INTO action_proposals VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(a.id,JSON.stringify(a));return a;}
   private original(a:ActionProposal){if(!a.related)return;const row=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(a.related.actionId) as {json:string}|undefined;return row?JSON.parse(row.json) as ActionProposal:undefined;}
   private relationValid(a:ActionProposal){if(!a.related)return true;const original=this.original(a);return !!original&&original.kind==='calendar.create'&&!original.resolution&&original.version===a.related.version&&original.status===a.related.status;}
-  /** Only the private, exact current-owner receipt can replace captured proof.
-   * Ordinary calendar proposals retain the existing evidence requirement. */
-  private valid(a:ActionProposal){return this.options.proposalCurrent?.(a.id)!==false&&this.relationValid(a)&&(a.ownerInstruction?this.options.ownerInstructionCurrent?.(a)===true:a.kind==='message.send'?Boolean(a.message&&a.message.text.trim()):a.evidence.length>0&&a.evidence.every(e=>{const r=this.read([e.id])[0];return r&&this.current(e.id)&&fingerprint(r)===e.fingerprint;}));}
+  /** A privately authorized current request or current captured proof. */
+  private valid(a:ActionProposal){
+    if(this.options.proposalCurrent?.(a.id)===false||!this.relationValid(a))return false;
+    if(a.ownerInstruction)return this.options.ownerInstructionCurrent?.(a)===true;
+    if(a.externalCalendar)return this.options.externalCalendarCurrent?.(a)===true;
+    if(a.kind==='message.send')return Boolean(a.message&&a.message.text.trim());
+    return a.evidence.length>0&&a.evidence.every(e=>{const r=this.read([e.id])[0];return r&&this.current(e.id)&&fingerprint(r)===e.fingerprint;});
+  }
   private validate(a:ActionProposal){
     if(this.options.proposalCurrent?.(a.id)===false){
       // The origin check can retire its task and scrub this durable proposal.
@@ -138,7 +143,7 @@ export class Actions {
     const missing=a.evidence.filter(e=>!this.read([e.id]).length);
     if(missing.length){a.evidence=a.evidence.filter(e=>!missing.includes(e));if(['proposed','approved','dismissed','stale'].includes(a.status)){a.event={title:moteText("来源已删除的日程建议"),start:null,end:null,timeZone:null,allDay:false,location:'',description:''};if(a.related)a.related.event={...a.event};a.uncertainty='';a.status='stale';a.version++;}this.save(a);}
     if(['proposed','approved'].includes(a.status)&&!this.valid(a)){
-      if(a.ownerInstruction)a.event={title:moteText('日程'),start:null,end:null,timeZone:null,allDay:false,location:'',description:''};
+      if(a.ownerInstruction||a.externalCalendar)a.event={title:moteText('日程'),start:null,end:null,timeZone:null,allDay:false,location:'',description:''};
       a.status='stale';a.version++;this.save(a);
     }return a;
   }
@@ -175,13 +180,27 @@ export class Actions {
   connectorTargets(){return this.options.connectorTargets?.()??[];}
   private connectorChoice(target:ActionProposalTarget){return this.connectorTargets().find(choice=>JSON.stringify(choice.target)===JSON.stringify(target));}
   messageProposalRevision(){return this.meta('message-proposals',{revision:0}).revision;}
-  /** Internal Actions-owner sink. Its caller must already hold the real query
-   * commit transaction and the exact private single-use message receipt. */
+  /** The owner query commit and the external calendar admission both pin
+   * their exact request before inserting a durable Action. */
   proposeCurrentCalendar(id:string,event:ActionProposal['event'],target:CentralConnectorActionTarget,ownerInstruction:NonNullable<ActionProposal['ownerInstruction']>,change?:{kind:'calendar.update'|'calendar.cancel';original:NonNullable<ActionProposal['related']>}){
-    if(!this.store.db.isTransaction)throw new StoreError('Owner Action acceptance requires its query transaction',409);
-    const at=new Date().toISOString(),action:ActionProposal={id,kind:change?.kind??'calendar.create',event:calendarEventSchema.parse(event),...(change?{related:structuredClone(change.original)}:{}),target,ownerInstruction,evidence:[],uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at};
-    if(this.store.db.prepare('SELECT 1 FROM action_proposals WHERE id=?').get(id)||this.options.ownerInstructionCurrent?.(action)!==true)throw new StoreError('The current owner Action receipt is unavailable',409);
+    return this.proposeAuthorizedCalendar({id,event,target,ownerInstruction,kind:change?.kind??'calendar.create',...(change?{related:structuredClone(change.original)}:{})});
+  }
+  proposeExternalCalendar(id:string,event:ActionProposal['event'],target:CentralConnectorActionTarget,externalCalendar:NonNullable<ActionProposal['externalCalendar']>){
+    return this.proposeAuthorizedCalendar({id,event,target,externalCalendar,kind:'calendar.create'});
+  }
+  private proposeAuthorizedCalendar(input:Pick<ActionProposal,'id'|'event'|'target'|'kind'|'related'|'ownerInstruction'|'externalCalendar'>){
+    if(!this.store.db.isTransaction)throw new StoreError('Current Action acceptance requires its admission transaction',409);
+    const at=new Date().toISOString(),action:ActionProposal={...input,event:calendarEventSchema.parse(input.event),evidence:[],uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at};
+    if(this.store.db.prepare('SELECT 1 FROM action_proposals WHERE id=?').get(action.id)||!this.valid(action))throw new StoreError('The current Action authorization is unavailable',409);
     return this.save(action);
+  }
+  /** A process that lost a claimed calendar effect can only report uncertainty. */
+  recoverCurrentCalendar(){
+    const rows=this.store.db.prepare("SELECT id,json FROM action_proposals WHERE json_extract(json,'$.status')='executing' AND (json_type(json,'$.ownerInstruction')='object' OR json_type(json,'$.externalCalendar')='object')").all();
+    for(const row of rows){
+      const action=JSON.parse(String(row.json)) as ActionProposal;
+      if(action.operationId)this.connectorReceipt(String(row.id),action.operationId,{operationId:action.operationId,status:'uncertain'});
+    }
   }
   /** Called only by the owner product adapter after task/version/grant checks.
    * This creates the existing proposal; confirmation and sending stay unchanged. */

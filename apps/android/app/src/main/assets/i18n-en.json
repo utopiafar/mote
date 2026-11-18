@@ -385,7 +385,6 @@
   "新建连接": "New connection",
   "检索和读取已获准访问的资料，不修改内容。": "Search and read authorized materials without changing content.",
   "客户端兼容性": "Client compatibility",
-  "指定来源写入": "Write to selected sources",
   "生成 MCP 配置": "Generate MCP configuration",
   "配置已生成": "Configuration generated",
   "{0} 的连接配置": "Connection configuration for {0}",
@@ -7127,7 +7126,6 @@
   "控件状态": "Control state",
   "配置站点与扩展": "Configure sites and extension",
   "采集内容、可用能力与字段规则": "Capture choices, available capabilities and field rules",
-  "按用途推荐权限和 Agent 专属连接向导尚未开放。当前只读 MCP 可检索已获准的归档资料；写入必须单独授权。": "Purpose-based permission recommendations and Agent connection guides are not available yet. Read-only MCP can search authorized archived materials; writing requires separate authorization.",
   "还没有设备连接。生成邀请即可添加。": "No device connections yet. Create an invitation to add one.",
   "还没有 AI 连接。生成 MCP 配置即可添加。": "No AI connections yet. Create an MCP configuration to add one.",
   "这份洞察当前不可用，请从历史选择其他洞察。": "This insight is currently unavailable. Select another insight from history.",
@@ -8694,5 +8692,15 @@
   "选择后自动填写": "Filled in automatically after selection",
   "本机设置": "Local settings",
   "压缩前图片": "Image before compression",
-  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Please use only this material to start getting to know me. Explain the facts it clearly presents, what remains uncertain, and the questions you need me to answer."
+  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Please use only this material to start getting to know me. Explain the facts it clearly presents, what remains uncertain, and the questions you need me to answer.",
+  "MCP · 创建日程": "MCP · Calendar creation",
+  "创建日程": "Create calendar events",
+  "授权目标日历": "Authorized calendar",
+  "此连接可根据你的当次指令，仅在所选日历创建日程。": "This connection can create events in the selected calendar when you explicitly ask.",
+  "请先在来源中选择日历并授权写入。": "Select a calendar in Sources and authorize writes first.",
+  "将配置粘贴到 Codex 的 config.toml，然后重启 Codex。": "Paste this into Codex’s config.toml, then restart Codex.",
+  "复制 Codex 配置": "Copy Codex configuration",
+  "Codex 配置": "Codex configuration",
+  "撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。": "Revocation stops new calendar writes. Check the Action receipt for any request already dispatched.",
+  "日历授权、目标或当前上下文已变化。": "Calendar authorization, the destination, or the current context changed."
 }

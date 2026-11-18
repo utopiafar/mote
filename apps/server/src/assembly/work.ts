@@ -97,6 +97,7 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
       store:actionInputs.store,files:actionInputs.files,sources:actionInputs.sources,connections:actionInputs.connections,executor:actionInputs.executor,
       configService:actionInputs.configService,semanticArtifacts:actionInputs.semanticArtifacts,assistantTasks:actionInputs.assistantTasks,
       ownerCalendarAuthority:actionInputs.ownerCalendarAuthority,
+      externalCalendarAuthority:actionInputs.externalCalendarAuthority,
       readEvidence:ids=>actionInputs.evidenceReader.memories.readEvidence(ids),currentEvidence:id=>actionInputs.evidenceReader.memories.isCurrentEvidence(id),
       actionProviders:()=>actionInputs.pluginCenter.actionProviders(),connectorAction:input=>actionInputs.pluginCenter.executeConnectorAction(input),
       query:input=>actionInputs.queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),configured:()=>actionInputs.agent.configured,
@@ -139,6 +140,7 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
     get insightServices(){return current();},get insightRuns(){return current().runs;},
     get actions(){if(!actionsLease||!actionsInput)throw Error('Actions plugin is not selected');actionsLease.assertCurrent();return actionsInput.actionsForAssembly;},
     get actionsServices(){if(!actionsLease)throw Error('Actions plugin is not selected');return actionsLease.value;},
+    get externalCalendar(){actionsLease?.assertCurrent();return actionsLease?.value.externalCalendar;},
     contributeAssistantRoutes(context:Context,cards:Parameters<typeof insightAssistantFeature>[1]){
       if(insights)contributeDomainRoutes(context,{'mote.insights':insightAssistantFeature(insights,cards)});
     },
@@ -147,6 +149,7 @@ export async function prepareWorkDomains(dependencies:WorkDomainDependencies){
 
 export interface ActionsAssemblyDependencies {
   readonly ownerCalendarAuthority?:import('../owner-calendar-instructions.js').OwnerCalendarAuthority;
+  readonly externalCalendarAuthority?:import('../external-calendar-actions.js').ExternalCalendarAuthority;
   readonly store:Store;
   readonly assistantTasks:import('../assistant-tasks.js').AssistantTasks;
   readonly evidenceReader:EvidenceReader;

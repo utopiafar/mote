@@ -7,8 +7,9 @@ export function calendarNeedsAttention(item:ActionProposal){return calendarNeeds
 export function calendarStateLabel(item:ActionProposal){
  if(item.ownerInstruction&&item.cancelRequestedAt&&item.status==='dismissed')return moteText('已取消等待执行');
  if(item.ownerInstruction&&item.cancelRequestedAt&&['executing','uncertain'].includes(item.status))return moteText('已请求取消，写入结果仍待核实');
- if(item.ownerInstruction&&item.status==='approved')return moteText('排队中');
- if(item.ownerInstruction&&item.status==='stale')return moteText('已失效');
+ if((item.ownerInstruction||item.externalCalendar)&&item.status==='approved')return moteText('排队中');
+ if((item.ownerInstruction||item.externalCalendar)&&item.status==='stale')return moteText('已失效');
+ if(item.externalCalendar&&item.status==='executing')return moteText('正在写入 / 等待回执');
  if(item.kind==='message.send')return ({proposed:moteText('待确认'),dismissed:moteText('已忽略'),approved:moteText('排队中'),executing:moteText('正在发送'),succeeded:moteText('已完成'),uncertain:moteText('结果需要核实'),stale:moteText('原文已变化')} as const)[item.status];
  if(item.resolution)return item.resolution==='completed'?moteText('已完成'):moteText('已取消');
  if(item.managed?.state==='cancel_requested')return moteText('已请求取消，写入结果仍待核实');

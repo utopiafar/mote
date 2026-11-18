@@ -29,15 +29,13 @@
 .access-workspace .connection-help p { max-width:74ch; line-height:1.7; }
 .access-create-form { max-width:674px; display:flex; flex-direction:column; gap:24px; }
 .access-create-form > label { display:flex; flex-direction:column; gap:10px; font-size:12px; }
-.access-workspace .access-create-form input { width:100%; height:44px; min-height:44px; padding:10px 12px; border-radius:var(--mote-radius-control); font-size:13px; background:var(--mote-surface); }
+.access-workspace .access-create-form :is(input, select) { width:100%; height:44px; min-height:44px; padding:10px 12px; border-radius:var(--mote-radius-control); font-size:13px; background:var(--mote-surface); }
 .access-create-form small { color:var(--mote-muted); font-size:11px; }
-.access-permission { display:grid; grid-template-columns:100px 1fr; gap:16px; padding:24px 0; border-top:1px solid var(--mote-hair); border-bottom:1px solid var(--mote-hair); font-size:13px; }
-.access-permission > span { color:var(--mote-muted); }
-.access-permission p { margin:10px 0 0; font-size:11px; color:var(--mote-muted); line-height:1.7; }
 .access-workspace .access-create-form .connection-help { margin:0; }
 .access-form-actions { display:flex; justify-content:flex-end; padding-top:20px; margin-top:0; border-top:1px solid var(--mote-hair); }
 .access-detail { max-width:794px; }
 .access-detail .page-heading { border-bottom:1px solid var(--mote-hair); padding-bottom:28px; }
+.access-detail .connection-mcp .codex-config { min-height:115px; }
 .access-properties { display:grid; grid-template-columns:100px minmax(0,1fr); gap:22px 20px; margin:30px 0; font-size:14px; }
 .access-properties dt { color:var(--mote-muted); }
 .access-properties dd { text-align:left; margin:0; overflow-wrap:anywhere; }
@@ -56,7 +54,7 @@
 .source-dialog header h2 { font-size:15px; margin:0; }
 .source-dialog > p { font-size:13px; line-height:1.7; padding:22px; margin:0; }
 .source-dialog footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid var(--mote-hair); }
-@media(max-width:700px) { .source-workspace { padding:4px 0 30px; } .access-row { gap:12px; flex-wrap:wrap; padding:18px 3px; } .access-row .source-row-copy { min-width:55%; } .access-permission,.access-properties { grid-template-columns:90px minmax(0,1fr); } .source-workspace .page-heading h1 { font-size:23px; } }
+@media(max-width:700px) { .source-workspace { padding:4px 0 30px; } .access-row { gap:12px; flex-wrap:wrap; padding:18px 3px; } .access-row .source-row-copy { min-width:55%; } .access-properties { grid-template-columns:90px minmax(0,1fr); } .source-workspace .page-heading h1 { font-size:23px; } }
 /* A long connection name may wrap; its authorization state remains one phrase. */
 .access-workspace .access-detail > .split-heading > div { min-width:0; flex:1; }
 .access-workspace .access-detail > .split-heading h1 { overflow-wrap:anywhere; }

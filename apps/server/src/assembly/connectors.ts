@@ -44,6 +44,7 @@ export interface ConnectorsAssemblyDependencies {
   readonly validOwnerBearer:(authorization:string|undefined)=>boolean;
   readonly connections:Connections;
   readonly authorizationPlatform:AuthorizationPlatform;
+  readonly externalCalendar?:import('../external-calendar-contract.js').ExternalCalendarPort;
   readonly connectorTesting?:ConnectorTestDependencies;
   readonly additionalManifests?:readonly ConnectorManifest[];
 }
@@ -62,7 +63,8 @@ export async function assembleConnectors(dependencies:ConnectorsAssemblyDependen
     mapError:error=>error instanceof ConnectorError?{status:error.statusCode,error:error.code}:error instanceof ZodError?{status:400,error:'connector_input_invalid'}:undefined,
   });
   const connectorConfig={dataDir:bootstrap.dataDir,token:bootstrap.owner.token,allowedOrigins:server.allowedOrigins,publicUrl:server.publicUrl||undefined,connectors:connectorsSettings};
-  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,configService.current(connectorsConfigDomain),resource)},dependencies.pluginStorage,dependencies.connectorTesting,additionalManifests,dispatcher);
+  const mcpCalendar=dependencies.externalCalendar&&{...dependencies.externalCalendar,authenticate:(header:string|undefined)=>connections.mcpCalendarConnection(header)};
+  const connectors=await registerConnectors(app,dependencies.backendContext,{memoryRecipeSettings,diagnostics,memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers,processing,config:connectorConfig,ownerAuthorization,mcpAuthorization:(header,resource)=>connections.mcpAuthorization(header,configService.current(connectorsConfigDomain),resource),mcpCalendar},dependencies.pluginStorage,dependencies.connectorTesting,additionalManifests,dispatcher);
   resources.defer(()=>connectors.close());
   return Object.freeze({connectors});
 }
