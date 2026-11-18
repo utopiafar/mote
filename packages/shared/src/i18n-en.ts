@@ -8671,6 +8671,8 @@ export const english: Readonly<Record<string, string>> = {
   "加载可选内容": "Load available content",
   "可选内容列表未完整返回，只能选择当前已列出的内容。": "The available content list is incomplete. Only the items currently listed can be selected.",
   "保存范围会启用所选来源的读取；未选内容不会接入，已有归档保留。": "Saving the scope enables reading for the selected sources. Unselected content is not collected, and existing archives are retained.",
+  "已选 {0} 项，最多可选 {1} 项。": "{0} of {1} allowed items selected.",
+  "取消勾选一项后即可改选。": "Deselect an item to choose another.",
   "历史范围：{0}": "History scope: {0}",
   "全部已授权历史": "All authorized history",
   "仅接入新增内容": "New content only",

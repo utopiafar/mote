@@ -12,10 +12,11 @@ import {SourceDisconnectReview} from './SourceDisconnectReview';
 import {SourceCoverageDetails} from './SourceCoverage';
 
 export type OfficialProvider='notion'|'slack'|'feishu-session';
+// Keep the form limits aligned with the installed packages' /select validation.
 export const officialConnectorDefinitions={
- notion:{id:'official-notion',packageId:'mote.official.notion',kind:'mote.official.notion',name:()=> 'Notion',types:['page','database']},
- slack:{id:'official-slack',packageId:'mote.official.slack',kind:'mote.official.slack',name:()=> 'Slack',types:['channel','im','mpim']},
- 'feishu-session':{id:'official-feishu-session',packageId:'mote.official.feishu-session',kind:'mote.official.feishu-session',name:()=>moteText('飞书会话'),types:['group','p2p']},
+ notion:{id:'official-notion',packageId:'mote.official.notion',kind:'mote.official.notion',name:()=> 'Notion',types:['page','database'],selectionLimit:50},
+ slack:{id:'official-slack',packageId:'mote.official.slack',kind:'mote.official.slack',name:()=> 'Slack',types:['channel','im','mpim'],selectionLimit:100},
+ 'feishu-session':{id:'official-feishu-session',packageId:'mote.official.feishu-session',kind:'mote.official.feishu-session',name:()=>moteText('飞书会话'),types:['group','p2p'],selectionLimit:100},
 } as const;
 type Selection={id:string;type:string;sourceId:string;initialSync?:'all'|'new_only';title?:string;name?:string};
 type Status={configured:boolean;connected:boolean;accountId?:string;connectionGeneration?:string;account?:string;workspace?:string;team?:string;user?:string;archiveAuthorized?:boolean;readScopesOk?:boolean;selected:Selection[];state:string;job?:{kind:string;state:string;authorizationUrl?:string;error?:string}};
@@ -51,6 +52,8 @@ function OfficialConnectorContent({api,provider,sourceId,refresh}:{api:Api;provi
  const selected=Array.isArray(status?.selected)?status.selected:[];
  const dirty=form?.visit===visit&&form.dirty;
  const choices=form?.visit===visit?form.choices:selected.map(item=>({id:item.id,type:item.type,initialSync:item.initialSync??'all'}));
+ const {selectionLimit}=definition;
+ const limitReached=choices.length>=selectionLimit,overLimit=choices.length>selectionLimit;
  const listed=candidates?.visit===visit?candidates:undefined;
  const busy=operation?.visit===visit&&operation.busy,notice=operation?.visit===visit?operation.notice:undefined;
  const authorizing=provider==='feishu-session'&&status?.job?.kind==='archive'&&['running','waiting'].includes(status.job.state);
@@ -100,11 +103,16 @@ function OfficialConnectorContent({api,provider,sourceId,refresh}:{api:Api;provi
    {provider==='feishu-session'&&!status.connected?<a className="button" href="#/connections/lark">{moteText('连接飞书账号')}</a>:<button className="button" disabled={busy||!status.configured||authorizing} onClick={authorize}>{moteText(ready?'重新授权':'连接账号')}</button>}
    <button className="text-button" disabled={busy} onClick={()=>void action(async(signal)=>{if(provider==='feishu-session')await api.request(path+'/check',{method:'POST',body:'{}',signal});})}>{moteText('刷新状态')}</button>
   </div></div>{provider==='feishu-session'&&<p className="connector-help">{moteText('飞书会话需要单独的消息读取授权；不会开启发送权限。')}</p>}{url&&<><a className="text-button connector-authorization" href={url} target="_blank" rel="noreferrer noopener">{moteText('在系统浏览器打开授权页面')}</a><p>{moteText('授权完成后返回此页并刷新状态。')}</p></>}{authorizing&&<button className="text-button" onClick={()=>void action(async(signal)=>{await api.request(path+'/cancel',{method:'POST',body:'{}',signal});},true)}>{moteText('取消')}</button>}{status.job?.kind==='archive'&&status.job.state==='failed'&&<p role="alert">{moteText('授权未完成，请重试。')}</p>}</section>
-  {ready&&<><form className="connector-section" onSubmit={event=>{event.preventDefault();if(url||authorizing)return;const chosen=choices.map(item=>({...item}));void action(async(signal,valid)=>{
+  {ready&&<><form className="connector-section" onSubmit={event=>{event.preventDefault();if(url||authorizing||overLimit)return;const chosen=choices.map(item=>({...item}));void action(async(signal,valid)=>{
    await api.request(path+'/select',{method:'POST',body:JSON.stringify({selected:chosen}),signal});if(!valid())return;setForm({visit,choices:chosen,dirty:false});setOperation({visit,busy:true,notice:moteText('同步范围已保存。')});if(chosen.length)await sync(signal,valid);
-  });}}><h2>{moteText('允许读取的内容')}</h2><button type="button" className="button" disabled={busy||Boolean(url)||authorizing} onClick={load}>{moteText('加载可选内容')}</button>{listed?.truncated&&<p>{moteText('可选内容列表未完整返回，只能选择当前已列出的内容。')}</p>}<p className="connector-help">{moteText('保存范围会启用所选来源的读取；未选内容不会接入，已有归档保留。')}</p><fieldset disabled={busy||Boolean(sourcePage.error)||Boolean(url)||authorizing}>
-   {all.map(item=>{const checked=choices.find(value=>value.id===item.id);return <div className="connector-selection" key={item.id}><label className="connector-check"><input type="checkbox" checked={Boolean(checked)} disabled={!checked&&choices.length>=100} onChange={event=>update(event.target.checked?[...choices,{id:item.id,type:item.type,initialSync:'all'}]:choices.filter(value=>value.id!==item.id))}/>{label(item)} · {kindLabel(item.type)}</label>{checked&&<label>{moteText('历史范围：{0}',label(item))}<select value={checked.initialSync} onChange={event=>update(choices.map(value=>value.id===item.id?{...value,initialSync:event.target.value as Choice['initialSync']}:value))}><option value="all">{moteText('全部已授权历史')}</option><option value="new_only">{moteText('仅接入新增内容')}</option></select></label>}</div>;})}
-   {choices.some(item=>item.initialSync==='new_only')&&<p className="connector-help">{moteText('首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。')}</p>}<div className="connector-savebar"><button className="button primary" disabled={!dirty}>{moteText('保存并同步')}</button>{dirty&&<small>{moteText('有未保存的修改')}</small>}</div>
+  });}}><h2>{moteText('允许读取的内容')}</h2><button type="button" className="button" disabled={busy||Boolean(url)||authorizing} onClick={load}>{moteText('加载可选内容')}</button>{listed?.truncated&&<p>{moteText('可选内容列表未完整返回，只能选择当前已列出的内容。')}</p>}<p className="connector-help">{moteText('保存范围会启用所选来源的读取；未选内容不会接入，已有归档保留。')}</p>
+  <p className="connector-help" role="status">
+   {moteText('已选 {0} 项，最多可选 {1} 项。',choices.length,selectionLimit)}
+   {limitReached&&<> {moteText('取消勾选一项后即可改选。')}</>}
+  </p>
+  <fieldset disabled={busy||Boolean(sourcePage.error)||Boolean(url)||authorizing}>
+   {all.map(item=>{const checked=choices.find(value=>value.id===item.id);return <div className="connector-selection" key={item.id}><label className="connector-check"><input type="checkbox" checked={Boolean(checked)} disabled={!checked&&limitReached} onChange={event=>update(event.target.checked?[...choices,{id:item.id,type:item.type,initialSync:'all'}]:choices.filter(value=>value.id!==item.id))}/>{label(item)} · {kindLabel(item.type)}</label>{checked&&<label>{moteText('历史范围：{0}',label(item))}<select value={checked.initialSync} onChange={event=>update(choices.map(value=>value.id===item.id?{...value,initialSync:event.target.value as Choice['initialSync']}:value))}><option value="all">{moteText('全部已授权历史')}</option><option value="new_only">{moteText('仅接入新增内容')}</option></select></label>}</div>;})}
+   {choices.some(item=>item.initialSync==='new_only')&&<p className="connector-help">{moteText('首次同步建立基线，之后接入新增内容并跟踪已接入资料的修订。')}</p>}<div className="connector-savebar"><button className="button primary" disabled={!dirty||overLimit}>{moteText('保存并同步')}</button>{dirty&&<small>{moteText('有未保存的修改')}</small>}</div>
   </fieldset></form><section className="connector-section"><h2>{moteText('同步与归档')}</h2><button className="button" disabled={busy||dirty||!selected.length||Boolean(url)||authorizing} onClick={()=>void action(sync)}>{moteText('立即同步')}</button>{Boolean(sourcePage.error)&&<p role="alert">{connectorFailure(sourcePage.error)}</p>}{selected.map(item=>{const source=sourcePage.data?.items.find(value=>value.id===item.sourceId);return source?<div key={item.sourceId}><h3>{label(item)}</h3><SourceCoverageDetails source={source}/><a className="text-button" href={'#/connections?sourceId='+encodeURIComponent(source.id)}>{moteText('管理来源')}</a></div>:null;})}</section></>}
   {status.connected&&<div className="connector-risk-actions"><button className="text-button danger-text" onClick={()=>setReview(visit)}>{moteText('断开连接')}</button></div>}{review===visit&&<SourceDisconnectReview busy={false} items={provider==='feishu-session'?[moteText('停止飞书会话读取并暂停所选会话；已归档资料和飞书账号的其他连接保留。')]:undefined} cancel={()=>setReview(undefined)} confirm={()=>{setReview(undefined);void action(async(signal,valid)=>{await api.request(path+'/disconnect',{method:'POST',body:'{}',signal});if(valid()){setReview(undefined);setCandidates(undefined);setForm(undefined);setOperation({visit,busy:true});resources(api).invalidate(key=>key===path||key==='/api/connectors/status',true);}},true);}}/>}
  </div>;
