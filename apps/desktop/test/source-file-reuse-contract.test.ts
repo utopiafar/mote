@@ -2,8 +2,7 @@ import { afterEach, expect, it } from 'vitest';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildApp } from '../../server/src/app';
-import type { Config } from '../../server/src/config';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import { scanSourceFiles } from '../src/source-files';
 import { SourceSync } from '../src/source-sync';
 import { DEFAULT_SOURCE_OPTIONS, type SourceDefinition, type SourceRequest } from '../src/source-types';
@@ -17,8 +16,7 @@ it('sends actual Mac manifests to Central and reuses an authorized archive witho
   const bytes = Buffer.from('Generated identical archive bytes');
   await writeFile(join(selected, 'a.txt'), bytes); await writeFile(join(selected, 'b.txt'), bytes);
   const token = 'generated-mac-reuse-owner';
-  const config: Config = {dataDir:join(root, 'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
-  const node = await buildApp(config, {backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
+  const node = await buildFixtureCentral(join(root, 'central'), token, { dataKey: '53'.repeat(32) });
   try {
     await node.app.ready();
     const source: SourceDefinition = {id:'generated-mac',name:'Generated Mac',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'archive',enabled:true};
@@ -49,8 +47,7 @@ it('retries an attempted reference manifest before publishing a newer revision',
   root=await realpath(await mkdtemp(join(tmpdir(),'mote-reference-retry-')));
   const selected=join(root,'selected'),file=join(selected,'a.txt');await mkdir(selected);await writeFile(file,'first');
   const token='generated-reference-retry-owner';
-  const config:Config={dataDir:join(root,'central'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',contentEncryptionEnabled:true,dataKey:'53'.repeat(32)};
-  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model expected');},close:async()=>{}}});
+  const node=await buildFixtureCentral(join(root, 'central'), token, { dataKey: '53'.repeat(32) });
   try{
     await node.app.ready();
     const source:SourceDefinition={id:'reference-mac',name:'Generated',kind:'local-files',deviceId:'generated-device',platform:'macos',retention:'reference',enabled:true};

@@ -3,7 +3,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {buildApp} from '../../server/src/app.js';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import {defaultConfig} from '../src/config';
 import type {AskConversation,AskRun} from '../src/ask';
 import {DesktopPluginHost} from '../src/plugin-host/desktop-host.js';
@@ -47,11 +47,8 @@ it('delivers real query progress and its answer through the one restricted Ask s
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let calls = 0;
-  const node = await buildApp({
-    dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
-    allowedOrigins: [], model: 'generated-model', modelBaseUrl: 'https://generated.invalid', apiKey: 'generated-key',
-    allowUnauthenticatedLocal: false, embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-  }, {
+  const node = await buildFixtureCentral(join(serverDirectory, 'data'), token, {
+    deployment: {model: 'generated-model', baseUrl: 'https://generated.invalid', apiKey: 'generated-key'},
     agent: {
       configured: true,
       close: async () => { release(); },

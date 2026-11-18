@@ -4,8 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseMoteLink } from '@mote/shared';
-import { buildApp, type QueryAgent } from '../../server/src/app';
-import type { Config as ServerConfig } from '../../server/src/config';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import { defaultConfig } from '../src/config';
 import { centralRoute, centralScope, pollBrowserLogin, prepareBrowserSession, showCentral, type CentralNavigation } from '../src/central-navigation';
 import { consumeLoginTicket } from '../../web/src/login-handoff';
@@ -14,7 +13,6 @@ import { clearSession, connectionStorageKey, readStoredSession } from '../../web
 
 const origin = 'https://fixture.invalid';
 const owner = 'generated-navigation-owner-token-123456789';
-const inactive: QueryAgent = { configured: false, query: async () => { throw Error('No model calls belong in navigation contracts'); }, close: async () => {} };
 const savedGlobals = new Map<string, PropertyDescriptor | undefined>();
 function stubGlobal(key: string, value: unknown) {
   if (!savedGlobals.has(key)) savedGlobals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
@@ -31,12 +29,7 @@ afterEach(() => {
 
 async function fixture(serviceOrigin = origin) {
   const directory = await mkdtemp(join(tmpdir(), 'mote-navigation-'));
-  const config: ServerConfig = {
-    dataDir: directory, token: owner, tokenPath: join(directory, 'owner-token'), host: '127.0.0.1', port: 0, profile: 'test', tokenFromEnvironment: true, maxExportBytes: 4 * 1024 * 1024, insightIntervalHours: 0,
-    allowedOrigins: [serviceOrigin], model: '', modelBaseUrl: 'https://api.deepseek.com', apiKey: '', allowUnauthenticatedLocal: false,
-    embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false,
-  };
-  const value = await buildApp(config, { agent: inactive, backgroundWorker: false });
+  const value = await buildFixtureCentral(directory, owner, { allowedOrigins: [serviceOrigin], maxExportBytes: 4 * 1024 * 1024 });
   const requests: { url: URL; init?: RequestInit }[] = [];
   const fetcher = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), serviceOrigin);

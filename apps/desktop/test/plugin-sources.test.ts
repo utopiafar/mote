@@ -3,7 +3,7 @@ import {copyFile,mkdir,mkdtemp,realpath,rename,rm,writeFile} from 'node:fs/promi
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {buildApp} from '../../server/src/app.js';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import {defaultConfig,publicConfig} from '../src/config';
 import {DEFAULT_SOURCE_OPTIONS,sourceSyncScope, type SourceStatus} from '../src/source-types';
 import {sourceConnectionBinding} from '../src/login-session';
@@ -48,14 +48,7 @@ it('keeps source checkpoints and revision cursors continuous against real Centra
   const serverDirectory = await mkdtemp(join(tmpdir(), 'mote-plugin-sources-central-'));
   directories.push(serverDirectory);
   const token = 'generated-plugin-sources-' + randomUUID();
-  const node = await buildApp({
-    dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
-    allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
-    embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-  }, {
-    backgroundWorker: false,
-    agent: {configured: false, query: async () => { throw Error('No model in generated source fixture'); }, close: async () => {}},
-  });
+  const node = await buildFixtureCentral(join(serverDirectory, 'data'), token);
   const origin = await node.app.listen({host: '127.0.0.1', port: 0});
   const config = {...defaultConfig(), serverUrl: origin, token};
   const clientDirectory = await mkdtemp(join(tmpdir(), 'mote-plugin-sources-client-'));

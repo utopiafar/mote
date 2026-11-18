@@ -3,7 +3,7 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {buildApp} from '../../server/src/app.js';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import {defaultConfig} from '../src/config';
 import type {Config, Status} from '../src/contracts';
 import type {ConnectionBindingStore} from '../src/connection-binding';
@@ -65,14 +65,7 @@ it('keeps the saved connection until an explicit confirmation and consumes the r
   const clientDirectory = await mkdtemp(join(tmpdir(), 'mote-plugin-device-settings-client-'));
   directories.push(serverDirectory, clientDirectory);
   const ownerToken = 'generated-device-settings-owner-' + randomUUID();
-  const node = await buildApp({
-    dataDir: join(serverDirectory, 'data'), token: ownerToken, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
-    allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
-    embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-  }, {
-    backgroundWorker: false,
-    agent: {configured: false, query: async () => { throw Error('No model in generated device settings fixture'); }, close: async () => {}},
-  });
+  const node = await buildFixtureCentral(join(serverDirectory, 'data'), ownerToken);
   const origin = await node.app.listen({host: '127.0.0.1', port: 0});
   try {
     const invitation = (await fetch(origin + '/api/connections/invitations', {

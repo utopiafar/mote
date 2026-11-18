@@ -4,7 +4,7 @@ import {EventEmitter} from 'node:events';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
-import {buildApp} from '../../server/src/app.js';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import {defaultConfig} from '../src/config';
 import {DurableQueue} from '../src/queue';
 import {DesktopPluginHost} from '../src/plugin-host/desktop-host.js';
@@ -168,14 +168,7 @@ describe('capture plugin Central consumer', () => {
     const serverDirectory = await mkdtemp(join(tmpdir(), 'mote-plugin-capture-central-'));
     directories.push(serverDirectory);
     const token = 'generated-plugin-capture-' + randomUUID();
-    const node = await buildApp({
-      dataDir: join(serverDirectory, 'data'), token, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
-      allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
-      embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-    }, {
-      backgroundWorker: false,
-      agent: {configured: false, query: async () => { throw Error('No model in generated capture fixture'); }, close: async () => {}},
-    });
+    const node = await buildFixtureCentral(join(serverDirectory, 'data'), token);
     const origin = await node.app.listen({host: '127.0.0.1', port: 0});
     const settings = {...defaultConfig(), serverUrl: origin, token, packedUpload: false};
     const clientDirectory = await mkdtemp(join(tmpdir(), 'mote-plugin-capture-client-'));
