@@ -40,6 +40,7 @@ export type AssistantCardFeedback=z.infer<typeof assistantCardFeedbackSchema>;
 type CardRow={seq:number;id:string;cursor_key:string;kind:z.infer<typeof cardKind>;matter_id:string|null;revision:number;current_version:string;state:'open'|'resolved'|'stale';accepted_task_id:string|null;read_at:string|null;created_at:string;updated_at:string};
 type VersionRow={seq:number;card_id:string;version:string;request_hash:string;state:'open'|'resolved';stale:number;private_json:string|null;created_at:string};
 type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'>&{historicalEvidenceIds?:string[]};
+type VisibleVersion={snapshot:VersionRow;body:Body;ids:string[]};
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
 
 /** Only the domain caller chooses object identity and semantic updates. This
@@ -98,18 +99,20 @@ export class AssistantCards {
   if(row.private_json===null)throw new StoreError('Assistant card version is unavailable',409);
   return decodeMemoryPrivate<Body>(this.store,row.private_json);
  }
- private publicBody(row:VersionRow){const {historicalEvidenceIds:_,...body}=this.payload(row);return body;}
- private visibleVersion(row:VersionRow,scope:QueryScope){
-  if(!row.private_json)return false;
+ private publicBody(body:Body){const {historicalEvidenceIds:_,...visible}=body;return visible;}
+ private visibleVersion(row:VersionRow,scope:QueryScope):VisibleVersion|undefined{
+  if(!row.private_json)return;
   const body=this.payload(row),pins=body.sourceContextDependencies??[],historical=new Set(body.historicalEvidenceIds??[]),ids=this.ids(row.card_id,row.version);
-  return this.valid(ids.filter(id=>!historical.has(id)),scope,Boolean(row.stale),pins.map(pin=>pin.sourceId))&&
-   (!historical.size||this.valid([...historical],scope,true,pins.map(pin=>pin.sourceId)))&&
-   (Boolean(row.stale)||sourceContextDependenciesCurrent(this.reader.sources.contexts,pins));
+  const sources=pins.map(pin=>pin.sourceId);
+  if(!this.valid(ids.filter(id=>!historical.has(id)),scope,Boolean(row.stale),sources)||
+   historical.size&&!this.valid([...historical],scope,true,sources)||
+   !row.stale&&!sourceContextDependenciesCurrent(this.reader.sources.contexts,pins))return;
+  return {snapshot:row,body,ids};
  }
  private current(row:CardRow,scope:QueryScope){
-  const snapshot=this.versionRow(row.id,row.current_version);
-  if(!snapshot||!this.visibleVersion(snapshot,scope))throw new StoreError('Assistant card not found',404);
-  return snapshot;
+  const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,scope);
+  if(!visible)throw new StoreError('Assistant card not found',404);
+  return visible;
  }
  private acceptedTask(row:CardRow,scope:QueryScope){
   if(!row.accepted_task_id)return null;
@@ -129,19 +132,23 @@ export class AssistantCards {
   return {taskScope,taskEvidence:records.map(record=>({id:record.id,title:record.windowTitle||record.appName||'',
    ...(record.provenance?.sourceId?{sourceId:record.provenance.sourceId}:{}),deviceId:record.deviceId,at:record.capturedAt}))};
  }
- private view(row:CardRow,scope:QueryScope){
-  const snapshot=this.current(row,scope),body=this.publicBody(snapshot),ids=this.ids(row.id,row.current_version);
-  const feedback=(this.store.db.prepare('SELECT seq,version,action,stale,private_json,created_at FROM assistant_card_feedback WHERE card_id=? ORDER BY seq').all(row.id) as FeedbackRow[]).flatMap(entry=>{
-   const prior=this.versionRow(row.id,entry.version);
+ private visibleFeedback(id:string,scope:QueryScope){
+  return (this.store.db.prepare('SELECT seq,version,action,stale,private_json,created_at FROM assistant_card_feedback WHERE card_id=? ORDER BY seq').all(id) as FeedbackRow[]).flatMap(entry=>{
+   const prior=this.versionRow(id,entry.version);
    const ids=this.store.db.prepare('SELECT evidence_id FROM assistant_card_feedback_evidence WHERE feedback_seq=? ORDER BY evidence_id').all(entry.seq).map(value=>String(value.evidence_id));
    const sources=this.store.db.prepare('SELECT source_id FROM assistant_card_feedback_context WHERE feedback_seq=? ORDER BY source_id').all(entry.seq).map(value=>String(value.source_id));
    if(!prior?.private_json||!this.valid(ids,scope,Boolean(entry.stale),sources))return [];
    const detail=entry.private_json?decodeMemoryPrivate<{note?:string;until?:string}>(this.store,entry.private_json):{};
-   return [{version:entry.version,action:entry.action,...detail,...(entry.stale?{evidenceStale:true}:{}),createdAt:entry.created_at}];
+   return [{ids,sources,item:{version:entry.version,action:entry.action,...detail,...(entry.stale?{evidenceStale:true}:{}),createdAt:entry.created_at}}];
   });
-  return {id:row.id,kind:row.kind,matterId:row.matter_id,version:row.current_version,state:row.state,revision:row.revision,...(snapshot.stale?{evidenceStale:true}:{}),
-   ...body,...this.taskInput(row,snapshot,ids),evidenceDependencies:{version:1 as const,complete:true as const,ids:ids.filter(id=>Boolean(parseEvidenceId(id)))},readAt:row.read_at,acceptedTaskId:this.acceptedTask(row,scope),
-   feedback,createdAt:row.created_at,updatedAt:row.updated_at};
+ }
+ private cardContent(row:CardRow,visible:VisibleVersion,feedback:ReturnType<AssistantCards['visibleFeedback']>){
+  return {id:row.id,kind:row.kind,matterId:row.matter_id,version:row.current_version,state:row.state,revision:row.revision,...(visible.snapshot.stale?{evidenceStale:true}:{}),
+   ...this.publicBody(visible.body),evidenceDependencies:{version:1 as const,complete:true as const,ids:visible.ids.filter(id=>Boolean(parseEvidenceId(id)))},
+   feedback:feedback.map(entry=>entry.item),readAt:row.read_at,createdAt:row.created_at,updatedAt:row.updated_at};
+ }
+ private view(row:CardRow,scope:QueryScope,visible=this.current(row,scope)){
+  return {...this.cardContent(row,visible,this.visibleFeedback(row.id,scope)),...this.taskInput(row,visible.snapshot,visible.ids),acceptedTaskId:this.acceptedTask(row,scope)};
  }
  private expect(row:CardRow,expectedRevision:number){if(row.revision!==revision.parse(expectedRevision))throw new StoreError('Assistant card changed; reload before continuing',409);}
 
@@ -182,15 +189,15 @@ export class AssistantCards {
   * previous version cannot be used to infer a new reminder. */
  notificationTiming(id:string,rawScope:QueryScope){
   return this.transaction(()=>{
-   const scope=queryScopeSchema.parse(rawScope),row=this.row(id),current=this.current(row,scope);
-   if(!this.payload(current).reminderReason)return null;
+   const scope=queryScopeSchema.parse(rawScope),row=this.row(id),{snapshot:current,body}=this.current(row,scope);
+   if(!body.reminderReason)return null;
    let origin=current.created_at,before=current.seq;
    for(;;){
     const versions=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT 100').all(id,before) as VersionRow[];
     if(!versions.length)break;
     for(const previous of versions){
-     if(!this.visibleVersion(previous,scope))return null;
-     if(!this.payload(previous).reminderReason)return {origin,currentVersionAt:current.created_at};
+     const visible=this.visibleVersion(previous,scope);if(!visible)return null;
+     if(!visible.body.reminderReason)return {origin,currentVersionAt:current.created_at};
      origin=previous.created_at;before=previous.seq;
     }
    }
@@ -298,7 +305,11 @@ export class AssistantCards {
    while(found.length<=selected.limit){
     const rows=this.store.db.prepare("SELECT * FROM assistant_cards WHERE seq<? AND state!='stale' ORDER BY seq DESC LIMIT ?").all(before,batch) as CardRow[];
     if(!rows.length)break;
-    for(const row of rows){before=row.seq;const snapshot=this.versionRow(row.id,row.current_version);if(snapshot&&this.visibleVersion(snapshot,selected.scope))found.push(this.view(row,selected.scope));if(found.length>selected.limit)break;}
+    for(const row of rows){
+     before=row.seq;const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,selected.scope);
+     if(visible)found.push(this.view(row,selected.scope,visible));
+     if(found.length>selected.limit)break;
+    }
     if(found.length>selected.limit||rows.length<batch)break;
    }
    const items=found.slice(0,selected.limit),last=items.at(-1);
@@ -312,7 +323,7 @@ export class AssistantCards {
   const selected=queryScopeSchema.parse(scope);
   if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid assistant review limit');
   return this.transaction(()=>{
-   const items:(ReturnType<AssistantCards['view']>&{disclosureDependencies:{version:1;complete:true;ids:string[]};sourceContextDependencies:SourceContextDeclaration[]})[]=[];let before=Number.MAX_SAFE_INTEGER;
+   const items:(ReturnType<AssistantCards['cardContent']>&{disclosureDependencies:{version:1;complete:true;ids:string[]};sourceContextDependencies:SourceContextDeclaration[]})[]=[];let before=Number.MAX_SAFE_INTEGER;
    const result=(hasMore:boolean)=>({items:items.slice(0,limit),hasMore,
     disclosureDependencies:{version:1 as const,complete:true as const,ids:[...new Set(items.flatMap(card=>card.disclosureDependencies.ids))].sort()},
     sourceContextDependencies:items.flatMap(card=>card.sourceContextDependencies)});
@@ -320,24 +331,19 @@ export class AssistantCards {
     const rows=this.store.db.prepare('SELECT * FROM assistant_cards WHERE seq<? ORDER BY seq DESC LIMIT 100').all(before) as CardRow[];
     if(!rows.length)break;
     for(const row of rows){
-     before=row.seq;const snapshot=this.versionRow(row.id,row.current_version);
-     if(snapshot&&this.visibleVersion(snapshot,selected)){
+     before=row.seq;const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,selected);
+     if(visible){
       // Retain each card's complete lineage, including feedback about earlier
       // versions, so consumers can distinguish evidence from owner constraints.
-      const dependencies=new Set(this.ids(row.id,row.current_version)),pins=[...(this.payload(snapshot).sourceContextDependencies??[])];
-      const feedback=this.store.db.prepare('SELECT seq,version,stale FROM assistant_card_feedback WHERE card_id=?').all(row.id) as Pick<FeedbackRow,'seq'|'version'|'stale'>[];
-      for(const entry of feedback){
-       const prior=this.versionRow(row.id,entry.version);
-       const ids=this.store.db.prepare('SELECT evidence_id FROM assistant_card_feedback_evidence WHERE feedback_seq=? ORDER BY evidence_id').all(entry.seq).map(value=>String(value.evidence_id));
-       const sources=this.store.db.prepare('SELECT source_id FROM assistant_card_feedback_context WHERE feedback_seq=? ORDER BY source_id').all(entry.seq).map(value=>String(value.source_id));
-       if(!prior?.private_json||!this.valid(ids,selected,Boolean(entry.stale),sources))continue;
+      const dependencies=new Set(visible.ids),pins=[...(visible.body.sourceContextDependencies??[])],feedback=this.visibleFeedback(row.id,selected);
+      for(const {ids,sources} of feedback){
        for(const id of ids)dependencies.add(id);
        if(sources.length){
         const versions=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND private_json IS NOT NULL').all(row.id) as VersionRow[];
         for(const version of versions)for(const pin of this.payload(version).sourceContextDependencies??[])if(sources.includes(pin.sourceId))pins.push(pin);
        }
       }
-      items.push({...this.view(row,selected),disclosureDependencies:{version:1,complete:true,ids:[...dependencies].sort()},sourceContextDependencies:pins});
+      items.push({...this.cardContent(row,visible,feedback),disclosureDependencies:{version:1,complete:true,ids:[...dependencies].sort()},sourceContextDependencies:pins});
      }
      if(items.length>limit)return result(true);
     }
@@ -359,7 +365,11 @@ export class AssistantCards {
    while(found.length<=selected.limit){
     const rows=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT ?').all(id,before,batch) as VersionRow[];
     if(!rows.length)break;
-    for(const row of rows){before=row.seq;const ids=this.ids(id,row.version);if(this.visibleVersion(row,selected.scope))found.push({version:row.version,state:row.state,...this.publicBody(row),evidenceDependencies:{version:1,complete:true,ids:ids.filter(value=>Boolean(parseEvidenceId(value)))},...(row.stale?{evidenceStale:true as const}:{}),createdAt:row.created_at});if(found.length>selected.limit)break;}
+    for(const row of rows){
+     before=row.seq;const visible=this.visibleVersion(row,selected.scope);
+     if(visible)found.push({version:row.version,state:row.state,...this.publicBody(visible.body),evidenceDependencies:{version:1,complete:true,ids:visible.ids.filter(value=>Boolean(parseEvidenceId(value)))},...(row.stale?{evidenceStale:true as const}:{}),createdAt:row.created_at});
+     if(found.length>selected.limit)break;
+    }
     if(found.length>selected.limit||rows.length<batch)break;
    }
    const items=found.slice(0,selected.limit),last=items.at(-1);

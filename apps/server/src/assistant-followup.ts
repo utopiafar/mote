@@ -46,7 +46,7 @@ const inputSchema=z.object({operationId:z.string().min(1).max(512),requestId:z.s
  mode:z.discriminatedUnion('kind',[z.object({kind:z.literal('change')}).strict(),z.object({kind:z.literal('briefing'),after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true})}).strict()]),
 }).strict().refine(value=>value.mode.kind!=='briefing'||Date.parse(value.mode.after)<Date.parse(value.mode.before));
 type Input=z.infer<typeof inputSchema>;
-type Card=ReturnType<AssistantCards['get']>;
+type Card=ReturnType<AssistantCards['review']>['items'][number];
 type Commitment=ReturnType<AssistantCommitments['get']>;
 type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:Card[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
  memoryRevisions:{id:string;version:number;fingerprint:string}[];materialRefs:string[];evidenceIds:string[];dependencies:string[];suppressionIds:string[];
