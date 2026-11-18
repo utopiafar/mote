@@ -10,12 +10,14 @@ import {setImmediate as nextTurn,setTimeout as delay} from 'node:timers/promises
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
+import {ActivityProjection} from '../src/activity.js';
 import {EvidenceStore as Store} from '../src/evidence-store.js';
+import {Operations} from '../src/operations.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {MemoryStore,MemoryOutputValidationError,memoryEvidenceFingerprint} from '../src/memory.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
-import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
+import {MemoryPipeline,type MemoryPipelineOptions,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {AgentTimeoutError,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
@@ -26,6 +28,20 @@ function fixture(t:TestContext,beforeStoreClose?:()=>Promise<void>){
   t.after(async()=>{try{await beforeStoreClose?.();}finally{store.close();rmSync(directory,{recursive:true,force:true});}});
   return {directory,store,sources,memories};
 }
+
+function fixtureWithActivity(t:TestContext,options:Omit<MemoryPipelineOptions,'store'|'memories'>){
+  let activity:ActivityProjection|undefined;
+  let pipeline:MemoryPipeline|undefined;
+  const {store,sources,memories}=fixture(t,async()=>{
+    try{await pipeline?.close();}finally{activity?.close();}
+  });
+  // Match Host startup by opening Activity's projection over the Store's
+  // Memory tables before the pipeline starts writing jobs and batches.
+  activity=new ActivityProjection(store,new Operations(store));
+  pipeline=fixtureMemoryPipeline({...options,store,memories});
+  return {store,sources,pipeline};
+}
+
 const item=(externalId='a',text='合成原文：我计划学习 TypeScript，尚未开始。',revision='1',observedAt='2026-09-15T01:00:00Z')=>({externalId,text,revision,observedAt,title:'Generated record',kind:'file',layer:'original'});
 const result=(id:string,quote?:{offset:number;quote:string})=>({answer:JSON.stringify({memories:[{title:'合成候选',statement:`尚未开始的计划 [${id}]`,uncertainty:'没有完成证据',evidenceIds:[id],...(quote?{evidence:[{id,...quote}]}:{})}]}),citations:[{id,capturedAt:'2026-09-15T01:00:00Z',appName:'Generated',excerpt:'合成'}],trace:[],runId:'generated-run'});
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'});
@@ -76,9 +92,9 @@ test('unchanged authorization-wait wakes do not rewrite jobs or reorder Activity
 });
 
 test('a second batch starting while one already runs still rewrites the job and advances Activity ordering',async t=>{
- const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('derived-a','a'.repeat(600))),b=await sources.upsert('generated',item('derived-b','b'.repeat(600)));
  let slots=1;const releases:(()=>void)[]=[];
- const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>slots,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{if(releases.length>=2)return empty();await new Promise<void>(r=>releases.push(r));return empty();}}});t.after(()=>pipeline.close());
+ const {store,sources,pipeline}=fixtureWithActivity(t,{batchCharacters:256,concurrency:()=>slots,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{if(releases.length>=2)return empty();await new Promise<void>(r=>releases.push(r));return empty();}}});
+ const a=await sources.upsert('generated',item('derived-a','a'.repeat(600))),b=await sources.upsert('generated',item('derived-b','b'.repeat(600)));
  const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);
  const storedStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id) as {json:string}).json)).status);
  while(releases.length<1||storedStatus()!=='running')await nextTurn();
@@ -106,9 +122,9 @@ test('a second batch starting while one already runs still rewrites the job and 
 });
 
 test('the first refresh of a job persisted without derived counters does not write or reorder it',async t=>{
- const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('baseline-a','a'.repeat(600)));
  let release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
- const pipeline=fixtureMemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>1,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{await gate;return empty();}}});t.after(()=>pipeline.close());
+ const {store,sources,pipeline}=fixtureWithActivity(t,{batchCharacters:256,concurrency:()=>1,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{await gate;return empty();}}});
+ const a=await sources.upsert('generated',item('baseline-a','a'.repeat(600)));
  const job=pipeline.create({evidenceIds:[a.id]}),done=pipeline.run(job.id);
  const storedStatus=()=>String(JSON.parse(String((store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id) as {json:string}).json)).status);
  while(storedStatus()!=='running')await nextTurn();
@@ -134,9 +150,9 @@ test('the first refresh of a job persisted without derived counters does not wri
 });
 
 test('a batch update rolled back with its transaction leaves no transition signal for an unchanged refresh',async t=>{
- const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('rollback-a','a'.repeat(600)));
  let allowed=true;
- const pipeline=fixtureMemoryPipeline({store,memories,admission:{evidenceAllowedForMemory:()=>allowed},models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{throw new ProviderFailure({category:'permanent',code:'provider_timeout',retryAfterMs:0});}}});t.after(()=>pipeline.close());
+ const {store,sources,pipeline}=fixtureWithActivity(t,{admission:{evidenceAllowedForMemory:()=>allowed},models:{model:()=> 'fixture',configured:()=>true},phases:{query:async()=>{throw new ProviderFailure({category:'permanent',code:'provider_timeout',retryAfterMs:0});}}});
+ const a=await sources.upsert('generated',item('rollback-a','a'.repeat(600)));
  const job=pipeline.create({evidenceIds:[a.id]}),failed=await pipeline.run(job.id);
  assert.equal(failed.status,'failed');assert.equal(failed.failedBatches,1);
  // acceptRetry invalidates the failed batch inside its transaction; failing the job
