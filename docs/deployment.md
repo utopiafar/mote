@@ -165,6 +165,8 @@ docker build --target core --tag mote-central:local-core .
 docker build --target full --tag mote-central:local-full .
 ```
 
+两个镜像都随附 Notion 只读、Slack 归档、飞书会话和 Markdown / Obsidian 导出的官方发布包文件。登录中央 Web 后，从「插件中心 → 官方目录」选择「预览并安装」，再确认「安装此版本」。中央直接从镜像内的文件解析并安装所选版本，无需从 GitHub 下载这些包。实例配置、启用与第三方授权在安装后单独完成。
+
 需要官方录音 CLI 或受管 OCR/ASR 环境时，初始化时显式选择 full；只选择 full 仍不启动媒体 worker：
 
 ```sh
@@ -287,4 +289,11 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 ## 验证
 
-部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口。已构建的core/full可分别用`node scripts/test-docker-images.mjs --variant core --image LOCAL_CORE_TAG`和`--variant full --image LOCAL_FULL_TAG`验证真实消费：Agent/导入依赖、SQLite/HTTP、默认资源选择与full的角色切换。该入口不构建镜像、不安装权重或执行模型推理，仅清理本次生成的profile、容器和卷。Docker-only 入口可用 `node scripts/test-docker-deploy-cli.mjs --image LOCAL_CORE --cli LOCAL_DEPLOY_CLI` 按需验证；测试驱动使用 Node，但传给真实宿主入口的 PATH 只有 Docker 和必需系统工具，覆盖拒绝、锁、失败恢复、备份、升级和回滚，并核对测试前后的容器/卷清单。Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。
+部署测试使用临时profile、生成数据和独立loopback进程验证健康、身份隔离、备份/恢复与切换。`test:profiles`、`test:profiles:container`和更新测试是按需入口。对已构建的 core/full 镜像运行对应命令：
+
+```sh
+node scripts/test-docker-images.mjs --variant core --image LOCAL_CORE_TAG
+node scripts/test-docker-images.mjs --variant full --image LOCAL_FULL_TAG
+```
+
+脚本检查 Agent/导入依赖、SQLite/HTTP、默认资源选择和 full 的 worker 切换，离线读取镜像中的官方清单并加载入口，再用空数据卷验证 Plugin Center 的解析、安装与重启后的状态。该入口不构建镜像、不安装权重或执行模型推理，仅清理本次生成的 profile、容器和卷。Docker-only 入口可用 `node scripts/test-docker-deploy-cli.mjs --image LOCAL_CORE --cli LOCAL_DEPLOY_CLI` 按需验证；测试驱动使用 Node，但传给真实宿主入口的 PATH 只有 Docker 和必需系统工具，覆盖拒绝、锁、失败恢复、备份、升级和回滚，并核对测试前后的容器/卷清单。Docker/NAS权限、公网证书、系统服务和实际目标机器必须各自验证。已有历史通过数量不代表当前部署已验收，见[测试规范](testing.zh-CN.md)。
