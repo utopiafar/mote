@@ -5,14 +5,17 @@ import type {FastifyInstance} from 'fastify';
 import type {CentralDomainPlugin} from '../domain-activation.js';
 import {StoreError} from '../evidence-store.js';
 import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
+import type {ExternalCalendarPort} from '../external-calendar-contract.js';
 
 /** The input grants one concrete domain factory, never a Store, SQL connection,
  * engine or mutable collection of host services. Resources open only when the
  * selected activation prepares. */
 export interface ActionsDomain {
   readonly ownerCalendar?:OwnerCalendarPort;
+  readonly externalCalendar?:ExternalCalendarPort;
   tick():Promise<void>;
   routes(app:FastifyInstance):void;
+  quiesce?():void;
   close():Promise<void>;
 }
 export interface ActionsServicesInputs {open():Promise<ActionsDomain>}
@@ -54,7 +57,14 @@ export function createActionsServices(inputs:ActionsServicesInputs){
     return inflight??=domain.tick().finally(()=>{inflight=undefined;});
   };
   const ownerCalendar=()=>{if(phase!=='active'||!domain?.ownerCalendar)throw unavailable();return domain.ownerCalendar;};
+  const externalCalendar=()=>{if(phase!=='active'||!domain?.externalCalendar)throw unavailable();return domain.externalCalendar;};
+  const calendarPort:ExternalCalendarPort=Object.freeze({
+    target:(...args:Parameters<ExternalCalendarPort['target']>)=>externalCalendar().target(...args),
+    create:(...args:Parameters<ExternalCalendarPort['create']>)=>externalCalendar().create(...args),
+    receipt:(...args:Parameters<ExternalCalendarPort['receipt']>)=>externalCalendar().receipt(...args),
+  });
   return Object.freeze({
+    externalCalendar:calendarPort,
     offerOwnerCalendar:(...args:Parameters<OwnerCalendarPort['offerOwnerCalendar']>)=>ownerCalendar().offerOwnerCalendar(...args),
     proposeOwnerCalendar:(...args:Parameters<OwnerCalendarPort['proposeOwnerCalendar']>)=>ownerCalendar().proposeOwnerCalendar(...args),
     acceptOwnerCalendar:(...args:Parameters<OwnerCalendarPort['acceptOwnerCalendar']>)=>ownerCalendar().acceptOwnerCalendar(...args),
@@ -68,7 +78,7 @@ export function createActionsServices(inputs:ActionsServicesInputs){
       if(phase!=='prepared')throw unavailable();
       phase='active';timer=setInterval(()=>{if(phase==='active')void poll().catch(()=>{});},pollIntervalMs);timer.unref?.();
     },
-    quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';clearTimer();},
+    quiesce(_reason?:StopReason){if(phase==='active')phase='quiescing';clearTimer();domain?.quiesce?.();},
     stop:async(_reason?:StopReason)=>{await close();},dispose:close,close,poll,
     get available(){return phase==='active';},
     routes(app:FastifyInstance){

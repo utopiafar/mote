@@ -35,8 +35,14 @@ const now=()=>new Date().toISOString();
 export const documentReference=(value:string)=>larkReference(value);
 const selectionSchema=z.object({...documentSelectionSchema,calendarIds:z.array(z.string().min(1).max(1000)).max(10),pastDays:z.number().int().min(0).max(180),futureDays:z.number().int().min(1).max(180),timeZone:z.string().max(100).refine(v=>{try{new Intl.DateTimeFormat('en',{timeZone:v});return true;}catch{return false;}}),autoSync:z.boolean()}).strict();
 const defaults=():LarkSelection=>({documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:true,documentDiscovery:{created:true,edited:true,opened:true,firstSyncDays:30}});
-const savedSchema=z.object({version:z.literal(1),enabled:z.boolean(),selectionAuthorized:z.boolean().optional(),calendarWriteAuthorized:z.boolean().optional(),account:z.string().optional(),selection:selectionSchema,lastSyncAt:z.string().datetime().optional()}).strict();
+const writableCalendarSchema=z.object({id:z.string().min(1).max(1000),name:z.string().min(1).max(200)}).strict();
+const savedSchema=z.object({version:z.literal(1),enabled:z.boolean(),selectionAuthorized:z.boolean().optional(),calendarWriteAuthorized:z.boolean().optional(),writableCalendars:z.array(writableCalendarSchema).max(10).optional(),account:z.string().optional(),selection:selectionSchema,lastSyncAt:z.string().datetime().optional()}).strict();
 type Saved=z.infer<typeof savedSchema>;
+type ListedCalendar=LarkCalendar&{writable:boolean};
+const writableSelection=(calendars:ListedCalendar[],ids:string[])=>ids.flatMap(id=>{
+  const calendar=calendars.find(entry=>entry.id===id);
+  return calendar?.writable?[{id,name:calendar.name.slice(0,200)}]:[];
+});
 const eventSchema=z.object({event_id:z.string().min(1).max(1000),summary:z.string().max(2000).optional(),description:z.string().max(90000).optional(),status:z.string().optional(),start_time:z.object({timestamp:z.string().optional(),date:z.string().optional(),timezone:z.string().optional()}).optional(),end_time:z.object({timestamp:z.string().optional(),date:z.string().optional(),timezone:z.string().optional()}).optional(),location:z.object({name:z.string().optional()}).optional()});
 function revision(item:Omit<SourceItem,'revision'>,prior?:SourceItemRecord):SourceItem{
   const {observedAt,...content}=item;
@@ -74,7 +80,13 @@ export class LarkConnector{
   private calendarAbort=new AbortController();
   private calendarWrites=new Set<Promise<ConnectorActionReceipt>>();
   constructor(private ctx:LarkContext,runner?:LarkRunner){const dir=ctx.directory;this.file=new PrivateFile(dir,'lark.json');this.runner=runner??createLarkRunner(dir);}
-  async init(){const saved=await this.file.read();if(saved)this.saved=savedSchema.parse(saved);this.initialized=true;this.configureSyncInterval(this.ctx.syncIntervalMs??900000);}
+  async init(){
+    const saved=await this.file.read();if(saved)this.saved=savedSchema.parse(saved);
+    this.initialized=true;this.configureSyncInterval(this.ctx.syncIntervalMs??900000);
+    // Older selections have consent and calendar IDs, but no provider role
+    // snapshot. Restore that projection without delaying Central startup.
+    if(!this.closed&&this.needsWritableCalendarRoles())void this.refresh().catch(()=>{});
+  }
   configureSyncInterval(intervalMs:number){
     const interval=Math.max(60000,intervalMs);
     if(this.timer&&this.syncIntervalMs===interval)return;
@@ -86,7 +98,22 @@ export class LarkConnector{
   async refresh(){
     if(this.closed)throw new ConnectorError('connector_closed',503);
     if(this.active||this.reading||this.disconnecting)return this.status();
-    return this.checking??=this.probe().finally(()=>{this.checking=undefined;});
+    return this.checking??=this.checkConnection().finally(()=>{this.checking=undefined;});
+  }
+  private async checkConnection(){
+    await this.probe();
+    if(!this.closed&&!this.disconnecting)await this.restoreWritableCalendarRoles(this.calendarAbort.signal);
+    return this.status();
+  }
+  private needsWritableCalendarRoles(){
+    return this.saved.enabled&&this.saved.calendarWriteAuthorized===true&&this.saved.selection.calendarIds.length>0&&this.saved.writableCalendars===undefined;
+  }
+  private async restoreWritableCalendarRoles(signal:AbortSignal){
+    if(!this.needsWritableCalendarRoles()||!this.snapshot.connected||!this.account||this.account!==this.saved.account)return;
+    try{
+      const calendars=await this.calendarPreflight(this.listCalendars(signal),signal);
+      await this.rememberWritableCalendars(calendars,signal);
+    }catch(error){if(!signal.aborted)this.snapshot.error=this.code(error);}
   }
   private async probe(signal?:AbortSignal):Promise<LarkStatus>{
     const current=()=>{if(signal?.aborted)throw new ConnectorError('lark_operation_cancelled',409);};
@@ -146,7 +173,9 @@ export class LarkConnector{
     await this.probe();if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);
     if(!this.snapshot.connected||!this.account)throw new ConnectorError('lark_login_incomplete',409);
     if(!larkCalendarWriteScopesOk([...this.grantedScopes]))throw new ConnectorError('lark_calendar_write_permission_required',403);
-    const next={...this.saved,calendarWriteAuthorized:true};await this.file.write(next);this.saved=next;
+    const ids=this.saved.selection.calendarIds,calendars=ids.length?await this.listCalendars(signal):[];
+    signal.throwIfAborted();
+    const next={...this.saved,calendarWriteAuthorized:true,writableCalendars:writableSelection(calendars,ids)};await this.file.write(next);this.saved=next;
   });}
   private async authorizeDevice(scopes:string[],signal:AbortSignal,job:LarkJob){
     const raw=larkJson(await this.run({kind:'login',scopes},signal));
@@ -162,23 +191,46 @@ export class LarkConnector{
   private async disable(){await this.pauseSources();this.saved={...this.saved,enabled:false};await this.file.write(this.saved);}
   async disconnect(){if(this.disconnecting)throw new ConnectorError('lark_busy',409);this.disconnecting=true;this.invalidateCalendarActions();try{this.readController?.abort();await this.reading?.catch(()=>{});await this.checking;await this.cancel();await this.disable();const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;return this.status();}finally{this.disconnecting=false;}}
   private async requireConnected(signal?:AbortSignal){await this.probe(signal);if(signal?.aborted)throw new ConnectorError('lark_operation_cancelled',409);if(!this.snapshot.connected||!this.saved.enabled||!this.account||this.account!==this.saved.account)throw new ConnectorError('lark_not_connected',409);}
-  private async listCalendars(signal?:AbortSignal):Promise<LarkCalendar[]>{
-    let token:string|undefined;const all:LarkCalendar[]=[];const seen=new Set<string>();
+  private async listCalendars(signal?:AbortSignal):Promise<ListedCalendar[]>{
+    let token:string|undefined;const all:ListedCalendar[]=[];const seen=new Set<string>();
     for(let page=0;page<30;page++){
+      signal?.throwIfAborted();
       const envelope=larkJson(await this.runner({kind:'calendars',pageToken:token},{signal}));
       const data=z.object({calendar_list:z.array(z.object({calendar_id:z.string().min(1),summary:z.string().optional(),type:z.string().optional(),role:z.string().optional(),is_deleted:z.boolean().optional()})),has_more:z.boolean(),page_token:z.string().optional()}).parse(envelope.data??envelope);
-      all.push(...data.calendar_list.filter(c=>!c.is_deleted&&['reader','writer','owner'].includes(c.role??'')).map(c=>({id:c.calendar_id,name:c.summary??c.calendar_id,primary:c.type==='primary'})));
+      all.push(...data.calendar_list.filter(c=>!c.is_deleted&&['reader','writer','owner'].includes(c.role??'')).map(c=>({
+        id:c.calendar_id,name:c.summary||c.calendar_id,primary:c.type==='primary',writable:c.role==='writer'||c.role==='owner',
+      })));
       if(!data.has_more)return all;
       if(!data.page_token||seen.has(data.page_token))throw new ConnectorError('lark_pagination_invalid',502);token=data.page_token;seen.add(token);
     }throw new ConnectorError('lark_calendar_limit',413);
   }
-  async calendars(){this.assertIdle();const controller=new AbortController();this.readController=controller;this.reading=(async()=>{await this.requireConnected();return {calendars:await this.listCalendars(controller.signal)};})();try{return await this.reading;}finally{this.reading=undefined;this.readController=undefined;}}
+  private async rememberWritableCalendars(calendars:ListedCalendar[],signal:AbortSignal){
+    signal.throwIfAborted();
+    if(!this.saved.calendarWriteAuthorized)return;
+    const writableCalendars=writableSelection(calendars,this.saved.selection.calendarIds);
+    if(JSON.stringify(writableCalendars)===JSON.stringify(this.saved.writableCalendars))return;
+    const next={...this.saved,writableCalendars};
+    await this.file.write(next);this.saved=next;
+  }
+  async calendars(){
+    this.assertIdle();const controller=new AbortController();this.readController=controller;
+    this.reading=(async()=>{
+      await this.requireConnected(controller.signal);
+      const calendars=await this.listCalendars(controller.signal);
+      await this.rememberWritableCalendars(calendars,controller.signal);
+      return {calendars:calendars.map(({writable:_,...calendar})=>calendar)};
+    })();
+    try{return await this.reading;}finally{this.reading=undefined;this.readController=undefined;}
+  }
   async select(raw:unknown){
     this.assertIdle();const input=selectionSchema.parse(raw);input.documents=[...new Set(input.documents)];input.calendarIds=[...new Set(input.calendarIds)];
     // Lock mutations through the same job gate, including validation reads.
     this.start('selection',async signal=>{
-      await this.requireConnected();if(input.calendarIds.length){const allowed=new Set((await this.listCalendars(signal)).map(c=>c.id));if(input.calendarIds.some(id=>!allowed.has(id)))throw new ConnectorError('lark_calendar_not_available',400);}
-      if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);const previous=[...(hasDocumentSelection(this.saved.selection)?[this.sourceId('docs')]:[]),...this.saved.selection.calendarIds.map(id=>this.sourceId('calendar',id))];const next={...this.saved,selection:input,selectionAuthorized:true};await this.file.write(next);this.saved=next;this.snapshot.missingScopes=missingScopes(input,this.grantedScopes);this.registerSources();const retained=new Set([...(hasDocumentSelection(input)?[this.sourceId('docs')]:[]),...input.calendarIds.map(id=>this.sourceId('calendar',id))]);for(const id of previous)if(!retained.has(id)&&this.ctx.read.sourceExists(id))this.ctx.sources.update(id,{enabled:false});
+      await this.requireConnected();
+      const calendars=input.calendarIds.length?await this.listCalendars(signal):[];
+      if(input.calendarIds.some(id=>!calendars.some(calendar=>calendar.id===id)))throw new ConnectorError('lark_calendar_not_available',400);
+      const writableCalendars=writableSelection(calendars,input.calendarIds);
+      if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);const previous=[...(hasDocumentSelection(this.saved.selection)?[this.sourceId('docs')]:[]),...this.saved.selection.calendarIds.map(id=>this.sourceId('calendar',id))];const next={...this.saved,selection:input,selectionAuthorized:true,writableCalendars};await this.file.write(next);this.saved=next;this.snapshot.missingScopes=missingScopes(input,this.grantedScopes);this.registerSources();const retained=new Set([...(hasDocumentSelection(input)?[this.sourceId('docs')]:[]),...input.calendarIds.map(id=>this.sourceId('calendar',id))]);for(const id of previous)if(!retained.has(id)&&this.ctx.read.sourceExists(id))this.ctx.sources.update(id,{enabled:false});
     });
     await this.active;if(this.job?.state==='failed'||this.job?.state==='cancelled')throw new ConnectorError(this.job.error??'lark_operation_failed',400);return this.status();
   }
@@ -203,7 +255,10 @@ export class LarkConnector{
   });}
   startSync(reference?:string,automatic=false){return this.start('sync',async(signal,job)=>{
     if(automatic&&(!this.selectionAuthorized()||hasDocumentSelection(this.saved.selection)&&!this.documents(signal).confirmed()&&!this.saved.selection.calendarIds.length))return;
-    await this.requireConnected();if(this.snapshot.missingScopes.length)throw new ConnectorError('lark_permission_required',403);this.registerSources();this.reportSources('syncing',undefined,Boolean(reference));const result:NonNullable<LarkJob['result']>={imported:0,duplicates:0};job.result=result;
+    await this.requireConnected(signal);
+    await this.restoreWritableCalendarRoles(signal);
+    signal.throwIfAborted();
+    if(this.snapshot.missingScopes.length)throw new ConnectorError('lark_permission_required',403);this.registerSources();this.reportSources('syncing',undefined,Boolean(reference));const result:NonNullable<LarkJob['result']>={imported:0,duplicates:0};job.result=result;
     const write=async(sourceId:string,item:SourceItem,bytes?:Buffer)=>{
       if(signal.aborted)throw new ConnectorError('lark_operation_cancelled',409);
       const authorize=()=>{if(signal.aborted||!this.saved.enabled||!this.ctx.sources.getSource(sourceId).enabled)throw new ConnectorError('lark_operation_cancelled',409);const documentId=item.document?.activity?.documentId??item.externalId;if(this.ctx.read.forgotten(sourceId,documentId))throw new ConnectorError('lark_document_forgotten',410);};
@@ -250,7 +305,9 @@ export class LarkConnector{
   },Boolean(reference));}
   calendarActionProviders():ActionPluginProvider[]{
     if(this.closed||this.disconnecting||this.changingCalendarScope()||!this.saved.enabled||this.saved.calendarWriteAuthorized!==true)return [];
-    return this.saved.selection.calendarIds.map(calendarId=>({identity:builtinIdentity,name:moteText("飞书日历 · {0}", calendarId.slice(0,80)),capability:centralCalendarCapability,calendarId}));
+    return (this.saved.writableCalendars??[]).filter(calendar=>this.saved.selection.calendarIds.includes(calendar.id)).map(calendar=>({
+      identity:builtinIdentity,name:moteText("飞书日历 · {0}", calendar.name),capability:centralCalendarCapability,calendarId:calendar.id,
+    }));
   }
   disconnectWriteAuthorization(){return this.start('selection',async()=>{
     const next={...this.saved,calendarWriteAuthorized:false};await this.file.write(next);this.saved=next;
@@ -285,6 +342,8 @@ export class LarkConnector{
     };
     authorize();await this.requireConnected(signal);authorize();
     if(!larkCalendarWriteScopesOk([...this.grantedScopes]))throw new ConnectorError('lark_calendar_write_not_authorized',403);
+    const calendars=await this.calendarPreflight(this.listCalendars(signal),signal);authorize();
+    if(!calendars.some(calendar=>calendar.id===calendarId&&calendar.writable))throw new ConnectorError('lark_calendar_not_writable',403);
     // Once dispatched, cancellation is only a request to the runner. Consume a
     // real receipt or leave the host operation uncertain; never claim rollback.
     if(input.kind==='calendar.create'){

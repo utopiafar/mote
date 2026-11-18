@@ -385,7 +385,6 @@
   "新建连接": "Neue Verbindung",
   "检索和读取已获准访问的资料，不修改内容。": "Autorisierte Materialien durchsuchen und lesen, ohne Inhalte zu ändern.",
   "客户端兼容性": "Client-Kompatibilität",
-  "指定来源写入": "In ausgewählte Quellen schreiben",
   "生成 MCP 配置": "MCP-Konfiguration erstellen",
   "配置已生成": "Konfiguration erstellt",
   "{0} 的连接配置": "Verbindungskonfiguration für {0}",
@@ -7127,7 +7126,6 @@
   "控件状态": "Steuerelementstatus",
   "配置站点与扩展": "Websites und Erweiterung konfigurieren",
   "采集内容、可用能力与字段规则": "Erfassungsoptionen, verfügbare Fähigkeiten und Feldregeln",
-  "按用途推荐权限和 Agent 专属连接向导尚未开放。当前只读 MCP 可检索已获准的归档资料；写入必须单独授权。": "Zweckbasierte Berechtigungsempfehlungen und Agent-Verbindungsassistenten sind noch nicht verfügbar. Schreibgeschütztes MCP kann autorisierte archivierte Materialien durchsuchen; Schreiben erfordert eine separate Autorisierung.",
   "还没有设备连接。生成邀请即可添加。": "Noch keine Geräteverbindungen. Erstellen Sie eine Einladung, um eines hinzuzufügen.",
   "还没有 AI 连接。生成 MCP 配置即可添加。": "Noch keine AI-Verbindungen. Erstellen Sie eine MCP-Konfiguration, um eine hinzuzufügen.",
   "这份洞察当前不可用，请从历史选择其他洞察。": "Diese Erkenntnis ist derzeit nicht verfügbar. Wählen Sie eine andere Erkenntnis aus dem Verlauf.",
@@ -8692,5 +8690,15 @@
   "选择后自动填写": "Nach der Auswahl automatisch ausgefüllt",
   "本机设置": "Lokale Einstellungen",
   "压缩前图片": "Bild vor der Komprimierung",
-  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Lerne mich zunächst nur anhand dieser Unterlage kennen. Erläutere die darin klar erkennbaren Fakten, was noch ungewiss ist und welche Fragen ich noch beantworten sollte."
+  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Lerne mich zunächst nur anhand dieser Unterlage kennen. Erläutere die darin klar erkennbaren Fakten, was noch ungewiss ist und welche Fragen ich noch beantworten sollte.",
+  "MCP · 创建日程": "MCP · Termine erstellen",
+  "创建日程": "Kalendertermine erstellen",
+  "授权目标日历": "Autorisierter Kalender",
+  "此连接可根据你的当次指令，仅在所选日历创建日程。": "Diese Verbindung kann auf Ihre ausdrückliche Anweisung Termine im ausgewählten Kalender erstellen.",
+  "请先在来源中选择日历并授权写入。": "Wählen Sie zuerst unter Quellen einen Kalender aus und erlauben Sie Schreibzugriffe.",
+  "将配置粘贴到 Codex 的 config.toml，然后重启 Codex。": "Fügen Sie die Konfiguration in die config.toml von Codex ein und starten Sie Codex neu.",
+  "复制 Codex 配置": "Codex-Konfiguration kopieren",
+  "Codex 配置": "Codex-Konfiguration",
+  "撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。": "Der Widerruf stoppt neue Kalendereinträge. Prüfen Sie für bereits gesendete Anfragen die Aktionsquittung.",
+  "日历授权、目标或当前上下文已变化。": "Die Kalenderberechtigung, das Ziel oder der aktuelle Kontext hat sich geändert."
 }

@@ -125,7 +125,4 @@ export class OwnerCalendarInstructions {
   }catch{return false;}
  }
  accepted(id:string){const row=this.store.db.prepare('SELECT json FROM action_proposals WHERE id=?').get(id);if(!row)return false;const action=JSON.parse(String(row.json)) as ActionProposal;return action.status==='approved'&&this.current(action);}
- /** A former process cannot know the result of a claimed effect. Retain its
-  * operation identity and expose uncertainty; never turn it back into queued. */
- recover(){for(const row of this.store.db.prepare("SELECT id,json FROM action_proposals WHERE json_type(json,'$.ownerInstruction')='object' AND json_extract(json,'$.status')='executing'").iterate()){const action=JSON.parse(String(row.json)) as ActionProposal;if(action.operationId)this.actions.connectorReceipt(String(row.id),action.operationId,{operationId:action.operationId,status:'uncertain'});}}
 }

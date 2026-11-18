@@ -3,7 +3,7 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {z} from 'zod';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
-import {connectionClientPlatforms,connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
+import {actionPluginIdentitySchema,centralConnectorActionTargetSchema,connectionClientPlatforms,connectionServerUrl,connectionUri,type ConnectionInvitation} from '@mote/shared';
 import {PrivateFile} from './connectors/private-file.js';
 import type {EvidenceStore as Store} from './evidence-store.js';
 import type {SourceStore} from './sources.js';
@@ -15,9 +15,13 @@ const platform=z.enum([...connectionClientPlatforms,'other'] as const);
 const timestamp=z.string().datetime();
 const sourceId=z.string().min(1).max(128).regex(/^[^\0\r\n]+$/);
 const eventKind=z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9._-]*$/);
-const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write','developer']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(sourceId).max(500).optional(),mcpResource:z.string().max(2048).optional(),eventSourceIds:z.array(sourceId).min(1).max(500).optional(),eventKinds:z.array(eventKind).min(1).max(20).optional(),rateLimitPerMinute:z.number().int().min(1).max(600).optional()}).strict()
+const calendarTarget=centralConnectorActionTargetSchema.extend({calendarId:centralConnectorActionTargetSchema.shape.calendarId.unwrap(),capabilityId:z.literal('calendar.manage'),capabilityVersion:z.literal(1)});
+const calendarGrant=z.object({name:z.string().min(1).max(1000),target:calendarTarget,identity:actionPluginIdentitySchema}).strict();
+export type McpCalendarGrant=z.infer<typeof calendarGrant>;
+const credentialSchema=z.object({id:z.string().uuid(),label,scope:z.enum(['owner','collector','mcp-read','mcp-write','mcp-calendar','developer']),createdAt:timestamp,revokedAt:timestamp.optional(),expiresAt:timestamp.optional(),serverUrl:z.string().max(2048),hash:z.string().regex(/^[a-f0-9]{64}$/),deviceId:deviceId.optional(),deviceName:z.string().min(1).max(200).optional(),platform:platform.optional(),writeSourceIds:z.array(sourceId).max(500).optional(),mcpResource:z.string().max(2048).optional(),calendarGrant:calendarGrant.optional(),eventSourceIds:z.array(sourceId).min(1).max(500).optional(),eventKinds:z.array(eventKind).min(1).max(20).optional(),rateLimitPerMinute:z.number().int().min(1).max(600).optional()}).strict()
   .refine(c=>c.scope!=='collector'||Boolean(c.deviceId&&c.platform),'Collector credentials require a device and platform')
   .refine(c=>c.scope!=='developer'||Boolean(c.eventSourceIds?.length&&c.eventKinds?.length),'Developer credentials require an explicit event scope')
+  .refine(c=>(c.scope==='mcp-calendar')===Boolean(c.calendarGrant),'Calendar credentials require an exact calendar grant');
 const savedSchema=z.object({version:z.literal(1),credentials:z.array(credentialSchema)}).strict();
 export type ConnectionCredential=z.infer<typeof credentialSchema>;
 type Saved=z.infer<typeof savedSchema>;
@@ -115,18 +119,43 @@ export class Connections {
     const hash=digest(header.slice(7));return this.credentials.find(c=>c.hash===hash&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock()));
   }
   assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));}
-  publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,mcpResource:__,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{})};}
+  publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,mcpResource:__,calendarGrant,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{}),...(calendarGrant?{calendarName:calendarGrant.name}:{})};}
   inventory(config?:ConnectorConfig){return {items:this.credentials.map(c=>this.publicCredential(c)),mcp:{enabled:Boolean(config?.mcpEnabled),writeEnabled:Boolean(config?.mcpEnabled&&config.mcpWriteEnabled&&config.mcpWriteSourceIds?.length),writeSourceIds:config?.mcpWriteSourceIds??[]}};}
   revoke(id:string){z.string().uuid().parse(id);return this.serialize(async()=>{const found=this.credentials.find(c=>c.id===id);if(!found)throw new ConnectionError('connection_not_found',404,moteText("未找到此连接。"));if(!found.revokedAt)await this.persist(this.credentials.map(c=>c.id===id?{...c,revokedAt:new Date(this.clock()).toISOString()}:c));return {revoked:true as const,id};});}
+  private async issueMcp(input:Pick<ConnectionCredential,'label'|'serverUrl'|'scope'|'writeSourceIds'|'calendarGrant'>){
+    const token=randomBytes(32).toString('base64url');
+    const credential:ConnectionCredential={...input,id:randomUUID(),createdAt:new Date(this.clock()).toISOString(),hash:digest(token)};
+    await this.persist([...this.credentials,credential]);
+    return {credential:this.publicCredential(credential),config:{mcpServers:{mote:{type:'http' as const,url:input.serverUrl+'/mcp',headers:{Authorization:`Bearer ${token}`}}}}};
+  }
   mintMcp(raw:unknown,config?:ConnectorConfig){
     const input=z.object({serverUrl:z.string().max(2048),label,access:z.enum(['read','write'])}).strict().parse(raw),url=serverUrl(input.serverUrl);
     if(!config?.mcpEnabled)throw new ConnectionError('mcp_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。"));
     if(input.access==='write'&&(!config.mcpWriteEnabled||!config.mcpWriteSourceIds?.length))throw new ConnectionError('mcp_write_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpWriteToken、connectors.mcpWriteSourceIds，并开启 connectors.mcpWriteEnabled 后重启节点。"));
     const sourceIds=input.access==='write'?z.array(z.string().min(1).max(128)).min(1).max(500).parse([...new Set(config.mcpWriteSourceIds)]):undefined;
-    return this.serialize(async()=>{
-      const token=randomBytes(32).toString('base64url');const c:ConnectionCredential={id:randomUUID(),label:input.label,scope:input.access==='write'?'mcp-write':'mcp-read',createdAt:new Date(this.clock()).toISOString(),serverUrl:url,hash:digest(token),...(sourceIds?{writeSourceIds:sourceIds}:{})};
-      await this.persist([...this.credentials,c]);return {credential:this.publicCredential(c),config:{mcpServers:{mote:{type:'http' as const,url:url+'/mcp',headers:{Authorization:`Bearer ${token}`}}}}};
+    return this.serialize(()=>this.issueMcp({
+      label:input.label,scope:input.access==='write'?'mcp-write':'mcp-read',serverUrl:url,...(sourceIds?{writeSourceIds:sourceIds}:{}),
+    }));
+  }
+  /** A trusted Actions route resolves the owner's choice inside the issuance
+   * queue. Reading the calendar catalog alone does not confer a grant. */
+  mintMcpCalendar(raw:unknown,resolve:(target:McpCalendarGrant['target'])=>McpCalendarGrant){
+    const input=z.object({serverUrl:z.string().max(2048),label,target:calendarTarget}).strict().parse(raw);
+    const url=serverUrl(input.serverUrl);
+    return this.serialize(()=>{
+      const grant=calendarGrant.parse(resolve(input.target));
+      return this.issueMcp({label:input.label,scope:'mcp-calendar',serverUrl:url,calendarGrant:grant});
     });
+  }
+  mcpCalendarGrant(id:string){
+    const c=this.credentials.find(c=>c.id===id);
+    if(!c||c.scope!=='mcp-calendar'||!c.calendarGrant)return;
+    this.assertActive(c);
+    return structuredClone(c.calendarGrant);
+  }
+  mcpCalendarConnection(header:string|undefined){
+    const c=this.authenticate(header);
+    return c?.scope==='mcp-calendar'?c.id:undefined;
   }
   /** A Developer API credential reads the host event journal only. It has no
    * device, MCP, plugin-control or action authority, and its source scope is

@@ -386,7 +386,6 @@ export const french: Readonly<Record<string, string>> = {
   "新建连接": "Nouvelle connexion",
   "检索和读取已获准访问的资料，不修改内容。": "Rechercher et lire les contenus autorisés sans les modifier.",
   "客户端兼容性": "Compatibilité du client",
-  "指定来源写入": "Écrire dans les sources sélectionnées",
   "生成 MCP 配置": "Générer la configuration MCP",
   "配置已生成": "Configuration générée",
   "{0} 的连接配置": "Configuration de connexion de {0}",
@@ -7128,7 +7127,6 @@ export const french: Readonly<Record<string, string>> = {
   "控件状态": "État du contrôle",
   "配置站点与扩展": "Configurer les sites et l'extension",
   "采集内容、可用能力与字段规则": "Choix de collecte, capacités disponibles et règles de champs",
-  "按用途推荐权限和 Agent 专属连接向导尚未开放。当前只读 MCP 可检索已获准的归档资料；写入必须单独授权。": "Les recommandations d'autorisations par usage et les guides de connexion dédiés aux agents ne sont pas encore disponibles. Le MCP en lecture seule peut rechercher les éléments archivés autorisés ; l'écriture requiert une autorisation séparée.",
   "还没有设备连接。生成邀请即可添加。": "Aucune connexion d'appareil pour l'instant. Créez une invitation pour en ajouter une.",
   "还没有 AI 连接。生成 MCP 配置即可添加。": "Aucune connexion IA pour l'instant. Créez une configuration MCP pour en ajouter une.",
   "这份洞察当前不可用，请从历史选择其他洞察。": "Cet insight est actuellement indisponible. Sélectionnez un autre insight dans l'historique.",
@@ -8693,5 +8691,15 @@ export const french: Readonly<Record<string, string>> = {
   "选择后自动填写": "Rempli automatiquement après sélection",
   "本机设置": "Paramètres locaux",
   "压缩前图片": "Image avant compression",
-  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Commence à me connaître en t’appuyant uniquement sur ce document. Présente les faits qu’il établit clairement, les points encore incertains et les questions auxquelles tu as besoin que je réponde."
+  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Commence à me connaître en t’appuyant uniquement sur ce document. Présente les faits qu’il établit clairement, les points encore incertains et les questions auxquelles tu as besoin que je réponde.",
+  "MCP · 创建日程": "MCP · Création d’événements",
+  "创建日程": "Créer des événements",
+  "授权目标日历": "Calendrier autorisé",
+  "此连接可根据你的当次指令，仅在所选日历创建日程。": "Cette connexion peut créer des événements dans le calendrier sélectionné à votre demande explicite.",
+  "请先在来源中选择日历并授权写入。": "Sélectionnez d’abord un calendrier dans Sources et autorisez l’écriture.",
+  "将配置粘贴到 Codex 的 config.toml，然后重启 Codex。": "Collez cette configuration dans le fichier config.toml de Codex, puis redémarrez Codex.",
+  "复制 Codex 配置": "Copier la configuration de Codex",
+  "Codex 配置": "Configuration de Codex",
+  "撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。": "La révocation bloque les nouvelles écritures. Consultez le reçu d’action pour toute demande déjà envoyée.",
+  "日历授权、目标或当前上下文已变化。": "L’autorisation du calendrier, la destination ou le contexte actuel a changé."
 };

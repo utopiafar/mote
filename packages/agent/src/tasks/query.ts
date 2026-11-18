@@ -73,8 +73,13 @@ export const selectedCurrentInstructionDraftTaskDescriptor = {
   select: input => input.assistantDraft === true && input.assistantCurrentInstruction === true && input.evidenceIds !== undefined,
 } as const satisfies TaskDescriptor;
 
+const externalCalendarReviewTaskDescriptor = {
+  ...currentInstructionDraftTaskDescriptor,id:'external-calendar-review',profile:{output:'answer',retrieval:'none'},priority:12,
+  select: input => input.externalCalendarCandidate !== undefined,
+} as const satisfies TaskDescriptor;
+
 export function createQueryTaskPack(): TaskPack {
-  return Object.freeze({tasks: Object.freeze([answerTaskDescriptor,selectedAnswerTaskDescriptor,answerDraftTaskDescriptor,selectedAnswerDraftTaskDescriptor,currentInstructionDraftTaskDescriptor,selectedCurrentInstructionDraftTaskDescriptor])});
+  return Object.freeze({tasks: Object.freeze([answerTaskDescriptor,selectedAnswerTaskDescriptor,answerDraftTaskDescriptor,selectedAnswerDraftTaskDescriptor,currentInstructionDraftTaskDescriptor,selectedCurrentInstructionDraftTaskDescriptor,externalCalendarReviewTaskDescriptor])});
 }
 
 export function installQueryTaskPack(registry: TaskRegistry = defaultTaskRegistry): () => void | Promise<void> {

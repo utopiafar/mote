@@ -83,10 +83,12 @@ export class ManagedCalendar {
  }
  private async dispatchApproved(){
   for(const row of this.store.db.prepare("SELECT id FROM action_proposals WHERE json_extract(json,'$.status')='approved' AND json_extract(json,'$.target.executionLocation')='central-connector' ORDER BY rowid LIMIT 20").all() as {id:string}[]){
-   const action=this.actions.get(row.id);if(action.status!=='approved'||!action.target||!isCentralConnectorActionTarget(action.target))continue;
-   if(action.kind==='message.send'&&!this.capabilities.messageSendGranted(action.target))continue;
-   await this.dispatch(action);
+   await this.dispatchApprovedAction(row.id);
   }
+ }
+ async dispatchApprovedAction(id:string){
+  const action=this.actions.get(id);
+  if(action.status==='approved')await this.dispatch(action);
  }
  private async dispatch(action:ActionProposal){
   const target=action.target,operationId=action.operationId;
