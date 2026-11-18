@@ -2,7 +2,7 @@ import {afterEach,expect,it} from 'vitest';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {buildApp} from '../../server/src/app.js';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import {DesktopPluginHost} from '../src/plugin-host/desktop-host.js';
 import {NativeProviderRegistry} from '../src/plugin-host/native-registry.js';
 import type {IpcCallerView,IpcInvokeResult,IpcRouter} from '../src/plugin-host/ipc-registry.js';
@@ -42,14 +42,7 @@ async function centralFixture() {
   const directory = await mkdtemp(join(tmpdir(),'mote-capability-publisher-'));
   directories.push(directory);
   const owner = 'generated-capability-owner';
-  const node = await buildApp({
-    dataDir: join(directory,'data'), token: owner, tokenPath: 'generated', host: '127.0.0.1', port: 0, maxExportBytes: 1_000_000, insightIntervalHours: 0,
-    allowedOrigins: [], model: '', modelBaseUrl: '', apiKey: '', allowUnauthenticatedLocal: false,
-    embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', logLevel: 'silent',
-  }, {
-    backgroundWorker: false,
-    agent: {configured: false, query: async () => { throw Error('No model in generated capability fixture'); }, close: async () => {}},
-  });
+  const node = await buildFixtureCentral(join(directory,'data'), owner);
   const ownerHeaders = {authorization:'Bearer ' + owner};
   const invitation = await node.app.inject({method:'POST',url:'/api/connections/collector-invitations',headers:ownerHeaders,
     payload:{serverUrl:'https://generated.invalid',label:'Generated Mac',deviceId:'generated-mac'}});

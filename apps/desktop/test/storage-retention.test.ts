@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash,randomUUID} from 'node:crypto';
 import sharp from 'sharp';
-import {buildApp} from '../../server/src/app.js';
+import { buildFixtureCentral } from './central-fixture.mjs';
 import {defaultConfig} from '../src/config';
 import {DurableQueue} from '../src/queue';
 import {LocalSourceManager} from '../src/source-manager';
@@ -22,7 +22,7 @@ const roots:string[]=[],cleanup:(()=>Promise<unknown>|void)[]=[];
 afterEach(async()=>{for(const close of cleanup.splice(0).reverse())await close();vi.unstubAllGlobals();vi.restoreAllMocks();for(const root of roots.splice(0))await rm(root,{recursive:true,force:true});});
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
 async function fixture(){const directory=await realpath(await mkdtemp(join(tmpdir(),'mote-mac-storage-')));roots.push(directory);let models=0;
- const token='generated-mac-storage-'+randomUUID(),node=await buildApp({dataDir:join(directory,'central'),token,tokenPath:'generated',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'},{backgroundWorker:false,agent:{configured:false,async query(){models++;throw Error('No model in Mac storage fixture');},async close(){}}});cleanup.push(()=>node.app.close());
+ const token='generated-mac-storage-'+randomUUID(),node=await buildFixtureCentral(join(directory,'central'),token,{agent:{configured:false,async query(){models++;throw Error('No model in Mac storage fixture');},async close(){}}});cleanup.push(()=>node.app.close());
  const origin=await node.app.listen({host:'127.0.0.1',port:0}),config={...defaultConfig(),serverUrl:origin,token,packedUpload:false,syncMode:'manual' as const},nativeFetch=globalThis.fetch;
  return {directory,node,origin,config,nativeFetch,get models(){return models;},get:(path:string,init:RequestInit={})=>nativeFetch(origin+path,{...init,headers:{authorization:'Bearer '+token,...Object.fromEntries(new Headers(init.headers))}})};
 }
