@@ -5,6 +5,7 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.UUID
 import javax.crypto.Cipher
@@ -93,52 +94,126 @@ class CentralNativeContractTest {
         restored.acknowledge(note.getString("id"), JSONObject().put("id", note.getString("id")).put("duplicate", false).put("receipt", receipt))
         assertEquals(0, restored.read().getJSONArray("pending").length())
     }
-    private fun fileAck(manifest: JSONObject, id: String): JSONObject {
+    private fun fileReplayAck(manifest: JSONObject, id: String): JSONObject {
         val item = manifest.getJSONObject("item")
-        val ack = JSONObject().put("id",id).put("captureId",id).put("sourceId",manifest.getString("sourceId")).put("externalId",item.getString("externalId")).put("revision",item.getString("revision")).put("sha256",manifest.getString("sha256")).put("sizeBytes",manifest.getLong("sizeBytes"))
-        return ack.put("receipt",JSONObject(ack.toString()).put("version",2).put("kind","file-revision").put("state","received").put("duplicate",false))
+        val identity = JSONObject().put("id", id).put("sourceId", manifest.getString("sourceId"))
+            .put("externalId", item.getString("externalId")).put("revision", item.getString("revision")).put("duplicate", true)
+        val receipt = JSONObject(identity.toString()).put("version", 2).put("kind", "file-revision").put("state", "received")
+        val hash = manifest.getString("sha256")
+        return identity.put("captureId", id).put("objectId", hash).put("sha256", hash)
+            .put("sizeBytes", manifest.getLong("sizeBytes")).put("receipt", receipt)
     }
     private fun partAck(part: Int, bytes: ByteArray) = JSONObject().put("part",part).put("bytes",bytes.size).put("hash",java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
     @Test fun attachmentRetryPreservesManifestAndSkipsDurableParts() = temporary { root ->
-        val file = File(root, "generated-image").apply { writeBytes(ByteArray(4 * 1024 * 1024 + 3) { (it % 251).toByte() }) }
-        val uploadId = UUID.randomUUID().toString(); val captureId = UUID.randomUUID().toString()
-        val manifests = mutableListOf<String>(); val parts = mutableListOf<String>(); var attempt = 0
-        val client = CentralClient(origin, token, { _, url, bytes, _, _ ->
-            when {
-                url.endsWith("/api/sources") -> 200 to JSONObject()
-                url.endsWith("/uploads") -> {
-                    manifests.add(String(bytes!!)); attempt++
-                    200 to JSONObject().put("uploadId", uploadId).put("parts", if (attempt == 1) JSONArray() else JSONArray().put(partAck(0,file.readBytes().copyOfRange(0,4*1024*1024))))
+        val partBytes = 4 * 1024 * 1024
+        val original = ByteArray(partBytes + 3) { (it % 251).toByte() }
+        val file = File(root, "generated-image").apply { writeBytes(original) }
+        val uploadId = UUID.randomUUID().toString()
+        val captureId = UUID.randomUUID().toString()
+        val uploads = "/api/file-sync/v1/uploads"
+        val manifests = mutableListOf<String>()
+        val parts = mutableListOf<Int>()
+        val durable = JSONArray()
+        var commits = 0
+        val client = CentralClient(origin, token, { method, url, bytes, _, _ ->
+            when (method to url.removePrefix(origin)) {
+                "POST" to "/api/sources" -> 200 to JSONObject()
+                "POST" to uploads -> {
+                    manifests += String(requireNotNull(bytes), Charsets.UTF_8)
+                    val begin = JSONObject().put("partBytes", partBytes)
+                    if (commits == 0) {
+                        begin.put("uploadId", uploadId).put("parts", JSONArray(durable.toString()))
+                            .put("nextPart", JSONObject.NULL).put("ack", JSONObject.NULL)
+                    } else {
+                        begin.put("uploadId", captureId).put("parts", JSONArray()).put("ack", fileReplayAck(JSONObject(manifests.first()), captureId))
+                    }
+                    200 to begin
                 }
-                url.contains("/parts/") -> { parts.add(url); 200 to partAck(url.substringAfterLast('/').toInt(),bytes!!) }
-                else -> if (attempt == 1) throw java.io.IOException("Generated lost response") else 200 to fileAck(JSONObject(manifests.last()),captureId)
+                "PUT" to "$uploads/$uploadId/parts/0", "PUT" to "$uploads/$uploadId/parts/1" -> {
+                    val part = url.substringAfterLast('/').toInt()
+                    val body = requireNotNull(bytes)
+                    parts += part
+                    assertArrayEquals(original.copyOfRange(part * partBytes, minOf((part + 1) * partBytes, original.size)), body)
+                    if (part == 1 && manifests.size == 1) {
+                        throw IOException("Generated lost request before the tail was stored")
+                    }
+                    val ack = partAck(part, body)
+                    durable.put(part, ack)
+                    200 to ack
+                }
+                "POST" to "$uploads/$uploadId/commit" -> {
+                    assertEquals(2, durable.length())
+                    commits++
+                    throw IOException("Generated lost response after the revision was committed")
+                }
+                else -> error("Unexpected attachment request: $method $url")
             }
         })
-        assertThrows(java.io.IOException::class.java) { CentralAttachments.upload(client, file, "fixture.png", "image/png", "fixture-phone", { 1000L }) }
-        assertEquals(captureId, CentralAttachments.upload(client, file, "fixture.png", "image/png", "fixture-phone", { 1000L }))
-        assertEquals(manifests[0], manifests[1]); assertEquals(3, parts.size); assertTrue(parts.last().endsWith("/parts/1"))
+        fun upload() = CentralAttachments.upload(client, file, "fixture.png", "image/png", "fixture-phone", { 1000L })
+        assertThrows(IOException::class.java) { upload() }
+        assertThrows(IOException::class.java) { upload() }
+        assertEquals(captureId, upload())
+        assertEquals(List(3) { manifests.first() }, manifests)
+        assertEquals(listOf(0, 1, 1), parts)
+        assertEquals(1, commits)
     }
     @Test fun importRetryAfterLostAdmissionResponseUsesSameArchivedFileAndRequestId() = temporary { root ->
-        val cipher = encrypted(); val uploadId = UUID.randomUUID().toString(); val requestId = UUID.randomUUID().toString()
-        val fileId = UUID.randomUUID().toString(); val jobId = UUID.randomUUID().toString()
-        CentralStateFile(root, "import", cipher).write(JSONObject().put("manifest", JSONObject().put("id", uploadId).put("name", "generated.txt").put("sizeBytes", 3))
+        val cipher = encrypted()
+        val uploadId = UUID.randomUUID().toString()
+        val requestId = UUID.randomUUID().toString()
+        val fileId = UUID.randomUUID().toString()
+        val jobId = UUID.randomUUID().toString()
+        val original = byteArrayOf(1, 2, 3)
+        val manifest = JSONObject().put("id", uploadId).put("name", "generated.txt").put("sizeBytes", original.size)
+        CentralStateFile(root, "import", cipher).write(JSONObject().put("manifest", manifest)
             .put("requestId", requestId).put("instruction", "Generated instruction"))
-        File(root, "part-0.enc").writeBytes(cipher.seal(byteArrayOf(1, 2, 3)))
-        var committed = false; var attempts = 0; var partCalls = 0; val requests = mutableListOf<String>()
-        val client = CentralClient(origin, token, { _, url, bytes, _, _ -> when {
-            url.endsWith("/api/import-uploads") -> 200 to JSONObject().put("id", uploadId).put("partBytes", CentralImports.PART).put("parts", JSONArray()).apply { if (committed) put("fileId", fileId) }
-            url.contains("/parts/") -> { partCalls++; 200 to JSONObject() }
-            url.endsWith("/commit") -> { committed = true; 200 to JSONObject().put("id", fileId) }
-            else -> { requests.add(String(bytes!!)); attempts++
-                if (attempts == 1) throw java.io.IOException("Generated lost admission response") else 202 to JSONObject().put("id", jobId)
+        val part = File(root, "part-0.enc").apply { writeBytes(cipher.seal(original)) }
+        val uploads = "/api/import-uploads"
+        var commits = 0
+        var partCalls = 0
+        val requests = mutableListOf<String>()
+        val client = CentralClient(origin, token, { method, url, bytes, _, _ ->
+            when (method to url.removePrefix(origin)) {
+                "POST" to uploads -> {
+                    assertEquals(manifest.toString(), String(requireNotNull(bytes), Charsets.UTF_8))
+                    200 to JSONObject().put("id", uploadId).put("partBytes", 4 * 1024 * 1024).put("parts", JSONArray())
+                        .put("nextPart", JSONObject.NULL).apply { if (commits > 0) put("fileId", fileId) }
+                }
+                "PUT" to "$uploads/$uploadId/parts/0" -> {
+                    val body = requireNotNull(bytes)
+                    assertArrayEquals(original, body)
+                    partCalls++
+                    200 to partAck(0, body)
+                }
+                "POST" to "$uploads/$uploadId/commit" -> {
+                    assertEquals(1, partCalls)
+                    commits++
+                    200 to JSONObject().put("id", fileId)
+                }
+                "POST" to "/api/imports" -> {
+                    requests += String(requireNotNull(bytes), Charsets.UTF_8)
+                    if (requests.size == 1) throw IOException("Generated lost admission response")
+                    202 to JSONObject().put("id", jobId)
+                }
+                else -> error("Unexpected import request: $method $url")
             }
-        } })
+        })
         val store = CentralImports(root, cipher)
-        assertThrows(java.io.IOException::class.java) { store.send(client) { _, _ -> } }
-        assertTrue(store.pending().has("manifest"))
-        assertEquals(jobId, CentralImports(root, cipher).send(client) { _, _ -> }.getString("id"))
-        assertEquals(requests[0], requests[1]); assertEquals(1, partCalls); assertFalse(store.pending().has("manifest"))
-        assertEquals(requestId, JSONObject(requests[0]).getString("requestId"))
-        assertEquals(fileId, JSONObject(requests[0]).getJSONArray("archivedFileIds").getString(0))
+        assertThrows(IOException::class.java) { store.send(client) { _, _ -> } }
+        val restored = CentralImports(root, cipher)
+        val pending = restored.pending()
+        assertEquals(manifest.toString(), pending.getJSONObject("manifest").toString())
+        assertEquals(fileId, pending.getString("archivedFileId"))
+        assertArrayEquals(original, cipher.open(part.readBytes()))
+        assertEquals(jobId, restored.send(client) { _, _ -> }.getString("id"))
+        assertEquals(2, requests.size)
+        assertEquals(requests[0], requests[1])
+        assertEquals(1, partCalls)
+        assertEquals(2, commits)
+        assertFalse(restored.pending().has("manifest"))
+        assertFalse(part.exists())
+        val admitted = JSONObject(requests.first())
+        assertEquals(requestId, admitted.getString("requestId"))
+        assertEquals(fileId, admitted.getJSONArray("archivedFileIds").getString(0))
     }
 }
