@@ -150,6 +150,9 @@ export const consumerScopes={
   'projectMemoryLifecycleSettings':'memory-lifecycle',
   'storedMemoryLifecycleSettings':'memory-lifecycle',
  },
+ 'lifecycle-extensions.ts':{
+  recoverableMemoryJobs:'memory',
+ },
  'plugins/action-capabilities.ts':{'ActionCapabilities.command':'action-capabilities','ActionCapabilities.declare':'action-capabilities','ActionCapabilities.declarations':'action-capabilities','ActionCapabilities.inventory':'action-capabilities','ActionCapabilities.saveDraft':'action-capabilities','ActionCapabilities.revokeDraft':'action-capabilities','ActionCapabilities.grants':'action-capabilities','ActionCapabilities.revokeGrant':'action-capabilities'},
  'actions.ts':{'Actions.proposeAuthorizedCalendar':'actions','Actions.recoverCurrentCalendar':'actions','Actions.connectorClaim':'actions','Actions.discover':'actions'},
  'external-calendar-actions.ts':{'ExternalCalendarActions.read':'actions','ExternalCalendarActions.accept':'actions'},
@@ -323,6 +326,7 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {"from":"apps/server/src/material-organizers.ts","to":"execution_steps","symbol":"0222a27909ae40647fefd0c860b859b7b2f7783492cfe6144ad209818012f372","scope":"MaterialOrganizerRuntime.repairStale","scopeFingerprint":"95b2de2d4d944163cd0138cc98e42fd33d6987ebe9ce4286f99442d02b4acae9","reason":"Find stale steps of the exact active organizer operations before validating and restoring their current generations through the execution engine."},
  {"from":"apps/server/src/evidence-dependencies.ts","to":"file_artifacts","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Check which artifacts replaced the requested file's original derived chunks before retiring dependent Memory."},
  {"from":"apps/server/src/evidence-dependencies.ts","to":"file_chunks","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Read the exact retired chunk IDs for the requested file without reading their bodies."},
  {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Preserve canonical Material anchor identity if it overlaps a retired file chunk ID."},
@@ -1758,16 +1762,6 @@ export const retainedClassificationScopes=[
   "symbol": "6c2b67b68305e5f8cb5672e2a487bad87d462af119d9ac10681815d218a27203",
   "scope": "MaterialOrganizerRuntime.tick",
   "scopeFingerprint": "3fe116023a77f61aec64351cd43be29e88a170a0876aeec6e5fab7d60ff205ff",
-  "operation": "read",
-  "completeSql": true
- },
- {
-  "from": "apps/server/src/material-organizers.ts",
-  "to": "execution_steps",
-  "kind": "read",
-  "symbol": "8929c9f77b8c57416f0ce8089be54c02741a32a8e09deaaa06b7503170109eab",
-  "scope": "MaterialOrganizerRuntime.repairStale",
-  "scopeFingerprint": "ee180a846a41ff388e85dddd7f19bb3966c2369f7a4d649bb99e6aec3989323e",
   "operation": "read",
   "completeSql": true
  },

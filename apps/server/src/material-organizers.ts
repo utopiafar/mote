@@ -850,7 +850,10 @@ export class MaterialOrganizerRuntime {
     const db=this.store.db;
     if((db.prepare('SELECT COUNT(*) n FROM changes WHERE seq>?').get(this.cursor()) as {n:number}).n)return;
     if(db.prepare('SELECT 1 FROM material_organizer_backfills WHERE complete=0 LIMIT 1').get())return;
-    const rows=db.prepare(`SELECT g.* FROM execution_steps e JOIN material_organizer_groups g ON e.operation_id='material-organizer:'||g.group_key
+    // Probe each organizer operation directly. Starting from stale steps can
+    // scan every group for every retired generation, even with no repair due.
+    const rows=db.prepare(`SELECT g.* FROM material_organizer_groups g CROSS JOIN execution_steps e INDEXED BY execution_operations
+      ON e.operation_id='material-organizer:'||g.group_key
       WHERE e.kind=? AND e.state='stale' AND g.active=1 AND json_extract(e.input,'$.generation')=g.generation
       ORDER BY e.rowid DESC LIMIT 500`).all(ORGANIZER_STEP) as OrganizerGroupRow[];
     if(!rows.length)return;
