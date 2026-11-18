@@ -48,13 +48,25 @@ it('keeps the current draft and dirty state when the rule import fails',async()=
 });
 
 for(const change of ['edit','reset','leave','owner'] as const)it(`discards a late rule import after ${change} without restoring an old draft or feedback`,async()=>{
- let finish!:()=>void;loader.load.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>finish=resolve);return vi.importActual('@mote/shared/ui-builtins');});
+ const started=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+ loader.load.mockImplementationOnce(async()=>{
+  started.resolve();
+  await release.promise;
+  return vi.importActual('@mote/shared/ui-builtins');
+ });
  if(change==='reset')input('device-name','Generated unsaved device name');
- el<HTMLButtonElement>('ui-page-builtins').click();await vi.waitFor(()=>expect(finish).toBeTypeOf('function'));
- if(change==='edit'){input('ui-page-rules','[');input('ui-page-rules','[]');}
- else if(change==='reset')el<HTMLButtonElement>('settings-reset').click();
- else if(change==='leave')el<HTMLButtonElement>('chrome-back').click();
- else{state={...state,authorizationGeneration:2,config:{...state.config,serverUrl:'http://127.0.0.1:2',authSourceBinding:'generated-other-owner'}};receiveStatus(state);}
- const feedback=el('feedback').textContent;finish();await flush();await flush();
+ el<HTMLButtonElement>('ui-page-builtins').click();
+ await started.promise;
+ let feedback: string | null;
+ try{
+  if(change==='edit'){input('ui-page-rules','[');input('ui-page-rules','[]');}
+  else if(change==='reset')el<HTMLButtonElement>('settings-reset').click();
+  else if(change==='leave')el<HTMLButtonElement>('chrome-back').click();
+  else{state={...state,authorizationGeneration:2,config:{...state.config,serverUrl:'http://127.0.0.1:2',authSourceBinding:'generated-other-owner'}};receiveStatus(state);}
+  feedback=el('feedback').textContent;
+ }finally{
+  release.resolve();
+  await vi.dynamicImportSettled();
+ }
  expect(el<HTMLTextAreaElement>('ui-page-rules').value).toBe('[]');expect(el('feedback').textContent).toBe(feedback);expect(el('settings-pending').hidden).toBe(change!=='edit');expect(api.configure).not.toHaveBeenCalled();
 });
