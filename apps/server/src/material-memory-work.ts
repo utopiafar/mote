@@ -71,6 +71,10 @@ export class MaterialMemoryWork {
   private rows(id:string){return this.store.db.prepare('SELECT * FROM material_memory_requests WHERE material_id=?').all(id) as WorkRow[];}
   private transaction<T>(run:()=>T):T{const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{const result=run();if(own)db.exec('COMMIT');return result;}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}}
   private update(row:WorkRow,set:string,values:(string|number|null)[]=[]){return this.store.db.prepare(`UPDATE material_memory_requests SET ${set} WHERE material_id=? AND scope=? AND revision=?`).run(...values,row.material_id,row.scope,row.revision);}
+  private failedEnqueue(row:WorkRow,error:unknown){
+    const tooLarge=error instanceof StoreError&&error.statusCode===413;
+    this.update(row,'error=?,ready_at=?',[tooLarge?'memory_input_too_large':'memory_enqueue_failed',tooLarge?TERMINAL_AT:this.now()+RETRY_DELAY_MS]);
+  }
   private revoke(row:WorkRow){if(row.job_id)this.store.db.prepare('INSERT OR IGNORE INTO material_memory_revocations VALUES(?,?,?)').run(row.job_id,row.material_id,row.revision);}
   private available(row:WorkRow,sourceId:string,jobId?:string){
     if(row.binding_json){const binding=memoryRecipeBindingSchema.parse(JSON.parse(row.binding_json));if(!this.recipes?.enabled(sourceId,binding))return false;}
@@ -258,7 +262,12 @@ export class MaterialMemoryWork {
           created=runner.create({evidenceIds,originKey:'memory-package:'+sha256(JSON.stringify(proposal.members)),contextTime:members[0].contextTime,recipes:binding?[{id:binding.recipe.id,version:binding.recipe.version}]:undefined,automaticGrants:grants,workPackage:memoryWorkPackageSchema.parse({id:packageId,goal:proposal.goal,instruction:proposal.instruction,inputs:members.map(({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint})=>({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint}))})});
           if(!this.inputs.claimMany(grants,created.id))throw new StoreError('Memory package authorization changed',409);
           for(const row of rows)if(!this.update(row,'job_id=?,error=NULL',[created.id]).changes)throw new StoreError('Memory package input changed',409);
-        });}catch(error){for(const row of rows)if(row)this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);onSkipped?.(proposal);continue;}
+        });}catch(error){
+          // Only a singleton failure establishes that this original is too
+          // large on its own. A rebuild can still change its selected ranges.
+          for(const row of rows)if(row)this.failedEnqueue(row,rows.length===1?error:undefined);
+          onSkipped?.(proposal);continue;
+        }
         if(!created)onSkipped?.(proposal);
         if(created){onCreated?.(proposal,created);this.launch(runner,{...rows[0],job_id:created.id},allowed);started++;}
       }
@@ -290,7 +299,7 @@ export class MaterialMemoryWork {
             return Boolean(this.update(row,'job_id=?,input_fingerprint=?,error=NULL',[job.id,selection.fingerprint]).changes);
           });
           if(!claimed){this.revoke({...row,job_id:job.id});continue;}row.job_id=job.id;
-        }catch{this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);continue;}
+        }catch(error){this.failedEnqueue(row,error);continue;}
       }
       let job:{status:string;errorCode?:string};
       try{job=runner.state(row.job_id!);}catch{this.update(row,"error='memory_job_unavailable',ready_at=?",[TERMINAL_AT]);continue;}

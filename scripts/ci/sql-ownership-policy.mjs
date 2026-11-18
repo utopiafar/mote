@@ -284,7 +284,9 @@ export const consumerScopes={
  "ArchivedFileStore.removeUnreferenced": "archived-files"
 },
  "evidence-dependencies.ts":{
- "evidenceDependents": "evidence-dependencies"
+ "materialEvidenceInstalled": "evidence-dependencies",
+ "evidenceDependents": "evidence-dependencies",
+ "invalidateRetiredFileEvidence": "memory"
 },
  /** Only this scan reads this owner's saved provider configurations. The
   * configuration() path also reads dynamic plan/binding relations and stays pending. */
@@ -321,6 +323,10 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"file_artifacts","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Check which artifacts replaced the requested file's original derived chunks before retiring dependent Memory."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"file_chunks","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Read the exact retired chunk IDs for the requested file without reading their bodies."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Preserve canonical Material anchor identity if it overlaps a retired file chunk ID."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence_dependencies","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"1b1b48015c6637df86e1e7f14364d031964851908c11f948b7a7ae657ee16fa3","reason":"Follow the exact indexed Formal anchor links from affected originals so only dependent Memory is retired."},
  {
   "from": "apps/server/src/memory-phase-outputs.ts",
   "to": "execution_steps",

@@ -29,9 +29,16 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
  // This lineage fixture supplies only synthetic transcription; never call the default local diarizer.
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'},policy:fixtureFilePolicy({...processing.view().settings,enabled:true,audioProcessor:'audio.http'},processing.runtime.registry)});await processing.tick();
  const before=files.chunks(original.id),oldArtifact=before[0].fileEvidence!.artifactId,stableFingerprint=memoryEvidenceFingerprint(before[0]),memories=new MemoryStore(store,ids=>files.evidence(ids),id=>files.isCurrentEvidence(id));
- const save=(index:number)=>{const record=before[index];return memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated '+index,statement:`Generated statement [${record.id}]`,uncertainty:'Fixture only',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()}),'fixture').items[0];};
- const proposal=save(0),scope={after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'},snapshot=createInsightSnapshot(store,randomUUID(),scope);
- const stable=memories.publish(proposal.id),changed=memories.publish(save(1).id),reportId=randomUUID();assert.notEqual(createInsightSnapshot(store,randomUUID(),scope).scopeFingerprint,snapshot.scopeFingerprint);store.saveInsight({runId:reportId,answer:'Historical generated report'},reportId);
+ const save=(label:string,indexes:number[],relatedMemoryIds?:string[])=>{
+  const records=indexes.map(index=>before[index]),evidenceIds=records.map(record=>record.id);
+  const claim={title:'Generated '+label,statement:`Generated ${label} [${evidenceIds.join(', ')}]`,uncertainty:'Fixture only',evidenceIds,relatedMemoryIds,evidence:records.map(({id,ocrText})=>({id,quote:ocrText}))};
+  const result=fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[claim]}),citations:records.map(({id,capturedAt,ocrText})=>({id,capturedAt,appName:'Generated',excerpt:ocrText})),trace:[],runId:randomUUID()});
+  return memories.extract(result,'fixture',relatedMemoryIds?{tier:'consolidated',relatedMemoryIds}:undefined).items[0];
+ };
+ const proposal=save('stable',[0]),scope={after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'},snapshot=createInsightSnapshot(store,randomUUID(),scope);
+ const stable=memories.publish(proposal.id),changed=memories.publish(save('changed',[0,1]).id),reportId=randomUUID();assert.notEqual(createInsightSnapshot(store,randomUUID(),scope).scopeFingerprint,snapshot.scopeFingerprint);store.saveInsight({runId:reportId,answer:'Historical generated report'},reportId);
+ const related=memories.publish(save('related',[0],[changed.id]).id);
+ const descendant=memories.publish(save('descendant',[0],[related.id]).id);
  assert.ok(evidenceDependents(store,{kind:'file_chunk',id:before[0].id}).some(node=>node.kind==='memory'&&node.id===stable.id));
  const materials=new MaterialStore(store);organizers=new MaterialOrganizerRuntime(store,materials);
 while(await organizers.tick(100));
@@ -39,9 +46,17 @@ while(await organizers.tick(100));
  const anchors=materials.evidence(materials.evidenceIds(formal.ref));
  const stableAnchor=anchors.find(record=>record.ocrText==='Stable first segment')!,changedAnchor=anchors.find(record=>record.ocrText==='Second segment version 1')!;
  assert.ok(stableAnchor);assert.ok(changedAnchor);
+ // File-artifact edges cannot lead outward from a retired chunk. Evaluating
+ // this branch detects a full graph pass even on a small generated fixture.
+ let irrelevantEdges=0;
+ store.db.function('generated_edge_read',id=>{irrelevantEdges++;return id;});
+ const view=String(store.db.prepare("SELECT sql FROM sqlite_master WHERE name='evidence_dependency_edges'").get()!.sql);
+ store.db.exec('DROP VIEW evidence_dependency_edges;'+view.replace("SELECT 'file_artifact',artifact_id,'file_chunk'","SELECT 'file_artifact',generated_edge_read(artifact_id),'file_chunk'"));
  revision++;processing.retry(original.id);await processing.tick();const after=files.chunks(original.id);
  assert.equal(after[0].id,before[0].id);assert.notEqual(after[1].id,before[1].id);assert.notEqual(after[0].fileEvidence!.artifactId,oldArtifact);assert.equal(memoryEvidenceFingerprint(after[0]),stableFingerprint);
  assert.equal(memories.get(stable.id).status,'published');assert.equal(memories.get(changed.id).status,'stale');assert.equal(files.isCurrentEvidence(before[1].id),false);
+ assert.equal(memories.get(related.id).status,'stale');assert.equal(memories.get(descendant.id).status,'stale');
+ assert.equal(irrelevantEdges,0,'a file refresh must not evaluate unrelated types of evidence edges');
  assert.equal(materials.isCurrentEvidence(changedAnchor.id),false,'retired file chunks immediately invalidate formal descendants');
  assert.equal(materials.isCurrentEvidence(stableAnchor.id),true);
  assert.throws(()=>materials.read(formal.ref),{statusCode:409});

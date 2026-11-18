@@ -1,6 +1,6 @@
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {MEMORY_VISUAL_EVIDENCE_CONTRACT} from './memory-image-proof.js';
-import {memoryImageGrants,memoryImageLocator,memoryImageLocators,assertMemoryImageGrants,uninspectedMemoryImageTargets,type MemoryImageLocator,type MemoryImageGrant} from './memory-image-grants.js';
+import {memoryImageGrants,memoryImageLocators,assertMemoryImageGrants,uninspectedMemoryImageTargets,type MemoryImageLocator,type MemoryImageGrant} from './memory-image-grants.js';
 import {memoryFeedbackBatchId,validMemoryFeedbackPlan,hasUsefulMemoryFeedbackScope,type MemoryFeedbackPlanner,type MemoryFeedbackRequest,type MemoryFeedbackPlan,type MemoryFeedbackGroup} from './memory-feedback.js';
 import {decodeMemoryJob,encodeMemoryJob,decodeMemoryBatch,encodeMemoryBatch,installMemoryPrivateRetirement} from './plugins/memory-private-storage.js';
 import {memoryWorkPackageSchema,memoryWorkInstruction,readMemoryWorkCoverage,type MemoryWorkPackage,type MemoryWorkMember,type MemoryWorkCoverage,type MemoryOwnerQuestion,type MemoryWorkInspection} from './memory-work-contract.js';
@@ -486,10 +486,11 @@ export class MemoryPipeline {
     const budget=job.batchCharacters,all:Chunk[]=[],authorizedChunks:Chunk[]=[],authorizedKeys=new Set<string>(),refsByEvidence=new Map<string,{id:string;revision:string}[]>();let skippedChunks=0;
     for(const ref of job.artifactRefs??[]){const artifact=this.store.archive.get(ref.id);if(!artifact||artifact.revision!==ref.revision)throw new StoreError('Semantic input changed',409);for(const range of (artifact.metadata.evidenceRanges??[]) as EvidenceRange[]){const refs=refsByEvidence.get(range.id)??[];if(!refs.some(r=>r.id===ref.id))refs.push(ref);refsByEvidence.set(range.id,refs);}}
     const records=new Map(this.options.memories.readCurrentEvidence(plans.flatMap(plan=>plan.ids)).map(record=>[record.id,record]));
+    const imageLocators=memoryImageLocators(this.store,[...records.keys()]);
     for(const plan of plans)for(const id of plan.ids){
       const record=records.get(id);if(!record)throw new StoreError('Memory input evidence is missing or superseded',409);
       if(!record.ocrText.length||record.provenance?.layer==='reference'||record.provenance?.document?.fileIndex?.coverage==='lightweight'){skippedChunks++;continue;}
-      const fingerprint=memoryEvidenceFingerprint(record),profile=memoryProfile(record),image=memoryImageLocator(this.store,id),selected=evidenceRanges?evidenceRanges.filter(r=>r.id===id):[{id,offset:0,length:record.ocrText.length}];
+      const fingerprint=memoryEvidenceFingerprint(record),profile=memoryProfile(record),image=imageLocators.get(id),selected=evidenceRanges?evidenceRanges.filter(r=>r.id===id):[{id,offset:0,length:record.ocrText.length}];
       // The host can retain already assessed originals as interpretation
       // context without scheduling them as extraction targets again.
       const ranges=[...selected.map(range=>({range,target:true})),...(contextEvidenceRanges??[]).filter(range=>range.id===id).map(range=>({range,target:false}))];

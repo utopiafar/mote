@@ -70,7 +70,7 @@ for(const boundary of ['before-commit','after-commit'] as const)test(`actual pro
  t.after(()=>rmSync(directory,{recursive:true,force:true}));
  const source=`
  import {appendFileSync} from 'node:fs';
- import {Store} from ${JSON.stringify(new URL('../src/store.ts',import.meta.url).href)};
+ import {EvidenceStore as Store} from ${JSON.stringify(new URL('../src/evidence-store.ts',import.meta.url).href)};
  import {SourceStore} from ${JSON.stringify(new URL('../src/sources.ts',import.meta.url).href)};
  import {MemoryStore} from ${JSON.stringify(new URL('../src/memory.ts',import.meta.url).href)};
  import {MemoryPipeline} from ${JSON.stringify(new URL('../src/memory-pipeline.ts',import.meta.url).href)};

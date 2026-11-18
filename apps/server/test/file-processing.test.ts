@@ -44,7 +44,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {buildApp} from '../src/app.js';
 import type {HostDependencies} from '../src/host.js';
 import {} from '../src/config.js';
-import {MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
+import {MediaAssets,MEDIA_CATALOG,mediaModelIdentities} from '../src/media-assets.js';
 import {FUNASR_PINS,FUNASR_PROTOCOL,parseFunasrRequest,parseFunasrResponse,parseFunasrArchive,funasrDialogueOutput,type FunasrRequest} from '../src/funasr-contract.js';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import type {FileDialogueCleanup} from '../src/file-recipes.js';
@@ -1054,6 +1054,13 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  let preparationGate:Promise<void>;
  const holdPreparation=()=>{preparationInput=undefined;preparationGate=new Promise<void>((resolve,reject)=>{releasePreparation=resolve;failPreparation=reject;});};holdPreparation();
  let releaseModels!:()=>void;const modelGate=new Promise<void>(resolve=>releaseModels=resolve);
+ if(options.deferModels){
+  // Keep the real asset owner and bundle verification. Stub its download
+  // transport before activation so the preparation port uses the same assets.
+  t.mock.method(MediaAssets.prototype,'installAsync',async function(this:MediaAssets,role:Parameters<MediaAssets['installAsync']>[0],_source?:'auto'|'official'|'mirror',signal?:AbortSignal){
+   assert.equal(role,'dialogue');await modelGate;signal?.throwIfAborted();await this.importBundle(role,bundle,signal);
+  });
+ }
  let held:{path:string;started:()=>void;gate:Promise<void>;release:()=>void}|undefined;
  const token='generated-funasr-worker-token-00001';
  const worker=createServer((req,res)=>{void(async()=>{
@@ -1100,14 +1107,10 @@ async function nativeFunasrFixture(t:any,options:{authorize?:boolean;cleanup?:bo
  let node=await start();
  t.after(async()=>{held?.release();releasePreparation();releaseModels();try{await node.app.close();}finally{worker.closeAllConnections();await new Promise<void>(resolve=>worker.close(()=>resolve()));MEDIA_CATALOG.dialogue=previous;rmSync(directory,{recursive:true,force:true});}assert.deepEqual(errors,[],'worker boundary assertions must surface');});
  for(const file of files){mkdirSync(join(bundle,file.name.split('/')[0]),{recursive:true});writeFileSync(join(bundle,file.name),modelBytes);}
- if(options.deferModels){
-  // Replace the external download while retaining real bundle verification
-  // and publication in the temporary profile's MediaAssets owner.
-  node.featureServices.mediaAssets.installAsync=async(role,_source,signal)=>{await modelGate;signal?.throwIfAborted();await node.featureServices.mediaAssets.importBundle(role,bundle,signal);};
- }else await node.featureServices.mediaAssets.importBundle('dialogue',bundle);
+ if(!options.deferModels)await node.featureServices.mediaAssets.importBundle('dialogue',bundle);
  if(options.authorize!==false)await authorizeFixtureModels(node);
  node.sources.register({id:'generated-native-audio',name:'Generated native audio',kind:'upload',deviceId:'generated-native',platform:'import',retention:'archive'});
- const headers={authorization:'Bearer '+configuration.token};
+ const headers={authorization:'Bearer '+configuration.privateCredential.token};
  const save=async(change:(policy:any)=>void)=>{const v=node.processing.view(),policy=structuredClone(v.policy);change(policy);const response=await node.app.inject({method:'PUT',url:'/api/file-processing',headers,payload:{revision:v.revision,settings:v.settings,policy}});assert.equal(response.statusCode,200,response.body);};
  if(!options.cleanup)await save(policy=>{policy.profiles.find((p:any)=>p.processorId==='audio.local-dialogue').parameters.deduplicate=false;});
  const upload=async(name='generated-'+(++serial)+'.wav',revision='1',previousRevision:string|null=null)=>{
@@ -1145,7 +1148,8 @@ test('public upload uses the current FunASR recipe, persists raw bytes before CA
  assert.deepEqual(f.node.processing.artifact(diarization.id).output.payload.checkpoint,recognition.checkpoint);
  const current=f.node.files.chunks(id)[0].fileEvidence!.artifactId,payload=f.node.processing.artifact(current).output.payload;
  assert.equal(payload.mapping.length,5);assert.equal(payload.version,'generated-only');
- const snapshot=f.node.processing.explain(id).snapshots[0];assert.equal((snapshot.recipe as any).version,'3');assert.ok((snapshot.stagePins as any[]).some(p=>p.id===FUNASR_PINS.align.id));
+ const snapshot=f.node.processing.explain(id).snapshots[0],recipe=snapshot.recipe as {id:string;version:string};
+ assert.deepEqual({id:recipe.id,version:recipe.version},FUNASR_PINS.recipe);assert.ok((snapshot.stagePins as any[]).some(p=>p.id===FUNASR_PINS.align.id));
  if(process.env.MOTE_ASR03_EXAMPLE_PATH)writeFileSync(process.env.MOTE_ASR03_EXAMPLE_PATH,JSON.stringify({protocol:FUNASR_PROTOCOL,pins:FUNASR_PINS,requests:f.requests,responses:f.wires.map(wire=>JSON.parse(wire)),job:detail.job,configurationReceipt:snapshot,raw:f.node.processing.artifact(raw.id),diarization:f.node.processing.artifact(diarization.id),selectedDialogue:f.node.processing.artifact(current)},null,2)+'\n');
  const materials=new MaterialStore(f.node.store),organizers=new MaterialOrganizerRuntime(f.node.store,materials);try{while(await organizers.tick(100));const result=materials.get(materialId('generated-native-audio','generated-1.wav'))!;assert.ok(result);assert.match(materials.read(result.ref).text,/一百零一/);}finally{await organizers.close();}
 });
@@ -1199,7 +1203,7 @@ for(const completed of [false,true])test(`retired pinned audio ${completed?'hist
  if(completed){assert.equal((await f.details(id)).job.state,'succeeded');return;}
  assert.equal((await f.details(id)).job.state,'blocked');assert.equal((await f.details(id)).job.error,'file_processor_version_unavailable');assert.equal((await f.details(id)).job.attempts,0);
  const partial=await f.node.app.inject({method:'POST',url:'/api/files/'+id+'/retry',headers:f.headers,payload:{stage:'diarize'}});assert.equal(partial.statusCode,409);
- await f.retry(id);await f.node.processing.tick();const current=await f.details(id);assert.equal(current.job.state,'succeeded',JSON.stringify(current.job));assert.equal(f.counts().recognize,1);assert.equal(current.artifacts.find((a:any)=>a.kind==='transcript').processorVersion,'5');
+ await f.retry(id);await f.node.processing.tick();const current=await f.details(id);assert.equal(current.job.state,'succeeded',JSON.stringify(current.job));assert.equal(f.counts().recognize,1);assert.equal(current.artifacts.find((a:any)=>a.kind==='transcript').processorVersion,FUNASR_PINS.extract.version);
  assert.equal(db.prepare('SELECT receipt FROM file_configuration_snapshots WHERE capture_id=? AND fingerprint=?').get(id,oldRevision)!.receipt,JSON.stringify(receipt),'old receipt stays available for review');
 });
 
