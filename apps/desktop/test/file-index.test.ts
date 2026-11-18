@@ -8,7 +8,7 @@ import {DEFAULT_SOURCE_OPTIONS} from '../src/source-types';
 it('stable identity survives rename and snapshots retain central read permission',async()=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-index-')));try{
  vi.spyOn(localVolume,'localVolumeIdentity').mockResolvedValue('apfs:generated-volume');
- const path=join(root,'one.txt'),text='Generated evidence '.repeat(1000);await writeFile(path,text);const options={...DEFAULT_SOURCE_OPTIONS,allowRead:true};
+ const path=join(root,'one.txt'),text='Generated evidence '.repeat(1000);await writeFile(path,text);const options={...DEFAULT_SOURCE_OPTIONS,retention:'snapshot' as const,centralProcessingConsent:true,allowRead:true};
  const firstScan=await scanSourceFiles(root,options),first=firstScan.items[0];expect(first.document?.fileIndex).toMatchObject({status:'pending',allowRead:true,maxIndexCharacters:100000});expect(first.text).toBe('');
  await rename(path,join(root,'two.txt'));const second=(await scanSourceFiles(root,options,undefined,undefined,firstScan.checkpoint)).items[0];expect(second.externalId).toBe(first.externalId);expect(second.document?.fileIndex?.contentVersion).toBe(first.document?.fileIndex?.contentVersion);
  const readDisabled=(await scanSourceFiles(root,{...options,allowRead:false})).items[0];expect(readDisabled.document?.fileIndex?.allowRead).toBe(false);expect(readDisabled.localOriginalBase64).toBe(Buffer.from(text).toString('base64'));

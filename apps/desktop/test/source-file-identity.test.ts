@@ -6,10 +6,10 @@ import {join} from 'node:path';
 import {scanSourceFiles} from '../src/source-files';
 import {DirectoryCatalog} from '../src/directory-catalog';
 import {sourceWork} from '../src/background';
+import {INGRESS_VERSION_HEADERS} from '../src/ingress-protocol';
 import * as volume from '../src/local-volume';
-import {SourceSync} from '../src/source-sync';
+import {SourceSync,type SnapshotRecovery} from '../src/source-sync';
 import {DEFAULT_SOURCE_OPTIONS,type LocalFileCheckpoint,type SourceDefinition,type SourceRequest} from '../src/source-types';
-import {sourceAck} from './fixtures';
 
 let root:string;
 const checkpoint=(scan:Awaited<ReturnType<typeof scanSourceFiles>>)=>scan.checkpoint as LocalFileCheckpoint;
@@ -276,28 +276,71 @@ it('keeps registry IDs when a policy forces a rescan across restart',async()=>{
 });
 
 it('reopens the same registry identity when Central requests snapshot input recovery',async()=>{
-  const selected=join(root,'selected'),state=join(root,'state'),marker=join(root,'markers');await mkdir(selected);
-  const bytes='Generated recovery';await writeFile(join(selected,'a.md'),bytes);
-  const source:SourceDefinition={id:'generated',name:'Generated',kind:'local-files',deviceId:'generated',platform:'macos',retention:'snapshot',enabled:true};
-  let sync=new SourceSync(state);await sync.initialize();await sync.ensurePolicy('snapshot');
-  const first=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,marker,sync.fileCheckpoint(),[],true);
-  await sync.stage(first,false);const queued=sync.pendingContent()[0];
-  const request:SourceRequest=async(path,body)=>{
-    if(path==='/api/sources')return source;
-    if(path.includes('/head?'))return {revision:null};
-    if(path.endsWith('/uploads'))return {uploadId:'generated',partBytes:4194304,parts:[]};
-    if(path.includes('/parts/'))return {part:0,hash:createHash('sha256').update(body as Buffer).digest('hex'),bytes:(body as Buffer).length};
-    if(path.endsWith('/commit'))return {...sourceAck(source.id,queued,'file-revision'),sha256:hash(bytes),sizeBytes:Buffer.byteLength(bytes)};
-    throw Error(path);
-  };
-  await sync.flush(source,request);
-  expect(await sync.requestSnapshotRecovery([{captureId:'00000000-0000-4000-8000-000000000035',externalId:queued.externalId,revision:queued.revision,sha256:hash(bytes),sizeBytes:Buffer.byteLength(bytes),observedAt:queued.observedAt}])).toHaveLength(1);
-  sync=new SourceSync(state);await sync.initialize();
-  const retry=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,marker,sync.fileCheckpoint(),[],true);
-  expect(retry.items[0].externalId).toBe(queued.externalId);await sync.stage(retry,false);
-  expect(sync.pendingContent()).toHaveLength(1);
-  expect(sync.pendingContent()[0]).toMatchObject({externalId:queued.externalId,revision:queued.revision,snapshotRecovery:{captureId:'00000000-0000-4000-8000-000000000035',sha256:hash(bytes)}});
-  await sync.flush(source,request);
+  const selected=join(root,'selected'),state=join(root,'state'),marker=join(root,'markers');
+  await mkdir(selected);
+  const bytes='Generated recovery';
+  await writeFile(join(selected,'a.md'),bytes);
+  const options={...DEFAULT_SOURCE_OPTIONS,retention:'snapshot' as const,centralProcessingConsent:true};
+  const source:SourceDefinition={id:'generated',name:'Generated',kind:'local-files',deviceId:'generated',platform:'macos',retention:options.retention,enabled:true};
+  const {buildApp}=await import('../../server/src/app.js');
+  const dataDir=join(root,'central'),token='generated-owner-snapshot-recovery';
+  const central=await buildApp({
+    path:join(dataDir,'mote.yaml'),privateCredential:{token,tokenPath:'fixture-only'},
+    initialDocument:{
+      version:1,revision:0,
+      storage:{dataDir,maxExportBytes:1_000_000},
+      server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
+      execution:{insightIntervalHours:0},
+      models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},
+      diagnostics:{enabled:false},
+    },
+  },{
+    backgroundWorker:false,
+    agent:{configured:false,query:async()=>{throw Error('No model in generated recovery fixture');},close:async()=>{}},
+  });
+  try{
+    await central.app.ready();
+    const paths:string[]=[];
+    const request:SourceRequest=async(url,body,method)=>{
+      paths.push(url);
+      const headers:Record<string,string>={...INGRESS_VERSION_HEADERS,authorization:'Bearer '+token};
+      if(body!==undefined)headers['content-type']=body instanceof Uint8Array?'application/octet-stream':'application/json';
+      const response=await central.app.inject({url,method,headers,payload:body instanceof Uint8Array?Buffer.from(body):JSON.stringify(body)});
+      expect(response.statusCode,response.body).toBe(200);
+      return response.json();
+    };
+    let sync=new SourceSync(state);
+    await sync.initialize();
+    await sync.ensurePolicy('snapshot');
+    const scan=()=>scanSourceFiles(selected,options,undefined,marker,sync.fileCheckpoint(),[],true);
+    await sync.stage(await scan(),false);
+    const [queued]=sync.pendingContent();
+    expect(queued.layer).toBe('snapshot');
+    await sync.flush(source,request);
+    expect(sync.status().pending).toBe(0);
+    const captureId=central.sources.getItem(source.id,queued.externalId)!.captureId!;
+    central.files.releaseSnapshotInput(captureId);
+    const recoveryPath='/api/file-sync/v1/recovery?sourceId='+source.id;
+    const {items}=await request(recoveryPath,undefined,'GET') as {items:SnapshotRecovery[]};
+    const {externalId,revision,observedAt}=queued;
+    const sha256=hash(bytes),sizeBytes=Buffer.byteLength(bytes);
+    expect(items).toEqual([{captureId,externalId,revision,observedAt,sha256,sizeBytes}]);
+    expect(await sync.requestSnapshotRecovery(items)).toEqual(items);
+
+    sync=new SourceSync(state);
+    await sync.initialize();
+    const retry=await scan();
+    expect(retry.items[0].externalId).toBe(externalId);
+    await sync.stage(retry,false);
+    expect(sync.pendingContent()).toHaveLength(1);
+    expect(sync.pendingContent()[0]).toMatchObject({externalId,revision,observedAt,snapshotRecovery:{captureId,sha256,sizeBytes}});
+    await sync.flush(source,request);
+    expect(paths).toContain('/api/file-sync/v1/recovery/'+captureId+'/uploads');
+    expect(sync.status().pending).toBe(0);
+    expect(central.sources.history(source.id,externalId).map(item=>item.captureId)).toEqual([captureId]);
+    expect(Buffer.concat([...central.files.processingBytes(captureId)]).toString()).toBe(bytes);
+    expect(await request(recoveryPath,undefined,'GET')).toEqual({items:[]});
+  }finally{await central.app.close();}
 });
 
 it('refuses an older registry without clearing its existing state',async()=>{

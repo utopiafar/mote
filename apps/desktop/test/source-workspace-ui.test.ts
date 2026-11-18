@@ -1,13 +1,17 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,realpath,rm,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createSourceWorkspaceUi} from '../src/source-workspace-ui';
 import {createCaptureSyncUi} from '../src/capture-sync-ui';
 import {createSourceSyncPreview,renderSourceMaintenancePreview} from '../src/source-maintenance-preview';
-import {SourceSync,sourceHash} from '../src/source-sync';
+import {defaultConfig} from '../src/config';
+import {localContentPage} from '../src/content-library';
+import {DurableQueue} from '../src/queue';
+import {LocalSourceManager} from '../src/source-manager';
+import {DEFAULT_SOURCE_OPTIONS} from '../src/source-types';
 import type {DesktopApi,Status} from '../src/contracts';
 import type {SourceStatus} from '../src/contracts/sources';
 import type {SourceContextState} from '../src/source-context-outbox';
@@ -164,27 +168,52 @@ it('acts on the current source options when a privacy option changed without a v
 });
 
 it('rereads a policy-restaged revision with unchanged count and ACK using the real outbox status',async()=>{
- const directory=await mkdtemp(join(tmpdir(),'mote-source-ui-revision-'));
+ const directory=await realpath(await mkdtemp(join(tmpdir(),'mote-source-ui-revision-')));
+ const manager=new LocalSourceManager(join(directory,'sources'),{...defaultConfig(),serverUrl:'',syncMode:'manual'},'/generated-unused-helper',true);
  try{
-  const engine=new SourceSync(join(directory,'outbox.json'));await engine.initialize();
-  const item={externalId:'generated-policy-file',title:'Generated private title',text:'Generated private body',kind:'file' as const,layer:'snapshot' as const};
-  const scan=(value:typeof item)=>({items:[value],seen:[value.externalId],complete:true,skipped:0});
-  await engine.stage(scan(item),false);
-  vi.mocked(api.sourcePendingContent).mockImplementation(async()=>({items:engine.pendingContent().map(value=>({key:`source:${id}:${sourceHash(`${value.externalId}\0${value.revision}`)}`,source:'file' as const,title:value.title,observedAt:value.observedAt,preview:value.text})),total:engine.status().pending}));
-  const edited={...structuredClone(source),source:{...source.source,redactLiterals:['Generated private']}};
-  ui.update([{...edited,...engine.status()}]);ui.open(id);await flush();
-  expect(el('source-detail-body').textContent).toContain(item.title);
-  const reads=vi.mocked(api.sourcePendingContent).mock.calls.length,ack=engine.status().lastAcknowledgedAt;
-  await engine.ensurePolicy('generated-redaction-policy');await engine.stage(scan({...item,title:'[已遮盖] title',text:'[已遮盖] body'}),false);
-  expect(engine.status().pending).toBe(1);expect(engine.status().lastAcknowledgedAt).toBe(ack);
-  ui.update([{...edited,...engine.status()}]);await flush();
+  const selected=join(directory,'selected'),title='Generated private title.txt',body='Generated private body';
+  await mkdir(selected);
+  await writeFile(join(selected,title),body);
+  await manager.initialize();
+  const sourceId=await manager.addFiles(selected,{...DEFAULT_SOURCE_OPTIONS,retention:'snapshot',centralProcessingConsent:true});
+  await manager.sync(true);
+  const [before]=manager.status();
+  const [{item:old}]=manager.pendingContent();
+  const queue=new DurableQueue(join(directory,'capture-queue'));
+  vi.mocked(api.sourcePendingContent).mockImplementation(async requestedId=>localContentPage(queue,manager,0,undefined,requestedId));
+  ui.update([before]);ui.open(sourceId);await flush();
+  expect(el('source-detail-body').textContent).toContain(title);
+  const reads=vi.mocked(api.sourcePendingContent).mock.calls.length;
+
+  await manager.update(sourceId,{...before.source,redactLiterals:['Generated private']});
+  await manager.sync(true);
+  const [restaged]=manager.status();
+  expect(restaged).toMatchObject({pending:1,blocked:1,failures:[{localPolicy:true}]});
+  expect(restaged.pending).toBe(before.pending);
+  expect(restaged.lastAcknowledgedAt).toBe(before.lastAcknowledgedAt);
+  expect(restaged.pendingContentRevision).toBeGreaterThan(before.pendingContentRevision!);
+  expect(localContentPage(queue,manager,0,undefined,sourceId)).toMatchObject({total:1,items:[{title:'[已遮盖] title.txt'}]});
+  ui.update([restaged]);await flush();
   expect(api.sourcePendingContent).toHaveBeenCalledTimes(reads+1);
-  expect(el('source-detail-body').textContent).not.toContain(item.title);expect(el('source-detail-body').textContent).toContain('[已遮盖] title');
-  const version=engine.status().pendingContentRevision;
-  await engine.stage(scan({...item,title:'[已遮盖] title',text:'[已遮盖] body'}),false);
-  expect(engine.status().pendingContentRevision).toBe(version);
-  ui.update([{...edited,...engine.status()}]);await flush();expect(api.sourcePendingContent).toHaveBeenCalledTimes(reads+1);
- }finally{await rm(directory,{recursive:true,force:true});}
+  const detail=el('source-detail-body');
+  expect(detail.textContent).not.toContain('Generated private');
+  expect(detail.textContent).toContain('[已遮盖] title.txt');
+  expect(detail.querySelector('.source-failures')?.textContent).toContain('旧待传版本已隔离，原输入保留。');
+  const pending=manager.pendingContent();
+  expect(pending).toHaveLength(2);
+  const current=pending.find(({item})=>item.revision!==old.revision)!.item;
+  expect(current.externalId).toBe(old.externalId);
+  expect(await readFile(join(current.localOriginal!.directory,'0'),'utf8')).toBe('[已遮盖] body');
+  expect(localContentPage(queue,manager).items).toContainEqual(expect.objectContaining({title,error:expect.stringContaining('旧待传版本已隔离')}));
+  expect(await readFile(join(old.localOriginal!.directory,'0'),'utf8')).toBe(body);
+  expect(await readFile(join(selected,title),'utf8')).toBe(body);
+
+  await manager.sync(true);
+  const [unchanged]=manager.status();
+  expect(unchanged.pendingContentRevision).toBe(restaged.pendingContentRevision);
+  ui.update([unchanged]);await flush();
+  expect(api.sourcePendingContent).toHaveBeenCalledTimes(reads+1);
+ }finally{await manager.close();await rm(directory,{recursive:true,force:true});}
 });
 
 it('keeps loaded archive pages when only status fields change',async()=>{
