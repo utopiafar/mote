@@ -379,6 +379,8 @@ export class AssistantFollowup {
   let running=false;
   for(const row of pending){
    const task=this.tasks.get(String(row.id)),batchId=String(row.batch_id);
+   // An accepted owner retry returns a blocked analysis to waiting.
+   if(task.state==='blocked')continue;
    if(task.state==='stale'||task.state==='cancelled'){changes.settle(batchId,task.state);continue;}
    const progress=this.batch.progress(batchId);
    if(['cancelled','stale'].includes(progress.task.state)||progress.items.some(step=>['failed','blocked','cancelled','stale'].includes(step.state))){

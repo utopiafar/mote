@@ -9,6 +9,7 @@ import type {ExecutionEngine} from '../execution-engine.js';
 import type {DelegatedQueryRuns} from '../delegated-query-runs.js';
 import type {MemoryPublication} from '../plugins/memory-publication.js';
 import type {MemoryPhasePipelinePlatform} from '../plugins/memory-phase-pipeline.js';
+import type {MemoryLifecycleServicePlatform} from '../plugins/memory-lifecycle-service.js';
 
 /** Shared shutdown latch. Admission paths poll it while handlers still run;
  * the close-order hooks set it before interrupting transports. */
@@ -32,6 +33,7 @@ export interface ServerLifecycleHookDependencies {
   readonly eventLoop:IntervalHistogram;
   readonly queryRuns:DelegatedQueryRuns;
   readonly memoryPublication:MemoryPublication;
+  readonly memoryLifecycleService:Pick<MemoryLifecycleServicePlatform,'quiesce'>;
   readonly memoryPhasePipeline:Pick<MemoryPhasePipelinePlatform,'quiesce'>;
   readonly resources:ServerResources;
   readonly diagnostics:ServerDiagnostics;
@@ -41,9 +43,11 @@ export interface ServerLifecycleHookDependencies {
  * quiesce platforms, interrupt polling and transports while handlers and
  * stores are still live, then release every registered resource. */
 export function installServerLifecycleHooks(app:FastifyInstance,dependencies:ServerLifecycleHookDependencies){
-  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,memoryPublication,memoryPhasePipeline,resources,diagnostics}=dependencies;
+  const {lifecycle,configurationPlatform,sourcePipelines,executionPlatform,executor,eventLoop,queryRuns,memoryPublication,memoryLifecycleService,memoryPhasePipeline,resources,diagnostics}=dependencies;
   app.addHook('preClose',async()=>{
     lifecycle.markClosing();
+    // Preserve the active window before shutting down the pipeline it can still call.
+    memoryLifecycleService.quiesce('shutdown');
     // Withdraw reply admission before source/model dependencies drain. An
     // accepted read must see a temporarily absent provider, not obsolete work.
     memoryPhasePipeline.quiesce('shutdown');

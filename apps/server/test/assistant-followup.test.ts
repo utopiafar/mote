@@ -552,6 +552,27 @@ test('a current catalog original already reviewed with a due group is claimed on
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,2);
 });
 
+test('a blocked automatic analysis does not keep processing the same finished batch',async t=>{
+ const f=await fixture(t);let now=Date.now();
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ await f.add('Generated automatic review with an unusable result.');
+ f.node.assistantChanges.tick(100);now+=60001;
+ paused.mock.restore();f.programs.push(()=>({reason:'Generated result omits the required card and commitment lists'}));
+ const finish=t.mock.method(f.service,'finish');
+ await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();assert.ok(analysis);
+ const task=f.tasks.get(String(analysis.id));await f.wait(task);
+ await f.service.tick(f.node.assistantChanges);
+ assert.equal(f.tasks.get(task.id).state,'blocked');
+ assert.equal(f.node.store.db.prepare("SELECT state FROM task_records WHERE kind='assistant.change'").get()!.state,'blocked');
+ await f.service.tick(f.node.assistantChanges);
+ await f.service.tick(f.node.assistantChanges);
+ assert.equal(finish.mock.callCount(),1);
+ assert.equal(f.seen.length,1);
+});
+
 test('an oversized automatic group is split with headroom and every original reaches a completed analysis',async t=>{
  const f=await fixture(t);let now=Date.now()+60001;
  (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;

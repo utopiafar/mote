@@ -41,6 +41,8 @@ test('a terminal semantic child counts once and owner retry executes only its li
   assert.equal((await f.node.app.inject({method:'POST',url})).statusCode,401);
   assert.equal((await f.node.app.inject({method:'POST',url:'/api/memory-settings/extraction/'+randomUUID()+'/retry',headers:f.owner})).statusCode,409);
   const response=await f.node.app.inject({method:'POST',url,headers:f.owner});assert.equal(response.statusCode,202);await f.node.lifecycle.tick();
+  const linked=f.node.store.db.prepare("SELECT e.id FROM execution_steps e JOIN operation_parents p ON p.child_id=e.operation_id WHERE p.parent_id=? AND e.kind='context-dag.semantic'").all('workflow:lifecycle:'+stopped.active!.id);
+  assert.equal(linked.length,1);await f.node.executor.drain(linked.map(step=>String(step.id)));
   assert.equal(f.calls(),before+1,'explicit owner recovery re-executes only the linked semantic child');assert.equal(f.node.workflows.view().jobs.find(job=>job.id===foreign)?.state,'failed');
   const state=JSON.parse(String(f.node.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='extraction'").get()!.json));state.retryAt=0;f.node.store.db.prepare("UPDATE memory_lifecycle_state SET json=? WHERE id='extraction'").run(JSON.stringify(state));
   f.node.store.db.prepare('UPDATE execution_steps SET available_at=0 WHERE id=?').run('lifecycle:'+stopped.active!.id);

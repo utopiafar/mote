@@ -51,6 +51,31 @@ test('app.close stops publication polling before executor disposal and retains p
  assert.ok(next.executor.list({kind:'memory.provider-reconcile',limit:100}).items.length>0,'fresh process schedules retained reconciliation');
 });
 
+test('app.close preserves a Memory window when its pipeline stops accepting new work',async t=>{
+ const f=await fixture(t),entered=deferred(),pipelineQuiesced=deferred();
+ const agent={configured:true,query:async()=>{throw Error('No model in generated lifecycle shutdown fixture');},close:async()=>{}};
+ const node=await f.start(agent),view=(host:Node)=>host.lifecycle.view().extensions.find(item=>item.id==='consolidation')!;
+ const quiesce=node.memoryPipeline.quiesce.bind(node.memoryPipeline);
+ t.mock.method(node.memoryPipeline,'quiesce',()=>{quiesce();pipelineQuiesced.resolve();});
+ node.lifecycle.replace({id:'consolidation',version:view(node).version,stream:'memory',async run(_window,checkpoint){
+  checkpoint('completed');entered.resolve();await pipelineQuiesced.promise;
+  await node.memoryPipeline.run(randomUUID());
+ }});
+ const windowId=node.lifecycle.request('consolidation',[randomUUID()],'generated-start');
+ const running=node.lifecycle.tick();await entered.promise;
+ await node.app.close();await running;
+ const interrupted=view(node);
+ assert.equal(interrupted.active?.id,windowId);
+ assert.equal(interrupted.active?.checkpoint,'completed');
+ assert.equal(interrupted.failures,0);
+ assert.equal(interrupted.manualRetryRequired,false);
+ assert.equal(node.executor.get('lifecycle:'+windowId)?.state,'waiting');
+ const next=await f.start(agent);await next.lifecycle.tick();
+ assert.equal(view(next).lastRun?.id,windowId);
+ assert.equal(view(next).active,undefined);
+ assert.equal(view(next).failures,0);
+});
+
 // This total budget covers 184 generated intakes, preparation, close and restart.
 // Allow CI contention while completing the journey; this is not an app.close latency requirement.
 test('app.close preserves 180 model waits, queues, retry deadlines and explicit cancellation; restart resumes eligible files',{timeout:240000},async t=>{
