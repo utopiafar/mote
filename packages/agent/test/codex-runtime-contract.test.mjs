@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createAgent, AgentResponseError} from '../dist/index.js';
+import {createAgent, AgentProviderError, AgentResponseError} from '../dist/index.js';
+import {launchCodexAppServer} from '../dist/runtime/codex/launch.js';
 import {codexContextTools} from '../dist/runtime/codex/tools.js';
 
 const record = {
@@ -19,6 +20,32 @@ const reader = {
   devices: async () => [],
   activity: async () => ({}),
 };
+
+test('a stalled native budget probe can be retried before model execution', {timeout: 15_000}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'mote-codex-probe-timeout-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const executable = join(root, 'generated-codex');
+  const observations = join(root, 'observations.jsonl');
+  await writeFile(join(root, 'auth.json'), '{}', {mode: 0o600});
+  await writeFile(executable, `#!${process.execPath}
+import {appendFileSync, existsSync} from 'node:fs';
+import {join} from 'node:path';
+appendFileSync(${JSON.stringify(observations)}, JSON.stringify({
+  command: process.argv[2],
+  credentialsLinked: existsSync(join(process.env.CODEX_HOME, 'auth.json')),
+}) + '\\n');
+setInterval(() => {}, 1000);
+`, {mode: 0o700});
+
+  await assert.rejects(() => launchCodexAppServer({executable, home: root}), error => {
+    assert.ok(error instanceof AgentProviderError);
+    assert.deepEqual(error.details, {category: 'transient', code: 'provider_timeout', executionStarted: false});
+    assert.equal(error.diagnostic.code, 'ETIMEDOUT');
+    return true;
+  });
+  const observed = (await readFile(observations, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(observed, [{command: '--mote-context-budget-version', credentialsLinked: false}]);
+});
 
 /** A real child speaking the App Server protocol. It validates the Host dynamic
  * schema and reacts to the structured tool error, rather than only echoing RPC. */

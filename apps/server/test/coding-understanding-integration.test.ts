@@ -243,7 +243,7 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
   if(proof&&support(report))return response(proof.id,owner,products(proof.id,false));
   const range=input.evidenceRanges![0],quote=originals.find(record=>record.id===range.id)!.ocrText.slice(range.offset,range.offset+Math.min(range.length,100));
   return response(range.id,quote,{summary:'Generated bounded progress context',evidence:[{id:range.id,quote,offset:range.offset}],workRecords:[],events:[],memoryCandidates:[],actionCues:[]});
- },false,{modelMaxTokens:512});
+ });
  await node.sources.upsertBatch('coding',[event('owner','user',owner),event('assistant','assistant',report),event('progress','user',('Generated progress note.\n').repeat(490)),event('tail','user',tail)]);
  await node.sourcePipelines.tick();const material=node.materials.list({kind:'mote.coding-session'}).items[0],ids=node.materials.evidenceIds(material.ref);
  const created=manualJob(node,ids),failed=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
@@ -264,7 +264,12 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
  assert.throws(()=>adapter.read({ref:material.ref,scope:{kind:'selection',sourceIds:[]}}),{statusCode:404});
  // Feed the producer's persisted products to the production A14/K4 consumer,
  // rather than constructing another matching semantic-product fixture.
- const headers={authorization:'Bearer '+token},configuration=(await node.app.inject({url:'/api/configuration',headers})).json();
+ const headers={authorization:'Bearer '+token};
+ const model=(await node.app.inject({url:'/api/model-settings',headers})).json();
+ const {apiKeyConfigured,headersConfigured,extraBodyConfigured,...settings}=model.settings;
+ const modelConfigured=await node.app.inject({method:'PUT',url:'/api/model-settings',headers,payload:{revision:model.revision,settings:{...settings,maxTokens:512}}});
+ assert.equal(modelConfigured.statusCode,200,modelConfigured.body);
+ const configuration=(await node.app.inject({url:'/api/configuration',headers})).json();
  const configured=await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:configuration.revision,value:{context:{contextWindow:32000,contextWindowSource:'configured'}}}});assert.equal(configured.statusCode,200,configured.body);
  const followup=node.featureServices.assistantFollowup;
  (followup as unknown as {now:()=>string}).now=()=>contextTime;

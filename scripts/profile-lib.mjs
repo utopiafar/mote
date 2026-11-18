@@ -313,6 +313,7 @@ export async function nativeIdentity(p) {
   return { ...supervisor, record };
 }
 const HEALTH_PROBE_TIMEOUT_MS = 5000;
+const NATIVE_STARTUP_TIMEOUT_MS = 60000;
 export async function health(p, timeoutMs = HEALTH_PROBE_TIMEOUT_MS) {
   try { await deploymentProbe(p,'/api/status',timeoutMs);return true; }
   catch { return false; }
@@ -359,10 +360,10 @@ export async function startNative(p, foreground = false, options = {}) {
   if (!child.pid) throw Error('Could not start central process');
   const record = { pid: child.pid, marker, configurationFile: p.configFile, dataDir: p.dataDir, release: p.meta.release, startedAt: new Date().toISOString() };
   try { await atomicJson(p.processFile, record); } catch (error) { child.kill('SIGTERM'); throw error; }
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + NATIVE_STARTUP_TIMEOUT_MS;
   while (!(await health(p, Math.max(1, Math.min(HEALTH_PROBE_TIMEOUT_MS, deadline - Date.now()))))) {
     if (failure || child.exitCode !== null || child.signalCode !== null) throw Error(`Central exited during startup; inspect logs in ${resolve(p.directory,p.env.MOTE_LOG_DIR||'logs')}`);
-    if (Date.now() > deadline) { child.kill('SIGTERM'); throw Error('Central did not become healthy within 20 seconds; process was asked to stop'); }
+    if (Date.now() > deadline) { child.kill('SIGTERM'); throw Error(`Central did not become healthy within ${NATIVE_STARTUP_TIMEOUT_MS / 1000} seconds. A graceful shutdown was requested`); }
     await sleep(100);
   }
   if (!foreground) { child.unref(); return { pid: child.pid, url: p.url }; }

@@ -33,7 +33,13 @@ export class ModelAuthorizationHost {
       const anchor=this.store.db.prepare('SELECT material_id,revision FROM material_evidence WHERE id=?').get(id);
       const material=anchor?this.materials.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision))):/^(?:mat_|material:)/.test(id)?this.materials.get(id):undefined;
       if(material){
-        for(const row of this.store.db.prepare('SELECT input_key FROM material_memory_requests WHERE material_id=? AND revision=?').all(material.id,material.revision))result.add(sourceModelIdentity(material.origin.sourceId,String(row.input_key)));
+        const requests=this.store.db.prepare('SELECT input_key FROM material_memory_requests WHERE material_id=? AND revision=?').all(material.id,material.revision);
+        for(const row of requests)result.add(sourceModelIdentity(material.origin.sourceId,String(row.input_key)));
+        // A retained block can outlive its revision's Memory work request.
+        // Its pinned dependencies still lead to the original intake receipts.
+        if(!requests.length&&anchor){
+          for(const root of this.evidenceTriggers(this.materials.retainedEvidenceDependencies(id),seen))result.add(root);
+        }
         continue;
       }
       const artifact=this.store.archive.get(id);

@@ -22,7 +22,7 @@
 
 | 协议 | 适配 |
 | --- | --- |
-| `codex-app-server` | Central系统用户的本机Codex CLI与文件登录 |
+| `codex-app-server` | Mote 构建的 Codex App Server 与 Central 系统用户的 Codex 文件登录 |
 | `deepseek` | 原生Messages适配 |
 | `openai-completions`、`openai-responses` | 对应HTTP消息、流式与工具格式 |
 | `anthropic-messages`、`google-generative-ai` | 对应原生消息与工具协议 |
@@ -31,7 +31,7 @@ HTTP运行时使用Harness/pi-ai，Codex使用独立适配器；共享Mote工具
 
 HTTP的`modelRequestTimeoutMs`为5000–600000毫秒；`agentTimeoutMs`为5000–3600000毫秒或`null`，新HTTP预设默认一小时。Agent预算计实际模型、工具和修正时间，不计中央名额等待。并发变化作用于后续准入。默认输出预算65536 tokens，专用设置调整；它不是累计账单或字数。输出超限的较短回答恢复与失败保留见[Agent说明](agent-runtime.md#runtime-roles)。
 
-Codex需要运行Central的系统用户已安装CLI和文件登录；Docker内也需CLI及可访问凭据。`models.codex.executable/home`只由宿主配置提供，修改需重启。每次请求使用独立进程和临时home，不继承私人MCP、插件、hooks或历史会话。查询只开放Mote上下文工具，导入使用独立可写临时工作区。
+Codex 需要运行 Central 的系统用户有可访问的文件登录。原生部署还需在对应发布目录构建带请求预算检查的 App Server，见[原生部署](deployment.md#安装与启动)。系统安装的 Codex CLI 可用于登录和读取模型目录。`models.codex.executable/home`只由宿主配置提供，修改需重启。每次请求使用独立进程和临时home，不继承私人MCP、插件、hooks或历史会话。查询只开放Mote上下文工具，导入使用独立可写临时工作区。
 
 Codex单次模型请求期限由上游管理，Mote的Agent总预算仍可为空；HTTP输出token设置不传给Codex。推理档位和Standard/Fast按当前目录选择，不静默替换；Fast返回档位不匹配会失败。Host未配置窗口时使用272000 token保守预算，并受目录实际窗口和输出预留约束；真正超限保留失败，不裁剪原始目标。能力取决于所用CLI和模型，连接测试仅证明本次调用。
 

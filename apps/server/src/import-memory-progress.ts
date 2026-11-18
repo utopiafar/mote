@@ -4,6 +4,7 @@ import type {MemoryWorkMember} from './memory-work-contract.js';
 
 type State=Exclude<keyof ImportMemoryProgress,'total'|'receipts'|'jobIds'>;
 const priority:State[]=['unavailable','failed','waitingForModel','running','pending','paused','cancelled','disabled','completed'];
+const inputWaitErrors=new Set(['memory_context_required','memory_owner_material_required','image_disclosure_disabled']);
 type Chunk={id:string;key:string;offset:number;length:number;fingerprint:string};
 type Job={status:string;workPackage?:{inputs?:{ref:string;sourceId:string;inputKey:string;scope:string}[]};authorizedChunks:Chunk[];materialRefs:Record<string,string>};
 type Batch={status:string;errorCode?:string;supersededBy?:string[];chunks:Chunk[];coverage?:MemoryWorkMember[];materialRefs?:Record<string,string>};
@@ -29,9 +30,9 @@ function memberProgress(job:Job,batches:Batch[],checkpoints:Set<string>,sourceId
   });
   if(complete)return 'completed';
   if(['cancelled','paused','pausing','waiting_for_model'].includes(job.status))return;
-  if(leaves.some(batch=>['failed','invalidated'].includes(batch.status)&&batch.errorCode!=='memory_context_required'))return 'failed';
+  if(leaves.some(batch=>['failed','invalidated'].includes(batch.status)&&!inputWaitErrors.has(batch.errorCode??'')))return 'failed';
   if(leaves.some(batch=>batch.status==='running'))return 'running';
-  if(leaves.some(batch=>batch.status==='pending'||batch.errorCode==='memory_context_required'))return 'pending';
+  if(leaves.some(batch=>batch.status==='pending'||inputWaitErrors.has(batch.errorCode??'')))return 'pending';
 }
 
 /** Read-only projection of the original receipt queue. Never authorizes or creates work. */

@@ -570,7 +570,13 @@ export class MaterialStore {
     const document=context?.document??{timeBasis:'unknown',contentRole:'other'};
     return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
-  isCurrentEvidence(id:string){return currentEvidenceAllowed((this.currentEvidenceStatement??=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id=?')).get(id) as CurrentEvidenceRow|undefined);}
+  private currentEvidenceRow(id:string){return (this.currentEvidenceStatement??=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id=?')).get(id) as CurrentEvidenceRow|undefined;}
+  isCurrentEvidence(id:string){return currentEvidenceAllowed(this.currentEvidenceRow(id));}
+  retainedEvidenceDependencies(id:string):string[]{
+    const anchor=this.currentEvidenceRow(id);
+    if(!anchor||anchor.evidence_revision===anchor.revision||!currentEvidenceAllowed(anchor))return [];
+    return this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id).map(row=>String(row.evidence_id));
+  }
   /** The same exact current-anchor predicate as the single-ID resolver. Each
    * synchronous Formal input check reads its full selection once, including
    * retained Coding prefixes; no result survives the next check. */
