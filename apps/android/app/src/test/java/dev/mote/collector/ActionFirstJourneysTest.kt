@@ -6,6 +6,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 class ActionFirstJourneysTest {
     @get:Rule val temporary = TemporaryFolder()
@@ -21,17 +22,21 @@ class ActionFirstJourneysTest {
         assertNull("Continuous stability checks stay active unless explicitly capturing once", files.prepare(selected, { ByteArrayInputStream(original) }, { true }, now = now))
         val saved = files.prepare(selected, { ByteArrayInputStream(original) }, { true }, now = now, captureImmediately = true)!!
         assertEquals(now, saved.getLong("stableSince"))
-        val manifest = saved.getJSONObject("pending").getJSONObject("manifest")
+        val revision = saved.getJSONObject("pending").getJSONObject("manifest").getJSONObject("item").getString("revision")
+        val uri = requireNotNull(selected.uri)
         val restored = FileArchiveQueue(directory, cipher)
         assertTrue(restored.configure(selected).getBoolean("importCaptured"))
         assertEquals(saved.toString(), restored.next(selected.id).toString())
         assertArrayEquals(original, restored.part(selected.id, 0))
-        val preview = restored.pendingPreview(selected.id, selected.uri!!, manifest.getJSONObject("item").getString("revision"))!!
+        val preview = restored.pendingPreview(selected.id, uri, revision)!!
         assertEquals(String(original), preview.first); assertTrue(preview.second)
-        val exported = java.io.ByteArrayOutputStream()
-        restored.exportPending(selected.id, selected.uri, manifest.getJSONObject("item").getString("revision"), exported)
+        val exported = ByteArrayOutputStream()
+        restored.exportPending(selected.id, uri, revision, exported)
         assertArrayEquals(original, exported.toByteArray())
-        assertThrows(Exception::class.java) { restored.pendingPreview(selected.id, selected.uri, "wrong-revision") }
+        assertNull(restored.pendingPreview(selected.id, uri, "wrong-revision"))
+        val rejected = ByteArrayOutputStream()
+        assertThrows(Exception::class.java) { restored.exportPending(selected.id, uri, "wrong-revision", rejected) }
+        assertEquals(0, rejected.size())
         restored.saveState(selected.id, restored.state(selected.id).apply { remove("importCaptured") })
         val crashRecovery = FileArchiveQueue(directory, cipher)
         assertTrue("Pending durable bytes recover the completion marker before scanning", crashRecovery.configure(selected).getBoolean("importCaptured"))
