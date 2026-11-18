@@ -78,6 +78,12 @@ export class MemoryStore {
       return this.recordIsCurrent(record);
     });
   }
+  /** Preserve the resolver's missing-ID behavior, but reject any returned
+   * original that is no longer current. Validate the same canonical read. */
+  readEvidenceIfCurrent(ids:readonly string[]):MemoryRecord[]|undefined {
+    const records=this.readEvidence([...ids]);
+    return records.every(record=>this.recordIsCurrent(record))?records:undefined;
+  }
   private recordIsCurrent(record:MemoryRecord):boolean {
     const id=record.id;
     if(!record||!this.currentEvidence(id))return false;

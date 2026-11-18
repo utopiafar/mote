@@ -70,14 +70,15 @@ export class AssistantCards {
   if(!this.reader.contextDependenciesAllowed(ids,undefined,historical))return false;
   if(!historical&&this.store.db.prepare(`SELECT 1 FROM memories WHERE id IN (SELECT value FROM json_each(?))
    AND (coalesce(json_extract(json,'$.status'),'')!='published' OR json_extract(json,'$.supersededBy') IS NOT NULL) LIMIT 1`).get(JSON.stringify(ids)))return false;
-  const records=this.reader.memories.readEvidence([...ids]);
+  const records=historical?this.reader.memories.readEvidence([...ids]):this.reader.memories.readEvidenceIfCurrent(ids);
+  if(!records)return false;
   const scoped=scope.kind==='selection'||scope.deviceId!==undefined||scope.after!==undefined||scope.before!==undefined||scope.evidenceIds!==undefined;
   if(ids.length>0&&!records.length)return false;
   if(scoped&&!records.length&&(!sourceIds.length||scope.deviceId!==undefined||scope.after!==undefined||scope.before!==undefined||scope.evidenceIds!==undefined))return false;
   let selected:Set<string>|undefined;
   if(scope.evidenceIds!==undefined)selected=new Set(taskEvidenceIds(this.store,{version:1,complete:true,ids:scope.evidenceIds}));
   for(const record of records){
-   if((!historical&&!this.reader.memories.isCurrentEvidence(record.id))||record.privacy?.excluded||!withinEvidenceScope(record,scope))return false;
+   if(record.privacy?.excluded||!withinEvidenceScope(record,scope))return false;
    if(scope.kind==='selection'&&scope.sourceIds!==undefined&&(!record.provenance?.sourceId||!scope.sourceIds.includes(record.provenance.sourceId)))return false;
    if(selected&&!selected.has(record.id))return false;
   }

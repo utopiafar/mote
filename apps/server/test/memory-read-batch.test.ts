@@ -62,6 +62,11 @@ test('reading a recording batch resolves each exact original context once while 
  const readSpy=t.mock.method(reader.memories,'readEvidence',(ids:string[])=>{originalReads++;return read(ids);});
  assert.deepEqual(reader.memories.extract(output,'generated',options),{items:[],runId:output.runId});readSpy.mock.restore();
  assert.equal(originalReads,1,'zero-candidate validation must check the whole current batch without rereading every original twice');
+ originalReads=0;
+ const currentProof=t.mock.method(reader.memories,'readEvidence',(ids:string[])=>{originalReads++;return read(ids);});
+ const current=reader.memories.readEvidenceIfCurrent(ids);currentProof.mock.restore();
+ assert.deepEqual(current,records);
+ assert.equal(originalReads,1,'current proof must share one canonical read');
  store.db.prepare('INSERT INTO file_evidence_links(parent_id,capture_id) VALUES(?,?)').run(originals[1].id,originals[0].chunks[0].id);
  const selected=[ids[0],ids[1],ids[40]],linked=reader.memories.readEvidence(selected);
  assert.deepEqual(linked,selected.flatMap(id=>reader.memories.readEvidence([id])),'an explicit chunk-parent link must not reuse a sibling context');
@@ -116,6 +121,10 @@ test('batch Memory guards reuse formal metadata while preserving exact originals
  assert.equal(reader.memories.readCurrentEvidence(first.ids).length,0,'old inactive anchors are still rejected');
  assert.equal((await agent.evidence({ids:first.ids})).length,0,'old processing pins cannot borrow fresh owner attribution');
  const currentIds=materials.evidenceIds(changed.ref),current=reader.memories.readCurrentEvidence(currentIds);assert.equal(current.length,40);assert.ok(current.every(record=>record.attributionContext?.ownerStatements?.[0].answer.includes('synthetic paragraphs')));
+ assert.deepEqual(reader.memories.readEvidenceIfCurrent([...first.ids,...currentIds])?.map(record=>record.id),currentIds,'the resolver still omits unavailable original IDs');
+ const staleProof=t.mock.method(reader.memories,'readEvidence',()=>[batch[0],current[0]]);
+ const rejected=reader.memories.readEvidenceIfCurrent([first.ids[0],currentIds[0]]);staleProof.mock.restore();
+ assert.ok(rejected===undefined,'a returned stale original rejects the whole proof alongside current originals');
  store.delete(second.original.id);assert.equal(reader.memories.readCurrentEvidence(second.ids).length,0,'source deletion cannot reuse a previous call cache');
  assertCurrentParity([...ids,...currentIds]);
  assert.equal((await agent.evidence({ids:second.ids})).length,0);

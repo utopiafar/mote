@@ -215,8 +215,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     if(!sourceContextDependenciesCurrent(this.sources.contexts,card.evidence.flatMap(value=>value.attributionContext?.sourceContextDeclarations??[])))return false;
     for(const reference of card.evidence){const declaration=reference.attributionContext?.sourceDeclaration;if(declaration){let source;try{source=this.sources.getSource(declaration.sourceId);}catch{return false;}if((source.ownerRelationVersion??1)!==declaration.version||(source.ownerRelation??null)!==declaration.ownerRelation)return false;}}
     if(ownerArchive)return ids.every(id=>this.archivedEvidence([formatEvidenceRef('capture',id)],scope).length===1||retained(id));
-    const anchors=this.memories.readEvidence(lineage.evidenceIds);
-    if(lineage.evidenceIds.some(id=>!anchors.some(anchor=>anchor.id===id)&&!retained(id))||anchors.some(anchor=>anchor.privacy.excluded||!this.memories.isCurrentEvidence(anchor.id)))return false;
+    const anchors=this.memories.readEvidenceIfCurrent(lineage.evidenceIds);
+    if(!anchors||lineage.evidenceIds.some(id=>!anchors.some(anchor=>anchor.id===id)&&!retained(id))||anchors.some(anchor=>anchor.privacy.excluded))return false;
     if(lineage.evidence.some(proof=>{const anchor=anchors.find(value=>value.id===proof.id);return anchor?(strictProof||anchor.provenance?.uri?.startsWith('material:'))&&memoryEvidenceFingerprint(anchor)!==proof.contentHash:!retained(proof.id);}))return false;
     const materialAncestors=new Set<string>();
     for(const id of lineage.evidenceIds){const release=releasedMemoryOriginal(this.store,id);if(release?.materialId)for(const original of release.identity.origins)materialAncestors.add(original);}
