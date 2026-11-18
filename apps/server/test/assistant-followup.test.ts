@@ -138,7 +138,13 @@ test('preparing an assistant preview of many small blocks batches original check
  t.diagnostic(`preview preparation checked the full Material ${fullReads} times`);
  assert.ok(fullReads<=8,`the whole Material must not be checked again for each preview quote (${fullReads} reads)`);
  assert.equal(yielded,true,'unrelated event-loop work must run before preview preparation completes');
- await turn;await f.wait(task);const result=await f.service.finish(task.id);assert.deepEqual(result.cardIds,[]);assert.deepEqual(result.commitmentIds,[]);
+ await turn;await f.wait(task);
+ const batchId=f.service.progress(task.id).batch!.task.id,firstAnchor=[...expected.keys()][0];
+ const reads=t.mock.method(f.reader.memories,'readEvidence');
+ assert.equal(f.service.assertBatchDependencies(batchId,[firstAnchor]),true);
+ const hydratedActiveBody=reads.mock.calls.some(call=>call.arguments[0].some(id=>expected.has(id)));reads.mock.restore();
+ assert.equal(hydratedActiveBody,false,'an active Formal anchor needs the same current identity and disclosure checks without reopening its body');
+ const result=await f.service.finish(task.id);assert.deepEqual(result.cardIds,[]);assert.deepEqual(result.commitmentIds,[]);
 });
 
 test('deletion during assistant preview preparation prevents model admission after its event-loop yield',async t=>{

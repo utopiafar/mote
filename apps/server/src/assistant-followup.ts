@@ -262,8 +262,14 @@ export class AssistantFollowup {
   // The same originals remain current query grants and exact proof targets in
   // the new batch; the historical anchor itself is never a retrieval grant.
   if(declaredAnchors.size)historical.push(...taskEvidenceIds(this.store,deps([...declaredAnchors])));
-  const current=new Set(this.reader.memories.readCurrentEvidence(ids).map(record=>record.id));
-  const records=new Map(this.reader.memories.readEvidence(ids.filter(id=>!current.has(id))).map(record=>[record.id,record]));
+  // Active Material anchors cannot be historical dependencies. Resolve their
+  // identity in bulk and leave disclosure to the caller's current policy check.
+  const activeAnchors=this.materials.currentEvidenceIds(ids);
+  // The canonical reader gives a capture with the same ID precedence.
+  for(const capture of this.store.evidenceMetadata([...activeAnchors]))activeAnchors.delete(capture.id);
+  const otherIds=ids.filter(id=>!activeAnchors.has(id));
+  const current=new Set(this.reader.memories.readCurrentEvidence(otherIds).map(record=>record.id));
+  const records=new Map(this.reader.memories.readEvidence(otherIds.filter(id=>!current.has(id))).map(record=>[record.id,record]));
   const memories=this.store.db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids));
   for(const memory of memories){
    let value=JSON.parse(String(memory.json));if(value.status!=='published')return;

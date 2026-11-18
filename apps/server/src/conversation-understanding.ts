@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {Temporal} from '@js-temporal/polyfill';
 import {CODING_DIALOGUE_SCHEMA_VERSION,ProviderFailure,type CaptureRecord,type QueryResult} from '@mote/shared';
-import {AgentResponseError,type QueryInput} from '@mote/agent';
+import {AgentResponseError,AgentTimeoutError,type QueryInput} from '@mote/agent';
 import {ProcessingFailure,type ContextProcessor} from './processing-runtime.js';
 import type {MaterialReadPage} from './materials.js';
 import {materialRequirementsSchema} from './material-readiness.js';
@@ -220,6 +220,8 @@ export function conversationUnderstandingProcessor(options:ConversationUnderstan
    // owner decision is pending.
    if(!started&&!sampled&&error instanceof ProviderFailure&&error.details.admissionWaiting===true&&error.details.executionStarted===false)meter.discard();
    else meter.finish('failed');
+   if(error instanceof AgentTimeoutError)throw retainFailureContext(new ProcessingFailure('permanent','provider_timeout'),
+    {...failureContext(error),errorName:error.name,causeCode:error.diagnostic.code});
    if(error instanceof AgentResponseError||error instanceof z.ZodError||error instanceof SyntaxError||error instanceof MemoryOutputValidationError||error instanceof StoreError&&error.statusCode===502){
     const context=error instanceof AgentResponseError?{...failureContext(error),...(error.reason==='host_validation'&&lastValidation?lastValidation:{causeCode:error.reason,errorName:'AgentResponseError'})}:failureContext(error);
     throw retainFailureContext(new ProcessingFailure('permanent','invalid_model_output'),context);

@@ -580,7 +580,7 @@ export class MaterialStore {
   /** The same exact current-anchor predicate as the single-ID resolver. Each
    * synchronous Formal input check reads its full selection once, including
    * retained Coding prefixes; no result survives the next check. */
-  private currentEvidenceIds(ids:readonly string[]):Set<string> {
+  currentEvidenceIds(ids:readonly string[]):Set<string> {
     if(!ids.length)return new Set();
     const rows=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids)) as CurrentEvidenceRow[];
     return new Set(rows.filter(currentEvidenceAllowed).map(row=>row.id));

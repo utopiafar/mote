@@ -811,11 +811,11 @@ export class MemoryPipeline {
   private prepare(id:string){
     const job=this.storedJob(id);if(['paused','pausing','cancelled','completed'].includes(job.status))return;
     for(const plan of this.inputPlans.list(id))if(!this.engine.get(plan.id))this.engine.enqueue('memory:'+id,'memory.input',{jobId:id,planId:plan.id},{id:plan.id,initial:{state:plan.batchIds===undefined?'waiting':'succeeded',attempts:0,availableAt:0}});
-    for(const batch of this.batches(id)){
-      if(!['pending','running'].includes(batch.status))continue;
-      const stepId=this.engine.enqueue('memory:'+id,'memory.batch',{jobId:id,batchId:batch.id,evidenceIds:batch.resourceEvidenceIds??[...new Set([...batch.chunks,...(batch.contextChunks??[])].map(c=>c.id))]},{id:batch.id,initial:{state:batch.status==='running'?'running':'waiting',attempts:0,availableAt:0}});
-      const state=this.engine.get(stepId)!.state;if(['failed','blocked','cancelled'].includes(state))this.engine.retry(stepId);
-    }
+    for(const batch of this.batches(id))if(['pending','running'].includes(batch.status))this.prepareBatch(id,batch);
+  }
+  private prepareBatch(id:string,batch:StoredBatch){
+    const stepId=this.engine.enqueue('memory:'+id,'memory.batch',{jobId:id,batchId:batch.id,evidenceIds:batch.resourceEvidenceIds??[...new Set([...batch.chunks,...(batch.contextChunks??[])].map(c=>c.id))]},{id:batch.id,initial:{state:batch.status==='running'?'running':'waiting',attempts:0,availableAt:0}});
+    const state=this.engine.get(stepId)!.state;if(['failed','blocked','cancelled'].includes(state))this.engine.retry(stepId);
   }
   run(id:string):Promise<MemoryJobDetail> {
     try{this.assertAdmission();}catch(error){return Promise.reject(error);}
@@ -851,11 +851,15 @@ export class MemoryPipeline {
     let job=this.storedJob(id);
     this.assertRetryWindow(job);
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
-    // A persisted wait may already be visible to an owner command before the
-    // next completion-observer turn. Settle only that target; a real running
-    // batch/input keeps its existing handle and cannot start a duplicate call.
+    // The completion can cover queued batches long after a sibling failed.
+    // Keep that handle while reopening failed work in an idle owner retry.
     if(this.active.has(id))this.settle([id]);
-    if(this.active.has(id))return {job:this.get(id),completion:this.active.get(id)!};
+    const active=this.active.get(id);
+    const retryable=(batch:MemoryBatch)=>batch.status==='failed'&&batch.errorCode!=='memory_context_required';
+    if(active){
+      const current=this.get(id);
+      if(!ownerAction||(current.runningBatches??0)>0||this.inputBusy(id)||!current.batches.some(retryable))return {job:current,completion:active};
+    }
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
       try{
       job=this.storedJob(id);
@@ -864,32 +868,39 @@ export class MemoryPipeline {
       const batches=this.batches(id);
       if(batches.some(batch=>batch.errorCode==='memory_provider_unknown_result'&&db.prepare("SELECT 1 FROM memory_provider_writes WHERE parent_id=? AND state='submitted'").get(batch.id)))throw new StoreError('Previous Memory publication outcome requires reconciliation before retry',409);
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
-      if(this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
-      for(const batch of batches)if(batch.status==='failed'&&batch.errorCode!=='memory_context_required'){
+      // A partial retry keeps the active job's model and the sibling batches'
+      // input ranges. A new run can rebind its model and plan remaining work.
+      if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
+      const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);
+      for(const batch of batches)if(retryable(batch)){
         try{this.admitBatch(job,batch);}catch{batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
         if(batch.errorCode==='memory_evaluation_incomplete')this.phaseOutputs.retryReview(batch.id,ownerAction);
         // This owner action authorizes another failed preparation call. Parent
         // re-entry and resource waiting alone must never reopen these children.
         if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='processing_jobs'").get())for(const child of db.prepare("SELECT e.id FROM processing_jobs p JOIN execution_steps e ON e.id=p.id WHERE json_extract(p.json,'$.parentGrant.stepId')=? AND e.state='failed'").all(batch.id))this.engine.retry(String(child.id),ownerAction);
         this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
-        if(this.engine.get(batch.id))this.engine.retry(batch.id,ownerAction);
-        batch.status='pending';delete batch.errorCode;this.saveBatch(batch);
+        const step=this.engine.get(batch.id);
+        if(step)this.engine.retry(batch.id,ownerAction);
+        batch.status='pending';delete batch.errorCode;
+        if(active&&capacity)delete batch.readRanges;
+        this.saveBatch(batch);
+        if(active&&!step)this.prepareBatch(id,batch);
       }
       // Reopen failed phases against their saved exact generation first. Then
       // the retry can plan unfinished work using the current allowance, even
       // when the original job predates request-aware partitioning.
-      if(this.options.models.capacity?.(job.modelProfileId,job.modelOverride))for(const batch of batches)if(batch.status==='pending'){
+      if(!active&&capacity)for(const batch of batches)if(batch.status==='pending'){
         delete batch.readRanges;this.saveBatch(batch);
       }
       job.status='queued';delete job.errorCode;this.saveJob(job);
-      for(const plan of this.inputPlans.list(id)){
+      if(!active)for(const plan of this.inputPlans.list(id)){
         const step=this.engine.get(plan.id);
         if(!step||!['waiting','blocked','failed'].includes(step.state)||plan.batchIds!==undefined)continue;
         this.engine.retry(plan.id,ownerAction);
       }
       if(own)db.exec('COMMIT');
     }catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
-    const completion=this.run(id);return {job:this.get(id),completion};
+    const completion=this.run(id);if(active)this.wake();return {job:this.get(id),completion};
   }
   private validateStep(step:ExecutionStep){
     const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(String(step.input.batchId));if(!row)return false;
