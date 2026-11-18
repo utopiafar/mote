@@ -1,8 +1,8 @@
 import {testPluginControl} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {createHash,randomUUID} from 'node:crypto';
+import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {OAuth2Client} from 'google-auth-library';
@@ -45,10 +45,16 @@ function context(directory:string,store:Store,sources:SourceStore):ConnectorCont
  return {evidenceReader:connectorReader(store,sources),store,sources,config:{dataDir:directory,token:ownerToken,allowedOrigins:[],connectors:{directory:join(directory,'connectors'),googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
 }
 
-const calendarA={id:'generated-calendar-a@example.invalid',summary:'Generated calendar A',timeZone:'UTC',primary:true};
-const calendarB={id:'generated-calendar-b',summary:'Generated calendar B',timeZone:'UTC'};
+type GoogleCalendar={id:string;summary:string;timeZone:string;primary?:boolean;accessRole?:string};
+const calendarA={id:'generated-calendar-a@example.invalid',summary:'Generated calendar A',timeZone:'UTC',primary:true,accessRole:'owner'};
+const calendarB={id:'generated-calendar-b',summary:'Generated calendar B',timeZone:'UTC',accessRole:'writer'};
+const calendarReader={id:'generated-read-only-calendar',summary:'Generated read-only calendar',timeZone:'UTC',accessRole:'reader'};
+const calendarLimitedWriter={id:'generated-limited-writer-calendar',summary:'Generated limited-writer calendar',timeZone:'UTC',accessRole:'writerWithoutPrivateAccess'};
 const readScope='https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly';
 const writeScope='https://www.googleapis.com/auth/calendar.events';
+const calendarListPath='/calendar/v3/users/me/calendarList';
+const googleTarget=(calendarId:string)=>({executionLocation:'central-connector' as const,packageId:'mote.builtin.google-calendar',instanceId:'google-calendar',instanceRevision:1,capabilityId:'calendar.manage',capabilityVersion:1,calendarId});
+const googleAction=(calendarId:string)=>({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.create' as const,event,target:googleTarget(calendarId),actionId:randomUUID()}});
 
 async function googleFixture(t:TestContext){
  const base=await local(t,'mote-cloud-google-'),ctx=context(base.directory,base.store,base.sources);
@@ -57,14 +63,26 @@ async function googleFixture(t:TestContext){
   const write=options.code==='generated-write-code';
   return {tokens:{refresh_token:write?'synthetic-write-refresh-private':'synthetic-read-refresh-private',access_token:write?'synthetic-write-access-private':'synthetic-read-access-private',scope:write?writeScope:readScope}};
  }) as any;
- oauth.getAccessToken=(async()=>({token:oauth.credentials.access_token})) as any;
+ const state:{writeResponse?:Response;writeTokenError?:Error}={};
+ oauth.getAccessToken=(async()=>{
+  if(oauth.credentials.scope===writeScope&&state.writeTokenError)throw state.writeTokenError;
+  return {token:oauth.credentials.access_token};
+ }) as typeof oauth.getAccessToken;
  const calls:{method:string;path:string;body?:Record<string,unknown>;authorization:string}[]=[];
- let failWrites=false;
+ const available:GoogleCalendar[]=[calendarA,calendarB,calendarReader,calendarLimitedWriter,
+  {id:'generated-freebusy-calendar',summary:'Generated free/busy calendar',timeZone:'UTC',accessRole:'freeBusyReader'},
+  {id:'generated-unknown-role-calendar',summary:'Generated unknown role calendar',timeZone:'UTC',primary:true,accessRole:'futureRole'},
+  {id:'generated-no-role-calendar',summary:'Generated no role calendar',timeZone:'UTC'}];
  const deps:GoogleDependencies={oauthFactory:()=>oauth,fetch:(async(input,init)=>{
-  const url=new URL(String(input)),method=init?.method??'GET';
-  if(method==='GET'&&url.pathname.endsWith('/calendarList'))return Response.json({items:[calendarA,calendarB]});
-  calls.push({method,path:url.pathname,body:init?.body?JSON.parse(String(init.body)):undefined,authorization:new Headers(init?.headers).get('authorization')??''});
-  if(failWrites&&method!=='GET')return new Response('',{status:403});
+  const url=new URL(String(input)),method=init?.method??'GET',authorization=new Headers(init?.headers).get('authorization')??'';
+  if(method==='GET'){
+   assert.equal(authorization,'Bearer synthetic-read-access-private');
+   if(url.pathname===calendarListPath)return Response.json({items:available});
+   const calendar=available.find(c=>url.pathname===calendarListPath+'/'+encodeURIComponent(c.id));
+   assert.ok(calendar,url.pathname);return Response.json(calendar);
+  }
+  calls.push({method,path:url.pathname,body:init?.body?JSON.parse(String(init.body)):undefined,authorization});
+  if(state.writeResponse)return state.writeResponse;
   if(method==='POST')return Response.json({id:'generated-google-event'});
   if(method==='PATCH')return Response.json({id:decodeURIComponent(url.pathname.split('/').at(-1)!)});
   if(method==='DELETE')return new Response(null,{status:204});
@@ -73,7 +91,12 @@ async function googleFixture(t:TestContext){
  const connector=new GoogleCalendarConnector(googleCalendarContext(ctx),deps);await connector.init();t.after(()=>connector.close());
  const read=await connector.start();await connector.callback(new URL(read.authorizationUrl).searchParams.get('state')!,'generated-read-code');
  await connector.select({calendarIds:[calendarA.id,calendarB.id]});
- return {connector,calls,setFailWrites(value:boolean){failWrites=value;}};
+ const authorizeWrite=async()=>{
+  const started=await connector.startWrite(),url=new URL(started.authorizationUrl);
+  assert.equal(url.searchParams.get('scope'),writeScope);assert.equal(url.searchParams.get('include_granted_scopes'),'true');
+  await connector.callback(url.searchParams.get('state')!,'generated-write-code');
+ };
+ return {connector,calls,state,available,authorizeWrite,credentialsPath:join(base.directory,'connectors','google-calendar.json')};
 }
 
 async function larkFixture(t:TestContext){
@@ -100,32 +123,52 @@ async function larkFixture(t:TestContext){
 }
 async function done(connector:LarkConnector){for(let n=0;n<500;n++){const status=connector.status();if(!status.job||!['running','waiting'].includes(status.job.state))return status;await new Promise(resolve=>setTimeout(resolve,5));}throw Error('Lark job did not finish');}
 
-test('Google read-only connection never writes; a separate write consent enables one explicitly selected calendar at a time',async t=>{
- const f=await googleFixture(t),target=(calendarId:string)=>({executionLocation:'central-connector' as const,packageId:'mote.builtin.google-calendar',instanceId:'google-calendar',instanceRevision:1,capabilityId:'calendar.manage',capabilityVersion:1,calendarId});
+test('Google write consent enables only selected calendars with a writable role',async t=>{
+ const f=await googleFixture(t);
+ await f.connector.select({calendarIds:f.available.map(calendar=>calendar.id)});
  assert.deepEqual(f.connector.calendarActionProviders(),[],'read authorization is not write authorization');
- await assert.rejects(()=>f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.create',event,target:target(calendarA.id),actionId:randomUUID()}}),/google_calendar_write_not_authorized/);
+ await assert.rejects(()=>f.connector.executeAction(googleAction(calendarA.id)),/google_calendar_write_not_authorized/);
  assert.equal(f.calls.length,0,'a read-only token never reaches a write request');
- const started=await f.connector.startWrite(),url=new URL(started.authorizationUrl);
- assert.equal(url.searchParams.get('scope'),writeScope);assert.equal(url.searchParams.get('include_granted_scopes'),'true');
- await f.connector.callback(url.searchParams.get('state')!,'generated-write-code');
+ await f.authorizeWrite();
  assert.equal(f.connector.status().writeConnected,true);assert.ok(!JSON.stringify(f.connector.status()).includes('synthetic-write'));
- const providers=f.connector.calendarActionProviders();assert.deepEqual(providers.map(provider=>provider.calendarId).sort(),[calendarA.id,calendarB.id].sort());
+ const providers=f.connector.calendarActionProviders();assert.deepEqual(providers.map(provider=>provider.calendarId),[calendarA.id,calendarB.id,calendarLimitedWriter.id]);
  assert.ok(!JSON.stringify(providers).includes('synthetic-write'),'the inventory projection never contains a write token');
+ for(const calendar of f.available.filter(calendar=>!providers.some(provider=>provider.calendarId===calendar.id))){
+  await assert.rejects(()=>f.connector.executeAction(googleAction(calendar.id)),/google_calendar_target_not_writable/);
+ }
+ assert.equal(f.calls.length,0,'every non-writable role is blocked at dispatch');
 
- const created=await f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.create',event,target:target(calendarA.id),actionId:randomUUID()}});
+ const created=await f.connector.executeAction(googleAction(calendarA.id));
  assert.deepEqual(created,{status:'succeeded',externalId:'generated-google-event'});
  const create=f.calls.at(-1)!;assert.equal(create.method,'POST');assert.equal(create.authorization,'Bearer synthetic-write-access-private');assert.ok(create.path.includes(encodeURIComponent(calendarA.id)));assert.equal(create.body?.summary,event.title);
- const updated=await f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.update',event:{...event,title:'Generated updated appointment'},target:target(calendarA.id),externalId:'generated-google-event',actionId:randomUUID()}});
+ const updated=await f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.update',event:{...event,title:'Generated updated appointment'},target:googleTarget(calendarA.id),externalId:'generated-google-event',actionId:randomUUID()}});
  assert.deepEqual(updated,{status:'succeeded',externalId:'generated-google-event'});assert.equal(f.calls.at(-1)!.method,'PATCH');assert.ok(f.calls.at(-1)!.path.includes(encodeURIComponent(calendarA.id)));
- const cancelled=await f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.cancel',event,target:target(calendarB.id),externalId:'generated-google-event',actionId:randomUUID()}});
+ const cancelled=await f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.cancel',event,target:googleTarget(calendarB.id),externalId:'generated-google-event',actionId:randomUUID()}});
  assert.deepEqual(cancelled,{status:'succeeded',externalId:'generated-google-event'});assert.equal(f.calls.at(-1)!.method,'DELETE');assert.ok(f.calls.at(-1)!.path.includes(encodeURIComponent(calendarB.id)),'each action writes only its declared calendar');
- await assert.rejects(()=>f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.create',event,target:target('generated-unselected'),actionId:randomUUID()}}),/google_calendar_target_not_selected/);
- await assert.rejects(()=>f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.complete',event,target:target(calendarA.id),actionId:randomUUID()}}),/google_calendar_completion_unsupported/);
+ assert.equal((await f.connector.executeAction(googleAction(calendarLimitedWriter.id))).status,'succeeded');
+ assert.ok(f.calls.at(-1)!.path.includes(encodeURIComponent(calendarLimitedWriter.id)));
+ await assert.rejects(()=>f.connector.executeAction(googleAction('generated-unselected')),/google_calendar_target_not_selected/);
+ await assert.rejects(()=>f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.complete',event,target:googleTarget(calendarA.id),actionId:randomUUID()}}),/google_calendar_completion_unsupported/);
+});
 
- f.setFailWrites(true);
- await assert.rejects(()=>f.connector.executeAction({capability:{id:'calendar.manage',version:1},operationId:randomUUID(),input:{kind:'calendar.create',event,target:target(calendarA.id),actionId:randomUUID()}}),/google_calendar_write_permission_required/);
+for(const rejection of ['access token', 'write scope', 'refresh token'] as const)test('Google withdraws write authorization after rejection of the '+rejection,async t=>{
+ const f=await googleFixture(t);await f.authorizeWrite();
+ if(rejection==='access token')f.state.writeResponse=Response.json({error:{errors:[{domain:'global',reason:'authError'}]}},{status:401});
+ if(rejection==='write scope')f.state.writeResponse=Response.json({error:{details:[{domain:'googleapis.com',reason:'ACCESS_TOKEN_SCOPE_INSUFFICIENT'}]}},{status:403});
+ if(rejection==='refresh token'){
+  f.state.writeTokenError=Error('Generated OAuth transport failure');
+  await assert.rejects(()=>f.connector.executeAction(googleAction(calendarA.id)),/google_calendar_write_failed/);
+  assert.equal(f.connector.status().writeConnected,true,'a transient token failure preserves write consent');
+  f.state.writeTokenError=Object.assign(Error('Generated OAuth refresh rejected'),{response:{data:{error:'invalid_grant'}}});
+ }
+ await assert.rejects(()=>f.connector.executeAction(googleAction(calendarA.id)),rejection==='refresh token'?/google_calendar_write_authorization_required/:/google_calendar_write_permission_required/);
  assert.equal(f.connector.status().writeConnected,false,'a rejected write credential is not reported as connected');
  assert.deepEqual(f.connector.calendarActionProviders(),[],'revoked write access stops new write targets');
+ await assert.rejects(()=>f.connector.executeAction(googleAction(calendarB.id)),/google_calendar_write_not_authorized/);
+ assert.equal(f.calls.length,rejection==='refresh token'?0:1,'a rejected operation is never replayed');
+ assert.equal(JSON.parse(await readFile(f.credentialsPath,'utf8')).write,undefined,'the rejection is retained across restart');
+ assert.equal(f.connector.status().connected,true,'the separate read connection is retained');
+ assert.deepEqual((await f.connector.calendars()).calendars.filter(calendar=>calendar.selected).map(calendar=>calendar.id),[calendarA.id,calendarB.id]);
 });
 
 test('Lark write consent reuses the existing account and writes only the selected calendar',async t=>{
@@ -213,20 +256,40 @@ function calendarGate(){
 async function productionCalendarFixture(t:TestContext,kind:'google'|'lark'){
  const directory=await mkdtemp(join(tmpdir(),'mote-cloud-production-'+kind+'-'));
  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:ownerToken,tokenPath:join(directory,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',baseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,googleClientId:'synthetic-client',googleClientSecret:'synthetic-secret',googleRedirectUri:'http://127.0.0.1/oauth/google/callback'}}};
- const state={write:false,account:'generated-lark-user',outcome:'ok' as 'ok'|'missing',requests:0,calls:[] as {calendarId:string;event:Record<string,unknown>;authorization?:string}[]};
- const gates:ReturnType<typeof calendarGate>[]=[],blocked:{preflight?:ReturnType<typeof calendarGate>;write?:ReturnType<typeof calendarGate>}={};
- const pause=async(phase:'preflight'|'write',signal?:AbortSignal)=>{const gate=blocked[phase];if(gate){delete blocked[phase];await gate.pause(signal);}};
+ const state={write:false,account:'generated-lark-user',outcome:'ok' as 'ok'|'missing',requests:0,calls:[] as {calendarId:string;event:Record<string,unknown>;authorization?:string}[],
+  googleCalendars:new Map<string,GoogleCalendar>([calendarA,calendarB,calendarReader].map(calendar=>[calendar.id,calendar])),
+  googleDeniedCalendar:'',googleListUnavailable:false,googleWriteUnauthorized:false};
+ const googleReadEvent={id:'generated-read-event',summary:'Generated Google import',status:'confirmed',
+  start:{dateTime:new Date(Date.now()+86400000).toISOString()},end:{dateTime:new Date(Date.now()+90000000).toISOString()}};
+ type Phase='preflight'|'role'|'write';
+ const gates:ReturnType<typeof calendarGate>[]=[],blocked:Partial<Record<Phase,ReturnType<typeof calendarGate>>>={};
+ const pause=async(phase:Phase,signal?:AbortSignal)=>{const gate=blocked[phase];if(gate){delete blocked[phase];await gate.pause(signal);}};
  const google:GoogleDependencies={oauthFactory:()=>{
   const oauth=new OAuth2Client({clientId:'synthetic-client',clientSecret:'synthetic-secret',redirectUri:config.initialDocument!.connectors!.googleRedirectUri});
   oauth.getToken=(async(options:{code?:string})=>{const write=options.code==='generated-write-code',identity=write?'write':options.code==='generated-other-read-code'?'other-read':'read';return {tokens:{refresh_token:'synthetic-'+identity+'-refresh-private',access_token:'synthetic-'+identity+'-access-private',scope:write?writeScope:readScope}};}) as any;
   oauth.getAccessToken=(async()=>{await pause('preflight');return {token:oauth.credentials.access_token};}) as any;return oauth;
  },fetch:(async(input,init)=>{
   state.requests++;const url=new URL(String(input));assert.equal(url.origin,'https://www.googleapis.com');
-  if((init?.method??'GET')==='GET'&&url.pathname.endsWith('/calendarList'))return Response.json({items:[calendarA,calendarB]});
+  if((init?.method??'GET')==='GET'){
+   assert.match(new Headers(init?.headers).get('authorization')??'',/^Bearer synthetic-(other-)?read-access-private$/);
+   if(url.pathname===calendarListPath){
+    return state.googleListUnavailable?new Response(null,{status:503}):Response.json({items:[...state.googleCalendars.values()]});
+   }
+   if(url.pathname.startsWith(calendarListPath+'/')){
+    await pause('role',init?.signal??undefined);
+    const entry=state.googleCalendars.get(decodeURIComponent(url.pathname.slice(calendarListPath.length+1)));
+    return entry?Response.json(entry):new Response(null,{status:404});
+   }
+   assert.match(url.pathname,/^\/calendar\/v3\/calendars\/[^/]+\/events$/);
+   return Response.json({items:[googleReadEvent],nextSyncToken:'generated-sync'});
+  }
   assert.equal(init?.method,'POST','the production fixture allows only explicit event creates');
   const match=url.pathname.match(/^\/calendar\/v3\/calendars\/([^/]+)\/events$/);assert.ok(match,url.pathname);
-  state.calls.push({calendarId:decodeURIComponent(match[1]),event:JSON.parse(String(init?.body)),authorization:new Headers(init?.headers).get('authorization')??''});
+  const calendarId=decodeURIComponent(match[1]);
+  state.calls.push({calendarId,event:JSON.parse(String(init?.body)),authorization:new Headers(init?.headers).get('authorization')??''});
   await pause('write',init?.signal??undefined);
+  if(state.googleWriteUnauthorized)return new Response(null,{status:401});
+  if(state.googleDeniedCalendar===calendarId)return Response.json({error:{errors:[{domain:'calendar',reason:'requiredAccessLevel'}]}},{status:403});
   return Response.json(state.outcome==='missing'?{}:{id:'generated-google-event-'+state.calls.length});
  }) as typeof fetch};
  const lark:LarkRunner=async(command,options)=>{
@@ -275,11 +338,101 @@ async function productionCalendarFixture(t:TestContext,kind:'google'|'lark'){
  const grant=async(choice:ActionConnectorChoice)=>{const provider=(await inventory()).providers.find(value=>value.identity.packageId===choice.target.packageId&&value.calendarId===choice.target.calendarId)!;const draft=await request('PUT','/api/action-capability-drafts',{...command(0),id:randomUUID(),capability:choice.capability,target:choice.target,inputs:{sources:[source],existingArchived:true,futureInputs:true}});return await request('PUT','/api/action-capability-grants',{...command(0),id:randomUUID(),draftId:draft.id,draftRevision:draft.revision,plugin:provider.identity,acknowledgeCalendarWrites:true}) as ActionGrant;};
  const setEnabled=async(enabled:boolean)=>{const path='/api/plugin-builds/'+encodeURIComponent('bundled:'+(kind==='google'?'google-calendar':'lark'));const build=await request('GET',path) as PluginBuildView;return request('PATCH',path,{...command(build.revision),selection:enabled?{packageId:build.packageId,version:build.version,configurationRevision:0}:null});};
  return {current,state,calendarIds,packageId,excluded,inventory,request,connectRead,connectWrite,disconnectWrite,select,propose,grant,tick,setEnabled,
-  holdNext(phase:'preflight'|'write'){assert.equal(blocked[phase],undefined);const gate=calendarGate();gates.push(gate);blocked[phase]=gate;return gate;},
-  async restart(){await current().app.close();node=await start();},
+  googleCredentialsPath:join(directory,'connectors','google-calendar.json'),
+  holdNext(phase:Phase){assert.equal(blocked[phase],undefined);const gate=calendarGate();gates.push(gate);blocked[phase]=gate;return gate;},
+  async restart(updateProfile?:()=>Promise<void>){await current().app.close();await updateProfile?.();node=await start();},
   async changeAccount(){if(kind==='google')await googleAuthorize(false,'generated-other-read-code');else{state.account='generated-other-lark-user';await request('POST','/api/connectors/lark/check');}},
  };
 }
+
+test('production Google keeps readable calendars selected and other targets available after a target-level 403',async t=>{
+ const f=await productionCalendarFixture(t,'google');await f.connectRead();
+ await f.select([calendarA.id,calendarB.id,calendarReader.id]);await f.connectWrite();
+ const initial=await f.inventory(),choices=initial.centralConnectors;
+ assert.deepEqual(choices.map(choice=>choice.target.calendarId).sort(),[calendarA.id,calendarB.id].sort());
+ const grantA=await f.grant(choices.find(choice=>choice.target.calendarId===calendarA.id)!);
+ f.state.googleDeniedCalendar=calendarA.id;
+ const denied=await f.propose();await f.tick();
+ await until(()=>f.current().actions.get(denied.id).status==='uncertain','the target rejection settles the dispatched operation');
+ assert.deepEqual(f.state.calls.map(call=>call.calendarId),[calendarA.id]);
+ await f.tick();assert.equal(f.state.calls.length,1,'a forbidden mutation is never replayed');
+ assert.equal((await f.request('GET','/api/connectors/status')).google.writeConnected,true);
+ assert.ok((await f.inventory()).centralConnectors.some(choice=>choice.target.calendarId===calendarB.id));
+
+ f.state.googleCalendars.set(calendarA.id,{...calendarA,accessRole:'reader'});
+ const beforeRefresh=(await f.inventory()).grants.find(grant=>grant.id===grantA.id);
+ assert.equal(beforeRefresh?.available,true,'the cached role is still writable before the next Google read');
+ const stale=await f.propose();await f.tick();
+ await until(()=>f.current().actions.get(stale.id).status==='uncertain','the dispatch preflight sees the downgraded role');
+ assert.equal(f.state.calls.length,1,'the downgraded calendar never receives a mutation');
+ const refreshed=await f.inventory();
+ assert.deepEqual(refreshed.centralConnectors.map(choice=>choice.target.calendarId),[calendarB.id]);
+ assert.equal(refreshed.grants.find(grant=>grant.id===grantA.id)?.available,false);
+ await f.grant(refreshed.centralConnectors[0]);
+ const other=await f.propose();await f.tick();
+ await until(()=>f.current().actions.get(other.id).status==='succeeded','the other calendar writes under the same account consent');
+ assert.deepEqual(f.state.calls.map(call=>call.calendarId),[calendarA.id,calendarB.id]);
+
+ const listed=await f.request('GET','/api/connectors/google/calendars');
+ assert.deepEqual(listed.calendars.filter((calendar:{selected:boolean})=>calendar.selected).map((calendar:{id:string})=>calendar.id),[calendarA.id,calendarB.id,calendarReader.id]);
+ assert.deepEqual(await f.request('POST','/api/connectors/google/sync'),{imported:3,duplicates:0,calendars:3});
+ for(const calendar of [calendarA,calendarReader]){
+  const sourceId='google-'+createHash('sha256').update(calendar.id).digest('hex').slice(0,24);
+  assert.equal(f.current().sources.getItem(sourceId,'generated-read-event')?.title,'Generated Google import');
+ }
+
+ f.state.googleCalendars.set(calendarA.id,{...calendarA,accessRole:'writerWithoutPrivateAccess'});
+ await f.request('GET','/api/connectors/google/calendars');
+ assert.equal((await f.inventory()).grants.find(grant=>grant.id===grantA.id)?.available,true,'listing refreshes a restored effective role');
+ await f.tick();assert.equal(f.state.calls.length,2,'restoring the role does not replay prior operations');
+});
+
+test('production Google restores missing persisted roles through normal sync without disturbing event checkpoints',async t=>{
+ const f=await productionCalendarFixture(t,'google');await f.connectRead();
+ await f.select([calendarA.id,calendarReader.id]);await f.connectWrite();
+ assert.deepEqual(await f.request('POST','/api/connectors/google/sync'),{imported:2,duplicates:0,calendars:2});
+ await f.restart(async()=>{
+  const saved=JSON.parse(await readFile(f.googleCredentialsPath,'utf8'));
+  for(const calendar of saved.calendars)delete calendar.accessRole;
+  await writeFile(f.googleCredentialsPath,JSON.stringify(saved));
+ });
+ assert.deepEqual((await f.inventory()).centralConnectors,[],'an unverified legacy calendar is never a write target');
+ const before=JSON.parse(await readFile(f.googleCredentialsPath,'utf8'));
+ f.state.googleListUnavailable=true;
+ assert.deepEqual(await f.request('POST','/api/connectors/google/sync'),{imported:0,duplicates:2,calendars:2});
+ assert.deepEqual((await f.inventory()).centralConnectors,[],'a failed metadata refresh does not infer permission');
+ f.state.googleListUnavailable=false;
+ assert.deepEqual(await f.request('POST','/api/connectors/google/sync'),{imported:0,duplicates:2,calendars:2});
+ assert.deepEqual((await f.inventory()).centralConnectors.map(choice=>choice.target.calendarId),[calendarA.id]);
+ const after=JSON.parse(await readFile(f.googleCredentialsPath,'utf8'));
+ assert.deepEqual(after.checkpoints,before.checkpoints);
+ assert.deepEqual(after.calendars.map((calendar:GoogleCalendar)=>calendar.accessRole),['owner','reader']);
+ await f.restart();
+ assert.deepEqual((await f.inventory()).centralConnectors.map(choice=>choice.target.calendarId),[calendarA.id]);
+});
+
+for(const change of ['stop','new write consent'] as const)test('production Google applies a late 401 to its originating credential after '+change,async t=>{
+ const f=await productionCalendarFixture(t,'google');await f.connectRead();await f.connectWrite();
+ const choice=(await f.inventory()).centralConnectors.find(value=>value.target.calendarId===calendarA.id)!;await f.grant(choice);
+ const pending=await f.propose(),gate=f.holdNext('write');
+ await f.tick();await until(()=>gate.state.entered,'the cloud write is issued');
+ let stopping:Promise<PluginBuildView>|undefined;
+ if(change==='stop'){
+  stopping=f.setEnabled(false);
+  await until(()=>gate.state.signal?.aborted===true,'stop signals the in-flight write');
+ }else{
+  await f.disconnectWrite();await f.connectWrite();
+ }
+ f.state.googleWriteUnauthorized=true;
+ gate.release();await stopping;
+ await until(()=>f.current().actions.get(pending.id).status==='uncertain','the dispatched operation settles after rejection');
+ if(change==='stop')await f.setEnabled(true);
+ const status=(await f.request('GET','/api/connectors/status')).google;
+ assert.equal(status.connected,true);
+ assert.equal(status.writeConnected,change==='new write consent');
+ assert.equal((await f.inventory()).centralConnectors.length,change==='stop'?0:2);
+ await f.tick();assert.equal(f.state.calls.length,1,'the rejected write is never replayed');
+});
 
 for(const kind of ['google','lark'] as const)test('production '+kind+' calendar manifest publishes scoped targets and settles host writes across authorization and lifecycle changes',async t=>{
  const f=await productionCalendarFixture(t,kind);
@@ -334,10 +487,10 @@ for(const kind of ['google','lark'] as const)test('production '+kind+' calendar 
  assert.equal(f.state.calls.length,3);
 });
 
-for(const kind of ['google','lark'] as const)for(const withdrawal of ['stop','selection','write authorization'] as const)test('production '+kind+' preflight is fenced by '+withdrawal+' even when the cloud ignores cancellation',async t=>{
+for(const [kind,phase] of [['google','preflight'],['google','role'],['lark','preflight']] as const)for(const withdrawal of ['stop','selection','write authorization'] as const)test('production '+kind+' '+(phase==='role'?'role check':'preflight')+' is fenced by '+withdrawal+' even when the cloud ignores cancellation',async t=>{
  const f=await productionCalendarFixture(t,kind);await f.connectRead();await f.connectWrite();
  const choice=(await f.inventory()).centralConnectors.find(value=>value.target.calendarId===f.calendarIds[0])!;await f.grant(choice);
- const pending=await f.propose(),gate=f.holdNext('preflight');await f.tick();await until(()=>gate.state.entered,'the write reaches the controlled cloud preflight');
+ const pending=await f.propose(),gate=f.holdNext(phase);await f.tick();await until(()=>gate.state.entered,'the write reaches the controlled cloud preflight');
  assert.equal(f.state.calls.length,0,'the cloud create has not been issued');
  if(withdrawal==='stop'){assert.equal((await f.setEnabled(false)).observed,'stopped');assert.deepEqual((await f.inventory()).centralConnectors,[]);}
  else if(withdrawal==='selection'){await f.select([f.calendarIds[1]]);await f.select(f.calendarIds);}

@@ -65,7 +65,9 @@ connectors:
 
 回调与运行中的中央节点必须一致。本机开发可以使用 `http://127.0.0.1:端口/oauth/google/callback`；远端要求 HTTPS。上述显式密钥引用从启动环境读取，普通环境变量不覆盖 YAML。OAuth 配置改变后重启该 profile，在「来源」中连接 Google，完成授权后返回 Mote，明确选择需要同步的日历；仅同步间隔改变可热应用。读取授权请求 `calendar.calendarlist.readonly` 与 `calendar.events.readonly`。授权采用一次性 state、PKCE 和 offline access；详见 [Google 服务端 OAuth](https://developers.google.com/identity/protocols/oauth2/web-server) 与 [日历权限范围](https://developers.google.com/workspace/calendar/api/auth)。
 
-云日历写出另需独立的 `calendar.events` 授权。启用连接器并完成写授权后，已选日历会进入 Actions 的中央执行目录；所有者还需明确授权一个目标日历及输入来源范围。有效范围内的完整、明确日程沿同一行动派发与回执链执行，无需逐条再次确认；重叠授权不会静默选择日历。撤回写授权、取消日历选择或停用连接器会停止对应的新写入；停用选择在重启后保留，重新启用只恢复原范围。没有事件身份的创建回执记为未知，不作为成功或自动重试。
+云日历写出另需独立的 `calendar.events` 授权。启用连接器并完成写授权后，已选日历中角色为 `owner`、`writer` 或 `writerWithoutPrivateAccess` 的日历会进入 Actions 的中央执行目录。`writerWithoutPrivateAccess` 的写入限于非私密事件。Mote 在刷新日历列表或同步时更新角色，并在写出前向 Google 核对目标日历的当前角色。已有选择在查到可写角色后即可作为写出目标，只读日历仍可同步。单个日历或事件拒绝写入后，其他可写目标可以继续使用。Google 拒绝写令牌或确认 OAuth 写权限不足时，Mote 会要求重新授权。参阅 [Google CalendarList 角色](https://developers.google.com/workspace/calendar/api/v3/reference/calendarList)。
+
+所有者还需明确授权一个目标日历及输入来源范围。有效范围内的完整、明确日程沿同一行动派发与回执链执行，无需逐条再次确认；重叠授权不会静默选择日历。撤回写授权、取消日历选择或停用连接器会停止对应的新写入；停用选择在重启后保留，重新启用只恢复原范围。没有事件身份的创建回执记为未知，不作为成功或自动重试。
 
 等待写前授权检查时停用或撤回范围，会阻断旧执行，即使随后恢复同一范围也不会让它继续写出。已发出的云端请求只能请求中止，不能据此声称写入已撤销；仍以实际回执判断，结果不明时保持未知且不自动重试。
 
