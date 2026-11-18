@@ -30,10 +30,18 @@ export class ModelAuthorizationHost {
       if(seen.has(id))continue;seen.add(id);
       const capture=captureModelIdentity(id);if(this.control.roots(capture).length){result.add(capture);continue;}
       const chunk=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(id);if(chunk){for(const root of this.evidenceTriggers([String(chunk.capture_id)],seen))result.add(root);continue;}
-      const anchor=this.store.db.prepare('SELECT material_id,revision FROM material_evidence WHERE id=?').get(id);
+      const anchor=this.store.db.prepare(`SELECT e.material_id,e.revision,h.revision AS head_revision
+        FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?`).get(id);
       const material=anchor?this.materials.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision))):/^(?:mat_|material:)/.test(id)?this.materials.get(id):undefined;
       if(material){
-        for(const row of this.store.db.prepare('SELECT input_key FROM material_memory_requests WHERE material_id=? AND revision=?').all(material.id,material.revision))result.add(sourceModelIdentity(material.origin.sourceId,String(row.input_key)));
+        const requests=this.store.db.prepare('SELECT input_key FROM material_memory_requests WHERE material_id=? AND revision=?').all(material.id,material.revision);
+        for(const row of requests)result.add(sourceModelIdentity(material.origin.sourceId,String(row.input_key)));
+        // A retained block can outlive its revision's Memory work request.
+        // Its pinned dependencies still lead to the original intake receipts.
+        if(!requests.length&&anchor&&anchor.revision!==anchor.head_revision&&this.materials.isCurrentEvidence(id)){
+          const inputs=this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id).map(row=>String(row.evidence_id));
+          for(const root of this.evidenceTriggers(inputs,seen))result.add(root);
+        }
         continue;
       }
       const artifact=this.store.archive.get(id);

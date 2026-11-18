@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput,ContextReader} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
+import {ExecutionFailure} from '../src/execution-engine.js';
 import {memoryEvidenceFingerprint} from '../src/memory.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {RecordingProvider} from '../src/connectors/recordings.js';
@@ -17,12 +18,16 @@ import {planGeneratedMemory,generatedMemoryOutput} from './fixtures/memory-plann
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {generatedNativeAdapter} from './fixtures/native-engine-adapter.js';
 
-type Mode='read'|'skip'|'empty-wire'|'revoke'|'bad-proof'|'deferred';
+type Mode='read'|'skip'|'empty-wire'|'revoke'|'bad-proof'|'deferred'|'late-audio';
 async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
  const dataDir=await mkdtemp(join(tmpdir(),'mote-recording-integration-')),token='generated-integration-owner',headers={authorization:'Bearer '+token};
  const original='Owner 00:00:00.000\nI prefer quiet mornings for focused work.\n';
+ let audioAvailable=mode!=='late-audio';
  const provider:RecordingProvider={id:providerId,version:'generated@1',account:async()=>({id:'generated-owner',name:'Generated owner'}),discover:async()=>({ids:['generated-recording']}),
-  metadata:async()=>({id:'generated-recording',title:'Generated recording',recordedAt:'2026-09-20T00:00:00Z',durationMs:5000}),transcript:async()=>providerId==='feishu'?{rawText:original,transcript:feishuTranscript(original,5000)}:dingtalkTranscript({taskUuid:'generated-recording',complete:true,paragraphList:[{nickName:'Owner',paragraph:'I prefer quiet mornings for focused work.',sentenceList:[{sentence:'I prefer quiet mornings for focused work.'}]}]},5000),media:async()=>({mimeType:'audio/wav',bytes:Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)])})};
+  metadata:async()=>({id:'generated-recording',title:'Generated recording',recordedAt:'2026-09-20T00:00:00Z',durationMs:5000}),transcript:async()=>providerId==='feishu'?{rawText:original,transcript:feishuTranscript(original,5000)}:dingtalkTranscript({taskUuid:'generated-recording',complete:true,paragraphList:[{nickName:'Owner',paragraph:'I prefer quiet mornings for focused work.',sentenceList:[{sentence:'I prefer quiet mornings for focused work.'}]}]},5000),media:async()=>{
+   if(!audioAvailable)throw new ExecutionFailure('permanent','generated_backup_unavailable');
+   return {mimeType:'audio/wav',bytes:Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)])};
+  }};
  const cfg:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let node!:Awaited<ReturnType<typeof buildApp>>,rawId='';const calls:{skill?:string;phase?:string}[]=[],wire:{items:number;evidence:number;sourceEvidence:number}[]=[],seedDeliveries:number[]=[];let transportDenied=false;
  const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,connectorTesting:{recordings:[provider]},createModelAgent:async(_settings,reader,host)=>({configured:true,close:async()=>{},query:async(input:QueryInput)=>{
@@ -52,12 +57,28 @@ async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
  const authorization=(await node.app.inject({url:'/api/model-authorization',headers:{authorization:'Bearer '+token}})).json();
  const consent=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:authorization.authorization.revision,operationId:randomUUID(),action:'on'}});assert.equal(consent.statusCode,200,consent.body);
  await api('PUT','/api/memory-integration-settings',{recipe:{id:'mote.memory-integration',version:'2'}});
+ const drainRecordings=async()=>{
+  for(let n=0;n<30;n++){const rows=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE ? AND state IN ('waiting','running') AND available_at<=? LIMIT 100").all('recording.'+providerId+'.%',Date.now());if(!rows.length)break;await node.executor.drain(rows.map(row=>String(row.id)));}
+ };
  await api('POST',`/api/connectors/${providerId}-recordings/connect`);await api('PUT',`/api/connectors/${providerId}-recordings/selection`,{enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-10-01T00:00:00Z',autoSync:false,backupAudio:true});
- for(let n=0;n<30;n++){const rows=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE ? AND state IN ('waiting','running') AND available_at<=? LIMIT 100").all('recording.'+providerId+'.%',Date.now());if(!rows.length)break;await node.executor.drain(rows.map(row=>String(row.id)));}
+ await drainRecordings();
  await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(job=>['queued','running'].includes(job.status)).map(job=>node.memoryPipeline.run(job.id)));
  const source=await api('GET',`/api/connectors/${providerId}-recordings`);rawId=node.sources.getItem(source.sourceId,'generated-recording')!.captureId;
  const cards=node.memories.list().map(card=>node.memories.get(card.id)).filter(card=>card.status==='published'&&card.admission?.layer==='memory');assert.equal(cards.length,1);assert.deepEqual(seedDeliveries,[1,1]);
  const originalDependencies=node.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(cards[0].id).map(row=>String(row.evidence_id));assert.ok(originalDependencies.includes(rawId));
+ if(mode==='late-audio'){
+  const anchor=cards[0].evidenceIds[0],pin=node.store.db.prepare('SELECT material_id,revision FROM material_evidence WHERE id=?').get(anchor)!;
+  assert.equal(source.counts.audio,0);audioAvailable=true;
+  await api('POST',`/api/connectors/${providerId}-recordings/retry`);
+  await drainRecordings();await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);
+  assert.equal((await api('GET',`/api/connectors/${providerId}-recordings`)).counts.audio,1);
+  const current=node.materials.get(String(pin.material_id))!;
+  assert.notEqual(current.revision,pin.revision,'late backup audio publishes a new Material revision');
+  assert.ok(node.materials.isCurrentEvidence(anchor),'the original transcript anchor remains current');
+  assert.equal(node.memories.get(cards[0].id).status,'published');
+  const request=node.store.db.prepare('SELECT revision FROM material_memory_requests WHERE material_id=?').get(current.id);
+  assert.equal(request?.revision,current.revision,'recipe work moved to the current Material revision');
+ }
  if(mode==='bad-proof')node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.evidence[0].contentHash',?) WHERE id=?").run('0'.repeat(64),cards[0].id);
  if(mode==='deferred'){const current=(await node.app.inject({url:'/api/model-authorization',headers:{authorization:'Bearer '+token}})).json();const closed=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:{authorization:'Bearer '+token},payload:{revision:current.authorization.revision,operationId:randomUUID(),action:'off'}});assert.equal(closed.statusCode,200,closed.body);}
  const next=node.lifecycle.settings();next.consolidation.enabled=true;next.consolidation.minChanges=1;await node.lifecycle.save({revision:node.configService.revision,settings:next});
@@ -69,6 +90,14 @@ for(const source of ['feishu','dingtalk'] as const)test(`${source} recording rea
  const f=await fixture(t,source,'read');assert.deepEqual(f.wire,[{items:1,evidence:1,sourceEvidence:1}]);assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);assert.ok(f.view().cursor>f.before.cursor);assert.equal(f.view().pendingChanges,0);
  assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'a genuine read followed by no useful relation stays a valid zero result');assert.equal(f.receipts()[0].memoryIds.length,1);assert.equal(f.receipts()[0].evidenceIds.length,1);
  await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'success does not replay the old paid window after restart');assert.equal(f.receipts()[0].memoryIds.length,1);
+});
+test('late recording backup preserves automatic integration for a retained transcript anchor',async t=>{
+ const f=await fixture(t,'feishu','late-audio');
+ assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);assert.ok(f.view().cursor>f.before.cursor);
+ assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1);
+ assert.deepEqual(f.wire,[{items:1,evidence:1,sourceEvidence:1}]);
+ const work=f.node.store.db.prepare('SELECT json FROM background_model_work WHERE id=?').get('automatic-integration:'+f.view().lastRun?.id);
+ assert.deepEqual(JSON.parse(String(work?.json)).roots,['capture:'+f.rawId]);
 });
 test('A1: automatic consolidation waits while the switch is off and completes once after reopening',async t=>{
  const f=await fixture(t,'feishu','deferred');
