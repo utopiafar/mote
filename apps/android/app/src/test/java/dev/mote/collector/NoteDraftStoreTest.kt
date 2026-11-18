@@ -22,18 +22,31 @@ class NoteDraftStoreTest {
         assertFalse(dir.listFiles()!!.any { String(it.readBytes()).contains("原样保留") })
     }
     @Test fun `crash after enqueue before clearing draft reuses submission and does not duplicate`() {
-        val dir = folder.newFolder(); val store = NoteDraftStore(dir, cipher)
+        val dir = folder.newFolder()
+        val store = NoteDraftStore(dir, cipher)
+        val origin = "https://fixture.example"
+        val queueDir = folder.newFolder()
+        fun openQueue() = DurableQueue(queueDir, cipher).apply { archiveOrigin = origin }
         store.update("合成草稿", "平静")
-        val prepared = store.prepare("https://fixture.example", ::event).prepared!!
-        val queue = DurableQueue(folder.newFolder(), cipher); queue.enqueue(prepared, null)
+        val prepared = store.prepare(origin, ::event).prepared!!
+        val id = prepared.getString("id")
+        assertEquals(id, openQueue().enqueue(prepared, null))
+
         val reopened = NoteDraftStore(dir, cipher)
-        val retry = reopened.prepare("https://fixture.example") { error("Must reuse original submission") }.prepared!!
+        val queue = openQueue()
+        val retry = reopened.prepare(origin) { error("Must reuse original submission") }.prepared!!
         assertEquals(prepared.toString(), retry.toString())
-        queue.enqueue(retry, null); assertEquals(1, queue.depth())
-        queue.acknowledge(retry.getString("id"))
-        queue.enqueue(retry, null) // Lost ACK/clear still reuses same central idempotency key.
-        assertEquals(prepared.getString("id"), queue.peek()!!.getString("id"))
-        reopened.clear(); assertEquals("", reopened.read().text)
+        assertEquals(id, queue.enqueue(retry, null))
+        assertEquals(1, queue.depth())
+        assertEquals(id, queue.peek()?.getString("id"))
+
+        queue.acknowledge(id)
+        assertEquals(id, queue.enqueue(retry, null))
+        assertEquals(1, queue.depth())
+        assertTrue(queue.capture(id)!!.getBoolean("uploaded"))
+        assertNull(queue.peek())
+        reopened.clear()
+        assertEquals(NoteDraft(), NoteDraftStore(dir, cipher).read())
     }
     @Test fun `only explicit edit or new note resets a prepared submission`() {
         val store = NoteDraftStore(folder.newFolder(), cipher); store.update("same text", "calm")

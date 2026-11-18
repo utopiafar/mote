@@ -159,16 +159,22 @@ class SyncReadinessTest {
             override fun seal(bytes: ByteArray) = bytes.map { (it.toInt() xor 91).toByte() }.toByteArray()
             override fun open(bytes: ByteArray) = seal(bytes)
         }
-        val dir = folder.newFolder(); val store = LocalSourceStore(dir, cipher)
         val source = LocalSource(name = "Generated disabled source", kind = "local-files", uri = "content://fixture/document/root", enabled = false)
-        store.save(source)
-        File(dir, "source-${source.id}.enc").writeBytes(byteArrayOf(0))
-        assertEquals(0, SyncHealth.sourceAttentionCount(store) { error("disabled source must not read pending files") })
-        store.save(source.copy(enabled = true))
-        assertTrue(runCatching { SyncHealth.sourceAttentionCount(store) { 0 } }.isFailure)
+        fun corruptStore(enabled: Boolean): LocalSourceStore {
+            val dir = folder.newFolder()
+            val store = LocalSourceStore(dir, cipher)
+            store.save(source.copy(enabled = enabled))
+            File(dir, "source-${source.id}.enc").writeBytes(byteArrayOf(0))
+            return store
+        }
+        val disabled = corruptStore(enabled = false)
+        assertEquals(0, SyncHealth.sourceAttentionCount(disabled) { error("disabled source must not read pending files") })
+        val enabled = corruptStore(enabled = true)
+        val health = runCatching { SyncHealth.sourceAttentionCount(enabled) { 0 } }
+        assertTrue(health.exceptionOrNull() is org.json.JSONException)
         val status = StoredSyncStatus("waiting", "等待充电")
         assertEquals(VisibleSyncStatus.Many(listOf(VisibleSyncStatus.Message("等待充电"), VisibleSyncStatus.SourceUnavailable)),
-            SyncReadiness.visible(connected, status, "等待充电", empty, null, null, sourceUnavailable = true, matches = ::matches))
+            SyncReadiness.visible(connected, status, "等待充电", empty, health.getOrNull(), null, sourceUnavailable = health.isFailure, matches = ::matches))
     }
 
     @Test fun languageCatalogLoadingAndFailureDoNotShowAnUnverifiedOldStatus() {
