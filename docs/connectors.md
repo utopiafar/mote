@@ -108,7 +108,7 @@ connectors:
   mcpWriteSourceIds: []
 ```
 
-MCP 凭据至少 32 字符，必须与中央 owner 令牌分开，写凭据还须与读凭据不同。把 `/mcp` 的 HTTPS URL 与只读凭据配置给支持自定义 Authorization Bearer 的 MCP 客户端。只读凭据使用与中央查询 Agent 相同的资料可见性策略：高频截图和 Coding 原始事件不出现在目录、搜索或按 UUID 展开中，整理后的正式资料可按页读取。完整原件仍由中央 owner API 按权限管理。只把 MCP 凭据交给你信任的客户端；MCP 不向它们开放 Google refresh token、中央管理接口或 shell。
+MCP 静态令牌至少 32 字符。只读令牌、归档写入令牌与中央 owner 令牌各自独立。把 `/mcp` 的 HTTPS URL 与只读凭据配置给支持自定义 Authorization Bearer 的 MCP 客户端。只读凭据使用与中央查询 Agent 相同的资料可见性策略：高频截图和 Coding 原始事件不出现在目录、搜索或按 UUID 展开中，整理后的正式资料可按页读取。完整原件仍由中央 owner API 按权限管理。只把 MCP 凭据交给你信任的客户端；MCP 不向它们开放 Google refresh token、中央管理接口或 shell。
 
 | 只读工具 | 用途 |
 |---|---|
@@ -141,11 +141,17 @@ connectors:
   mcpWriteSourceIds: [agent-results, agent-notes]
 ```
 
-写凭据仅暴露 `mote_put_item`，只能写入列出的既有 sourceId，没有只读工具，也不能创建信源或删除物理资料库。必须由调用方提供稳定 externalId、revision 与 observedAt，使用统一信源协议。内部查询 Harness 从不获得这些写工具。读凭据不接受写方法，owner 主令牌也不是 MCP 凭据。
+归档写入凭据仅暴露 `mote_put_item`，只能写入列出的既有 sourceId，没有只读工具，也不能创建信源或删除物理资料库。必须由调用方提供稳定 externalId、revision 与 observedAt，使用统一信源协议。内部查询 Harness 从不获得这些写工具。读凭据不接受写方法，owner 主令牌也不是 MCP 凭据。
 
 需要 stdio 的桌面客户端可运行仓库的 `scripts/mcp-stdio.mjs`：把中央生成的 `mcpServers.mote` HTTP 配置保存到私有 JSON 文件，再使用 `node scripts/mcp-stdio.mjs --connection /绝对路径/private-connection.json`。不要在命令参数里直接放 token。stdio 仅是本机到已配置 Mote HTTP 端点的桥接，不是中央任意执行外部程序的入口。
 
-Mote也提供MCP OAuth发现、客户端注册、授权码/PKCE和刷新；在已登录的「AI接入」批准连接，沿同一独立凭据与撤销边界。OAuth客户端使用节点的`/mcp`地址，Bearer JSON和stdio入口继续可用。具体聊天产品兼容性仍需实际联调，不据此声称迁移了其他产品不可见的私有记忆。发现与路由见[mcp-oauth-routes.ts](../apps/server/src/connectors/mcp-oauth-routes.ts)。
+Mote 也提供 MCP OAuth 发现、客户端注册、授权码/PKCE 和刷新。所有者在「AI 接入」批准连接。OAuth 范围为 `mote.read`（只读）和按配置启用的 `mote.write`（归档写入），客户端使用节点的 `/mcp` 地址。Bearer JSON 和 stdio 入口继续可用。具体聊天产品兼容性仍需实际联调，不据此声称迁移了其他产品不可见的私有记忆。发现与路由见 [mcp-oauth-routes.ts](../apps/server/src/connectors/mcp-oauth-routes.ts)。
+
+### 独立日历创建授权
+
+所有者在「AI 接入」为独立运行的 Codex 等客户端签发单独可撤销的日历凭据，绑定一个已选且可写的云日历。连接可查看该目标、创建一条符合当次指令的日程，以及查询本连接提交的 Action 回执。检索资料和写入归档各需相应凭据。
+
+凭据认证连接身份，当前用户消息由可信客户端原样传给 Central。Central 按当次指令和有效 Memory 核验日程，在领取 Action 时复核连接和目标权限。用同一连接和请求 ID 查询原回执，凭 `succeeded` 和供应方事件 ID 确认创建。撤销阻止新请求和未领取的 Action，已领取的 Action 以实际回执为准。见[外部 Codex 创建日程](connections.md#外部-codex-创建日程)。
 
 ## 从远程 MCP 导入
 
