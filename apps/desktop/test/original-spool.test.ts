@@ -1,8 +1,9 @@
 import {afterEach,it,expect} from 'vitest';
-import {mkdtemp,realpath,writeFile,readFile,rm,stat,access,mkdir} from 'node:fs/promises';
+import {mkdtemp,realpath,writeFile,readFile,readdir,rm,stat,access,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import {spoolOriginal,originalPart} from '../src/original-spool';
 import {scanSourceFiles} from '../src/source-files';
 import {SourceSync} from '../src/source-sync';
@@ -62,11 +63,37 @@ it('streams a 20 MiB immutable original across restart, resumes missing parts, v
  expect(sent).toEqual([0,1,2,3,4,5]);expect(Buffer.concat([...parts.values()]).equals(bytes)).toBe(true);
  expect(createHash('sha256').update(bytes).digest('hex')).toBe(spool.sha256);expect(sync.status().pending).toBe(0);await expect(access(spool.directory)).rejects.toThrow();
 });
-it('rejects a stale file identity and removes rejected queue snapshots',async()=>{
- const dir=await fixture(),path=join(dir,'fixture.txt');await writeFile(path,'before');const previous=await stat(path);await writeFile(path,'after changed');
- await expect(spoolOriginal(path,join(dir,'spools'),{dev:previous.dev,ino:previous.ino,size:previous.size,mtimeMs:previous.mtimeMs,ctimeMs:previous.ctimeMs})).rejects.toThrow('changed');
- const scan=await scanSourceFiles(path,{...DEFAULT_SOURCE_OPTIONS,retention:'archive'},undefined,join(dir,'markers.json'));const location=scan.items[0].localOriginal!.directory;
- const sync=new SourceSync(join(dir,'queue.json'),{maxEvents:0});await sync.initialize();await expect(sync.stage(scan,false)).rejects.toThrow();await expect(access(location)).rejects.toThrow();
+it('rejects a stale file identity and removes snapshots rejected by the outbox',async()=>{
+ const dir=await fixture(),path=join(dir,'fixture.txt'),spools=join(dir,'spools');
+ await writeFile(path,'before');
+ const previous=await stat(path);
+ await writeFile(path,'after changed');
+ await expect(spoolOriginal(path,spools,{dev:previous.dev,ino:previous.ino,size:previous.size,mtimeMs:previous.mtimeMs,ctimeMs:previous.ctimeMs})).rejects.toThrow('changed');
+ expect(await readdir(spools)).toEqual([]);
+
+ const marker=join(dir,'markers.json'),state=join(dir,'queue.json');
+ const options={...DEFAULT_SOURCE_OPTIONS,retention:'archive' as const};
+ const scan=await scanSourceFiles(path,options,undefined,marker);
+ const location=scan.items[0].localOriginal!.directory;
+ const sync=new SourceSync(state);
+ await sync.initialize();
+ const db=new DatabaseSync(state+'.sqlite');
+ try{
+  db.exec("CREATE TRIGGER reject_pending BEFORE INSERT ON entries WHEN new.section='pendingRealtime' BEGIN SELECT RAISE(ABORT,'generated write failure'); END");
+  await expect(sync.stage(scan,false)).rejects.toThrow('generated write failure');
+  await expect(access(location)).rejects.toMatchObject({code:'ENOENT'});
+  expect(await readFile(path,'utf8')).toBe('after changed');
+
+  const restarted=new SourceSync(state);
+  await restarted.initialize();
+  expect(restarted.status().pending).toBe(0);
+  expect(restarted.fileCheckpoint()).toBeUndefined();
+  db.exec('DROP TRIGGER reject_pending');
+  const retry=await scanSourceFiles(path,options,undefined,marker,restarted.fileCheckpoint());
+  expect(await restarted.stage(retry,false)).toBe(1);
+  const spool=restarted.pendingContent()[0].localOriginal!;
+  expect((await originalPart(spool,0)).toString()).toBe('after changed');
+ }finally{db.close();}
 });
 it('commits large directory files individually without rolling back a completed snapshot when the next file exceeds the scan budget',async()=>{
  const dir=await fixture(),root=join(dir,'input');await mkdir(root);await writeFile(join(root,'a.txt'),Buffer.alloc(17*1024*1024,65));await writeFile(join(root,'b.txt'),'second');

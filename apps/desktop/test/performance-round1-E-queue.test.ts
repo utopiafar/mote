@@ -31,5 +31,8 @@ it('retains the exact base64 admission formula and oversized-first progress',asy
   await queue.acknowledge(generated(1).id,undefined,'https://central.example');await queue.acknowledge(generated(2).id,undefined,'https://central.example');
   const oversized=Buffer.concat([pixels.subarray(0,-2),Buffer.alloc(2_000_000),pixels.subarray(-2)]);
   await queue.enqueue(generated(3),oversized);
-  expect((await queue.nextBatch(25))[0].image).toEqual(oversized);
+  const [entry]=await queue.nextBatch(25);
+  expect(entry.record.event.id).toBe(generated(3).id);
+  // Compare every byte without making the matcher enumerate millions of properties.
+  expect(entry.image?.equals(oversized)).toBe(true);
 });
