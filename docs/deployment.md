@@ -64,6 +64,8 @@ npm run connectors:prepare
 node scripts/mote.mjs init --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"
 ```
 
+如果本节点要用 Codex App Server，在部署源码目录额外运行 `npm run native:prepare -w @mote/agent -- --online`，使用脚本固定的 Rust 工具链构建带请求预算检查的 App Server。已有同版构建缓存时可省略 `--online`。准备后用 `node packages/agent/native/codex.mjs --mote-context-budget-version` 检查可执行文件，再在模型设置页测试连接。
+
 编辑该环境的 `mote.yaml` 设置部署参数，然后启动。模型服务也可以启动后在 Web“系统管理 → 模型”中保存并立即应用，见[模型服务配置](model-providers.md)：
 
 ```sh
