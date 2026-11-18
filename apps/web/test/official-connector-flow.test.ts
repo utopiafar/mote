@@ -22,21 +22,27 @@ import type {OfficialProvider} from '../src/plugins/sources/OfficialConnectorSet
 
 const definitions={notion:{repository:'mote/official-notion-connector',kind:'mote.official.notion',name:'Notion',candidate:'Generated selected page',externalId:'page-generated'},slack:{repository:'mote/official-slack-connector',kind:'mote.official.slack',name:'Slack',candidate:'Generated selected channel',externalId:`${Math.floor(Date.now()/1000)-90*86400}.000100`},'feishu-session':{repository:'mote/official-feishu-session-connector',kind:'mote.official.feishu-session',name:'飞书会话',candidate:'Generated selected group',externalId:'om_generated_ui'}} as const;
 
+function notionPage(id:string,title:string){
+ return {object:'page',id,url:'https://www.notion.so/'+id,created_time:'2026-01-01T00:00:00Z',last_edited_time:'2026-11-01T00:00:00Z',properties:{Name:{type:'title',title:[{plain_text:title}]}}};
+}
 function fakeNotion(){
  const calls:{path:string;method:string}[]=[];
  const state={workspace:'generated-workspace-A',failRead:false};
+ const pages=[notionPage('page-generated','Generated selected page')];
  const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
  const transport:typeof fetch=async(input,init={})=>{
   const url=new URL(String(input)),method=init.method??'GET';calls.push({path:url.pathname,method});
   if(url.hostname!=='api.notion.com')throw Error('No unbounded provider network in the generated official connector fixture');
   if(url.pathname==='/v1/oauth/token')return json({access_token:'generated-private-notion-token',workspace_id:state.workspace,workspace_name:state.workspace,bot_id:'generated-bot'});
   if(state.failRead)return json({code:'unauthorized'},401);
-  if(url.pathname==='/v1/search')return json({results:[{object:'page',id:'page-generated',url:'https://www.notion.so/page-generated',properties:{Name:{type:'title',title:[{plain_text:'Generated selected page'}]}}}],has_more:false});
-  if(url.pathname==='/v1/pages/page-generated')return json({object:'page',id:'page-generated',url:'https://www.notion.so/page-generated',created_time:'2026-01-01T00:00:00Z',last_edited_time:'2026-11-01T00:00:00Z',properties:{Name:{type:'title',title:[{plain_text:'Generated selected page'}]}}});
-  if(url.pathname==='/v1/blocks/page-generated/children')return json({results:[{id:'generated-block',object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'Generated actual Notion body through owner HTTP and rendered source settings'}]}}],has_more:false,next_cursor:null});
+  if(url.pathname==='/v1/search')return json({results:pages,has_more:false});
+  const page=pages.find(value=>url.pathname==='/v1/pages/'+value.id);
+  if(page)return json(page);
+  const parent=pages.find(value=>url.pathname==='/v1/blocks/'+value.id+'/children');
+  if(parent)return json({results:[{id:parent.id+'-block',object:'block',type:'paragraph',paragraph:{rich_text:[{plain_text:'Generated actual Notion body through owner HTTP and rendered source settings'}]}}],has_more:false,next_cursor:null});
   throw Error('Unexpected generated Notion request '+url.pathname);
  };
- return {transport,calls,state};
+ return {transport,calls,state,pages};
 }
 function fakeOfficial(provider:OfficialProvider){
  const notion=fakeNotion(),calls:{path:string;method:string}[]=[],commands:string[]=[],logins:string[][]=[];
@@ -72,8 +78,16 @@ function Flow({api}:{api:Api}){
 }
 async function fixture(t:TestContext,kind:OfficialProvider='notion'){
  const definition=definitions[kind],directory=await mkdtemp(join(tmpdir(),'mote-official-flow-')),owner='generated-owner-'+randomUUID(),secret='GENERATED_OFFICIAL_'+randomUUID().replaceAll('-','_'),provider=fakeOfficial(kind);process.env[secret]='generated-private-client-secret';
- const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:owner,tokenPath:join(directory,'owner')},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1024*1024},server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},connectors:{directory:join(directory,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]}}};
- const node=await buildApp(config,{backgroundWorker:false,connectorTesting:{fetch:provider.transport,lark:provider.runner},agent:{configured:false,async query(){throw Error('No model in the official connector flow');},async close(){}}});
+ const profileConfig=(profileDir:string,token:string):ConfigurationPlatformOptions=>({
+  path:join(profileDir,'mote.yaml'),privateCredential:{token,tokenPath:join(profileDir,'owner')},
+  initialDocument:{
+   version:1,revision:0,storage:{dataDir:profileDir,maxExportBytes:1024*1024},
+   server:{host:'127.0.0.1',port:0,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},
+   models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},
+   diagnostics:{level:'silent'},connectors:{directory:join(profileDir,'connectors'),mcpEnabled:false,mcpReadToken:'',mcpWriteEnabled:false,mcpWriteToken:'',mcpWriteSourceIds:[]},
+  },
+ });
+ const node=await buildApp(profileConfig(directory,owner),{backgroundWorker:false,connectorTesting:{fetch:provider.transport,lark:provider.runner},agent:{configured:false,async query(){throw Error('No model in the official connector flow');},async close(){}}});
  const origin=await node.app.listen({host:'127.0.0.1',port:0}),nativeFetch=globalThis.fetch,prior=new Map<string,PropertyDescriptor|undefined>(),locale=getLocale();configureLocale(()=> 'zh-CN');
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:origin+'/#/connections/add',pretendToBeVisual:true});
  const requests:{path:string;method:string}[]=[],origins=new Map([['Bearer '+owner,origin]]),otherNodes:typeof node[]=[];
@@ -97,7 +111,13 @@ async function fixture(t:TestContext,kind:OfficialProvider='notion'){
  const render=(selectedApi:Api=api)=>act(async()=>root.render(React.createElement(Flow,{api:selectedApi})));
  return {node,dom,api,provider,requests,request,until,button,click,render,instance,definition,
   holdNext(path:string){let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;}),hold={path,entered:false,released:false,release:()=>{hold.released=true;release();},wait};delayed.push(hold);return hold;},
-  async otherCentral(){const token='generated-other-'+randomUUID(),other=await buildApp({...config,dataDir:join(directory,'other-central'),token,tokenPath:join(directory,'other-owner')},{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in the replacement Central');},async close(){}}});otherNodes.push(other);const nextOrigin=await other.app.listen({host:'127.0.0.1',port:0});origins.set('Bearer '+token,nextOrigin);return {api:createApi({token}),node:other};},
+  async otherCentral(){
+   const token='generated-other-'+randomUUID();
+   const other=await buildApp(profileConfig(join(directory,'other-central'),token),{backgroundWorker:false,agent:{configured:false,async query(){throw Error('No model in the replacement Central');},async close(){}}});
+   otherNodes.push(other);
+   origins.set('Bearer '+token,await other.app.listen({host:'127.0.0.1',port:0}));
+   return {api:createApi({token}),node:other};
+  },
   async replaceAccount(){if(kind==='feishu-session'){provider.state.account='ou_generated_other';await request('/api/connectors/feishu-session/check',{});}else{if(kind==='notion')provider.notion.state.workspace='generated-workspace-B';else provider.state.team='T_GENERATED_OTHER';const started=await request('/api/connectors/'+kind+'/start',{}),target=new URL(started.authorizationUrl);const response=await nativeFetch(origin+'/oauth/'+kind+'/callback?state='+encodeURIComponent(target.searchParams.get('state')!)+'&code=generated-other-code');assert.equal(response.status,200);}await this.refresh();},
   async refresh(){await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/connectors/')||key==='/api/sources'));},
   async authorize(){await until(()=>Boolean([...dom.window.document.querySelectorAll('button')].find(value=>value.textContent==='连接账号')));await click('连接账号');await until(()=>Boolean(dom.window.document.querySelector('.connector-authorization')));const target=new URL(dom.window.document.querySelector<HTMLAnchorElement>('.connector-authorization')!.href);assert.equal(target.hostname,kind==='notion'?'api.notion.com':kind==='slack'?'slack.com':'accounts.feishu.cn');assert.equal(target.searchParams.has('access_token'),false);if(kind==='feishu-session'){await until(provider.authorizationWaiting);provider.releaseAuthorization();await until(()=>provider.state.scopes.includes('im:message.group_msg:get_as_user'));}else{const callback=await nativeFetch(origin+'/oauth/'+kind+'/callback?state='+encodeURIComponent(target.searchParams.get('state')!)+'&code=generated-code');assert.equal(callback.status,200);}await this.refresh();await until(()=>Boolean([...dom.window.document.querySelectorAll('button')].find(value=>value.textContent==='加载可选内容')));},
@@ -117,6 +137,7 @@ test('Notion directory opens the formal installed connector, authorizes, saves a
 for(const provider of ['slack','feishu-session'] as const)test(`${provider} directory authorizes only reading, saves selected content and revisits the real source coverage`,async t=>{
  const f=await fixture(t,provider);await f.render();await f.until(()=>Boolean([...f.dom.window.document.querySelectorAll('h3')].find(value=>value.textContent===f.definition.name)));
  const card=[...f.dom.window.document.querySelectorAll('h3')].find(value=>value.textContent===f.definition.name)!.closest<HTMLAnchorElement>('a')!;await act(async()=>card.click());await f.authorize();await f.click('加载可选内容');await f.until(()=>Boolean([...f.dom.window.document.querySelectorAll('label')].find(value=>value.textContent?.includes(f.definition.candidate))));
+ assert.equal(f.dom.window.document.querySelector('.official-source-connector form [role=status]')?.textContent,'已选 0 项，最多可选 100 项。');
  await act(async()=>f.dom.window.document.querySelector<HTMLInputElement>('.official-source-connector input[type=checkbox]')!.click());await f.click('保存并同步');await f.until(()=>f.node.sources.listSources().some(source=>source.kind===f.definition.kind&&source.status?.coverage?.state==='complete'));await f.refresh();await f.until(()=>f.dom.window.document.body.textContent!.includes('所选范围已完成'));
  const source=f.node.sources.listSources().find(value=>value.kind===f.definition.kind)!;assert.equal(source.initialSync,'all');assert.match(f.node.sources.getItem(source.id,f.definition.externalId)!.text,/Generated actual/);assert.equal(source.status?.coverage?.processed,1);
  const detail=f.dom.window.document.querySelector<HTMLAnchorElement>('a[href="#/connections?sourceId='+source.id+'"]')!;await act(async()=>detail.click());await f.until(()=>Boolean(f.dom.window.document.querySelector('.source-final-tabs')));await f.until(()=>/Generated actual/.test(f.dom.window.document.querySelector('.source-final-content:not([hidden])')?.textContent??''));await act(async()=>f.dom.window.document.querySelector<HTMLButtonElement>('.source-final-tabs button:last-child')!.click());await f.until(()=>Boolean(f.dom.window.document.querySelector('[data-official-provider="'+provider+'"]')));assert.equal(f.node.sources.history(source.id,f.definition.externalId).length,1);f.assertPrivate();
@@ -125,6 +146,74 @@ for(const provider of ['slack','feishu-session'] as const)test(`${provider} dire
 async function open(f:Awaited<ReturnType<typeof fixture>>){
  await f.render();await f.until(()=>Boolean([...f.dom.window.document.querySelectorAll('h3')].find(value=>value.textContent?.startsWith(f.definition.name))));const card=[...f.dom.window.document.querySelectorAll('h3')].find(value=>value.textContent?.startsWith(f.definition.name))!.closest<HTMLAnchorElement>('a')!;await act(async()=>card.click());await f.authorize();
 }
+test('Notion saves 50 selections, blocks the 51st and allows a replacement at capacity',async t=>{
+ const f=await fixture(t);
+ const {pages,calls}=f.provider.notion;
+ for(let number=2;number<=51;number++)pages.push(notionPage('page-generated-'+number,'Generated selectable page '+number));
+ const choices=pages.map((page,index)=>({id:page.id,type:'page',initialSync:index>0&&index<49?'new_only':'all'}));
+ const selectPath='/api/connectors/notion/select';
+ const saved=async()=>(await f.request<{selected:{id:string;sourceId:string;initialSync:string}[]}>('/api/connectors/notion')).selected;
+ const checkboxes=()=>[...f.dom.window.document.querySelectorAll<HTMLInputElement>('.official-source-connector form input[type=checkbox]')];
+ const count=()=>checkboxes().filter(input=>input.checked).length;
+ const hint=()=>f.dom.window.document.querySelector('.official-source-connector form [role=status]')?.textContent;
+ await open(f);
+ await act(async()=>{await f.request(selectPath,{selected:choices.slice(0,49)});});
+ await f.refresh();
+ await f.until(()=>count()===49);
+ await f.click('加载可选内容');
+ await f.until(()=>checkboxes().length===51&&!checkboxes()[0]!.closest('fieldset')!.disabled);
+ const fiftieth=checkboxes()[49]!,extra=checkboxes()[50]!;
+ await act(async()=>fiftieth.click());
+ assert.equal(count(),50);
+ assert.equal(extra.disabled,true);
+ assert.equal(hint(),'已选 50 项，最多可选 50 项。 取消勾选一项后即可改选。');
+ await act(async()=>extra.click());
+ assert.equal(extra.checked,false);
+ assert.equal(count(),50);
+ assert.equal(f.button('保存并同步').disabled,false);
+ await f.click('保存并同步');
+ await f.until(()=>!f.button('立即同步').disabled);
+ const before=await saved();
+ assert.deepEqual(before.map(({id,initialSync})=>({id,initialSync})),choices.slice(0,50).map(({id,initialSync})=>({id,initialSync})));
+
+ const providerReads=calls.length;
+ await act(async()=>{await assert.rejects(f.request(selectPath,{selected:choices}),{status:400,code:'notion_input_invalid'});});
+ assert.equal(calls.length,providerReads,'an oversized direct request is rejected before provider discovery');
+ assert.deepEqual(await saved(),before);
+
+ await act(async()=>{f.dom.window.location.hash='#/connections/add';});
+ await f.until(()=>!f.dom.window.document.querySelector('.official-source-connector'));
+ await act(async()=>{f.dom.window.location.hash='#/connections?setup=official-notion';});
+ await f.until(()=>count()===50);
+ await f.click('加载可选内容');
+ await f.until(()=>checkboxes().length===51&&!checkboxes()[0]!.closest('fieldset')!.disabled);
+ const removed=checkboxes()[0]!,replacement=checkboxes()[50]!;
+ assert.equal(removed.checked,true);
+ assert.equal(removed.disabled,false);
+ assert.equal(replacement.disabled,true);
+ await act(async()=>removed.click());
+ assert.equal(count(),49);
+ assert.equal(hint(),'已选 49 项，最多可选 50 项。');
+ assert.equal(replacement.disabled,false);
+ await act(async()=>replacement.click());
+ assert.equal(count(),50);
+ assert.equal(removed.disabled,true);
+ await f.click('保存并同步');
+ await f.until(()=>!f.button('立即同步').disabled);
+ const after=await saved();
+ const bindings=(items:typeof before)=>items.map(({id,sourceId,initialSync})=>({id,sourceId,initialSync}));
+ assert.deepEqual(bindings(after.slice(0,-1)),bindings(before.slice(1)));
+ const added=after.at(-1)!;
+ assert.equal(added.id,choices[50]!.id);
+ assert.equal(added.initialSync,'all');
+ const original=before[0]!;
+ assert.equal(f.node.sources.getSource(original.sourceId).enabled,false);
+ assert.equal(f.node.sources.history(original.sourceId,original.id).length,1);
+ assert.equal(f.node.sources.getSource(added.sourceId).enabled,true);
+ assert.ok(f.node.sources.getItem(added.sourceId,added.id),'the replacement is archived through the normal sync');
+ f.assertPrivate();
+});
+
 async function choose(f:Awaited<ReturnType<typeof fixture>>,mode:'all'|'new_only'='all'){
  await f.click('加载可选内容');await f.until(()=>Boolean(f.dom.window.document.querySelector('.official-source-connector input[type=checkbox]')));await act(async()=>f.dom.window.document.querySelector<HTMLInputElement>('.official-source-connector input[type=checkbox]')!.click());
  if(mode==='new_only')await act(async()=>{const select=f.dom.window.document.querySelector<HTMLSelectElement>('.official-source-connector select')!;select.value=mode;select.dispatchEvent(new f.dom.window.Event('change',{bubbles:true}));});

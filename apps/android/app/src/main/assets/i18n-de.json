@@ -8670,6 +8670,8 @@
   "加载可选内容": "Verfügbare Inhalte laden",
   "可选内容列表未完整返回，只能选择当前已列出的内容。": "Die Liste der verfügbaren Inhalte ist unvollständig. Nur die aktuell aufgeführten Einträge können ausgewählt werden.",
   "保存范围会启用所选来源的读取；未选内容不会接入，已有归档保留。": "Das Speichern des Umfangs aktiviert das Lesen der ausgewählten Quellen. Nicht ausgewählte Inhalte werden nicht erfasst; vorhandene Archive bleiben erhalten.",
+  "已选 {0} 项，最多可选 {1} 项。": "{0} von höchstens {1} Einträgen ausgewählt.",
+  "取消勾选一项后即可改选。": "Wählen Sie einen Eintrag ab, um einen anderen auszuwählen.",
   "历史范围：{0}": "Verlaufsumfang: {0}",
   "全部已授权历史": "Gesamter autorisierter Verlauf",
   "仅接入新增内容": "Nur neue Inhalte",

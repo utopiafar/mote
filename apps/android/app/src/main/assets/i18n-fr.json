@@ -8670,6 +8670,8 @@
   "加载可选内容": "Charger le contenu disponible",
   "可选内容列表未完整返回，只能选择当前已列出的内容。": "La liste du contenu disponible est incomplète. Seuls les éléments actuellement affichés peuvent être sélectionnés.",
   "保存范围会启用所选来源的读取；未选内容不会接入，已有归档保留。": "L’enregistrement du périmètre active la lecture des sources sélectionnées. Le contenu non sélectionné n’est pas collecté et les archives existantes sont conservées.",
+  "已选 {0} 项，最多可选 {1} 项。": "Sélection de {0} éléments sur un maximum de {1}.",
+  "取消勾选一项后即可改选。": "Décochez un élément pour en sélectionner un autre.",
   "历史范围：{0}": "Périmètre de l’historique : {0}",
   "全部已授权历史": "Tout l’historique autorisé",
   "仅接入新增内容": "Nouveau contenu uniquement",
