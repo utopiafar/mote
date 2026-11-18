@@ -14,20 +14,31 @@ class LibraryRefreshPolicyTest {
         var revision = 0L
         val cipher = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes }
         val queue = DurableQueue(folder.newFolder(), cipher, initialOnMutation = { if (it) revision++ })
-        fun note() = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note").put("capturedAt", "2026-01-01T00:00:00Z")
+        fun event(source: String = "note") = JSONObject().put("id", UUID.randomUUID().toString()).put("source", source).put("capturedAt", "2026-01-01T00:00:00Z")
             .put("platform", "android").put("durationMs", 0).put("ocrText", "Generated queue contract").put("privacy", JSONObject().put("excluded", false))
-        val first = note(); val second = note()
-        queue.enqueue(first, null); queue.enqueue(second, null)
+        fun screen() = event("screen").put("imageMime", "image/png")
+        val image = byteArrayOf(1, 2, 3)
+        val first = queue.enqueue(screen(), image)
+        val second = queue.enqueue(screen(), image)
+        val hash = queue.dedupeRow(first)!!.getString("blob")
         val policy = LibraryRefreshPolicy(revision, queue.inventory().records)
         val baseline = revision
         queue.withDeferredIndexWrites {
-            repeat(3) { queue.enqueue(note(), null) }
-            queue.acknowledge(first.getString("id")); queue.archiveMissing(second.getString("id"))
+            repeat(3) { inserted ->
+                queue.enqueue(event(), null)
+                assertEquals(baseline + inserted + 1, revision)
+            }
+            assertTrue(queue.resolveDedupe(first, hash, second, hash, destination = null))
+            assertEquals(4L, revision - baseline)
+            queue.archiveMissing(second)
+            assertEquals(5L, revision - baseline)
         }
         assertEquals(5L, revision - baseline)
-        assertEquals(4, queue.inventory().records)
-        assertEquals("net +2 is not pure insertion", LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(revision, queue.inventory().records))
-        repeat(5) { queue.enqueue(note(), null) }
+        val inventory = queue.inventory()
+        assertEquals(4, inventory.records)
+        assertEquals(1, inventory.blocked)
+        assertEquals("net +2 is not pure insertion", LibraryRefreshPolicy.Action.FULL, policy.recordsChanged(revision, inventory.records))
+        repeat(5) { queue.enqueue(event(), null) }
         assertEquals(LibraryRefreshPolicy.Action.INCREMENTAL, policy.recordsChanged(revision, queue.inventory().records))
     }
     @Test fun aFirstPageMustCoverEveryInsertionBeforeKeepingDeeperPages() {

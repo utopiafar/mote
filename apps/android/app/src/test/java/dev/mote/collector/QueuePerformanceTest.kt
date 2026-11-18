@@ -118,21 +118,30 @@ class QueuePerformanceTest {
         val root = Files.createTempDirectory("mote-index-interrupted").toFile()
         val cipher = CountingCipher()
         try {
-            val source = File(root, "source"); val queue = DurableQueue(source, cipher)
-            val rows = (0..3).map(::event)
-            rows.forEach { queue.enqueue(it, byteArrayOf(1, 2, 3)) }
-            val hash = queue.dedupeRow(rows.first().getString("id"))!!.getString("blob")
+            val source = File(root, "source")
+            val queue = DurableQueue(source, cipher, role = DurableQueue.Role.QUARANTINE)
+            val image = byteArrayOf(1, 2, 3)
+            // The deleted row and its survivors share an index shard, forcing a rebuild after the interruption.
+            val ids = (0..3).map { index ->
+                val row = event(index).put("id", "00000000-0000-4000-8000-00000000000$index")
+                queue.enqueue(row, image)
+            }
+            val hash = queue.dedupeRow(ids.first())!!.getString("blob")
             val crashed = File(root, "crashed")
             queue.withDeferredIndexWrites {
-                assertTrue(queue.resolveDedupe(rows[1].getString("id"), hash, rows[0].getString("id"), hash, null))
+                assertTrue(queue.resolveDedupe(ids[1], hash, referenceId = null, referenceHash = null, destination = null))
                 // Snapshot before finally flushes the invalidated derived shard, as after process death.
                 copy(source, crashed)
             }
-            val restored = DurableQueue(crashed, cipher)
+            cipher.reset()
+            val restored = DurableQueue(crashed, cipher, role = DurableQueue.Role.QUARANTINE)
             assertEquals(3, restored.inventory().records)
+            assertEquals("The missing shard is rebuilt from the three surviving event files", 3, cipher.records)
             restored.recoverOrphans()
-            assertArrayEquals(byteArrayOf(1, 2, 3), restored.image(rows[0].getString("id")))
-            rows.filterIndexed { index, _ -> index != 1 }.forEach { restored.acknowledge(it.getString("id")) }
+            listOf(ids[0], ids[2], ids[3]).forEach { id ->
+                assertArrayEquals(image, restored.image(id))
+                assertTrue(restored.resolveDedupe(id, hash, referenceId = null, referenceHash = null, destination = null))
+            }
             assertEquals(0, restored.inventory().records)
             assertFalse(crashed.listFiles()!!.any { it.extension == "blob" })
         } finally { root.deleteRecursively() }
