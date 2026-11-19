@@ -288,6 +288,9 @@ export class ExecutionEngine {
    return;
   }
   const db=this.store.db,now=this.now(),fence=randomUUID(),policy=this.policy(handler,view(row)),timeout=policy.timeoutMs;
+  const leaseMs=timeout===null?30000:Math.min(timeout+10000,30000);
+  const extendLease=(until:number,validAfter:number)=>db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(until,row.id,fence,validAfter).changes;
+  let knownLeaseUntil:number;
   db.exec('BEGIN IMMEDIATE');
   try{
    const lane=this.lane(view(row)),limit=this.limit(row.pool,lane);
@@ -310,17 +313,27 @@ export class ExecutionEngine {
     const failure=retainFailureContext(new ExecutionFailure('permanent','retry_budget_exhausted'),{causeCode});
     this.retainFailure(this.get(row.id)!,'failed',failure,failure);this.project(row.id);db.exec('COMMIT');return;
    }
-   const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,now+(timeout===null?30000:Math.min(timeout+10000,30000)),now,row.id).changes;
+   const claimedAt=this.now();
+   knownLeaseUntil=claimedAt+leaseMs;
+   const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,knownLeaseUntil,claimedAt,row.id).changes;
    if(!claimed){db.exec('COMMIT');return;}
    const sequence=Number(db.prepare('INSERT INTO execution_sequence(pool,next) VALUES(?,1) ON CONFLICT(pool) DO UPDATE SET next=next+1 RETURNING next').get(row.pool)!.next);
    db.prepare('INSERT INTO execution_fairness(pool,operation_id,last_started) VALUES(?,?,?) ON CONFLICT(pool,operation_id) DO UPDATE SET last_started=excluded.last_started').run(row.pool,row.operation_id,sequence);
-   this.project(row.id);db.exec('COMMIT');
+   this.project(row.id);
+   // Input validation and the running projection complete in the same writer
+   // transaction. Start the visible lease when that admission is ready.
+   const projectedLeaseUntil=this.now()+leaseMs;
+   if(projectedLeaseUntil>knownLeaseUntil){
+    extendLease(projectedLeaseUntil,knownLeaseUntil-1);
+    knownLeaseUntil=projectedLeaseUntil;
+   }
+   db.exec('COMMIT');
   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');db.prepare("UPDATE execution_steps SET state='blocked',error=?,updated_at=? WHERE id=? AND state='waiting'").run(error instanceof StoreError&&error.statusCode===507?'storage_full':'admission_failed',this.now(),row.id);this.project(row.id);return;}
   // Dispose deadlines when work settles. Composed AbortSignal.timeout sources
   // can remain strongly retained by Node until a long deadline actually fires.
   const step=this.get(row.id)!,signal=controller.signal;
   const deadline=timeout===null?undefined:setTimeout(()=>controller.abort(new DOMException('The operation was aborted due to timeout','TimeoutError')),timeout);deadline?.unref();
-  let previousRenewal=this.observing()?observationClock():undefined,knownLeaseUntil=now+(timeout===null?30000:Math.min(timeout+10000,30000));
+  let previousRenewal=this.observing()?observationClock():undefined;
   const renewal=setInterval(()=>{
    if(this.stopping)return;
    const started=this.observing()?observationClock():undefined,priorLeaseUntil=knownLeaseUntil;
@@ -328,7 +341,7 @@ export class ExecutionEngine {
    // The original CAS/abort boundary is unchanged. Observation runs afterward.
    // A lost lease is an interruption, never a user cancellation: child abort
    // listeners must not persist `cancelled` for work that can still resume.
-   try{const at=this.now();renewedAt=at;if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(at+30000,row.id,fence,at).changes){outcome='cas_missed';controller.abort(interrupted);}else{outcome='renewed';knownLeaseUntil=at+30000;}}catch{controller.abort();}
+   try{const at=this.now();renewedAt=at;if(!extendLease(at+30000,at)){outcome='cas_missed';controller.abort(interrupted);}else{outcome='renewed';knownLeaseUntil=at+30000;}}catch{controller.abort();}
    try{const ended=started?observationClock():undefined;
     if(started)this.observe({type:'renew',taskId:row.id,attempt:step.attempts,outcome,...observationGap(previousRenewal,started,10000),...(ended&&ended.monotonic>=started.monotonic?{durationMs:ended.monotonic-started.monotonic}:{}),...(renewedAt===undefined?{}:{leaseRemainingMs:Math.max(0,priorLeaseUntil-renewedAt),leaseOverdueMs:Math.max(0,renewedAt-priorLeaseUntil)})});
     previousRenewal=started;

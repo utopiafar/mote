@@ -46,7 +46,7 @@ for(const mode of ['background','drain','mixed-lanes'])test(`a large admission-w
   import {mkdtempSync,rmSync} from 'node:fs';
   import {tmpdir} from 'node:os';
   import {join} from 'node:path';
-  import {Store} from ${JSON.stringify(new URL('../src/store.ts',import.meta.url).href)};
+  import {EvidenceStore as Store} from ${JSON.stringify(new URL('../src/evidence-store.ts',import.meta.url).href)};
   import {ExecutionEngine,ExecutionFailure} from ${JSON.stringify(new URL('../src/execution-engine.ts',import.meta.url).href)};
   const dir=mkdtempSync(join(tmpdir(),'mote-admission-yield-')),store=new Store(dir),engine=new ExecutionEngine(store);
   ${mode==='mixed-lanes'?"engine.configurePool('waiting',{concurrency:{background:()=>1,interactive:()=>1},lane:step=>step.kind==='provider'?'interactive':'background'});":''}
