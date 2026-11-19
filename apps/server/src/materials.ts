@@ -93,7 +93,8 @@ export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;to
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
-type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>;anchors:Map<string,string>};
+type EvidenceContextInput={anchor_id:string;evidence_id:string;chunk_capture_id:string|null;declaration_seed:number};
+type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>;anchors:Map<string,string>;inputs:Map<string,EvidenceContextInput[]>;chunks:Map<string,string>};
 type CurrentEvidenceRow={id:string;source_id:string;sequence:number;min_visible_sequence:number;retired:number;revision:string;evidence_revision:string;coding_active:number;snapshot_active:number;invalidated:number};
 const currentEvidenceSelection=`SELECT e.id,h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
     EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
@@ -236,12 +237,31 @@ export class MaterialStore {
    * Each original keeps its own import lineage; the next read starts fresh. */
   contextsForEvidence(records:readonly CaptureRecord[]):AttributionContext[] {
     if(records.length<2)return records.map(record=>this.contextForEvidenceWithin(record));
-    const ids=JSON.stringify([...new Set(records.map(record=>record.id))]);
+    const ids=[...new Set(records.map(record=>record.id))];
     const db=this.store.db;
     const anchors=new Map(db.prepare('SELECT id,material_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))')
-      .all(ids).map(row=>[String(row.id),String(row.material_id)]));
-    const contexts:EvidenceContexts={materials:new Map(),originals:new Map(),anchors};
+      .all(JSON.stringify(ids)).map(row=>[String(row.id),String(row.material_id)]));
+    const inputs=new Map<string,EvidenceContextInput[]>();
+    if(anchors.size){
+      const rows=(this.contextDependenciesStatement??=db.prepare(`SELECT d.anchor_id,d.evidence_id,f.capture_id chunk_capture_id,
+        EXISTS(SELECT 1 FROM captures c WHERE c.id=d.evidence_id) OR
+        EXISTS(SELECT 1 FROM file_evidence_links l WHERE l.capture_id=d.evidence_id) declaration_seed
+        FROM material_evidence_dependencies d JOIN json_each(?) wanted ON wanted.value=d.anchor_id
+        LEFT JOIN file_chunks f ON f.id=d.evidence_id`)).all(JSON.stringify([...anchors.keys()])) as EvidenceContextInput[];
+      for(const row of rows){
+        const prior=inputs.get(row.anchor_id);
+        if(prior)prior.push(row);else inputs.set(row.anchor_id,[row]);
+      }
+    }
+    const unresolved=ids.filter(id=>!anchors.has(id));
+    const chunks=new Map(this.contextChunkParents(unresolved).map(row=>[row.id,row.capture_id]));
+    const contexts:EvidenceContexts={materials:new Map(),originals:new Map(),anchors,inputs,chunks};
     return records.map(record=>this.contextForEvidenceWithin(record,contexts));
+  }
+  private contextChunkParents(ids:readonly string[]):{id:string;capture_id:string}[] {
+    if(!ids.length)return [];
+    return (this.contextChunkStatement??=this.store.db.prepare('SELECT id,capture_id FROM file_chunks WHERE id IN (SELECT value FROM json_each(?))'))
+      .all(JSON.stringify(ids)) as {id:string;capture_id:string}[];
   }
   private contextForEvidenceWithin(record:CaptureRecord,contexts?:EvidenceContexts):AttributionContext {
     const id=contexts?contexts.anchors.get(record.id):(this.contextAnchorStatement??=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?')).get(record.id)?.material_id as string|undefined;
@@ -249,21 +269,18 @@ export class MaterialStore {
       if(contexts&&!contexts.materials.has(id))contexts.materials.set(id,this.get(id)?.attributionContext);
       const context=(contexts?contexts.materials.get(id):this.get(id)?.attributionContext)??unknownAttributionContext();
       if(!contexts){const inputs=this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(record.id).map(row=>String(row.evidence_id));return this.withImportContext(context,inputs,true);}
-      const inputs=(this.contextDependenciesStatement??=this.store.db.prepare(`SELECT d.evidence_id,f.capture_id chunk_capture_id,
-        EXISTS(SELECT 1 FROM captures c WHERE c.id=d.evidence_id) OR
-        EXISTS(SELECT 1 FROM file_evidence_links l WHERE l.capture_id=d.evidence_id) declaration_seed
-        FROM material_evidence_dependencies d LEFT JOIN file_chunks f ON f.id=d.evidence_id WHERE d.anchor_id=?`)).all(record.id);
+      const inputs=contexts.inputs.get(record.id)??[];
       // Sibling transcript anchors have different chunk IDs but the same exact
       // original declarations. Resolve those once in this synchronous read.
       // Keep declaration/link seeds separate from the chunk parents used by
       // capture-channel context; an unusual explicit link still gets its own key.
-      const key=JSON.stringify([id,[...new Set(inputs.filter(row=>row.declaration_seed).map(row=>String(row.evidence_id)))].sort(),[...new Set(inputs.flatMap(row=>row.chunk_capture_id?[String(row.chunk_capture_id)]:[]))].sort()]);
+      const key=JSON.stringify([id,[...new Set(inputs.filter(row=>row.declaration_seed).map(row=>row.evidence_id))].sort(),[...new Set(inputs.flatMap(row=>row.chunk_capture_id?[row.chunk_capture_id]:[]))].sort()]);
       const cached=contexts.originals.get(key);if(cached)return cached;
-      const scoped=this.withImportContext(context,inputs.map(row=>String(row.evidence_id)),true);
+      const scoped=this.withImportContext(context,inputs.map(row=>row.evidence_id),true);
       contexts.originals.set(key,scoped);return scoped;
     }
-    const file=(this.contextChunkStatement??=this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?')).get(record.id);
-    const captureId=String(file?.capture_id??record.id);
+    const capture=contexts?contexts.chunks.get(record.id):this.contextChunkParents([record.id])[0]?.capture_id;
+    const captureId=capture??record.id;
     // Raw transcript chunks also share one exact original. Their lineage is
     // used by disclosure/assistant guards alongside formal anchors; resolving
     // the same parent's declarations per chunk makes those guards quadratic.

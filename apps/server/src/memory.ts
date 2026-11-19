@@ -46,6 +46,10 @@ function reference(record:MemoryRecord,span?:{offset?:number;length?:number;quot
     ...(record.attributionContext?{attributionContext:record.attributionContext}:{}),
     ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
+function formalMaterialUri(record:MemoryRecord):string|undefined {
+  const uri=record.provenance?.uri;
+  return record.appId==='mote.material'&&uri?.startsWith('material:')?uri:undefined;
+}
 export type PreparedMemoryExtraction={at:string;resultHash:string;items:Memory[];changed:Memory[];expected:Record<string,string|null>;deletionSnapshot:string};
 export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:PreparedMemoryExtraction;at?:string;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 export class MemoryStore {
@@ -69,38 +73,41 @@ export class MemoryStore {
   count(){return Number(this.store.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n);}
   isCurrentEvidence(id:string):boolean {
     const record=this.readEvidence([id])[0];
-    return Boolean(record&&this.recordIsCurrent(record));
+    return Boolean(record&&this.recordIsCurrent(record,undefined,this.materialEvidenceUris([record])));
   }
   /** Read canonical originals once for this synchronous guard. Callers provide
    * only IDs; they cannot substitute their own records for current authority. */
   readCurrentEvidence(ids:readonly string[]):MemoryRecord[] {
     const seen=new Set<string>(),records=this.readEvidence([...new Set(ids)]);
-    const current=this.currentEvidenceBatch?.(records.map(record=>record.id));
+    const current=this.currentEvidenceBatch?.(records.map(record=>record.id)),materialUris=this.materialEvidenceUris(records);
     return records.filter(record=>{
       if(seen.has(record.id))return false;seen.add(record.id);
-      return this.recordIsCurrent(record,current);
+      return this.recordIsCurrent(record,current,materialUris);
     });
   }
   /** Preserve the resolver's missing-ID behavior, but reject any returned
    * original that is no longer current. Validate the same canonical read. */
   readEvidenceIfCurrent(ids:readonly string[]):MemoryRecord[]|undefined {
     const records=this.readEvidence([...ids]);
-    const current=this.currentEvidenceBatch?.(records.map(record=>record.id));
-    return records.every(record=>this.recordIsCurrent(record,current))?records:undefined;
+    const current=this.currentEvidenceBatch?.(records.map(record=>record.id)),materialUris=this.materialEvidenceUris(records);
+    return records.every(record=>this.recordIsCurrent(record,current,materialUris))?records:undefined;
   }
-  private recordIsCurrent(record:MemoryRecord,current?:ReadonlySet<string>):boolean {
+  private materialEvidenceUris(records:readonly MemoryRecord[]):ReadonlyMap<string,string> {
+    const ids=records.filter(record=>formalMaterialUri(record)!==undefined).map(record=>record.id);
+    if(!ids.length||!(this.materialEvidenceTableStatement??=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'")).get())return new Map();
+    const anchors=(this.materialEvidenceStatement??=this.store.db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM material_evidence e
+      JOIN material_heads h ON h.id=e.material_id
+      WHERE e.id IN (SELECT value FROM json_each(?)) AND h.retired=0`)).all(JSON.stringify(ids)) as {id:string;material_id:string;revision:string;block_id:string}[];
+    return new Map(anchors.map(anchor=>[anchor.id,`material:${anchor.material_id}@${anchor.revision}#${anchor.block_id}`]));
+  }
+  private recordIsCurrent(record:MemoryRecord,current:ReadonlySet<string>|undefined,materialUris:ReadonlyMap<string,string>):boolean {
     const id=record.id;
     if(!(current?current.has(id):this.currentEvidence(id)))return false;
     // Formal Material anchors keep their immutable origin revision even when
     // Coding append reuses an unchanged prefix. The injected currentEvidence
     // resolver checks that the block is still active in the current head.
-    if(record.appId==='mote.material'&&record.provenance?.uri?.startsWith('material:')){
-      if(!(this.materialEvidenceTableStatement??=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'")).get())return false;
-      const anchor=(this.materialEvidenceStatement??=this.store.db.prepare(`SELECT e.material_id,e.revision,e.block_id FROM material_evidence e
-        JOIN material_heads h ON h.id=e.material_id
-        WHERE e.id=? AND h.retired=0`)).get(id) as {material_id:string;revision:string;block_id:string}|undefined;
-      return Boolean(anchor&&record.provenance.uri===`material:${anchor.material_id}@${anchor.revision}#${anchor.block_id}`);
-    }
+    const uri=formalMaterialUri(record);
+    if(uri!==undefined)return uri===materialUris.get(id);
     if(record.provenance?.layer!=='derived')return true;
     const file=fileEvidenceSchema.safeParse(record.fileEvidence);
     // The injected host resolver verifies active, traceable file artifacts. Other
@@ -229,7 +236,8 @@ export class MemoryStore {
       const evidence=this.readEvidence(evidenceIds),evidenceById=new Map(evidence.map(record=>[record.id,record])),current=new Map<string,boolean>();
       // This guard is synchronous: reuse its canonical read while checking the
       // live resolver once per ID. Later validation/commit calls read afresh.
-      for(const record of evidence)if(!current.has(record.id))current.set(record.id,this.recordIsCurrent(record));
+      const materialUris=this.materialEvidenceUris(evidence);
+      for(const record of evidence)if(!current.has(record.id))current.set(record.id,this.recordIsCurrent(record,undefined,materialUris));
       const fingerprints=evidenceIds.map(id=>{const record=evidenceById.get(id);return [id,record?memoryEvidenceFingerprint(record):null,current.get(id)??false];});
       const related=[...new Set([...(options.relatedMemoryIds??[]),...parsed.data.memories.flatMap(m=>(m.relations??[]).map(r=>r.memoryId))])].map(id=>this.get(id));
       let imageReads:ReturnType<typeof memoryImageReadReceipts>;
