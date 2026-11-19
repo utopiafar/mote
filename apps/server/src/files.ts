@@ -496,21 +496,29 @@ export class FileStore {
   publishSnapshotIndex(id:string,total:number,length:number,parser:string,partial=false,warnings:string[]=[]){const capture=this.store.evidence([id])[0];if(!capture?.provenance?.document?.fileIndex)return;const index={...capture.provenance.document.fileIndex,status:'ready',parser,totalCharacters:total,length,coverage:total>length||partial?'lightweight':total?'full':'none',...(warnings.length?{warnings}:{} )};this.store.db.prepare('INSERT INTO file_snapshot_index VALUES(?,?) ON CONFLICT(capture_id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(index));this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());}
   saveSnapshotText(id:string,text:string){const index=JSON.parse(this.version(id).manifest).item.document?.fileIndex;if(!index?.allowRead)return;const asset=this.store.assets.put(Buffer.from(text));try{this.store.db.prepare('INSERT OR REPLACE INTO file_snapshot_text VALUES(?,?)').run(id,asset.hash);}finally{asset.release();}}
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
-  chunks(id:string,offset=0,limit=100){this.version(id);const rows=this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[];
-    return this.chunkRecords(rows);}
+  chunks(id:string,offset=0,limit=100){return [...this.preferredChunks(id,offset,Math.min(limit,200))];}
+  /** Internal full transcript passes walk the preferred chunks in one order. */
+  preferredChunks(id:string,offset=0,limit=-1){
+    this.version(id);
+    const rows=this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).iterate(id,limit,offset) as unknown as Iterable<Chunk>;
+    return this.projectChunkRecords(rows);
+  }
   speakerAttributions(captureId:string,artifactId:string){
     return readFileSpeakerAttributions(this.store,captureId,artifactId);
   }
   private chunkRecords(rows:Chunk[]){
+    return [...this.projectChunkRecords(rows)];
+  }
+  private *projectChunkRecords(rows:Iterable<Chunk>){
     const attributions=new Map<string,ReturnType<typeof readFileSpeakerAttributions>>(),originals=new Map<string,{record:CaptureRecord;version:Version}>();
-    return rows.map(c=>{
+    for(const c of rows){
       // A transcript's parent body and manifest can be large. Share them only
       // within this synchronous projection; the next read resolves them anew.
       let original=originals.get(c.capture_id);
       if(!original){original={record:this.store.evidence([c.capture_id])[0],version:this.version(c.capture_id)};originals.set(c.capture_id,original);}
       let names=attributions.get(c.artifact_id);if(!names){names=this.speakerAttributions(c.capture_id,c.artifact_id);attributions.set(c.artifact_id,names);}
-      return this.chunkRecord(c,names,original.record,original.version);
-    });
+      yield this.chunkRecord(c,names,original.record,original.version);
+    }
   }
   private chunkRecord(c:Chunk,attributions:ReturnType<typeof readFileSpeakerAttributions>,record:CaptureRecord,v:Version):CaptureRecord & ContextRecord{
     const metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?attributions[metadata.speaker]:undefined;
@@ -524,14 +532,19 @@ export class FileStore {
   }
   currentEvidenceIds(ids:readonly string[]):Set<string> {
     if(!ids.length)return new Set();
-    const rows=(this.currentEvidenceBatchStatement??=this.store.db.prepare(`SELECT id,capture_id,artifact_id FROM file_chunks
-      WHERE id IN (SELECT value FROM json_each(?))`)).all(JSON.stringify(ids));
-    const artifacts=new Map<string,boolean>(),current=new Set<string>();
+    const rows=(this.currentEvidenceBatchStatement??=this.store.db.prepare(`SELECT c.id,c.capture_id,c.artifact_id,
+      EXISTS(SELECT 1 FROM file_versions v WHERE v.capture_id=c.id) AS file_id_collision FROM file_chunks c
+      WHERE c.id IN (SELECT value FROM json_each(?))`)).all(JSON.stringify(ids));
+    const attachments=new Map<string,boolean>(),artifacts=new Map<string,boolean>(),current=new Set<string>();
     for(const row of rows){
-      const id=String(row.id),key=JSON.stringify([row.capture_id,row.artifact_id]);
-      // Attachment policy still applies to each chunk. The preferred artifact
-      // and its file's currentness are shared only within this synchronous read.
-      if(!fileAttachmentAvailable(this.store,id,true))continue;
+      const id=String(row.id),captureId=String(row.capture_id),key=JSON.stringify([captureId,row.artifact_id]);
+      // A chunk sharing a file's ID still resolves its own attachment lineage.
+      // Other chunks of the same capture look up the same parent version.
+      if(row.file_id_collision){if(!fileAttachmentAvailable(this.store,id,true))continue;}
+      else{
+        if(!attachments.has(captureId))attachments.set(captureId,fileAttachmentAvailable(this.store,id,true));
+        if(!attachments.get(captureId))continue;
+      }
       if(!artifacts.has(key))artifacts.set(key,this.isCurrentEvidence(id));
       if(artifacts.get(key))current.add(id);
     }

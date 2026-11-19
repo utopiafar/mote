@@ -93,7 +93,7 @@ export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;to
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
-type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>};
+type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>;anchors:Map<string,string>};
 type CurrentEvidenceRow={id:string;source_id:string;sequence:number;min_visible_sequence:number;retired:number;revision:string;evidence_revision:string;coding_active:number;snapshot_active:number;invalidated:number};
 const currentEvidenceSelection=`SELECT e.id,h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
     EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
@@ -236,13 +236,16 @@ export class MaterialStore {
    * Each original keeps its own import lineage; the next read starts fresh. */
   contextsForEvidence(records:readonly CaptureRecord[]):AttributionContext[] {
     if(records.length<2)return records.map(record=>this.contextForEvidenceWithin(record));
-    const contexts:EvidenceContexts={materials:new Map(),originals:new Map()};
+    const ids=JSON.stringify([...new Set(records.map(record=>record.id))]);
+    const db=this.store.db;
+    const anchors=new Map(db.prepare('SELECT id,material_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))')
+      .all(ids).map(row=>[String(row.id),String(row.material_id)]));
+    const contexts:EvidenceContexts={materials:new Map(),originals:new Map(),anchors};
     return records.map(record=>this.contextForEvidenceWithin(record,contexts));
   }
   private contextForEvidenceWithin(record:CaptureRecord,contexts?:EvidenceContexts):AttributionContext {
-    const anchor=(this.contextAnchorStatement??=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?')).get(record.id);
-    if(anchor){
-      const id=String(anchor.material_id);
+    const id=contexts?contexts.anchors.get(record.id):(this.contextAnchorStatement??=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?')).get(record.id)?.material_id as string|undefined;
+    if(id!==undefined){
       if(contexts&&!contexts.materials.has(id))contexts.materials.set(id,this.get(id)?.attributionContext);
       const context=(contexts?contexts.materials.get(id):this.get(id)?.attributionContext)??unknownAttributionContext();
       if(!contexts){const inputs=this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(record.id).map(row=>String(row.evidence_id));return this.withImportContext(context,inputs,true);}
@@ -552,7 +555,8 @@ export class MaterialStore {
     if(!ids.length)return [];
     const materials=new Map<string,MaterialRecord|undefined>(),layouts=new Map<string,boolean>();
     const derivedAllowed=new Map<string,boolean>();
-    const anchors=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?');
+    const anchors=new Map(this.store.db.prepare('SELECT id,material_id,revision,block_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify([...new Set(ids)])).map(row=>[String(row.id),row]));
     const contexts=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?');
     let codingBlocks:StatementSync|undefined,snapshotBlocks:StatementSync|undefined;
     return ids.flatMap(id=>{
