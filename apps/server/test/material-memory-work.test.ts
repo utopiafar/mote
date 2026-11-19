@@ -128,6 +128,22 @@ test('a planning race leaves every receipt unconsumed and planning metadata neve
   assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,0);assert.equal(fake.created.length,0);
 });
 
+test('recovering a planned backlog leaves a turn between jobs and stops on disposal',async t=>{
+  const {store,materials,work,draft,receive,advance}=fixture(t),fake=fakeRunner();
+  for(const externalId of ['generated-first','generated-second']){
+    const material=materials.publish({...draft(),id:materialId('generated-source',externalId),origin:{sourceId:'generated-source',externalId}});
+    receive(externalId);work.observe(material.id,['source-body'],{inputKey:externalId,change:'source'});
+  }
+  assert.equal(work.drain(fake.runner,true),2);await new Promise(resolve=>setImmediate(resolve));
+  fake.ran.length=0;advance(6000);
+  const recovering=work.drainBounded(fake.runner,true);
+  await Promise.resolve();
+  assert.equal(fake.ran.length,1,'only the first stored job can open in the current turn');
+  work.dispose();await recovering;
+  assert.equal(fake.ran.length,1);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()?.n,2);
+});
+
 test('a failed member claim does not consume the successful prefix of a package',t=>{
   const {store,work,receive}=fixture(t);receive('one');receive('two',false);
   store.db.exec('BEGIN IMMEDIATE');try{assert.equal(work.inputs.claimMany([{sourceId:'generated-source',inputKey:'one',scope:'memory.default'},{sourceId:'generated-source',inputKey:'two',scope:'memory.default'}],'package'),false);store.db.exec('COMMIT');}catch(error){store.db.exec('ROLLBACK');throw error;}

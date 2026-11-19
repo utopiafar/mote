@@ -157,6 +157,9 @@ export const consumerScopes={
   'projectMemoryLifecycleSettings':'memory-lifecycle',
   'storedMemoryLifecycleSettings':'memory-lifecycle',
  },
+ 'memory-pipeline.ts':{
+  'MemoryPipeline.batches':'memory',
+ },
  'lifecycle-extensions.ts':{
   recoverableMemoryJobs:'memory',
  },

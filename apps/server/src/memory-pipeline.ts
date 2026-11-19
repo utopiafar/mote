@@ -177,7 +177,7 @@ export class MemoryPipeline {
   private queuePosition(id:string){const row=this.store.db.prepare("SELECT count(*) n FROM memory_jobs INDEXED BY memory_jobs_queue_status WHERE json_extract(json,'$.status') IN ('queued','running') AND rowid<=(SELECT rowid FROM memory_jobs WHERE id=?)").get(id);return Number(row?.n)||undefined;}
   private steps(id:string){return this.store.db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND (kind IN ('memory.batch','memory.input') OR kind LIKE 'memory.phase.%')").all('memory:'+id).map(row=>String(row.id));}
   pause(id:string){const job=this.storedJob(id);if(['queued','running','waiting_for_input'].includes(job.status)){job.status=Number(this.counts(id).running)>0?'pausing':'paused';this.saveJob(job);this.wake();}return this.get(id);}
-  resume(id:string){const job=this.storedJob(id);if(!['paused','pausing'].includes(job.status))return;job.status='queued';this.saveJob(job);for(const plan of this.inputPlans.list(id)){const step=this.engine.get(plan.id);if(step?.state==='waiting'||step?.state==='blocked'&&['paused','pausing'].includes(step.error??''))this.engine.retry(plan.id,false);}this.prepare(id);void this.run(id).catch(()=>{});this.wake();}
+  resume(id:string){const job=this.storedJob(id);if(!['paused','pausing'].includes(job.status))return;job.status='queued';this.saveJob(job);for(const plan of this.inputPlans.list(id)){const step=this.engine.get(plan.id);if(step?.state==='waiting'||step?.state==='blocked'&&['paused','pausing'].includes(step.error??''))this.engine.retry(plan.id,false);}this.prepareJob(id,this.storedJob(id));void this.run(id).catch(()=>{});this.wake();}
   cancel(id:string,options?:{cause:'authority'}){
     const cause=options?.cause??'owner',pending=[id],seen=new Set<string>(),stopped:string[]=[],db=this.store.db,own=!db.isTransaction;
     if(own)db.exec('BEGIN IMMEDIATE');
@@ -350,7 +350,11 @@ export class MemoryPipeline {
     if(row.status!=='waiting_for_model'||row.error!=='configuration_changed'||typeof row.fingerprint!=='string'||!this.options.models.configuration)return false;
     try{return this.options.models.configuration(typeof row.profile==='string'?row.profile:undefined,typeof row.model==='string'?row.model:undefined).fingerprint!==row.fingerprint;}catch{return true;}
   }
-  private batches(id:string):StoredBatch[]{return (this.store.db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(id) as {json:string}[]).map(row=>decodeMemoryBatch<StoredBatch>(this.store,row.json));}
+  private batches(id:string,pendingOnly=false):StoredBatch[]{
+    const status=pendingOnly?"AND json_extract(json,'$.status') IN ('pending','running')":'';
+    const rows=this.store.db.prepare(`SELECT json FROM memory_batches WHERE job_id=? ${status} ORDER BY idx`).all(id) as {json:string}[];
+    return rows.map(row=>decodeMemoryBatch<StoredBatch>(this.store,row.json));
+  }
   private batch(id:string):StoredBatch {const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(id);if(!row)throw new StoreError('Memory batch not found',404);return decodeMemoryBatch<StoredBatch>(this.store,String(row.json));}
   private saveJob(job:MemoryJob){const {batches:_batches,inputPlans:_plans,recipeProgress:_recipes,memoryCount:_count,outcome:_outcome,invalidatedBatches:_invalidated,priorValidationFailure:_validation,...value}=job as MemoryJobDetail;value.updatedAt=new Date().toISOString();const prior=this.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(job.id),json=encodeMemoryJob(this.store,value,Boolean(prior&&JSON.parse(String(prior.json)).privateRetired));this.store.db.prepare('UPDATE memory_jobs SET json=? WHERE id=?').run(json,job.id);}
   private saveBatch(batch:StoredBatch){
@@ -769,7 +773,7 @@ export class MemoryPipeline {
         const state=states[index];if(state.state==='ready'){plan.resolvedInput=state.pin;plan.batchIds=batches.filter(batch=>batch.planIds?.includes(plan.id)).map(batch=>batch.id);}this.inputPlans.put(plan);
         this.engine.enqueue('memory:'+job.id,'memory.input',{jobId:job.id,planId:plan.id},{id:plan.id,initial:{state:state.state==='ready'?'succeeded':state.state==='waiting'?'waiting':state.state==='stale'?'stale':'blocked',attempts:0,availableAt:0,...(state.state==='ready'?{}:{error:state.code})}});
       }
-      this.prepare(job.id);this.refreshJob(job.id);if(own)db.exec('COMMIT');
+      this.prepareJob(job.id);this.refreshJob(job.id);if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
     return this.get(job.id);
   }
@@ -782,7 +786,7 @@ export class MemoryPipeline {
     if(evidenceIds.length>20000||previousChunks+made.batches.reduce((n,b)=>n+b.chunks.length,0)>10000||nextIndex+made.batches.length>10000)throw new StoreError('Memory job exceeds 10000 batches',413);
     for(const batch of made.batches)this.insertBatch(job.id,batch);
     plan.resolvedInput=state.pin;plan.batchIds=made.batches.map(batch=>batch.id);this.inputPlans.put(plan);
-    job.materialInputs=[...new Map([...job.materialInputs,state.pin].map(pin=>[JSON.stringify(pin),pin])).values()];job.materialRefs={...job.materialRefs,...state.scope.refs};job.authorizedChunks=[...job.authorizedChunks,...made.authorizedChunks];job.evidenceIds=evidenceIds;job.skippedChunks+=made.skippedChunks;job.status='queued';this.saveJob(job);this.prepare(job.id);
+    job.materialInputs=[...new Map([...job.materialInputs,state.pin].map(pin=>[JSON.stringify(pin),pin])).values()];job.materialRefs={...job.materialRefs,...state.scope.refs};job.authorizedChunks=[...job.authorizedChunks,...made.authorizedChunks];job.evidenceIds=evidenceIds;job.skippedChunks+=made.skippedChunks;job.status='queued';this.saveJob(job);this.prepareJob(job.id);
   }
   private planView(jobId:string){
     const empty=():MemoryPlanSummary=>({total:0,waiting:0,blocked:0,stale:0,completed:0}),inputPlans=empty(),recipes=new Map<string,MemoryRecipeProgress>(),batchById=new Map(this.batches(jobId).map(batch=>[batch.id,batch]));
@@ -815,10 +819,10 @@ export class MemoryPipeline {
     if(this.active.size)return;
     this.store.db.exec("UPDATE memory_jobs SET json=json_set(json,'$.status','paused') WHERE json_extract(json,'$.status')='pausing'");
   }
-  private prepare(id:string){
-    const job=this.storedJob(id);if(['paused','pausing','cancelled','completed'].includes(job.status))return;
+  private prepareJob(id:string,job=this.storedJob(id)){
+    if(['paused','pausing','cancelled','completed'].includes(job.status))return;
     for(const plan of this.inputPlans.list(id))if(!this.engine.get(plan.id))this.engine.enqueue('memory:'+id,'memory.input',{jobId:id,planId:plan.id},{id:plan.id,initial:{state:plan.batchIds===undefined?'waiting':'succeeded',attempts:0,availableAt:0}});
-    for(const batch of this.batches(id))if(['pending','running'].includes(batch.status))this.prepareBatch(id,batch);
+    for(const batch of this.batches(id,true))this.prepareBatch(id,batch);
   }
   private prepareBatch(id:string,batch:StoredBatch){
     const stepId=this.engine.enqueue('memory:'+id,'memory.batch',{jobId:id,batchId:batch.id,evidenceIds:batch.resourceEvidenceIds??[...new Set([...batch.chunks,...(batch.contextChunks??[])].map(c=>c.id))]},{id:batch.id,initial:{state:batch.status==='running'?'running':'waiting',attempts:0,availableAt:0}});
@@ -827,9 +831,9 @@ export class MemoryPipeline {
   run(id:string):Promise<MemoryJobDetail> {
     try{this.assertAdmission();}catch(error){return Promise.reject(error);}
     const existing=this.active.get(id);if(existing)return existing;
-    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    const db=this.store.db,own=!db.isTransaction;let job:MemoryJob;if(own)db.exec('BEGIN IMMEDIATE');
     try{
-      const job=this.storedJob(id);let changed=false;
+      job=this.storedJob(id);let changed=false;
       // An explicit start is durable. Startup recovery must distinguish it
       // from a prepared selection that the owner has not activated yet.
       if(job.activationRequired&&!['paused','pausing','cancelled','completed'].includes(job.status)){job.activationRequired=false;changed=true;}
@@ -839,7 +843,7 @@ export class MemoryPipeline {
     let resolve!:(job:MemoryJobDetail)=>void,reject!:(error:unknown)=>void;
     const task=new Promise<MemoryJobDetail>((yes,no)=>{resolve=yes;reject=no;});
     this.completions.set(id,{resolve,reject});this.active.set(id,task);
-    try{this.prepare(id);}catch(error){this.completions.delete(id);this.active.delete(id);reject(error);}
+    try{this.prepareJob(id,job);}catch(error){this.completions.delete(id);this.active.delete(id);reject(error);}
     this.wake();return task;
   }
   private assertRetryWindow(job:MemoryJob){
