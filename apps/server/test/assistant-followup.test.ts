@@ -19,7 +19,7 @@ import {materialId,MaterialStore} from '../src/materials.js';
 import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
-import {assistantQueryInput,assistantQueryWithinCapacity,assistantRequestUsage} from '../src/assistant-request-budget.js';
+import {assistantBatchContext,assistantQueryInput,assistantQueryWithinCapacity,assistantRequestUsage} from '../src/assistant-request-budget.js';
 
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
@@ -516,6 +516,20 @@ test('a review at capacity delivers exact original spans once and preserves its 
  assert.equal(receipt.ocrText,originals[0].quote);assert.equal(receipt.textRange.start,originals[0].offset);
  assert.ok(assembleHostContext(selected,[receipt],reserve.draftTokens).prompt.includes(originals[0].quote));
  assert.equal(assistantQueryWithinCapacity(input,originals,[record],{...capacity,contextWindow:512}),undefined);
+});
+
+test('batch transport can omit a duplicate while the saved original still stages an exact receipt',async t=>{
+ const f=await fixture(t),note=await f.add('Generated authorized original. '.repeat(45));
+ const record=f.reader.memories.readCurrentEvidence([note.id])[0],originals=[{id:record.id,offset:50,quote:record.ocrText.slice(50,650)}];
+ const context={turns:[],materials:[{ref:note.material.ref}],originals},limit=300;
+ assert.ok(assistantBatchContext(context,limit,()=>false).bytes>limit);
+ const compact=assistantBatchContext(context,limit,()=>true);assert.ok(compact.bytes<=limit);
+ assert.deepEqual(compact.context,{turns:[],materials:context.materials});assert.equal(context.originals,originals);
+ const input:QueryInput={question:'Review the authorized original',evidenceIds:[record.id],taskContext:compact.context};
+ const selected=assistantQueryWithinCapacity(input,originals,[record],{contextWindow:64000,maxOutputTokens:512,draftTokens:512});assert.ok(selected);
+ assert.deepEqual(selected.evidenceRanges,[{id:record.id,offset:50,length:600}]);
+ const receipt=originalEvidenceReceipt(record,50,600);assert.equal(receipt.ocrText,originals[0].quote);
+ assert.ok(assembleHostContext(selected,[receipt]).prompt.includes(originals[0].quote));
 });
 
 test('a review can send compact quotes for all originals and defer full receipts that exceed capacity',async t=>{

@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
-import {assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
+import {assistantBatchContext,assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
 import {parseArtifactRef,parseEvidenceId,queryScopeSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
@@ -184,7 +184,7 @@ export class AssistantFollowup {
   // The original selection stays in the saved scope and the query's grants.
   // Its IDs are already available through the bounded original read catalog.
   const {evidenceIds:_,...contextScope}=scope;
-  const context={turns:[],asOf,scope:contextScope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
+  const fullContext={turns:[],asOf,scope:contextScope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
    ...(pendingOwnerQuestions.length?{pendingOwnerQuestions}:{}),
    memoryTruncated:Boolean(memoryPage.nextCursor),matters:matters.map(matter=>({id:matter.id,revision:matter.revision,goal:matter.goal,correction:matter.correction})),
    cards:cards.map(card=>({id:card.id,revision:card.revision,kind:card.kind,state:card.state,matterId:card.matterId,title:card.title,
@@ -194,8 +194,9 @@ export class AssistantFollowup {
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
   const question=PROMPT;
-  const bytes=Buffer.byteLength(JSON.stringify(context));
-  if(bytes>(selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES))throw new AssistantContextLimit(bytes);
+  const limit=selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES;
+  const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(this.requestCapacity?.()));
+  if(bytes>limit)throw new AssistantContextLimit(bytes);
   const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
   if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
   await yieldTurn();assertActive();
@@ -359,7 +360,8 @@ export class AssistantFollowup {
  /** Only a saved follow-up can select its initial original spans. Other batch
   * products retain their existing query contract. No saved input is rewritten. */
  prepareQuery(input:QueryInput):QueryInput{
-  if(!this.requestCapacity?.())return input;
+  const context=input.taskContext;
+  if(!this.requestCapacity?.()&&(!context||!('materials' in context)||'originals' in context))return input;
   const batchId=input.traceContext?.jobId;if(!batchId)return input;
   const row=this.store.db.prepare("SELECT f.id FROM task_records b JOIN task_records f ON f.operation_id=b.operation_id WHERE b.id=? AND b.kind='batch' AND f.kind='assistant.followup'").get(batchId);
   if(!row)return input;
@@ -368,7 +370,11 @@ export class AssistantFollowup {
   return this.prepareRequest(input,snapshot.originals);
  }
  private prepareRequest(input:QueryInput,originals:Snapshot['originals'],currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
-  const capacity=this.requestCapacity?.();if(!capacity)return input;
+  const capacity=this.requestCapacity?.(),context=input.taskContext;
+  if(!capacity){
+   if(!context||'originals' in context)return input;
+   const taskContext={...context,originals};return {...input,taskContext};
+  }
   const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryWithinCapacity(input,originals,records,capacity);
   if(!prepared)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
   return prepared;
