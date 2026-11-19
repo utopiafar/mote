@@ -481,8 +481,10 @@ def create_server(worker, secret, port=0):
         def authorized(self):
             return bool(secret) and hmac.compare_digest(self.headers.get('Authorization', '').encode('utf-8'), ('Bearer '+secret).encode('utf-8'))
 
-        def json_response(self, body, status=200, unstarted=False):
+        def json_response(self, body, status=200, unstarted=False, deadline=None):
             data = contract.serialize(body).encode('utf-8')
+            if deadline is not None and (worker.stopping.is_set() or time.monotonic() >= deadline):
+                return
             self.send_response(status)
             self.send_header('Content-Type', 'application/json')
             self.send_header('X-Mote-Execution', 'local')
@@ -495,7 +497,24 @@ def create_server(worker, secret, port=0):
             if body.get('code') == 'resource_busy':
                 self.send_header('Retry-After', '5')
             self.end_headers()
-            self.wfile.write(data)
+            if deadline is None:
+                self.wfile.write(data)
+                return
+            # A short socket timeout lets uploads observe shutdown. Result
+            # transfers can outlast one such wait when the host is busy.
+            pending = memoryview(data)
+            while pending and not worker.stopping.is_set():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                self.connection.settimeout(min(1, remaining))
+                try:
+                    sent = self.connection.send(pending)
+                except socket.timeout:
+                    continue
+                if not sent:
+                    return
+                pending = pending[sent:]
 
         def failure(self, operation, code, status=200):
             body = contract.loads(contract.worker_failure(operation, code))
@@ -646,7 +665,7 @@ def create_server(worker, secret, port=0):
                 # Physical cleanup and the admission context both finish before
                 # the caller can receive a terminal body and reuse capacity.
                 if response is not None and response['status'] == 'succeeded':
-                    self.json_response(response)
+                    self.json_response(response, deadline=deadline)
                 else:
                     self.failure(operation, code, status)
 

@@ -145,6 +145,13 @@ def run_audio(request, original, dialogue_directory, *, backend, threads, timeou
             source['durationMs'] += 1  # A seemingly complete but invalid output.
         text = '' if mode == 'silence' else '生成录音的完整尾段。'
         native = {'text': text, 'sentence_info': [{'start': 0, 'end': source['durationMs'], 'text': text}] if text else []}
+        if mode == 'large-response':
+            sentence = 'generated text ' * 500
+            text = sentence * 200
+            duration = source['durationMs'] / 200
+            native = {'text': text, 'sentence_info': [
+                {'start': index * duration, 'end': (index + 1) * duration, 'text': sentence} for index in range(200)
+            ]}
         return contract.recognize_to_checkpoint(request, source, request['identity'],
             {'value': [[0, source['durationMs']]] if text else []}, native, [{'text': text}] if text else [])
     def cam(cp, speakers):
@@ -535,12 +542,13 @@ import {mkdtemp,rm,readFile,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
-import {Store,sha256} from './apps/server/src/store.ts';
+import {EvidenceStore as Store,sha256} from './apps/server/src/evidence-store.ts';
 import {SourceStore} from './apps/server/src/sources.ts';
 import {FileStore} from './apps/server/src/files.ts';
 import {FileProcessing} from './apps/server/src/file-processing.ts';
 import {ProviderFailure} from '@mote/shared';
 import {fixtureFilePolicy} from './apps/server/test/fixtures/file-policy.ts';
+import {createTestScope} from './apps/server/test/fixtures/plugin-scope.ts';
 import {requestLocalJson} from './apps/server/src/local-http.ts';
 import {parseFunasrResponse,parseFunasrArchive,projectFunasrTranscript} from './apps/server/src/funasr-contract.ts';
 const input=JSON.parse(await new Promise(resolve=>{let s='';process.stdin.on('data',b=>s+=b);process.stdin.on('end',()=>resolve(s));}));
@@ -567,7 +575,8 @@ const provider={async transcribe(call){
  received=parseFunasrResponse(raw,request);assert.equal(received.status,'succeeded');
  return projectFunasrTranscript(parseFunasrArchive(received.checkpoint,request));
 }};
-const processing=new FileProcessing(files,provider,undefined,{media:{asrEndpoint:input.url,workerToken:input.token}});
+const owner=createTestScope();
+const processing=new FileProcessing(owner.scope,files,provider,undefined,{media:{asrEndpoint:input.url,workerToken:input.token}});
 const until=async(check,label)=>{const deadline=Date.now()+10000;while(!await check()){assert.ok(Date.now()<deadline,label+' '+JSON.stringify(store.db.prepare('SELECT kind,state,error FROM execution_steps').all()));await delay(10);}};
 try{
  await processing.runtime.ready;
@@ -599,7 +608,7 @@ try{
  await processing.tick();assert.equal(issued,1);assert.equal(files.detail(id).artifacts.length,0);
  }
 }finally{
- await unlink(join(input.workerRoot,'hold-run')).catch(()=>{});await processing.close();store.close();await rm(directory,{recursive:true,force:true});
+ await unlink(join(input.workerRoot,'hold-run')).catch(()=>{});await processing.close();await owner.close();store.close();await rm(directory,{recursive:true,force:true});
 }
 """
         result = subprocess.run(['node', '--import', 'tsx', '--input-type=module', '-e', script], cwd=ROOT,
@@ -711,6 +720,32 @@ try{
         self.assertGreater(f.runs()[-1]['timeout'], 1)
         self.assertLessEqual(f.runs()[-1]['timeout'], 2)
         self.assertEqual(list(f.scratch.iterdir()), [])
+
+    def test_large_result_can_wait_for_the_consumer_within_the_request_budget(self):
+        f = self.fixture(timeout=8)
+        request, audio = f.request()
+        (f.root/'mode').write_text('large-response')
+        body, content_type = multipart(request, audio)
+        request_id = str(uuid.uuid4())
+        connection = http.client.HTTPConnection('127.0.0.1', f.port, timeout=8)
+        try:
+            connection.connect()
+            connection.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65_536)
+            connection.request('POST', '/transcribe', body, {
+                'Authorization': 'Bearer '+f.token, 'Content-Type': content_type,
+                'X-Mote-Request-Id': request_id, 'X-Mote-Request-Scope': SCOPE,
+            })
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertGreater(int(response.getheader('Content-Length')), 4 * 1024 * 1024)
+            self.assertEqual(f.fact(request_id)['state'], 'succeeded')
+            time.sleep(1.3)
+            result = self.response((response.status, {key.lower(): value for key, value in response.getheaders()}, response.read()), request)
+            checkpoint = contract.read_checkpoint(result['checkpoint'], request)
+            self.assertEqual(checkpoint['text'], 'generated text ' * 100_000)
+            self.assertEqual(len(f.runs()), 1)
+        finally:
+            connection.close()
 
     def test_complete_output_cannot_succeed_when_child_termination_exceeds_request_budget(self):
         f = self.fixture(timeout=1)
