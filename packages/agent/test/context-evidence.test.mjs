@@ -94,7 +94,15 @@ for(const format of [undefined,'tuple'])test(`a broader exact ${format??'object'
 test('large exact target and context vectors remain whole without artificial original-count limits',async t=>{
  const generated=(kind,count)=>Array.from({length:count},(_,index)=>{const body=`Generated ${kind} ${index} 🌱`,record={id:randomUUID(),deviceId:'generated',capturedAt:'2026-10-01T00:00:00Z',appName:'Generated short transcript',ocrText:'prefix '+body+' suffix'};return {record,range:{id:record.id,offset:7,length:body.length},member:{key:createHash('sha256').update(kind+index).digest('hex'),id:record.id,offset:7,length:body.length}};});
  const targets=generated('target',200),contexts=generated('context',140),input=bounds({evidenceIds:targets.map(row=>row.record.id),evidenceRanges:targets.map(row=>row.range),evidenceReadRanges:contexts.map(row=>row.range),taskContext:{turns:[],memoryWork:{workContract:'range-evaluation@1',members:targets.map(row=>row.member),contextMembers:contexts.map(row=>row.member),authorizedMembers:[...targets,...contexts].map(row=>row.member)}}});
- const bridge=await startBridge(reader([...targets,...contexts].map(row=>row.record)),input);t.after(()=>bridge.close());
+ const source=reader([...targets,...contexts].map(row=>row.record)),read=source.evidence,reads=[];
+ let yielded=false;setImmediate(()=>{yielded=true;});
+ source.evidence=async args=>{
+  if(reads.length)assert.equal(yielded,true,'the Host must service another turn before reading another page');
+  reads.push(args.ids);return read(args);
+ };
+ const bridge=await startBridge(source,input);t.after(()=>bridge.close());
+ assert.ok(reads.length>1,'large selections must not hydrate in one synchronous reader call');
+ assert.deepEqual(reads.flat(),[...targets,...contexts].map(row=>row.record.id));
  assert.equal(bridge.seedEvidence.length,200);assert.deepEqual(bridge.deliveredRanges,targets.map(row=>row.range).sort((a,b)=>a.id.localeCompare(b.id)));assert.equal(bridge.records.size,200);
  for(const row of targets)assert.equal(bridge.records.get(row.record.id).ocrText,row.record.ocrText.slice(row.range.offset,row.range.offset+row.range.length));
  const envelope=buildContextEnvelope(input,bridge.seedEvidence),work=envelope.untrustedTaskContext.memoryWork;

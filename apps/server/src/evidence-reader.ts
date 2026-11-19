@@ -136,7 +136,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const head=batchViews?batchViews.heads.get(material.ref):this.materialHead(material,scope);
       return [head?this.materialCard(material,head,undefined,selected)??selected:selected];
     });
-    return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].map(record=>({...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{})})).filter(record=>{
+    const records=[...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])];
+    const contexts=this.materials?.contextsForEvidence(records);
+    return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})})).filter(record=>{
       if(!withinEvidenceScope(record,scope))return false;if(includeHistorical)return true;
       const file=this.files?.fileForRead(record.id);if(file)return Boolean(this.files!.readableFile(record.id));
       const p=record.provenance;return !(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted);

@@ -40,6 +40,11 @@ test('unknown stays readable; owner correction changes all projections and fence
   assert.equal(materials.read(corrected.ref).spans[0].attributionContext.ownerRelation,'third_party');
   assert.equal(materials.evidence(materials.evidenceIds(corrected.ref))[0].attributionContext?.ownerRelation,'third_party');
   assert.equal(reader.context([raw])[0].attributionContext?.ownerRelation,'third_party');
+  const contexts=t.mock.method(materials,'contextsForEvidence'),ids=[raw.id,...materials.evidenceIds(corrected.ref)];
+  const originals=reader.evidence(ids.map(id=>'capture:'+id));
+  assert.equal(contexts.mock.callCount(),1,'one batch shares the current attribution lookup');
+  assert.deepEqual(new Set(originals.map(record=>record.id)),new Set(ids));
+  assert.ok(originals.every(record=>record.attributionContext?.ownerRelation==='third_party'));
   assert.equal(materials.get(first.ref),undefined);assert.ok(oldAnchors.every(id=>!materials.isCurrentEvidence(id)));
   assert.notEqual(materials.input(corrected.ref,['body'])!.fingerprint,oldPin);
   assert.deepEqual(store.evidence([receipt.id])[0],raw);assert.deepEqual(store.db.prepare('SELECT hash FROM material_block_payloads').all(),payloads);

@@ -1,5 +1,6 @@
 import {HOST_READ_OPERATIONS} from './tools/descriptor.js';
 import {isDeepStrictEqual} from 'node:util';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import type {ImagePayload} from './tools/image-result.js';
 import {attributionMetadata,attributionMetadataResponse} from './tools/result-metadata.js';
 import {AsyncLocalStorage} from 'node:async_hooks';
@@ -34,6 +35,7 @@ import type {
 } from "./types.js";
 
 const hostError=(message:string)=>new ContextToolError('invalid_tool_arguments',message,'correct_arguments');
+const originalReadBatchSize=256;
 
 export const TOOL_NAMES = CONTEXT_TOOLS.map(([name])=>name);
 
@@ -234,16 +236,27 @@ export async function createContextToolSession(
     const historicalEmpty=bounds.executionLane==='interactive'&&bounds.hostRetrieval==='none'&&Boolean(bounds.conversation?.historyContext)&&Boolean(bounds.historicalSelection?.evidenceIds?.length)&&bounds.evidenceIds?.length===0&&ranges.length===0;
     if(!bounds.evidenceIds||!extractionSeedScopeValid(bounds.evidenceIds,ranges)&&!historicalEmpty)throw hostError('Invalid extraction evidence scope');
     if(readRanges.some(r=>typeof r.id!=='string'||!r.id||!Number.isSafeInteger(r.offset)||r.offset<0||!Number.isSafeInteger(r.length)||r.length<1||!Number.isSafeInteger(r.offset+r.length)))throw hostError('Invalid context evidence read scope');
-    const ids=[...new Set([...bounds.evidenceIds,...readRanges.map(r=>r.id)])];
-    for(const raw of ids.length?await reader.evidence({...range({},bounds),ids}):[])if(ids.includes(raw.id)){const record=bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw;permitted.set(record.id,record);originalPins.set(record.id,originalPin(record));}
-    const scope=range({},bounds);
+    const seeds=new Set(bounds.evidenceIds),rangeIds=new Set(ranges.map(r=>r.id));
+    const ids=[...new Set([...seeds,...readRanges.map(r=>r.id)])],scope=range({},bounds);
+    // Readers may do synchronous local I/O before returning. Bound each read
+    // and leave a turn for HTTP and execution leases between pages.
+    for(let offset=0;offset<ids.length;offset+=originalReadBatchSize){
+      if(offset)await yieldTurn();
+      bounds.signal?.throwIfAborted();
+      const page=ids.slice(offset,offset+originalReadBatchSize),requested=new Set(page);
+      for(const raw of await reader.evidence({...scope,ids:page}))if(requested.has(raw.id)){
+        const record=bounds.skill==='calendar-extraction'?{...raw,ocrText:actionEvidenceText(raw)}:raw;
+        permitted.set(record.id,record);originalPins.set(record.id,originalPin(record));
+      }
+    }
+    if(ids.length>originalReadBatchSize)bounds.assertContextAuthority?.();
     for(const id of ids){
       const record=permitted.get(id);
-      if(!record){if(bounds.evidenceIds.includes(id))throw hostError('Extraction evidence is missing');continue;}
+      if(!record){if(seeds.has(id))throw hostError('Extraction evidence is missing');continue;}
       const document=documentSchema.safeParse((record.provenance as Record<string,unknown>|undefined)?.document);
       const at=sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
       if((scope.deviceId&&record.deviceId!==scope.deviceId)||(scope.after&&Date.parse(at)<Date.parse(scope.after))||(scope.before&&Date.parse(at)>=Date.parse(scope.before)))throw hostError('Extraction evidence is outside the selected scope');
-      if(bounds.evidenceIds.includes(id)&&!ranges.some(r=>r.id===id))throw hostError('Every extraction evidence ID requires a delivered range');
+      if(seeds.has(id)&&!rangeIds.has(id))throw hostError('Every extraction evidence ID requires a delivered range');
     }
     for(const r of ranges){const text=permitted.get(r.id)!.ocrText;
       if(bounds.evidenceRanges&&(r.offset+r.length>text.length||splitsPair(text,r.offset)||splitsPair(text,r.offset+r.length)))throw hostError('Extraction range must stay inside original text and UTF-16 boundaries');
