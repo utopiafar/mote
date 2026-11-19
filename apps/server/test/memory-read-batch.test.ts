@@ -100,7 +100,11 @@ test('batch Memory guards reuse formal metadata while preserving exact originals
  const batch=reader.memories.readEvidence(ids);assert.deepEqual(batch,individual);assert.equal(materialReads,4,'two body revisions and two current attribution contexts are parsed once each');
  const assertCurrentParity=(selected:string[])=>assert.deepEqual([...materials['currentEvidenceIds'](selected)].sort(),[...new Set(selected)].filter(id=>materials.isCurrentEvidence(id)).sort());
  assertCurrentParity([...ids,randomUUID()]);
- assert.deepEqual(reader.memories.readCurrentEvidence(ids),individual);
+ const currentSingle=t.mock.method(materials,'isCurrentEvidence'),currentBatch=t.mock.method(materials,'currentEvidenceIds');
+ assert.deepEqual(reader.memories.readCurrentEvidence([...ids,ids[0],randomUUID()]),individual);
+ assert.equal(currentBatch.mock.callCount(),1,'one lookup checks the complete current Material selection');
+ assert.equal(currentSingle.mock.callCount(),0,'the batch does not probe Material currentness for each anchor');
+ currentSingle.mock.restore();currentBatch.mock.restore();
  let inputs=[materials.input(first.material.ref,['material'])!,materials.input(second.material.ref,['material'])!],fingerprints=Object.fromEntries(batch.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
  const agent=reader.agent({diagnostics:new ServerDiagnostics({directory:join(directory,'logs'),enabled:false}),currentOperation:()=> 'memory',currentMaterialInputs:()=>inputs,currentProcessingEvidence:()=>fingerprints});
  const arguments_={ids};

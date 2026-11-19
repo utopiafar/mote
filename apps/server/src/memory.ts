@@ -53,7 +53,9 @@ export class MemoryStore {
   // Retain compiled handles only. Each guard still reads the current transaction.
   private materialEvidenceTableStatement?:StatementSync;
   private materialEvidenceStatement?:StatementSync;
-  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){
+  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),
+    private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id),
+    private currentEvidenceBatch?:(ids:readonly string[])=>ReadonlySet<string>){
     let deletions:MemoryDeletions|undefined;
     installSchemaPlan(store.db,[{...memorySearchSchemaInstallation,install:db=>{
       // Initialize the deletion ledger before search triggers, while the
@@ -72,21 +74,23 @@ export class MemoryStore {
   /** Read canonical originals once for this synchronous guard. Callers provide
    * only IDs; they cannot substitute their own records for current authority. */
   readCurrentEvidence(ids:readonly string[]):MemoryRecord[] {
-    const seen=new Set<string>();
-    return this.readEvidence([...new Set(ids)]).filter(record=>{
+    const seen=new Set<string>(),records=this.readEvidence([...new Set(ids)]);
+    const current=this.currentEvidenceBatch?.(records.map(record=>record.id));
+    return records.filter(record=>{
       if(seen.has(record.id))return false;seen.add(record.id);
-      return this.recordIsCurrent(record);
+      return this.recordIsCurrent(record,current);
     });
   }
   /** Preserve the resolver's missing-ID behavior, but reject any returned
    * original that is no longer current. Validate the same canonical read. */
   readEvidenceIfCurrent(ids:readonly string[]):MemoryRecord[]|undefined {
     const records=this.readEvidence([...ids]);
-    return records.every(record=>this.recordIsCurrent(record))?records:undefined;
+    const current=this.currentEvidenceBatch?.(records.map(record=>record.id));
+    return records.every(record=>this.recordIsCurrent(record,current))?records:undefined;
   }
-  private recordIsCurrent(record:MemoryRecord):boolean {
+  private recordIsCurrent(record:MemoryRecord,current?:ReadonlySet<string>):boolean {
     const id=record.id;
-    if(!record||!this.currentEvidence(id))return false;
+    if(!(current?current.has(id):this.currentEvidence(id)))return false;
     // Formal Material anchors keep their immutable origin revision even when
     // Coding append reuses an unchanged prefix. The injected currentEvidence
     // resolver checks that the block is still active in the current head.

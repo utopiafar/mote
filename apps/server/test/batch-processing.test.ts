@@ -167,12 +167,16 @@ test('excluding contextual evidence during a call prevents publication even when
   const entered=gate(),release=gate(),calls:string[]=[];t.after(()=>release.release());
   const f=await fixture(t,async input=>{calls.push(input.question);entered.release();await release.promise;return answer(input);});
   const root=await f.note('root','generated-root'),context=await f.note('context','generated-context');f.command('on');
+  const disclosure=t.mock.method(f.node.modelAuthorizationHost,'disclosure');
   const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated contextual query',evidenceIds:[context]}]},
     {kind:'automatic',purpose:'working',roots:['capture:'+root]});
-  await reached(entered.promise);f.command('exclude',['device:generated-context']);release.release();
+  await reached(entered.promise);
+  assert.equal(disclosure.mock.callCount(),0,'an empty exclusion list requires no source lookup');
+  f.command('exclude',['device:generated-context']);release.release();
   await until(()=>!f.node.executor.isActiveStep(f.batch.progress(batch.id).items[0].id));
   assert.notEqual(f.batch.progress(batch.id).items[0].state,'succeeded');
   assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
+  assert.ok(disclosure.mock.callCount()>0,'the next boundary resolves contextual evidence under the changed exclusions');
   assert.deepEqual(calls,['Generated contextual query']);
 });
 

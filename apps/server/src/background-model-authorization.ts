@@ -261,11 +261,13 @@ export class BackgroundModelAuthorization {
   }
   /** Automatic disclosure only forbids currently excluded sources. Everything
    * else still passes through the existing source, privacy and read checks. */
-  assertDisclosure(disclosures:readonly ModelDisclosure[]){
+  assertDisclosure(disclosures:readonly ModelDisclosure[]|(()=>readonly ModelDisclosure[])){
     const authority=this.context.getStore();if(!authority)throw pending();this.assert(authority.work);
     if(authority.work.kind!=='automatic')return;
     const excluded=new Set(this.state().excludedSourceIds);
-    if(disclosures.some(disclosure=>excluded.has(disclosure.sourceId)))throw pending();
+    if(!excluded.size)return;
+    const sources=typeof disclosures==='function'?disclosures():disclosures;
+    if(sources.some(disclosure=>excluded.has(disclosure.sourceId)))throw pending();
   }
   allowsDisclosure(disclosure:ModelDisclosure){try{this.assertDisclosure([disclosure]);return true;}catch{return false;}}
   /** Recheck the existing fences after trusted host invalidation; no new admission policy. */
