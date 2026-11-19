@@ -74,6 +74,24 @@ test('a failed reducer retries without repeating successful items, and one item 
   await new Promise(resolve=>setTimeout(resolve,25));assert.equal(calls.filter(q=>q==='Generated single query').length,1);
 });
 
+test('an item authority check revalidates its frozen originals once per check',async t=>{
+  let f!:Awaited<ReturnType<typeof fixture>>;
+  const checked:number[]=[];
+  f=await fixture(t,async input=>{
+    const reads=t.mock.method(f.node.featureServices.evidenceReader.memories,'readCurrentEvidence');
+    try{
+      assert.ok(input.assertContextAuthority);
+      input.assertContextAuthority();checked.push(reads.mock.callCount());
+      input.assertContextAuthority();checked.push(reads.mock.callCount());
+    }finally{reads.mock.restore();}
+    return answer(input);
+  });
+  const id=await f.note('item authority');
+  const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated query',evidenceIds:[id]}]},manual(f.node));
+  await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
+  assert.deepEqual(checked,[1,2],'each fresh grant validates the current frozen input once');
+});
+
 test('cancel before start or during a model call prevents all late item and reduce publication',async t=>{
   const started=gate(),release=gate(),calls:string[]=[];let inFlight:QueryInput|undefined;t.after(()=>release.release());
   const f=await fixture(t,async input=>{calls.push(input.question);inFlight=input;started.release();await release.promise;return answer(input);});

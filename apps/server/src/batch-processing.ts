@@ -148,9 +148,13 @@ export class BatchProcessing {
     // Context-only originals remain in the authority fence even when they are
     // unread catalog entries. Exclusion is an authorization wait, before the
     // generic current-input check can classify that same revocation as stale.
-    const assert=()=>{signal.throwIfAborted();this.assertDisclosure(frozen.evidenceIds);assertGrant();const current=this.parent(step);
-      this.tasks.evidenceDependencies(current.id,current.revision,this.current(current.id));
-      this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);};
+    const assert=()=>{
+      signal.throwIfAborted();this.assertDisclosure(frozen.evidenceIds);assertGrant();
+      // The current execution grant runs valid(), including the parent's
+      // dependencies and the current item's frozen evidence. A reducer's
+      // combined selection and prior results are constructed here.
+      if(!input.itemId){this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);}
+    };
     assert();
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),
@@ -211,6 +215,7 @@ export class BatchProcessing {
     const parent=this.batch(id),steps=this.steps(id),items=steps.filter(step=>step.kind==='batch.item');
     return {task:parent,completed:items.filter(step=>step.state==='succeeded').length,total:items.length,items,reduce:steps.find(step=>step.kind==='batch.reduce')};
   }
+  state(id:string){return this.batch(id).state;}
   private steps(id:string){return this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('batch.item','batch.reduce') AND json_extract(input,'$.batchId')=? ORDER BY rowid").all(id).map(row=>this.engine.get(String(row.id))!);}
   result(id:string){const task=this.batch(id),result=this.tasks.result<QueryResult>(id,task.revision,this.current(id));if(result)this.assertResultCurrent(result);return result;}
   cancel(id:string){

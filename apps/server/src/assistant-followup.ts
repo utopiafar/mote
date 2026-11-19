@@ -323,7 +323,7 @@ export class AssistantFollowup {
   if(snapshot.admission.kind==='automatic'){
    if(!this.control||snapshot.batchId&&this.control.workState('batch:'+snapshot.batchId)!=='current'||!this.allowsAutomatic(snapshot.dependencies))
     throw new StoreError('Assistant automatic context is no longer permitted',409);
-   if(snapshot.batchId&&['cancelled','stale'].includes(this.batch.progress(snapshot.batchId).task.state))throw new StoreError('Assistant automatic analysis was stopped',409);
+   if(snapshot.batchId&&['cancelled','stale'].includes(this.batch.state(snapshot.batchId)))throw new StoreError('Assistant automatic analysis was stopped',409);
   }
  }
  private currentQuestion(pin:{id:string;revision:number}){
@@ -352,7 +352,8 @@ export class AssistantFollowup {
    WHERE b.id=? AND f.kind='assistant.followup'`).get(taskId);
   if(!row)return false;
   const task=this.tasks.get(String(row.id)),snapshot=this.snapshot(task);
-  if(ids.some(id=>!snapshot.dependencies.includes(id)))throw new StoreError('Assistant batch context changed',409);
+  const dependencies=new Set(snapshot.dependencies);
+  if(ids.some(id=>!dependencies.has(id)))throw new StoreError('Assistant batch context changed',409);
   return true;
  }
  /** Only a saved follow-up can select its initial original spans. Other batch
