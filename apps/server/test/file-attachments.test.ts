@@ -83,7 +83,15 @@ test('an archived image reuses one extraction and composes with its caption for 
  const chunk=f.node.files.chunks(child)[0];f.node.files.indexed(chunk.id,[1,0],'generated-attachment-vector');
  const candidates=()=>{const query=f.node.files.vectorQuery('generated-attachment-vector',{source:'file',sourceId:'generated-notes'})!;return f.node.store.db.prepare(query.sql).all(...query.values).map(row=>String(row.id));};
  assert.ok(candidates().includes(chunk.id),'the authorized attachment contributes to vector coverage');
- f.node.store.delete(authored.id);await f.organize();assert.equal(f.node.memories.list({includeStale:true}).length,0);
+ f.node.store.delete(authored.id);await f.organize();
+ const retained=f.node.memories.list({includeStale:true});
+ assert.deepEqual(retained.map(memory=>memory.id).sort(),[...done.memoryIds].sort(),'releasing originals retains the two verified conclusions');
+ for(const id of done.memoryIds){
+  const response=await f.node.app.inject({method:'GET',url:'/api/memories/'+id,headers});
+  assert.equal(response.statusCode,200,response.body);
+  const memory=response.json();assert.equal(memory.status,'published');assert.equal(memory.evidence.length,2);
+  for(const evidence of memory.evidence){assert.equal(evidence.originalAvailable,false);assert.equal(evidence.quote,undefined);}
+ }
  assert.ok(!candidates().includes(chunk.id),'withdrawn attachment identities do not contribute to candidate or coverage counts');
  assert.equal(f.node.files.version(donor).object_hash,sha256(f.bytes),'independently retained original survives removal of the caption');
  await assert.rejects(f.node.featureServices.archiveReader.readImage!({id:child}));

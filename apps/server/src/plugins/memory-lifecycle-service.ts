@@ -1,4 +1,5 @@
 import type {ManifestContribution} from '@mote/plugin-api';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import type {PluginLifecycle,ServiceBinding,StopReason} from '@mote/plugin-api/contracts';
 import type {HostPluginContext} from '@mote/plugin-host';
 import type {QueryInput} from '@mote/agent';
@@ -102,7 +103,7 @@ export function createMemoryLifecycleService(dependencies:MemoryLifecycleService
   let phase:'created'|'prepared'|'active'|'quiescing'|'stopped'|'disposed'='created';
   let lifecycle:MemoryLifecycle|undefined,working:WorkingMemory|undefined;
   let poll:ReturnType<typeof setInterval>|undefined,recovery:ReturnType<typeof setInterval>|undefined;
-  let inflight:Promise<void>|undefined,closing:Promise<void>|undefined;
+  let inflight:Promise<void>|undefined,recoveryWork:Promise<void>|undefined,closing:Promise<void>|undefined;
   let ready=!dependencies.whenReady,readyRequested=false;
   const recovering=new Set<string>();
   const readable=()=>{
@@ -111,13 +112,19 @@ export function createMemoryLifecycleService(dependencies:MemoryLifecycleService
   };
   const clearTimers=()=>{if(poll)clearInterval(poll);poll=undefined;if(recovery)clearInterval(recovery);recovery=undefined;};
   const recover=()=>{
-    if(!ready||phase!=='active')return;
+    if(!ready||phase!=='active'||recoveryWork)return;
     const current=readable().lifecycle;
-    for(const id of recoverableMemoryJobs(dependencies.store,current)){
-      if(recovering.has(id))continue;
-      recovering.add(id);
-      void dependencies.pipeline.run(id).catch(()=>{}).finally(()=>{recovering.delete(id);});
-    }
+    recoveryWork=(async()=>{
+      for(const id of recoverableMemoryJobs(dependencies.store,current)){
+        if(recovering.has(id))continue;
+        // Preparing a saved job opens its private inputs and validates every
+        // pending batch. Give HTTP and execution renewals a turn between jobs.
+        await yieldTurn();
+        if(phase!=='active')return;
+        recovering.add(id);
+        void dependencies.pipeline.run(id).catch(()=>{}).finally(()=>{recovering.delete(id);});
+      }
+    })().catch(()=>{}).finally(()=>{recoveryWork=undefined;});
   };
   const requestReady=()=>{
     if(ready)return recover();
@@ -134,6 +141,7 @@ export function createMemoryLifecycleService(dependencies:MemoryLifecycleService
   };
   const close=()=>closing??=(async()=>{
     phase='disposed';clearTimers();
+    await recoveryWork;
     const errors:unknown[]=[];
     const owned=lifecycle;lifecycle=undefined;working=undefined;
     try{await owned?.close();}catch(error){errors.push(error);}
@@ -193,6 +201,7 @@ export function createMemoryLifecycleService(dependencies:MemoryLifecycleService
       if(phase==='created'){phase='stopped';return;}
       phase='quiescing';clearTimers();
       await readable().lifecycle.quiesce();
+      await recoveryWork;
       await inflight?.catch(()=>{});
       phase='stopped';
     },

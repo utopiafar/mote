@@ -81,6 +81,9 @@ test('app.close preserves a Memory window when its pipeline stops accepting new 
 // Allow CI contention while completing the journey; this is not an app.close latency requirement.
 test('app.close preserves 180 model waits, queues, retry deadlines and explicit cancellation; restart resumes eligible files',{timeout:240000},async t=>{
  let ready=false,calls=0;
+ // This scenario drives admissions explicitly. A wall-clock poll can otherwise
+ // claim the queued file during fixture setup on slower or faster hosts.
+ t.mock.timers.enable({apis:['setInterval']});
  t.mock.method(MediaAssets.prototype,'ready',()=>ready);
  const f=await fixture(t,[{id:'fixture.audio',name:'Generated model wait',version:'1',stage:'extract',serviceKind:'asr',localOnly:true,managedModel:'dialogue',mediaTypes:['audio/'],async process(){calls++;return transcript;}}]);
  const node=await f.start();node.featureRoutes.stop();await configure(node,{audioProcessor:'fixture.audio'});const missing:string[]=[];
@@ -91,6 +94,7 @@ test('app.close preserves 180 model waits, queues, retry deadlines and explicit 
  const retry=fileStep(node,backoff),deadline=Date.now()+3600000;
  f.store.db.prepare("UPDATE execution_steps SET error='provider_unavailable',attempts=2,available_at=?,recovery_deadline=? WHERE id=?").run(deadline,deadline+3600000,retry.id);node.executor.project(retry.id);
  node.executor.fail(fileStep(node,failed).id,'generated_failure');node.processing.cancel(cancelled);
+ assert.equal(fileStep(node,queued).state,'waiting');
  const before=f.store.db.prepare("SELECT * FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') ORDER BY id").all(),jobs=f.store.db.prepare('SELECT * FROM file_jobs ORDER BY capture_id').all();
  await node.app.close();
  assert.deepEqual(f.store.db.prepare("SELECT * FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') ORDER BY id").all(),before);
