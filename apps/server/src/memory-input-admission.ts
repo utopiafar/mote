@@ -17,7 +17,7 @@ export type MemoryInputAdmissionOptions={
   materialInput?:(ref:string,required:readonly string[])=>(MaterialInputPin&{ready:boolean;dependencies?:MaterialDependencyStatus[]})|undefined;
   materialRequirements?:(ref:string)=>string[]|undefined;
   automaticAllowed?:(job:MemoryAutomaticAuthority)=>boolean;
-  materialAllowedForMemory?:(ref:string,profileId?:string,required?:readonly string[])=>boolean;
+  materialAllowedForMemory?:(ref:string,profileId?:string,required?:readonly string[],selectionReady?:boolean)=>boolean;
   evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;
 };
 export type MemoryReadyInputScope={strategy?:MemoryRecipeBinding;ids:string[];inputs:MaterialInputPin[];refs:Record<string,string>;planIds?:string[]};
@@ -68,7 +68,7 @@ export class MemoryInputAdmission implements MemoryInputAdmissionPort {
       const selections=byEvidence.get(id)??[];
       const allowed=selections.length?selections.every(input=>{
         const prior=checked.get(input);if(prior?.ref===ref)return prior.allowed;
-        const current=this.selection(ref,input.required),allowed=Boolean(current?.ready&&current.materialId===input.materialId&&current.fingerprint===input.fingerprint&&this.options.materialAllowedForMemory?.(ref,profileId,input.required));
+        const current=this.selection(ref,input.required),allowed=Boolean(current?.ready&&current.materialId===input.materialId&&current.fingerprint===input.fingerprint&&this.options.materialAllowedForMemory?.(ref,profileId,input.required,true));
         checked.set(input,{ref,allowed});return allowed;
       }):this.options.materialAllowedForMemory?.(ref,profileId);
       if(!currentEvidence.has(id)||!allowed||pinned&&!selections.length&&pinned[id]!==ref)throw new StoreError('Memory Material dependency is not ready or changed',409);

@@ -42,10 +42,15 @@ test('append mappings include retained blocks and honor output-only state change
   const {materials,draft}=fixture(t),block={...draft.blocks[0],id:'section-0',kind:'text' as const,format:'markdown-fragment',text:'Generated first section'};
   const initial={...draft,kind:'mote.coding-session',blocks:[block],artifacts:[{key:'conversation',state:'ready' as const,blockIds:['section-0']}]};
   const first=materials.publish(initial,{codingSnapshot:{checkpoint:'first',appendEpoch:1,headCount:1}});
+  const [prefix]=materials.input(first.ref,['conversation'])!.evidenceIds;
   const added={...block,id:'section-1',text:'Generated second section'},next={...initial,mode:'append' as const,baseRevision:first.revision,reuseBlocks:1,blocks:[added],artifacts:[{key:'conversation',state:'ready' as const,blockIds:['section-0','section-1']}]};
   const options={expectedRevision:first.revision,codingSnapshot:{checkpoint:'next',appendEpoch:1,headCount:2}};
   assert.throws(()=>materials.publish({...next,artifacts:[{key:'conversation',state:'ready',blockIds:['missing']}]},options),/unknown blocks/);
-  const second=materials.publish(next,options);assert.equal(materials.input(second.ref,['conversation'])!.evidenceIds.length,2);
+  const second=materials.publish(next,options);
+  const reread=t.mock.method(materials,'currentEvidenceIds'),selection=materials.input(second.ref,['conversation'])!;
+  assert.equal(selection.ready,true);assert.equal(selection.evidenceIds.length,2);
+  assert.equal(selection.evidenceIds[0],prefix,'the retained prefix stays at its original ordered anchor');
+  assert.equal(reread.mock.callCount(),0,'ordered active blocks and their anchor validity come from one read');
   const failed=materials.publish({...next,baseRevision:second.revision,reuseBlocks:2,blocks:[],artifacts:[{key:'conversation',state:'failed',blockIds:['section-0','section-1'],reason:'Generated stage failure'}]},
     {expectedRevision:second.revision,codingSnapshot:{checkpoint:'next',appendEpoch:1,headCount:2}});
   assert.equal(failed.changed,true);assert.equal(materials.input(failed.ref,['conversation'])!.ready,false);

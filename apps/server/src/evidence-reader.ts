@@ -963,8 +963,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
-  materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[]){
-    return this.materials?.withReadMetadata(()=>{const material=this.materials!.get(ref);return Boolean(material&&this.materials!.get(material.id)?.ref===material.ref&&this.materialExposure(material,'memory',policy,required));})??false;
+  materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[],selectionReady?:boolean){
+    return this.materials?.withReadMetadata(()=>{const material=this.materials!.get(ref);return Boolean(material&&this.materials!.get(material.id)?.ref===material.ref&&this.materialExposure(material,'memory',policy,required,false,selectionReady));})??false;
   }
   /** Planning checks permission to derive after readiness; no original content
    * is disclosed by admitting a waiting plan. Actual batches recheck readiness. */

@@ -484,13 +484,22 @@ export class MaterialStore {
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  evidenceIds(ref:string,blockIds?:readonly string[],maximum?:number){const material=this.get(ref);if(!material)return [];
+  evidenceIds(ref:string,blockIds?:readonly string[],maximum?:number){
+    const material=this.get(ref);return material?this.evidenceAnchors(material,blockIds,maximum).map(row=>row.anchor_id):[];
+  }
+  private evidenceAnchors(material:MaterialRecord,blockIds?:readonly string[],maximum?:number,verifyCurrent=false){
     if(maximum!==undefined&&(!Number.isSafeInteger(maximum)||maximum<1||maximum>20000))throw new StoreError('Invalid material evidence limit');
     const limit=maximum===undefined?'':' LIMIT ?',limitArgs=maximum===undefined?[]:[maximum];
-    if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
-      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`)
-      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs) as {anchor_id:string}[]).map(row=>row.anchor_id);
-    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs).map(r=>String(r.anchor_id));}
+    const projection=verifyCurrent?'b.anchor_id,e.invalidated IS 0 AS active':'b.anchor_id';
+    const join=verifyCurrent?' LEFT JOIN material_evidence e ON e.id=b.anchor_id AND e.material_id=b.material_id':'';
+    const selectedBlocks=blockIds?' AND b.block_id IN (SELECT value FROM json_each(?))':'';
+    const args=[...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs];
+    const rows=this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT ${projection} FROM material_block_versions b${join}
+      WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) AND b.anchor_id IS NOT NULL${selectedBlocks} ORDER BY b.idx${limit}`)
+      .all(material.id,material.sequence,material.sequence,...args):this.store.db.prepare(`SELECT ${projection} FROM material_blocks b${join}
+      WHERE b.material_id=? AND b.revision=? AND b.anchor_id IS NOT NULL${selectedBlocks} ORDER BY b.idx${limit}`).all(material.id,material.revision,...args);
+    return rows as {anchor_id:string;active?:number}[];
+  }
   /** A listing card represents the item itself: its own body text first, then
    * processed text (for example a visual interpretation). The transport metadata
    * projection is the fallback for items without either, followed by attachment
@@ -529,9 +538,11 @@ export class MaterialStore {
       if(!material||this.get(material.id)?.ref!==material.ref)return;
       const status=materialDependencyStatus(material,required),artifacts=required.map(key=>material.artifacts?.find(a=>a.key===key));
       const mapped=required.every((key,i)=>key!=='material'&&artifacts[i]?.blockIds!==undefined);
-      const evidenceIds=this.evidenceIds(ref,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined);
-      const current=this.currentEvidenceIds(evidenceIds);
-      return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>current.has(id)),materialId:material.id,required,evidenceIds,
+      // The current visible head already selects active snapshot or Coding blocks.
+      // Check anchor invalidation in the ordered block read used for the pin.
+      const anchors=this.evidenceAnchors(material,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined,undefined,true);
+      const evidenceIds=anchors.map(row=>row.anchor_id);
+      return {...status,ready:status.ready&&anchors.length>0&&anchors.every(row=>row.active===1),materialId:material.id,required,evidenceIds,
         fingerprint:hash(JSON.stringify([material.id,material.attributionContext,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
     });
   }
@@ -577,9 +588,8 @@ export class MaterialStore {
     if(!anchor||anchor.evidence_revision===anchor.revision||!currentEvidenceAllowed(anchor))return [];
     return this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id).map(row=>String(row.evidence_id));
   }
-  /** The same exact current-anchor predicate as the single-ID resolver. Each
-   * synchronous Formal input check reads its full selection once, including
-   * retained Coding prefixes; no result survives the next check. */
+  /** The same current-anchor predicate as the single-ID resolver for arbitrary
+   * evidence sets, including retained Coding prefixes. */
   currentEvidenceIds(ids:readonly string[]):Set<string> {
     if(!ids.length)return new Set();
     const rows=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids)) as CurrentEvidenceRow[];
