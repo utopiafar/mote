@@ -40,12 +40,23 @@ export function assistantRequestUsage(input:QueryInput,records:readonly ContextR
 export function assistantQueryWithinCapacity(input:QueryInput,originals:readonly Original[],records:readonly ContextRecord[],capacity:AssistantRequestCapacity):QueryInput|undefined {
  const prepared=assistantQueryInput(input,originals,records);
  if(assistantRequestUsage(prepared,records,capacity).fits)return prepared;
- const context=prepared.taskContext;
- if(!prepared.evidenceRanges?.length||!context||!('originals' in context))return;
+ const context=prepared.taskContext,ranges=prepared.evidenceRanges;
+ if(!ranges?.length||!context||!('originals' in context))return;
  const {originals:duplicate,...taskContext}=context;
  if(canonicalRecipeJson(duplicate)!==canonicalRecipeJson(originals))return;
  // The host seed already carries each exact span, ID, offset and provenance.
  // Keep its disclosure grants and remove only the second copy of those spans.
  const compact={...prepared,taskContext};
  if(assistantRequestUsage(compact,records,capacity).fits)return compact;
+ // If the expanded original metadata still exceeds capacity, keep every
+ // exact quote in the task and let the model page their full read grants.
+ // Use the longest affordable prefix for the initial rich receipts.
+ let low=1,high=ranges.length-1,best:QueryInput|undefined;
+ while(low<=high){
+  const count=Math.floor((low+high)/2),evidenceRanges=ranges.slice(0,count);
+  const candidate={...prepared,evidenceIds:[...new Set(evidenceRanges.map(range=>range.id))],evidenceRanges};
+  if(assistantRequestUsage(candidate,records,capacity).fits){best=candidate;low=count+1;}
+  else high=count-1;
+ }
+ return best;
 }
