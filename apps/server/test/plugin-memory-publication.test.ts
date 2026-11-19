@@ -63,6 +63,25 @@ async function generatedProvider(file:string,options:{loseAck?:boolean;tamper?:(
   return {provider,puts:()=>puts};
 }
 
+test('local evidence reconciliation leaves a turn for the host while acknowledging every retirement',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-publication-turn-')),store=new Store(directory),memories=new MemoryStore(store);
+  const native=await generatedProvider(join(directory,'provider.json')),seen:string[]=[];
+  const platform=createMemoryPublication({store,memories,bindings:bindings(native.provider),revokeEvidence:async ids=>{seen.push(...ids);}});
+  t.after(async()=>{await platform.close();store.close();await rm(directory,{recursive:true,force:true});});
+  const ids=Array.from({length:3},()=>randomUUID());
+  for(const id of ids){
+    await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-12T00:00:00Z',durationMs:0,ocrText:'Generated original'});
+    store.invalidateMemoryEvidence(id);
+  }
+  platform.prepare();platform.start();
+  const early=new Promise<number>(resolve=>setImmediate(()=>resolve(seen.length)));
+  await platform.publication.reconcile();
+  assert.ok((await early)<ids.length,'the event loop must advance before a local retirement backlog drains');
+  assert.deepEqual(new Set(seen),new Set(ids));
+  assert.equal(seen.length,ids.length);
+  assert.equal(platform.publication.pending(),0);
+});
+
 test('lost remote acknowledgement stays an unknown submitted write until an exact digest is observed after restart, without a second semantic write or rollback',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-publication-plugin-ack-')),vault=join(directory,'vault'),stateFile=join(directory,'provider.json'),memory=generatedMemory('Generated lost acknowledgement body.');
   t.after(()=>rm(directory,{recursive:true,force:true}));

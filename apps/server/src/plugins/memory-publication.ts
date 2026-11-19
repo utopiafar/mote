@@ -11,6 +11,7 @@ import {sha256,StoreError} from '../evidence-store.js';
 import type {EvidenceStore as Store} from '../evidence-store.js';
 import {memorySchema,type Memory} from '../memory-schema.js';
 import {randomUUID} from 'node:crypto';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {installMemoryPublicationRetirement,registerMemoryPublicationDependencies,memoryPublicationRetired} from './memory-private-storage.js';
 import {installSchemaPlan} from '../schema-installation.js';
 import {memoryPublicationSchemaInstallation} from './memory-publication-schema.js';
@@ -136,10 +137,14 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
   }
   private queueUnpublishedErases(writes:Record<string,unknown>[]){for(const row of writes){const write=JSON.parse(String(row.json));if(!write.privateRetired||write.hostPublished)continue;const id='retired-stage:'+row.id,json=JSON.stringify({namespace:write.namespace,memoryId:write.key.memoryId,key:write.key});this.store.db.prepare("INSERT INTO memory_provider_erases VALUES(?,?,'submitted') ON CONFLICT(id) DO UPDATE SET state='submitted'").run(id,json);}}
   async reconcile(){for(const row of this.store.db.prepare("SELECT id,generation,json FROM memory_provider_evidence_revocations WHERE state='submitted'").all()){
+    // Local adapters can resolve through microtasks alone. Release the host
+    // between durable intents so timers, requests and leases keep advancing.
+    await yieldTurn();if(this.closed)return;
     const value=JSON.parse(String(row.json));try{
       await this.revokeEvidence?.([value.evidenceId]);const db=this.store.db;db.exec('SAVEPOINT memory_evidence_reconcile');try{const writes=db.prepare("SELECT w.id,w.json FROM memory_provider_writes w JOIN memory_publication_dependencies d ON d.operation_id=w.parent_id WHERE d.kind='evidence' AND d.dependency_id=?").all(value.evidenceId);if(value.deleted)this.queueErases([...new Set([...(value.memoryIds??[]),...writes.map(write=>JSON.parse(String(write.json)).key.memoryId as string)])].filter(id=>!value.releasedOriginal?.memoryFingerprints?.[id]));else this.queueUnpublishedErases(writes);db.prepare("UPDATE memory_provider_evidence_revocations SET state='acknowledged' WHERE id=? AND generation=? AND state='submitted'").run(row.id,row.generation);db.exec('RELEASE memory_evidence_reconcile');}catch(error){if(db.isTransaction){db.exec('ROLLBACK TO memory_evidence_reconcile; RELEASE memory_evidence_reconcile');}throw error;}
     }catch{/* Source cleanup remains durable and retryable; publication is fenced already. */}
   }for(const row of this.store.db.prepare("SELECT id,json FROM memory_provider_writes WHERE state='submitted'").all()){
+    await yieldTurn();if(this.closed)return;
     const write=JSON.parse(String(row.json));try{const read=await this.bindings.provider(write.namespace.instanceId,write.namespace).read({namespace:write.namespace,key:write.key});if(read&&memoryBodyDigest(read)===(write.bodyDigest??(write.memory?memoryBodyDigest(write.memory):undefined))){
       this.store.db.prepare("UPDATE memory_provider_writes SET state='acknowledged' WHERE id=?").run(row.id);
       // An earlier empty export cannot acknowledge erasure of a write whose
@@ -147,6 +152,7 @@ export class MemoryPublication implements MemoryStagePublication,MemoryOwnerPubl
       for(const erase of this.store.db.prepare('SELECT id,json FROM memory_provider_erases').all()){const intent=JSON.parse(String(erase.json));if(intent.memoryId===write.key.memoryId&&(!intent.key||JSON.stringify(intent.key)===JSON.stringify(write.key))&&JSON.stringify(intent.namespace)===JSON.stringify(write.namespace))this.store.db.prepare("UPDATE memory_provider_erases SET state='submitted' WHERE id=?").run(erase.id);}
     }}catch{/* Unknown remains visible; never retry a revoked write. */}
   }for(const row of this.store.db.prepare("SELECT id,json FROM memory_provider_erases WHERE state='submitted'").all()){
+    await yieldTurn();if(this.closed)return;
     const intent=JSON.parse(String(row.json)),selected=(key:ReturnType<typeof memoryProviderKey>)=>key.memoryId===intent.memoryId&&(!intent.key||JSON.stringify(key)===JSON.stringify(intent.key));try{const provider=this.bindings.provider(intent.namespace.instanceId,intent.namespace),records=await provider.export({namespace:intent.namespace});for(const record of records)if(selected(record.key))await provider.remove({namespace:intent.namespace,key:record.key,opId:String(row.id)+':'+sha256(JSON.stringify(record.key))});
       const unresolved=this.store.db.prepare("SELECT json FROM memory_provider_writes WHERE state='submitted'").all().some(write=>{const value=JSON.parse(String(write.json));return selected(value.key)&&JSON.stringify(value.namespace)===JSON.stringify(intent.namespace);});
       if(!unresolved&&!(await provider.export({namespace:intent.namespace})).some(record=>selected(record.key)))this.store.db.prepare("UPDATE memory_provider_erases SET state='acknowledged' WHERE id=?").run(row.id);
