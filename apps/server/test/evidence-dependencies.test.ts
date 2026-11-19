@@ -22,7 +22,7 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
  const directory=mkdtempSync(join(tmpdir(),'mote-file-dependencies-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);let revision=1;
  sources.register({id:'generated',name:'Generated audio',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
  const bytes=Buffer.from('Generated audio fixture'),upload=files.begin({sourceId:'generated',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2025-01-01T00:00:00.000Z',title:'Generated',text:'',kind:'file',layer:'original',mimeType:'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes),relativePath:'generated.wav'},()=>{});files.part(upload.uploadId,0,bytes,()=>{});const original=await files.commit(upload.uploadId,()=>{});
- const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>({durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Stable first segment'},{startMs:1000,endMs:2000,text:'Second segment version '+revision}]})},undefined,{analyze:async records=>({answer:'Generated summary',citations:[{id:records[0].id}]})});
+ const processing=new FileProcessing(testScope(t),files,{transcribe:async()=>({durationMs:3000,segments:[{startMs:0,endMs:1000,text:'Stable first segment'},{startMs:1000,endMs:2000,text:'Second segment version '+revision},{startMs:2000,endMs:3000,text:'Third segment version '+revision}]})},undefined,{analyze:async records=>({answer:'Generated summary',citations:[{id:records[0].id}]})});
  const runs=new InsightRuns(store,{executor:processing.engine});let organizers:MaterialOrganizerRuntime|undefined;
  t.after(async()=>{await organizers?.close();await processing.close();await runs.close();store.close();rmSync(directory,{recursive:true,force:true});});
  await processing.runtime.ready;
@@ -44,8 +44,10 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
 while(await organizers.tick(100));
  const materialIdValue=materialId('generated','generated.wav'),formal=materials.get(materialIdValue)!;
  const anchors=materials.evidence(materials.evidenceIds(formal.ref));
- const stableAnchor=anchors.find(record=>record.ocrText==='Stable first segment')!,changedAnchor=anchors.find(record=>record.ocrText==='Second segment version 1')!;
+ const stableAnchor=anchors.find(record=>record.ocrText==='Stable first segment')!,changedAnchor=anchors.find(record=>record.ocrText==='Second segment version 1')!,otherChanged=anchors.find(record=>record.ocrText==='Third segment version 1')!;
  assert.ok(stableAnchor);assert.ok(changedAnchor);
+ assert.ok(otherChanged);
+ const invalidateConversations=t.mock.method(store,'invalidateConversationAnswers');
  // File-artifact edges cannot lead outward from a retired chunk. Evaluating
  // this branch detects a full graph pass even on a small generated fixture.
  let irrelevantEdges=0;
@@ -58,6 +60,13 @@ while(await organizers.tick(100));
  assert.equal(memories.get(related.id).status,'stale');assert.equal(memories.get(descendant.id).status,'stale');
  assert.equal(irrelevantEdges,0,'a file refresh must not evaluate unrelated types of evidence edges');
  assert.equal(materials.isCurrentEvidence(changedAnchor.id),false,'retired file chunks immediately invalidate formal descendants');
+ assert.equal(materials.isCurrentEvidence(otherChanged.id),false);
+ const retiredIds=[changedAnchor.id,otherChanged.id].sort();
+ const anchorCalls=invalidateConversations.mock.calls.flatMap(call=>{
+  const selection=call.arguments[0];
+  return selection?.some((id:string)=>retiredIds.includes(id))?[selection.slice().sort()]:[];
+ });
+ assert.deepEqual(anchorCalls,[retiredIds],'retire conversation dependencies once for the whole file revision');
  const retirement=store.db.prepare('SELECT generation,state FROM memory_provider_evidence_revocations WHERE id=?');
  const retired=retirement.get(changedAnchor.id);
  assert.ok(retired);

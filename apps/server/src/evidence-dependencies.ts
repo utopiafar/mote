@@ -35,13 +35,7 @@ export function invalidateRetiredFileEvidence(store:Store,captureId:string){
  ) SELECT kind,id FROM descendants`).all(captureId) as {kind:keyof typeof ids;id:string}[];
  if(!retired.length)return;
  for(const {kind,id} of retired)ids[kind].push(id);
- if(ids.material_evidence.length){
-  // Later artifacts can cover the same retired chunks. Keep their full
-  // descendant set, and issue an anchor revocation only when it is still due.
-  const needsRevocation=db.prepare(`SELECT 1 FROM material_evidence e WHERE e.id=? AND (e.invalidated=0
-   OR NOT EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r WHERE r.id=e.id))`);
-  for(const anchor of ids.material_evidence)if(needsRevocation.get(anchor))store.invalidateMemoryEvidence(anchor);
- }
+ store.retireFileMaterialEvidence(ids.material_evidence);
  const batches=JSON.stringify(ids.memory_batch);
  db.prepare(`UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?)
   WHERE id IN (SELECT value FROM json_each(?)) AND json_extract(json,'$.status')!='stale'`).run(new Date().toISOString(),JSON.stringify(ids.memory));

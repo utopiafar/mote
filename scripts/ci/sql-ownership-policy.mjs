@@ -133,6 +133,10 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'evidence-store.ts':{
+  'EvidenceStore.retireFileMaterialEvidence':'material',
+  'EvidenceStore.invalidateSemanticEvidence':'memory',
+ },
  'owner-questions.ts':{
   'OwnerQuestions.row':'owner-question-services',
   'OwnerQuestions.transaction':'owner-question-services',
@@ -326,12 +330,13 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
- {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence","symbol":"760454b99a0c6bec1faa6745679e0bb6ab25eff78d0894df749051650eb73445","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"00bbf28411e6bf5a7a446268917c17228e6c74b26e2957a9a54b857ca251f8f0","reason":"Check the exact anchor retirement flag before issuing its durable Memory revocation."},
+ {"from":"apps/server/src/evidence-store.ts","to":"file_evidence_links","symbol":"c43229042e956eeefce5aa85e5f79f80ad3d24037b2f7d1e0bf3aee4da4a2e40","scope":"EvidenceStore.retireFileMaterialEvidence","scopeFingerprint":"91a54a596415021a5ece189e42c69e429f901cb58c4aa0b6ed96ac769c311773","reason":"Detect an exact anchor ID shared by a capture with attachments so its original lineage is retired too."},
+ {"from":"apps/server/src/evidence-store.ts","to":"memory_provider_evidence_revocations","symbol":"c43229042e956eeefce5aa85e5f79f80ad3d24037b2f7d1e0bf3aee4da4a2e40","scope":"EvidenceStore.retireFileMaterialEvidence","scopeFingerprint":"91a54a596415021a5ece189e42c69e429f901cb58c4aa0b6ed96ac769c311773","reason":"Check that each retired Material anchor has a durable Memory revocation receipt."},
  {"from":"apps/server/src/material-organizers.ts","to":"execution_steps","symbol":"0222a27909ae40647fefd0c860b859b7b2f7783492cfe6144ad209818012f372","scope":"MaterialOrganizerRuntime.repairStale","scopeFingerprint":"95b2de2d4d944163cd0138cc98e42fd33d6987ebe9ce4286f99442d02b4acae9","reason":"Find stale steps of the exact active organizer operations before validating and restoring their current generations through the execution engine."},
- {"from":"apps/server/src/evidence-dependencies.ts","to":"file_artifacts","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"00bbf28411e6bf5a7a446268917c17228e6c74b26e2957a9a54b857ca251f8f0","reason":"Check which artifacts replaced the requested file's original derived chunks before retiring dependent Memory."},
- {"from":"apps/server/src/evidence-dependencies.ts","to":"file_chunks","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"00bbf28411e6bf5a7a446268917c17228e6c74b26e2957a9a54b857ca251f8f0","reason":"Read the exact retired chunk IDs for the requested file without reading their bodies."},
- {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"00bbf28411e6bf5a7a446268917c17228e6c74b26e2957a9a54b857ca251f8f0","reason":"Preserve canonical Material anchor identity if it overlaps a retired file chunk ID."},
- {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence_dependencies","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"00bbf28411e6bf5a7a446268917c17228e6c74b26e2957a9a54b857ca251f8f0","reason":"Follow the exact indexed Formal anchor links from affected originals so only dependent Memory is retired."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"file_artifacts","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"af58c2287bde3b53e480b7c6d65ef1a26bb2649bfbe730cd8068573547ae0824","reason":"Check which artifacts replaced the requested file's original derived chunks before retiring dependent Memory."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"file_chunks","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"af58c2287bde3b53e480b7c6d65ef1a26bb2649bfbe730cd8068573547ae0824","reason":"Read the exact retired chunk IDs for the requested file without reading their bodies."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"af58c2287bde3b53e480b7c6d65ef1a26bb2649bfbe730cd8068573547ae0824","reason":"Preserve canonical Material anchor identity if it overlaps a retired file chunk ID."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence_dependencies","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"af58c2287bde3b53e480b7c6d65ef1a26bb2649bfbe730cd8068573547ae0824","reason":"Follow the exact indexed Formal anchor links from affected originals so only dependent Memory is retired."},
  {
   "from": "apps/server/src/memory-phase-outputs.ts",
   "to": "execution_steps",

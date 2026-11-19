@@ -14,5 +14,6 @@ export function memoryStorageSchema(db:DatabaseSync){db.exec(`
  CREATE TABLE IF NOT EXISTS memory_batch_dependencies (batch_id TEXT NOT NULL REFERENCES memory_batches(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,PRIMARY KEY(batch_id,evidence_id));
  CREATE INDEX IF NOT EXISTS memory_batch_dependencies_evidence ON memory_batch_dependencies(evidence_id);
  CREATE TABLE IF NOT EXISTS memory_checkpoints (key TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,completed_at TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS memory_checkpoints_evidence ON memory_checkpoints(evidence_id);
  CREATE INDEX IF NOT EXISTS memory_batches_job ON memory_batches(job_id,idx);
 `);}
