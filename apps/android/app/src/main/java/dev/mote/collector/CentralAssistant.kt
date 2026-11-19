@@ -71,13 +71,39 @@ internal class AssistantScope(value: JSONObject) {
     }
 }
 
-internal data class AssistantProof(val id: String, val quote: String, val ref: String) {
+internal data class AssistantProofOrigin(val source: String?, val speaker: String?, val recordedAt: String?) {
+    companion object {
+        fun read(row: JSONObject): AssistantProofOrigin {
+            val source = when (AssistantJson.optional(row, "provider")) {
+                "codex" -> "Codex"
+                "claude" -> "Claude Code"
+                "kimi" -> "Kimi Code"
+                "opencode" -> "OpenCode"
+                else -> AssistantJson.optional(row, "appName") ?: AssistantJson.optional(row, "sourceId")
+            }
+            return AssistantProofOrigin(source, AssistantJson.optional(row, "speaker"), AssistantJson.optional(row, "recordedAt")?.also(Instant::parse))
+        }
+    }
+}
+
+internal data class AssistantProof(val id: String, val quote: String, val ref: String, val origin: AssistantProofOrigin? = null) {
     companion object {
         fun read(row: JSONObject): AssistantProof {
             val id = AssistantJson.id(row)
             val ref = AssistantJson.optional(row, "ref")?.let(MoteLink::reference) ?: CentralEvidenceReference.capture(id)
             return AssistantProof(id, AssistantJson.string(row, "quote"), ref)
         }
+        fun cardEvidence(row: JSONObject): List<AssistantProof> {
+            fun key(item: JSONObject) = AssistantJson.id(item) to item.optLong("offset", -1L)
+            val origins = if (row.has("evidenceOrigins")) AssistantJson.rows(row, "evidenceOrigins") { key(it) to AssistantProofOrigin.read(it) }.toMap() else emptyMap()
+            return AssistantJson.rows(row, "evidence") { read(it).copy(origin = origins[key(it)]) }
+        }
+    }
+}
+
+internal data class AssistantCodingStep(val goal: String, val whyNow: String) {
+    companion object {
+        fun read(row: JSONObject) = AssistantCodingStep(AssistantJson.string(row, "goal"), AssistantJson.string(row, "whyNow"))
     }
 }
 
@@ -85,7 +111,7 @@ internal data class AssistantCard(
     val id: String, val revision: Long, val version: String, val kind: String, val state: String,
     val title: String, val body: String, val evidence: List<AssistantProof>, val matterId: String?,
     val acceptedTaskId: String?, val readAt: String?, val feedback: List<String>, val updatedAt: String, val stale: Boolean,
-    val taskScope: AssistantScope?,
+    val taskScope: AssistantScope?, val codingNextStep: AssistantCodingStep?,
 ) {
     val startable get() = kind == "suggestion" && state == "open" && !stale && acceptedTaskId == null
     companion object {
@@ -93,7 +119,7 @@ internal data class AssistantCard(
             AssistantJson.id(row), AssistantJson.revision(row), AssistantJson.string(row, "version"),
             AssistantJson.state(row, "kind", setOf("activity", "suggestion", "briefing", "artifact", "question")),
             AssistantJson.state(row, "state", setOf("open", "resolved", "stale")),
-            AssistantJson.string(row, "title"), AssistantJson.string(row, "body"), AssistantJson.rows(row, "evidence", AssistantProof::read),
+            AssistantJson.string(row, "title"), AssistantJson.string(row, "body"), AssistantProof.cardEvidence(row),
             AssistantJson.nullable(row, "matterId")?.also { require(MoteLink.uuidId(it) == it) },
             AssistantJson.nullable(row, "acceptedTaskId")?.also { require(MoteLink.uuidId(it) == it) },
             AssistantJson.nullable(row, "readAt")?.also { Instant.parse(it) },
@@ -102,6 +128,7 @@ internal data class AssistantCard(
             if (row.get("taskScope") === JSONObject.NULL) null else AssistantScope(row.getJSONObject("taskScope")).also {
                 require(it.json().has("evidenceIds"))
             },
+            row.optJSONObject("codingNextStep")?.let(AssistantCodingStep::read),
         )
     }
 }

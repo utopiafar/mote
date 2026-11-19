@@ -49,7 +49,15 @@ internal abstract class AssistantPanel(
     }
     protected fun proof(items: List<AssistantProof>, parent: LinearLayout) {
         for (item in items) {
-            parent.addView(MoteComponents.row(activity, title = MoteI18n.text("依据"), subtitle = item.quote,
+            val origin = item.origin
+            val speaker = when (origin?.speaker) {
+                "owner" -> MoteI18n.text("你说")
+                "user" -> MoteI18n.text("用户发言")
+                "agent" -> MoteI18n.text("Agent 报告")
+                else -> null
+            }
+            val title = listOfNotNull(origin?.source, speaker, origin?.recordedAt?.let(MemoryDetailPanel::displayTime)).joinToString(" · ")
+            parent.addView(MoteComponents.row(activity, title = title.ifEmpty { MoteI18n.text("依据") }, subtitle = item.quote,
                 onClick = { launch(AssistantOpen.Evidence(item.ref, scope)) }))
         }
     }
@@ -79,6 +87,7 @@ internal class AssistantFeedView(
             label(MoteI18n.text(when (card.kind) { "briefing" -> "简报"; "suggestion" -> "建议的下一步"; "question" -> "需要补充"; "artifact" -> "成果"; else -> "动态" }), group, NativeFontRole.META)
             label(card.updatedAt + " · " + MoteI18n.text(if (card.readAt == null) "未读" else "已读"), group, NativeFontRole.META)
             label(card.body, group)
+            card.codingNextStep?.let { label(MoteI18n.text("为什么现在") + " · " + it.whyNow, group) }
             if (card.stale || card.state == "stale") label(MoteI18n.text("这是历史版本，当前资料已更新。"), group)
             if (card.state == "resolved") label(MoteI18n.text("已解决"), group)
             card.feedback.lastOrNull()?.let { action ->
@@ -106,7 +115,7 @@ internal class AssistantFeedView(
             } else card.acceptedTaskId?.let { id -> button("任务状态", group) { launch(AssistantOpen.Task(id, null, model.scope(card.id))) } }
             if (card.startable && task == null) {
                 label(model.scope(card.id).description(), group)
-                val goal = editor(card.title, group)
+                val goal = editor(card.codingNextStep?.goal ?: card.title, group)
                 button("开始", group, model.canStart(card.id) && (model.pendingCardId == null || model.pendingCardId == card.id)) {
                     val text = goal.text.toString()
                     work({ if (model.start(card.id, card.revision, text) != null) model.refresh() }) { draw() }
@@ -132,7 +141,7 @@ internal class AssistantFeedView(
                 label(row.getString("createdAt") + " · " + row.getString("version"))
                 label(row.getString("body"))
                 if (row.optBoolean("evidenceStale")) label(MoteI18n.text("这是历史版本，当前资料已更新。"))
-                proof(AssistantJson.rows(row, "evidence", AssistantProof::read), this)
+                proof(AssistantProof.cardEvidence(row), this)
             }
             AssistantJson.cursor(requireNotNull(page))?.let { next -> button("下一页") { history(id, next) } }
         }

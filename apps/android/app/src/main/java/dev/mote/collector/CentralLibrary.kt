@@ -342,6 +342,18 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 }
                 NativeOriginalDetail.more(ui.hostActivity(), actions, null, null)
             }
+            if (current.getString("revision") == item.getString("revision")) current.optJSONObject("codingContext")?.let { context ->
+                ui.button(MoteI18n.text("主会话") + " · " + context.getString("title")) { evidence(context.getString("ref")) }
+                val requests = context.getJSONArray("requests")
+                if (requests.length() > 0) ui.disclosure(MoteI18n.text("主会话的用户原话")) { section ->
+                    for (index in 0 until requests.length()) {
+                        val request = requests.getJSONObject(index)
+                        val time = AssistantJson.optional(request, "recordedAt")?.let(::readerTime)
+                        ui.button(listOfNotNull(MoteI18n.text("用户原文"), time).joinToString(" · "), parent = section) { captureEvidence(request.getString("id")) }
+                        ui.text(request.getString("quote"), parent = section)
+                    }
+                }
+            }
             if(readable.isEmpty())ui.text(MoteI18n.text(if(item.optInt("blockCount")==item.optInt("assetCount"))"此版本暂无文字正文。" else "本页暂无文字正文。"))
             for(index in 0 until spans.length()) {
                 val span=spans.getJSONObject(index)
