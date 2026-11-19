@@ -345,18 +345,18 @@ export class AssistantCards {
    return {items,nextCursor:found.length>selected.limit&&last?this.cursor(selected.scope,last.id):null};
   });
  }
- /** Internal analysis input. Historical versions remain explicitly marked stale;
-  * the ordinary feed continues to expose only current cards. A caller must not
-  * infer semantic identity from the order, title or storage key. */
- review(scope:QueryScope,limit=100){
+ /** Internal analysis input. Read all visible cards and feedback in one
+  * scoped snapshot unless the caller asks for a bounded preview. Historical
+  * versions remain explicitly marked stale. */
+ review(scope:QueryScope,limit?:number){
   const selected=queryScopeSchema.parse(scope);
-  if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid assistant review limit');
+  if(limit!==undefined&&(!Number.isSafeInteger(limit)||limit<1||limit>100))throw new StoreError('Invalid assistant review limit');
   return this.transaction(()=>{
    // Cards and earlier feedback often share originals. Keep their canonical
    // reads within this transaction and scope, with separate historical reads.
    const evidence:ReviewEvidence={current:new Map(),historical:new Map()};
    const items:(ReturnType<AssistantCards['cardContent']>&{disclosureDependencies:{version:1;complete:true;ids:string[]};sourceContextDependencies:SourceContextDeclaration[]})[]=[];let before=Number.MAX_SAFE_INTEGER;
-   const result=(hasMore:boolean)=>({items:items.slice(0,limit),hasMore,
+   const result=(hasMore:boolean)=>({items:limit===undefined?items:items.slice(0,limit),hasMore,
     disclosureDependencies:{version:1 as const,complete:true as const,ids:[...new Set(items.flatMap(card=>card.disclosureDependencies.ids))].sort()},
     sourceContextDependencies:items.flatMap(card=>card.sourceContextDependencies)});
    for(;;){
@@ -377,7 +377,7 @@ export class AssistantCards {
       }
       items.push({...this.cardContent(row,visible,feedback),disclosureDependencies:{version:1,complete:true,ids:[...dependencies].sort()},sourceContextDependencies:pins});
      }
-     if(items.length>limit)return result(true);
+     if(limit!==undefined&&items.length>limit)return result(true);
     }
     if(rows.length<100)break;
    }

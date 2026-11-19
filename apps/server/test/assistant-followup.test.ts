@@ -686,6 +686,36 @@ test('a blocked automatic analysis does not keep processing the same finished ba
  assert.equal(f.seen.length,1);
 });
 
+test('automatic follow-up reads and respects all visible cards when their count exceeds the preview limit',async t=>{
+ const f=await fixture(t),cards=f.node.featureServices.assistantCards;
+ let now=Date.now();(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ const prior=await f.add('Generated source keeps the older issue in scope.');
+ const existing=Array.from({length:31},(_,index)=>cards.publish({id:randomUUID(),kind:'suggestion',matterId:null,
+  version:'generated-initial',state:'open',title:`Generated issue ${index}`,body:'Generated scoped review context.',
+  evidence:[{id:prior.id,offset:0,quote:prior.text}],evidenceDependencies:{version:1,complete:true,ids:[prior.id]}},undefined,all,f.assertCurrent));
+ const oldest=existing[0];
+ cards.feedback(oldest.id,{expectedRevision:oldest.revision,action:'never_remind'},all);
+ const suppressed=cards.get(oldest.id,all);
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const note=await f.add('Generated new source revisits the older issue.');
+ f.programs.push(context=>{
+  assert.deepEqual(new Set(context.cards.map(value=>value.id)),new Set(existing.map(value=>value.id)));
+  assert.ok(context.cards.find(value=>value.id===oldest.id)!.feedback.some(value=>value.action==='never_remind'));
+  return answer([card(evidence(context,note.text),{action:'update',cardId:oldest.id,relatedCardIds:[oldest.id]})],[]);
+ });
+ f.node.assistantChanges.tick(100);now+=60001;
+ assert.deepEqual(f.node.assistantChanges.ready().map(item=>item.input.captureId),[note.id]);
+ paused.mock.restore();
+ await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();
+ assert.ok(analysis,'a fitting review is admitted with all 31 scoped cards');
+ const task=f.tasks.get(String(analysis.id));await f.wait(task);await f.service.tick(f.node.assistantChanges);
+ assert.equal(f.tasks.get(task.id).state,'succeeded');
+ assert.equal(cards.get(oldest.id,all).revision,suppressed.revision,'the oldest visible never-remind decision still prevents publication');
+ assert.equal(f.node.store.db.prepare('SELECT t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(note.id)!.state,'succeeded');
+});
+
 test('an oversized automatic group is split with headroom and every original reaches a completed analysis',async t=>{
  const f=await fixture(t);let now=Date.now()+60001;
  (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;

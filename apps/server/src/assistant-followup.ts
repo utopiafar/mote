@@ -130,8 +130,8 @@ export class AssistantFollowup {
   });
   const materialProducts=views.map(view=>({ref:view.material.ref,products:view.products.map(product=>product.ref),nextCursor:view.nextCursor,coverage:view.coverage}));
   const memoryPage=await readCurrentMemoryPage(this.reader,scope,{level:'detail',limit:10,asOf});
-  const review=this.cards.review(scope,30),commitmentPage=this.commitments.page({scope,limit:30});
-  if(review.hasMore||commitmentPage.nextCursor)throw new StoreError('Assistant context exceeds the bounded review; narrow the scope',413);
+  const review=this.cards.review(scope),commitmentPage=this.commitments.page({scope,limit:30});
+  if(commitmentPage.nextCursor)throw new StoreError('Assistant commitments exceed the bounded review; narrow the scope',413);
   const cards=review.items,contextCards=cards.filter(card=>!suppressionOnly(card));
   // Unsuppressed history still needs a grant to interpret or update the issue.
   // A never-remind issue is retained only as an owner constraint, without prose.
@@ -481,8 +481,7 @@ export class AssistantFollowup {
   const materialProducts=snapshot.materialRefs.map(ref=>{const view=this.understanding.read({ref,scope:snapshot.input.scope,limit:10});
    return {ref:view.material.ref,products:view.products.map(product=>product.ref),nextCursor:view.nextCursor,coverage:view.coverage};});
   if(canonicalRecipeJson(materialProducts)!==canonicalRecipeJson(snapshot.materialProducts))throw new StoreError('Understanding changed; analyze again',409);
-  const current=this.cards.review(snapshot.input.scope,30);
-  if(current.hasMore)throw new StoreError('Assistant cards changed; analyze again',409);
+  const current=this.cards.review(snapshot.input.scope);
   if(JSON.stringify(current.items.map(card=>[card.id,card.revision,card.state]))!==JSON.stringify(snapshot.cards.map(card=>[card.id,card.revision,card.state])))throw new StoreError('Assistant cards changed; analyze again',409);
   const commitments=this.commitments.page({scope:snapshot.input.scope,limit:30});
   if(commitments.nextCursor||JSON.stringify(commitments.items.map(item=>[item.id,item.revision]))!==JSON.stringify(snapshot.commitments.map(item=>[item.id,item.revision])))throw new StoreError('Commitments changed; analyze again',409);
