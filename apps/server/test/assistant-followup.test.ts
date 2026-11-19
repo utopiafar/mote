@@ -728,6 +728,34 @@ test('a blocked automatic analysis does not keep processing the same finished ba
  assert.equal(f.seen.length,1);
 });
 
+test('automatic follow-up keeps a prior card’s Memory artifact in lineage without granting it as an original',async t=>{
+ const f=await fixture(t),prior=await f.add('Generated original supporting an earlier card.'),artifact=await f.produce(prior);
+ const raw:QueryResult={answer:JSON.stringify({memories:[{title:'Generated prior Memory',statement:`${prior.text} [${prior.id}]`,uncertainty:'Generated fixture',evidenceIds:[prior.id]}]}),
+  citations:[{id:prior.id,capturedAt:at,appName:'Generated',excerpt:prior.text}],trace:[],runId:randomUUID()};
+ const draft=f.node.memories.extract(fixtureMemoryResult(f.node.memories,raw),'generated').items[0]!,memory=f.node.memories.publish(draft.id,draft.version);
+ f.node.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(memory.id,artifact);
+ const existing=f.node.featureServices.assistantCards.publish({id:randomUUID(),kind:'suggestion',matterId:null,version:'generated-initial',state:'open',
+  title:'Generated earlier suggestion',body:'Generated history for the new review.',evidence:[{id:prior.id,offset:0,quote:prior.text}],
+  evidenceDependencies:{version:1,complete:true,ids:[prior.id,memory.id]}},undefined,all,f.assertCurrent);
+ let now=Date.now();(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const note=await f.add('Generated new original is ready for automatic review.','generated-next');
+ f.node.assistantChanges.tick(100);now+=60001;
+ f.programs.push((context,input)=>{
+  assert.ok(context.cards.some(value=>value.id===existing.id));
+  assert.ok(input.evidenceIds!.includes(note.id));
+  assert.ok(!input.evidenceIds!.includes(artifact));
+  return answer();
+ });
+ paused.mock.restore();await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();
+ assert.ok(analysis,'the artifact dependency must not block admission to an original selection');
+ const task=f.tasks.get(String(analysis.id));await f.wait(task);await f.service.tick(f.node.assistantChanges);
+ const completed=f.tasks.get(task.id);assert.equal(completed.state,'succeeded');
+ assert.ok(f.tasks.evidenceDependencies(task.id,completed.revision,f.assertCurrent).ids.includes(artifact));
+});
+
 test('automatic follow-up reads and respects all visible cards when their count exceeds the preview limit',async t=>{
  const f=await fixture(t),cards=f.node.featureServices.assistantCards;
  let now=Date.now();(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;

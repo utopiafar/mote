@@ -478,9 +478,11 @@ export class AssistantFollowup {
   for(const record of this.store.evidenceMetadata(selected))if(record.source==='file'&&record.provenance)
    selected.push(...this.files.read({captureId:record.id,scope:all}).disclosureDependencies.ids);
   for(const card of this.cards.review(all,30).items)if(this.allowsAutomatic(card.evidenceDependencies.ids))selected.push(...card.evidenceDependencies.ids);
-  const evidenceIds=taskEvidenceIds(this.store,deps(selected));
-  if(!this.allowsAutomatic(evidenceIds))throw new StoreError('Assistant automatic context is no longer permitted',409);
-  const scope:QueryScope={kind:'selection',evidenceIds};
+  const lineage=taskEvidenceIds(this.store,deps(selected));
+  if(!this.allowsAutomatic(lineage))throw new StoreError('Assistant automatic context is no longer permitted',409);
+  // Internal artifact dependencies participate in policy and invalidation.
+  // The selected evidence scope only accepts public evidence identities.
+  const scope:QueryScope={kind:'selection',evidenceIds:lineage.filter(id=>Boolean(parseEvidenceId(id)))};
   const requestId='assistant-change:'+group.map(candidate=>candidate.task.id).sort().join(':');
   await this.analyze({operationId:requestId,requestId,scope,materialRefs:refs,mode:{kind:'change'}},
    {kind:'automatic',purpose:'assistant',roots:group.map(candidate=>candidate.input.root)},active,()=>{},
