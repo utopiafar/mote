@@ -83,6 +83,20 @@ async function fixture(t:TestContext){
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
 
+test('large owner selection stays host-side while the model sees only the chosen originals',async t=>{
+ const f=await fixture(t),note=await f.add('Generated scoped original with a complete exact quote.');
+ const anchors=f.node.materials.evidenceIds(note.material.ref),unavailable=Array.from({length:1400},()=>randomUUID());
+ const scope:QueryScope={kind:'selection',evidenceIds:[note.id,...anchors,...unavailable],timeZone:'Asia/Shanghai'};
+ f.programs.push(()=>answer());
+ const task=await f.start([note.material.ref],{kind:'change'},scope);
+ await f.wait(task);
+ assert.deepEqual(f.tasks.input<{input:{scope:QueryScope}}>(task.id,task.revision,f.assertCurrent).input.scope,scope);
+ assert.deepEqual((f.seen[0] as Context&{scope:unknown}).scope,{kind:'selection',timeZone:'Asia/Shanghai'});
+ assert.deepEqual(new Set(f.grants[0]),new Set([note.id,...anchors]));
+ assert.ok(f.seen[0].originals.some(item=>anchors.includes(item.id)&&item.quote===note.text));
+ assert.equal((await f.service.finish(task.id)).reason,'Generated result');
+});
+
 test('assistant analysis retains exact scoped import authorship and source dates without Memory, and a changed declaration fences its saved result',async t=>{
  const f=await fixture(t),sourceId='generated-authored-journal',otherSource='generated-unrelated-dialogue';
  for(const id of [sourceId,otherSource])f.node.sources.register({id,name:id,kind:'custom',deviceId:'generated-device',platform:'import'});

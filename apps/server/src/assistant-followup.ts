@@ -175,21 +175,16 @@ export class AssistantFollowup {
   // deletion. Shared dependencies keep their evidence role and need a grant.
   const dependencies=unique([...contextDependencies,...taskEvidenceIds(this.store,review.disclosureDependencies)]),contextIds=new Set(contextDependencies);
   const suppressionIds=dependencies.filter(id=>!contextIds.has(id));
-  const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
-  if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
-  await yieldTurn();assertActive();
-  if(views.some(view=>!view.disclosureDependencies.complete))throw new StoreError('Assistant material lineage is incomplete',409);
-  const memoryRecords=this.reader.memories.readEvidence(unique(memoryPage.items.flatMap(memory=>memory.evidenceIds)));
-  const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
-   ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
-  const evidenceIds=unique(this.reader.memories.readCurrentEvidence(contextDependencies).map(record=>record.id));
   const pendingOwnerQuestions=questionPins.map(pin=>{
    const question=this.currentQuestion(pin);
    if(!views.some(view=>view.material.id===question.materialId&&view.material.ref===question.materialRef)||
     question.evidence.some(span=>!contextDependencies.includes(span.id)))throw new StoreError('Assistant owner question exceeds its evidence scope',409);
    return {id:question.id,revision:question.revision,state:question.state,prompt:question.prompt,reason:question.reason,evidence:question.evidence};
   });
-  const context={turns:[],asOf,scope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
+  // The original selection stays in the saved scope and the query's grants.
+  // Its IDs are already available through the bounded original read catalog.
+  const {evidenceIds:_,...contextScope}=scope;
+  const context={turns:[],asOf,scope:contextScope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
    ...(pendingOwnerQuestions.length?{pendingOwnerQuestions}:{}),
    memoryTruncated:Boolean(memoryPage.nextCursor),matters:matters.map(matter=>({id:matter.id,revision:matter.revision,goal:matter.goal,correction:matter.correction})),
    cards:cards.map(card=>({id:card.id,revision:card.revision,kind:card.kind,state:card.state,matterId:card.matterId,title:card.title,
@@ -201,7 +196,15 @@ export class AssistantFollowup {
   const question=PROMPT;
   const bytes=Buffer.byteLength(JSON.stringify(context));
   if(bytes>(selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES))throw new AssistantContextLimit(bytes);
-  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals);
+  const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
+  if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
+  await yieldTurn();assertActive();
+  if(views.some(view=>!view.disclosureDependencies.complete))throw new StoreError('Assistant material lineage is incomplete',409);
+  const memoryRecords=this.reader.memories.readEvidence(unique(memoryPage.items.flatMap(memory=>memory.evidenceIds)));
+  const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
+   ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
+  const currentRecords=this.reader.memories.readCurrentEvidence(contextDependencies),evidenceIds=unique(currentRecords.map(record=>record.id));
+  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,currentRecords);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,questionPins,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
@@ -363,9 +366,9 @@ export class AssistantFollowup {
   if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
   return this.prepareRequest(input,snapshot.originals);
  }
- private prepareRequest(input:QueryInput,originals:Snapshot['originals']){
+ private prepareRequest(input:QueryInput,originals:Snapshot['originals'],currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
   const capacity=this.requestCapacity?.();if(!capacity)return input;
-  const records=this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryInput(input,originals,records);
+  const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryInput(input,originals,records);
   if(!assistantRequestUsage(prepared,records,capacity).fits)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
   return prepared;
  }
@@ -425,6 +428,7 @@ export class AssistantFollowup {
  }
  private async consumeGroup(changes:AssistantChangeFeed,ready:ReturnType<AssistantChangeFeed['ready']>,excluded:Set<string>,all:QueryScope,active:()=>void,includeCatalog:boolean){
   const refs=unique(ready.map(candidate=>candidate.input.material!.ref));
+  const catalogEvidence=new Map<string,readonly string[]>();
   // Background context is a bounded page from the same authorized catalog.
   // Relevance and issue identity are left to the interpreter.
   let cursor:string|undefined;
@@ -434,7 +438,7 @@ export class AssistantFollowup {
     if(refs.length===5)break;
     if(refs.includes(material.ref)||excluded.has(material.origin.sourceId))continue;
     try{const view=this.understanding.read({ref:material.ref,scope:all,limit:10});
-     if(this.allowsAutomatic(view.disclosureDependencies.ids))refs.push(material.ref);
+     if(this.allowsAutomatic(view.disclosureDependencies.ids)){refs.push(material.ref);catalogEvidence.set(material.ref,view.disclosureDependencies.ids);}
     }catch(error){if(!(error instanceof StoreError&&error.statusCode===404))throw error;}
    }
    cursor=page.nextCursor??undefined;
@@ -444,7 +448,7 @@ export class AssistantFollowup {
   // Native notes are authorized as device originals; their Material catalog
   // source is a projection. Select exact dependency IDs through the existing
   // disclosure resolver instead of guessing source identities from that label.
-  const selected=refs.flatMap(ref=>this.understanding.read({ref,scope:all,limit:10}).disclosureDependencies.ids);
+  const selected=refs.flatMap(ref=>catalogEvidence.get(ref)??this.understanding.read({ref,scope:all,limit:10}).disclosureDependencies.ids);
   for(const record of this.store.evidenceMetadata(selected))if(record.source==='file'&&record.provenance)
    selected.push(...this.files.read({captureId:record.id,scope:all}).disclosureDependencies.ids);
   for(const card of this.cards.review(all,30).items)if(this.allowsAutomatic(card.evidenceDependencies.ids))selected.push(...card.evidenceDependencies.ids);
