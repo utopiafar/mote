@@ -412,6 +412,9 @@ export class AssistantFollowup {
   const pending=this.store.db.prepare(`SELECT DISTINCT f.id,b.id batch_id FROM assistant_change_work w JOIN task_records c ON c.id=w.task_id
    JOIN task_records b ON b.id=w.started_batch JOIN task_records f ON f.operation_id=b.operation_id
    WHERE c.state IN ('running','blocked') AND f.kind='assistant.followup'`).all();
+  // Batch commit schedules this poll in a microtask. Let lease timers and HTTP
+  // run before reopening the batch and follow-up evidence in a fresh read.
+  if(pending.length){await yieldTurn();active();}
   let running=false;
   for(const row of pending){
    const task=this.tasks.get(String(row.id)),batchId=String(row.batch_id);
@@ -424,7 +427,11 @@ export class AssistantFollowup {
     this.transaction(()=>{if(task.state!==state)this.tasks.setState(task.id,task.revision,state);changes.settle(batchId,state);});continue;
    }
    if(progress.task.state!=='succeeded'){running=true;continue;}
-   try{const result=await this.finish(task.id,active);active();changes.complete(batchId,result);}
+   try{
+    const result=await this.finish(task.id,active);
+    await yieldTurn();active();
+    changes.complete(batchId,result);
+   }
    catch(error){active();this.reportFailure(task.id,error);
     this.transaction(()=>{const current=this.tasks.get(task.id);if(!['stale','cancelled','succeeded','blocked'].includes(current.state))this.tasks.setState(current.id,current.revision,'blocked');changes.settle(batchId,'blocked');});
    }

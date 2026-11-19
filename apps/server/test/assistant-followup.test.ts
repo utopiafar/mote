@@ -697,6 +697,21 @@ test('a current catalog original already reviewed with a due group is claimed on
  f.node.assistantChanges.tick(100);now+=60001;
  const context=await later();f.node.assistantChanges.tick(100);
  assert.deepEqual(f.node.assistantChanges.ready().map(item=>item.input.captureId),[due.id],'the second original has deliberately not reached its own quiet deadline');
+ let afterBatch=false,afterFollowup=false;
+ const commit=f.batch['commit'].bind(f.batch),processor=f.batch as unknown as {commit:typeof commit};
+ t.mock.method(processor,'commit',(...args:Parameters<typeof commit>)=>{
+  commit(...args);setImmediate(()=>{afterBatch=true;});
+ });
+ const finish=f.service.finish.bind(f.service);
+ t.mock.method(f.service,'finish',async(...args:Parameters<typeof finish>)=>{
+  assert.ok(afterBatch,'host callbacks can run between the batch commit and follow-up publication');
+  const saved=await finish(...args);setImmediate(()=>{afterFollowup=true;});return saved;
+ });
+ const complete=f.node.assistantChanges.complete.bind(f.node.assistantChanges);
+ t.mock.method(f.node.assistantChanges,'complete',(...args:Parameters<typeof complete>)=>{
+  assert.ok(afterFollowup,'host callbacks can run between follow-up publication and change completion');
+  return complete(...args);
+ });
  paused.mock.restore();f.programs.push(()=>answer([],[],'Generated current inputs were reviewed.'));
  await f.service.tick(f.node.assistantChanges);
  const task=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();assert.ok(task);await f.wait(f.tasks.get(String(task.id)));await f.service.tick(f.node.assistantChanges);
