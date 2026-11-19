@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {isDeepStrictEqual} from 'node:util';
 import type {Cancellation, ServiceLease} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
@@ -162,6 +163,7 @@ class ManagedHostRunSession implements HostRunSession {
   private released = false;
   private cancellationTask?: Promise<void>;
   private deadlineTimer?: ReturnType<typeof setTimeout>;
+  private backgroundTurnStarted = performance.now();
   private abortListener: () => void;
   private readonly usageEvents: ReturnType<typeof createRuntimeUsageEvents>;
   constructor(readonly dependencies: HostRunDependencies, private assembly: HostSessionAssembly) {
@@ -196,8 +198,12 @@ class ManagedHostRunSession implements HostRunSession {
         }
         let primary = false;
         try {
+          let pause = this.yieldBackgroundTurn();
+          if (pause) await pause;
           this.assertAttempt(attempt);
           const result = await sender(delivery.payload);
+          pause = this.yieldBackgroundTurn();
+          if (pause) await pause;
           this.assertAttempt(attempt);
           try { delivery.confirm(); }
           catch (error) { this.hostToolFailure ??= {error}; throw error; }
@@ -219,6 +225,8 @@ class ManagedHostRunSession implements HostRunSession {
       runModel: <T>(attempt: RuntimeAttempt, task: () => Promise<T>) => this.track(async () => {
         this.assertAttempt(attempt);
         const admitted = async () => {
+          const pause = this.yieldBackgroundTurn();
+          if (pause) await pause;
           this.assertAttempt(attempt);
           // The active budget can reject before an uncooperative provider task
           // settles. Stop tracking that abandoned model call after the admitted
@@ -233,6 +241,8 @@ class ManagedHostRunSession implements HostRunSession {
           } finally { if (work) this.pending.delete(work); }
         };
         const result = await (assembly.admit ? assembly.admit(admitted, signal) : admitted());
+        const pause = this.yieldBackgroundTurn();
+        if (pause) await pause;
         this.assertAttempt(attempt);
         return result;
       }),
@@ -328,8 +338,19 @@ class ManagedHostRunSession implements HostRunSession {
     this.assertCurrent();
     if (!this.attempt || this.attempt !== attempt || this.lifecycle.phase !== 'running') throw new RuntimeContractError();
   }
+  private yieldBackgroundTurn(): Promise<void> | undefined {
+    // Several proof checks can run in consecutive microtasks with already
+    // resolved runtime promises. Allow HTTP, lease timers and revocations to
+    // run before the next check at a background model or delivery boundary.
+    if (this.dependencies.input.executionLane !== 'background' || performance.now() - this.backgroundTurnStarted < 50) return;
+    return yieldTurn().then(() => { this.backgroundTurnStarted = performance.now(); });
+  }
   private track<T>(task: () => Promise<T>): Promise<T> {
-    const pending = Promise.resolve().then(task); this.pending.add(pending);
+    const pending = Promise.resolve().then(() => {
+      const pause = this.yieldBackgroundTurn();
+      return pause ? pause.then(task) : task();
+    });
+    this.pending.add(pending);
     void pending.then(() => this.pending.delete(pending), () => this.pending.delete(pending));
     return pending;
   }
@@ -340,6 +361,8 @@ class ManagedHostRunSession implements HostRunSession {
       if (!isDeepStrictEqual(this.dependencies.profile.binding, this.dependencies.runtime.binding) || !isDeepStrictEqual(this.dependencies.output.binding.service, hostOutputService)) throw new RuntimeContractError();
       if (typeof this.dependencies.input.question !== 'string' || !this.dependencies.input.question.trim()) throw new AgentInputError();
       this.runtimeHandle = await this.dependencies.runtime.value.prepare(this.dependencies.profile, this.dependencies.model, this.port);
+      const pause = this.yieldBackgroundTurn();
+      if (pause) await pause;
       this.assertCurrent(); this.lifecycle.setPhase('idle');
     } catch (error) {
       const terminal = this.port.signal.aborted ? {kind: 'cancelled' as const, cause: this.lifecycle.cancellation?.kind ?? 'cancelled' as const} : {kind: 'failed' as const, failure: {code: 'internal' as const}};
@@ -349,6 +372,8 @@ class ManagedHostRunSession implements HostRunSession {
     }
   }
   private async runAttempt(prompt: string, index: number, error?: AgentResponseError): Promise<RuntimeOutcome> {
+    const pause = this.yieldBackgroundTurn();
+    if (pause) await pause;
     this.assertCurrent();
     const attempt = Object.freeze({id: randomUUID(), index});
     this.attempt = attempt; this.lastAttempt = attempt; this.lifecycle.setPhase('running');
@@ -361,6 +386,8 @@ class ManagedHostRunSession implements HostRunSession {
       this.runtimeWork = Promise.resolve().then(() => error ? this.handle.repair({...request, validation: {reason: error.reason, feedback: error.message}} satisfies RuntimeRepairRequest) : this.handle.run(request));
       const raw = await this.runtimeWork;
       await Promise.all([...this.steeringPending]);
+      const pause = this.yieldBackgroundTurn();
+      if (pause) await pause;
       this.assertAttempt(attempt);
       const outcome = parseRuntimeOutcome(raw);
       reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});
