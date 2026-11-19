@@ -86,8 +86,9 @@ async function fixture(t:TestContext){
 
 test('large owner selection stays host-side while the model sees only the chosen originals',async t=>{
  const f=await fixture(t),note=await f.add('Generated scoped original with a complete exact quote.');
- const anchors=f.node.materials.evidenceIds(note.material.ref),unavailable=Array.from({length:1400},()=>randomUUID());
+ const anchors=f.node.materials.evidenceIds(note.material.ref),unavailable=Array.from({length:53_000},()=>randomUUID());
  const scope:QueryScope={kind:'selection',evidenceIds:[note.id,...anchors,...unavailable],timeZone:'Asia/Shanghai'};
+ assert.ok(Buffer.byteLength(JSON.stringify(scope))>2_000_000,'one complete frozen selection can exceed the general task payload limit');
  f.programs.push(()=>answer());
  const task=await f.start([note.material.ref],{kind:'change'},scope);
  await f.wait(task);

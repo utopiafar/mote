@@ -10,6 +10,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import {TaskRecords} from '../src/task-records.js';
+import {invalidateTaskEvidence} from '../src/task-evidence.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {hostRun} from './fixtures/host-run.js';
 import type {QueryRunLease} from '../src/query-agent.js';
@@ -90,6 +91,29 @@ test('an item authority check revalidates its frozen originals once per check',a
   const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated query',evidenceIds:[id]}]},manual(f.node));
   await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
   assert.deepEqual(checked,[1,2],'each fresh grant validates the current frozen input once');
+});
+
+test('batch admission retains all original pins for a long Material',async t=>{
+  const f=await fixture(t,async()=>assert.fail('The model is deliberately unavailable'),false);
+  const id=await f.note('x'.repeat(14_200));
+  await f.node.materialOrganizer.tick(100);
+  const prior=f.node.materials.list({kind:'mote.note',limit:10}).items.find(material=>material.origin.externalId===id);assert.ok(prior);
+  const blocks=Array.from({length:14_200},(_,index)=>({id:`generated-${index}`,kind:'text' as const,format:'plain',text:'x',memberIds:['original']}));
+  const material=f.node.materials.publish({id:prior.id,kind:prior.kind,schemaVersion:1,title:'Generated long Material',origin:prior.origin,blocks,
+    members:[{id:'original',kind:'capture',ref:'capture:'+id}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}},{expectedRevision:prior.revision});
+  const evidenceIds=f.node.materials.evidenceIds(material.ref);
+  assert.equal(evidenceIds.length,14_200);
+  const task=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated long review',evidenceIds}]},manual(f.node));
+  const tasks=new TaskRecords(f.node.store),item=tasks.get(String(f.batch.progress(task.id).items[0].input.itemId));
+  const saved=tasks.input<{evidenceIds:string[];processingEvidence:Record<string,string>}>(item.id,item.revision,ids=>{
+    assert.equal(ids.length,evidenceIds.length+1);assert.ok(ids.includes(id));
+  });
+  assert.ok(Buffer.byteLength(JSON.stringify(saved))>2_000_000);
+  assert.deepEqual(saved.evidenceIds,evidenceIds);
+  assert.ok(evidenceIds.every(pin=>saved.processingEvidence[pin]?.length===64));
+  invalidateTaskEvidence(f.node.store,[evidenceIds.at(-1)!]);
+  assert.equal(tasks.get(item.id).state,'stale');
+  assert.throws(()=>tasks.input(item.id,item.revision,()=>assert.fail('Withdrawn input is unavailable')),{statusCode:409});
 });
 
 test('cancel before start or during a model call prevents all late item and reduce publication',async t=>{

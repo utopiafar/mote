@@ -8,7 +8,7 @@ import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
 import {AssistantMatters} from './assistant-matters.js';
 import {AssistantUnderstandingReader} from './assistant-understanding.js';
-import {BATCH_CONTEXT_MAX_BYTES,BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
+import {BATCH_CONTEXT_MAX_BYTES,BATCH_TASK_INPUT_MAX_BYTES,BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
 import {AssistantChangeFeed} from './assistant-change-feed.js';
 import {BackgroundModelAuthorization} from './background-model-authorization.js';
 import {FileObservationReader,type FileObservation} from './file-observations.js';
@@ -239,7 +239,8 @@ export class AssistantFollowup {
    const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
     materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,...(queryContext?{queryContext}:{})};
    this.assertSnapshot(snapshot);
-   const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},ids=>this.assertDependencies(snapshot,ids));
+   const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},
+    ids=>this.assertDependencies(snapshot,ids),{maxInputBytes:BATCH_TASK_INPUT_MAX_BYTES});
    accepted(task);return task;
   });
  }

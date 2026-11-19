@@ -29,6 +29,7 @@ type Row={id:string;operation_id:string;kind:string;state:OperationState;revisio
  * inside the same transaction as the read/write. A receipt is no authorization. */
 export type AssertTaskCurrent=(evidenceIds:readonly string[])=>void;
 const identity=z.string().min(1).max(512);
+const defaultPayloadMaxBytes=2_000_000;
 const metadata=(row:Row):TaskRecord=>({id:row.id,operationId:row.operation_id,kind:row.kind,state:row.state,revision:row.revision,createdAt:row.created_at,updatedAt:row.updated_at});
 const terminal=(state:OperationState)=>['succeeded','cancelled','stale','skipped'].includes(state);
 function checkCurrent(assertCurrent:AssertTaskCurrent,ids:readonly string[]){
@@ -76,21 +77,22 @@ export class TaskRecords {
       throw new StoreError('Task record changed; reload before continuing',409);
     return row;
   }
-  private normalize(value:unknown){
+  private normalize(value:unknown,maxBytes=defaultPayloadMaxBytes){
     // JSON round-trip strips undefined consistently before hashing or storage.
     // Validation errors never include the private value or a parser excerpt.
     let plain:string;
     try{plain=JSON.stringify(value);if(plain===undefined)throw Error();JSON.parse(plain);}
     catch{throw new StoreError('Task payload must be JSON');}
-    if(Buffer.byteLength(plain)>2_000_000)throw new StoreError('Task payload is too large',413);
+    if(Buffer.byteLength(plain)>maxBytes)throw new StoreError('Task payload is too large',413);
     return JSON.parse(plain) as unknown;
   }
   private dependencies(id:string){return this.store.db.prepare('SELECT evidence_id FROM task_evidence WHERE task_id=? ORDER BY evidence_id').all(id).map(row=>String(row.evidence_id));}
 
-  create(input:{operationId:string;kind:string;requestId:string;input:unknown;evidenceDependencies:EvidenceDependencies},assertCurrent:AssertTaskCurrent):TaskRecord{
+  create(input:{operationId:string;kind:string;requestId:string;input:unknown;evidenceDependencies:EvidenceDependencies},assertCurrent:AssertTaskCurrent,
+    {maxInputBytes=defaultPayloadMaxBytes}:{maxInputBytes?:number}={}):TaskRecord{
     const operationId=identity.parse(input.operationId),kind=identity.parse(input.kind),requestId=identity.parse(input.requestId);
     return this.transaction(()=>{
-      const payload=this.normalize(input.input),dependencies=validateTaskDependencies(input.evidenceDependencies);
+      const payload=this.normalize(input.input,maxInputBytes),dependencies=validateTaskDependencies(input.evidenceDependencies);
       const hash=sha256(canonicalRecipeJson({operationId,kind,input:payload,evidenceDependencies:dependencies}));
       const prior=this.store.db.prepare('SELECT * FROM task_records WHERE request_id=?').get(requestId) as Row|undefined;
       if(prior){if(prior.request_hash!==hash)throw new StoreError('Task request ID was reused with different content',409);return metadata(prior);}

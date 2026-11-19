@@ -15,6 +15,10 @@ import {resolveDependencies} from './conversation-lineage.js';
 export type BatchQuery=Pick<QueryInput,'question'|'taskContext'|'contextSourceContextDependencies'> & {evidenceIds:string[]};
 export type BatchRequest={operationId:string;requestId:string;items:BatchQuery[];reduce?:string};
 export const BATCH_CONTEXT_MAX_BYTES=48000;
+// A saved review retains the complete original selection and its fingerprints.
+// Tens of thousands of grants can fit the paged model catalog and exceed the
+// general task payload limit. This budget is for private persisted inputs.
+export const BATCH_TASK_INPUT_MAX_BYTES=8_000_000;
 type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
@@ -217,7 +221,7 @@ export class BatchProcessing {
     const batch=this.transaction(()=>{
       const items=request.items.map((input,index)=>{
         const frozen=this.frozen(input);
-        return this.tasks.create({operationId:request.operationId,kind:'batch.item',requestId:'batch-item:'+sha256(JSON.stringify([request.requestId,index])),input:frozen,evidenceDependencies:deps(frozen.evidenceIds)},this.assertCurrent);
+        return this.tasks.create({operationId:request.operationId,kind:'batch.item',requestId:'batch-item:'+sha256(JSON.stringify([request.requestId,index])),input:frozen,evidenceDependencies:deps(frozen.evidenceIds)},this.assertCurrent,{maxInputBytes:BATCH_TASK_INPUT_MAX_BYTES});
       });
       const allIds=[...new Set(request.items.flatMap(item=>item.evidenceIds))];
       const parent=this.tasks.create({operationId:request.operationId,kind:'batch',requestId:'batch:'+sha256(request.requestId),
