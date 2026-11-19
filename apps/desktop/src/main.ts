@@ -50,7 +50,9 @@ import { BackgroundJobs } from './background-jobs';
 import type { Config, Status } from './contracts';
 import { trayIconName } from './tray-icon';
 import { trayMenuTemplate, type TrayMenuItemId } from './tray-menu';
+import { guardMacSocketTypeOfService } from './socket-type-of-service';
 
+guardMacSocketTypeOfService();
 const defaultDataDirectory = app.getPath('userData');
 const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
 const desktopDevDownloadsUrl='https://github.com/utopiafar/mote/releases?q=desktop-dev-+prerelease%3Atrue+draft%3Afalse&expanded=true';

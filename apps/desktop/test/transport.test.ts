@@ -1,13 +1,45 @@
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import { Socket } from 'node:net';
 import {EventJournal} from '../src/support';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { heartbeat, uploadCapture,uploadCaptureBatch } from '../src/transport';
 import { defaultConfig } from '../src/config';
 import { captureAck,event, image } from './fixtures';
+import { guardMacSocketTypeOfService } from '../src/socket-type-of-service';
 
 afterEach(() => vi.unstubAllGlobals());
+
+it('keeps default macOS requests alive when the socket rejects its QoS mark', () => {
+  const prototype = Socket.prototype as Socket & {setTypeOfService?: (value: number) => Socket};
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'setTypeOfService');
+  const invalidMark = Object.assign(new Error('Generated invalid socket mark'), {code: 'EINVAL', syscall: 'setTypeOfService'});
+  const invalidOtherCall = Object.assign(new Error('Generated invalid socket operation'), {code: 'EINVAL', syscall: 'connect'});
+  const deniedMark = Object.assign(new Error('Generated denied socket mark'), {code: 'EPERM', syscall: 'setTypeOfService'});
+  let failure: Error | undefined = invalidMark;
+  const setter = function(this: Socket) { if (failure) throw failure; return this; };
+  Object.defineProperty(prototype, 'setTypeOfService', {value: setter, configurable: true, writable: true});
+  const socket = new Socket() as typeof prototype;
+  try {
+    guardMacSocketTypeOfService('linux');
+    expect(prototype.setTypeOfService).toBe(setter);
+    guardMacSocketTypeOfService('darwin');
+    expect(socket.setTypeOfService!(0)).toBe(socket);
+    expect(() => socket.setTypeOfService!(8)).toThrow(invalidMark);
+    failure = invalidOtherCall;
+    expect(() => socket.setTypeOfService!(0)).toThrow(invalidOtherCall);
+    failure = deniedMark;
+    expect(() => socket.setTypeOfService!(0)).toThrow(deniedMark);
+    failure = undefined;
+    expect(socket.setTypeOfService!(16)).toBe(socket);
+  } finally {
+    socket.destroy();
+    if (descriptor) Object.defineProperty(prototype, 'setTypeOfService', descriptor);
+    else delete prototype.setTypeOfService;
+  }
+});
+
 describe('acknowledgment-gated uploads', () => {
   it('journals validated split receipts before a later subrequest fails and meters attempted bytes', async () => {
     const entries = [0, 1].map(i => ({ event: event(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`) }));
