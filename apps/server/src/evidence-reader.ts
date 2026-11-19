@@ -331,7 +331,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   context(records:CaptureRecord[]){
     const fileViews=new Map<string,ReturnType<FileStore['fileView']>>();
-    return records.map(record=>{
+    const contexts=this.materials?.contextsForEvidence(records);
+    return records.map((record,index)=>{
     const formal=this.materials&&this.store.db.prepare('SELECT 1 FROM material_evidence WHERE id=?').get(record.id);
     const nativeFile=this.files&&this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
     const current=formal?this.materials!.isCurrentEvidence(record.id):nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance?.externalId&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
@@ -360,7 +361,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const item=view.item.text?{...view.item,text:'',...(view.item.document?{document:{...view.item.document,fileIndex:undefined}}:{})}:view.item;
       fileView={...view,item};fileViews.set(fileId,fileView);
     }
-    return {...record,...(fileView?{fileView,provenance:{...record.provenance!,originalAvailable:fileView.canOpenOriginal}}:{}),...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
+    return {...record,...(fileView?{fileView,provenance:{...record.provenance!,originalAvailable:fileView.canOpenOriginal}}:{}),...(contexts?{attributionContext:contexts[index]}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
     });
   }
   records(args:Range&{query?:string},search=false){
@@ -899,7 +900,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     }
     return true;
   }
-  private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false){
+  private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false,materialAccess?:Map<string,boolean>){
     if(!fileAttachmentAvailable(this.store,record.id,metadataOnly))return false;
     const fileId=this.files?.fileForRead(record.id);
     // An exact image id can name a retained immutable historical original.
@@ -914,7 +915,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       // Coding append keeps unchanged prefix anchors active across revisions.
       if(!material)return false;
       const current=this.materials?.get(material.id);
-      return Boolean(current&&this.materials?.isCurrentEvidence(record.id)&&this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly));
+      if(!current||!this.materials?.isCurrentEvidence(record.id))return false;
+      // A single synchronous evidence read can share the current Material's
+      // policy result. Each anchor still proves its own currentness.
+      const cached=materialAccess?.get(current.ref);if(cached!==undefined)return cached;
+      const allowed=this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly);
+      materialAccess?.set(current.ref,allowed);return allowed;
     }
     // A tombstone revokes model access to every historical revision of that
     // source item. Owner archive/history APIs can still inspect those bytes.
@@ -1284,7 +1290,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       }
       return operation('expand')==='expand'&&Boolean(currentGrants()?.get(id)?.some(source=>grantIsCurrent(id,source)));
     };
-    const boundedEvidenceAllowed=(record:CaptureRecord,batch?:{canonical:Map<string,CaptureRecord>;selections:Map<MaterialInputPin,boolean>;inputs?:readonly MaterialInputPin[]})=>{
+    const boundedEvidenceAllowed=(record:CaptureRecord,batch?:{canonical:Map<string,CaptureRecord>;selections:Map<MaterialInputPin,boolean>;materialAccess:Map<string,boolean>;inputs?:readonly MaterialInputPin[]})=>{
       const inputs=batch?batch.inputs:options.currentMaterialInputs?.();
       const imageGrant=(options.currentGrantContext?.() as {processingImages?:readonly MemoryImageGrant[]}|undefined)?.processingImages?.find(grant=>grant.id===record.id);
       if((operation('expand')==='memory'||imageGrant)&&inputs?.length&&record.provenance?.uri?.startsWith('material:')){
@@ -1299,7 +1305,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
           batch?.selections.set(pin,allowed);return allowed;
         });
       }
-      return this.captureExposure(record,operation('expand'),policy,'capture',hasScreenGrant(record.id));
+      return this.captureExposure(record,operation('expand'),policy,'capture',hasScreenGrant(record.id),false,batch?.materialAccess);
     };
     return {
       catalog:async args=>{
@@ -1427,7 +1433,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         const read=()=>{
           const inputs=options.currentMaterialInputs?.(),canonical=new Map<string,CaptureRecord>();
           if(inputs?.length)for(const record of this.memories.readEvidence(args.ids.map(ref=>evidenceRefId(ref,'capture')??ref)))if(!canonical.has(record.id))canonical.set(record.id,record);
-          const batch={inputs,canonical,selections:new Map<MaterialInputPin,boolean>()};
+          const batch={inputs,canonical,selections:new Map<MaterialInputPin,boolean>(),materialAccess:new Map<string,boolean>()};
           return this.context(this.evidenceById(args.ids,args,{scoped:new Map(),heads:new Map()}).filter(record=>boundedEvidenceAllowed(record,batch)));
         };
         return this.materials?this.materials.withReadMetadata(read):read();
