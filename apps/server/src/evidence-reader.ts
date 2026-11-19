@@ -84,18 +84,18 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
     // not replace its identity when validating a durable dependency.
-    const currentNonMaterial=(id:string)=>files?.isCurrentEvidence(id)||files?.readableFile(id)===id||store.isCurrentEvidence(id);
+    const currentCapture=(id:string)=>files?.readableFile(id)===id||store.isCurrentEvidence(id);
     this.memories=openMemoryRecords(store,ids=>{
       const read=()=>{
         const records=[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],contexts=materials?.contextsForEvidence(records);
         return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})}));
       };
       return materials?materials.withReadMetadata(read):read();
-    },id=>Boolean(materials?.isCurrentEvidence(id)||currentNonMaterial(id)),ids=>{
-      // Material currentness uses exactly the single-anchor predicate. Reuse
-      // its set only for this read; raw and file originals keep their guards.
+    },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||currentCapture(id)),ids=>{
+      // Reuse the current Material and file selections only for this read.
       const selected=[...new Set(ids)],current=materials?.currentEvidenceIds(selected)??new Set<string>();
-      for(const id of selected)if(!current.has(id)&&currentNonMaterial(id))current.add(id);
+      const remaining=selected.filter(id=>!current.has(id)),chunks=files?.currentEvidenceIds(remaining);
+      for(const id of remaining)if(chunks?.has(id)||currentCapture(id))current.add(id);
       return current;
     });
   }

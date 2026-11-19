@@ -49,6 +49,11 @@ test('reading a recording batch resolves each exact original context once while 
  const rawBatch=reader.memories.readEvidence(chunkIds);rawSpy.mock.restore();
  assert.deepEqual(rawBatch,rawIndividual,'raw transcript lineage preserves the same exact per-original declarations as individual reads');
  assert.equal(rawContextReads,2,'raw transcript siblings resolve each exact original context once per synchronous read');
+ const fileCurrent=t.mock.method(files,'isCurrentEvidence');
+ assert.deepEqual(reader.memories.readCurrentEvidence(chunkIds),rawIndividual);
+ assert.equal(fileCurrent.mock.callCount(),2,'the two artifacts share their currentness checks across all of their chunks');
+ fileCurrent.mock.restore();
+ assert.deepEqual(files.evidence([chunkIds[1],randomUUID(),chunkIds[0],chunkIds[1]]),[expectedChunks[1],expectedChunks[0],expectedChunks[1]],'a bulk read preserves input order and repeated IDs');
  let contextReads=0;const prepare=store.db.prepare.bind(store.db);
  const spy=t.mock.method(store.db,'prepare',(sql:string)=>{if(sql.includes('SELECT DISTINCT c.id,c.device_id'))contextReads++;return prepare(sql);});
  const records=reader.memories.readEvidence(ids);spy.mock.restore();
@@ -80,6 +85,8 @@ test('reading a recording batch resolves each exact original context once while 
  store.delete(originals[0].id);
  assert.equal(reader.memories.readCurrentEvidence(ids).length,0,'the next guard must observe deletion of a combined Material member');
  assert.equal(reader.memories.readCurrentEvidence(originals[1].chunks.map(chunk=>chunk.id)).length,80,'the independent surviving original stays current');
+ sources.update('generated-recording-context',{enabled:false});
+ assert.equal(files.currentEvidenceIds(chunkIds).size,0,'the next batch must recheck the source permission');
 });
 
 test('batch Memory guards reuse formal metadata while preserving exact originals and fresh revocation',async t=>{

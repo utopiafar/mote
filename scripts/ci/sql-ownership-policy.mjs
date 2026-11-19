@@ -160,6 +160,10 @@ export const consumerScopes={
  'lifecycle-extensions.ts':{
   recoverableMemoryJobs:'memory',
  },
+ 'files.ts':{
+  'FileStore.currentEvidenceIds':'file',
+  'FileStore.evidence':'file',
+ },
  'plugins/action-capabilities.ts':{'ActionCapabilities.command':'action-capabilities','ActionCapabilities.declare':'action-capabilities','ActionCapabilities.declarations':'action-capabilities','ActionCapabilities.inventory':'action-capabilities','ActionCapabilities.saveDraft':'action-capabilities','ActionCapabilities.revokeDraft':'action-capabilities','ActionCapabilities.grants':'action-capabilities','ActionCapabilities.revokeGrant':'action-capabilities'},
  'actions.ts':{'Actions.proposeAuthorizedCalendar':'actions','Actions.recoverCurrentCalendar':'actions','Actions.connectorClaim':'actions','Actions.discover':'actions'},
  'external-calendar-actions.ts':{'ExternalCalendarActions.read':'actions','ExternalCalendarActions.accept':'actions'},

@@ -28,6 +28,7 @@ const fileListSignature=(args:Range&{query?:string;mimePrefix?:string})=>sha256(
 /** Bounded parts using the configured content write policy. No caller supplies a filesystem path. */
 export class FileStore {
   private currentEvidenceStatement?:StatementSync;
+  private currentEvidenceBatchStatement?:StatementSync;
   private readableFileStatement?:StatementSync;
   /** Processing owns input authority and the transition after bounded resupply. */
   processingReceiptCurrent?:(input:Record<string,unknown>,phase:'pipeline'|'summary')=>boolean;
@@ -521,6 +522,21 @@ export class FileStore {
     if(!fileAttachmentAvailable(this.store,id,true))return false;
     return Boolean((this.currentEvidenceStatement??=this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id')} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`)).get(id));
   }
+  currentEvidenceIds(ids:readonly string[]):Set<string> {
+    if(!ids.length)return new Set();
+    const rows=(this.currentEvidenceBatchStatement??=this.store.db.prepare(`SELECT id,capture_id,artifact_id FROM file_chunks
+      WHERE id IN (SELECT value FROM json_each(?))`)).all(JSON.stringify(ids));
+    const artifacts=new Map<string,boolean>(),current=new Set<string>();
+    for(const row of rows){
+      const id=String(row.id),key=JSON.stringify([row.capture_id,row.artifact_id]);
+      // Attachment policy still applies to each chunk. The preferred artifact
+      // and its file's currentness are shared only within this synchronous read.
+      if(!fileAttachmentAvailable(this.store,id,true))continue;
+      if(!artifacts.has(key))artifacts.set(key,this.isCurrentEvidence(id));
+      if(artifacts.get(key))current.add(id);
+    }
+    return current;
+  }
   /** Resolve a currently permitted file or chunk; an identity is never a path grant. */
   readableFile(id:string):string|undefined {
     const captureId=this.fileForRead(id);if(!captureId||!fileAttachmentAvailable(this.store,captureId,true))return;
@@ -541,8 +557,10 @@ export class FileStore {
   }
   evidence(ids:string[]){
     if(!ids.length)return [];
-    const select=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1');
-    const rows=ids.flatMap(id=>{const c=select.get(id) as Chunk|undefined;return c?[c]:[];});return this.chunkRecords(rows);
+    const rows=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id IN (SELECT value FROM json_each(?)) AND a.current=1')
+      .all(JSON.stringify([...new Set(ids)])) as Chunk[];
+    const byId=new Map(rows.map(row=>[row.id,row]));
+    return this.chunkRecords(ids.flatMap(id=>{const row=byId.get(id);return row?[row]:[];}));
   }
   search(args:ContextRange&{query?:string}){return this.searchPage(args).items;}
   /** Directory metadata is a separate lexical channel from extracted chunks. */
