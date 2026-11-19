@@ -112,6 +112,13 @@ test('batch Memory guards reuse formal metadata while preserving exact originals
  assert.equal(currentBatch.mock.callCount(),1,'one lookup checks the complete current Material selection');
  assert.equal(currentSingle.mock.callCount(),0,'the batch does not probe Material currentness for each anchor');
  currentSingle.mock.restore();currentBatch.mock.restore();
+ const changedUri={...individual[0],provenance:{...individual[0].provenance!,uri:individual[1].provenance!.uri}};
+ const wrongAnchor=t.mock.method(reader.memories,'readEvidence',()=>[changedUri,individual[1]]);
+ try{
+  assert.deepEqual(reader.memories.readCurrentEvidence(ids.slice(0,2)),[individual[1]],'a current ID cannot borrow a sibling’s original URI');
+  assert.equal(reader.memories.readEvidenceIfCurrent(ids.slice(0,2)),undefined);
+  assert.equal(reader.memories.isCurrentEvidence(individual[0].id),false);
+ }finally{wrongAnchor.mock.restore();}
  let inputs=[materials.input(first.material.ref,['material'])!,materials.input(second.material.ref,['material'])!],fingerprints=Object.fromEntries(batch.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
  const agent=reader.agent({diagnostics:new ServerDiagnostics({directory:join(directory,'logs'),enabled:false}),currentOperation:()=> 'memory',currentMaterialInputs:()=>inputs,currentProcessingEvidence:()=>fingerprints});
  const arguments_={ids};
