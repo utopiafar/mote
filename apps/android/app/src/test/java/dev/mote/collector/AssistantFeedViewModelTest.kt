@@ -24,6 +24,22 @@ class AssistantFeedViewModelTest {
             exchange(method, url, bytes?.let { JSONObject(String(it)) })
         }), scope, domain)
 
+    @Test fun `Coding cards keep each quote's origin and the proposed deliverable`() {
+        val coding = f.card().put("evidence", JSONArray().put(f.proof()).put(f.proof().put("offset", 32)))
+            .put("evidenceOrigins", JSONArray()
+                .put(JSONObject().put("id", f.evidence).put("offset", 0).put("provider", "codex").put("speaker", "agent"))
+                .put(JSONObject().put("id", f.evidence).put("offset", 32).put("provider", "codex").put("speaker", "user").put("recordedAt", f.time)))
+            .put("codingNextStep", JSONObject().put("kind", "prepare").put("goal", "Prepare the review").put("whyNow", "Review is due"))
+        val api = api { _, _, _ -> 200 to f.page(coding) }
+        val disk = store(); val model = AssistantFeedViewModel(api, disk::read, disk::write)
+        model.refresh()
+        val card = model.cards.single()
+        assertEquals(listOf("agent", "user"), card.evidence.map { it.origin?.speaker })
+        assertEquals("Codex", card.evidence.last().origin?.source)
+        assertEquals(f.time, card.evidence.last().origin?.recordedAt)
+        assertEquals("Prepare the review", card.codingNextStep?.goal)
+    }
+
     @Test fun `server task scope controls suggestion acceptance and reads independently of a broader matter`() {
         val broad = AssistantScope(JSONObject().put("kind", "all").put("deviceId", "generated-device"))
         val selected = f.scope()

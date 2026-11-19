@@ -3,7 +3,7 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
 import {assistantBatchContext,assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
-import {parseArtifactRef,parseEvidenceId,queryScopeSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {codingNextStepSchema,parseArtifactRef,parseEvidenceId,queryScopeSchema,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
 import {AssistantMatters} from './assistant-matters.js';
@@ -13,8 +13,9 @@ import {AssistantChangeFeed} from './assistant-change-feed.js';
 import {BackgroundModelAuthorization} from './background-model-authorization.js';
 import {FileObservationReader,type FileObservation} from './file-observations.js';
 import {readCurrentMemoryPage} from './current-memory.js';
-import {EvidenceReader} from './evidence-reader.js';
-import type {MaterialStore} from './materials.js';
+import {EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
+import type {CodingRequest,MaterialStore} from './materials.js';
+import {codingMessageProof} from './coding-session-context.js';
 import type {ModelConnection} from './background-model-authorization.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,combineSourceContextDependencies} from './source-context-lineage.js';
@@ -35,7 +36,8 @@ const uuid=z.string().uuid();
 const text=z.string().trim().min(1).max(8000);
 const proof=z.object({id:uuid,quote:z.string().min(1).max(2000),offset:z.number().int().nonnegative().safe()}).strict();
 const cardProposal=z.object({action:z.enum(['new','update','resolve','confirm']),cardId:uuid.nullable(),relatedCardIds:z.array(uuid).max(100),
- title:z.string().trim().min(1).max(500),body:text,reason:text,reminderReason:z.string().trim().min(1).max(2000).optional(),evidence:z.array(proof).min(1).max(20),matterId:uuid.nullable()}).strict();
+ title:z.string().trim().min(1).max(500),body:text,reason:text,reminderReason:z.string().trim().min(1).max(2000).optional(),evidence:z.array(proof).min(1).max(20),matterId:uuid.nullable(),
+ codingNextStep:codingNextStepSchema.extend({request:proof}).optional()}).strict();
 // Only the interpretation is supplied by the model. Identity, revisions,
 // dependencies and source pins are taken from the host's saved snapshot.
 const commitmentInterpretation=commitmentProposalSchema.innerType().omit({commitmentId:true,eventId:true,evidenceDependencies:true,sourceContextDependencies:true});
@@ -52,6 +54,7 @@ type Commitment=ReturnType<AssistantCommitments['get']>;
 type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:CardPin[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
  memoryRevisions:{id:string;version:number;fingerprint:string}[];materialRefs:string[];evidenceIds:string[];dependencies:string[];suppressionIds:string[];
  materialProducts:{ref:string;products:string[];nextCursor:string|null;coverage:ReturnType<AssistantUnderstandingReader['read']>['coverage']}[];
+ codingRequests?:{materialId:string;requests:CodingRequest[]}[];
  pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission;
  queryContext?:NonNullable<QueryInput['taskContext']>};
 const deps=(ids:readonly string[])=>({version:1 as const,complete:true as const,ids:[...new Set(ids)].sort()});
@@ -74,6 +77,9 @@ function scopeContains(outer:QueryScope,inner:QueryScope){
  return true;
 }
 function empty(scope:QueryScope){return scope.kind==='selection'&&scope.sourceIds?.length===0||scope.evidenceIds?.length===0;}
+
+const CODING_FOLLOWUP=`For Coding transcripts, preserve native user and agent attribution for the exact cited message. A user's explicit request is a user statement; an Agent's report is an Agent report and never verifies completion. A matched parent conversation may offer several original user passages. Cite the one that establishes the actual requested work. Same repository, titles, timing and an Agent's assignment do not establish a shared owner goal.
+Leave progress, accepted scope corrections, historical PR and deployment reports, and missing later status in their conversation history. A new Coding card is only for a concrete useful next step now: a deliverable you can prepare or a decision the owner can take. Include optional codingNextStep with kind "prepare" or "decision", whyNow grounded in the specific current change or unresolved owner decision you cite, goal describing the deliverable or choice, and request as an exact {id,offset,quote} of the user's request. Use the offered parent request for a delegated conversation, and the conversation's own user request for standalone work. A missing parent request or current trigger means no card. Use confirm for a decision and new or update for preparation. Source arrival time is not work time. Do not open a new commitment or question merely to reconcile historical Agent reports. Return empty cards when appropriate.`;
 
 /** One bounded interpreter for understanding, Memory, cards and commitments.
  * Owner commands and A4 supply the existing batch admission. No schedule or
@@ -147,6 +153,8 @@ export class AssistantFollowup {
    ...contextCards.flatMap(card=>card.evidenceDependencies.ids),...commitments.flatMap(item=>item.evidenceDependencies.ids)]);
   const matters=matterPage.items.filter(matter=>scopeContains(scope,matter.scope)&&matter.evidenceIds.every(id=>readable.has(id)));
   const originals:{id:string;offset:number;quote:string}[]=[];
+  const codingRequests:NonNullable<Snapshot['codingRequests']>=[];
+  const selectedIds=scope.evidenceIds===undefined?undefined:new Set(scope.evidenceIds);
   const materialContext=[];
   for(const view of views){
    const material=view.material;let body:{text:string;complete:boolean}|undefined;
@@ -166,13 +174,28 @@ export class AssistantFollowup {
     body={text:page.text,complete:page.text.length===material.textLength&&view.coverage.extraction.status==='ready'};
    }
    for(const product of view.products)for(const original of product.sourceEvidence)originals.push({id:original.id,offset:original.offset,quote:original.quote});
+   const parent=this.materials.codingContext(material);
+   const codingChild=Boolean(parent)||this.materials.isCodingChild(material);
+   const available=parent?.requests.filter(request=>!selectedIds||selectedIds.has(request.id)).slice(0,4)??[];
+   const parentRecords=new Map(this.reader.memories.readCurrentEvidence(unique(available.map(request=>request.id))).map(record=>[record.id,record]));
+   const requests=available.filter(request=>{
+    const record=parentRecords.get(request.id);
+    return Boolean(record&&withinEvidenceScope(record,scope)&&record.ocrText.slice(request.offset,request.offset+request.quote.length)===request.quote&&
+      this.reader.contextDependenciesAllowed([request.id]));
+   });
+   originals.push(...requests.map(({id,offset,quote})=>({id,offset,quote})));
+   if(codingChild){
+    codingRequests.push({materialId:material.id,requests});
+   }
    materialContext.push({ref:material.ref,title:material.title,origin:material.origin,attributionContext:material.attributionContext,coverage:view.coverage,products:view.products.map(product=>({summary:product.summary,events:product.events,workRecords:product.workRecords,generatedAt:product.generatedAt})),
-    productsTruncated:Boolean(view.nextCursor),...(body?{body}:{})});
+    productsTruncated:Boolean(view.nextCursor),...(body?{body}:{}),
+    ...(codingChild?{parentRequests:requests.map(({id,offset,quote,recordedAt})=>({id,offset,length:quote.length,recordedAt}))}:{})});
    await yieldTurn();assertActive();
   }
   const memoryRevisions=memoryPage.items.map(memory=>({id:memory.id,version:memory.version,fingerprint:memory.fingerprint}));
   const contextDependencies=taskEvidenceIds(this.store,deps([...views.flatMap(view=>view.disclosureDependencies.ids),...views.flatMap(view=>view.products.map(product=>{const parsed=parseArtifactRef(product.ref);if(!parsed)throw new StoreError('Semantic product reference is invalid',409);return parsed.id;})),...memoryPage.items.flatMap(memory=>[memory.id,...memory.evidenceIds]),
-   ...contextCards.flatMap(card=>card.disclosureDependencies.ids),...commitments.flatMap(item=>item.evidenceDependencies.ids),...observations.flatMap(observation=>observation.disclosureDependencies.ids)]));
+   ...contextCards.flatMap(card=>card.disclosureDependencies.ids),...commitments.flatMap(item=>item.evidenceDependencies.ids),...observations.flatMap(observation=>observation.disclosureDependencies.ids),
+   ...codingRequests.flatMap(context=>context.requests.map(request=>request.id))]));
   // Suppression-only lineage still invalidates private tasks on withdrawal or
   // deletion. Shared dependencies keep their evidence role and need a grant.
   const dependencies=unique([...contextDependencies,...taskEvidenceIds(this.store,review.disclosureDependencies)]),contextIds=new Set(contextDependencies);
@@ -195,7 +218,7 @@ export class AssistantFollowup {
   // Keep the owner's bounded question separate from the existing batch task
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
-  const question=PROMPT;
+  const question=views.some(view=>view.material.kind==='mote.coding-session')?PROMPT+'\n\n'+CODING_FOLLOWUP:PROMPT;
   const limit=selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES;
   const capacity=this.requestCapacity?.();
   const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(capacity));
@@ -237,7 +260,8 @@ export class AssistantFollowup {
     addTaskEvidence(this.store,itemId,allDependencies);
    }
    const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
-    materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,...(queryContext?{queryContext}:{})};
+    materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,
+    ...(codingRequests.length?{codingRequests}:{}),...(queryContext?{queryContext}:{})};
    this.assertSnapshot(snapshot);
    const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},
     ids=>this.assertDependencies(snapshot,ids),{maxInputBytes:BATCH_TASK_INPUT_MAX_BYTES});
@@ -399,16 +423,16 @@ export class AssistantFollowup {
   if(!prepared)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
   return prepared;
  }
- /** Called by the existing Material poll and batch completion. The queue,
-  * original receipts and recovery remain owned by A4 and BatchProcessing. */
+ /** Called by the existing Material poll and batch completion. ChangeFeed
+  * and BatchProcessing handle the queue, original receipts and recovery. */
  tick(changes:AssistantChangeFeed):Promise<void>{
   if(this.closed)return Promise.resolve();
   return this.polling??=this.consume(changes).catch(error=>{if(!this.closed)this.reportFailure(undefined,error);throw error;}).finally(()=>{this.polling=undefined;});
  }
  private async consume(changes:AssistantChangeFeed){
   const active=()=>{if(this.closed)throw new StoreError('Assistant consumer is closed',409);};
-  // A completed analysis may have committed immediately before a restart. Its
-  // saved result completes A4 without another model request or publication.
+  // A completed analysis may have committed immediately before a restart.
+  // The saved result completes the change records without another model request or publication.
   const pending=this.store.db.prepare(`SELECT DISTINCT f.id,b.id batch_id FROM assistant_change_work w JOIN task_records c ON c.id=w.task_id
    JOIN task_records b ON b.id=w.started_batch JOIN task_records f ON f.operation_id=b.operation_id
    WHERE c.state IN ('running','blocked') AND f.kind='assistant.followup'`).all();
@@ -483,6 +507,11 @@ export class AssistantFollowup {
   // source is a projection. Select exact dependency IDs through the existing
   // disclosure resolver instead of guessing source identities from that label.
   const selected=refs.flatMap(ref=>catalogEvidence.get(ref)??this.understanding.read({ref,scope:all,limit:10}).disclosureDependencies.ids);
+  if(includeCatalog)for(const ref of refs){
+   const material=this.materials.get(ref);if(!material)continue;
+   const requests=this.materials.codingContext(material)?.requests.slice(0,4)??[];
+   for(const request of requests)if(this.allowsAutomatic([request.id]))selected.push(request.id);
+  }
   for(const record of this.store.evidenceMetadata(selected))if(record.source==='file'&&record.provenance)
    selected.push(...this.files.read({captureId:record.id,scope:all}).disclosureDependencies.ids);
   for(const card of this.cards.review(all,30).items)if(this.allowsAutomatic(card.evidenceDependencies.ids))selected.push(...card.evidenceDependencies.ids);
@@ -514,13 +543,43 @@ export class AssistantFollowup {
    if(memory.status!=='published'||memory.supersededBy||memory.version!==pin.version||memory.fingerprint!==pin.fingerprint||memory.validFrom&&Date.parse(memory.validFrom)>Date.parse(this.now())||memory.validUntil&&Date.parse(memory.validUntil)<=Date.parse(this.now()))throw new StoreError('Memory changed; analyze again',409);
   }
  }
+ private originalIncludes(item:z.infer<typeof proof>,snapshot:Snapshot){
+  return snapshot.originals.some(value=>value.id===item.id&&value.offset<=item.offset&&item.offset+item.quote.length<=value.offset+value.quote.length&&
+   value.quote.slice(item.offset-value.offset,item.offset-value.offset+item.quote.length)===item.quote);
+ }
  private proof(items:z.infer<typeof proof>[],snapshot:Snapshot){
+  const records=new Map(this.reader.memories.readCurrentEvidence(unique(items.map(item=>item.id))).map(record=>[record.id,record]));
   for(const item of items){
-   const original=snapshot.originals.find(value=>value.id===item.id&&value.offset<=item.offset&&item.offset+item.quote.length<=value.offset+value.quote.length&&value.quote.slice(item.offset-value.offset,item.offset-value.offset+item.quote.length)===item.quote);
-   if(!original)throw new StoreError('Assistant quotation is not in the supplied original',409);
-   const current=this.reader.memories.readCurrentEvidence([item.id])[0];
+   if(!this.originalIncludes(item,snapshot))throw new StoreError('Assistant quotation is not in the supplied original',409);
+   const current=records.get(item.id);
    if(!current||current.ocrText.slice(item.offset,item.offset+item.quote.length)!==item.quote)throw new StoreError('Assistant quotation is no longer current',409);
   }
+  return records;
+ }
+ private codingCardStep(item:z.infer<typeof cardProposal>,records:Map<string,CaptureRecord>,snapshot:Snapshot){
+  const materialIds=unique([...records.values()].flatMap(record=>{
+   const source=record.provenance;
+   return source?.document?.coding?[source.externalId]:[];
+  }));
+  if(!materialIds.length||item.action==='resolve')return {eligible:true};
+  const next=item.codingNextStep;
+  if(!next||(next.kind==='decision')!==(item.action==='confirm')||!this.originalIncludes(next.request,snapshot))return {eligible:false};
+  const request=this.proof([next.request],snapshot).get(next.request.id);
+  if(!request||codingMessageProof(request,next.request)?.speaker!=='user'||
+     ['third_party','mixed'].includes(request.attributionContext?.ownerRelation??'unknown'))return {eligible:false};
+  const sameRequest=(candidate:CodingRequest)=>candidate.id===next.request.id&&candidate.offset<=next.request.offset&&
+    next.request.offset+next.request.quote.length<=candidate.offset+candidate.quote.length;
+  if(!materialIds.every(id=>{
+   const material=this.materials.get(id);
+   if(!material)return false;
+   const child=snapshot.codingRequests?.find(context=>context.materialId===id);
+   if(!child)return !this.materials.isCodingChild(material)&&id===request.provenance?.externalId;
+   return child.requests.some(sameRequest)&&Boolean(this.materials.codingContext(material)?.requests.some(sameRequest));
+  }))return {eligible:false};
+  const {request:_,...step}=next;
+  const evidence=item.evidence.some(proof=>proof.id===next.request.id&&proof.offset===next.request.offset&&proof.quote===next.request.quote)?
+    item.evidence:[...item.evidence,next.request];
+  return {eligible:true,step,evidence};
  }
  /** Finish only from the batch's persisted actual result. A revision conflict is
   * recoverable by starting a fresh analysis; no stale output is merged. */
@@ -545,7 +604,8 @@ export class AssistantFollowup {
    const publicDependencies=deps(dependencies.filter(id=>Boolean(parseEvidenceId(id))));
    const internalDependencies=dependencies.filter(id=>!parseEvidenceId(id));
    for(const [index,item] of output.cards.entries()){
-    this.proof(item.evidence,snapshot);
+    const records=this.proof(item.evidence,snapshot),coding=this.codingCardStep(item,records,snapshot);
+    if(!coding.eligible)continue;
     const related=item.relatedCardIds.map(id=>{const card=snapshot.cards.find(value=>value.id===id);if(!card)throw new StoreError('Assistant referenced an unavailable card',409);return card;});
     if(related.some(card=>card.feedback.some(feedback=>feedback.action==='never_remind')))continue;
     const existing=item.cardId?snapshot.cards.find(card=>card.id===item.cardId):undefined;
@@ -555,7 +615,8 @@ export class AssistantFollowup {
     if(item.matterId&&!snapshot.matterRevisions.some(matter=>matter.id===item.matterId))throw new StoreError('Assistant referenced an unavailable matter',409);
     const id=existing?.id??stableId(task.id,'card',index),kind=existing?.kind??(item.action==='confirm'?'question':snapshot.input.mode.kind==='briefing'?'briefing':'suggestion');
     const publication:AssistantCardPublication={id,kind,matterId:item.matterId,version:`followup:${task.id}:${index}`,state:item.action==='resolve'?'resolved':'open',title:item.title,
-     body:item.body+'\n\n'+item.reason,...(item.reminderReason?{reminderReason:item.reminderReason}:{}),evidence:item.evidence,evidenceDependencies:publicDependencies,...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})};
+     body:item.body+'\n\n'+item.reason,...(item.reminderReason?{reminderReason:item.reminderReason}:{}),evidence:coding.evidence??item.evidence,
+     ...(coding.step?{codingNextStep:coding.step}:{}),evidenceDependencies:publicDependencies,...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})};
     this.cards.publish(publication,existing?.revision,scope,check,internalDependencies,snapshot.historicalIds);cardIds.push(id);
    }
    for(const [index,item] of output.commitments.entries()){

@@ -121,6 +121,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   archivedEvidence(refs:string[],scope:Range={}){
     return this.readEvidence(refs,scope,true);
   }
+  hasCodingOriginals(ids:string[]){return this.materials?.hasCodingOriginals(ids)??false;}
   private readEvidence(refs:string[],scope:Range,includeHistorical:boolean,batchViews?:{scoped:Map<string,boolean>;heads:Map<string,CaptureRecord|undefined>}){
     const ids=[...new Set(refs.map(ref=>parseEvidenceRef(ref)).filter(ref=>ref?.kind==='capture').map(ref=>ref!.id))];
     const materialRecords=(this.materials?.evidence(ids)??[]).flatMap(record=>{

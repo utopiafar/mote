@@ -8702,5 +8702,11 @@
   "复制 Codex 配置": "Copiar configuración de Codex",
   "Codex 配置": "Configuración de Codex",
   "撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。": "La revocación detiene las escrituras nuevas. Consulta el comprobante de la acción para las solicitudes ya enviadas.",
-  "日历授权、目标或当前上下文已变化。": "Cambió la autorización del calendario, el destino o el contexto actual."
+  "日历授权、目标或当前上下文已变化。": "Cambió la autorización del calendario, el destino o el contexto actual.",
+  "主会话": "Conversación principal",
+  "主会话的用户原话": "Mensajes del usuario en la conversación principal",
+  "你说": "Dijiste",
+  "用户发言": "Mensaje del usuario",
+  "Agent 报告": "Informe del agente",
+  "为什么现在": "Por qué ahora"
 }

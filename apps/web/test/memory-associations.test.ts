@@ -130,7 +130,12 @@ test('opening interaction evidence rechecks the real scoped projection after wit
   const proof=f.d.querySelector<HTMLButtonElement>('[data-commitment] details button')!;assert.ok(proof);
   f.node.store.delete(a.id);
   await act(async()=>proof.click());await settled(()=>!f.d.querySelector('[data-commitment]'));
-  assert.deepEqual(f.opened,[],'withdrawn proof cannot open from a retained interaction');assert.doesNotMatch(f.d.body.textContent!,/Generated withdrawn/);
+  assert.deepEqual(f.opened,[],'withdrawn proof cannot open from a retained interaction');
+  assert.doesNotMatch(f.d.querySelector('.memory-associations')!.textContent!,/Generated withdrawn/);
+  const original=f.d.querySelector<HTMLButtonElement>('.memory-evidence .evidence-card')!;
+  assert.equal(original.disabled,true);
+  assert.match(original.textContent!,/原件已释放/);
+  assert.doesNotMatch(original.textContent!,/Generated withdrawn/);
 });
 
 test('a topic combines explicit Memory references across people and matters without including unrelated commitments',async t=>{

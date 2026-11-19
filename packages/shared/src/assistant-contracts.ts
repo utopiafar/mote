@@ -10,6 +10,12 @@ const uuid=z.string().uuid();
 const revision=z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const ownerText=z.string().min(1).max(8000).refine(value=>value.trim().length>0,{message:'Input cannot be blank'});
 
+export const codingNextStepSchema=z.object({kind:z.enum(['prepare','decision']),
+  whyNow:z.string().trim().min(1).max(1000),goal:z.string().trim().min(1).max(1000)}).strict();
+export type CodingNextStep=z.infer<typeof codingNextStepSchema>;
+export type AssistantEvidenceOrigin={id:string;offset?:number;sourceId?:string;
+  provider?:'codex'|'claude'|'kimi'|'opencode';speaker?:'user'|'owner'|'agent';recordedAt?:string;appName?:string};
+
 /** Identifies one original source revision; neither this pin nor its capture
  * ID confers access. Artifact refs and workRecords are never originals. */
 export const sourceEvidenceRevisionSchema=provenanceSchema.pick({sourceId:true,externalId:true,revision:true}).extend({

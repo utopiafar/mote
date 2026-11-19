@@ -27,6 +27,10 @@ export function projectEvidence(record: ContextRecord, offset = 0, length = 600,
   const metadata = recordMetadataSchema.safeParse(record.metadata);
   const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
   const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
+  const deliveredDocument=document.success?{
+    ...document.data,
+    ...(document.data.codingMessages?{codingMessages:document.data.codingMessages.filter(message=>message.start<end&&message.end>start)}:{}),
+  }:undefined;
   const fileView = fileViewSchema.safeParse(record.fileView);
   const attribution = attributionContextSchema.safeParse(record.attributionContext);
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
@@ -61,7 +65,7 @@ export function projectEvidence(record: ContextRecord, offset = 0, length = 600,
     ...(record.provenance&&typeof record.provenance==='object'?{provenance:{
       sourceId:(record.provenance as Record<string,unknown>).sourceId,
       externalId:(record.provenance as Record<string,unknown>).externalId,
-      ...(document.success?{document:document.data}:{}),
+      ...(deliveredDocument?{document:deliveredDocument}:{}),
       layer:(record.provenance as Record<string,unknown>).layer,
       deleted:(record.provenance as Record<string,unknown>).deleted,
       revision:(record.provenance as Record<string,unknown>).revision,

@@ -5,7 +5,7 @@ import {confirmNavigation} from './unsaved';
 import { useEffect,useRef,useState } from 'react';
 import {noteMaterialPage,noteAssetTarget,noteQuoteCaptureId,type NoteReadSpan} from './note-material-render';
 import {ArchivedFileButton} from './ArchivedFileButton';
-import type {ArchivedFile} from '@mote/shared';
+import {formatEvidenceRef,type ArchivedFile} from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import { type Api, type Capture, ApiError, errorMessage,dateTime } from './api';
 import {ConversationOrigin} from './NoteOrigin';
@@ -57,6 +57,7 @@ export type Material = {
         original: string;
     };
     attributionContext?: AttributionContext;
+    codingContext?: {ref:string;title:string;requests:{id:string;eventId:string;quote:string;recordedAt?:string}[]};
     memorySource?: {
         status: 'ready' | 'waiting' | 'unavailable' | 'too_large';
         evidenceIds: string[];
@@ -174,6 +175,7 @@ export function MaterialDetail({ api, material, onOpen, onOpenSavedOrigin, onSav
     const rebuilding = selected.coverage.reason === 'source_evidence_changed' || read.error instanceof ApiError && read.error.status === 409;
     const historical = current.error === undefined && current.data && current.data.revision !== material.revision;
     const memorySource = !agent && !historical && current.error === undefined && current.data?.ref === material.ref ? current.data.memorySource : undefined;
+    const codingContext = !agent && !historical && current.error === undefined && current.data?.ref === material.ref ? current.data.codingContext : undefined;
     const catalog = (presentation.data?.schemaVersion === 1 && Array.isArray(presentation.data.types) ? presentation.data.types : []).find(type => type.kind === selected.kind && type.schemaVersion === selected.schemaVersion);
     const ownerNote=!agent&&material.kind==='mote.note'&&material.schemaVersion===2;
     const failureInstance=useRef({});
@@ -197,6 +199,12 @@ export function MaterialDetail({ api, material, onOpen, onOpenSavedOrigin, onSav
     {historical && <p role="status">{moteText('这是历史版本，当前资料已更新。')} <button className="button" onClick={() => onOpen(current.data!.ref)}>{moteText('查看当前版本')}</button></p>}
     {rebuilding ? <p role="status">{moteText('来源已更正，正在重新整理资料。完成后可继续查看。')} <button onClick={retry}>{moteText('刷新')}</button></p> : read.error !== undefined && <p role="alert">{errorMessage(read.error)} <button onClick={retry}>{moteText('重试')}</button></p>}
     {current.error !== undefined && <p role="alert">{errorMessage(current.error)} <button onClick={retry}>{moteText('重试')}</button></p>}
+    {!rebuilding&&codingContext&&<section className="reader-source-details" aria-label={moteText('主会话')}>
+        <button className="text-button" type="button" onClick={()=>onOpen(codingContext.ref)}>{moteText('主会话')} · {codingContext.title}</button>
+        {codingContext.requests.length>0&&<details><summary>{moteText('主会话的用户原话')}</summary>
+            {codingContext.requests.map(request=><div key={request.eventId}><button className="text-button" type="button" onClick={()=>onOpen(formatEvidenceRef('capture',request.id))}>{moteText('用户原文')}{request.recordedAt?' · '+dateTime(request.recordedAt):''}</button><blockquote>{request.quote}</blockquote></div>)}
+        </details>}
+    </section>}
     {!rebuilding && read.error === undefined && current.error === undefined && read.data && read.data.material.ref===material.ref && <FeatureView catalog={catalog} api={api} onOpen={onOpen} value={{ ...selected, representation: agent ? 'markdown' : 'owner-material', text: read.data.text }} fallback={ownerNote?<NoteMaterialBody key={noteReaderKey(api,material.ref)} api={api} page={read.data} onOpen={onOpen} onOpenSavedOrigin={openSavedOrigin} onSavedOriginSettled={onSavedOriginSettled} offset={offset} onOffset={setOffset}/>:<><AnswerMarkdown onOpen={onOpen} answer={{ answer: read.data.text, runId: selected.ref, trace: [], citations: [] }}/><p className="fine-print">{moteText('从第 {0} 个字符开始', offset + 1)} · {read.data.textRange.total}</p><div className="processing-actions">{offset > 0 && <button className="button" onClick={() => setOffset(0)}>{moteText('返回第一页')}</button>}{read.data.textRange.nextOffset !== null && <button className="button" onClick={() => setOffset(read.data!.textRange.nextOffset!)}>{moteText('继续展开')}</button>}</div></>}/>}
     {!agent && <FeatureActions position="detail" catalog={catalog} api={api} onOpen={onOpen} value={{ ...selected, representation: 'owner-material', text: read.data?.text ?? '' }}/>}
     <div className="reader-source-details"><button className="text-button" aria-expanded={tab==='origin'} onClick={()=>{setTab(tab==='origin'?'body':'origin');setMemberOffset(0);}}>{moteText('来源与处理')}</button>{tab === 'origin' && <><div className="source-material-tools-target" ref={setSourceTools}/>    {memorySource?.status === 'ready' && <a className="button" href={memoryMaterialRoute(selected.ref)}>{moteText('仅从这份正式资料提取记忆')}</a>}

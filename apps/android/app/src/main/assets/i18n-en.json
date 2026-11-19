@@ -8702,5 +8702,11 @@
   "复制 Codex 配置": "Copy Codex configuration",
   "Codex 配置": "Codex configuration",
   "撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。": "Revocation stops new calendar writes. Check the Action receipt for any request already dispatched.",
-  "日历授权、目标或当前上下文已变化。": "Calendar authorization, the destination, or the current context changed."
+  "日历授权、目标或当前上下文已变化。": "Calendar authorization, the destination, or the current context changed.",
+  "主会话": "Parent conversation",
+  "主会话的用户原话": "User messages in the parent conversation",
+  "你说": "You said",
+  "用户发言": "User message",
+  "Agent 报告": "Agent report",
+  "为什么现在": "Why now"
 }

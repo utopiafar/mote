@@ -40,7 +40,8 @@ export function registerMaterialRoutes(app:FastifyInstance,materials:MaterialSto
       anchors.length>20000?{status:'too_large' as const,evidenceIds:[]}:
       !anchors.length||anchors.some(anchor=>!materials.isCurrentEvidence(anchor))?{status:'unavailable' as const,evidenceIds:[]}:
       {status:'ready' as const,evidenceIds:anchors};
-    return {...material,memorySource};
+    const codingContext=materials.codingContext(material);
+    return {...material,memorySource,...(codingContext?{codingContext}:{})};
   });
   app.get('/api/materials/:id/read',async req=>{
     const materialId=id.parse((req.params as {id:string}).id),{revision:version,...range}=readQuery.parse(req.query);

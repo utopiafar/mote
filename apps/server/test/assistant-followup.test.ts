@@ -20,6 +20,7 @@ import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
 import {assistantBatchContext,assistantQueryInput,assistantQueryWithinCapacity,assistantRequestUsage} from '../src/assistant-request-budget.js';
+import type {CodingEvidence,SourceItem} from '@mote/shared';
 
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
@@ -83,6 +84,47 @@ async function fixture(t:TestContext){
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
+
+test('Coding progress stays in history, while a current next step must cite the actual owner request',async t=>{
+ const f=await fixture(t),source='generated-coding',parent=randomUUID(),child=randomUUID(),turn=randomUUID();
+ f.node.sources.register({id:source,name:'Generated Coding',kind:'coding-agent',deviceId:'generated-device',platform:'macos'});
+ f.node.sourcePipelines.configure(source,{settleSeconds:0});
+ const event=(sessionId:string,entry:number,role:CodingEvidence['role'],text:string,extra:Partial<CodingEvidence>={}):SourceItem=>({
+  externalId:sessionId+':'+entry,revision:'initial',kind:'message',layer:'original',observedAt:at,text,title:'',
+  document:{recordedAt:at,contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-workspace',
+   sessionId,turnId:turn,eventId:sessionId+':'+entry,role,order:{entry,event:0},part:0,parts:1,
+   ...(role==='user'?{attribution:'human' as const}:role==='assistant'?{attribution:'agent' as const,channel:'final'}:{}),...extra}},
+ });
+ const report='Generated agent report of prior work.',request='Generated request to prepare the parent review.',steer='Generated change to a delegated check.';
+ await f.node.sources.upsertBatch(source,[event(child,1,'assistant',report,{childSession:true}),event(child,2,'user',steer,{childSession:true})]);
+ await f.node.sourcePipelines.tick();
+ const material=f.node.materials.list({sourceId:source}).items.find(value=>value.origin.sessionId===child)!;
+ assert.ok(material);const anchor=f.node.materials.evidenceIds(material.ref)[0]!;
+ const cards=f.node.featureServices.assistantCards,legacy=randomUUID();
+ cards.publish({id:legacy,kind:'suggestion',matterId:null,version:'old',state:'open',title:'Generated older suggestion',body:report,reminderReason:'Generated old reminder',
+  evidence:[{id:anchor,quote:report}],evidenceDependencies:{version:1,complete:true,ids:[anchor]}},undefined,all,f.assertCurrent);
+ assert.equal(cards.page({scope:all}).items.length,0);
+ assert.equal(cards.notificationCandidates(all).length,0);
+ assert.equal(cards.get(legacy,all).taskScope,null);
+ const withoutParent=await f.run([material.ref],context=>answer([card(evidence(context,report)),card(evidence(context,steer),{
+  codingNextStep:{kind:'prepare',whyNow:'Generated check is pending.',goal:'Prepare the delegated check.',request:evidence(context,steer)},
+ })]));
+ assert.deepEqual(withoutParent.cardIds,[]);
+ await f.node.sources.upsertBatch(source,[event(parent,1,'user',request),event(parent,2,'tool_result','',{launch:{childSessionId:child,turnId:turn}})]);
+ await f.node.sourcePipelines.tick();
+ const parentMaterial=f.node.materials.get(f.node.materials.codingContext(material)!.ref)!;
+ const next=await f.run([material.ref],context=>answer([card(evidence(context,report),{
+  codingNextStep:{kind:'prepare',whyNow:'Generated review is tomorrow.',goal:'Prepare a one-page review checklist.',request:evidence(context,request)},
+ })]));
+ assert.equal(next.cardIds.length,1);
+ const published=cards.page({scope:all}).items[0]!;
+ assert.equal(published.codingNextStep?.goal,'Prepare a one-page review checklist.');
+ assert.deepEqual(published.evidenceOrigins.map(item=>[item.provider,item.speaker,item.recordedAt]),[['codex','agent',at],['codex','user',at]]);
+ assert.deepEqual(published.evidence.map(item=>item.quote),[report,request]);
+ f.node.materials.redactUntilRebuilt(parentMaterial.id);
+ assert.equal(f.node.materials.codingContext(material),undefined);
+ assert.equal(cards.page({scope:all}).items.length,0);
+});
 
 test('large owner selection stays host-side while the model sees only the chosen originals',async t=>{
  const f=await fixture(t),note=await f.add('Generated scoped original with a complete exact quote.');
