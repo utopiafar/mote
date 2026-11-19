@@ -154,6 +154,33 @@ test('full request packing splits automatic work below the transport ceiling and
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,6,'the five new originals and the fixture original each consume their existing receipt once');
 });
 
+test('a single large automatic review reaches the native model with its complete saved context',async t=>{
+ const f=await fixture(t),service=f.node.featureServices.assistantFollowup,store=f.node.store;
+ const id=f.originalId,quote=store.evidence([id])[0].ocrText.slice(0,40);
+ const summary='生成摘要。'+'甲'.repeat(4495);
+ const events=Array.from({length:12},(_,index)=>({statement:`生成事件 ${index}。`+'乙'.repeat(1150),uncertainty:'Generated',evidence:[{id,offset:0,quote}]}));
+ assert.ok(Buffer.byteLength(JSON.stringify({summary,events}))>48000,'the product alone exceeds the inline batch ceiling');
+ const artifact='a'.repeat(64);
+ store.archive.save(artifact,artifact,artifact,{kind:'semantic',text:summary,metadata:{complete:true,productsVersion:1,events,memoryCandidates:[],actionCues:[],citations:[id],evidenceRanges:[{id,offset:0,length:quote.length}]}},
+  [{id,fingerprint:store.archive.fingerprint(id)!}],'mote.segment-understanding','3','generated');
+ let now=Date.now()+60001;(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ f.node.assistantChanges.tick(100);now+=60001;
+ await service.tick(f.node.assistantChanges);
+ const change=()=>store.db.prepare('SELECT t.state,w.started_batch FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(id)!;
+ const batch=change().started_batch;assert.equal(typeof batch,'string','the full single-Material review fits the effective model window');
+ const progress=await wait(f,String(batch));assert.equal(progress.task.state,'succeeded',JSON.stringify(progress.items.map(item=>({state:item.state,error:item.error}))));
+ await service.tick(f.node.assistantChanges);
+ assert.equal(change().state,'succeeded');
+ assert.equal(f.requests.length,2,'the native request and the authorized original read complete together');
+ const message=f.requests[0].input.findLast((item:any)=>item.type==='message'&&item.role==='user');
+ const context=JSON.parse(message.content.find((part:any)=>part.type==='input_text').text).untrustedTaskContext;
+ assert.equal(context.materials[0].ref,f.material.ref);
+ assert.equal(context.materials[0].products[0].summary,summary);
+ assert.deepEqual(context.materials[0].products[0].events,events);
+ assert.equal(store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant' AND original=?").get('capture:'+id)!.n,1);
+});
+
 test('an indivisible full request stays blocked and unclaimed, then resumes after an explicit capacity correction',async t=>{
  const f=await fixture(t,132000),service=f.node.featureServices.assistantFollowup;let now=Date.now()+60001;
  (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;

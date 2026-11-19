@@ -51,7 +51,8 @@ type Commitment=ReturnType<AssistantCommitments['get']>;
 type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:Card[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
  memoryRevisions:{id:string;version:number;fingerprint:string}[];materialRefs:string[];evidenceIds:string[];dependencies:string[];suppressionIds:string[];
  materialProducts:{ref:string;products:string[];nextCursor:string|null;coverage:ReturnType<AssistantUnderstandingReader['read']>['coverage']}[];
- pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission};
+ pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission;
+ queryContext?:NonNullable<QueryInput['taskContext']>};
 const deps=(ids:readonly string[])=>({version:1 as const,complete:true as const,ids:[...new Set(ids)].sort()});
 const unique=(ids:readonly string[])=>[...new Set(ids)].sort();
 const historicalCard=(card:Card)=>card.state==='stale'||card.evidenceStale||card.feedback.some(feedback=>feedback.evidenceStale);
@@ -106,7 +107,7 @@ export class AssistantFollowup {
  async start(raw:Input,admission:{identities:readonly string[];connections:ModelConnection[]},assertActive:()=>void=()=>{},accepted:(task:TaskRecord)=>void=()=>{}){
   return this.analyze(raw,{kind:'manual',identities:[...admission.identities].sort(),connections:[...admission.connections].sort((a,b)=>a.id.localeCompare(b.id)||a.fingerprint.localeCompare(b.fingerprint))},assertActive,accepted);
  }
- private async analyze(raw:Input,selectedAdmission:BatchAdmission,assertActive:()=>void,accepted:(task:TaskRecord)=>void,submit?:(request:BatchRequest)=>TaskRecord){
+ private async analyze(raw:Input,selectedAdmission:BatchAdmission,assertActive:()=>void,accepted:(task:TaskRecord)=>void,submit?:(request:BatchRequest)=>TaskRecord,allowSavedContext=false){
   if(this.closed)throw new StoreError('Assistant consumer is closed',409);
   assertActive();
   const input=inputSchema.parse(raw),scope=input.scope;
@@ -195,8 +196,13 @@ export class AssistantFollowup {
   // the batch context bound and complete provider budget still apply to them.
   const question=PROMPT;
   const limit=selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES;
-  const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(this.requestCapacity?.()));
-  if(bytes>limit)throw new AssistantContextLimit(bytes);
+  const capacity=this.requestCapacity?.();
+  const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(capacity));
+  // Once only one Material remains, preserve its complete review in the
+  // private snapshot when the inline batch context is too small. The full
+  // model request must still fit before any original receipt is claimed.
+  const queryContext=bytes>limit&&allowSavedContext&&capacity?context:undefined;
+  if(bytes>limit&&!queryContext)throw new AssistantContextLimit(bytes);
   const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
   if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
   await yieldTurn();assertActive();
@@ -205,7 +211,7 @@ export class AssistantFollowup {
   const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
    ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
   const currentRecords=this.reader.memories.readCurrentEvidence(contextDependencies),evidenceIds=unique(currentRecords.map(record=>record.id));
-  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,currentRecords);
+  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,capacity,currentRecords);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,questionPins,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
@@ -214,7 +220,7 @@ export class AssistantFollowup {
    assertActive();
    const existing=this.prior(input,selectedAdmission);if(existing)return accept(existing);
    const operationId='assistant-followup:'+sha256(canonicalRecipeJson([input.operationId,input.requestId]));
-   const request={operationId,requestId:input.requestId,items:[{question,taskContext:context,evidenceIds}]};
+   const request={operationId,requestId:input.requestId,items:[{question,evidenceIds,...(queryContext?{}:{taskContext:context})}]};
    const batch=submit?submit(request):this.batch.submit(request,selectedAdmission);
    // The batch input contains derived context as well as original reads. Its
    // persisted parent and item must retain the same complete invalidation
@@ -226,7 +232,7 @@ export class AssistantFollowup {
     addTaskEvidence(this.store,itemId,allDependencies);
    }
    const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
-    materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission};
+    materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,...(queryContext?{queryContext}:{})};
    this.assertSnapshot(snapshot);
    const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},ids=>this.assertDependencies(snapshot,ids));
    accepted(task);return task;
@@ -357,20 +363,22 @@ export class AssistantFollowup {
   if(ids.some(id=>!dependencies.has(id)))throw new StoreError('Assistant batch context changed',409);
   return true;
  }
- /** Only a saved follow-up can select its initial original spans. Other batch
-  * products retain their existing query contract. No saved input is rewritten. */
+ /** Only the owner of this batch can supply its saved review context and
+  * initial original spans. No saved input is rewritten. */
  prepareQuery(input:QueryInput):QueryInput{
-  const context=input.taskContext;
-  if(!this.requestCapacity?.()&&(!context||!('materials' in context)||'originals' in context))return input;
   const batchId=input.traceContext?.jobId;if(!batchId)return input;
+  const context=input.taskContext,capacity=this.requestCapacity?.();
+  if(!capacity&&context&&(!('materials' in context)||'originals' in context))return input;
   const row=this.store.db.prepare("SELECT f.id FROM task_records b JOIN task_records f ON f.operation_id=b.operation_id WHERE b.id=? AND b.kind='batch' AND f.kind='assistant.followup'").get(batchId);
   if(!row)return input;
   const snapshot=this.snapshot(this.tasks.get(String(row.id)));
   if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
-  return this.prepareRequest(input,snapshot.originals);
+  const saved=snapshot.queryContext;
+  if(saved&&!capacity)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(saved)));
+  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity);
  }
- private prepareRequest(input:QueryInput,originals:Snapshot['originals'],currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
-  const capacity=this.requestCapacity?.(),context=input.taskContext;
+ private prepareRequest(input:QueryInput,originals:Snapshot['originals'],capacity:AssistantRequestCapacity|undefined,currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
+  const context=input.taskContext;
   if(!capacity){
    if(!context||'originals' in context)return input;
    const taskContext={...context,originals};return {...input,taskContext};
@@ -465,7 +473,7 @@ export class AssistantFollowup {
   const requestId='assistant-change:'+group.map(candidate=>candidate.task.id).sort().join(':');
   await this.analyze({operationId:requestId,requestId,scope,materialRefs:refs,mode:{kind:'change'}},
    {kind:'automatic',purpose:'assistant',roots:group.map(candidate=>candidate.input.root)},active,()=>{},
-   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}));
+   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}),!includeCatalog&&refs.length===1);
  }
  async close(){this.closed=true;await this.polling?.catch(()=>{});}
  private assertSnapshot(snapshot:Snapshot){
