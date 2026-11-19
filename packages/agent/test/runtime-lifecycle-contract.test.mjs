@@ -136,6 +136,26 @@ for (const point of ['input', 'scope', 'lease', 'deadline', 'cancel', 'close']) 
   });
 }
 
+test('a slow background tool read gives a queued revocation time to prevent disclosure', async () => {
+  const revocation = new DOMException('Generated scope withdrawal', 'AbortError');
+  let sent = 0, confirmed = 0, discarded = 0;
+  const f = fixture({
+    input: {executionLane: 'background'},
+    run: async (request, host) => {
+      await host.tools.deliver(request.attempt, {callId: 'generated-slow-read', name: tools[0].name, arguments: {}}, async () => { sent++; });
+      return outcome();
+    },
+    readTool: () => {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 65);
+      setImmediate(() => f.input.abort(revocation));
+      return {payload: {text: 'Generated staged evidence'}, confirm() { confirmed++; }, discard() { discarded++; }};
+    },
+  });
+  const session = await f.create();
+  await assert.rejects(session.execute(), error => error === revocation);
+  assert.deepEqual({sent, confirmed, discarded}, {sent: 0, confirmed: 0, discarded: 1});
+});
+
 test('a pending admission is released on cancellation and a late runModel cannot acquire another slot', {timeout: 5000}, async () => {
   const queued = deferred(), startedRun = deferred();
   let admissions = 0, slots = 0, started = 0;
