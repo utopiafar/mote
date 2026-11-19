@@ -787,7 +787,7 @@ export class MaterialStore {
         const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
         for(const [index,member] of draft.members.entries())insertMember.run(id,revision,index,member.id,member.kind,member.ref,member.revision??null,member.locator?JSON.stringify(member.locator):null);
         db.prepare('UPDATE material_revisions SET text_length=?,asset_count=? WHERE material_id=? AND revision=?').run(offset,assetCount,id,revision);
-        for(const anchor of this.evidenceIds(id))if(!retained.has(anchor))this.store.invalidateMemoryEvidence(anchor);
+        this.store.retireMaterialEvidenceRevisions(this.evidenceIds(id).filter(anchor=>!retained.has(anchor)));
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
         this.setSearchable(id,searchable);
         this.notifyPublished({id,revision,kind:draft.kind,sourceId:draft.origin.sourceId,...(draft.origin.deviceId?{deviceId:draft.origin.deviceId}:{}),occurredAt:now});

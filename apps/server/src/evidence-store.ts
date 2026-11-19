@@ -389,22 +389,30 @@ export class EvidenceStore {
     if(deleted)this.db.exec('DELETE FROM insights');
     this.invalidateSemanticEvidence(id,deleted,preserveDialogue,released);
   }
-  /** The file lineage walk supplies all descendant anchors. Revoke only
-   * anchors that still need a durable receipt, within the file transaction. */
-  retireFileMaterialEvidence(ids:string[]) {
+  /** Retire replaced Material evidence inside the caller's revision transaction.
+   * Descendants can still be current when an original anchor was retired earlier. */
+  retireMaterialEvidenceRevisions(ids:string[]) {
     if(!ids.length)return;
     const db=this.db;
-    const due=db.prepare(`SELECT e.id,EXISTS(SELECT 1 FROM file_evidence_links l WHERE l.parent_id=e.id) linked
-      FROM json_each(?) selected JOIN material_evidence e ON e.id=selected.value
+    const due=db.prepare(`WITH RECURSIVE selected(id) AS (
+      SELECT value FROM json_each(?)
+      UNION SELECT e.id FROM selected s JOIN material_evidence_dependencies d ON d.evidence_id=s.id
+       JOIN material_evidence e ON e.id=d.anchor_id WHERE e.invalidated=0
+    )
+    SELECT e.id,EXISTS(SELECT 1 FROM file_evidence_links l WHERE l.parent_id=e.id) linked
+      FROM selected s JOIN material_evidence e ON e.id=s.id
       WHERE e.invalidated=0 OR NOT EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r WHERE r.id=e.id)`);
-    const pending=due.all(JSON.stringify(ids));
-    if(!pending.length)return;
+    const selection=JSON.stringify(ids);
+    let pending=due.all(selection);
     // A capture can share an anchor ID. Preserve the individual path for its
-    // attachment descendants, which are outside the file chunk lineage walk.
-    if(pending.some(row=>row.linked)){
-      for(const row of pending)if(due.get(JSON.stringify([row.id])))this.invalidateMemoryEvidence(String(row.id));
-      return;
+    // attachment descendants, which are outside the Material anchor graph.
+    const linked=pending.filter(row=>row.linked);
+    if(linked.length){
+      const hasAttachment=db.prepare('SELECT 1 FROM file_evidence_links WHERE parent_id=? LIMIT 1');
+      for(const row of linked)if(hasAttachment.get(row.id))this.invalidateMemoryEvidence(String(row.id));
+      pending=due.all(selection);
     }
+    if(!pending.length)return;
     const retired=pending.map(row=>String(row.id));
     db.prepare('UPDATE material_evidence SET invalidated=1 WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(retired));
     this.invalidateSemanticEvidence(retired);

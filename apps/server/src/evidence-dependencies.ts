@@ -35,7 +35,7 @@ export function invalidateRetiredFileEvidence(store:Store,captureId:string){
  ) SELECT kind,id FROM descendants`).all(captureId) as {kind:keyof typeof ids;id:string}[];
  if(!retired.length)return;
  for(const {kind,id} of retired)ids[kind].push(id);
- store.retireFileMaterialEvidence(ids.material_evidence);
+ store.retireMaterialEvidenceRevisions(ids.material_evidence);
  const batches=JSON.stringify(ids.memory_batch);
  db.prepare(`UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?)
   WHERE id IN (SELECT value FROM json_each(?)) AND json_extract(json,'$.status')!='stale'`).run(new Date().toISOString(),JSON.stringify(ids.memory));
