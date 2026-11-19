@@ -356,8 +356,9 @@ export class EvidenceStore {
   }
   evidence(ids:string[]) {
     if(!ids.length)return [];
-    const select=this.db.prepare('SELECT * FROM captures WHERE id=?');
-    return ids.map(id=>select.get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));
+    const rows=this.db.prepare('SELECT * FROM captures WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify([...new Set(ids)])) as Row[];
+    const byId=new Map(rows.map(row=>[row.id,row]));
+    return ids.map(id=>byId.get(id)).filter((row):row is Row=>Boolean(row)).map(row=>this.record(row));
   }
   /** Host authorization only. Preserve permission/processing metadata without
    * copying original or derived bodies into repeated dependency fences. */

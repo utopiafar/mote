@@ -593,12 +593,17 @@ test('a very long Assistant file pages every exact original grant when its inlin
  const original=f.reader.memories.readCurrentEvidence([note.id])[0];
  const records=[original,...Array.from({length:18105},()=>({...original,id:randomUUID()}))];
  const originals=[{id:original.id,offset:0,quote:original.ocrText}],context={turns:[],originals};
- const input:QueryInput={question:'Review the generated original and inspect only needed context.',evidenceIds:records.map(record=>record.id),taskContext:context};
+ let authorityChecks=0;const assertContextAuthority=()=>{authorityChecks++;};
+ const input:QueryInput={question:'Review the generated original and inspect only needed context.',evidenceIds:records.map(record=>record.id),taskContext:context,assertContextAuthority};
  const capacity={contextWindow:272000,maxOutputTokens:128000,draftTokens:65536};
  const prepared=assistantQueryInput(input,originals,records),compact={...prepared,taskContext:{turns:[]}};
  assert.equal(assistantRequestUsage({...compact,evidenceReadRangeFormat:'tuple'},records,capacity).fits,false);
+ authorityChecks=0;
  assert.equal(assistantQueryWithinCapacity(input,originals,records,capacity),undefined,'the caller can still require group splitting');
+ assert.equal(authorityChecks,1);
  const selected=assistantQueryWithinCapacity(input,originals,records,capacity,true);assert.ok(selected);
+ assert.equal(authorityChecks,2,'the alternative serialized shapes share the same synchronous authority check');
+ assert.equal(selected.assertContextAuthority,assertContextAuthority);
  assert.equal(selected.evidenceReadRangeFormat,'paged');assert.equal(assistantRequestUsage(selected,records,capacity).fits,true);
  assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
  assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);

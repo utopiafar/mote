@@ -39,6 +39,26 @@ test('draining work in a full pool does not join an unrelated completion backlog
  assert.equal(engine.get(waiting)!.state,'succeeded');assert.equal(engine.get(waiting)!.attempts,1);assert.equal(completed,64);
 });
 
+test('expensive admission in one pool gives owner callbacks a turn before the next pool',async t=>{
+ const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');
+ const {EvidenceStore:Store}=await import('../src/evidence-store.js'),{ExecutionEngine}=await import('../src/execution-engine.js');
+ const directory=mkdtempSync(join(tmpdir(),'mote-cross-pool-admission-')),store=new Store(directory),engine=new ExecutionEngine(store);
+ t.after(async()=>{await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ let monotonic=0;
+ t.mock.method(performance,'now',()=>monotonic);
+ for(const kind of ['generated-first','generated-second'])engine.register({kind,pool:kind,concurrency:()=>1,
+  validate:()=>{if(kind==='generated-first')monotonic+=80;return true;},execute:async()=>null,commit:()=>{}});
+ const first=engine.enqueue('generated-first','generated-first',{}),second=engine.enqueue('generated-second','generated-second',{});
+ const callback=new Promise<void>(resolve=>setImmediate(()=>{
+  assert.equal(store.db.isTransaction,false);
+  engine.cancel(second);resolve();
+ }));
+ const running=engine.tick();await callback;await running;
+ assert.equal(engine.get(first)?.state,'succeeded');
+ assert.equal(engine.get(second)?.state,'cancelled');
+ assert.equal(engine.get(second)?.attempts,0);
+});
+
 for(const mode of ['background','drain','mixed-lanes'])test(`a large admission-wait backlog yields to provider callbacks and timers (${mode})`,async()=>{
  // Isolate the historical microtask starvation: its own timeout cannot run
  // when the child never returns to the event loop. No private inputs are used.

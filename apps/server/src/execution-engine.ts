@@ -244,18 +244,29 @@ export class ExecutionEngine {
   }
  }
  /** Start available slots. Return only work admitted by this call; slow older work is independent. */
- tick(){
-  if(this.stopping||this.quiescing)return Promise.resolve();
-  if(this.pumping){this.pumpAgain=true;return Promise.resolve();}
+ async tick(){
+  if(this.stopping||this.quiescing)return;
+  if(this.pumping){this.pumpAgain=true;return;}
   this.pumping=true;const started:Promise<void>[]=[];
+  let turnStarted=performance.now();
   try{
    this.recover();
    const blocked=this.store.db.prepare("WITH RECURSIVE blocked(id) AS (SELECT id FROM execution_steps WHERE state IN ('failed','blocked','cancelled','stale') UNION SELECT d.step_id FROM execution_dependencies d JOIN blocked b ON b.id=d.dependency_id) SELECT e.id FROM execution_steps e JOIN blocked b ON b.id=e.id WHERE e.state='waiting'").all();
    for(const row of blocked){this.store.db.prepare("UPDATE execution_steps SET state='blocked',error='dependency_failed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),String(row.id));this.project(String(row.id));}
    const pools=[...new Set([...this.handlers.values()].map(h=>h.pool))];
-   for(const pool of pools){
-    const handlers=[...this.handlers.values()].filter(h=>h.pool===pool),lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
-    for(const lane of lanes){const limit=this.limit(pool,lane);
+   admission:for(const pool of pools){
+    const lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
+    for(const lane of lanes){
+     // Synchronous checks in several different pools can compound into one
+     // long turn. Yield only outside a caller's write transaction.
+     if(performance.now()-turnStarted>=50&&!this.store.db.isTransaction){
+      await yieldTurn();
+      if(this.stopping||this.quiescing)break admission;
+      turnStarted=performance.now();
+     }
+     const handlers=[...this.handlers.values()].filter(h=>h.pool===pool);
+     if(!handlers.length)continue;
+     const limit=this.limit(pool,lane);
     // Fill a lane across event-loop turns. Each admission can synchronously
     // validate a complete recording and prepare its model input; filling every
     // slot in one pass compounds those guards before HTTP can run.
@@ -265,12 +276,14 @@ export class ExecutionEngine {
      if(!row)continue;
      const handler=this.handlers.get(row.kind)!;
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{if(this.active.get(row.id)?.controller===controller)this.active.delete(row.id);if(completed)this.scheduleTick();});
+     // The caller still gets the rejection from the joined admission tasks.
+     void task.catch(()=>{});
      this.active.set(row.id,{controller,task,pool,kind:row.kind,lane});started.push(task);
      this.scheduleTick();
     }
    }
   }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;this.scheduleTick();}}
-  return Promise.all(started).then(()=>{});
+  await Promise.all(started);
  }
  private async execute(row:Row,handler:ExecutionHandler,controller:AbortController){
   try{await this.executeWithinTurn(row,handler,controller);}
