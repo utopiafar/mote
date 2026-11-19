@@ -61,6 +61,17 @@ function fixture(overrides = {}) {
   return {deps, calls, events, cleanupErrors, assembly, disposers, get port() { return port; }, revoke() { active = false; }, stop() { scope.abort(); }, revokeLease(service) { leaseControllers.get(service).abort({kind: 'revoked'}); }, create: () => createHostRunSession(deps, assembly)};
 }
 
+test('shared tool and domain authority is checked once per boundary and again after lease release',async()=>{
+  const f=fixture();let checks=0,checkedAfterRelease=false;
+  f.deps.tools.assertCurrent=()=>{checks++;if(f.calls.includes('release:mote.agent.runtime'))checkedAfterRelease=true;};
+  f.deps.commitFence=f.deps.tools;
+  const session=await f.create(),prior=checks;
+  f.port.assertCurrent();
+  assert.equal(checks,prior+1);
+  await session.execute();
+  assert.equal(checkedAfterRelease,true);
+});
+
 for (const engine of ['dsh-fixture', 'codex-fixture']) test(`${engine}: real bridge selected ranges feed the same Host output and cannot be widened by candidate JSON`, async () => {
   const input = {question: 'Generated selected question', evidenceIds: [id], evidenceRanges: [{id, offset: 0, length: 9}]};
   const bridge = await startBridge(reader, input);

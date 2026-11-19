@@ -319,7 +319,10 @@ class ManagedHostRunSession implements HostRunSession {
     if (this.lifecycle.phase === 'closed' || this.lifecycle.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
     const deps = this.dependencies;
     deps.runtime.assertCurrent(); deps.model.assertCurrent(); deps.output.assertCurrent();
-    deps.tools.assertCurrent(); deps.commitFence.assertCurrent();
+    deps.tools.assertCurrent();
+    // A single Host authority can own both sets of checks. Distinct fences
+    // still run independently, and the final domain check runs after release.
+    if(deps.commitFence!==deps.tools)deps.commitFence.assertCurrent();
   }
   private assertAttempt(attempt: RuntimeAttempt) {
     this.assertCurrent();

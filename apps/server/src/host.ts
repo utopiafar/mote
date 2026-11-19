@@ -327,7 +327,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   let assistantRoutines:AssistantRoutines;
   const automaticEvidenceAllowed=(ids:readonly string[])=>{
     const excluded=new Set(modelAuthorization.view().excludedSourceIds);
-    return !modelAuthorizationHost.disclosure(ids).some(value=>excluded.has(value.sourceId));
+    return !excluded.size||!modelAuthorizationHost.disclosure(ids).some(value=>excluded.has(value.sourceId));
   };
   assistantTasks=new AssistantTasks(store,assistantCards,assistantMatters,evidenceReader,materials,conversations,sourceContexts,()=>batchProcessing,()=>availableModelConnections(),ownerQuestionServices.port,{
     input:ref=>assistantRoutines.input(ref),current:ref=>assistantRoutines.current(ref),allows:automaticEvidenceAllowed,control:modelAuthorization,

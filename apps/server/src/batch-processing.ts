@@ -1,11 +1,12 @@
 import type {QueryInput} from '@mote/agent';
 import type {EvidenceDependencies,QueryResult} from '@mote/shared';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {BackgroundModelAuthorization,type AutomaticModelPurpose,type ModelConnection} from './background-model-authorization.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
-import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
+import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
 import {resolveDependencies} from './conversation-lineage.js';
 
@@ -74,6 +75,21 @@ export class BatchProcessing {
   private current(taskId:string):AssertTaskCurrent{return ids=>{
     if(!this.product?.assertDependencies?.(taskId,ids))this.assertCurrent(ids);
   };}
+  /** Use only inside a single read transaction. The product's proof covers an
+   * item's subset only when it belongs to the same operation. */
+  private readAuthority(parent:TaskRecord){
+    let checked:ReadonlySet<string>|undefined;
+    return {
+      parent:(ids:readonly string[])=>{
+        if(this.product?.assertDependencies?.(parent.id,ids))checked=new Set(ids);
+        else this.assertCurrent(ids);
+      },
+      item:(item:TaskRecord):AssertTaskCurrent=>ids=>{
+        const scope=checked;
+        if(item.operationId!==parent.operationId||!scope||ids.some(id=>!scope.has(id)))this.current(item.id)(ids);
+      },
+    };
+  }
   private frozen(input:BatchQuery):FrozenQuery{
     if(!input||typeof input.question!=='string'||!input.question.trim()||input.question.length>8000||!Array.isArray(input.evidenceIds)||
        input.evidenceIds.some(id=>typeof id!=='string'||!id)||new Set(input.evidenceIds).size!==input.evidenceIds.length)
@@ -109,19 +125,11 @@ export class BatchProcessing {
     if(this.closed)return false;
     try{return this.transaction(()=>{
       const parent=this.parent(step),input=step.input as StepInput;
-      let checked:ReadonlySet<string>|undefined;
-      this.tasks.evidenceDependencies(parent.id,parent.revision,ids=>{
-        if(this.product?.assertDependencies?.(parent.id,ids))checked=new Set(ids);
-        else this.assertCurrent(ids);
-      });
+      const authority=this.readAuthority(parent);
+      this.tasks.evidenceDependencies(parent.id,parent.revision,authority.parent);
       if(input.itemId){
         const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
-        const parentScope=item.operationId===parent.operationId?checked:undefined;
-        // The Assistant parent and item retain the same context. Reuse only
-        // the proven subset in this read snapshot. Fresh pins still gate reads.
-        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,ids=>{
-          if(!parentScope||ids.some(id=>!parentScope.has(id)))this.current(item.id)(ids);
-        }));
+        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,authority.item(item)));
       }
       return this.product?.valid(step)??true;
     });}catch{return false;}
@@ -139,11 +147,16 @@ export class BatchProcessing {
     this.product?.project(step);
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
-    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.current(parent.id));
+    const started=performance.now(),input=step.input as StepInput;
+    const {parent,plan,itemInput}=this.transaction(()=>{
+      const parent=this.parent(step),authority=this.readAuthority(parent);
+      const plan=this.tasks.input<Plan>(parent.id,parent.revision,authority.parent),item=input.itemId?this.tasks.get(input.itemId):undefined;
+      return {parent,plan,itemInput:item&&this.tasks.input<FrozenQuery>(item.id,item.revision,authority.item(item))};
+    });
     let frozen:FrozenQuery,taskContext:QueryInput['taskContext'],sourceContexts:QueryInput['contextSourceContextDependencies'];
     let inputs:QueryResult[]=[];
-    if(input.itemId){
-      const item=this.tasks.get(input.itemId);frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id));
+    if(itemInput){
+      frozen=itemInput;
       taskContext=frozen.taskContext;sourceContexts=frozen.contextSourceContextDependencies;
     }else{
       if(plan.reduce===undefined)throw new ExecutionFailure('stale','batch_reduce_missing');
@@ -167,6 +180,9 @@ export class BatchProcessing {
       // combined selection and prior results are constructed here.
       if(!input.itemId){this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);}
     };
+    // A large saved request can spend a full turn validating before the Agent
+    // starts. The grant below is checked after servicing pending HTTP and timers.
+    if(performance.now()-started>=50)await yieldTurn();
     assert();
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),

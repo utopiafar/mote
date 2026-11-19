@@ -1,4 +1,5 @@
 import {createHash, randomUUID} from 'node:crypto';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {PluginHost, PluginResourceScope, type PluginDefinition} from '@mote/plugin-host';
 import type {ServiceBinding, ServiceContract, ScopeIdentity} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS, type ModelProfile} from '@mote/shared/models';
@@ -282,6 +283,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     }});
   })();
   async function execute(raw: QueryInput): Promise<AgentAnswer> {
+    let preparationTurn=performance.now();
     const input = pinContextTools({...raw, ...(raw.evidenceReadRanges ? {evidenceReadRanges: Object.freeze(raw.evidenceReadRanges.map(range => Object.freeze({...range})))} : {}), ...(options.contextToolMode ? {hostContextToolMode: options.contextToolMode} : {})}, options.reader);
     input.signal?.throwIfAborted();
     if (closed) throw new AgentClosedError();
@@ -294,6 +296,9 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
     let nativeAssembly: NativeDshAssemblyBinding | undefined;
     let signal = AbortSignal.any([scope.signal, ...(input.signal ? [input.signal] : [])]);
     const assertCurrent = () => { input.signal?.throwIfAborted(); if (closed) throw new AgentClosedError(); signal.throwIfAborted(); nativeAssembly?.assertCurrent(); nativeAssembly?.application?.assertCurrent(); input.assertContextAuthority?.(); };
+    const yieldPreparation=async()=>{
+      if(performance.now()-preparationTurn>=50){await yieldTurn();preparationTurn=performance.now();}
+    };
     const trace = (event: Parameters<typeof reportTrace>[1]) => reportTrace(input, {...event, runId});
     let session: HostRunSession | undefined, bridge: Awaited<ReturnType<typeof startBridge>> | undefined,releaseControl:(()=>void)|void;
     let bridgeClosing: Promise<void> | undefined;
@@ -304,10 +309,10 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       if (nativeAssembly && selectedRuntime.id !== DSH_RUNTIME_ID) throw new DshProfileError('dsh_profile_invalid');
       if (nativeAssembly) signal = AbortSignal.any([signal, nativeAssembly.signal]);
       if(nativeAssembly?.application)applications.set(runId,nativeAssembly.application);
-      assertCurrent();
+      await yieldPreparation();assertCurrent();
       reportProgress(input, {stage: 'starting'});
       trace({type: 'run.started', stage: 'starting', payload: {model: options.model, provider: options.provider, protocol: options.protocol, skill: input.skill ?? null, responseMode: input.responseMode ?? 'answer', question: input.question, traceContext: input.traceContext ?? null}});
-      await initialize(); assertCurrent();
+      await initialize();await yieldPreparation();assertCurrent();
       // Output availability is checked before bridge reads or runtime preparation.
       const output = await host.acquire(hostOutputService, outputBinding!, signal); scope.defer(() => output.release());
       const runtime = await host.acquire(runtimeService, runtimeBindings.get(selectedRuntime.id)!, signal); scope.defer(() => runtime.release());
@@ -325,8 +330,8 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
         requirements: {taskKind: 'query', capabilities: ['tools']},
         ...(launch ? {launch} : {}),
       });
-      bridge = await startBridge(options.reader, {...input, signal, onTrace: trace}, options.maxToolCalls); assertCurrent();
-      await nativeAssembly?.application?.prepare(bridge.nativeExposure);assertCurrent();
+      bridge = await startBridge(options.reader, {...input, signal, onTrace: trace}, options.maxToolCalls);await yieldPreparation();assertCurrent();
+      await nativeAssembly?.application?.prepare(bridge.nativeExposure);await yieldPreparation();assertCurrent();
       const toolSnapshot=contextToolSnapshot(input);
       const assertToolPins=()=>{assertCurrent();try{toolSnapshot.assertAllActive();}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}};
       const allowedTools=new Set(taskTools(input));
@@ -438,8 +443,9 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       const modelValue = input.modelBudget
         ? {...modelPort.value, contextWindow: codexConservative ? CODEX_CONSERVATIVE_CONTEXT_WINDOW : input.modelBudget.contextWindow}
         : modelPort.value;
+      const runAuthority = {definitions, bindings: [], assertCurrent:assertToolPins};
       const dependencies = {runId, scope, input: {...input, signal}, runtime, model: {...modelPort, value: modelValue, selection: selection.modelSelection}, output,
-        tools: {definitions, bindings: [], assertCurrent:assertToolPins}, commitFence: {assertCurrent:assertToolPins},
+        tools: runAuthority, commitFence: runAuthority,
         budget: {activeTimeoutMs: options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs},
         activeBudget: new ActiveExecutionBudget(options.agentTimeoutMs === undefined ? DEFAULT_AGENT_EXECUTION_TIMEOUT_MS : options.agentTimeoutMs),
       };

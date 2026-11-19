@@ -283,8 +283,14 @@ export class AssistantFollowup {
   // The canonical reader gives a capture with the same ID precedence.
   for(const capture of this.store.evidenceMetadata([...activeAnchors]))activeAnchors.delete(capture.id);
   const otherIds=ids.filter(id=>!activeAnchors.has(id));
-  const current=new Set(this.reader.memories.readCurrentEvidence(otherIds).map(record=>record.id));
-  const records=new Map(this.reader.memories.readEvidence(otherIds.filter(id=>!current.has(id))).map(record=>[record.id,record]));
+  // Current preferred file chunks also have no historical role. Preserve the
+  // canonical reader's capture and Material precedence if identities overlap.
+  const chunks=this.reader.files?.currentEvidenceIds(otherIds)??new Set<string>(),chunkIds=[...chunks];
+  for(const capture of this.store.evidenceMetadata(chunkIds))chunks.delete(capture.id);
+  for(const anchor of this.materials.evidence(chunkIds))chunks.delete(anchor.id);
+  const unresolved=otherIds.filter(id=>!chunks.has(id));
+  const current=new Set(this.reader.memories.readCurrentEvidence(unresolved).map(record=>record.id));
+  const records=new Map(this.reader.memories.readEvidence(unresolved.filter(id=>!current.has(id))).map(record=>[record.id,record]));
   const memories=this.store.db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids));
   for(const memory of memories){
    let value=JSON.parse(String(memory.json));if(value.status!=='published')return;
