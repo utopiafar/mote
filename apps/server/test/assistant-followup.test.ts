@@ -25,7 +25,7 @@ const at='2026-10-01T10:00:00.000Z';
 const headers={authorization:'Bearer generated-followup-owner'};
 type Context={materials:{ref:string;attributionContext?:AttributionContext;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
  cards:{id:string;revision:number;state:string;title:string;body?:string;suppressionOnly?:boolean;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
-type Program=(context:Context)=>unknown|Promise<unknown>;
+type Program=(context:Context,input:QueryInput)=>unknown|Promise<unknown>;
 const evidence=(context:Context,needle:string)=>{
  const source=context.originals.find(original=>original.quote.includes(needle));assert.ok(source,`Original not supplied: ${needle}; context=${JSON.stringify(context.materials)}; originals=${JSON.stringify(context.originals)}`);
  return {id:source.id,offset:source.offset+source.quote.indexOf(needle),quote:needle};
@@ -45,7 +45,7 @@ async function fixture(t:TestContext){
   assert.ok(tokens+4000<=32000,'generated request must fit the declared small fixture window');
   const context=input.taskContext as unknown as Context;assert.ok(context?.materials);seen.push(context);grants.push([...(input.evidenceIds??[])]);
   const program=programs.shift();assert.ok(program,'A generated model response must be explicitly supplied');
-  try{return {answer:JSON.stringify(await program(context)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
+  try{return {answer:JSON.stringify(await program(context,input)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
   catch(error){providerFailure=error;throw error;}
  },close:async()=>{}}});
  const reader=node.featureServices.evidenceReader;
@@ -95,6 +95,24 @@ test('large owner selection stays host-side while the model sees only the chosen
  assert.deepEqual(new Set(f.grants[0]),new Set([note.id,...anchors]));
  assert.ok(f.seen[0].originals.some(item=>anchors.includes(item.id)&&item.quote===note.text));
  assert.equal((await f.service.finish(task.id)).reason,'Generated result');
+});
+
+test('each execution grant validates shared Assistant context once and checks again after revocation',async t=>{
+ const f=await fixture(t),note=await f.add('Generated original for a shared batch authority check.');
+ f.programs.push((_context,input)=>{
+  assert.ok(input.assertContextAuthority);
+  const checks=t.mock.method(f.service,'assertBatchDependencies');
+  input.assertContextAuthority();
+  assert.equal(checks.mock.callCount(),1,'parent and item should share the current Assistant dependency check');
+  input.assertContextAuthority();
+  assert.equal(checks.mock.callCount(),2,'a new authority boundary must check again');
+  f.node.store.delete(note.id);
+  assert.throws(()=>input.assertContextAuthority!());
+  return answer();
+ });
+ const task=await f.start([note.material.ref]),batchId=f.service.progress(task.id).batch!.task.id;
+ await until(()=>f.batch.progress(batchId).items[0].state==='stale');
+ assert.throws(()=>f.batch.result(batchId),{statusCode:409});
 });
 
 test('assistant analysis retains exact scoped import authorship and source dates without Memory, and a changed declaration fences its saved result',async t=>{

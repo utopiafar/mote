@@ -22,7 +22,8 @@ export type BatchAdmission={kind:'automatic';purpose:AutomaticModelPurpose;roots
  * These callbacks neither admit work nor create another execution mechanism. */
 export type BatchProductProjection={
   /** A product may retain authorized historical context as invalidation lineage.
-   * The query's read grants still have to be current in frozen() and pins(). */
+   * The query's read grants still have to be current in frozen() and pins().
+   * A successful check covers those IDs for the same operation in that read snapshot. */
   assertDependencies?(taskId:string,ids:readonly string[]):boolean;
   valid(step:ExecutionStep):boolean;
   project(step:ExecutionStep):void;
@@ -106,13 +107,24 @@ export class BatchProcessing {
   }
   private valid(step:ExecutionStep){
     if(this.closed)return false;
-    try{
+    try{return this.transaction(()=>{
       const parent=this.parent(step),input=step.input as StepInput;
-      this.tasks.evidenceDependencies(parent.id,parent.revision,this.current(parent.id));
-      if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
-        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id)));}
+      let checked:ReadonlySet<string>|undefined;
+      this.tasks.evidenceDependencies(parent.id,parent.revision,ids=>{
+        if(this.product?.assertDependencies?.(parent.id,ids))checked=new Set(ids);
+        else this.assertCurrent(ids);
+      });
+      if(input.itemId){
+        const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
+        const parentScope=item.operationId===parent.operationId?checked:undefined;
+        // The Assistant parent and item retain the same context. Reuse only
+        // the proven subset in this read snapshot. Fresh pins still gate reads.
+        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,ids=>{
+          if(!parentScope||ids.some(id=>!parentScope.has(id)))this.current(item.id)(ids);
+        }));
+      }
       return this.product?.valid(step)??true;
-    }catch{return false;}
+    });}catch{return false;}
   }
   private project(step:ExecutionStep){
     const input=step.input as StepInput;
