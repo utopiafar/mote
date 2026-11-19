@@ -65,8 +65,8 @@ export class MemoryTopicsHost {
    control.inheritStep(parent.id,id);
   }
  }
- /** An explicit retry of a completed Memory job can requeue its optional
-  * classifier with the original admission and immutable Memory pins. */
+ /** An explicit topic retry requeues the optional classifier with the
+  * original admission and immutable Memory pins. */
  retry(operationId:string){
   if(this.closing)return;
   const {store,executor,control}=this.options,db=store.db;

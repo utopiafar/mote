@@ -131,8 +131,10 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
     child.post('/api/memory-jobs/:id/cancel',async req=>dependencies.pipeline().cancel(jobId(req.params)));
     child.post('/api/memory-jobs/:id/retry',async(req,reply)=>{
       const pipeline=dependencies.pipeline(),id=jobId(req.params),operationId='memory:'+id,control=dependencies.modelAuthorizationHost.control;
+      const {target}=z.object({target:z.literal('topics').optional()}).parse(req.query);
       const job=pipeline.get(id);
-      if(job.status==='completed'){
+      if(target==='topics'||job.status==='completed'){
+        if(['paused','pausing','cancelled'].includes(job.status))throw new StoreError('Memory job is paused or cancelled',409);
         dependencies.retryTopics(operationId);
         return reply.code(202).send(job);
       }

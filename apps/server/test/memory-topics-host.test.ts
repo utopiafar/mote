@@ -99,6 +99,27 @@ test('retrying a completed Memory job recovers its blocked topics without reopen
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
 });
 
+test('an explicit topic retry preserves the rest of an in-progress Memory job and respects pause',async t=>{
+ const f=await fixture(t);f.failNextTopic(new Error('Generated topic classification failure'));await f.command('on');
+ const job=await f.intake();await f.settle();
+ const operationId='memory:'+job.id,executor=f.node.executor,[topic]=executor.list({operationId,kind:'memory.topics'}).items;
+ assert.equal(topic.state,'blocked');
+ const primary=executor.list({operationId,kind:'memory.batch'}).items;
+ const pipeline=f.node.memoryPipeline,get=pipeline.get.bind(pipeline);
+ let status:'paused'|'running'='paused';
+ t.mock.method(pipeline,'get',(id:string)=>({...get(id),status}));
+ const retry=t.mock.method(pipeline,'acceptRetry');
+ const path='/api/memory-jobs/'+job.id+'/retry?target=topics';
+ assert.equal((await f.node.app.inject({method:'POST',url:path,headers:f.headers})).statusCode,409);
+ assert.equal(executor.get(topic.id)!.state,'blocked');
+ status='running';
+ const accepted=await f.node.app.inject({method:'POST',url:path,headers:f.headers});
+ assert.equal(accepted.statusCode,202,accepted.body);assert.equal(accepted.json().status,'running');
+ await f.settle();assert.equal(executor.get(topic.id)!.state,'succeeded');assert.equal(f.calls,2);
+ assert.deepEqual(executor.list({operationId,kind:'memory.batch'}).items,primary);
+ assert.equal(retry.mock.callCount(),0,'topic retry must not invoke the primary retry path');
+});
+
 test('stop fences a late topic result without deleting its already published Memory',async t=>{
  const f=await fixture(t);await f.command('on');const held=f.hold(),working=f.intake();await held.started;await f.command('stop');held.release();await working;await f.settle();
  assert.equal(f.calls,1);assert.ok(f.node.memories.list().length>0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,0);
