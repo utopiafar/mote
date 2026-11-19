@@ -1,6 +1,7 @@
 import {testScope} from './fixtures/plugin-scope.js';
 import {test,after,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import {mkdtemp,mkdir,writeFile,appendFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -154,11 +155,63 @@ for(const [provider,legacy] of [['codex',false],['claude',false],['kimi',false],
   for(const visible of f.native.expected){const index=text.indexOf(visible);assert.ok(index>previous,`${visible} follows the preceding native event`);assert.equal(text.split(visible).length-1,1,`${visible} appears once`);previous=index;}
   assert.match(text,/Attribution: human/);assert.match(text,/Attribution: agent · Channel: commentary/);assert.match(text,/Attribution: agent · Channel: final/);
   const evidence=await f.consumer.evidence({ids:f.materials.evidenceIds(material.ref)});assert.ok(evidence.length>0);
+  const attributed=evidence.flatMap(record=>(record.provenance?.document?.codingMessages??[]).map(span=>({speaker:span.speaker,text:record.ocrText.slice(span.start,span.end)})));
+  assert.ok(attributed.some(message=>message.speaker==='user'&&message.text===requestText));
+  assert.ok(attributed.some(message=>message.speaker==='agent'&&message.text===final));
   for(const secret of denied){assert.ok(!text.includes(secret),secret);assert.ok(evidence.every(record=>!record.ocrText.includes(secret)),secret);assert.equal(f.materials.list({query:secret}).items.length,0,secret);}
   for(const item of f.received)assert.ok(item.document?.coding?.order,'native ordering survives serialization');
   const revision=material.revision;await f.sources.upsertBatch('generated-coding',[...new Map(f.received.map(item=>[JSON.stringify([item.externalId,item.revision]),item])).values()]);await f.runtime.tick();assert.equal(f.materials.get(material.id)!.revision,revision,'lost ACK and duplicate receipts cannot duplicate visible messages');
  });
 }
+
+test('Codex creation receipts connect an existing child to its parent turn when that journal arrives',async t=>{
+ const f=await fixture(t,'codex'),root=f.native.path,child='c1558a13-087e-4530-825a-da3ffeb16451',parent='bc558a13-087e-4530-825a-da3ffeb16451',turn='d1558a13-087e-4530-825a-da3ffeb16451';
+ const meta=(id:string)=>({type:'session_meta',payload:{id,cwd:'/generated/same-repository',thread_source:id===child?'agent_created_thread':'user'}});
+ const start=(id:string)=>({type:'event_msg',payload:{type:'task_started',turn_id:id}});
+ const message=(role:'user'|'assistant',text:string)=>({type:'response_item',timestamp:at,payload:{type:'message',role,phase:'final_answer',content:[{type:'text',text}]}});
+ const receipt={type:'item_completed',thread_id:parent,turn_id:turn,item:{type:'McpToolCall',server:'codex_app',pluginId:'codex-app-tools@openai-bundled',
+  tool:'create_thread',status:'completed',arguments:{prompt:'PRIVATE_LAUNCH_INSTRUCTIONS'},result:{isError:false,content:[{type:'text',text:JSON.stringify({threadId:child,hostId:'generated-host'})}]}}};
+ await writeFile(join(root,'delegated.jsonl'),[meta(child),message('assistant','Generated delegated result.')].map(line).join(''));
+ await writeFile(join(root,'unrelated.jsonl'),[meta('other'),message('user','Another request in the same repository.'),message('assistant',JSON.stringify(receipt))].map(line).join(''));
+ await f.collect();await f.collect();
+ const lookup=()=>f.materials.list({kind:'mote.coding-session'}).items.find(material=>material.origin.sessionId===child)!;
+ assert.ok(lookup());const original=lookup().ref;assert.equal(f.materials.isCodingChild(lookup()),true);assert.equal(f.materials.codingContext(lookup()),undefined);
+ await writeFile(join(root,'parent.jsonl'),[meta(parent),start('generated-other-turn'),message('user','Generated unrelated parent turn.'),
+  start(turn),message('user','Generated original request for the delegated work.'),{type:'event_msg',timestamp:at,payload:receipt},
+  message('user','Generated later steering.')].map(line).join(''));
+ await f.collect();await f.collect();
+ const context=f.materials.codingContext(lookup());
+ assert.equal(lookup().ref,original);assert.ok(context);
+ assert.deepEqual(context.requests.map(request=>request.quote),['Generated original request for the delegated work.']);
+ const source=f.materials.get(context.ref)!;
+ assert.equal(source.origin.sessionId,parent);
+ assert.doesNotMatch(f.materials.read(source.ref,{length:12000}).text,/PRIVATE_LAUNCH_INSTRUCTIONS|create_thread/);
+ f.materials.redactUntilRebuilt(source.id);
+ assert.equal(f.materials.codingContext(lookup()),undefined);
+});
+
+test('Codex attachments use the native fork position and keep only the actual user input',async t=>{
+ const f=await fixture(t,'codex'),root=f.native.path,parent=randomUUID(),child=randomUUID();
+ const user=(text:string)=>({type:'response_item',timestamp:at,payload:{type:'message',role:'user',content:[{type:'input_text',text}]}});
+ const original='Generated request before creating the side conversation.',correction='Generated direct user correction in the side conversation.';
+ const parentHead=[{type:'session_meta',payload:{id:parent}},user(original)].map(line).join('');
+ await writeFile(join(root,'attached-root.jsonl'),parentHead+line(user('Generated newer request in the same parent.')));
+ const meta={type:'session_meta',payload:{id:child,attached_thread:true,forked_from_id:parent,history_base:{thread_id:parent,end_byte_offset:Buffer.byteLength(parentHead)}}};
+ const injected=user('PRIVATE_BRANCH_SUMMARY'),message=user(correction);
+ await writeFile(join(root,'attached-child.jsonl'),[meta,
+  {...injected,payload:{...injected.payload,internal_chat_message_metadata_passthrough:{content_item_kinds:['unknown']}}},
+  {type:'event_msg',payload:{type:'task_started',turn_id:randomUUID()}},
+  {...message,payload:{...message.payload,content:[...message.payload.content,{type:'input_text',text:'PRIVATE_HARNESS_CONTENT'}],
+   internal_chat_message_metadata_passthrough:{content_item_metadata:[{provenance:{type:'user'}},{provenance:{type:'harness'}}]}}},
+ ].map(line).join(''));
+ await f.collect();await f.collect();
+ const attached=f.materials.list({kind:'mote.coding-session'}).items.find(material=>material.origin.sessionId===child)!;
+ const context=f.materials.codingContext(attached);
+ assert.deepEqual(context?.requests.map(request=>request.quote),[original]);
+ const body=f.materials.read(attached.ref,{length:12000}).text;
+ assert.match(body,new RegExp(correction));
+ assert.doesNotMatch(body,/PRIVATE_BRANCH_SUMMARY|PRIVATE_HARNESS_CONTENT/);
+});
 
 test('same-time late native commentary rebuilds in native order and a later private revision keeps that exact projection',async t=>{
  const f=await fixture(t,'codex');await f.collect();const material=f.materials.list().items[0],all=[...new Map(f.received.map(item=>[item.externalId,item])).values()];

@@ -17,6 +17,8 @@ import type {HomeSnapshot} from './controller';
 import {assistantCardPath,assistantScopeQuery,homeAssistantScope,type AssistantCard,type AssistantCardHistoryPage,type AssistantCardVersion} from './assistant-cards';
 
 const cardLabels={activity:'动态',suggestion:'建议的下一步',briefing:'简报',artifact:'已保存成果',question:'需要你补充'};
+const codingSources={codex:'Codex',claude:'Claude Code',kimi:'Kimi Code',opencode:'OpenCode'};
+const speakers={owner:'你说',user:'用户发言',agent:'Agent 报告'};
 const taskIdFromRoute=()=>new URLSearchParams(window.location.hash.split('?')[1]??'').get('assistantTask');
 
 function Pages({page,count,next,loading,onPrevious,onNext}:{page:number;count:number;next?:string|null;loading:boolean;onPrevious:()=>void;onNext:(cursor:string)=>void}){
@@ -31,7 +33,12 @@ function CardBody({value,onEvidence}:{value:AssistantCardVersion;onEvidence:(id:
   {value.evidenceStale&&<p className="notice">{moteText('来源已变更')}</p>}
   <div className="home-assistant-body"><AnswerMarkdown answer={{answer:value.body,citations:[],runId:'',trace:[]}} onOpen={()=>{}} readOnly/></div>
   <details className="home-assistant-proof"><summary>{moteText('原文依据')} · {value.evidence.length}</summary>
-   {value.evidence.map((proof,index)=><div key={proof.id+':'+index}><button type="button" className="text-button" onClick={()=>onEvidence(proof.id)}>{moteText('来源资料 {0}',index+1)}</button><blockquote>{proof.quote}</blockquote></div>)}
+   {value.evidence.map((proof,index)=>{
+    const origin=value.evidenceOrigins?.find(item=>item.id===proof.id&&item.offset===proof.offset);
+    const description=[origin?.provider?codingSources[origin.provider]:origin?.appName,
+     origin?.speaker?moteText(speakers[origin.speaker]):undefined,origin?.recordedAt?dateTime(origin.recordedAt):undefined].filter(Boolean);
+    return <div key={proof.id+':'+index}><button type="button" className="text-button" onClick={()=>onEvidence(proof.id)}>{description.length?description.join(' · '):moteText('来源资料 {0}',index+1)}</button><blockquote>{proof.quote}</blockquote></div>;
+   })}
    {!value.evidence.length&&<p>{moteText('尚无原文依据。')}</p>}
   </details>
  </>;
@@ -98,7 +105,8 @@ function HomeTask({api,id,scope,supports,onOpen}:{api:Api;id:string;scope:QueryS
 }
 
 function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskState}:{api:Api;card:AssistantCard;state:HomeSnapshot;scope:QueryScope;supports:(capability:string)=>boolean;refresh:()=>void;onOpen:(ref:string)=>void;onTask:(id:string)=>void;onTaskState:(id:string,state:WorkState|undefined)=>void}){
- const [goal,setGoal]=useState(card.title),[editing,setEditing]=useState(false),[history,setHistory]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const defaultGoal=card.codingNextStep?.goal??card.title;
+ const [goal,setGoal]=useState(defaultGoal),[editing,setEditing]=useState(false),[history,setHistory]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [reviewedVersion,setReviewedVersion]=useState(card.version);
  const pending=useRef(false),alive=useRef(true),command=useRef<{requestId:string;goal:string;scope:QueryScope;cardId:string;expectedRevision:number}|undefined>(undefined);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
@@ -139,13 +147,18 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
    else if(alive.current){readUnavailable();setError(moteText('原文已不可用，请重新读取。'));}
   }catch{if(alive.current){readUnavailable();setError(moteText('原文已不可用，请重新读取。'));}}
  };
- const sources=card.sourceContextDependencies?.map(pin=>state.sources.error===undefined?state.sources.data?.items.find(source=>source.id===pin.sourceId)?.name:undefined).filter(Boolean)??[];
+ const sources=[...new Set(card.evidenceOrigins?.flatMap(origin=>{
+  const name=origin.provider?codingSources[origin.provider]:
+   (state.sources.error===undefined?state.sources.data?.items.find(source=>source.id===origin.sourceId)?.name:undefined)??origin.appName;
+  return name?[name]:[];
+ })??[])];
  return <article className="home-assistant-card" data-card-id={card.id} data-card-revision={card.revision} aria-busy={busy}>
   <div className="home-assistant-meta"><span>{moteText(cardLabels[card.kind])}</span><span>{card.readAt?moteText('已读'):moteText('未读')}</span>{card.state==='resolved'&&<span>{moteText('已解决')}</span>}</div>
   <h3>{card.title}</h3>
   <p className="home-assistant-meta">{moteText('发现时间')} · <time dateTime={card.createdAt}>{dateTime(card.createdAt)}</time>{card.updatedAt!==card.createdAt&&<> · {moteText('最近更新')} · <time dateTime={card.updatedAt}>{dateTime(card.updatedAt)}</time></>}{sources.length>0&&<> · {moteText('来源')} · {sources.join(' · ')}</>}</p>
   {card.kind==='briefing'&&<p className="fine-print">{moteText('简报仅代表下列依据及正文注明的覆盖范围。')}</p>}
   <CardBody value={card} onEvidence={id=>void open(id)}/>
+  {card.codingNextStep&&<div className="home-assistant-body"><p>{moteText('为什么现在')} · {card.codingNextStep.whyNow}</p><p>{moteText('工作目标')} · {card.codingNextStep.goal}</p></div>}
   {card.kind==='suggestion'&&<div data-task-scope>
    <p className="fine-print">{card.taskScope?moteText('仅使用此建议的完整证据与原始依赖；其他资料未包含。正文缺失或覆盖不完整时会明确提示。'):moteText('当前建议的完整资料范围不可用，请刷新后重新核对。')}</p>
    <details className="home-assistant-proof"><summary>{moteText('任务资料范围')} · {card.taskEvidence.length}</summary>
@@ -155,7 +168,7 @@ function HomeCard({api,card,state,scope,supports,refresh,onOpen,onTask,onTaskSta
   {taskState&&<div role="status"><WorkStateBadge state={taskState}/>{taskState==='needs_input'&&<span> · {moteText('需要你补充')}</span>}</div>}
   {taskRead.error!==undefined&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}<button type="button" className="text-button" onClick={taskRead.refresh}>{moteText('刷新状态')}</button></p>}
   {latestDecision&&<p role="status">{latestDecision.action==='later'?moteText('已稍后'):moteText('已忽略')}{latestDecision.until&&<> · <time dateTime={latestDecision.until}>{dateTime(latestDecision.until)}</time></>}</p>}
-  {changed&&card.kind==='suggestion'&&!card.acceptedTaskId&&<p className="notice" role="status">{moteText('建议已更新，请重新核对后确认。')}<button type="button" className="text-button" disabled={busy} onClick={()=>{setReviewedVersion(card.version);setGoal(card.title);command.current=undefined;setError('');}}>{moteText('重新核对最新建议')}</button></p>}
+  {changed&&card.kind==='suggestion'&&!card.acceptedTaskId&&<p className="notice" role="status">{moteText('建议已更新，请重新核对后确认。')}<button type="button" className="text-button" disabled={busy} onClick={()=>{setReviewedVersion(card.version);setGoal(defaultGoal);command.current=undefined;setError('');}}>{moteText('重新核对最新建议')}</button></p>}
   {editing&&<label className="home-assistant-goal">{moteText('工作目标')}<textarea aria-label={moteText('工作目标')} value={goal} maxLength={8000} rows={3} disabled={busy} onChange={event=>{setGoal(event.target.value);command.current=undefined;}}/></label>}
   <div className="home-assistant-actions">
    {card.acceptedTaskId?<button type="button" className="button primary" disabled={!supports('http:GET:/api/assistant/tasks/:id')} onClick={()=>onTask(card.acceptedTaskId!)}>{moteText('查看任务')}</button>:card.kind==='suggestion'&&card.state==='open'&&<>

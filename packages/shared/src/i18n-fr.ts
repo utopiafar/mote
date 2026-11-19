@@ -8703,5 +8703,11 @@ export const french: Readonly<Record<string, string>> = {
   "复制 Codex 配置": "Copier la configuration de Codex",
   "Codex 配置": "Configuration de Codex",
   "撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。": "La révocation bloque les nouvelles écritures. Consultez le reçu d’action pour toute demande déjà envoyée.",
-  "日历授权、目标或当前上下文已变化。": "L’autorisation du calendrier, la destination ou le contexte actuel a changé."
+  "日历授权、目标或当前上下文已变化。": "L’autorisation du calendrier, la destination ou le contexte actuel a changé.",
+  "主会话": "Conversation principale",
+  "主会话的用户原话": "Messages de l’utilisateur dans la conversation principale",
+  "你说": "Vous avez dit",
+  "用户发言": "Message utilisateur",
+  "Agent 报告": "Rapport de l’agent",
+  "为什么现在": "Pourquoi maintenant"
 };

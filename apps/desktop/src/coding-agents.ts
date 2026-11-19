@@ -11,6 +11,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {SourceOptions,SourceScan,ScannedItem} from './source-types';
 import {redactSourceText} from './source-types';
 import {repositoryCandidate} from './coding-project';
+import {codexAttachedParent,codexThreadLaunch} from './codex-session-links';
 
 export const codingProviders={claude:'Claude Code',codex:'Codex',kimi:'Kimi Code',opencode:'OpenCode'} as const;
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
@@ -31,13 +32,13 @@ export async function discoverCodingAgents(home=homedir(),env:NodeJS.ProcessEnv=
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>{const path=codingRoot(provider,home,env);return {provider,name:codingProviders[provider],path,available:await lstat(path).then(s=>provider==='opencode'?s.isFile()&&!s.isSymbolicLink():s.isDirectory()&&!s.isSymbolicLink(),()=>false)};}));
 }
 type EventOrder=NonNullable<CodingEvidence['order']>;
-type Context={entry?:number;sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;lastAssistantHash?:string;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string;kimiOrder?:EventOrder;kimiStepId?:string;kimiStepClosed?:boolean;kimiParts?:string[];kimiCompacting?:boolean};
+type Context={entry?:number;sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;parentBeforeEntry?:number;childSession?:true;callId?:string;hostSession?:boolean;turnId?:string;finalEmitted?:boolean;lastAssistantHash?:string;kimiText?:string;kimiAt?:string;kimiToolStep?:boolean;kimiHostTurn?:boolean;kimiCodeTurnId?:string;kimiOrder?:EventOrder;kimiStepId?:string;kimiStepClosed?:boolean;kimiParts?:string[];kimiCompacting?:boolean};
 type Cursor={offset:number;anchor:string;ino:number;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;generation:number;context:Context;pendingEvent?:{hash:string;nextItem:number}};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingOpenCodeCursor={lastSeq:number;lastUpdated:number;incomplete:string[];continuation?:{id:string;hash:string;nextItem:number}};
 export type CodingOpenCodeState={database:{fileId:string};sessions:Record<string,CodingOpenCodeCursor>};
 export type CodingCheckpoint={version:3;files:Record<string,Cursor>;initialized:boolean;catalog:Record<string,CodingCatalogEntry>;scanNumber:number;scanStartedAt:string;nextFile?:string;opencode?:CodingOpenCodeState};
-type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;order?:EventOrder;attribution?:CodingEvidence['attribution']};
+type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string;channel?:string;nativeId?:string;order?:EventOrder;attribution?:CodingEvidence['attribution'];launch?:CodingEvidence['launch']};
 const time=(v:unknown)=>{const ms=typeof v==='number'?(v>1e11?v:v*1000):typeof v==='string'?Date.parse(v):NaN,date=new Date(ms);return Number.isFinite(date.getTime())?date.toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
 /** Decode syntax only; no keywords select topics, intent or memory value. Reasoning and host instructions are not conversation evidence. */
@@ -69,9 +70,23 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   };
   if(provider==='codex'){
     const p=row.payload;
-    if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;context.hostSession=Boolean(p.source&&typeof p.source==='object'&&p.source.subagent);context.repositoryKey=repositoryCandidate(p.git?.repository_url);context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;}
+    if(row.type==='session_meta'&&p){
+      context.sessionId=String(p.id??p.session_id??context.sessionId);
+      context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;
+      const attachment=codexAttachedParent(p,context.sessionId);
+      context.parentSessionId=attachment?.id??(typeof p.parent_thread_id==='string'?p.parent_thread_id:undefined);
+      context.parentBeforeEntry=attachment?.beforeEntry;
+      context.childSession=p.thread_source==='agent_created_thread'||p.attached_thread===true||context.parentSessionId?true:undefined;
+      context.hostSession=Boolean(p.source&&typeof p.source==='object'&&p.source.subagent);
+      context.repositoryKey=repositoryCandidate(p.git?.repository_url);
+      context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;
+    }
     if(context.hostSession)return [];
     if(row.type==='event_msg'&&p?.type==='task_started'){context.turnId=p.turn_id;context.finalEmitted=false;context.lastAssistantHash=undefined;}
+    if(row.type==='event_msg'){
+      const launch=codexThreadLaunch(p,context.sessionId);
+      if(launch)return [{role:'tool_result',text:'',at,launch,...(context.entry!==undefined?{order:{entry:context.entry,event:0}}:{})}];
+    }
     // Older journals omit message phase but provide an explicit turn-completion
     // receipt. Use only its final answer, never the preceding message stream.
     if(row.type==='event_msg'&&p?.type==='task_complete'&&!context.finalEmitted&&typeof p.last_agent_message==='string'){
@@ -83,7 +98,18 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
     if(row.type!=='response_item'||!p)return [];
     if(p.type==='message'&&['user','assistant'].includes(p.role)){
       const channel=p.role==='assistant'?(p.phase==null?p.channel??'unknown':p.phase==='final_answer'?'final':['commentary','partial_answer'].includes(p.phase)?p.phase:'unknown'):p.channel;
-      add(p.role,textParts(p.content),undefined,channel);
+      let content=p.content;
+      if(p.role==='user'){
+        const provenance=p.internal_chat_message_metadata_passthrough,items=provenance?.content_item_metadata;
+        if(Array.isArray(content)&&Array.isArray(items)&&items.length===content.length&&items.every(item=>typeof item?.provenance?.type==='string')){
+          content=content.filter((_,index)=>items[index].provenance.type==='user');
+        }else if(context.parentBeforeEntry!==undefined&&!context.turnId&&provenance){
+          // Paginated attachments may start with an injected history summary.
+          // It has no user provenance and precedes the first actual turn.
+          return [];
+        }
+      }
+      add(p.role,textParts(content),undefined,channel);
       if(p.role==='assistant'&&['commentary','partial_answer','final'].includes(channel)&&events.length)context.lastAssistantHash=hash(events.at(-1)!.text);
       if(channel==='final')context.finalEmitted=true;
     }
@@ -222,8 +248,12 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
 /** Bounded output pieces for one decoded event. Native identity plus the
  * immutable raw-event version stay independent of scan scheduling. */
 function codingEventItems(provider:CodingProvider,context:Context,events:Event[],eventHash:string,identityPrefix:string,itemQueue:'realtime'|'history',options:SourceOptions,signal?:Pick<AbortSignal,'aborted'|'throwIfAborted'>):ScannedItem[]{
+  const sessionId=redactSourceText(context.sessionId,options.redactLiterals).slice(0,500);
+  const parentSessionId=context.parentSessionId&&sessionId===context.sessionId&&
+    redactSourceText(context.parentSessionId,options.redactLiterals)===context.parentSessionId?context.parentSessionId.slice(0,500):undefined;
   const bodies=events.map(event=>{
     const body=redactSourceText(event.text,options.redactLiterals),pieces:string[]=[];
+    if(event.launch&&sessionId===context.sessionId&&[event.launch.childSessionId,event.launch.turnId].every(id=>redactSourceText(id,options.redactLiterals)===id))pieces.push('');
     for(let offset=0;offset<body.length;){signal?.throwIfAborted();let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
     return {event,pieces};
   });
@@ -232,7 +262,9 @@ function codingEventItems(provider:CodingProvider,context:Context,events:Event[]
     const identity=event.nativeId?`${provider}:${context.sessionId}:${event.nativeId}:${eventIndex}`:`${identityPrefix}:${eventIndex}`;
     const eventId=hash(`${identity}:${eventHash}`);
     const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
-    for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,...(event.order?{order:event.order}:{}),...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
+    const turnId=provider==='codex'&&typeof context.turnId==='string'&&context.turnId?
+      redactSourceText(context.turnId,options.redactLiterals).slice(0,200):undefined;
+    for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${sessionId.slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId,projectIdentity:context.cwd?'workspace':'session',projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,childSession:context.childSession,turnId,launch:event.launch,...(event.order?{order:event.order}:{}),...(event.channel?{channel:event.channel}:{}),...(event.attribution?{attribution:event.attribution}:{}),callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId,parentBeforeEntry:parentSessionId?context.parentBeforeEntry:undefined,part,parts:pieces.length}}});
   }
   return items;
 }

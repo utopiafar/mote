@@ -107,4 +107,10 @@ function materialSchema(db:DatabaseSync){
       state TEXT NOT NULL,error TEXT);
       INSERT OR IGNORE INTO material_index_requests SELECT h.id,h.revision,1,1,'indexed',NULL
         FROM material_heads h JOIN material_searchable s ON s.material_id=h.id;`);
+ db.exec(`
+      CREATE TABLE IF NOT EXISTS material_coding_relations(
+        material_id TEXT NOT NULL REFERENCES material_heads(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,ref TEXT NOT NULL,details TEXT NOT NULL,
+        PRIMARY KEY(material_id,kind,ref,details));
+      CREATE INDEX IF NOT EXISTS material_coding_relations_target ON material_coding_relations(kind,ref);`);
 }

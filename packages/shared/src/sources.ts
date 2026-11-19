@@ -23,6 +23,7 @@ const originalMetadataSchema=z.record(z.unknown()).superRefine((value,ctx)=>{
   }
   if(!valid||JSON.stringify(value).length>32000)ctx.addIssue({code:'custom',message:'Original metadata must be bounded JSON (32,000 characters, depth 8)'});
 });
+const codingNativeId=z.string().min(1).max(200);
 export const codingEvidenceSchema=z.object({
   version:z.literal(1),provider:z.enum(['claude','codex','kimi','opencode']),sessionId:z.string().min(1).max(500),
   projectIdentity:z.enum(['workspace','session','unknown']).optional(),
@@ -35,9 +36,20 @@ export const codingEvidenceSchema=z.object({
   order:z.object({entry:z.number().int().nonnegative().safe(),event:z.number().int().nonnegative().safe()}).strict().optional(),
   attribution:z.enum(['human','agent','host','unknown']).optional(),
   callId:z.string().max(500).optional(),parentSessionId:z.string().max(500).optional(),
+  childSession:z.literal(true).optional(),parentBeforeEntry:z.number().int().nonnegative().safe().optional(),
+  turnId:codingNativeId.optional(),
+  launch:z.object({childSessionId:z.string().uuid(),turnId:z.string().uuid()}).strict().optional(),
   part:z.number().int().min(0),parts:z.number().int().min(1),
-}).strict();
+}).strict().refine(value=>!value.childSession||value.provider==='codex')
+  .refine(value=>value.parentBeforeEntry===undefined||value.provider==='codex'&&Boolean(value.parentSessionId))
+  .refine(value=>!value.launch||(value.provider==='codex'&&value.role==='tool_result'&&value.part===0&&value.parts===1&&value.launch.childSessionId!==value.sessionId));
 export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
+export const codingMessageSpanSchema=z.object({
+  start:z.number().int().nonnegative(),end:z.number().int().positive(),eventId:codingNativeId,
+  speaker:z.enum(['user','agent']),turnId:codingNativeId.optional(),entry:z.number().int().nonnegative().safe().optional(),
+  recordedAt:timestamp.optional(),
+}).strict().refine(span=>span.start<span.end);
+export type CodingMessageSpan=z.infer<typeof codingMessageSpanSchema>;
 /** Model-visible Coding evidence is a protocol-selected dialogue, never a raw
  * transcript. These bounds apply before indexing or any model invocation. */
 export const CODING_DIALOGUE_SCHEMA_VERSION=7;
@@ -108,6 +120,8 @@ export const documentSchema=z.object({
     if(value.state==='partial'&&!value.reason||value.state==='complete'&&value.reason)ctx.addIssue({code:'custom',message:'Body coverage requires a reason only while partial'});
   }).optional(),
   coding:codingEvidenceSchema.optional(),
+  /** Host-organized message coordinates within a Coding transcript block. */
+  codingMessages:z.array(codingMessageSpanSchema).max(256).optional(),
   activity:documentActivitySchema.optional(),
   fileId:z.string().min(1).max(200).optional(),path:z.string().max(4000).optional(),
   recordedAt:timestamp.describe('Explicit original authored/recording date; never the import or observation time. Omit when unknown.').optional(),occurredAt:timestamp.describe('Explicit time of the described event; omit when unknown.').optional(),

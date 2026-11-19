@@ -19,6 +19,7 @@ import {captureContextMembers,captureContextOriginals,isCaptureContextSourceId} 
 import type {LibraryMaterialType} from '@mote/shared';
 import {materialTypePredicate} from './material-type-filter.js';
 import {materialDerivationSchema,type MaterialDerivation} from './material-derivation.js';
+import {codingMessages,codingSessionRef,codingSessionRelationsSchema,type CodingSessionRelation} from './coding-session-context.js';
 
 const MATERIAL_PREFIX='mat_';
 const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
@@ -52,7 +53,7 @@ const draftSchema=z.object({
     projectName:z.string().max(400).optional(),projectIdentity:z.enum(['workspace','session','unknown']).optional(),
     cwd:z.string().max(4000).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),
     projectKey:z.string().min(1).max(512).optional(),sessionId:z.string().min(1).max(512).optional()}).strict(),
-  blocks:z.array(blockSchema),members:z.array(memberSchema),
+  blocks:z.array(blockSchema),members:z.array(memberSchema),codingRelations:codingSessionRelationsSchema.optional(),
   coverage:z.object({state:z.enum(['complete','partial','pending']),reason:z.string().max(500).optional()}).strict(),
   /** Named processing outputs let each consumer declare only the dependencies
    * it actually needs. A query may use a partial material while Memory waits. */
@@ -67,11 +68,12 @@ const appendDraftSchema=draftSchema.omit({blocks:true}).extend({mode:z.literal('
   reuseBlocks:z.number().int().nonnegative(),blocks:z.array(blockSchema)}).strict();
 export type MaterialAppendDraft=z.infer<typeof appendDraftSchema>;
 export type CodingAppendBase={record:MaterialRecord;archiveCheckpoint:string;appendEpoch:number;headCount:number;
+  codingRelations?:CodingSessionRelation[];
   lastBlock:{id:string;text:string;format:string|null;locator?:Record<string,unknown>;evidenceContext?:MaterialEvidenceContext}|null};
 export type CodingArchiveSnapshot={checkpoint:string;appendEpoch:number;headCount:number};
 export type MaterialMember=MaterialDraft['members'][number];
 export type MaterialBlock=MaterialDraft['blocks'][number];
-export type MaterialRecord=Omit<MaterialDraft,'blocks'|'members'> & {
+export type MaterialRecord=Omit<MaterialDraft,'blocks'|'members'|'codingRelations'> & {
   ref:string;revision:string;sequence:number;createdAt:string;updatedAt:string;
   blockCount:number;memberCount:number;textLength:number;assetCount:number;
   indexing:MaterialIndexStatus;
@@ -90,6 +92,7 @@ const MATERIAL_CHARACTER_WINDOW=Symbol('material-character-window');
 export type MaterialStoredBlock={attributionContext:AttributionContext;id:string;kind:'text'|'asset';format?:string;text:string;memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string}};
 export type MaterialPage={items:MaterialRecord[];nextCursor:string|null};
 export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;total:number};
+export type CodingRequest={id:string;offset:number;quote:string;eventId:string;recordedAt?:string};
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
@@ -347,7 +350,8 @@ export class MaterialStore {
     const retiredArtifacts=manifest.artifacts?.filter(artifact=>artifact.revision&&retiredProducts.has(artifact.revision))??[];
     const removedBlocks=new Set(retiredArtifacts.flatMap(artifact=>artifact.blockIds??[]));
     const artifacts=manifest.artifacts?.map(artifact=>retiredArtifacts.includes(artifact)?{key:artifact.key,state:'unavailable' as const,reason:'attribution_context_changed',blockIds:[]}:artifact);
-    return {...manifest,...(artifacts?{artifacts}:{}),blocks:blocks.filter(block=>!removedBlocks.has(block.id)),members};
+    const codingRelations=coding?this.codingRelations(material.id,material.revision):undefined;
+    return {...manifest,...(artifacts?{artifacts}:{}),...(codingRelations?{codingRelations}:{}),blocks:blocks.filter(block=>!removedBlocks.has(block.id)),members};
   }
   /** Republishes only immutable stored content; never runs a processor or grants paid work. */
   private republishContext(material:MaterialRecord,cause:'attribution'|'derived'='attribution'){
@@ -465,10 +469,98 @@ export class MaterialStore {
       AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(id,record.blockCount-1,record.sequence,record.sequence) as
       {block_id:string;format:string|null;locator:string|null;text:string;context_json:string|null}|undefined:undefined;
     if(record.blockCount&&!tail)return;
-    return {record,archiveCheckpoint:row.archive_checkpoint,appendEpoch:row.append_epoch,headCount:row.head_count,
+    return {record,codingRelations:this.codingRelations(id,record.revision),archiveCheckpoint:row.archive_checkpoint,appendEpoch:row.append_epoch,headCount:row.head_count,
       lastBlock:tail?{id:tail.block_id,text:tail.text,format:tail.format,
         ...(tail.locator?{locator:JSON.parse(tail.locator) as Record<string,unknown>}:{}),
         ...(tail.context_json?{evidenceContext:materialEvidenceContextSchema.parse(JSON.parse(tail.context_json))}:{})}:null};
+  }
+
+  private codingRelations(id:string,revision:string):CodingSessionRelation[]|undefined{
+    const snapshot=this.version(id,revision);
+    return snapshot?JSON.parse(snapshot.manifest).codingRelations:undefined;
+  }
+
+  private replaceCodingRelations(id:string,relations:readonly CodingSessionRelation[]|undefined,prior:readonly CodingSessionRelation[]|undefined){
+    if(JSON.stringify(relations)===JSON.stringify(prior))return;
+    this.store.db.prepare('DELETE FROM material_coding_relations WHERE material_id=?').run(id);
+    const insert=this.store.db.prepare('INSERT INTO material_coding_relations(material_id,kind,ref,details) VALUES(?,?,?,?)');
+    for(const relation of relations??[])insert.run(id,relation.kind,relation.ref,JSON.stringify(relation));
+  }
+
+  hasCodingOriginals(ids:string[]){
+    return Boolean(ids.length&&this.store.db.prepare(`SELECT 1 FROM json_each(?) proof JOIN material_evidence e ON e.id=proof.value
+      JOIN material_heads h ON h.id=e.material_id WHERE h.kind='mote.coding-session' LIMIT 1`).get(JSON.stringify(ids)));
+  }
+
+  isCodingChild(material:MaterialRecord){
+    const {sourceId,provider,sessionId}=material.origin;
+    if(material.kind!=='mote.coding-session'||!provider||!sessionId)return false;
+    return Boolean(this.store.db.prepare(`SELECT 1 FROM material_coding_relations WHERE material_id=? AND kind IN ('child','parent')
+      UNION ALL SELECT 1 FROM material_coding_relations WHERE kind='launch' AND ref=? LIMIT 1`)
+      .get(material.id,codingSessionRef(sourceId,provider,sessionId)));
+  }
+
+  private codingParentLink(child:MaterialRecord) {
+    const {sourceId,provider,sessionId}=child.origin;
+    if(child.kind!=='mote.coding-session'||!provider||!sessionId)return;
+    const db=this.store.db,childRef=codingSessionRef(sourceId,provider,sessionId);
+    const launches=db.prepare(`SELECT h.id,m.details FROM material_coding_relations m JOIN material_heads h ON h.id=m.material_id
+      WHERE m.kind='launch' AND m.ref=? AND h.source_id=? AND h.kind='mote.coding-session' AND h.retired=0 AND h.sequence>=h.min_visible_sequence AND h.id!=? LIMIT 2`)
+      .all(childRef,sourceId,child.id);
+    if(launches.length>1)return;
+    const attachments=db.prepare(`SELECT h.id,child.details FROM material_coding_relations child JOIN material_coding_relations parent ON parent.kind='identity' AND parent.ref=child.ref
+      JOIN material_heads h ON h.id=parent.material_id WHERE child.material_id=? AND child.kind='parent'
+        AND h.source_id=? AND h.kind='mote.coding-session' AND h.retired=0 AND h.sequence>=h.min_visible_sequence AND h.id!=? LIMIT 2`)
+      .all(child.id,sourceId,child.id);
+    if(attachments.length>1||launches[0]&&attachments[0]&&launches[0].id!==attachments[0].id)return;
+    const id=launches[0]?.id??attachments[0]?.id;
+    const parent=typeof id==='string'?this.get(id):undefined;
+    if(!parent||!this.derivedAllowed(parent)||parent.coverage.state!=='complete'||!parent.artifacts?.some(item=>item.key==='conversation'&&item.state==='ready'))return;
+    const launch=launches[0]?JSON.parse(String(launches[0].details)) as Extract<CodingSessionRelation,{kind:'launch'}>:undefined;
+    const attachment=attachments[0]?JSON.parse(String(attachments[0].details)) as Extract<CodingSessionRelation,{kind:'parent'}>:undefined;
+    return {parent,launch,beforeEntry:attachment?.beforeEntry};
+  }
+
+  private codingParentRequests(parent:MaterialRecord,{turnId,beforeEntry,beforeAt}:{turnId?:string;beforeEntry?:number;beforeAt?:string}):CodingRequest[]{
+    if(beforeEntry===undefined&&!beforeAt)return [];
+    const rows=this.store.db.prepare(`SELECT b.anchor_id id,p.text,j.value span FROM material_block_versions b
+      JOIN material_block_payloads p ON p.hash=b.payload_hash JOIN material_evidence e ON e.id=b.anchor_id AND e.invalidated=0
+      JOIN json_each(b.locator,'$.codingMessages') j
+      WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)
+        AND json_extract(j.value,'$.speaker')='user'
+        AND (? IS NULL OR json_extract(j.value,'$.turnId')=?)
+        AND (? IS NULL OR json_extract(j.value,'$.entry')<?)
+        AND (? IS NULL OR julianday(json_extract(j.value,'$.recordedAt'))<=julianday(?))
+      ORDER BY b.idx,CAST(j.key AS INTEGER) LIMIT 16`).all(parent.id,parent.sequence,parent.sequence,
+        turnId??null,turnId??null,beforeEntry??null,beforeEntry??null,beforeAt??null,beforeAt??null);
+    const requests=new Map<string,CodingRequest>();
+    for(const row of rows){
+      const [span]=codingMessages({codingMessages:[JSON.parse(String(row.span))]});
+      if(!span||requests.has(span.eventId))continue;
+      const quote=String(row.text).slice(span.start,Math.min(span.end,span.start+1200)).replace(/[\uD800-\uDBFF]$/,'');
+      if(quote.trim())requests.set(span.eventId,{id:String(row.id),offset:span.start,quote,eventId:span.eventId,...(span.recordedAt?{recordedAt:span.recordedAt}:{})});
+      if(requests.size===8)break;
+    }
+    return [...requests.values()];
+  }
+
+  codingContext(child:MaterialRecord) {
+    if(child.kind!=='mote.coding-session'||this.revisionForWrite(child.id)!==child.revision)return;
+    const visited=new Set([child.id]);let next=child;
+    let direct:ReturnType<MaterialStore['codingParentLink']>;
+    for(let depth=0;depth<8;depth++){
+      const link=this.codingParentLink(next);
+      if(!link)break;
+      if(visited.has(link.parent.id))return;
+      visited.add(link.parent.id);direct??=link;
+      if(!this.isCodingChild(link.parent)){
+        const requests=this.codingParentRequests(link.parent,link.launch?{turnId:link.launch.turnId,beforeEntry:link.launch.entry}:
+          link.beforeEntry===undefined?{beforeAt:next.origin.firstAt}:{beforeEntry:link.beforeEntry});
+        return {ref:link.parent.ref,title:link.parent.title,requests};
+      }
+      next=link.parent;
+    }
+    if(direct)return {ref:direct.parent.ref,title:direct.parent.title,requests:[]};
   }
 
   bindIndexEngine(engine:ExecutionEngine){return this.index=materialIndexRuntime(this,engine);}
@@ -589,7 +681,7 @@ export class MaterialStore {
     if(!derivedAllowed.has(ref))derivedAllowed.set(ref,this.derivedAllowed(material));
     if(!derivedAllowed.get(ref))return [];
     if(!layouts.has(ref))layouts.set(ref,this.codingLayout(material.id,material.revision));
-    const block=layouts.get(ref)?(codingBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_block_versions b
+    const block=layouts.get(ref)?(codingBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset,b.locator FROM material_block_versions b
       JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`))
       .get(material.id,material.revision,anchor.block_id,id):(snapshotBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
       WHERE b.material_id=? AND b.revision=? AND b.block_id=?`)).get(material.id,material.revision,anchor.block_id);if(!block)return [];
@@ -600,7 +692,8 @@ export class MaterialStore {
     // A material's range is not a block's authored/recording/event time. Only
     // the organizer can declare that context; captured prose cannot supply it.
     const document=context?.document??{timeBasis:'unknown',contentRole:'other'};
-    return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
+    const messages=coding&&block.locator?codingMessages(JSON.parse(String(block.locator))):[];
+    return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(messages.length?{codingMessages:messages}:{}),...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
   private currentEvidenceRow(id:string){return (this.currentEvidenceStatement??=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id=?')).get(id) as CurrentEvidenceRow|undefined;}
   isCurrentEvidence(id:string){return currentEvidenceAllowed(this.currentEvidenceRow(id));}
@@ -625,7 +718,7 @@ export class MaterialStore {
   private head(id:string):HeadRow|undefined{return (this.headStatement??=this.store.db.prepare('SELECT * FROM material_heads WHERE id=?')).get(id) as HeadRow|undefined;}
   private version(id:string,revision:string):RevisionRow|undefined{return (this.versionStatement??=this.store.db.prepare('SELECT revision,sequence,manifest,created_at AS version_created_at,text_length,block_count,member_count,asset_count,draft_hash FROM material_revisions WHERE material_id=? AND revision=?')).get(id,revision) as RevisionRow|undefined;}
   private record(head:HeadRow,row:RevisionRow,open=true):MaterialRecord {
-    const {derivation:_,...manifest}=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>&{derivation?:MaterialDerivation};
+    const {derivation:_,codingRelations:__,...manifest}=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>&{derivation?:MaterialDerivation};
     const rebuilding=head.revision===row.revision&&this.needsRebuild(head.id,row.revision,row.sequence);
     const invalidBlocks=rebuilding?new Set(this.store.db.prepare(`SELECT b.block_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
       WHERE b.material_id=? AND b.revision=? AND e.invalidated=1 UNION SELECT b.block_id FROM material_block_versions b JOIN material_evidence e ON e.id=b.anchor_id
@@ -820,6 +913,7 @@ export class MaterialStore {
         db.prepare('UPDATE material_revisions SET text_length=?,asset_count=? WHERE material_id=? AND revision=?').run(offset,assetCount,id,revision);
         this.store.retireMaterialEvidenceRevisions(this.evidenceIds(id).filter(anchor=>!retained.has(anchor)));
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
+        if(coding)this.replaceCodingRelations(id,draft.codingRelations,head?this.codingRelations(id,head.revision):undefined);
         this.setSearchable(id,searchable);
         this.notifyPublished({id,revision,kind:draft.kind,sourceId:draft.origin.sourceId,...(draft.origin.deviceId?{deviceId:draft.origin.deviceId}:{}),occurredAt:now});
         if(ownTransaction)db.exec('COMMIT');
@@ -906,6 +1000,7 @@ export class MaterialStore {
       db.prepare('UPDATE material_revisions SET text_length=? WHERE material_id=? AND revision=?').run(offset,draft.id,revision);
       db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?')
         .run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,draft.id);
+      this.replaceCodingRelations(draft.id,draft.codingRelations,priorBody.codingRelations);
       this.setSearchable(draft.id,searchable);
       this.notifyPublished({id:draft.id,revision,kind:draft.kind,sourceId:draft.origin.sourceId,...(draft.origin.deviceId?{deviceId:draft.origin.deviceId}:{}),occurredAt:now});
       if(ownTransaction)db.exec('COMMIT');return {...this.get(formatMaterialRef(draft.id,revision))!,changed:true};

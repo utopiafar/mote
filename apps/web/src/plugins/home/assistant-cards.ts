@@ -1,10 +1,11 @@
-import type {EvidenceDependencies,MatterEvidenceView,OwnerQuestionEvidence,QueryScope,SourceContextDeclaration} from '@mote/shared';
+import type {AssistantEvidenceOrigin,CodingNextStep,EvidenceDependencies,MatterEvidenceView,OwnerQuestionEvidence,QueryScope,SourceContextDeclaration} from '@mote/shared';
 
 /** The existing card HTTP projection. This client adds no publication fields or
  * semantic interpretation; its boundary test consumes the real producer. */
 export type AssistantCardVersion={
  version:string;state:'open'|'resolved'|'stale';title:string;body:string;evidence:OwnerQuestionEvidence[];
  evidenceDependencies:EvidenceDependencies;sourceContextDependencies?:SourceContextDeclaration[];
+ evidenceOrigins?:AssistantEvidenceOrigin[];codingNextStep?:CodingNextStep;
  evidenceStale?:boolean;reminderReason?:string;createdAt:string;
 };
 export type AssistantCard=AssistantCardVersion & {

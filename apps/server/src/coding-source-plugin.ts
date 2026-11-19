@@ -1,4 +1,5 @@
 import {codingProjectContext} from './coding-project.js';
+import {codingMessages,codingSessionRelations} from './coding-session-context.js';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
 import type {Context,Plugin} from '@deepseek-ai/cordis';
@@ -8,7 +9,7 @@ import {PluginResourceScope,type HostPluginContext,type HostScope} from '@mote/p
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceStore} from './sources.js';
 import type {EvidenceStore as Store} from './evidence-store.js';
-import {codingConversationEvidence,codingDialogueText,CODING_DIALOGUE_SCHEMA_VERSION,sourceItemSchema,type CodingEvidence,type SourceConnection,type SourceItem} from '@mote/shared';
+import {codingConversationEvidence,codingDialogueText,CODING_DIALOGUE_SCHEMA_VERSION,sourceItemSchema,type CodingEvidence,type CodingMessageSpan,type SourceConnection,type SourceItem} from '@mote/shared';
 import {materialId,type CodingAppendBase,type MaterialAppendDraft,type MaterialDraft} from './materials.js';
 import {archiveHash} from './source-archive.js';
 import {StoreError} from './evidence-store.js';
@@ -110,26 +111,42 @@ async function readCodingSnapshot(reader:RawReader,source:SourceConnection,ident
   if(!full)throw new StoreError('Coding raw snapshot is unavailable',409);
   return {...full,mode:'full'};
 }
-const eventText=(item:SourceItem)=>{const c=item.document!.coding!,attribution=c.attribution??(['assistant','assistant_delta'].includes(c.role)?'agent':'unknown');return `## ${c.role} · ${item.document?.recordedAt?'Recorded: '+item.document.recordedAt:'Observed: '+item.observedAt}\n\nEvent: ${c.eventId} · Part: ${c.part}/${c.parts} · Attribution: ${attribution}${c.channel?' · Channel: '+c.channel:''}\n\n${item.layer==='reference'?'[Body not collected]':item.text}\n\n`;};
 /** Blocks may span several event times. Keep those in their labeled event
  * headers; the block context declares only its earliest actual observation. */
 class CodingMaterialBody {
   readonly blocks:MaterialDraft['blocks']=[];
-  constructor(private firstIndex=0,private buffer='',private observedAt?:string,private order?:CodingEvidence['order']){}
+  constructor(private firstIndex=0,private buffer='',private observedAt?:string,private order?:CodingEvidence['order'],private messages:CodingMessageSpan[]=[]){}
   flush(){
     if(!this.buffer)return;
+    const locator={...(this.order?{codingOrder:this.order}:{}),...(this.messages.length?{codingMessages:this.messages}:{})};
     this.blocks.push({id:`section-${this.firstIndex+this.blocks.length}`,kind:'text',format:'markdown-fragment',text:this.buffer,memberIds:['archive'],
-      ...(this.order?{locator:{codingOrder:this.order}}:{}),
+      ...(Object.keys(locator).length?{locator}:{}),
       ...(this.observedAt?{evidenceContext:{observedAt:this.observedAt,document:{timeBasis:'unknown',contentRole:'transcript'}}}:{})});
-    this.buffer='';this.observedAt=undefined;this.order=undefined;
+    this.buffer='';this.observedAt=undefined;this.order=undefined;this.messages=[];
   }
-  append(text:string,observedAt?:string,order?:CodingEvidence['order']){
+  appendItem(item:SourceItem,nativeOrder:boolean){
+    const coding=item.document!.coding!,recordedAt=item.document?.recordedAt;
+    const header=`## ${coding.role} · ${recordedAt?'Recorded: '+recordedAt:'Observed: '+item.observedAt}\n\nEvent: ${coding.eventId} · Part: ${coding.part}/${coding.parts} · Attribution: ${coding.attribution}${coding.channel?' · Channel: '+coding.channel:''}\n\n`;
+    const text=item.layer==='reference'?'[Body not collected]':item.text;
+    const original:CodingMessageSpan|undefined=item.layer!=='reference'&&text.length?{
+      start:header.length,end:header.length+text.length,eventId:coding.eventId,speaker:coding.role==='user'?'user':'agent',
+      ...(coding.turnId?{turnId:coding.turnId}:{}),...(coding.order?{entry:coding.order.entry}:{}),...(recordedAt?{recordedAt}:{}),
+    }:undefined;
+    this.append(header+text+'\n\n',item.observedAt,nativeOrder?coding.order:undefined,original);
+  }
+  append(text:string,observedAt?:string,order?:CodingEvidence['order'],message?:CodingMessageSpan){
+    let consumed=0;
     while(text){
       let take=Math.min(12000-this.buffer.length,text.length);
       if(take<text.length&&/[\uD800-\uDBFF]/.test(text[take-1])&&/[\uDC00-\uDFFF]/.test(text[take]))take--;
       if(!take){this.flush();continue;}
       if(observedAt&&(!this.observedAt||Date.parse(observedAt)<Date.parse(this.observedAt)))this.observedAt=observedAt;
-      this.order=order;this.buffer+=text.slice(0,take);text=text.slice(take);if(this.buffer.length>=11999)this.flush();
+      if(message){
+        const start=Math.max(message.start,consumed),end=Math.min(message.end,consumed+take);
+        if(start<end)this.messages.push({...message,start:this.buffer.length+start-consumed,end:this.buffer.length+end-consumed});
+      }
+      this.order=order;this.buffer+=text.slice(0,take);text=text.slice(take);consumed+=take;
+      if(this.buffer.length>=11999)this.flush();
     }
   }
 }
@@ -140,7 +157,7 @@ const organize=({source,items,group:identity}:{source:SourceConnection;items:Sou
       // not event records; a block may contain many messages or part of one.
       const body=new CodingMaterialBody();
       body.append(`# Coding dialogue\n\nProvider: ${provider}\nSession: ${sessionId}\n\nUntrusted evidence: human messages and protocol-confirmed visible assistant text, including intermediate explanations. Hidden reasoning, tools, host envelopes and unconfirmed text are excluded by rules before indexing or model processing. Agent reports are not independently verified.\n\n`);
-      for(const item of records)body.append(eventText(item),item.observedAt,nativeOrder?item.document!.coding!.order:undefined);
+      for(const item of records)body.appendItem(item,nativeOrder);
       body.flush();const times=records.map(item=>new Date(item.document?.recordedAt??item.observedAt).toISOString()).sort();
       const events=new Map<string,{parts:number;seen:Set<number>}>();for(const item of items.filter(item=>!item.deleted&&codingConversationEvidence(item.document!.coding!))){const c=item.document!.coding!;const event=events.get(c.eventId)??{parts:c.parts,seen:new Set<number>()};event.parts=Math.max(event.parts,c.parts);event.seen.add(c.part);events.set(c.eventId,event);}
       const missingParts=[...events.values()].some(event=>event.seen.size!==event.parts||[...event.seen].some(part=>part>=event.parts));
@@ -151,6 +168,7 @@ const organize=({source,items,group:identity}:{source:SourceConnection;items:Sou
         title:project.projectName??sessionId,
         origin:{sourceId:source.id,externalId:identity,deviceId:source.deviceId,provider,projectKey,sessionId,...project,...(times.length?{firstAt:times[0],lastAt:times.at(-1)!}:{})},blocks:body.blocks,
         members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
+        codingRelations:codingSessionRelations(source.id,provider,sessionId,items),
         coverage:partial?{state:'partial',reason:partial}:{state:'complete'},
         artifacts:[{key:'conversation',state:conversationState,revision:conversationRevision(records),...(partial?{reason:partial}:{})}],
         fidelity:{state:'derived',limitations:['metadata_projected','tool_bodies_omitted','host_context_omitted','hidden_reasoning_omitted','unconfirmed_replies_omitted',...(records.some(item=>!item.document!.coding!.order)?['native_order_unknown']:[])]},retention:{original:'retained',policy:'keep'}};
@@ -160,13 +178,14 @@ const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSna
   const records=orderedConversation(snapshot.items);
   const reuseBlocks=records.length&&base.lastBlock!.text.length<11999?prior.blockCount-1:prior.blockCount;
   const tail=reuseBlocks<prior.blockCount?base.lastBlock:undefined;
-  const body=new CodingMaterialBody(reuseBlocks,tail?.text,tail?.evidenceContext?.observedAt,tail?.locator?.codingOrder as CodingEvidence['order']);
-  for(const item of records)body.append(eventText(item),item.observedAt,item.document!.coding!.order);body.flush();
+  const body=new CodingMaterialBody(reuseBlocks,tail?.text,tail?.evidenceContext?.observedAt,tail?.locator?.codingOrder as CodingEvidence['order'],codingMessages(tail?.locator));
+  for(const item of records)body.appendItem(item,true);body.flush();
   const newLast=records.length?new Date(records.at(-1)!.document?.recordedAt??records.at(-1)!.observedAt).toISOString():prior.origin.lastAt;
   const conversation=prior.artifacts?.find(artifact=>artifact.key==='conversation');
   return {mode:'append',baseRevision:prior.revision,reuseBlocks,id:prior.id,kind:'mote.coding-session',schemaVersion:prior.schemaVersion,
     title:prior.title,origin:{...prior.origin,...(newLast?{lastAt:newLast}:{})},blocks:body.blocks,
     members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
+    codingRelations:codingSessionRelations(source.id,prior.origin.provider!,prior.origin.sessionId!,snapshot.items,base.codingRelations),
     coverage:{state:'complete'},artifacts:records.length?[{key:'conversation',state:'ready',revision:conversationRevision(records,conversation?.revision)}]:prior.artifacts,
     fidelity:prior.fidelity,retention:prior.retention};
 };

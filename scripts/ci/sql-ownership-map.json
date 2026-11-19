@@ -1336,6 +1336,11 @@
    "file": "apps/server/src/material-catalog.ts",
    "installer": "materialCatalogSchemaInstallation"
   },
+  "material_coding_relations": {
+   "owner": "material",
+   "file": "apps/server/src/material-schema.ts",
+   "installer": "materialSchemaInstallation"
+  },
   "material_coding_snapshots": {
    "owner": "material",
    "file": "apps/server/src/material-schema.ts",

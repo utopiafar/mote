@@ -1,6 +1,6 @@
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
-import {evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {codingNextStepSchema,evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type AssistantEvidenceOrigin,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {type EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
 import {retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
@@ -8,6 +8,7 @@ import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
+import {codingMessageProof} from './coding-session-context.js';
 
 const cardKind=z.enum(['activity','suggestion','briefing','artifact','question']);
 const cardState=z.enum(['open','resolved']);
@@ -24,6 +25,7 @@ const publishSchema=z.object({
  id:uuid,kind:cardKind,matterId:uuid.nullable(),version,state:cardState,
  title:z.string().min(1).max(500),body:text,
  reminderReason:z.string().min(1).max(2000).refine(value=>value.trim().length>0).optional(),
+ codingNextStep:codingNextStepSchema.optional(),
  evidence:z.array(ownerQuestionEvidenceSchema.extend({id:uuid})).max(100),
  evidenceDependencies:evidenceDependenciesSchema,sourceContextDependencies:z.array(sourceContextDeclarationSchema).optional(),
 }).strict();
@@ -39,7 +41,7 @@ export const assistantCardFeedbackSchema=z.object({
 export type AssistantCardFeedback=z.infer<typeof assistantCardFeedbackSchema>;
 type CardRow={seq:number;id:string;cursor_key:string;kind:z.infer<typeof cardKind>;matter_id:string|null;revision:number;current_version:string;state:'open'|'resolved'|'stale';accepted_task_id:string|null;read_at:string|null;created_at:string;updated_at:string};
 type VersionRow={seq:number;card_id:string;version:string;request_hash:string;state:'open'|'resolved';stale:number;private_json:string|null;created_at:string};
-type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'>&{historicalEvidenceIds?:string[]};
+type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'|'codingNextStep'>&{historicalEvidenceIds?:string[]};
 type VisibleVersion={snapshot:VersionRow;body:Body;ids:string[]};
 type ReviewEvidence={current:Map<string,CaptureRecord[]>;historical:Map<string,CaptureRecord[]>;selection?:Set<string>};
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
@@ -116,6 +118,26 @@ export class AssistantCards {
   return decodeMemoryPrivate<Body>(this.store,row.private_json);
  }
  private publicBody(body:Body){const {historicalEvidenceIds:_,...visible}=body;return visible;}
+ private evidenceOrigins(evidence:Body['evidence'],historical=false):AssistantEvidenceOrigin[]{
+  const ids=[...new Set(evidence.map(proof=>proof.id))];
+  const originals=historical?this.readEvidence(ids,true)??[]:this.reader.memories.readCurrentEvidence(ids);
+  const records=new Map(originals.map(record=>[record.id,record]));
+  return evidence.flatMap(proof=>{
+   const record=records.get(proof.id);
+   if(!record)return [];
+   const source=record.provenance,provider=source?.document?.coding?.provider,message=codingMessageProof(record,proof);
+   const speaker=message?.speaker==='user'&&record.attributionContext?.ownerRelation==='owner'?'owner':message?.speaker;
+   const recordedAt=message?.recordedAt??source?.document?.recordedAt;
+   return [{id:proof.id,offset:proof.offset,...(source?{sourceId:source.sourceId}:{}),...(provider?{provider}:{}),
+    ...(speaker?{speaker}:{}),...(recordedAt?{recordedAt}:{}),...(record.appName&&!provider?{appName:record.appName}:{})}];
+  });
+ }
+ /** Leave earlier Coding suggestions accessible as history. A previously
+  * accepted card remains visible so a running task keeps its home. */
+ private feedEligible(row:CardRow,body:Body){
+  if(row.kind!=='suggestion'||row.accepted_task_id||body.codingNextStep||!body.evidence.length)return true;
+  return !this.reader.hasCodingOriginals(body.evidence.map(item=>item.id));
+ }
  private visibleVersion(row:VersionRow,scope:QueryScope,requireReminder=false,review?:ReviewEvidence):VisibleVersion|undefined{
   if(!row.private_json)return;
   const body=this.payload(row);
@@ -166,7 +188,9 @@ export class AssistantCards {
    feedback:feedback.map(entry=>entry.item),readAt:row.read_at,createdAt:row.created_at,updatedAt:row.updated_at};
  }
  private view(row:CardRow,scope:QueryScope,visible=this.current(row,scope)){
-  return {...this.cardContent(row,visible,this.visibleFeedback(row.id,scope)),...this.taskInput(row,visible.snapshot,visible.ids),acceptedTaskId:this.acceptedTask(row,scope)};
+  const task=this.feedEligible(row,visible.body)?this.taskInput(row,visible.snapshot,visible.ids):{taskScope:null,taskEvidence:[]};
+  return {...this.cardContent(row,visible,this.visibleFeedback(row.id,scope)),...task,
+   evidenceOrigins:this.evidenceOrigins(visible.body.evidence),acceptedTaskId:this.acceptedTask(row,scope)};
  }
  private expect(row:CardRow,expectedRevision:number){if(row.revision!==revision.parse(expectedRevision))throw new StoreError('Assistant card changed; reload before continuing',409);}
 
@@ -193,7 +217,8 @@ export class AssistantCards {
    const ids=taskEvidenceIds(this.store,dependencies),sourceIds=[...new Set(pins.map(pin=>pin.sourceId))];this.assertValid(ids,scope,sourceIds,historical);assertSourceContextDependencies(this.reader.sources.contexts,pins);
    assertPublicationCurrent(assertCurrent,ids);this.assertValid(ids,scope,sourceIds,historical);assertSourceContextDependencies(this.reader.sources.contexts,pins);
    if(existing)this.expect(this.row(input.id),expectedRevision!);
-   const at=this.now(),body=encodeMemoryPrivate(this.store,{title:input.title,body:input.body,evidence:input.evidence,...(input.reminderReason?{reminderReason:input.reminderReason}:{}),...(pins.length?{sourceContextDependencies:pins}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})});
+   const at=this.now(),body=encodeMemoryPrivate(this.store,{title:input.title,body:input.body,evidence:input.evidence,...(input.reminderReason?{reminderReason:input.reminderReason}:{}),
+     ...(input.codingNextStep?{codingNextStep:input.codingNextStep}:{}),...(pins.length?{sourceContextDependencies:pins}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})});
    if(existing)this.store.db.prepare('UPDATE assistant_cards SET matter_id=?,current_version=?,state=?,revision=revision+1,updated_at=? WHERE id=?').run(input.matterId,input.version,input.state,at,input.id);
    else this.store.db.prepare('INSERT INTO assistant_cards(id,cursor_key,kind,matter_id,revision,current_version,state,accepted_task_id,read_at,created_at,updated_at) VALUES(?,?,?,?,1,?,?,NULL,NULL,?,?)').run(input.id,randomBytes(32).toString('hex'),input.kind,input.matterId,input.version,input.state,at,at);
    this.store.db.prepare('INSERT INTO assistant_card_versions(card_id,version,request_hash,state,private_json,created_at) VALUES(?,?,?,?,?,?)').run(input.id,input.version,hash,input.state,body,at);
@@ -228,7 +253,7 @@ export class AssistantCards {
    for(const row of this.feedRows(Number.MAX_SAFE_INTEGER,100)){
     const snapshot=this.versionRow(row.id,row.current_version);
     const visible=snapshot&&this.visibleVersion(snapshot,scope,true),reason=visible?.body.reminderReason;
-    if(!visible||!reason)continue;
+    if(!visible||!reason||!this.feedEligible(row,visible.body))continue;
     const timing=this.notificationTiming(row.id,scope,visible.snapshot);
     if(!timing)continue;
     const feedback=this.visibleFeedback(row.id,scope).map(({item})=>item).filter(({action})=>action==='later'||action==='ignore'||action==='never_remind');
@@ -338,7 +363,7 @@ export class AssistantCards {
    const found:ReturnType<AssistantCards['view']>[]=[],batch=Math.max(30,selected.limit+1);
    for(const row of this.feedRows(before,batch)){
     const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,selected.scope);
-    if(visible)found.push(this.view(row,selected.scope,visible));
+    if(visible&&this.feedEligible(row,visible.body))found.push(this.view(row,selected.scope,visible));
     if(found.length>selected.limit)break;
    }
    const items=found.slice(0,selected.limit),last=items.at(-1);
@@ -393,13 +418,14 @@ export class AssistantCards {
     const selectedVersion=this.historyCursorVersion(selected.cursor,card,selected.scope);
     const row=this.versionRow(id,selectedVersion);if(!row)throw new StoreError('Invalid assistant card history cursor');before=row.seq;
    }
-   const found:{version:string;state:'open'|'resolved';title:string;body:string;evidence:Body['evidence'];sourceContextDependencies?:SourceContextDeclaration[];evidenceDependencies:{version:1;complete:true;ids:string[]};evidenceStale?:true;createdAt:string}[]=[],batch=Math.max(30,selected.limit+1);
+   const found:(ReturnType<AssistantCards['publicBody']>&{version:string;state:'open'|'resolved';evidenceOrigins:AssistantEvidenceOrigin[];evidenceDependencies:{version:1;complete:true;ids:string[]};evidenceStale?:true;createdAt:string})[]=[],batch=Math.max(30,selected.limit+1);
    while(found.length<=selected.limit){
     const rows=this.store.db.prepare('SELECT * FROM assistant_card_versions WHERE card_id=? AND seq<? ORDER BY seq DESC LIMIT ?').all(id,before,batch) as VersionRow[];
     if(!rows.length)break;
     for(const row of rows){
      before=row.seq;const visible=this.visibleVersion(row,selected.scope);
-     if(visible)found.push({version:row.version,state:row.state,...this.publicBody(visible.body),evidenceDependencies:{version:1,complete:true,ids:visible.ids.filter(value=>Boolean(parseEvidenceId(value)))},...(row.stale?{evidenceStale:true as const}:{}),createdAt:row.created_at});
+     if(visible)found.push({version:row.version,state:row.state,...this.publicBody(visible.body),evidenceOrigins:this.evidenceOrigins(visible.body.evidence,Boolean(row.stale)),
+      evidenceDependencies:{version:1,complete:true,ids:visible.ids.filter(value=>Boolean(parseEvidenceId(value)))},...(row.stale?{evidenceStale:true as const}:{}),createdAt:row.created_at});
      if(found.length>selected.limit)break;
     }
     if(found.length>selected.limit||rows.length<batch)break;

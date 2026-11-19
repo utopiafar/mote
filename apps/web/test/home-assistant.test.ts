@@ -131,6 +131,29 @@ test('Home disables each unsupported command and explains why without dispatchin
  await act(async()=>button(row(d,suggestion.id),'开始').click());assert.equal(mutations,0);
 });
 
+test('a Coding suggestion shows the original author and source and starts its proposed deliverable',async t=>{
+ const {d,render,opened}=await domFixture(t);
+ const suggestion={...card(),codingNextStep:{kind:'prepare' as const,whyNow:'Approval is due today.',goal:'Prepare the approval checklist.'},
+  evidenceOrigins:[{id:evidenceId,provider:'codex' as const,sourceId:'generated-coding',speaker:'owner' as const,recordedAt:at}],
+  sourceContextDependencies:[{sourceId:'generated-recording',fingerprint:'a'.repeat(64),version:1}]};
+ const calls:{goal:string}[]=[],taskId=randomUUID();
+ const base=client((path,init)=>{
+  if(path==='/api/assistant/tasks'&&init?.method==='POST'){const body=JSON.parse(String(init.body));calls.push(body);return {requestId:body.requestId,taskId};}
+  if(path.startsWith('/api/assistant/tasks/'))return {task:{id:taskId,state:'waiting',goal:suggestion.codingNextStep.goal}};
+  if(path.startsWith('/api/assistant-cards/'+suggestion.id+'?'))return suggestion;
+  return {items:[suggestion],nextCursor:null};
+ });
+ const api={...base,request:(path:string,init?:RequestInit)=>path==='/api/sources'?Promise.resolve({items:[{id:'generated-recording',name:'Feishu recordings'}]}):base.request(path,init)} as Api;
+ await render(api);const item=row(d,suggestion.id);
+ assert.match(item.textContent!,/来源 · Codex/);
+ assert.match(item.textContent!,/Codex · 你说/);
+ assert.match(item.textContent!,/Approval is due today/);
+ assert.doesNotMatch(item.textContent!,/Feishu recordings/);
+ const proof=item.querySelector<HTMLButtonElement>('.home-assistant-proof button')!;
+ await act(async()=>proof.click());assert.deepEqual(opened,['capture:'+evidenceId]);
+ await act(async()=>button(item,'开始').click());assert.deepEqual(calls.map(call=>call.goal),[suggestion.codingNextStep.goal]);
+});
+
 test('a failed cursor can return to the first real page without retaining the previous card as page two',async t=>{
  const {d,render}=await domFixture(t),suggestion=card();
  const api=client(path=>{if(new URL('http://fixture'+path).searchParams.has('cursor'))throw new ApiError('Generated cursor expired',409);return {items:[suggestion],nextCursor:'generated-cursor'};});
