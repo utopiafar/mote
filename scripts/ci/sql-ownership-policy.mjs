@@ -160,6 +160,9 @@ export const consumerScopes={
  'lifecycle-extensions.ts':{
   recoverableMemoryJobs:'memory',
  },
+ 'memory-topics-host.ts':{
+  'MemoryTopicsHost.retry':'execution',
+ },
  'files.ts':{
   'FileStore.currentEvidenceIds':'file',
   'FileStore.evidence':'file',

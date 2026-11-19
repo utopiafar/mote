@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {AgentResponseError,validateHostOutput} from '@mote/agent';
+import {AgentResponseError,AgentTimeoutError,validateHostOutput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {TOPIC_CLASSIFICATION_INSTRUCTION} from '../src/automatic-topics.js';
@@ -13,11 +13,13 @@ async function fixture(t:TestContext){
  const directory=await mkdtemp(join(tmpdir(),'mote-topics-host-')),token='generated-topic-owner',headers={authorization:'Bearer '+token};
  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let holdMemoryReview=false,interruptible=false,calls=0,checkTopicValidation=false,validatedTopics=0,hold:Promise<void>|undefined,entered:()=>void=()=>{},release:()=>void=()=>{};
+ const topicFailures:Error[]=[];
  const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
   if(input.question.startsWith(TOPIC_CLASSIFICATION_INSTRUCTION)){
    calls++;const records=JSON.parse(input.question.slice(TOPIC_CLASSIFICATION_INSTRUCTION.length+1));entered();
    if(hold&&interruptible)await Promise.race([hold,new Promise<void>((_resolve,reject)=>{if(input.signal?.aborted)reject(input.signal.reason);else input.signal?.addEventListener('abort',()=>reject(input.signal!.reason),{once:true});})]);else await hold;
    input.assertContextAuthority?.();
+   const failure=topicFailures.shift();if(failure)throw failure;
    const answer={answer:JSON.stringify({trees:[{id:'generated',label:'Generated quiet work',nodes:[{id:'focus',label:'Focused mornings',memoryIds:records.map((record:any)=>record.id)}]}]}),citations:[],trace:[],runId:randomUUID()};
    if(checkTopicValidation){
     const invalid={...answer,answer:JSON.stringify({trees:[{id:'generated',label:'Generated navigation',nodes:[{id:'empty',label:'Empty generated node',memoryIds:[]}]}]})};
@@ -39,7 +41,7 @@ async function fixture(t:TestContext){
  const command=async(action:'on'|'off'|'stop')=>{const view=(await node.app.inject({url:'/api/model-authorization',headers})).json();const result=await node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers,payload:{revision:view.authorization.revision,operationId:randomUUID(),action}});assert.equal(result.statusCode,200,result.body);};
  node.sources.register({id:'generated-topics',name:'Generated topics',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});
  node.memoryRecipeSettings.configure({sourceId:'generated-topics',recipes:[{id:'mote.personal-memory',version:'5'}]});
- return {get node(){return node;},headers,command,get calls(){return calls;},get validatedTopics(){return validatedTopics;},checkTopicValidation(){checkTopicValidation=true;},hold(canInterrupt=false,memoryReview=false){interruptible=canInterrupt;holdMemoryReview=memoryReview;let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);entered=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release};},
+ return {get node(){return node;},headers,command,get calls(){return calls;},get validatedTopics(){return validatedTopics;},checkTopicValidation(){checkTopicValidation=true;},failNextTopic(error:Error){topicFailures.push(error);},hold(canInterrupt=false,memoryReview=false){interruptible=canInterrupt;holdMemoryReview=memoryReview;let notify!:()=>void;const started=new Promise<void>(resolve=>notify=resolve);entered=notify;hold=new Promise<void>(resolve=>release=resolve);return {started,release};},
  async intake(){await node.sources.upsert('generated-topics',{externalId:randomUUID(),revision:'1',observedAt:new Date().toISOString(),kind:'message',layer:'original',text:'I prefer quiet mornings.'});await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);const job=node.memoryPipeline.list()[0];assert.ok(job);return node.memoryPipeline.run(job.id);},
  async settle(){for(let i=0;i<10;i++){await node.executor.tick();const ids=node.store.db.prepare("SELECT id FROM execution_steps WHERE kind='memory.topics'").all().map(row=>String(row.id));await node.executor.drain(ids);if(ids.every(id=>!['running','waiting'].includes(node.executor.get(id)!.state)))break;}},
  async restart(){await node.app.close();node=await buildApp(config,dependencies);},
@@ -67,6 +69,34 @@ test('topic output reaches the Agent repair validator before a corrected classif
  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
  assert.ok(f.node.memories.list().length>0,'topic validation preserves published Memory');
  assert.match((await f.node.app.inject({url:'/api/context-trees',headers:f.headers})).body,/Generated quiet work/);
+});
+
+test('a topic model timeout retries within the original admission and only publishes once',async t=>{
+ const f=await fixture(t);f.failNextTopic(new AgentTimeoutError());await f.command('on');
+ const job=await f.intake();assert.equal(job.status,'completed');await f.settle();
+ const [step]=f.node.executor.list({operationId:'memory:'+job.id,kind:'memory.topics'}).items;
+ assert.equal(step.state,'waiting');assert.equal(step.error,'provider_timeout');assert.equal(step.attempts,1);
+ const admission=f.node.modelAuthorization.stepAuthority(step.id);assert.ok(admission);
+ await new Promise(resolve=>setTimeout(resolve,Math.max(0,step.availableAt-Date.now())+10));await f.settle();
+ assert.equal(f.calls,2);assert.equal(f.node.executor.get(step.id)!.state,'succeeded');
+ assert.equal(f.node.modelAuthorization.stepAuthority(step.id),admission);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
+});
+
+test('retrying a completed Memory job recovers its blocked topics without reopening Memory or minting authority',async t=>{
+ const f=await fixture(t);f.failNextTopic(new Error('Generated topic classification failure'));await f.command('on');
+ const job=await f.intake();assert.equal(job.status,'completed');await f.settle();
+ const operationId='memory:'+job.id,[step]=f.node.executor.list({operationId,kind:'memory.topics'}).items;
+ assert.equal(step.state,'blocked');assert.equal(step.error,'topic_classification_failed');
+ const admission=f.node.modelAuthorization.stepAuthority(step.id),work=f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n;
+ const path='/api/memory-jobs/'+job.id+'/retry';
+ assert.equal((await f.node.app.inject({method:'POST',url:path})).statusCode,401);
+ const responses=await Promise.all([1,2].map(()=>f.node.app.inject({method:'POST',url:path,headers:f.headers})));
+ for(const response of responses){assert.equal(response.statusCode,202,response.body);assert.equal(response.json().status,'completed');assert.deepEqual(response.json().memoryIds,job.memoryIds);}
+ await f.settle();assert.equal(f.calls,2);assert.equal(f.node.executor.get(step.id)!.state,'succeeded');
+ assert.equal(f.node.modelAuthorization.stepAuthority(step.id),admission);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM background_model_work').get()!.n,work);
+ assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM context_topic_batches').get()!.n,1);
 });
 
 test('stop fences a late topic result without deleting its already published Memory',async t=>{

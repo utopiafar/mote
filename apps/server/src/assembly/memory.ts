@@ -259,6 +259,7 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
       memoryPhasePipeline.routes(app,{
         lifecycle:()=>memoryLifecycleService.lifecycle,
         store,files,evidenceReader,memories,
+        retryTopics:operationId=>memoryTopics.retry(operationId),
         modelSettings,
         modelAuthorizationHost,
         availableModelConnections,
