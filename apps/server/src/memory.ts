@@ -103,9 +103,26 @@ export class MemoryStore {
     // derived records (including model summaries and memories) are not evidence.
     return file.success&&file.data.chunkId===id&&file.data.captureId!==id;
   }
-  dependencyIds(id:string):string[]{const record=this.readEvidence([id])[0],file=fileEvidenceSchema.safeParse(record?.fileEvidence),ids=new Set(file.success?[id,file.data.captureId]:[id]);
-    if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get())for(const row of this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id))ids.add(String(row.evidence_id));
-    return [...ids];
+  dependencyIds(id:string):string[]{return this.dependenciesByEvidence([id]).get(id)!;}
+  dependenciesByEvidence(ids:readonly string[]):Map<string,string[]> {
+    const selected=[...new Set(ids)],parents=new Map(selected.map(id=>[id,new Set([id])]));
+    if(!selected.length)return new Map();
+    // The canonical reader batches Material metadata within one read. Use the
+    // same first record as a single-ID lookup when representations overlap.
+    const seen=new Set<string>();
+    for(const record of this.readEvidence(selected)){
+      const values=parents.get(record.id);
+      if(!values||seen.has(record.id))continue;
+      seen.add(record.id);
+      const file=fileEvidenceSchema.safeParse(record.fileEvidence);
+      if(file.success)values.add(file.data.captureId);
+    }
+    if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get()){
+      const rows=this.store.db.prepare(`SELECT anchor_id,evidence_id FROM material_evidence_dependencies
+        WHERE anchor_id IN (SELECT value FROM json_each(?)) ORDER BY anchor_id,evidence_id`).all(JSON.stringify(selected));
+      for(const row of rows)parents.get(String(row.anchor_id))?.add(String(row.evidence_id));
+    }
+    return new Map([...parents].map(([id,values])=>[id,[...values]]));
   }
   page(args:{includeHistory?:boolean;asOf?:string;sourceId?:string;sourceIds?:readonly string[];evidenceIds?:readonly string[];projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;contextPriority?:'standing';tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const conditions:string[]=[],values:(string|number)[]=[],limit=Math.max(1,Math.min(args.limit??30,100));

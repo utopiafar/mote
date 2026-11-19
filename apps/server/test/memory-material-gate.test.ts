@@ -31,11 +31,11 @@ async function fixture(t:TestContext,query:()=>Promise<ReturnType<typeof empty>>
     materialAllowedForMemory:ref=>work.readyForMemory(ref),evidenceAllowedForMemory},models:{configured:()=>true,model:()=> 'fixture'},phases:{query}});
   t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
   const id=materialId(sourceId,externalId);
-  const publish=(text:string,extracted:'pending'|'failed'|'ready')=>{
+  const publish=(text:string,extracted:'pending'|'failed'|'ready',blockCount=1)=>{
     const prior=materials.get(id);
     const draft:MaterialDraft={id,kind:'mote.message',schemaVersion:1,title:'Generated item',
       origin:{sourceId,externalId,deviceId:'generated-device'},
-      blocks:[{id:'body',kind:'text',format:'plain',text,memberIds:['original']}],
+      blocks:Array.from({length:blockCount},(_,index)=>({id:index?'body-'+index:'body',kind:'text' as const,format:'plain' as const,text,memberIds:['original']})),
       members:[{id:'original',kind:'capture',ref:`capture:${raw}`}],
       coverage:{state:extracted==='ready'?'complete':'partial',reason:extracted==='ready'?undefined:'processing_pending'},
       artifacts:[{key:'source-body',state:'ready'},{key:'extracted-text',state:extracted}],
@@ -44,6 +44,22 @@ async function fixture(t:TestContext,query:()=>Promise<ReturnType<typeof empty>>
   };
   return {store,sources,materials,work,memories,pipeline,raw,publish};
 }
+
+test('creating a Memory job resolves shared Material lineage together and pins each batch to its own ranges',async t=>{
+  const f=await fixture(t),material=f.publish(body.repeat(5),'ready',3);
+  f.work.observe(material.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
+  const anchors=f.materials.evidenceIds(material.ref);
+  assert.equal(anchors.length,3);
+  const read=t.mock.method(f.memories,'readEvidence');
+  const job=f.pipeline.create({evidenceIds:anchors,batchCharacters:256});
+  assert.ok(job.batches.length>1);
+  assert.ok(read.mock.calls.some(call=>anchors.every(id=>call.arguments[0].includes(id))));
+  assert.ok(!read.mock.calls.some(call=>call.arguments[0].length===1&&anchors.includes(call.arguments[0][0])),'job and batch receipts share the canonical lookup');
+  const jobLinks=f.store.db.prepare('SELECT evidence_id FROM memory_job_dependencies WHERE job_id=?');
+  const batchLinks=f.store.db.prepare('SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id=?');
+  assert.deepEqual(new Set(jobLinks.all(job.id).map(row=>row.evidence_id)),new Set([...anchors,f.raw]));
+  for(const batch of job.batches)assert.deepEqual(new Set(batchLinks.all(batch.id).map(row=>row.evidence_id)),new Set([...batch.evidenceRanges.map(range=>range.id),f.raw]));
+});
 
 test('ordinary raw artifact and manual raw job cannot bypass pending or failed named dependencies',async t=>{
   const f=await fixture(t),pending=f.publish(body,'pending');

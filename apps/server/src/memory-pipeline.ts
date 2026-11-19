@@ -310,7 +310,7 @@ export class MemoryPipeline {
     const configuration=this.options.models.configuration?.();
     return {model:configuration?.model??this.options.models.model(),...(configuration?{configuration}: {})};
   }
-  evidenceDependencies(ids:readonly string[]):string[]{return [...new Set(ids.flatMap(id=>this.options.memories.dependencyIds(id)))];}
+  evidenceDependencies(ids:readonly string[]):string[]{return [...new Set([...this.options.memories.dependenciesByEvidence(ids).values()].flat())];}
   /** The artifact lifecycle handles current screenshots and authored
    * records. Source items have their own revision-pinned Material Memory queue. */
   intakeArtifactIds(ids:readonly string[]):string[] {
@@ -474,10 +474,16 @@ export class MemoryPipeline {
     try{
       this.inputAdmission.admit(evidenceIds,materialRefs,input.modelProfileId,materialInputs);
       const jobJson=encodeMemoryJob(this.store,job),batchJson=batches.map(batch=>encodeMemoryBatch(this.store,batch));
-      const dependencies=[...new Set(evidenceIds.flatMap(id=>this.options.memories.dependencyIds(id)))];
-      this.store.db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(job.id,now,jobJson);
-      for(const id of dependencies)this.store.db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)').run(job.id,id);
-      for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,batchJson[batches.indexOf(batch)]);for(const id of new Set(batch.chunks.flatMap(chunk=>this.options.memories.dependencyIds(chunk.id))))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
+      const byEvidence=this.options.memories.dependenciesByEvidence(evidenceIds),db=this.store.db;
+      const addJobDependency=db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)');
+      const addBatch=db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)');
+      const addBatchDependency=db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)');
+      db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(job.id,now,jobJson);
+      for(const id of new Set([...byEvidence.values()].flat()))addJobDependency.run(job.id,id);
+      for(const [index,batch] of batches.entries()){
+        addBatch.run(batch.id,job.id,batch.index,batchJson[index]);
+        for(const id of new Set(batch.chunks.flatMap(chunk=>byEvidence.get(chunk.id)!)))addBatchDependency.run(batch.id,id);
+      }
       if(own)this.store.db.exec('COMMIT');
     }catch(error){if(own){if(this.store.db.isTransaction){this.store.db.exec('ROLLBACK');}}throw error;}
     return this.get(job.id);
@@ -588,14 +594,14 @@ export class MemoryPipeline {
     const result:StoredBatch[]=[];for(const batch of batches)result.push(...yield* bound(batch));return result;
   }
   private insertBatch(jobId:string,batch:StoredBatch){
-    const json=encodeMemoryBatch(this.store,batch),dependencies=[...new Set([...batch.chunks,...(batch.contextChunks??[])].flatMap(c=>this.options.memories.dependencyIds(c.id)))];
+    const json=encodeMemoryBatch(this.store,batch),dependencies=this.evidenceDependencies([...batch.chunks,...(batch.contextChunks??[])].map(chunk=>chunk.id));
     const newJobDependencies=dependencies.filter(id=>!this.store.db.prepare('SELECT 1 FROM memory_job_dependencies WHERE job_id=? AND evidence_id=?').get(jobId,id));
     for(const id of newJobDependencies)this.store.db.prepare('INSERT OR IGNORE INTO memory_job_dependencies VALUES(?,?)').run(jobId,id);
     this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,jobId,batch.index,json);
     for(const id of dependencies)this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);
   }
   private retainReadDependencies(batchId:string,chunks:Chunk[]){
-    const dependencies=[...new Set(chunks.flatMap(chunk=>this.options.memories.dependencyIds(chunk.id)))];
+    const dependencies=this.evidenceDependencies(chunks.map(chunk=>chunk.id));
     const additions=dependencies.filter(id=>!this.store.db.prepare('SELECT 1 FROM memory_batch_dependencies WHERE batch_id=? AND evidence_id=?').get(batchId,id));
     if(!additions.length)return;
     for(const id of additions)this.store.db.prepare('INSERT OR IGNORE INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batchId,id);
