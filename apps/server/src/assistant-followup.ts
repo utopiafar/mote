@@ -211,7 +211,7 @@ export class AssistantFollowup {
   const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
    ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
   const currentRecords=this.reader.memories.readCurrentEvidence(contextDependencies),evidenceIds=unique(currentRecords.map(record=>record.id));
-  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,capacity,currentRecords);
+  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,capacity,input.materialRefs.length===1,currentRecords);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
   this.assertSnapshot({input,questionPins,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
@@ -375,15 +375,15 @@ export class AssistantFollowup {
   if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
   const saved=snapshot.queryContext;
   if(saved&&!capacity)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(saved)));
-  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity);
+  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity,snapshot.materialRefs.length===1);
  }
- private prepareRequest(input:QueryInput,originals:Snapshot['originals'],capacity:AssistantRequestCapacity|undefined,currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
+ private prepareRequest(input:QueryInput,originals:Snapshot['originals'],capacity:AssistantRequestCapacity|undefined,allowCatalogPaging:boolean,currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
   const context=input.taskContext;
   if(!capacity){
    if(!context||'originals' in context)return input;
    const taskContext={...context,originals};return {...input,taskContext};
   }
-  const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryWithinCapacity(input,originals,records,capacity);
+  const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryWithinCapacity(input,originals,records,capacity,allowCatalogPaging);
   if(!prepared)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
   return prepared;
  }

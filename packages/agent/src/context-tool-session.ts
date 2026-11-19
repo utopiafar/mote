@@ -425,7 +425,7 @@ export async function createContextToolSession(
           try{const value=await Promise.race([task,cancelled]);assertLive();return value;}finally{signal.removeEventListener('abort',aborted);}
         };
       const ordinaryReads=new Set<HostReadOperation>(HOST_READ_OPERATIONS.filter(operation=>operation!=='readImage'));
-      if(pin.requires.every(permission=>permission==='actionCatalog'||permission==='progress'||ordinaryReads.has(permission as HostReadOperation))){
+      if(pin.requires.every(permission=>permission==='contextEvidenceCatalog'||permission==='actionCatalog'||permission==='progress'||ordinaryReads.has(permission as HostReadOperation))){
         const scope=Object.freeze(range(args,bounds));let grantedReadRange:{offset:number;length:number}|undefined;
         const inScope=(record:ContextRecord)=>{const at=sourceContentTime(record);return Number.isFinite(Date.parse(at))&&(!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));};
         const timeBounded=Boolean(scope.after||scope.before);
@@ -589,6 +589,14 @@ export async function createContextToolSession(
             }
             produced.push({operation,value:detach(value),originals,views});return detach(value) as never;
           },
+          contextEvidenceCatalog(offset,length){
+            assertLive();
+            if(!restricted||bounds.evidenceReadRangeFormat!=='paged'||!readRanges.length)throw hostError('Original range catalog is not authorized for this task');
+            if(!Number.isSafeInteger(offset)||offset<0||offset>readRanges.length||!Number.isSafeInteger(length)||length<1||length>100)
+              throw new ContextToolError('invalid_evidence_range','Use a catalog offset from 0 through its count and a length from 1 to 100.','correct_arguments');
+            const end=Math.min(offset+length,readRanges.length);
+            return {ranges:readRanges.slice(offset,end).map(({id,offset,length})=>[id,offset,length]),nextOffset:end<readRanges.length?end:null,total:readRanges.length};
+          },
           async actionCatalog(parameters){assertLive();if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');return wait(bounds.actionCatalog({...parameters,...range({...parameters},bounds),limit:parameters.limit}));},
           progress(message){assertLive();if(typeof message!=='string'||!message.trim()||message.length>600)throw hostError('Progress message must contain 1–600 characters');reportProgress(bounds,{stage:'model',message:message.trim()});},
         };
@@ -735,6 +743,7 @@ export async function createContextToolSession(
               assertLive();if(operation!=='readImage'||!isDeepStrictEqual(parameters[0],selection)||rawImage)throw hostError('Read exactly the admitted image selection');
               rawImage=structuredClone(await wait(reader.readImage!(selection)));return structuredClone(rawImage) as never;
             },
+            contextEvidenceCatalog:()=>{throw hostError('Original range catalog is unavailable through this image read');},
             actionCatalog:async()=>{throw hostError('Action catalog is unavailable through this image read');},
             progress:message=>reportProgress(bounds,{stage:'model',message}),
           };

@@ -40,7 +40,9 @@ export function taskTools(input:QueryInput):string[]{
     return [...new Set(input.hostToolSelection.filter(name=>available.has(name)))];
   }
   if(profile.retrieval==='none')return controls;
-  if(input.evidenceIds!==undefined)return [...(input.skill==='calendar-extraction'&&input.actionCatalog?['evidence','action_catalog']:['evidence']),...(input.executionLane==='interactive'&&input.conversation?.historyContext?['conversation_history','conversation_search']:[]),...(input.evidenceReadRanges?.length?['context_evidence']:[]),...(input.processingImages?.length&&imageToolAvailable(input)?['read_image']:[]),...controls];
+  const contextReads=input.evidenceReadRanges?.length
+    ?input.evidenceReadRangeFormat==='paged'?['context_evidence','context_evidence_catalog']:['context_evidence']:[];
+  if(input.evidenceIds!==undefined)return [...(input.skill==='calendar-extraction'&&input.actionCatalog?['evidence','action_catalog']:['evidence']),...(input.executionLane==='interactive'&&input.conversation?.historyContext?['conversation_history','conversation_search']:[]),...contextReads,...(input.processingImages?.length&&imageToolAvailable(input)?['read_image']:[]),...controls];
   return contextToolDefinitions(input).map(([name])=>name).filter(name=>name!=='action_catalog');
 }
 /** Internal dispatch keeps every authorized capability; runtime declarations
@@ -58,7 +60,10 @@ export function buildContextEnvelope(input:QueryInput,seedEvidence:ContextRecord
   const evidence=compactSeedEvidence(seedEvidence);
   const profile=prepared.profile;
   const tupleCatalog=input.evidenceReadRangeFormat==='tuple';
-  const authorizedContextRanges=input.evidenceIds!==undefined&&input.evidenceReadRanges?.length?{
+  const authorizedContextRanges=input.evidenceIds!==undefined&&input.evidenceReadRanges?.length?input.evidenceReadRangeFormat==='paged'?{
+    count:input.evidenceReadRanges.length,
+    instruction:'Use context_evidence_catalog to page the exact host-authorized original ranges. Start at offset 0 and follow nextOffset, or use an exact original ID already supplied in this task. Read selected originals with context_evidence. Catalog entries carry no original text or citations. Only successfully delivered original pages support citations. These reads cannot add extraction targets or widen scope.',
+  }:{
     ranges:tupleCatalog?input.evidenceReadRanges.map(({id,offset,length})=>[id,offset,length] as const):compactMemoryReadCatalog(input.evidenceReadRanges,taskContext),
     instruction:'These exact host-authorized original ranges are a read catalog, not delivered bodies, identity conclusions or targets. '+
       (tupleCatalog?'Each tuple is [id, offset, length] with the entire interval. Pass the literal id and an offset and length within that interval to context_evidence. ':

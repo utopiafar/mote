@@ -357,7 +357,7 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       if(selectedRuntime.id===CODEX_RUNTIME_ID&&initialEstimate+outputReserve>window)throw new AgentProviderError({category:'permanent',code:'processing_limit',executionStarted:false},{source:'runtime',stage:'startup',code:'contextWindowExceeded',modelId:options.model});
       let toolRemaining=Math.max(0,window-outputReserve-initialEstimate-2048);
       const controlled=new Set((input.hostControlChannel?.definitions??[]).map(tool=>tool.name));
-      const paged=new Set(['evidence','context_evidence','material_read','attribution_context']);
+      const paged=new Set(['evidence','context_evidence','context_evidence_catalog','material_read','attribution_context']);
       const omitted=()=>({text:JSON.stringify({budgetCoverage:{truncated:true,delivered:false,reason:'The tool result did not fit the remaining model context. No result content was delivered. Request a smaller page or use already delivered evidence.'}})});
 
       const readHostTool = async (call: RuntimeToolCall, toolSignal: AbortSignal) => {

@@ -47,20 +47,22 @@ function registryFixture() {
 test('pack descriptors pin the existing schemas and only declare Host read operations they use', () => {
   const {snapshot} = registryFixture();
   const byName = new Map(snapshot.entries.map(entry => [entry.name, entry]));
-  assert.deepEqual([...byName.keys()].sort(), ['attribution_context', 'context_evidence', 'evidence', 'search_context', 'timeline']);
+  assert.deepEqual([...byName.keys()].sort(), ['attribution_context', 'context_evidence', 'context_evidence_catalog', 'evidence', 'search_context', 'timeline']);
   for (const name of ['search_context', 'timeline', 'evidence', 'context_evidence']) assert.equal(byName.get(name).kind, 'originals');
   assert.equal(byName.get('attribution_context').kind, 'metadata');
   assert.deepEqual(byName.get('search_context').requires, ['search']);
   assert.deepEqual(byName.get('timeline').requires, ['timeline']);
   assert.deepEqual(byName.get('evidence').requires, ['evidence']);
   assert.deepEqual(byName.get('context_evidence').requires, ['evidence']);
+  assert.equal(byName.get('context_evidence_catalog').kind, 'metadata');
+  assert.deepEqual(byName.get('context_evidence_catalog').requires, ['contextEvidenceCatalog']);
   assert.deepEqual(byName.get('attribution_context').requires, ['evidence', 'sourceContext', 'materialRead']);
   for (const entry of snapshot.entries) {
     const expected = {...parameterSchemaSpecToJsonSchema(entry.fields), additionalProperties: false};
     assert.deepEqual(toolInputSchema(entry.fields), expected);
   }
   const wire = JSON.parse(JSON.stringify(snapshot));
-  assert.equal(wire.entries.length, 5);
+  assert.equal(wire.entries.length, 6);
   assert.equal('parse' in wire.entries[0] || 'execute' in wire.entries[0], false, 'snapshots stay pure DTOs');
 });
 

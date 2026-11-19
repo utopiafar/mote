@@ -567,6 +567,22 @@ test('Assistant packing keeps the complete range catalog when only its compact r
  assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
 });
 
+test('a very long Assistant file pages every exact original grant when its inline catalog exceeds model capacity',async t=>{
+ const f=await fixture(t),note=await f.add('Generated exact original for a long file.');
+ const original=f.reader.memories.readCurrentEvidence([note.id])[0];
+ const records=[original,...Array.from({length:18105},()=>({...original,id:randomUUID()}))];
+ const originals=[{id:original.id,offset:0,quote:original.ocrText}],context={turns:[],originals};
+ const input:QueryInput={question:'Review the generated original and inspect only needed context.',evidenceIds:records.map(record=>record.id),taskContext:context};
+ const capacity={contextWindow:272000,maxOutputTokens:128000,draftTokens:65536};
+ const prepared=assistantQueryInput(input,originals,records),compact={...prepared,taskContext:{turns:[]}};
+ assert.equal(assistantRequestUsage({...compact,evidenceReadRangeFormat:'tuple'},records,capacity).fits,false);
+ assert.equal(assistantQueryWithinCapacity(input,originals,records,capacity),undefined,'the caller can still require group splitting');
+ const selected=assistantQueryWithinCapacity(input,originals,records,capacity,true);assert.ok(selected);
+ assert.equal(selected.evidenceReadRangeFormat,'paged');assert.equal(assistantRequestUsage(selected,records,capacity).fits,true);
+ assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
+});
+
 test('the assembled batch passes the configured product budget to its query consumer',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-followup-budget-'));let calls=0;
  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-followup-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',maxTokens:512,baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};

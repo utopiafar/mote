@@ -46,7 +46,7 @@ export function assistantRequestUsage(input:QueryInput,records:readonly ContextR
  return {inputTokens,outputTokens:capacity.maxOutputTokens,bufferTokens,totalTokens,fits:totalTokens<=capacity.contextWindow};
 }
 
-export function assistantQueryWithinCapacity(input:QueryInput,originals:readonly Original[],records:readonly ContextRecord[],capacity:AssistantRequestCapacity):QueryInput|undefined {
+export function assistantQueryWithinCapacity(input:QueryInput,originals:readonly Original[],records:readonly ContextRecord[],capacity:AssistantRequestCapacity,allowCatalogPaging=false):QueryInput|undefined {
  const prepared=assistantQueryInput(input,originals,records);
  if(assistantRequestUsage(prepared,records,capacity).fits)return prepared;
  const context=prepared.taskContext,ranges=prepared.evidenceRanges;
@@ -57,18 +57,21 @@ export function assistantQueryWithinCapacity(input:QueryInput,originals:readonly
  // Keep its disclosure grants and remove only the second copy of those spans.
  const compact={...prepared,taskContext};
  if(duplicate!==undefined&&assistantRequestUsage(compact,records,capacity).fits)return compact;
- // Large scopes keep each exact grant but omit repeated range field names.
- const packed:QueryInput={...compact,evidenceReadRangeFormat:'tuple'};
- if(assistantRequestUsage(packed,records,capacity).fits)return packed;
- // If the expanded original metadata still exceeds capacity, keep every
- // exact quote in the task and let the model page their full read grants.
- // Use the longest affordable prefix for the initial rich receipts.
- let low=1,high=ranges.length-1,best:QueryInput|undefined;
- while(low<=high){
-  const count=Math.floor((low+high)/2),evidenceRanges=ranges.slice(0,count);
-  const candidate={...packed,taskContext:{...taskContext,originals},evidenceIds:[...new Set(evidenceRanges.map(range=>range.id))],evidenceRanges};
-  if(assistantRequestUsage(candidate,records,capacity).fits){best=candidate;low=count+1;}
-  else high=count-1;
+ // Keep the exact catalog inline when it fits, and expose the same grants
+ // through bounded pages when the catalog itself exceeds capacity.
+ const catalogFormats=allowCatalogPaging?['tuple','paged'] as const:['tuple'] as const;
+ for(const evidenceReadRangeFormat of catalogFormats){
+  const packed:QueryInput={...compact,evidenceReadRangeFormat};
+  if(assistantRequestUsage(packed,records,capacity).fits)return packed;
+  // Preserve every quote and retain the longest affordable prefix of its rich
+  // original receipts. Other original text can still be read using its grant.
+  let low=1,high=ranges.length-1,best:QueryInput|undefined;
+  while(low<=high){
+   const count=Math.floor((low+high)/2),evidenceRanges=ranges.slice(0,count);
+   const candidate={...packed,taskContext:{...taskContext,originals},evidenceIds:[...new Set(evidenceRanges.map(range=>range.id))],evidenceRanges};
+   if(assistantRequestUsage(candidate,records,capacity).fits){best=candidate;low=count+1;}
+   else high=count-1;
+  }
+  if(best)return best;
  }
- return best;
 }

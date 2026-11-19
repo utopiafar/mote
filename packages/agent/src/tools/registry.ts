@@ -107,6 +107,10 @@ function restrictPort(port: HostSessionPort, registration: Registration): HostSe
       if (!allowed.includes(operation)) deny(operation);
       return (port.read as unknown as (operation: HostReadOperation, ...args: unknown[]) => Promise<unknown>)(operation, ...args);
     }) as HostSessionPort['read'],
+    contextEvidenceCatalog: (offset,length) => {
+      if (!allowed.includes('contextEvidenceCatalog')) deny('contextEvidenceCatalog');
+      return port.contextEvidenceCatalog(offset,length);
+    },
     actionCatalog: args => {
       if (!allowed.includes('actionCatalog')) deny('actionCatalog');
       return port.actionCatalog(args);

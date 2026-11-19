@@ -30,6 +30,8 @@ export interface HostSessionPort {
   readonly signal:AbortSignal;
   assertCurrent():void;
   read<K extends HostReadOperation>(operation:K,...args:HostReadArguments<K>):Promise<HostReadResult<K>>;
+  /** Metadata page of this run's fixed original read grants. */
+  contextEvidenceCatalog(offset:number,length:number):{ranges:[string,number,number][];nextOffset:number|null;total:number};
   /** Host-granted calendar comparison only. No Action execution endpoint. */
   actionCatalog(args:Parameters<NonNullable<QueryInput['actionCatalog']>>[0]):ReturnType<NonNullable<QueryInput['actionCatalog']>>;
   /** Current tool progress only; parent bounds/redacts and isolates observers. */

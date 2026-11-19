@@ -37,8 +37,31 @@ test('legacy bounded sessions retain initial evidence tools and cannot inspect a
  assert.equal(buildContextEnvelope(bounds(),bridge.seedEvidence).authorizedContextRanges,undefined);
  assert.equal(contextToolDefinitions({question:'ordinary archive'}).some(([name])=>name==='context_evidence'),false);
  assert.equal((await send(bridge,'context_evidence',{id,offset:0,length:20})).status,400);
+ assert.equal((await send(bridge,'context_evidence_catalog',{offset:0,length:1})).status,400);
  assert.equal((await send(bridge,'evidence',{ids:[id],offset:0,length:20})).body.toolError.code,'evidence_range_exceeded');
  assert.deepEqual(bridge.deliveredRanges,[target]);
+});
+
+test('paged original range grants expose exact locators without a citation receipt',async t=>{
+ const outsideId='44444444-4444-4444-8444-444444444444';
+ const input=bounds({evidenceReadRanges:grants,evidenceReadRangeFormat:'paged'});
+ const bridge=await startBridge(reader([record,continuation,{...continuation,id:outsideId}]),input,12);t.after(()=>bridge.close());
+ const envelope=buildContextEnvelope(input,bridge.seedEvidence);
+ assert.deepEqual(taskTools(input),['evidence','context_evidence','context_evidence_catalog']);
+ assert.equal(envelope.authorizedContextRanges.count,2);
+ assert.equal(envelope.authorizedContextRanges.ranges,undefined);
+ assert.equal(JSON.stringify(envelope).includes(continuationId),false,'additional IDs arrive only through the catalog');
+ const first=await send(bridge,'context_evidence_catalog',{offset:0,length:1});
+ assert.equal(first.status,200);assert.deepEqual(first.body.ranges,[[id,0,text.length]]);assert.equal(first.body.nextOffset,1);
+ const second=await send(bridge,'context_evidence_catalog',{offset:first.body.nextOffset,length:1});
+ assert.equal(second.status,200);assert.deepEqual(second.body.ranges,[[continuationId,0,continuation.ocrText.length]]);assert.equal(second.body.nextOffset,null);
+ assert.deepEqual(bridge.deliveredRanges,[target]);
+ assert.equal(bridge.records.has(continuationId),false);
+ assert.equal((await send(bridge,'context_evidence_catalog',{offset:0,length:101})).status,400);
+ assert.equal((await send(bridge,'context_evidence',{id:outsideId,offset:0,length:1})).status,400);
+ const original=await send(bridge,'context_evidence',{id:continuationId,offset:0,length:12000});
+ assert.equal(original.status,200);assert.equal(original.body.data[0].ocrText,continuation.ocrText);
+ assert.deepEqual(bridge.deliveredRanges,[target,grants[1]]);
 });
 
 test('a persisted capability manifest cannot resume across an actual contract change',async()=>{
@@ -131,22 +154,31 @@ test('context pages retain the full requested authorized range beyond retired ch
  const outside=await send(bridge,'context_evidence',{id,offset:12000,length:1});assert.equal(outside.status,400);assert.equal(outside.body.toolError.code,'evidence_range_exceeded');
 });
 
-test('the Codex adapter supplies the host delivery receipt before validation and ignores forged model receipts',async t=>{
+for(const format of [undefined,'paged'])test(`the Codex adapter supplies the host delivery receipt for ${format??'inline'} ranges and ignores forged model receipts`,async t=>{
  const root=await mkdtemp(join(tmpdir(),'mote-context-read-codex-')),executable=join(root,'generated-codex.mjs');t.after(()=>rm(root,{recursive:true,force:true}));
  await writeFile(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused-key'}),{mode:0o600});
  await writeFile(executable,`#!${process.execPath}
 if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+const paged=${format==='paged'},continuation=${JSON.stringify(continuationId)};
+const call=(id,tool,args)=>send({id,method:'item/tool/call',params:{threadId:'generated-thread',tool,namespace:null,arguments:args}});
+const read=id=>call(999,'context_evidence',{id,offset:0,length:12000});
 readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
 if(m.method==='initialize')send({id:m.id,result:{}});
 else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
-else if(m.method==='thread/start'){if(m.params.dynamicTools.some(t=>!['evidence','context_evidence','skill'].includes(t.name)))process.exit(4);send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});}
-else if(m.method==='turn/start'){const envelope=JSON.parse(m.params.input[0].text);if(envelope.untrustedEvidence.some(r=>r.id===${JSON.stringify(continuationId)}))process.exit(5);send({id:m.id,result:{turn:{id:'generated-turn'}}});send({id:999,method:'item/tool/call',params:{threadId:'generated-thread',tool:'context_evidence',namespace:null,arguments:{id:${JSON.stringify(continuationId)},offset:0,length:12000}}});}
+else if(m.method==='thread/start'){const expected=['evidence','context_evidence','skill',...(paged?['context_evidence_catalog']:[])];if(m.params.dynamicTools.length!==expected.length||m.params.dynamicTools.some(t=>!expected.includes(t.name)))process.exit(4);send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});}
+else if(m.method==='turn/start'){
+ const envelope=JSON.parse(m.params.input[0].text);
+ if(envelope.untrustedEvidence.some(r=>r.id===continuation)||paged&&(envelope.authorizedContextRanges.count!==2||envelope.authorizedContextRanges.ranges))process.exit(5);
+ send({id:m.id,result:{turn:{id:'generated-turn'}}});
+ if(paged)call(998,'context_evidence_catalog',{offset:1,length:1});else read(continuation);
+}
+else if(m.id===998){if(!m.result.success)process.exit(7);const page=JSON.parse(m.result.contentItems[0].text);if(page.ranges.length!==1||page.ranges[0][0]!==continuation||page.nextOffset!==null)process.exit(8);read(page.ranges[0][0]);}
 else if(m.id===999){if(!m.result.success)process.exit(6);send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({answer:'Read generated continuation [${continuationId}]',citationIds:[${JSON.stringify(continuationId)}],evidenceReadRanges:[{id:'model-forged',offset:0,length:999999}]})}}});send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});}
 });
 `,{mode:0o700});
  const agent=createAgent({reader:reader(),protocol:'codex-app-server',model:'generated-model',codex:{executable,home:root},agentTimeoutMs:10000});t.after(()=>agent.close());let validated;
- const answer=await agent.query(bounds({evidenceReadRanges:grants,validateOutput:value=>{validated=value.evidenceReadRanges;assert.deepEqual(value.evidenceReadRanges,[target,{id:continuationId,offset:0,length:continuation.ocrText.length}]);}}));
+ const answer=await agent.query(bounds({evidenceReadRanges:grants,evidenceReadRangeFormat:format,validateOutput:value=>{validated=value.evidenceReadRanges;assert.deepEqual(value.evidenceReadRanges,[target,{id:continuationId,offset:0,length:continuation.ocrText.length}]);}}));
  assert.deepEqual(answer.evidenceReadRanges,validated);assert.equal(answer.citations[0].id,continuationId);assert.equal(answer.evidenceReadRanges.some(range=>range.id==='model-forged'),false);
 });

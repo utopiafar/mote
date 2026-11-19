@@ -15,6 +15,7 @@ export function readPackFacts(input:QueryInput):DerivedNavigationInputs {
     ...(input.incrementalEvidenceIds?{incrementalEvidenceIds:Object.freeze([...input.incrementalEvidenceIds])}:{})});
 }
 function enabled(input:QueryInput,name:string){
+  if(name==='context_evidence_catalog')return input.evidenceReadRangeFormat==='paged'&&input.evidenceIds!==undefined&&Boolean(input.evidenceReadRanges?.length);
   return (!['conversation_history','conversation_search'].includes(name)||input.executionLane==='interactive'&&Boolean(input.conversation?.historyContext))&&
     (name!=='read_image'||imageToolAvailable(input))&&(name!=='context_evidence'||input.evidenceIds!==undefined&&Boolean(input.evidenceReadRanges?.length))&&
     (name!=='action_catalog'||input.skill==='calendar-extraction'&&Boolean(input.actionCatalog));
@@ -26,7 +27,7 @@ function enabled(input:QueryInput,name:string){
 function standalonePacks(input:QueryInput,reader?:ContextReader):readonly ReadPackRegistration[]{
   const signal=input.signal??new AbortController().signal;
   const descriptors=createRegisteredReadPacks(readPackFacts(input)).filter(descriptor=>descriptor.exposure==='native'||descriptor.requires.every(permission=>
-    permission==='progress'||permission==='actionCatalog'?permission==='progress'||Boolean(input.actionCatalog):!reader||typeof reader[permission]==='function'));
+    permission==='progress'||permission==='contextEvidenceCatalog'||(permission==='actionCatalog'?Boolean(input.actionCatalog):!reader||typeof reader[permission]==='function')));
   return [{descriptors,lifecycle:{signal,assertCurrent(){signal.throwIfAborted();input.assertContextAuthority?.();}}}];
 }
 function assemble(input:QueryInput,packs:readonly ReadPackRegistration[]):RunTools {
