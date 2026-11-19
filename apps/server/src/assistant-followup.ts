@@ -47,8 +47,9 @@ const inputSchema=z.object({operationId:z.string().min(1).max(512),requestId:z.s
 }).strict().refine(value=>value.mode.kind!=='briefing'||Date.parse(value.mode.after)<Date.parse(value.mode.before));
 type Input=z.infer<typeof inputSchema>;
 type Card=ReturnType<AssistantCards['review']>['items'][number];
+type CardPin=Pick<Card,'id'|'revision'|'state'|'kind'>&{feedback:Pick<Card['feedback'][number],'action'>[]};
 type Commitment=ReturnType<AssistantCommitments['get']>;
-type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:Card[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
+type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:CardPin[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
  memoryRevisions:{id:string;version:number;fingerprint:string}[];materialRefs:string[];evidenceIds:string[];dependencies:string[];suppressionIds:string[];
  materialProducts:{ref:string;products:string[];nextCursor:string|null;coverage:ReturnType<AssistantUnderstandingReader['read']>['coverage']}[];
  pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission;
@@ -214,7 +215,11 @@ export class AssistantFollowup {
   this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,capacity,input.materialRefs.length===1,currentRecords);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
-  this.assertSnapshot({input,questionPins,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
+  // The query context and task lineage already retain the relevant evidence.
+  // Publication uses only each card's identity, revision and suppression.
+  const cardPins:CardPin[]=cards.map(({id,revision,state,kind,feedback})=>({id,revision,state,kind,
+   feedback:feedback.some(item=>item.action==='never_remind')?[{action:'never_remind'}]:[]}));
+  this.assertSnapshot({input,questionPins,batchId:'',cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
   await yieldTurn();assertActive();
   return this.transaction(()=>{
    assertActive();
@@ -231,7 +236,7 @@ export class AssistantFollowup {
     if(typeof itemId!=='string')throw new StoreError('Assistant batch item is unavailable',409);
     addTaskEvidence(this.store,itemId,allDependencies);
    }
-   const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
+   const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
     materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,...(queryContext?{queryContext}:{})};
    this.assertSnapshot(snapshot);
    const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},ids=>this.assertDependencies(snapshot,ids));

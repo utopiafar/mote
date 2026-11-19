@@ -400,6 +400,27 @@ test('a superseded never-remind card allows current-version analysis without rev
  assert.deepEqual(next.cardIds,[],'suppression history does not block subsequent current-version analysis');
 });
 
+test('follow-up publication keeps suppression pins when the prior card bodies exceed the task storage limit',async t=>{
+ const f=await fixture(t),put=versionedMaterial(f),cards=f.node.featureServices.assistantCards;
+ const oldText='Generated previous text.',first=await put('1',oldText),body='档'.repeat(31000);
+ const past=[];
+ for(let index=0;index<22;index++){
+  const prior=cards.publish({id:randomUUID(),kind:'suggestion',matterId:null,version:'generated-prior',state:'open',
+   title:`Generated issue ${index}`,body,evidence:[{id:first.capture.id,offset:0,quote:oldText}],
+   evidenceDependencies:{version:1,complete:true,ids:[first.capture.id]}},undefined,all,f.assertCurrent);
+  cards.feedback(prior.id,{expectedRevision:prior.revision,action:'never_remind'},all);past.push(prior.id);
+ }
+ assert.ok(Buffer.byteLength(body)*past.length>2000000);
+ const currentText='Generated fresh version revisits the old issue.',current=await put('2',currentText);
+ const result=await f.run([current.material.ref],context=>{
+  assert.equal(context.cards.length,past.length);
+  assert.ok(context.cards.every(item=>item.suppressionOnly&&item.body===undefined));
+  return answer([card(evidence(context,currentText),{relatedCardIds:[past[0]]})]);
+ });
+ assert.deepEqual(result.cardIds,[],'the saved suppression pin still prevents publication');
+ assert.equal(cards.history(past[0],{scope:all}).items[0].body,body);
+});
+
 test('an unsuppressed stale card sharing suppression history still requires a historical grant',async t=>{
  const f=await fixture(t),put=versionedMaterial(f),first=await put('1','Generated original has owner and review date questions.');
  const made=await f.run([first.material.ref],context=>answer([card(evidence(context,'owner'),{title:'Generated owner question'}),card(evidence(context,'review date'),{title:'Generated review date question'})]));
