@@ -1,5 +1,5 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
-import type {QueryInput} from '@mote/agent';
+import {AgentTimeoutError,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {TOPIC_CLASSIFICATION_INSTRUCTION,parseTopicClassification,type AutomaticTopics} from './automatic-topics.js';
 import {type BackgroundModelAuthorization,type ModelConnection} from './background-model-authorization.js';
@@ -44,7 +44,8 @@ export class MemoryTopicsHost {
     if(!admissionId)throw new ExecutionFailure('blocked','topic_admission_missing');
     const assert=()=>{grant.assert();if(!this.current(step))throw new ExecutionFailure('stale','topic_input_changed');control.assertCurrent({id:input.selection.connection.id,fingerprint:input.selection.connection.fingerprint});const memories=input.memories.map(saved=>options.memories.get(saved.id));options.assertReadable(memories);host.assertEvidence(memories.flatMap(memory=>memory.evidenceIds));};
     assert();return this.context.run({input,assert},()=>topics.classify({operationId:step.id,classifierId,memoryIds:input.memories.map(memory=>memory.id)},{admissionId,signal,assertCurrent:assert}));
-   },commit:()=>{},classify:error=>error instanceof ExecutionFailure?error:new ExecutionFailure('blocked','topic_classification_failed'),
+   },commit:()=>{},classify:error=>error instanceof ExecutionFailure?error:error instanceof AgentTimeoutError?
+    new ExecutionFailure('transient','provider_timeout'):new ExecutionFailure('blocked','topic_classification_failed'),
   }));
  }
  private current(step:ExecutionStep){
@@ -63,6 +64,29 @@ export class MemoryTopicsHost {
    executor.enqueue(parent.operationId,'memory.topics',input as unknown as Record<string,unknown>,{id,dependencies:[parent.id],optional:true});
    control.inheritStep(parent.id,id);
   }
+ }
+ /** An explicit topic retry requeues the optional classifier with the
+  * original admission and immutable Memory pins. */
+ retry(operationId:string){
+  if(this.closing)return;
+  const {store,executor,control}=this.options,db=store.db;
+  let cursor:number|undefined,reopened=false;
+  db.exec('SAVEPOINT memory_topics_retry');
+  try{
+   do{
+    const page=executor.list({operationId,kind:'memory.topics',cursor,limit:100});
+    for(const step of page.items){
+     if(step.operationId!==operationId||!['blocked','failed'].includes(step.state)||
+        !['topic_classification_failed','provider_timeout'].includes(step.error??'')||executor.isActiveStep(step.id))continue;
+     const admission=control.stepAuthority(step.id);
+     if(!admission||control.workState(admission)!=='current'||!this.current(step))continue;
+     executor.retry(step.id,true);reopened=true;
+    }
+    cursor=page.nextCursor??undefined;
+   }while(cursor!==undefined);
+   db.exec('RELEASE memory_topics_retry');
+  }catch(error){if(db.isTransaction)db.exec('ROLLBACK TO memory_topics_retry; RELEASE memory_topics_retry');throw error;}
+  if(reopened)executor.localEffect(()=>{void executor.tick().catch(()=>{});});
  }
  close(){return this.closing??=(async()=>{for(const dispose of this.disposers.reverse())await dispose();})();}
 }

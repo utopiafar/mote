@@ -24,13 +24,14 @@ type Prepared={python:string};
 type Options={runtime:'native'|'docker'|'unknown';media:MediaConfiguration;assets:MediaPreparationAssets;runtimeRoot:string;repository?:string;prepare?:(options:MediaRuntimeOptions&{signal:AbortSignal})=>Promise<Prepared>;fetch?:typeof fetch;startupTimeoutMs?:number};
 const roles=['ocr','dialogue','speaker-wespeaker','local-image'] as const;
 const active=(state:State)=>['queued','dependencies','verifying_dependencies','models','starting'].includes(state);
+const workerPortProbeTimeout='media.runtime.worker_port_probe_timeout';
 const assertWorkerPortAvailable=(port:number)=>new Promise<void>((resolve,reject)=>{
   const socket=connect({host:'127.0.0.1',port});
   let settled=false;
   const finish=(error?:Error)=>{if(settled)return;settled=true;socket.destroy();if(error)reject(error);else resolve();};
   // Only a completed connection proves a listener exists. An inconclusive
   // probe still prevents spawning, without claiming another process owns it.
-  socket.setTimeout(1000,()=>finish(Error('media.runtime.worker_port_probe_timeout')));
+  socket.setTimeout(1000,()=>finish(Error(workerPortProbeTimeout)));
   socket.once('connect',()=>finish(Error('media.runtime.worker_port_in_use')));
   socket.once('error',error=>finish((error as NodeJS.ErrnoException).code==='ECONNREFUSED'?undefined:Error('media.runtime.worker_port_probe_failed')));
 });
@@ -167,7 +168,14 @@ export class MediaPreparation {
       if(runtime==='native'&&prepared){
         await this.stopWorker(role);this.check(job);
         const args=mediaWorkerLaunch(role,{repository:this.repository,...media,localImagePort:media.localImagePort??9011});
-        await assertWorkerPortAvailable(Number(args.at(-1)));
+        const port=Number(args.at(-1));
+        await assertWorkerPortAvailable(port).catch(error=>{
+          if(!(error instanceof Error)||error.message!==workerPortProbeTimeout)throw error;
+          // Keep managed work waiting while a timed-out startup probe is
+          // retried once. The fresh probe still has to confirm availability.
+          this.check(job);
+          return assertWorkerPortAvailable(port);
+        });
         this.check(job);const home=join(this.directory,role,'worker');await mkdir(home,{recursive:true,mode:0o700});this.check(job);
         started=spawnMediaProcess(prepared.python,args,{cwd:this.repository,env:mediaWorkerEnvironment(home,prepared.python,media.workerToken)});
         this.workers.set(role,started);const owned=started;

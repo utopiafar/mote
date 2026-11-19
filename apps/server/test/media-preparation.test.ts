@@ -83,11 +83,14 @@ for(const failure of ['timeout','EACCES','EMFILE','ECONNRESET'] as const)test(`n
  const preparation=new MediaPreparation({runtime:'native',...f,repository:f.directory,prepare:async()=>({python:process.execPath}),startupTimeoutMs:2000});t.after(()=>preparation.close());
  // Only the unavailable OS socket result is controlled. Keep the real
  // preparation, assets, process owner, HTTP worker and retry entrypoint.
- const original=Socket.prototype.connect;let probes=0;
+ const original=Socket.prototype.connect;let probes=0,oneTimeout=false;
  const socketBoundary=t.mock.method(Socket.prototype,'connect',function(this:Socket,...args:any[]){
   const options=Array.isArray(args[0])?args[0][0]:args[0];
-  if(options&&options.host==='127.0.0.1'&&Number(options.port)===f.media.asrPort){
-   probes++;queueMicrotask(()=>{if(failure==='timeout')this.emit('timeout');else this.emit('error',Object.assign(Error('Generated private probe detail'),{code:failure}));});return this;
+  if(options&&options.host==='127.0.0.1'&&Number(options.port)===f.media.asrPort&&Object.keys(options).every(key=>key==='host'||key==='port')){
+   probes++;
+   if(!oneTimeout||probes===1){
+    queueMicrotask(()=>{if(failure==='timeout')this.emit('timeout');else this.emit('error',Object.assign(Error('Generated private probe detail'),{code:failure}));});return this;
+   }
   }
   return Reflect.apply(original,this,args);
  });
@@ -96,8 +99,10 @@ for(const failure of ['timeout','EACCES','EMFILE','ECONNRESET'] as const)test(`n
  assert.equal(failed.error,failure==='timeout'?'worker_port_probe_timeout':'worker_port_probe_failed');
  assert.ok(probes>0);assert.doesNotMatch(JSON.stringify(failed),/Generated private probe detail|generated-worker-token/);
  await assert.rejects(readFile(marker),{code:'ENOENT'},'an uncertain probe cannot authorize a worker spawn');
- socketBoundary.mock.restore();await preparation.start('dialogue');const recovered=await settled(preparation,'dialogue');
+ if(failure==='timeout'){oneTimeout=true;probes=0;}else socketBoundary.mock.restore();
+ await preparation.start('dialogue');const recovered=await settled(preparation,'dialogue');
  assert.equal(recovered.state,'ready');assert.equal(recovered.runtimeReady,true);assert.equal(await readFile(marker,'utf8'),'generated');
+ if(oneTimeout)assert.equal(probes,2,'a single inconclusive probe must be followed by a fresh bind check');
  await preparation.close();await assert.rejects(fetch(f.media.asrEndpoint),'owned recovery must free its listener');
 });
 

@@ -37,8 +37,31 @@ test('legacy bounded sessions retain initial evidence tools and cannot inspect a
  assert.equal(buildContextEnvelope(bounds(),bridge.seedEvidence).authorizedContextRanges,undefined);
  assert.equal(contextToolDefinitions({question:'ordinary archive'}).some(([name])=>name==='context_evidence'),false);
  assert.equal((await send(bridge,'context_evidence',{id,offset:0,length:20})).status,400);
+ assert.equal((await send(bridge,'context_evidence_catalog',{offset:0,length:1})).status,400);
  assert.equal((await send(bridge,'evidence',{ids:[id],offset:0,length:20})).body.toolError.code,'evidence_range_exceeded');
  assert.deepEqual(bridge.deliveredRanges,[target]);
+});
+
+test('paged original range grants expose exact locators without a citation receipt',async t=>{
+ const outsideId='44444444-4444-4444-8444-444444444444';
+ const input=bounds({evidenceReadRanges:grants,evidenceReadRangeFormat:'paged'});
+ const bridge=await startBridge(reader([record,continuation,{...continuation,id:outsideId}]),input,12);t.after(()=>bridge.close());
+ const envelope=buildContextEnvelope(input,bridge.seedEvidence);
+ assert.deepEqual(taskTools(input),['evidence','context_evidence','context_evidence_catalog']);
+ assert.equal(envelope.authorizedContextRanges.count,2);
+ assert.equal(envelope.authorizedContextRanges.ranges,undefined);
+ assert.equal(JSON.stringify(envelope).includes(continuationId),false,'additional IDs arrive only through the catalog');
+ const first=await send(bridge,'context_evidence_catalog',{offset:0,length:1});
+ assert.equal(first.status,200);assert.deepEqual(first.body.ranges,[[id,0,text.length]]);assert.equal(first.body.nextOffset,1);
+ const second=await send(bridge,'context_evidence_catalog',{offset:first.body.nextOffset,length:1});
+ assert.equal(second.status,200);assert.deepEqual(second.body.ranges,[[continuationId,0,continuation.ocrText.length]]);assert.equal(second.body.nextOffset,null);
+ assert.deepEqual(bridge.deliveredRanges,[target]);
+ assert.equal(bridge.records.has(continuationId),false);
+ assert.equal((await send(bridge,'context_evidence_catalog',{offset:0,length:101})).status,400);
+ assert.equal((await send(bridge,'context_evidence',{id:outsideId,offset:0,length:1})).status,400);
+ const original=await send(bridge,'context_evidence',{id:continuationId,offset:0,length:12000});
+ assert.equal(original.status,200);assert.equal(original.body.data[0].ocrText,continuation.ocrText);
+ assert.deepEqual(bridge.deliveredRanges,[target,grants[1]]);
 });
 
 test('a persisted capability manifest cannot resume across an actual contract change',async()=>{
@@ -48,10 +71,12 @@ test('a persisted capability manifest cannot resume across an actual contract ch
   await assert.rejects(startBridge(reader(),{...input,contextCapabilitySnapshot:saved},8),error=>error.code==='context_capabilities_changed');
 });
 
-test('a broader exact grant exposes only a catalog until successful model-selected original reads',async t=>{
- const input=bounds({evidenceReadRanges:grants}),bridge=await startBridge(reader(),input,12);t.after(()=>bridge.close());
+for(const format of [undefined,'tuple'])test(`a broader exact ${format??'object'} catalog exposes bodies only after successful original reads`,async t=>{
+ const input=bounds({evidenceReadRanges:grants,evidenceReadRangeFormat:format}),bridge=await startBridge(reader(),input,12);t.after(()=>bridge.close());
  const envelope=buildContextEnvelope(input,bridge.seedEvidence);
- assert.deepEqual(taskTools(input),['evidence','context_evidence']);assert.deepEqual(envelope.authorizedContextRanges.ranges,grants);
+ assert.deepEqual(taskTools(input),['evidence','context_evidence']);
+ assert.deepEqual(envelope.authorizedContextRanges.ranges,format==='tuple'?grants.map(({id,offset,length})=>[id,offset,length]):grants);
+ if(format==='tuple')assert.match(envelope.authorizedContextRanges.instruction,/\[id, offset, length\]/);
  assert.equal(envelope.untrustedEvidence.length,1);assert.equal(envelope.untrustedEvidence[0].ocrText,text.slice(target.offset,target.offset+target.length));
  const source=envelope.evidenceContexts[envelope.untrustedEvidence[0].commonContextRef];
  assert.equal(source.attributionContext.importStatements[0].instruction,instruction);
@@ -69,7 +94,15 @@ test('a broader exact grant exposes only a catalog until successful model-select
 test('large exact target and context vectors remain whole without artificial original-count limits',async t=>{
  const generated=(kind,count)=>Array.from({length:count},(_,index)=>{const body=`Generated ${kind} ${index} 🌱`,record={id:randomUUID(),deviceId:'generated',capturedAt:'2026-10-01T00:00:00Z',appName:'Generated short transcript',ocrText:'prefix '+body+' suffix'};return {record,range:{id:record.id,offset:7,length:body.length},member:{key:createHash('sha256').update(kind+index).digest('hex'),id:record.id,offset:7,length:body.length}};});
  const targets=generated('target',200),contexts=generated('context',140),input=bounds({evidenceIds:targets.map(row=>row.record.id),evidenceRanges:targets.map(row=>row.range),evidenceReadRanges:contexts.map(row=>row.range),taskContext:{turns:[],memoryWork:{workContract:'range-evaluation@1',members:targets.map(row=>row.member),contextMembers:contexts.map(row=>row.member),authorizedMembers:[...targets,...contexts].map(row=>row.member)}}});
- const bridge=await startBridge(reader([...targets,...contexts].map(row=>row.record)),input);t.after(()=>bridge.close());
+ const source=reader([...targets,...contexts].map(row=>row.record)),read=source.evidence,reads=[];
+ let yielded=false;setImmediate(()=>{yielded=true;});
+ source.evidence=async args=>{
+  if(reads.length)assert.equal(yielded,true,'the Host must service another turn before reading another page');
+  reads.push(args.ids);return read(args);
+ };
+ const bridge=await startBridge(source,input);t.after(()=>bridge.close());
+ assert.ok(reads.length>1,'large selections must not hydrate in one synchronous reader call');
+ assert.deepEqual(reads.flat(),[...targets,...contexts].map(row=>row.record.id));
  assert.equal(bridge.seedEvidence.length,200);assert.deepEqual(bridge.deliveredRanges,targets.map(row=>row.range).sort((a,b)=>a.id.localeCompare(b.id)));assert.equal(bridge.records.size,200);
  for(const row of targets)assert.equal(bridge.records.get(row.record.id).ocrText,row.record.ocrText.slice(row.range.offset,row.range.offset+row.range.length));
  const envelope=buildContextEnvelope(input,bridge.seedEvidence),work=envelope.untrustedTaskContext.memoryWork;
@@ -129,22 +162,31 @@ test('context pages retain the full requested authorized range beyond retired ch
  const outside=await send(bridge,'context_evidence',{id,offset:12000,length:1});assert.equal(outside.status,400);assert.equal(outside.body.toolError.code,'evidence_range_exceeded');
 });
 
-test('the Codex adapter supplies the host delivery receipt before validation and ignores forged model receipts',async t=>{
+for(const format of [undefined,'paged'])test(`the Codex adapter supplies the host delivery receipt for ${format??'inline'} ranges and ignores forged model receipts`,async t=>{
  const root=await mkdtemp(join(tmpdir(),'mote-context-read-codex-')),executable=join(root,'generated-codex.mjs');t.after(()=>rm(root,{recursive:true,force:true}));
  await writeFile(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused-key'}),{mode:0o600});
  await writeFile(executable,`#!${process.execPath}
 if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 import readline from 'node:readline';
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
+const paged=${format==='paged'},continuation=${JSON.stringify(continuationId)};
+const call=(id,tool,args)=>send({id,method:'item/tool/call',params:{threadId:'generated-thread',tool,namespace:null,arguments:args}});
+const read=id=>call(999,'context_evidence',{id,offset:0,length:12000});
 readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
 if(m.method==='initialize')send({id:m.id,result:{}});
 else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
-else if(m.method==='thread/start'){if(m.params.dynamicTools.some(t=>!['evidence','context_evidence','skill'].includes(t.name)))process.exit(4);send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});}
-else if(m.method==='turn/start'){const envelope=JSON.parse(m.params.input[0].text);if(envelope.untrustedEvidence.some(r=>r.id===${JSON.stringify(continuationId)}))process.exit(5);send({id:m.id,result:{turn:{id:'generated-turn'}}});send({id:999,method:'item/tool/call',params:{threadId:'generated-thread',tool:'context_evidence',namespace:null,arguments:{id:${JSON.stringify(continuationId)},offset:0,length:12000}}});}
+else if(m.method==='thread/start'){const expected=['evidence','context_evidence','skill',...(paged?['context_evidence_catalog']:[])];if(m.params.dynamicTools.length!==expected.length||m.params.dynamicTools.some(t=>!expected.includes(t.name)))process.exit(4);send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});}
+else if(m.method==='turn/start'){
+ const envelope=JSON.parse(m.params.input[0].text);
+ if(envelope.untrustedEvidence.some(r=>r.id===continuation)||paged&&(envelope.authorizedContextRanges.count!==2||envelope.authorizedContextRanges.ranges))process.exit(5);
+ send({id:m.id,result:{turn:{id:'generated-turn'}}});
+ if(paged)call(998,'context_evidence_catalog',{offset:1,length:1});else read(continuation);
+}
+else if(m.id===998){if(!m.result.success)process.exit(7);const page=JSON.parse(m.result.contentItems[0].text);if(page.ranges.length!==1||page.ranges[0][0]!==continuation||page.nextOffset!==null)process.exit(8);read(page.ranges[0][0]);}
 else if(m.id===999){if(!m.result.success)process.exit(6);send({method:'item/completed',params:{threadId:'generated-thread',item:{id:'generated-message',type:'agentMessage',text:JSON.stringify({answer:'Read generated continuation [${continuationId}]',citationIds:[${JSON.stringify(continuationId)}],evidenceReadRanges:[{id:'model-forged',offset:0,length:999999}]})}}});send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'completed'}}});}
 });
 `,{mode:0o700});
  const agent=createAgent({reader:reader(),protocol:'codex-app-server',model:'generated-model',codex:{executable,home:root},agentTimeoutMs:10000});t.after(()=>agent.close());let validated;
- const answer=await agent.query(bounds({evidenceReadRanges:grants,validateOutput:value=>{validated=value.evidenceReadRanges;assert.deepEqual(value.evidenceReadRanges,[target,{id:continuationId,offset:0,length:continuation.ocrText.length}]);}}));
+ const answer=await agent.query(bounds({evidenceReadRanges:grants,evidenceReadRangeFormat:format,validateOutput:value=>{validated=value.evidenceReadRanges;assert.deepEqual(value.evidenceReadRanges,[target,{id:continuationId,offset:0,length:continuation.ocrText.length}]);}}));
  assert.deepEqual(answer.evidenceReadRanges,validated);assert.equal(answer.citations[0].id,continuationId);assert.equal(answer.evidenceReadRanges.some(range=>range.id==='model-forged'),false);
 });

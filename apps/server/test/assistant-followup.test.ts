@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
+import {assembleHostContext,estimateSerializedTokens,originalEvidenceReceipt,type QueryInput} from '@mote/agent';
 import type {AttributionContext,QueryResult,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
@@ -19,13 +19,14 @@ import {materialId,MaterialStore} from '../src/materials.js';
 import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
+import {assistantBatchContext,assistantQueryInput,assistantQueryWithinCapacity,assistantRequestUsage} from '../src/assistant-request-budget.js';
 
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
 const headers={authorization:'Bearer generated-followup-owner'};
 type Context={materials:{ref:string;attributionContext?:AttributionContext;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
  cards:{id:string;revision:number;state:string;title:string;body?:string;suppressionOnly?:boolean;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
-type Program=(context:Context)=>unknown|Promise<unknown>;
+type Program=(context:Context,input:QueryInput)=>unknown|Promise<unknown>;
 const evidence=(context:Context,needle:string)=>{
  const source=context.originals.find(original=>original.quote.includes(needle));assert.ok(source,`Original not supplied: ${needle}; context=${JSON.stringify(context.materials)}; originals=${JSON.stringify(context.originals)}`);
  return {id:source.id,offset:source.offset+source.quote.indexOf(needle),quote:needle};
@@ -45,7 +46,7 @@ async function fixture(t:TestContext){
   assert.ok(tokens+4000<=32000,'generated request must fit the declared small fixture window');
   const context=input.taskContext as unknown as Context;assert.ok(context?.materials);seen.push(context);grants.push([...(input.evidenceIds??[])]);
   const program=programs.shift();assert.ok(program,'A generated model response must be explicitly supplied');
-  try{return {answer:JSON.stringify(await program(context)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
+  try{return {answer:JSON.stringify(await program(context,input)),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};}
   catch(error){providerFailure=error;throw error;}
  },close:async()=>{}}});
  const reader=node.featureServices.evidenceReader;
@@ -82,6 +83,39 @@ async function fixture(t:TestContext){
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
+
+test('large owner selection stays host-side while the model sees only the chosen originals',async t=>{
+ const f=await fixture(t),note=await f.add('Generated scoped original with a complete exact quote.');
+ const anchors=f.node.materials.evidenceIds(note.material.ref),unavailable=Array.from({length:53_000},()=>randomUUID());
+ const scope:QueryScope={kind:'selection',evidenceIds:[note.id,...anchors,...unavailable],timeZone:'Asia/Shanghai'};
+ assert.ok(Buffer.byteLength(JSON.stringify(scope))>2_000_000,'one complete frozen selection can exceed the general task payload limit');
+ f.programs.push(()=>answer());
+ const task=await f.start([note.material.ref],{kind:'change'},scope);
+ await f.wait(task);
+ assert.deepEqual(f.tasks.input<{input:{scope:QueryScope}}>(task.id,task.revision,f.assertCurrent).input.scope,scope);
+ assert.deepEqual((f.seen[0] as Context&{scope:unknown}).scope,{kind:'selection',timeZone:'Asia/Shanghai'});
+ assert.deepEqual(new Set(f.grants[0]),new Set([note.id,...anchors]));
+ assert.ok(f.seen[0].originals.some(item=>anchors.includes(item.id)&&item.quote===note.text));
+ assert.equal((await f.service.finish(task.id)).reason,'Generated result');
+});
+
+test('each execution grant validates shared Assistant context once and checks again after revocation',async t=>{
+ const f=await fixture(t),note=await f.add('Generated original for a shared batch authority check.');
+ f.programs.push((_context,input)=>{
+  assert.ok(input.assertContextAuthority);
+  const checks=t.mock.method(f.service,'assertBatchDependencies');
+  input.assertContextAuthority();
+  assert.equal(checks.mock.callCount(),1,'parent and item should share the current Assistant dependency check');
+  input.assertContextAuthority();
+  assert.equal(checks.mock.callCount(),2,'a new authority boundary must check again');
+  f.node.store.delete(note.id);
+  assert.throws(()=>input.assertContextAuthority!());
+  return answer();
+ });
+ const task=await f.start([note.material.ref]),batchId=f.service.progress(task.id).batch!.task.id;
+ await until(()=>f.batch.progress(batchId).items[0].state==='stale');
+ assert.throws(()=>f.batch.result(batchId),{statusCode:409});
+});
 
 test('assistant analysis retains exact scoped import authorship and source dates without Memory, and a changed declaration fences its saved result',async t=>{
  const f=await fixture(t),sourceId='generated-authored-journal',otherSource='generated-unrelated-dialogue';
@@ -138,7 +172,13 @@ test('preparing an assistant preview of many small blocks batches original check
  t.diagnostic(`preview preparation checked the full Material ${fullReads} times`);
  assert.ok(fullReads<=8,`the whole Material must not be checked again for each preview quote (${fullReads} reads)`);
  assert.equal(yielded,true,'unrelated event-loop work must run before preview preparation completes');
- await turn;await f.wait(task);const result=await f.service.finish(task.id);assert.deepEqual(result.cardIds,[]);assert.deepEqual(result.commitmentIds,[]);
+ await turn;await f.wait(task);
+ const batchId=f.service.progress(task.id).batch!.task.id,firstAnchor=[...expected.keys()][0];
+ const reads=t.mock.method(f.reader.memories,'readEvidence');
+ assert.equal(f.service.assertBatchDependencies(batchId,[firstAnchor]),true);
+ const hydratedActiveBody=reads.mock.calls.some(call=>call.arguments[0].some(id=>expected.has(id)));reads.mock.restore();
+ assert.equal(hydratedActiveBody,false,'an active Formal anchor needs the same current identity and disclosure checks without reopening its body');
+ const result=await f.service.finish(task.id);assert.deepEqual(result.cardIds,[]);assert.deepEqual(result.commitmentIds,[]);
 });
 
 test('deletion during assistant preview preparation prevents model admission after its event-loop yield',async t=>{
@@ -361,6 +401,27 @@ test('a superseded never-remind card allows current-version analysis without rev
  assert.deepEqual(next.cardIds,[],'suppression history does not block subsequent current-version analysis');
 });
 
+test('follow-up publication keeps suppression pins when the prior card bodies exceed the task storage limit',async t=>{
+ const f=await fixture(t),put=versionedMaterial(f),cards=f.node.featureServices.assistantCards;
+ const oldText='Generated previous text.',first=await put('1',oldText),body='档'.repeat(31000);
+ const past=[];
+ for(let index=0;index<22;index++){
+  const prior=cards.publish({id:randomUUID(),kind:'suggestion',matterId:null,version:'generated-prior',state:'open',
+   title:`Generated issue ${index}`,body,evidence:[{id:first.capture.id,offset:0,quote:oldText}],
+   evidenceDependencies:{version:1,complete:true,ids:[first.capture.id]}},undefined,all,f.assertCurrent);
+  cards.feedback(prior.id,{expectedRevision:prior.revision,action:'never_remind'},all);past.push(prior.id);
+ }
+ assert.ok(Buffer.byteLength(body)*past.length>2000000);
+ const currentText='Generated fresh version revisits the old issue.',current=await put('2',currentText);
+ const result=await f.run([current.material.ref],context=>{
+  assert.equal(context.cards.length,past.length);
+  assert.ok(context.cards.every(item=>item.suppressionOnly&&item.body===undefined));
+  return answer([card(evidence(context,currentText),{relatedCardIds:[past[0]]})]);
+ });
+ assert.deepEqual(result.cardIds,[],'the saved suppression pin still prevents publication');
+ assert.equal(cards.history(past[0],{scope:all}).items[0].body,body);
+});
+
 test('an unsuppressed stale card sharing suppression history still requires a historical grant',async t=>{
  const f=await fixture(t),put=versionedMaterial(f),first=await put('1','Generated original has owner and review date questions.');
  const made=await f.run([first.material.ref],context=>answer([card(evidence(context,'owner'),{title:'Generated owner question'}),card(evidence(context,'review date'),{title:'Generated review date question'})]));
@@ -452,6 +513,101 @@ test('a newly completed understanding product forces a fresh analysis before pub
  assert.equal(f.node.featureServices.assistantCards.page({scope:all}).items.length,0);
  const retry=await f.run([note.material.ref],context=>{assert.equal(context.materials[0].products[0].summary,'Generated requirement product');return answer();});
  assert.deepEqual(retry.cardIds,[]);
+});
+
+test('a review at capacity delivers exact original spans once and preserves its read grants',async t=>{
+ const f=await fixture(t),note=await f.add('Generated original with independent citations. '.repeat(25));
+ const record=f.reader.memories.readCurrentEvidence([note.id])[0];
+ const originals=[{id:record.id,offset:9,quote:record.ocrText.slice(9,809)}];
+ const context={turns:[],originals,scope:{kind:'all'},asOf:at};
+ const input:QueryInput={question:'Review the generated evidence',evidenceIds:[note.id],taskContext:context};
+ const prepared=assistantQueryInput(input,originals,[record]);
+ const reserve={contextWindow:64000,maxOutputTokens:512,draftTokens:512};
+ const full=assistantRequestUsage(prepared,[record],reserve);
+ const compactContext={turns:[],scope:context.scope,asOf:at};
+ const compact=assistantRequestUsage({...prepared,taskContext:compactContext},[record],reserve);
+ const capacity={...reserve,contextWindow:Math.ceil((Math.floor((full.inputTokens+compact.inputTokens)/2)+reserve.maxOutputTokens)*10/9)};
+ assert.equal(assistantRequestUsage(prepared,[record],capacity).fits,false);
+ const selected=assistantQueryWithinCapacity(input,originals,[record],capacity);assert.ok(selected);
+ assert.equal(assistantRequestUsage(selected,[record],capacity).fits,true);
+ assert.deepEqual(selected.taskContext,compactContext);
+ assert.deepEqual(selected.evidenceIds,prepared.evidenceIds);
+ assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
+ const receipt=originalEvidenceReceipt(record,originals[0].offset,originals[0].quote.length);
+ assert.equal(receipt.ocrText,originals[0].quote);assert.equal(receipt.textRange.start,originals[0].offset);
+ assert.ok(assembleHostContext(selected,[receipt],reserve.draftTokens).prompt.includes(originals[0].quote));
+ assert.equal(assistantQueryWithinCapacity(input,originals,[record],{...capacity,contextWindow:512}),undefined);
+});
+
+test('batch transport can omit a duplicate while the saved original still stages an exact receipt',async t=>{
+ const f=await fixture(t),note=await f.add('Generated authorized original. '.repeat(45));
+ const record=f.reader.memories.readCurrentEvidence([note.id])[0],originals=[{id:record.id,offset:50,quote:record.ocrText.slice(50,650)}];
+ const context={turns:[],materials:[{ref:note.material.ref}],originals},limit=300;
+ assert.ok(assistantBatchContext(context,limit,()=>false).bytes>limit);
+ const compact=assistantBatchContext(context,limit,()=>true);assert.ok(compact.bytes<=limit);
+ assert.deepEqual(compact.context,{turns:[],materials:context.materials});assert.equal(context.originals,originals);
+ const input:QueryInput={question:'Review the authorized original',evidenceIds:[record.id],taskContext:compact.context};
+ const selected=assistantQueryWithinCapacity(input,originals,[record],{contextWindow:64000,maxOutputTokens:512,draftTokens:512});assert.ok(selected);
+ assert.deepEqual(selected.evidenceRanges,[{id:record.id,offset:50,length:600}]);
+ const receipt=originalEvidenceReceipt(record,50,600);assert.equal(receipt.ocrText,originals[0].quote);
+ assert.ok(assembleHostContext(selected,[receipt]).prompt.includes(originals[0].quote));
+});
+
+test('a review can send compact quotes for all originals and defer full receipts that exceed capacity',async t=>{
+ const f=await fixture(t),notes=[await f.add('Generated first exact original.'),await f.add('Generated second exact original.')];
+ const evidenceIds=notes.map(note=>note.id),records=f.reader.memories.readCurrentEvidence(evidenceIds).map((record,index)=>({...record,windowTitle:`Generated file ${index} metadata. `.repeat(50)}));
+ const originals=records.map(record=>({id:record.id,offset:0,quote:record.ocrText})),taskContext={turns:[],originals};
+ const input:QueryInput={question:'Review all generated originals',evidenceIds,taskContext};
+ const prepared=assistantQueryInput(input,originals,records),firstRange=prepared.evidenceRanges![0];
+ const reserve={contextWindow:64000,maxOutputTokens:512,draftTokens:512};
+ const packed={...prepared,evidenceReadRangeFormat:'tuple' as const};
+ const compact=assistantRequestUsage({...packed,taskContext:{turns:[]}},records,reserve);
+ const first=assistantRequestUsage({...packed,evidenceIds:[firstRange.id],evidenceRanges:[firstRange]},records,reserve);
+ const capacity={...reserve,contextWindow:Math.ceil((Math.floor((compact.inputTokens+first.inputTokens)/2)+reserve.maxOutputTokens)*10/9)};
+ assert.equal(assistantRequestUsage({...packed,taskContext:{turns:[]}},records,capacity).fits,false);
+ const selected=assistantQueryWithinCapacity(input,originals,records,capacity);assert.ok(selected);
+ assert.deepEqual(selected.taskContext,taskContext,'every exact original and offset stays in the model context');
+ assert.deepEqual(selected.evidenceIds,[firstRange.id]);
+ assert.deepEqual(selected.evidenceRanges,[firstRange]);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges,'all originals still have their full paged read grants');
+});
+
+test('Assistant packing keeps the complete range catalog when only its compact representation fits',async t=>{
+ const f=await fixture(t),note=await f.add('Generated exact original.');
+ const original=f.reader.memories.readCurrentEvidence([note.id])[0],records=[original,...Array.from({length:140},()=>({...original,id:randomUUID()}))];
+ const originals=[{id:original.id,offset:0,quote:original.ocrText}],context={turns:[],originals};
+ const input:QueryInput={question:'Review the generated original with paged context',evidenceIds:records.map(record=>record.id),taskContext:context};
+ const prepared=assistantQueryInput(input,originals,records),compact={...prepared,taskContext:{turns:[]}};
+ const reserve={contextWindow:64000,maxOutputTokens:512,draftTokens:512};
+ const objects=assistantRequestUsage(compact,records,reserve),tuples=assistantRequestUsage({...compact,evidenceReadRangeFormat:'tuple'},records,reserve);
+ const capacity={...reserve,contextWindow:Math.ceil((Math.floor((objects.inputTokens+tuples.inputTokens)/2)+reserve.maxOutputTokens)*10/9)};
+ assert.equal(assistantRequestUsage(compact,records,capacity).fits,false);
+ const selected=assistantQueryWithinCapacity(input,originals,records,capacity);assert.ok(selected);
+ assert.equal(selected.evidenceReadRangeFormat,'tuple');assert.ok(assistantRequestUsage(selected,records,capacity).fits);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
+ assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
+});
+
+test('a very long Assistant file pages every exact original grant when its inline catalog exceeds model capacity',async t=>{
+ const f=await fixture(t),note=await f.add('Generated exact original for a long file.');
+ const original=f.reader.memories.readCurrentEvidence([note.id])[0];
+ const records=[original,...Array.from({length:18105},()=>({...original,id:randomUUID()}))];
+ const originals=[{id:original.id,offset:0,quote:original.ocrText}],context={turns:[],originals};
+ let authorityChecks=0;const assertContextAuthority=()=>{authorityChecks++;};
+ const input:QueryInput={question:'Review the generated original and inspect only needed context.',evidenceIds:records.map(record=>record.id),taskContext:context,assertContextAuthority};
+ const capacity={contextWindow:272000,maxOutputTokens:128000,draftTokens:65536};
+ const prepared=assistantQueryInput(input,originals,records),compact={...prepared,taskContext:{turns:[]}};
+ assert.equal(assistantRequestUsage({...compact,evidenceReadRangeFormat:'tuple'},records,capacity).fits,false);
+ authorityChecks=0;
+ assert.equal(assistantQueryWithinCapacity(input,originals,records,capacity),undefined,'the caller can still require group splitting');
+ assert.equal(authorityChecks,1);
+ const selected=assistantQueryWithinCapacity(input,originals,records,capacity,true);assert.ok(selected);
+ assert.equal(authorityChecks,2,'the alternative serialized shapes share the same synchronous authority check');
+ assert.equal(selected.assertContextAuthority,assertContextAuthority);
+ assert.equal(selected.evidenceReadRangeFormat,'paged');assert.equal(assistantRequestUsage(selected,records,capacity).fits,true);
+ assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
 });
 
 test('the assembled batch passes the configured product budget to its query consumer',async t=>{
@@ -550,6 +706,85 @@ test('a current catalog original already reviewed with a due group is claimed on
  now+=60001;await f.service.tick(f.node.assistantChanges);
  assert.equal(f.node.assistantChanges.ready().length,0);assert.equal(f.seen.length,1);assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.followup'").get()!.n,1);
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,2);
+});
+
+test('a blocked automatic analysis does not keep processing the same finished batch',async t=>{
+ const f=await fixture(t);let now=Date.now();
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ await f.add('Generated automatic review with an unusable result.');
+ f.node.assistantChanges.tick(100);now+=60001;
+ paused.mock.restore();f.programs.push(()=>({reason:'Generated result omits the required card and commitment lists'}));
+ const finish=t.mock.method(f.service,'finish');
+ await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();assert.ok(analysis);
+ const task=f.tasks.get(String(analysis.id));await f.wait(task);
+ await f.service.tick(f.node.assistantChanges);
+ assert.equal(f.tasks.get(task.id).state,'blocked');
+ assert.equal(f.node.store.db.prepare("SELECT state FROM task_records WHERE kind='assistant.change'").get()!.state,'blocked');
+ await f.service.tick(f.node.assistantChanges);
+ await f.service.tick(f.node.assistantChanges);
+ assert.equal(finish.mock.callCount(),1);
+ assert.equal(f.seen.length,1);
+});
+
+test('automatic follow-up keeps a prior card’s Memory artifact in lineage without granting it as an original',async t=>{
+ const f=await fixture(t),prior=await f.add('Generated original supporting an earlier card.'),artifact=await f.produce(prior);
+ const raw:QueryResult={answer:JSON.stringify({memories:[{title:'Generated prior Memory',statement:`${prior.text} [${prior.id}]`,uncertainty:'Generated fixture',evidenceIds:[prior.id]}]}),
+  citations:[{id:prior.id,capturedAt:at,appName:'Generated',excerpt:prior.text}],trace:[],runId:randomUUID()};
+ const draft=f.node.memories.extract(fixtureMemoryResult(f.node.memories,raw),'generated').items[0]!,memory=f.node.memories.publish(draft.id,draft.version);
+ f.node.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(memory.id,artifact);
+ const existing=f.node.featureServices.assistantCards.publish({id:randomUUID(),kind:'suggestion',matterId:null,version:'generated-initial',state:'open',
+  title:'Generated earlier suggestion',body:'Generated history for the new review.',evidence:[{id:prior.id,offset:0,quote:prior.text}],
+  evidenceDependencies:{version:1,complete:true,ids:[prior.id,memory.id]}},undefined,all,f.assertCurrent);
+ let now=Date.now();(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const note=await f.add('Generated new original is ready for automatic review.','generated-next');
+ f.node.assistantChanges.tick(100);now+=60001;
+ f.programs.push((context,input)=>{
+  assert.ok(context.cards.some(value=>value.id===existing.id));
+  assert.ok(input.evidenceIds!.includes(note.id));
+  assert.ok(!input.evidenceIds!.includes(artifact));
+  return answer();
+ });
+ paused.mock.restore();await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();
+ assert.ok(analysis,'the artifact dependency must not block admission to an original selection');
+ const task=f.tasks.get(String(analysis.id));await f.wait(task);await f.service.tick(f.node.assistantChanges);
+ const completed=f.tasks.get(task.id);assert.equal(completed.state,'succeeded');
+ assert.ok(f.tasks.evidenceDependencies(task.id,completed.revision,f.assertCurrent).ids.includes(artifact));
+});
+
+test('automatic follow-up reads and respects all visible cards when their count exceeds the preview limit',async t=>{
+ const f=await fixture(t),cards=f.node.featureServices.assistantCards;
+ let now=Date.now();(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ const paused=t.mock.method(f.service,'tick',async()=>{});
+ const prior=await f.add('Generated source keeps the older issue in scope.');
+ const existing=Array.from({length:31},(_,index)=>cards.publish({id:randomUUID(),kind:'suggestion',matterId:null,
+  version:'generated-initial',state:'open',title:`Generated issue ${index}`,body:'Generated scoped review context.',
+  evidence:[{id:prior.id,offset:0,quote:prior.text}],evidenceDependencies:{version:1,complete:true,ids:[prior.id]}},undefined,all,f.assertCurrent));
+ const oldest=existing[0];
+ cards.feedback(oldest.id,{expectedRevision:oldest.revision,action:'never_remind'},all);
+ const suppressed=cards.get(oldest.id,all);
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const note=await f.add('Generated new source revisits the older issue.');
+ f.programs.push(context=>{
+  assert.deepEqual(new Set(context.cards.map(value=>value.id)),new Set(existing.map(value=>value.id)));
+  assert.ok(context.cards.find(value=>value.id===oldest.id)!.feedback.some(value=>value.action==='never_remind'));
+  return answer([card(evidence(context,note.text),{action:'update',cardId:oldest.id,relatedCardIds:[oldest.id]})],[]);
+ });
+ f.node.assistantChanges.tick(100);now+=60001;
+ assert.deepEqual(f.node.assistantChanges.ready().map(item=>item.input.captureId),[note.id]);
+ paused.mock.restore();
+ await f.service.tick(f.node.assistantChanges);
+ const analysis=f.node.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.followup'").get();
+ assert.ok(analysis,'a fitting review is admitted with all 31 scoped cards');
+ const task=f.tasks.get(String(analysis.id));await f.wait(task);await f.service.tick(f.node.assistantChanges);
+ assert.equal(f.tasks.get(task.id).state,'succeeded');
+ assert.equal(cards.get(oldest.id,all).revision,suppressed.revision,'the oldest visible never-remind decision still prevents publication');
+ assert.equal(f.node.store.db.prepare('SELECT t.state FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(note.id)!.state,'succeeded');
 });
 
 test('an oversized automatic group is split with headroom and every original reaches a completed analysis',async t=>{

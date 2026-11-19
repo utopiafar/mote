@@ -6,7 +6,7 @@ import {defineToolDescriptor, type ToolDescriptor, type ToolFields} from '../des
 import type {HostSessionPort} from '../host-session.js';
 import type {ContextRange, ContextRecord} from '../../context-contracts.js';
 
-/** Original-evidence read pack. It owns the five original-facing tool schemas,
+/** Original-evidence read pack. It owns the original-facing tool schemas,
  * argument parsing and read request shape; the parent Host still owns discovery,
  * fresh grants, delivery receipts, ledger, citations and cancellation.
  *
@@ -80,7 +80,7 @@ function assertRecords(value:unknown):ContextRecord[]{
 }
 
 
-/** The five original-facing descriptors. Versioning is explicit so a pinned
+/** The original-facing descriptors. Versioning is explicit so a pinned
  * snapshot cannot silently inherit a schema change. */
 export function createOriginalReadPack(options:OriginalReadPackOptions={}):readonly ToolDescriptor[]{
   const timeZone=options.timeZone??'UTC';
@@ -155,5 +155,11 @@ export function createOriginalReadPack(options:OriginalReadPackOptions={}):reado
       return {source:'untrusted_personal_context',data:records};
     },
   });
-  return Object.freeze([search,timeline,evidence,contextEvidence]);
+  const catalogSpec=spec('context_evidence_catalog');
+  const contextEvidenceCatalog=defineToolDescriptor({
+    apiVersion:'1',name:'context_evidence_catalog',version:'1',description:catalogSpec[1],fields:catalogSpec[2],kind:'metadata',exposure:'native',requires:['contextEvidenceCatalog'],
+    parse(args){return {...args};},
+    execute(args,port){return port.contextEvidenceCatalog(Number(args.offset),Number(args.length));},
+  });
+  return Object.freeze([search,timeline,evidence,contextEvidence,contextEvidenceCatalog]);
 }

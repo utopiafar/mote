@@ -1,11 +1,12 @@
 import type {QueryInput} from '@mote/agent';
 import type {EvidenceDependencies,QueryResult} from '@mote/shared';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {BackgroundModelAuthorization,type AutomaticModelPurpose,type ModelConnection} from './background-model-authorization.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
-import {TaskRecords,type AssertTaskCurrent} from './task-records.js';
+import {TaskRecords,type AssertTaskCurrent,type TaskRecord} from './task-records.js';
 import {combineSourceContextDependencies} from './source-context-lineage.js';
 import {resolveDependencies} from './conversation-lineage.js';
 
@@ -14,6 +15,10 @@ import {resolveDependencies} from './conversation-lineage.js';
 export type BatchQuery=Pick<QueryInput,'question'|'taskContext'|'contextSourceContextDependencies'> & {evidenceIds:string[]};
 export type BatchRequest={operationId:string;requestId:string;items:BatchQuery[];reduce?:string};
 export const BATCH_CONTEXT_MAX_BYTES=48000;
+// A saved review retains the complete original selection and its fingerprints.
+// Tens of thousands of grants can fit the paged model catalog and exceed the
+// general task payload limit. This budget is for private persisted inputs.
+export const BATCH_TASK_INPUT_MAX_BYTES=8_000_000;
 type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
@@ -22,7 +27,8 @@ export type BatchAdmission={kind:'automatic';purpose:AutomaticModelPurpose;roots
  * These callbacks neither admit work nor create another execution mechanism. */
 export type BatchProductProjection={
   /** A product may retain authorized historical context as invalidation lineage.
-   * The query's read grants still have to be current in frozen() and pins(). */
+   * The query's read grants still have to be current in frozen() and pins().
+   * A successful check covers those IDs for the same operation in that read snapshot. */
   assertDependencies?(taskId:string,ids:readonly string[]):boolean;
   valid(step:ExecutionStep):boolean;
   project(step:ExecutionStep):void;
@@ -73,6 +79,21 @@ export class BatchProcessing {
   private current(taskId:string):AssertTaskCurrent{return ids=>{
     if(!this.product?.assertDependencies?.(taskId,ids))this.assertCurrent(ids);
   };}
+  /** Use only inside a single read transaction. The product's proof covers an
+   * item's subset only when it belongs to the same operation. */
+  private readAuthority(parent:TaskRecord){
+    let checked:ReadonlySet<string>|undefined;
+    return {
+      parent:(ids:readonly string[])=>{
+        if(this.product?.assertDependencies?.(parent.id,ids))checked=new Set(ids);
+        else this.assertCurrent(ids);
+      },
+      item:(item:TaskRecord):AssertTaskCurrent=>ids=>{
+        const scope=checked;
+        if(item.operationId!==parent.operationId||!scope||ids.some(id=>!scope.has(id)))this.current(item.id)(ids);
+      },
+    };
+  }
   private frozen(input:BatchQuery):FrozenQuery{
     if(!input||typeof input.question!=='string'||!input.question.trim()||input.question.length>8000||!Array.isArray(input.evidenceIds)||
        input.evidenceIds.some(id=>typeof id!=='string'||!id)||new Set(input.evidenceIds).size!==input.evidenceIds.length)
@@ -106,13 +127,16 @@ export class BatchProcessing {
   }
   private valid(step:ExecutionStep){
     if(this.closed)return false;
-    try{
+    try{return this.transaction(()=>{
       const parent=this.parent(step),input=step.input as StepInput;
-      this.tasks.evidenceDependencies(parent.id,parent.revision,this.current(parent.id));
-      if(input.itemId){const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
-        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id)));}
+      const authority=this.readAuthority(parent);
+      this.tasks.evidenceDependencies(parent.id,parent.revision,authority.parent);
+      if(input.itemId){
+        const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
+        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,authority.item(item)));
+      }
       return this.product?.valid(step)??true;
-    }catch{return false;}
+    });}catch{return false;}
   }
   private project(step:ExecutionStep){
     const input=step.input as StepInput;
@@ -127,11 +151,16 @@ export class BatchProcessing {
     this.product?.project(step);
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
-    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.current(parent.id));
+    const started=performance.now(),input=step.input as StepInput;
+    const {parent,plan,itemInput}=this.transaction(()=>{
+      const parent=this.parent(step),authority=this.readAuthority(parent);
+      const plan=this.tasks.input<Plan>(parent.id,parent.revision,authority.parent),item=input.itemId?this.tasks.get(input.itemId):undefined;
+      return {parent,plan,itemInput:item&&this.tasks.input<FrozenQuery>(item.id,item.revision,authority.item(item))};
+    });
     let frozen:FrozenQuery,taskContext:QueryInput['taskContext'],sourceContexts:QueryInput['contextSourceContextDependencies'];
     let inputs:QueryResult[]=[];
-    if(input.itemId){
-      const item=this.tasks.get(input.itemId);frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id));
+    if(itemInput){
+      frozen=itemInput;
       taskContext=frozen.taskContext;sourceContexts=frozen.contextSourceContextDependencies;
     }else{
       if(plan.reduce===undefined)throw new ExecutionFailure('stale','batch_reduce_missing');
@@ -148,9 +177,16 @@ export class BatchProcessing {
     // Context-only originals remain in the authority fence even when they are
     // unread catalog entries. Exclusion is an authorization wait, before the
     // generic current-input check can classify that same revocation as stale.
-    const assert=()=>{signal.throwIfAborted();this.assertDisclosure(frozen.evidenceIds);assertGrant();const current=this.parent(step);
-      this.tasks.evidenceDependencies(current.id,current.revision,this.current(current.id));
-      this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);};
+    const assert=()=>{
+      signal.throwIfAborted();this.assertDisclosure(frozen.evidenceIds);assertGrant();
+      // The current execution grant runs valid(), including the parent's
+      // dependencies and the current item's frozen evidence. A reducer's
+      // combined selection and prior results are constructed here.
+      if(!input.itemId){this.pins(frozen);for(const result of inputs)this.assertResultCurrent(result);}
+    };
+    // A large saved request can spend a full turn validating before the Agent
+    // starts. The grant below is checked after servicing pending HTTP and timers.
+    if(performance.now()-started>=50)await yieldTurn();
     assert();
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),
@@ -185,7 +221,7 @@ export class BatchProcessing {
     const batch=this.transaction(()=>{
       const items=request.items.map((input,index)=>{
         const frozen=this.frozen(input);
-        return this.tasks.create({operationId:request.operationId,kind:'batch.item',requestId:'batch-item:'+sha256(JSON.stringify([request.requestId,index])),input:frozen,evidenceDependencies:deps(frozen.evidenceIds)},this.assertCurrent);
+        return this.tasks.create({operationId:request.operationId,kind:'batch.item',requestId:'batch-item:'+sha256(JSON.stringify([request.requestId,index])),input:frozen,evidenceDependencies:deps(frozen.evidenceIds)},this.assertCurrent,{maxInputBytes:BATCH_TASK_INPUT_MAX_BYTES});
       });
       const allIds=[...new Set(request.items.flatMap(item=>item.evidenceIds))];
       const parent=this.tasks.create({operationId:request.operationId,kind:'batch',requestId:'batch:'+sha256(request.requestId),
@@ -211,6 +247,7 @@ export class BatchProcessing {
     const parent=this.batch(id),steps=this.steps(id),items=steps.filter(step=>step.kind==='batch.item');
     return {task:parent,completed:items.filter(step=>step.state==='succeeded').length,total:items.length,items,reduce:steps.find(step=>step.kind==='batch.reduce')};
   }
+  state(id:string){return this.batch(id).state;}
   private steps(id:string){return this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('batch.item','batch.reduce') AND json_extract(input,'$.batchId')=? ORDER BY rowid").all(id).map(row=>this.engine.get(String(row.id))!);}
   result(id:string){const task=this.batch(id),result=this.tasks.result<QueryResult>(id,task.revision,this.current(id));if(result)this.assertResultCurrent(result);return result;}
   cancel(id:string){

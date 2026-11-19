@@ -688,6 +688,25 @@ test('an owner retry observes a saved wait before asynchronous settlement withou
  release();assert.equal((await running).status,'completed');assert.equal(calls,3);
 });
 
+test('owner retry reopens a failed batch in a job with other queued batches',async t=>{
+ const {store,sources,memories}=fixture(t),original=await sources.upsert('generated',item('partial-retry','Generated original. '.repeat(24)));
+ const ranges:number[]=[];
+ const pipeline=fixtureMemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'fixture'},phases:{query:async input=>{ranges.push(input.evidenceRanges![0].offset);return empty();}}});
+ try{
+  const job=pipeline.create({evidenceIds:[original.id],batchCharacters:256});assert.equal(job.batches.length,2);
+  const completion=pipeline.run(job.id);
+  pipeline.engine.fail(job.batches[0].id,'generated_partial_failure');
+  const before=pipeline.get(job.id);assert.equal(before.status,'queued');assert.equal(before.failedBatches,1);assert.equal(before.runningBatches,0);
+  const sibling=pipeline.engine.get(job.batches[1].id);
+  const retry=pipeline.acceptRetry(job.id,true);
+  assert.equal(retry.completion,completion,'keep the completion already held by other callers');
+  assert.equal(retry.job.failedBatches,0);assert.equal(retry.job.pendingBatches,2);
+  assert.deepEqual(pipeline.engine.get(job.batches[1].id),sibling,'the other queued step keeps its exact state');
+  const completed=await completion;assert.equal(completed.status,'completed');assert.equal(completed.completedBatches,2);
+  assert.deepEqual(ranges.sort((a,b)=>a-b),job.batches.map(batch=>batch.evidenceRanges[0].offset));
+ }finally{await pipeline.close();}
+});
+
 test('memory keeps provider retry deadlines and refuses premature manual retry',async t=>{
  const {ProviderFailure}=await import('@mote/shared');const {store,sources,memories}=fixture(t),capture=await sources.upsert('generated',item());let calls=0;
  const pipeline=fixtureMemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'fixture'},phases:{query:async()=>{calls++;throw new ProviderFailure({category:'permanent',code:'rate_limited',retryAfterMs:12000});}}});

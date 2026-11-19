@@ -30,9 +30,10 @@ async function fixture(t:TestContext,window=272000){
   if(previous)await completionGate;
   const message=body.input.findLast((item:any)=>item.type==='message'&&item.role==='user');
   const envelope=JSON.parse(message.content.find((part:any)=>part.type==='input_text').text);
-  const grant=envelope.authorizedContextRanges.ranges.at(-1);
+  const range=envelope.authorizedContextRanges.ranges.at(-1);
+  const grant=Array.isArray(range)?{id:range[0],offset:range[1],length:range[2]}:range;
   const output=previous?[{id:'generated-final',type:'message',role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:JSON.stringify({answer:JSON.stringify({reason:'Generated bounded review completed.',cards:[],commitments:[]}),citationIds:[]}),annotations:[]}]}]:[
-   {id:'generated-read',type:'function_call',call_id:'generated-read',name:'context_evidence',arguments:JSON.stringify({id:grant.id,offset:Math.max(0,grant.length-100),length:100}),status:'completed'},
+   {id:'generated-read',type:'function_call',call_id:'generated-read',name:'context_evidence',arguments:JSON.stringify({id:grant.id,offset:grant.offset+Math.max(0,grant.length-100),length:100}),status:'completed'},
   ];
   res.writeHead(200,{'content-type':'text/event-stream'});
   const send=(type:string,value:unknown)=>res.write(`event: ${type}\ndata: ${JSON.stringify({type,...value as object})}\n\n`);
@@ -47,9 +48,9 @@ async function fixture(t:TestContext,window=272000){
  writeFileSync(catalog,JSON.stringify({models:[{slug:'gpt-6.1-terra',display_name:'Generated Terra Fast catalog',description:'Generated fixture',model_messages:{instructions_template:'Generated fixture model instructions.'},default_reasoning_level:'medium',supported_reasoning_levels:[{effort:'medium',description:'Generated fixture'}],shell_type:'shell_command',visibility:'list',supported_in_api:true,priority:0,supports_reasoning_summary_parameter:true,support_verbosity:false,truncation_policy:{mode:'tokens',limit:10000},context_window:272000,effective_context_window_percent:95,experimental_supported_tools:[],service_tiers:[{id:'priority',name:'Fast',description:'Generated Fast capability'}],additional_speed_tiers:['fast']}]}),{mode:0o600});
  writeFileSync(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused-credential'}),{mode:0o600});
  writeFileSync(executable,`#!${process.execPath}\nimport {spawn} from 'node:child_process';\nconst args=process.argv.slice(2);const child=spawn(${JSON.stringify(fileURLToPath(new URL('../../../packages/agent/native/codex.mjs',import.meta.url)))},args[0]==='--mote-context-budget-version'?args:[...args,'-c',${JSON.stringify('openai_base_url='+JSON.stringify(origin+'/v1'))},'-c',${JSON.stringify('model_catalog_json='+JSON.stringify(catalog))}],{stdio:'inherit'});child.on('exit',code=>process.exit(code??1));process.on('SIGTERM',()=>child.kill('SIGTERM'));\n`,{mode:0o700});
- const config:ConfigurationPlatformOptions={path:(join(root,'data'))+'/mote.yaml',privateCredential:{token:'generated-budget-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'data'),maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{protocol:'codex-app-server',model:'gpt-6.1-terra',maxTokens:65536,apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},codex:{executable:executable,home:root},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+ const config:ConfigurationPlatformOptions={path:(join(root,'data'))+'/mote.yaml',privateCredential:{token:'generated-budget-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'data'),maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{provider:'codex',protocol:'codex-app-server',model:'gpt-6.1-terra',maxTokens:65536,apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'high'},codex:{executable:executable,home:root},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+ t.after(async()=>{await node?.app.close();server.closeAllConnections();await new Promise<void>(done=>server.close(()=>done()));rmSync(root,{recursive:true,force:true});});
  node=await buildApp(config,{backgroundWorker:false});
- t.after(async()=>{await node.app.close();server.closeAllConnections();await new Promise<void>(done=>server.close(()=>done()));rmSync(root,{recursive:true,force:true});});
  await node.app.ready();
  const configuration=await node.app.inject({method:'GET',url:'/api/configuration',headers}),models=node.featureServices.configService.current(modelsConfigDomain);
  const fast=await node.app.inject({method:'PUT',url:'/api/configuration/models',headers,payload:{revision:configuration.json().revision,value:{...models,deployment:{...models.deployment,serviceTier:'fast'}}}});assert.equal(fast.statusCode,200,fast.body);
@@ -151,6 +152,33 @@ test('full request packing splits automatic work below the transport ceiling and
  assert.ok(f.requests.length>=4,'the whole group completes as multiple bounded analyses');
  for(const id of notes)assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant' AND original=?").get('capture:'+id)!.n,1);
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant'").get()!.n,6,'the five new originals and the fixture original each consume their existing receipt once');
+});
+
+test('a single large automatic review reaches the native model with its complete saved context',async t=>{
+ const f=await fixture(t),service=f.node.featureServices.assistantFollowup,store=f.node.store;
+ const id=f.originalId,quote=store.evidence([id])[0].ocrText.slice(0,40);
+ const summary='生成摘要。'+'甲'.repeat(4495);
+ const events=Array.from({length:12},(_,index)=>({statement:`生成事件 ${index}。`+'乙'.repeat(1150),uncertainty:'Generated',evidence:[{id,offset:0,quote}]}));
+ assert.ok(Buffer.byteLength(JSON.stringify({summary,events}))>48000,'the product alone exceeds the inline batch ceiling');
+ const artifact='a'.repeat(64);
+ store.archive.save(artifact,artifact,artifact,{kind:'semantic',text:summary,metadata:{complete:true,productsVersion:1,events,memoryCandidates:[],actionCues:[],citations:[id],evidenceRanges:[{id,offset:0,length:quote.length}]}},
+  [{id,fingerprint:store.archive.fingerprint(id)!}],'mote.segment-understanding','3','generated');
+ let now=Date.now()+60001;(f.node.assistantChanges as unknown as {now:()=>number}).now=()=>now;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ f.node.assistantChanges.tick(100);now+=60001;
+ await service.tick(f.node.assistantChanges);
+ const change=()=>store.db.prepare('SELECT t.state,w.started_batch FROM assistant_change_work w JOIN task_records t ON t.id=w.task_id WHERE w.capture_id=?').get(id)!;
+ const batch=change().started_batch;assert.equal(typeof batch,'string','the full single-Material review fits the effective model window');
+ const progress=await wait(f,String(batch));assert.equal(progress.task.state,'succeeded',JSON.stringify(progress.items.map(item=>({state:item.state,error:item.error}))));
+ await service.tick(f.node.assistantChanges);
+ assert.equal(change().state,'succeeded');
+ assert.equal(f.requests.length,2,'the native request and the authorized original read complete together');
+ const message=f.requests[0].input.findLast((item:any)=>item.type==='message'&&item.role==='user');
+ const context=JSON.parse(message.content.find((part:any)=>part.type==='input_text').text).untrustedTaskContext;
+ assert.equal(context.materials[0].ref,f.material.ref);
+ assert.equal(context.materials[0].products[0].summary,summary);
+ assert.deepEqual(context.materials[0].products[0].events,events);
+ assert.equal(store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE purpose='assistant' AND original=?").get('capture:'+id)!.n,1);
 });
 
 test('an indivisible full request stays blocked and unclaimed, then resumes after an explicit capacity correction',async t=>{

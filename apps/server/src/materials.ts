@@ -93,7 +93,7 @@ export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;to
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
-type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>};
+type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>;anchors:Map<string,string>};
 type CurrentEvidenceRow={id:string;source_id:string;sequence:number;min_visible_sequence:number;retired:number;revision:string;evidence_revision:string;coding_active:number;snapshot_active:number;invalidated:number};
 const currentEvidenceSelection=`SELECT e.id,h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
     EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
@@ -236,13 +236,16 @@ export class MaterialStore {
    * Each original keeps its own import lineage; the next read starts fresh. */
   contextsForEvidence(records:readonly CaptureRecord[]):AttributionContext[] {
     if(records.length<2)return records.map(record=>this.contextForEvidenceWithin(record));
-    const contexts:EvidenceContexts={materials:new Map(),originals:new Map()};
+    const ids=JSON.stringify([...new Set(records.map(record=>record.id))]);
+    const db=this.store.db;
+    const anchors=new Map(db.prepare('SELECT id,material_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))')
+      .all(ids).map(row=>[String(row.id),String(row.material_id)]));
+    const contexts:EvidenceContexts={materials:new Map(),originals:new Map(),anchors};
     return records.map(record=>this.contextForEvidenceWithin(record,contexts));
   }
   private contextForEvidenceWithin(record:CaptureRecord,contexts?:EvidenceContexts):AttributionContext {
-    const anchor=(this.contextAnchorStatement??=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?')).get(record.id);
-    if(anchor){
-      const id=String(anchor.material_id);
+    const id=contexts?contexts.anchors.get(record.id):(this.contextAnchorStatement??=this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?')).get(record.id)?.material_id as string|undefined;
+    if(id!==undefined){
       if(contexts&&!contexts.materials.has(id))contexts.materials.set(id,this.get(id)?.attributionContext);
       const context=(contexts?contexts.materials.get(id):this.get(id)?.attributionContext)??unknownAttributionContext();
       if(!contexts){const inputs=this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(record.id).map(row=>String(row.evidence_id));return this.withImportContext(context,inputs,true);}
@@ -484,13 +487,22 @@ export class MaterialStore {
       if(own)db.exec('COMMIT');
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
-  evidenceIds(ref:string,blockIds?:readonly string[],maximum?:number){const material=this.get(ref);if(!material)return [];
+  evidenceIds(ref:string,blockIds?:readonly string[],maximum?:number){
+    const material=this.get(ref);return material?this.evidenceAnchors(material,blockIds,maximum).map(row=>row.anchor_id):[];
+  }
+  private evidenceAnchors(material:MaterialRecord,blockIds?:readonly string[],maximum?:number,verifyCurrent=false){
     if(maximum!==undefined&&(!Number.isSafeInteger(maximum)||maximum<1||maximum>20000))throw new StoreError('Invalid material evidence limit');
     const limit=maximum===undefined?'':' LIMIT ?',limitArgs=maximum===undefined?[]:[maximum];
-    if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
-      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`)
-      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs) as {anchor_id:string}[]).map(row=>row.anchor_id);
-    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx${limit}`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs).map(r=>String(r.anchor_id));}
+    const projection=verifyCurrent?'b.anchor_id,e.invalidated IS 0 AS active':'b.anchor_id';
+    const join=verifyCurrent?' LEFT JOIN material_evidence e ON e.id=b.anchor_id AND e.material_id=b.material_id':'';
+    const selectedBlocks=blockIds?' AND b.block_id IN (SELECT value FROM json_each(?))':'';
+    const args=[...(blockIds?[JSON.stringify(blockIds)]:[]),...limitArgs];
+    const rows=this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT ${projection} FROM material_block_versions b${join}
+      WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) AND b.anchor_id IS NOT NULL${selectedBlocks} ORDER BY b.idx${limit}`)
+      .all(material.id,material.sequence,material.sequence,...args):this.store.db.prepare(`SELECT ${projection} FROM material_blocks b${join}
+      WHERE b.material_id=? AND b.revision=? AND b.anchor_id IS NOT NULL${selectedBlocks} ORDER BY b.idx${limit}`).all(material.id,material.revision,...args);
+    return rows as {anchor_id:string;active?:number}[];
+  }
   /** A listing card represents the item itself: its own body text first, then
    * processed text (for example a visual interpretation). The transport metadata
    * projection is the fallback for items without either, followed by attachment
@@ -529,9 +541,11 @@ export class MaterialStore {
       if(!material||this.get(material.id)?.ref!==material.ref)return;
       const status=materialDependencyStatus(material,required),artifacts=required.map(key=>material.artifacts?.find(a=>a.key===key));
       const mapped=required.every((key,i)=>key!=='material'&&artifacts[i]?.blockIds!==undefined);
-      const evidenceIds=this.evidenceIds(ref,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined);
-      const current=this.currentEvidenceIds(evidenceIds);
-      return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>current.has(id)),materialId:material.id,required,evidenceIds,
+      // The current visible head already selects active snapshot or Coding blocks.
+      // Check anchor invalidation in the ordered block read used for the pin.
+      const anchors=this.evidenceAnchors(material,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined,undefined,true);
+      const evidenceIds=anchors.map(row=>row.anchor_id);
+      return {...status,ready:status.ready&&anchors.length>0&&anchors.every(row=>row.active===1),materialId:material.id,required,evidenceIds,
         fingerprint:hash(JSON.stringify([material.id,material.attributionContext,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
     });
   }
@@ -541,7 +555,8 @@ export class MaterialStore {
     if(!ids.length)return [];
     const materials=new Map<string,MaterialRecord|undefined>(),layouts=new Map<string,boolean>();
     const derivedAllowed=new Map<string,boolean>();
-    const anchors=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?');
+    const anchors=new Map(this.store.db.prepare('SELECT id,material_id,revision,block_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify([...new Set(ids)])).map(row=>[String(row.id),row]));
     const contexts=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?');
     let codingBlocks:StatementSync|undefined,snapshotBlocks:StatementSync|undefined;
     return ids.flatMap(id=>{
@@ -577,10 +592,9 @@ export class MaterialStore {
     if(!anchor||anchor.evidence_revision===anchor.revision||!currentEvidenceAllowed(anchor))return [];
     return this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id).map(row=>String(row.evidence_id));
   }
-  /** The same exact current-anchor predicate as the single-ID resolver. Each
-   * synchronous Formal input check reads its full selection once, including
-   * retained Coding prefixes; no result survives the next check. */
-  private currentEvidenceIds(ids:readonly string[]):Set<string> {
+  /** The same current-anchor predicate as the single-ID resolver for arbitrary
+   * evidence sets, including retained Coding prefixes. */
+  currentEvidenceIds(ids:readonly string[]):Set<string> {
     if(!ids.length)return new Set();
     const rows=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids)) as CurrentEvidenceRow[];
     return new Set(rows.filter(currentEvidenceAllowed).map(row=>row.id));
@@ -787,7 +801,7 @@ export class MaterialStore {
         const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
         for(const [index,member] of draft.members.entries())insertMember.run(id,revision,index,member.id,member.kind,member.ref,member.revision??null,member.locator?JSON.stringify(member.locator):null);
         db.prepare('UPDATE material_revisions SET text_length=?,asset_count=? WHERE material_id=? AND revision=?').run(offset,assetCount,id,revision);
-        for(const anchor of this.evidenceIds(id))if(!retained.has(anchor))this.store.invalidateMemoryEvidence(anchor);
+        this.store.retireMaterialEvidenceRevisions(this.evidenceIds(id).filter(anchor=>!retained.has(anchor)));
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
         this.setSearchable(id,searchable);
         this.notifyPublished({id,revision,kind:draft.kind,sourceId:draft.origin.sourceId,...(draft.origin.deviceId?{deviceId:draft.origin.deviceId}:{}),occurredAt:now});

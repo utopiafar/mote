@@ -27,7 +27,7 @@ void hostReadOperationsComplete;
 
 /** Declared Host permission. Names are exactly the HostSessionPort entry names;
  * a declaration is validated by the Host and never creates a grant table. */
-export type ToolPermission = HostReadOperation | 'actionCatalog' | 'progress';
+export type ToolPermission = HostReadOperation | 'contextEvidenceCatalog' | 'actionCatalog' | 'progress';
 /** What the contribution describes. This is descriptive only: it grants no
  * citation, original bytes or image pixels. */
 export type ToolKind = 'originals' | 'derived' | 'metadata' | 'image';
@@ -49,7 +49,7 @@ export type ToolContractErrorCode =
   | 'tool_permission_denied'
   | 'stale_tool_pin';
 
-const hostPermissions = new Set<string>([...HOST_READ_OPERATIONS, 'actionCatalog', 'progress']);
+const hostPermissions = new Set<string>([...HOST_READ_OPERATIONS, 'contextEvidenceCatalog', 'actionCatalog', 'progress']);
 const namePattern = /^[a-z][a-z0-9_]{0,63}$/;
 const versionPattern = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 const reservedNames = new Set(['skill', '_ready', 'capability_discover', 'capability_execute']);

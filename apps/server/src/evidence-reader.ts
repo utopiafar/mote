@@ -84,13 +84,20 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
     // not replace its identity when validating a durable dependency.
+    const currentCapture=(id:string)=>files?.readableFile(id)===id||store.isCurrentEvidence(id);
     this.memories=openMemoryRecords(store,ids=>{
       const read=()=>{
         const records=[...store.evidence(ids),...(materials?.evidence(ids)??[]),...(files?.evidence(ids)??[])],contexts=materials?.contextsForEvidence(records);
         return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})}));
       };
       return materials?materials.withReadMetadata(read):read();
-    },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||files?.readableFile(id)===id||store.isCurrentEvidence(id)));
+    },id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||currentCapture(id)),ids=>{
+      // Reuse the current Material and file selections only for this read.
+      const selected=[...new Set(ids)],current=materials?.currentEvidenceIds(selected)??new Set<string>();
+      const remaining=selected.filter(id=>!current.has(id)),chunks=files?.currentEvidenceIds(remaining);
+      for(const id of remaining)if(chunks?.has(id)||currentCapture(id))current.add(id);
+      return current;
+    });
   }
   /** The production Evidence owner binds this once, alongside its real ports. */
   bindDerivedMaterials(){this.releaseDerivedRead??=this.materials?.bindDerivedReadPolicy(material=>this.derivedMaterialAllowed(material,defaultEvidenceExposurePolicy));}
@@ -129,7 +136,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const head=batchViews?batchViews.heads.get(material.ref):this.materialHead(material,scope);
       return [head?this.materialCard(material,head,undefined,selected)??selected:selected];
     });
-    return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].map(record=>({...record,...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{})})).filter(record=>{
+    const records=[...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])];
+    const contexts=this.materials?.contextsForEvidence(records);
+    return records.map((record,index)=>({...record,...(contexts?{attributionContext:contexts[index]}:{})})).filter(record=>{
       if(!withinEvidenceScope(record,scope))return false;if(includeHistorical)return true;
       const file=this.files?.fileForRead(record.id);if(file)return Boolean(this.files!.readableFile(record.id));
       const p=record.provenance;return !(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted);
@@ -215,8 +224,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     if(!sourceContextDependenciesCurrent(this.sources.contexts,card.evidence.flatMap(value=>value.attributionContext?.sourceContextDeclarations??[])))return false;
     for(const reference of card.evidence){const declaration=reference.attributionContext?.sourceDeclaration;if(declaration){let source;try{source=this.sources.getSource(declaration.sourceId);}catch{return false;}if((source.ownerRelationVersion??1)!==declaration.version||(source.ownerRelation??null)!==declaration.ownerRelation)return false;}}
     if(ownerArchive)return ids.every(id=>this.archivedEvidence([formatEvidenceRef('capture',id)],scope).length===1||retained(id));
-    const anchors=this.memories.readEvidence(lineage.evidenceIds);
-    if(lineage.evidenceIds.some(id=>!anchors.some(anchor=>anchor.id===id)&&!retained(id))||anchors.some(anchor=>anchor.privacy.excluded||!this.memories.isCurrentEvidence(anchor.id)))return false;
+    const anchors=this.memories.readEvidenceIfCurrent(lineage.evidenceIds);
+    if(!anchors||lineage.evidenceIds.some(id=>!anchors.some(anchor=>anchor.id===id)&&!retained(id))||anchors.some(anchor=>anchor.privacy.excluded))return false;
     if(lineage.evidence.some(proof=>{const anchor=anchors.find(value=>value.id===proof.id);return anchor?(strictProof||anchor.provenance?.uri?.startsWith('material:'))&&memoryEvidenceFingerprint(anchor)!==proof.contentHash:!retained(proof.id);}))return false;
     const materialAncestors=new Set<string>();
     for(const id of lineage.evidenceIds){const release=releasedMemoryOriginal(this.store,id);if(release?.materialId)for(const original of release.identity.origins)materialAncestors.add(original);}
@@ -320,7 +329,10 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       return {...page,items};
     }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{owned?.release();}
   }
-  context(records:CaptureRecord[]){return records.map(record=>{
+  context(records:CaptureRecord[]){
+    const fileViews=new Map<string,ReturnType<FileStore['fileView']>>();
+    const contexts=this.materials?.contextsForEvidence(records);
+    return records.map((record,index)=>{
     const formal=this.materials&&this.store.db.prepare('SELECT 1 FROM material_evidence WHERE id=?').get(record.id);
     const nativeFile=this.files&&this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
     const current=formal?this.materials!.isCurrentEvidence(record.id):nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance?.externalId&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
@@ -340,13 +352,18 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         }
       }
     }
-    const fileId=this.files?.readableFile(record.id),view=fileId?this.files!.fileView(fileId):undefined;
-    // FileView is navigation and coverage, not a second unbounded body delivery.
-    // Keep its existing schema while withholding item.text from a search receipt.
-    const item=view?.item.text?{...view.item,text:'',...(view.item.document?{document:{...view.item.document,fileIndex:undefined}}:{})}:view?.item;
-    const fileView=view&&item?{...view,item}:undefined;
-    return {...record,...(fileView?{fileView,provenance:{...record.provenance!,originalAvailable:fileView.canOpenOriginal}}:{}),...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
-  });}
+    const fileId=this.files?.readableFile(record.id);
+    let fileView=fileId?fileViews.get(fileId):undefined;
+    if(fileId&&!fileView){
+      // Each chunk still proves its current read authority. Related chunks in
+      // this synchronous projection can share the parent navigation view.
+      const view=this.files!.fileView(fileId);
+      const item=view.item.text?{...view.item,text:'',...(view.item.document?{document:{...view.item.document,fileIndex:undefined}}:{})}:view.item;
+      fileView={...view,item};fileViews.set(fileId,fileView);
+    }
+    return {...record,...(fileView?{fileView,provenance:{...record.provenance!,originalAvailable:fileView.canOpenOriginal}}:{}),...(contexts?{attributionContext:contexts[index]}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
+    });
+  }
   records(args:Range&{query?:string},search=false){
     const base=search&&args.query?this.store.searchPage({...args,includeTotal:false}):this.store.list({...args,includeTotal:false});
     const chunks=search&&args.query?this.files?.searchPage(args):undefined;
@@ -883,7 +900,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     }
     return true;
   }
-  private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false){
+  private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false,materialAccess?:Map<string,boolean>){
     if(!fileAttachmentAvailable(this.store,record.id,metadataOnly))return false;
     const fileId=this.files?.fileForRead(record.id);
     // An exact image id can name a retained immutable historical original.
@@ -898,7 +915,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       // Coding append keeps unchanged prefix anchors active across revisions.
       if(!material)return false;
       const current=this.materials?.get(material.id);
-      return Boolean(current&&this.materials?.isCurrentEvidence(record.id)&&this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly));
+      if(!current||!this.materials?.isCurrentEvidence(record.id))return false;
+      // A single synchronous evidence read can share the current Material's
+      // policy result. Each anchor still proves its own currentness.
+      const cached=materialAccess?.get(current.ref);if(cached!==undefined)return cached;
+      const allowed=this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly);
+      materialAccess?.set(current.ref,allowed);return allowed;
     }
     // A tombstone revokes model access to every historical revision of that
     // source item. Owner archive/history APIs can still inspect those bytes.
@@ -963,8 +985,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
-  materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[]){
-    return this.materials?.withReadMetadata(()=>{const material=this.materials!.get(ref);return Boolean(material&&this.materials!.get(material.id)?.ref===material.ref&&this.materialExposure(material,'memory',policy,required));})??false;
+  materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[],selectionReady?:boolean){
+    return this.materials?.withReadMetadata(()=>{const material=this.materials!.get(ref);return Boolean(material&&this.materials!.get(material.id)?.ref===material.ref&&this.materialExposure(material,'memory',policy,required,false,selectionReady));})??false;
   }
   /** Planning checks permission to derive after readiness; no original content
    * is disclosed by admitting a waiting plan. Actual batches recheck readiness. */
@@ -1268,7 +1290,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       }
       return operation('expand')==='expand'&&Boolean(currentGrants()?.get(id)?.some(source=>grantIsCurrent(id,source)));
     };
-    const boundedEvidenceAllowed=(record:CaptureRecord,batch?:{canonical:Map<string,CaptureRecord>;selections:Map<MaterialInputPin,boolean>;inputs?:readonly MaterialInputPin[]})=>{
+    const boundedEvidenceAllowed=(record:CaptureRecord,batch?:{canonical:Map<string,CaptureRecord>;selections:Map<MaterialInputPin,boolean>;materialAccess:Map<string,boolean>;inputs?:readonly MaterialInputPin[]})=>{
       const inputs=batch?batch.inputs:options.currentMaterialInputs?.();
       const imageGrant=(options.currentGrantContext?.() as {processingImages?:readonly MemoryImageGrant[]}|undefined)?.processingImages?.find(grant=>grant.id===record.id);
       if((operation('expand')==='memory'||imageGrant)&&inputs?.length&&record.provenance?.uri?.startsWith('material:')){
@@ -1283,7 +1305,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
           batch?.selections.set(pin,allowed);return allowed;
         });
       }
-      return this.captureExposure(record,operation('expand'),policy,'capture',hasScreenGrant(record.id));
+      return this.captureExposure(record,operation('expand'),policy,'capture',hasScreenGrant(record.id),false,batch?.materialAccess);
     };
     return {
       catalog:async args=>{
@@ -1411,7 +1433,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         const read=()=>{
           const inputs=options.currentMaterialInputs?.(),canonical=new Map<string,CaptureRecord>();
           if(inputs?.length)for(const record of this.memories.readEvidence(args.ids.map(ref=>evidenceRefId(ref,'capture')??ref)))if(!canonical.has(record.id))canonical.set(record.id,record);
-          const batch={inputs,canonical,selections:new Map<MaterialInputPin,boolean>()};
+          const batch={inputs,canonical,selections:new Map<MaterialInputPin,boolean>(),materialAccess:new Map<string,boolean>()};
           return this.context(this.evidenceById(args.ids,args,{scoped:new Map(),heads:new Map()}).filter(record=>boundedEvidenceAllowed(record,batch)));
         };
         return this.materials?this.materials.withReadMetadata(read):read();

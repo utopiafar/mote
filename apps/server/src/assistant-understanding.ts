@@ -66,19 +66,22 @@ export class AssistantUnderstandingReader {
   constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly reader:EvidenceReader,
     private readonly policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy){}
 
-  private selectionAllows(id:string,scope:QueryScope,seen=new Set<string>()):boolean {
-    if(scope.evidenceIds===undefined)return true;
-    if(scope.evidenceIds.includes(id))return true;
+  private selectionAllows(id:string,selection:ReadonlySet<string>,seen=new Set<string>()):boolean {
+    if(selection.has(id))return true;
     if(seen.has(id))return false;
     seen.add(id);
     const deps=this.store.db.prepare('SELECT evidence_id id FROM material_evidence_dependencies WHERE anchor_id=?').all(id).map(row=>String(row.id));
     const chunk=this.store.db.prepare('SELECT capture_id id FROM file_chunks WHERE id=?').get(id);
     const parents=deps.length?deps:chunk?[String(chunk.id)]:[];
-    return parents.length>0&&parents.every(parent=>this.selectionAllows(parent,scope,new Set(seen)));
+    return parents.length>0&&parents.every(parent=>this.selectionAllows(parent,selection,new Set(seen)));
   }
-  private authorized(ids:readonly string[],scope:QueryScope){
-    if(ids.some(id=>!this.selectionAllows(id,scope)))return false;
-    if(ids.some(id=>!this.materials.isCurrentEvidence(id)&&!this.reader.files?.isCurrentEvidence(id)&&!this.store.isCurrentEvidence(id)))return false;
+  private authorized(ids:readonly string[],scope:QueryScope,currentAnchors?:ReadonlySet<string>){
+    if(scope.evidenceIds!==undefined){
+      const selected=new Set(scope.evidenceIds);
+      if(ids.some(id=>!this.selectionAllows(id,selected)))return false;
+    }
+    const current=currentAnchors??this.materials.currentEvidenceIds(ids);
+    if(ids.some(id=>!current.has(id)&&!this.reader.files?.isCurrentEvidence(id)&&!this.store.isCurrentEvidence(id)))return false;
     if(!this.reader.contextDependenciesAllowed(ids,this.policy))return false;
     if(scope.kind==='selection'&&scope.sourceIds!==undefined){
       const sources=new Set(scope.sourceIds),restriction=new EvidenceExposurePolicy([],context=>sources.has(context.sourceId??''));
@@ -102,8 +105,8 @@ export class AssistantUnderstandingReader {
         if(!id)throw unavailable();members.push(id);
       }
     }
-    const anchors=this.materials.evidenceIds(ref);
-    if(anchors.some(id=>!this.materials.isCurrentEvidence(id))||!this.authorized([...members,...anchors],scope))throw unavailable();
+    const anchors=this.materials.evidenceIds(ref),ids=[...members,...anchors],current=this.materials.currentEvidenceIds(ids);
+    if(anchors.some(id=>!current.has(id))||!this.authorized(ids,scope,current))throw unavailable();
     return {material,members,anchors,complete:material.memberCount>0&&(!archiveMember||anchors.length>0)};
   }
   private candidates(material:MaterialRecord,members:string[]){

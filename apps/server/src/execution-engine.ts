@@ -244,18 +244,29 @@ export class ExecutionEngine {
   }
  }
  /** Start available slots. Return only work admitted by this call; slow older work is independent. */
- tick(){
-  if(this.stopping||this.quiescing)return Promise.resolve();
-  if(this.pumping){this.pumpAgain=true;return Promise.resolve();}
+ async tick(){
+  if(this.stopping||this.quiescing)return;
+  if(this.pumping){this.pumpAgain=true;return;}
   this.pumping=true;const started:Promise<void>[]=[];
+  let turnStarted=performance.now();
   try{
    this.recover();
    const blocked=this.store.db.prepare("WITH RECURSIVE blocked(id) AS (SELECT id FROM execution_steps WHERE state IN ('failed','blocked','cancelled','stale') UNION SELECT d.step_id FROM execution_dependencies d JOIN blocked b ON b.id=d.dependency_id) SELECT e.id FROM execution_steps e JOIN blocked b ON b.id=e.id WHERE e.state='waiting'").all();
    for(const row of blocked){this.store.db.prepare("UPDATE execution_steps SET state='blocked',error='dependency_failed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),String(row.id));this.project(String(row.id));}
    const pools=[...new Set([...this.handlers.values()].map(h=>h.pool))];
-   for(const pool of pools){
-    const handlers=[...this.handlers.values()].filter(h=>h.pool===pool),lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
-    for(const lane of lanes){const limit=this.limit(pool,lane);
+   admission:for(const pool of pools){
+    const lanes:ExecutionLane[]=this.admissions.has(pool)?['background','interactive']:['background'];
+    for(const lane of lanes){
+     // Synchronous checks in several different pools can compound into one
+     // long turn. Yield only outside a caller's write transaction.
+     if(performance.now()-turnStarted>=50&&!this.store.db.isTransaction){
+      await yieldTurn();
+      if(this.stopping||this.quiescing)break admission;
+      turnStarted=performance.now();
+     }
+     const handlers=[...this.handlers.values()].filter(h=>h.pool===pool);
+     if(!handlers.length)continue;
+     const limit=this.limit(pool,lane);
     // Fill a lane across event-loop turns. Each admission can synchronously
     // validate a complete recording and prepare its model input; filling every
     // slot in one pass compounds those guards before HTTP can run.
@@ -265,12 +276,14 @@ export class ExecutionEngine {
      if(!row)continue;
      const handler=this.handlers.get(row.kind)!;
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{if(this.active.get(row.id)?.controller===controller)this.active.delete(row.id);if(completed)this.scheduleTick();});
+     // The caller still gets the rejection from the joined admission tasks.
+     void task.catch(()=>{});
      this.active.set(row.id,{controller,task,pool,kind:row.kind,lane});started.push(task);
      this.scheduleTick();
     }
    }
   }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;this.scheduleTick();}}
-  return Promise.all(started).then(()=>{});
+  await Promise.all(started);
  }
  private async execute(row:Row,handler:ExecutionHandler,controller:AbortController){
   try{await this.executeWithinTurn(row,handler,controller);}
@@ -288,6 +301,9 @@ export class ExecutionEngine {
    return;
   }
   const db=this.store.db,now=this.now(),fence=randomUUID(),policy=this.policy(handler,view(row)),timeout=policy.timeoutMs;
+  const leaseMs=timeout===null?30000:Math.min(timeout+10000,30000);
+  const extendLease=(until:number,validAfter:number)=>db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(until,row.id,fence,validAfter).changes;
+  let knownLeaseUntil:number;
   db.exec('BEGIN IMMEDIATE');
   try{
    const lane=this.lane(view(row)),limit=this.limit(row.pool,lane);
@@ -310,17 +326,27 @@ export class ExecutionEngine {
     const failure=retainFailureContext(new ExecutionFailure('permanent','retry_budget_exhausted'),{causeCode});
     this.retainFailure(this.get(row.id)!,'failed',failure,failure);this.project(row.id);db.exec('COMMIT');return;
    }
-   const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,now+(timeout===null?30000:Math.min(timeout+10000,30000)),now,row.id).changes;
+   const claimedAt=this.now();
+   knownLeaseUntil=claimedAt+leaseMs;
+   const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,knownLeaseUntil,claimedAt,row.id).changes;
    if(!claimed){db.exec('COMMIT');return;}
    const sequence=Number(db.prepare('INSERT INTO execution_sequence(pool,next) VALUES(?,1) ON CONFLICT(pool) DO UPDATE SET next=next+1 RETURNING next').get(row.pool)!.next);
    db.prepare('INSERT INTO execution_fairness(pool,operation_id,last_started) VALUES(?,?,?) ON CONFLICT(pool,operation_id) DO UPDATE SET last_started=excluded.last_started').run(row.pool,row.operation_id,sequence);
-   this.project(row.id);db.exec('COMMIT');
+   this.project(row.id);
+   // Input validation and the running projection complete in the same writer
+   // transaction. Start the visible lease when that admission is ready.
+   const projectedLeaseUntil=this.now()+leaseMs;
+   if(projectedLeaseUntil>knownLeaseUntil){
+    extendLease(projectedLeaseUntil,knownLeaseUntil-1);
+    knownLeaseUntil=projectedLeaseUntil;
+   }
+   db.exec('COMMIT');
   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');db.prepare("UPDATE execution_steps SET state='blocked',error=?,updated_at=? WHERE id=? AND state='waiting'").run(error instanceof StoreError&&error.statusCode===507?'storage_full':'admission_failed',this.now(),row.id);this.project(row.id);return;}
   // Dispose deadlines when work settles. Composed AbortSignal.timeout sources
   // can remain strongly retained by Node until a long deadline actually fires.
   const step=this.get(row.id)!,signal=controller.signal;
   const deadline=timeout===null?undefined:setTimeout(()=>controller.abort(new DOMException('The operation was aborted due to timeout','TimeoutError')),timeout);deadline?.unref();
-  let previousRenewal=this.observing()?observationClock():undefined,knownLeaseUntil=now+(timeout===null?30000:Math.min(timeout+10000,30000));
+  let previousRenewal=this.observing()?observationClock():undefined;
   const renewal=setInterval(()=>{
    if(this.stopping)return;
    const started=this.observing()?observationClock():undefined,priorLeaseUntil=knownLeaseUntil;
@@ -328,7 +354,7 @@ export class ExecutionEngine {
    // The original CAS/abort boundary is unchanged. Observation runs afterward.
    // A lost lease is an interruption, never a user cancellation: child abort
    // listeners must not persist `cancelled` for work that can still resume.
-   try{const at=this.now();renewedAt=at;if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(at+30000,row.id,fence,at).changes){outcome='cas_missed';controller.abort(interrupted);}else{outcome='renewed';knownLeaseUntil=at+30000;}}catch{controller.abort();}
+   try{const at=this.now();renewedAt=at;if(!extendLease(at+30000,at)){outcome='cas_missed';controller.abort(interrupted);}else{outcome='renewed';knownLeaseUntil=at+30000;}}catch{controller.abort();}
    try{const ended=started?observationClock():undefined;
     if(started)this.observe({type:'renew',taskId:row.id,attempt:step.attempts,outcome,...observationGap(previousRenewal,started,10000),...(ended&&ended.monotonic>=started.monotonic?{durationMs:ended.monotonic-started.monotonic}:{}),...(renewedAt===undefined?{}:{leaseRemainingMs:Math.max(0,priorLeaseUntil-renewedAt),leaseOverdueMs:Math.max(0,renewedAt-priorLeaseUntil)})});
     previousRenewal=started;

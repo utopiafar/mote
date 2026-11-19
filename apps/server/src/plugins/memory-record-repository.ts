@@ -37,9 +37,10 @@ const unavailable=()=>new StoreError('Memory record repository is unavailable',5
 /** The only construction path for the record storage. The repository factory
  * uses it, and the transitional EvidenceReader borrows the same builder until
  * the host injects the acquired port instead of a constructor. */
-export function openMemoryRecords(store:MemoryStore['store'],readEvidence?:ConstructorParameters<typeof MemoryStore>[1],currentEvidence?:ConstructorParameters<typeof MemoryStore>[2]){
+export function openMemoryRecords(store:MemoryStore['store'],readEvidence?:ConstructorParameters<typeof MemoryStore>[1],
+ currentEvidence?:ConstructorParameters<typeof MemoryStore>[2],currentEvidenceBatch?:ConstructorParameters<typeof MemoryStore>[3]){
   memoryStorageSchema(store.db);
-  return new MemoryStore(store,readEvidence,currentEvidence);
+  return new MemoryStore(store,readEvidence,currentEvidence,currentEvidenceBatch);
 }
 
 /** Owns the actual MemoryStore. Other domains borrow it through the host lease

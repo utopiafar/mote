@@ -356,8 +356,9 @@ export class EvidenceStore {
   }
   evidence(ids:string[]) {
     if(!ids.length)return [];
-    const select=this.db.prepare('SELECT * FROM captures WHERE id=?');
-    return ids.map(id=>select.get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));
+    const rows=this.db.prepare('SELECT * FROM captures WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify([...new Set(ids)])) as Row[];
+    const byId=new Map(rows.map(row=>[row.id,row]));
+    return ids.map(id=>byId.get(id)).filter((row):row is Row=>Boolean(row)).map(row=>this.record(row));
   }
   /** Host authorization only. Preserve permission/processing metadata without
    * copying original or derived bodies into repeated dependency fences. */
@@ -389,25 +390,62 @@ export class EvidenceStore {
     if(deleted)this.db.exec('DELETE FROM insights');
     this.invalidateSemanticEvidence(id,deleted,preserveDialogue,released);
   }
+  /** Retire replaced Material evidence inside the caller's revision transaction.
+   * Descendants can still be current when an original anchor was retired earlier. */
+  retireMaterialEvidenceRevisions(ids:string[]) {
+    if(!ids.length)return;
+    const db=this.db;
+    const due=db.prepare(`WITH RECURSIVE selected(id) AS (
+      SELECT value FROM json_each(?)
+      UNION SELECT e.id FROM selected s JOIN material_evidence_dependencies d ON d.evidence_id=s.id
+       JOIN material_evidence e ON e.id=d.anchor_id WHERE e.invalidated=0
+    )
+    SELECT e.id,EXISTS(SELECT 1 FROM file_evidence_links l WHERE l.parent_id=e.id) linked
+      FROM selected s JOIN material_evidence e ON e.id=s.id
+      WHERE e.invalidated=0 OR NOT EXISTS(SELECT 1 FROM memory_provider_evidence_revocations r WHERE r.id=e.id)`);
+    const selection=JSON.stringify(ids);
+    let pending=due.all(selection);
+    // A capture can share an anchor ID. Preserve the individual path for its
+    // attachment descendants, which are outside the Material anchor graph.
+    const linked=pending.filter(row=>row.linked);
+    if(linked.length){
+      const hasAttachment=db.prepare('SELECT 1 FROM file_evidence_links WHERE parent_id=? LIMIT 1');
+      for(const row of linked)if(hasAttachment.get(row.id))this.invalidateMemoryEvidence(String(row.id));
+      pending=due.all(selection);
+    }
+    if(!pending.length)return;
+    const retired=pending.map(row=>String(row.id));
+    db.prepare('UPDATE material_evidence SET invalidated=1 WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(retired));
+    this.invalidateSemanticEvidence(retired);
+  }
   /** Changes interpretation without retiring original bytes, text, quote anchors, or linked excerpts. */
-  invalidateSemanticEvidence(id:string,deleted=false,preserveDialogue=false,releasedOriginal?:ReleasedMemoryOriginal) {
-    this.invalidateConversationAnswers([id],deleted&&preserveDialogue?'retired':deleted,releasedOriginal?.memoryFingerprints);
+  invalidateSemanticEvidence(evidence:string|string[],deleted=false,preserveDialogue=false,releasedOriginal?:ReleasedMemoryOriginal) {
+    const ids=typeof evidence==='string'?[evidence]:evidence;
+    if(!ids.length)return;
+    this.invalidateConversationAnswers(ids,deleted&&preserveDialogue?'retired':deleted,releasedOriginal?.memoryFingerprints);
     // The same evidence transaction revokes host visibility and records native
     // cleanup. A separate process may perform retention; no process-local
     // callback or remote request can stand in for this durable outbox.
-    const prior=this.db.prepare('SELECT generation,json,state FROM memory_provider_evidence_revocations WHERE id=?').get(id),retained=prior?.state==='submitted'?JSON.parse(String(prior.json)):undefined;
-    const previousRelease=prior?JSON.parse(String(prior.json)).releasedOriginal:undefined;
+    const priorRevocation=this.db.prepare('SELECT generation,json,state FROM memory_provider_evidence_revocations WHERE id=?');
+    const writeRevocation=this.db.prepare("INSERT INTO memory_provider_evidence_revocations VALUES(?,?,?,'submitted') ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,json=excluded.json,state='submitted'");
+    const deletedMemories=deleted?this.db.prepare('SELECT memory_id FROM memory_dependencies WHERE evidence_id=?'):undefined;
+    const keep=Object.keys(releasedOriginal?.memoryFingerprints??{});
     // A revision makes cards stale through the existing Memory state. Preserve
     // their exact past publication identity for owner history and later forget;
     // it never authorizes another card or survives strict privacy deletion.
-    const retainedOriginal=releasedOriginal??(!deleted?previousRelease:undefined);
-    const keep=Object.keys(releasedOriginal?.memoryFingerprints??{});
-    const memoryIds=[...new Set([...(retained?.memoryIds??[]),...(deleted?this.db.prepare('SELECT memory_id FROM memory_dependencies WHERE evidence_id=?').all(id).map(row=>String(row.memory_id)):[])])].filter(memoryId=>!keep.includes(memoryId));
-    this.db.prepare("INSERT INTO memory_provider_evidence_revocations VALUES(?,?,?,'submitted') ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,json=excluded.json,state='submitted'").run(id,Number(prior?.generation??0)+1,JSON.stringify({evidenceId:id,deleted:deleted||Boolean(retained?.deleted),memoryIds,...(retainedOriginal?{releasedOriginal:retainedOriginal}:{})}));
-    if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?) AND id NOT IN (SELECT value FROM json_each(?))').run(id,JSON.stringify(keep));
-    else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
-    this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=? OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?))').run(id,id);
-    this.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','invalidated','$.errorCode',?) WHERE id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?)").run(deleted?'evidence_deleted':'evidence_changed',id);
+    for(const id of ids){
+      const prior=priorRevocation.get(id),saved=prior?JSON.parse(String(prior.json)):undefined,retained=prior?.state==='submitted'?saved:undefined;
+      const retainedOriginal=releasedOriginal??(!deleted?saved?.releasedOriginal:undefined);
+      const memoryIds=[...new Set([...(retained?.memoryIds??[]),...(deletedMemories?.all(id).map(row=>String(row.memory_id))??[])])].filter(memoryId=>!keep.includes(memoryId));
+      writeRevocation.run(id,Number(prior?.generation??0)+1,JSON.stringify({evidenceId:id,deleted:deleted||Boolean(retained?.deleted),memoryIds,...(retainedOriginal?{releasedOriginal:retainedOriginal}:{})}));
+    }
+    // A file can retire thousands of anchors in one commit. Evaluate their
+    // shared Memory and checkpoint dependencies once for the whole revision.
+    const selected=JSON.stringify(ids);
+    if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?))) AND id NOT IN (SELECT value FROM json_each(?))').run(selected,JSON.stringify(keep));
+    else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?)))").run(new Date().toISOString(),selected);
+    this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id IN (SELECT value FROM json_each(?)) OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?))))').run(selected,selected);
+    this.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','invalidated','$.errorCode',?) WHERE id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?)))").run(deleted?'evidence_deleted':'evidence_changed',selected);
   }
   /** Scope revocation still resolves released originals without their bodies. */
   revokeReleasedMemory(scope:{sourceId?:string;materialId?:string;file?:{sourceId:string;externalId:string}}){

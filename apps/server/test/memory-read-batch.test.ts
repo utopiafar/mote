@@ -49,6 +49,11 @@ test('reading a recording batch resolves each exact original context once while 
  const rawBatch=reader.memories.readEvidence(chunkIds);rawSpy.mock.restore();
  assert.deepEqual(rawBatch,rawIndividual,'raw transcript lineage preserves the same exact per-original declarations as individual reads');
  assert.equal(rawContextReads,2,'raw transcript siblings resolve each exact original context once per synchronous read');
+ const fileCurrent=t.mock.method(files,'isCurrentEvidence');
+ assert.deepEqual(reader.memories.readCurrentEvidence(chunkIds),rawIndividual);
+ assert.equal(fileCurrent.mock.callCount(),2,'the two artifacts share their currentness checks across all of their chunks');
+ fileCurrent.mock.restore();
+ assert.deepEqual(files.evidence([chunkIds[1],randomUUID(),chunkIds[0],chunkIds[1]]),[expectedChunks[1],expectedChunks[0],expectedChunks[1]],'a bulk read preserves input order and repeated IDs');
  let contextReads=0;const prepare=store.db.prepare.bind(store.db);
  const spy=t.mock.method(store.db,'prepare',(sql:string)=>{if(sql.includes('SELECT DISTINCT c.id,c.device_id'))contextReads++;return prepare(sql);});
  const records=reader.memories.readEvidence(ids);spy.mock.restore();
@@ -62,6 +67,11 @@ test('reading a recording batch resolves each exact original context once while 
  const readSpy=t.mock.method(reader.memories,'readEvidence',(ids:string[])=>{originalReads++;return read(ids);});
  assert.deepEqual(reader.memories.extract(output,'generated',options),{items:[],runId:output.runId});readSpy.mock.restore();
  assert.equal(originalReads,1,'zero-candidate validation must check the whole current batch without rereading every original twice');
+ originalReads=0;
+ const currentProof=t.mock.method(reader.memories,'readEvidence',(ids:string[])=>{originalReads++;return read(ids);});
+ const current=reader.memories.readEvidenceIfCurrent(ids);currentProof.mock.restore();
+ assert.deepEqual(current,records);
+ assert.equal(originalReads,1,'current proof must share one canonical read');
  store.db.prepare('INSERT INTO file_evidence_links(parent_id,capture_id) VALUES(?,?)').run(originals[1].id,originals[0].chunks[0].id);
  const selected=[ids[0],ids[1],ids[40]],linked=reader.memories.readEvidence(selected);
  assert.deepEqual(linked,selected.flatMap(id=>reader.memories.readEvidence([id])),'an explicit chunk-parent link must not reuse a sibling context');
@@ -75,6 +85,8 @@ test('reading a recording batch resolves each exact original context once while 
  store.delete(originals[0].id);
  assert.equal(reader.memories.readCurrentEvidence(ids).length,0,'the next guard must observe deletion of a combined Material member');
  assert.equal(reader.memories.readCurrentEvidence(originals[1].chunks.map(chunk=>chunk.id)).length,80,'the independent surviving original stays current');
+ sources.update('generated-recording-context',{enabled:false});
+ assert.equal(files.currentEvidenceIds(chunkIds).size,0,'the next batch must recheck the source permission');
 });
 
 test('batch Memory guards reuse formal metadata while preserving exact originals and fresh revocation',async t=>{
@@ -95,7 +107,11 @@ test('batch Memory guards reuse formal metadata while preserving exact originals
  const batch=reader.memories.readEvidence(ids);assert.deepEqual(batch,individual);assert.equal(materialReads,4,'two body revisions and two current attribution contexts are parsed once each');
  const assertCurrentParity=(selected:string[])=>assert.deepEqual([...materials['currentEvidenceIds'](selected)].sort(),[...new Set(selected)].filter(id=>materials.isCurrentEvidence(id)).sort());
  assertCurrentParity([...ids,randomUUID()]);
- assert.deepEqual(reader.memories.readCurrentEvidence(ids),individual);
+ const currentSingle=t.mock.method(materials,'isCurrentEvidence'),currentBatch=t.mock.method(materials,'currentEvidenceIds');
+ assert.deepEqual(reader.memories.readCurrentEvidence([...ids,ids[0],randomUUID()]),individual);
+ assert.equal(currentBatch.mock.callCount(),1,'one lookup checks the complete current Material selection');
+ assert.equal(currentSingle.mock.callCount(),0,'the batch does not probe Material currentness for each anchor');
+ currentSingle.mock.restore();currentBatch.mock.restore();
  let inputs=[materials.input(first.material.ref,['material'])!,materials.input(second.material.ref,['material'])!],fingerprints=Object.fromEntries(batch.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
  const agent=reader.agent({diagnostics:new ServerDiagnostics({directory:join(directory,'logs'),enabled:false}),currentOperation:()=> 'memory',currentMaterialInputs:()=>inputs,currentProcessingEvidence:()=>fingerprints});
  const arguments_={ids};
@@ -116,6 +132,10 @@ test('batch Memory guards reuse formal metadata while preserving exact originals
  assert.equal(reader.memories.readCurrentEvidence(first.ids).length,0,'old inactive anchors are still rejected');
  assert.equal((await agent.evidence({ids:first.ids})).length,0,'old processing pins cannot borrow fresh owner attribution');
  const currentIds=materials.evidenceIds(changed.ref),current=reader.memories.readCurrentEvidence(currentIds);assert.equal(current.length,40);assert.ok(current.every(record=>record.attributionContext?.ownerStatements?.[0].answer.includes('synthetic paragraphs')));
+ assert.deepEqual(reader.memories.readEvidenceIfCurrent([...first.ids,...currentIds])?.map(record=>record.id),currentIds,'the resolver still omits unavailable original IDs');
+ const staleProof=t.mock.method(reader.memories,'readEvidence',()=>[batch[0],current[0]]);
+ const rejected=reader.memories.readEvidenceIfCurrent([first.ids[0],currentIds[0]]);staleProof.mock.restore();
+ assert.ok(rejected===undefined,'a returned stale original rejects the whole proof alongside current originals');
  store.delete(second.original.id);assert.equal(reader.memories.readCurrentEvidence(second.ids).length,0,'source deletion cannot reuse a previous call cache');
  assertCurrentParity([...ids,...currentIds]);
  assert.equal((await agent.evidence({ids:second.ids})).length,0);

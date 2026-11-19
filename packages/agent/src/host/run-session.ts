@@ -27,8 +27,14 @@ function cancellationKind(signal: AbortSignal, fallback: Cancellation['kind']): 
   return kind === 'cancelled' || kind === 'deadline_exceeded' || kind === 'revoked' || kind === 'scope_stopped' ? kind : fallback;
 }
 
+function defaultToolDefinitions(input:QueryInput){
+  let available:ReturnType<typeof contextToolDefinitions>|undefined;
+  const definitions=()=>available??=contextToolDefinitions(input);
+  return taskTools(input,definitions).map(name=>definitions().find(tool=>tool[0]===name));
+}
+
 /** Host assembly is shared; engine-specific schemas remain in the adapter. */
-export function assembleHostContext(input: QueryInput, seeds: ContextRecord[], outputTokens = DEFAULT_MODEL_MAX_TOKENS, maxToolCalls?: number, tools: unknown = taskTools(input).map(name => contextToolDefinitions(input).find(tool => tool[0] === name))) {
+export function assembleHostContext(input: QueryInput, seeds: ContextRecord[], outputTokens = DEFAULT_MODEL_MAX_TOKENS, maxToolCalls?: number, tools: unknown = defaultToolDefinitions(input)) {
   const prepared = prepareTaskContext(input), system = systemInstructions(input, seeds);
   return {system, tools, ...assembleContext(input, seeds, system, tools, outputTokens, maxToolCalls, prepared)};
 }
@@ -313,7 +319,10 @@ class ManagedHostRunSession implements HostRunSession {
     if (this.lifecycle.phase === 'closed' || this.lifecycle.phase === 'closing') throw new DOMException('Host run closed', 'AbortError');
     const deps = this.dependencies;
     deps.runtime.assertCurrent(); deps.model.assertCurrent(); deps.output.assertCurrent();
-    deps.tools.assertCurrent(); deps.commitFence.assertCurrent();
+    deps.tools.assertCurrent();
+    // A single Host authority can own both sets of checks. Distinct fences
+    // still run independently, and the final domain check runs after release.
+    if(deps.commitFence!==deps.tools)deps.commitFence.assertCurrent();
   }
   private assertAttempt(attempt: RuntimeAttempt) {
     this.assertCurrent();

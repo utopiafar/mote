@@ -133,6 +133,13 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'memory.ts':{
+  'MemoryStore.dependenciesByEvidence':'memory',
+ },
+ 'evidence-store.ts':{
+  'EvidenceStore.retireMaterialEvidenceRevisions':'material',
+  'EvidenceStore.invalidateSemanticEvidence':'memory',
+ },
  'owner-questions.ts':{
   'OwnerQuestions.row':'owner-question-services',
   'OwnerQuestions.transaction':'owner-question-services',
@@ -149,6 +156,19 @@ export const consumerScopes={
  'memory-lifecycle.ts':{
   'projectMemoryLifecycleSettings':'memory-lifecycle',
   'storedMemoryLifecycleSettings':'memory-lifecycle',
+ },
+ 'memory-pipeline.ts':{
+  'MemoryPipeline.batches':'memory',
+ },
+ 'lifecycle-extensions.ts':{
+  recoverableMemoryJobs:'memory',
+ },
+ 'memory-topics-host.ts':{
+  'MemoryTopicsHost.retry':'execution',
+ },
+ 'files.ts':{
+  'FileStore.currentEvidenceIds':'file',
+  'FileStore.evidence':'file',
  },
  'plugins/action-capabilities.ts':{'ActionCapabilities.command':'action-capabilities','ActionCapabilities.declare':'action-capabilities','ActionCapabilities.declarations':'action-capabilities','ActionCapabilities.inventory':'action-capabilities','ActionCapabilities.saveDraft':'action-capabilities','ActionCapabilities.revokeDraft':'action-capabilities','ActionCapabilities.grants':'action-capabilities','ActionCapabilities.revokeGrant':'action-capabilities'},
  'actions.ts':{'Actions.proposeAuthorizedCalendar':'actions','Actions.recoverCurrentCalendar':'actions','Actions.connectorClaim':'actions','Actions.discover':'actions'},
@@ -284,7 +304,9 @@ export const consumerScopes={
  "ArchivedFileStore.removeUnreferenced": "archived-files"
 },
  "evidence-dependencies.ts":{
- "evidenceDependents": "evidence-dependencies"
+ "materialEvidenceInstalled": "evidence-dependencies",
+ "evidenceDependents": "evidence-dependencies",
+ "invalidateRetiredFileEvidence": "memory"
 },
  /** Only this scan reads this owner's saved provider configurations. The
   * configuration() path also reads dynamic plan/binding relations and stays pending. */
@@ -321,6 +343,15 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {"from":"apps/server/src/evidence-store.ts","to":"file_evidence_links","symbol":"a85791a39dedc90113ca15dc9c99008d6bdbc6ef5818d6e4d94b8657ba0d17da","scope":"EvidenceStore.retireMaterialEvidenceRevisions","scopeFingerprint":"59ec02d65dea6d224a4935b1f3b95853811086259076d3e42e7b1e7c75d596e2","reason":"Detect an exact anchor ID shared by a capture with attachments so its original lineage is retired too."},
+ {"from":"apps/server/src/evidence-store.ts","to":"file_evidence_links","symbol":"340d7e921a7eb5bdfd19e0a6ef0f1c48d9674f7d5d3e73dc32794811ec9b926c","scope":"EvidenceStore.retireMaterialEvidenceRevisions","scopeFingerprint":"59ec02d65dea6d224a4935b1f3b95853811086259076d3e42e7b1e7c75d596e2","reason":"Recheck only a selected attachment parent after earlier retirement in the same transaction."},
+ {"from":"apps/server/src/evidence-store.ts","to":"memory_provider_evidence_revocations","symbol":"a85791a39dedc90113ca15dc9c99008d6bdbc6ef5818d6e4d94b8657ba0d17da","scope":"EvidenceStore.retireMaterialEvidenceRevisions","scopeFingerprint":"59ec02d65dea6d224a4935b1f3b95853811086259076d3e42e7b1e7c75d596e2","reason":"Check that each retired Material anchor has a durable Memory revocation receipt."},
+ {"from":"apps/server/src/material-organizers.ts","to":"execution_steps","symbol":"0222a27909ae40647fefd0c860b859b7b2f7783492cfe6144ad209818012f372","scope":"MaterialOrganizerRuntime.repairStale","scopeFingerprint":"95b2de2d4d944163cd0138cc98e42fd33d6987ebe9ce4286f99442d02b4acae9","reason":"Find stale steps of the exact active organizer operations before validating and restoring their current generations through the execution engine."},
+ {"from":"apps/server/src/memory.ts","to":"material_evidence_dependencies","symbol":"61d3aaac3a19676c3f81caa4549bb5c4943606d0f1e492673f324d10b63229fc","scope":"MemoryStore.dependenciesByEvidence","scopeFingerprint":"4b5867140d6a5a74241908636c0602ed35d746d383d5cce4b1cbb485add663f4","reason":"Resolve only the selected Material anchors to their exact original IDs for durable Memory lineage."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"file_artifacts","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"065312172cdd41d330fa4939514e74021939ac36ba760e19d3e04b235fffdfd3","reason":"Check which artifacts replaced the requested file's original derived chunks before retiring dependent Memory."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"file_chunks","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"065312172cdd41d330fa4939514e74021939ac36ba760e19d3e04b235fffdfd3","reason":"Read the exact retired chunk IDs for the requested file without reading their bodies."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"065312172cdd41d330fa4939514e74021939ac36ba760e19d3e04b235fffdfd3","reason":"Preserve canonical Material anchor identity if it overlaps a retired file chunk ID."},
+ {"from":"apps/server/src/evidence-dependencies.ts","to":"material_evidence_dependencies","symbol":"44269e8865cec6e074225aeb1ff1cec3682b08bbb48d2d476c858245908eff14","scope":"invalidateRetiredFileEvidence","scopeFingerprint":"065312172cdd41d330fa4939514e74021939ac36ba760e19d3e04b235fffdfd3","reason":"Follow the exact indexed Formal anchor links from affected originals so only dependent Memory is retired."},
  {
   "from": "apps/server/src/memory-phase-outputs.ts",
   "to": "execution_steps",
@@ -1759,16 +1790,6 @@ export const retainedClassificationScopes=[
   "from": "apps/server/src/material-organizers.ts",
   "to": "execution_steps",
   "kind": "read",
-  "symbol": "8929c9f77b8c57416f0ce8089be54c02741a32a8e09deaaa06b7503170109eab",
-  "scope": "MaterialOrganizerRuntime.repairStale",
-  "scopeFingerprint": "ee180a846a41ff388e85dddd7f19bb3966c2369f7a4d649bb99e6aec3989323e",
-  "operation": "read",
-  "completeSql": true
- },
- {
-  "from": "apps/server/src/material-organizers.ts",
-  "to": "execution_steps",
-  "kind": "read",
   "symbol": "d389ca025bf469752478909e84b6e40e4f76d794bc6dd40d0adde2f7e7895d35",
   "scope": "MaterialOrganizerRuntime.status",
   "scopeFingerprint": "72d120039f2945c48a51ba055a8da0c9e06526c33fdee1bf50658d7ff85ba00b",
@@ -2061,8 +2082,8 @@ export const nonSqlCalls=[
   "entryType": "AssistantTasks",
   "definitionFile": "apps/server/src/assistant-tasks.ts",
   "occurrence": 1,
-  "moduleFingerprint": "91f6d7c76ad87a480460637c2364d3e2e8e1ae066eac51c8b7ce2d0098f3eeba",
-  "scopeFingerprint": "502a63341674e7735f5f50341e7b8353da6d99d3c851cfe385ef15594045b115",
+  "moduleFingerprint": "3507a18bc03c76bdc795beb025617097ac79e0c43b75b3db3a7f3fafdf2abc29",
+  "scopeFingerprint": "76d8161534570428e3003614a462c1b69802bd9b826ee8f71f6d2418d423c3bf",
   "callFingerprint": "9104236b78880379928fdb6b2d187dac91fbc78fef00cba42700d3204be1cb92",
   "bindingFingerprint": "24b35046071f00a309bc8d34c268875e54380dbd8cafd6cead740e73c2cbda69",
   "assignmentFingerprint": "a1f49ec32ae112722e98331323257c139ebaca1d2e3a0604c1a96a75ae8755c1",
@@ -2119,7 +2140,7 @@ export const nonSqlCalls=[
    "scopeFingerprint": "d1a9e0aa81637036e60db398181603f1bd897c647c99ee406bbebac39edebfca",
    "queryRunsFingerprint": "0020572e46126aa45ba9b48ca4bd473be185d6f355483ac8134243ae4f56ccc5",
    "queryAssemblyFingerprint": "cc3a3fe08c1ec5c73c1e8727baa45f4dc806c8877cf5ba316da723b346ae2f73",
-   "hostFingerprint": "ed90a0e73dc60c3a5484bde0b20a86abb080339defad5eeb148fdc746bd873e7",
+   "hostFingerprint": "653e7156cc23a1bb9722144be4dda3c070d7457c6a66491a2dc1c7f977d81367",
    "memoryAssemblyFingerprint": "4e43052f63a33cd9ace516a8fd15a5014f523d996941eebf024611e22dd86705",
    "lifecycleFingerprint": "4f89c902c1471d00c6d7ca0f001894998918aaec22cb047004986cc1d0d7bf18",
    "definitionFingerprint": "2297635951754863c6388ee6a479d3f10c4b425f2a35a905f2a735a9aef352f6",

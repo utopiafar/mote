@@ -2,13 +2,13 @@ import {createHash} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
-import {assistantQueryInput,assistantRequestUsage,type AssistantRequestCapacity} from './assistant-request-budget.js';
+import {assistantBatchContext,assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
 import {parseArtifactRef,parseEvidenceId,queryScopeSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
 import {AssistantMatters} from './assistant-matters.js';
 import {AssistantUnderstandingReader} from './assistant-understanding.js';
-import {BATCH_CONTEXT_MAX_BYTES,BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
+import {BATCH_CONTEXT_MAX_BYTES,BATCH_TASK_INPUT_MAX_BYTES,BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
 import {AssistantChangeFeed} from './assistant-change-feed.js';
 import {BackgroundModelAuthorization} from './background-model-authorization.js';
 import {FileObservationReader,type FileObservation} from './file-observations.js';
@@ -46,12 +46,14 @@ const inputSchema=z.object({operationId:z.string().min(1).max(512),requestId:z.s
  mode:z.discriminatedUnion('kind',[z.object({kind:z.literal('change')}).strict(),z.object({kind:z.literal('briefing'),after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true})}).strict()]),
 }).strict().refine(value=>value.mode.kind!=='briefing'||Date.parse(value.mode.after)<Date.parse(value.mode.before));
 type Input=z.infer<typeof inputSchema>;
-type Card=ReturnType<AssistantCards['get']>;
+type Card=ReturnType<AssistantCards['review']>['items'][number];
+type CardPin=Pick<Card,'id'|'revision'|'state'|'kind'>&{feedback:Pick<Card['feedback'][number],'action'>[]};
 type Commitment=ReturnType<AssistantCommitments['get']>;
-type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:Card[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
+type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:CardPin[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
  memoryRevisions:{id:string;version:number;fingerprint:string}[];materialRefs:string[];evidenceIds:string[];dependencies:string[];suppressionIds:string[];
  materialProducts:{ref:string;products:string[];nextCursor:string|null;coverage:ReturnType<AssistantUnderstandingReader['read']>['coverage']}[];
- pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission};
+ pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission;
+ queryContext?:NonNullable<QueryInput['taskContext']>};
 const deps=(ids:readonly string[])=>({version:1 as const,complete:true as const,ids:[...new Set(ids)].sort()});
 const unique=(ids:readonly string[])=>[...new Set(ids)].sort();
 const historicalCard=(card:Card)=>card.state==='stale'||card.evidenceStale||card.feedback.some(feedback=>feedback.evidenceStale);
@@ -106,7 +108,7 @@ export class AssistantFollowup {
  async start(raw:Input,admission:{identities:readonly string[];connections:ModelConnection[]},assertActive:()=>void=()=>{},accepted:(task:TaskRecord)=>void=()=>{}){
   return this.analyze(raw,{kind:'manual',identities:[...admission.identities].sort(),connections:[...admission.connections].sort((a,b)=>a.id.localeCompare(b.id)||a.fingerprint.localeCompare(b.fingerprint))},assertActive,accepted);
  }
- private async analyze(raw:Input,selectedAdmission:BatchAdmission,assertActive:()=>void,accepted:(task:TaskRecord)=>void,submit?:(request:BatchRequest)=>TaskRecord){
+ private async analyze(raw:Input,selectedAdmission:BatchAdmission,assertActive:()=>void,accepted:(task:TaskRecord)=>void,submit?:(request:BatchRequest)=>TaskRecord,allowSavedContext=false){
   if(this.closed)throw new StoreError('Assistant consumer is closed',409);
   assertActive();
   const input=inputSchema.parse(raw),scope=input.scope;
@@ -129,8 +131,8 @@ export class AssistantFollowup {
   });
   const materialProducts=views.map(view=>({ref:view.material.ref,products:view.products.map(product=>product.ref),nextCursor:view.nextCursor,coverage:view.coverage}));
   const memoryPage=await readCurrentMemoryPage(this.reader,scope,{level:'detail',limit:10,asOf});
-  const review=this.cards.review(scope,30),commitmentPage=this.commitments.page({scope,limit:30});
-  if(review.hasMore||commitmentPage.nextCursor)throw new StoreError('Assistant context exceeds the bounded review; narrow the scope',413);
+  const review=this.cards.review(scope),commitmentPage=this.commitments.page({scope,limit:30});
+  if(commitmentPage.nextCursor)throw new StoreError('Assistant commitments exceed the bounded review; narrow the scope',413);
   const cards=review.items,contextCards=cards.filter(card=>!suppressionOnly(card));
   // Unsuppressed history still needs a grant to interpret or update the issue.
   // A never-remind issue is retained only as an owner constraint, without prose.
@@ -175,21 +177,16 @@ export class AssistantFollowup {
   // deletion. Shared dependencies keep their evidence role and need a grant.
   const dependencies=unique([...contextDependencies,...taskEvidenceIds(this.store,review.disclosureDependencies)]),contextIds=new Set(contextDependencies);
   const suppressionIds=dependencies.filter(id=>!contextIds.has(id));
-  const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
-  if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
-  await yieldTurn();assertActive();
-  if(views.some(view=>!view.disclosureDependencies.complete))throw new StoreError('Assistant material lineage is incomplete',409);
-  const memoryRecords=this.reader.memories.readEvidence(unique(memoryPage.items.flatMap(memory=>memory.evidenceIds)));
-  const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
-   ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
-  const evidenceIds=unique(this.reader.memories.readCurrentEvidence(contextDependencies).map(record=>record.id));
   const pendingOwnerQuestions=questionPins.map(pin=>{
    const question=this.currentQuestion(pin);
    if(!views.some(view=>view.material.id===question.materialId&&view.material.ref===question.materialRef)||
     question.evidence.some(span=>!contextDependencies.includes(span.id)))throw new StoreError('Assistant owner question exceeds its evidence scope',409);
    return {id:question.id,revision:question.revision,state:question.state,prompt:question.prompt,reason:question.reason,evidence:question.evidence};
   });
-  const context={turns:[],asOf,scope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
+  // The original selection stays in the saved scope and the query's grants.
+  // Its IDs are already available through the bounded original read catalog.
+  const {evidenceIds:_,...contextScope}=scope;
+  const fullContext={turns:[],asOf,scope:contextScope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
    ...(pendingOwnerQuestions.length?{pendingOwnerQuestions}:{}),
    memoryTruncated:Boolean(memoryPage.nextCursor),matters:matters.map(matter=>({id:matter.id,revision:matter.revision,goal:matter.goal,correction:matter.correction})),
    cards:cards.map(card=>({id:card.id,revision:card.revision,kind:card.kind,state:card.state,matterId:card.matterId,title:card.title,
@@ -199,18 +196,36 @@ export class AssistantFollowup {
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
   const question=PROMPT;
-  const bytes=Buffer.byteLength(JSON.stringify(context));
-  if(bytes>(selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES))throw new AssistantContextLimit(bytes);
-  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals);
+  const limit=selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES;
+  const capacity=this.requestCapacity?.();
+  const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(capacity));
+  // Once only one Material remains, preserve its complete review in the
+  // private snapshot when the inline batch context is too small. The full
+  // model request must still fit before any original receipt is claimed.
+  const queryContext=bytes>limit&&allowSavedContext&&capacity?context:undefined;
+  if(bytes>limit&&!queryContext)throw new AssistantContextLimit(bytes);
+  const historicalIds=this.historicalDependencies(contextDependencies,observations,scope);
+  if(!historicalIds)throw new StoreError('Historical assistant context requires a current-evidence review',409);
+  await yieldTurn();assertActive();
+  if(views.some(view=>!view.disclosureDependencies.complete))throw new StoreError('Assistant material lineage is incomplete',409);
+  const memoryRecords=this.reader.memories.readEvidence(unique(memoryPage.items.flatMap(memory=>memory.evidenceIds)));
+  const pins=combineSourceContextDependencies([...views.map(view=>view.sourceContextDependencies),...contextCards.map(card=>card.sourceContextDependencies),...commitments.map(item=>item.sourceContextDependencies),
+   ...this.materials.contextsForEvidence(memoryRecords).map(context=>context.sourceContextDeclarations)]);
+  const currentRecords=this.reader.memories.readCurrentEvidence(contextDependencies),evidenceIds=unique(currentRecords.map(record=>record.id));
+  this.prepareRequest({question,taskContext:context,evidenceIds,contextTime:asOf,executionLane:'background'},originals,capacity,input.materialRefs.length===1,currentRecords);
   await yieldTurn();assertActive();
   const completedEarlier=this.prior(input,selectedAdmission);if(completedEarlier)return accept(completedEarlier);
-  this.assertSnapshot({input,questionPins,batchId:'',cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
+  // The query context and task lineage already retain the relevant evidence.
+  // Publication uses only each card's identity, revision and suppression.
+  const cardPins:CardPin[]=cards.map(({id,revision,state,kind,feedback})=>({id,revision,state,kind,
+   feedback:feedback.some(item=>item.action==='never_remind')?[{action:'never_remind'}]:[]}));
+  this.assertSnapshot({input,questionPins,batchId:'',cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission});
   await yieldTurn();assertActive();
   return this.transaction(()=>{
    assertActive();
    const existing=this.prior(input,selectedAdmission);if(existing)return accept(existing);
    const operationId='assistant-followup:'+sha256(canonicalRecipeJson([input.operationId,input.requestId]));
-   const request={operationId,requestId:input.requestId,items:[{question,taskContext:context,evidenceIds}]};
+   const request={operationId,requestId:input.requestId,items:[{question,evidenceIds,...(queryContext?{}:{taskContext:context})}]};
    const batch=submit?submit(request):this.batch.submit(request,selectedAdmission);
    // The batch input contains derived context as well as original reads. Its
    // persisted parent and item must retain the same complete invalidation
@@ -221,10 +236,11 @@ export class AssistantFollowup {
     if(typeof itemId!=='string')throw new StoreError('Assistant batch item is unavailable',409);
     addTaskEvidence(this.store,itemId,allDependencies);
    }
-   const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
-    materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission};
+   const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
+    materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,...(queryContext?{queryContext}:{})};
    this.assertSnapshot(snapshot);
-   const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},ids=>this.assertDependencies(snapshot,ids));
+   const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},
+    ids=>this.assertDependencies(snapshot,ids),{maxInputBytes:BATCH_TASK_INPUT_MAX_BYTES});
    accepted(task);return task;
   });
  }
@@ -262,8 +278,20 @@ export class AssistantFollowup {
   // The same originals remain current query grants and exact proof targets in
   // the new batch; the historical anchor itself is never a retrieval grant.
   if(declaredAnchors.size)historical.push(...taskEvidenceIds(this.store,deps([...declaredAnchors])));
-  const current=new Set(this.reader.memories.readCurrentEvidence(ids).map(record=>record.id));
-  const records=new Map(this.reader.memories.readEvidence(ids.filter(id=>!current.has(id))).map(record=>[record.id,record]));
+  // Active Material anchors cannot be historical dependencies. Resolve their
+  // identity in bulk and leave disclosure to the caller's current policy check.
+  const activeAnchors=this.materials.currentEvidenceIds(ids);
+  // The canonical reader gives a capture with the same ID precedence.
+  for(const capture of this.store.evidenceMetadata([...activeAnchors]))activeAnchors.delete(capture.id);
+  const otherIds=ids.filter(id=>!activeAnchors.has(id));
+  // Current preferred file chunks also have no historical role. Preserve the
+  // canonical reader's capture and Material precedence if identities overlap.
+  const chunks=this.reader.files?.currentEvidenceIds(otherIds)??new Set<string>(),chunkIds=[...chunks];
+  for(const capture of this.store.evidenceMetadata(chunkIds))chunks.delete(capture.id);
+  for(const anchor of this.materials.evidence(chunkIds))chunks.delete(anchor.id);
+  const unresolved=otherIds.filter(id=>!chunks.has(id));
+  const current=new Set(this.reader.memories.readCurrentEvidence(unresolved).map(record=>record.id));
+  const records=new Map(this.reader.memories.readEvidence(unresolved.filter(id=>!current.has(id))).map(record=>[record.id,record]));
   const memories=this.store.db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify(ids));
   for(const memory of memories){
    let value=JSON.parse(String(memory.json));if(value.status!=='published')return;
@@ -314,7 +342,7 @@ export class AssistantFollowup {
   if(snapshot.admission.kind==='automatic'){
    if(!this.control||snapshot.batchId&&this.control.workState('batch:'+snapshot.batchId)!=='current'||!this.allowsAutomatic(snapshot.dependencies))
     throw new StoreError('Assistant automatic context is no longer permitted',409);
-   if(snapshot.batchId&&['cancelled','stale'].includes(this.batch.progress(snapshot.batchId).task.state))throw new StoreError('Assistant automatic analysis was stopped',409);
+   if(snapshot.batchId&&['cancelled','stale'].includes(this.batch.state(snapshot.batchId)))throw new StoreError('Assistant automatic analysis was stopped',409);
   }
  }
  private currentQuestion(pin:{id:string;revision:number}){
@@ -343,24 +371,32 @@ export class AssistantFollowup {
    WHERE b.id=? AND f.kind='assistant.followup'`).get(taskId);
   if(!row)return false;
   const task=this.tasks.get(String(row.id)),snapshot=this.snapshot(task);
-  if(ids.some(id=>!snapshot.dependencies.includes(id)))throw new StoreError('Assistant batch context changed',409);
+  const dependencies=new Set(snapshot.dependencies);
+  if(ids.some(id=>!dependencies.has(id)))throw new StoreError('Assistant batch context changed',409);
   return true;
  }
- /** Only a saved follow-up can select its initial original spans. Other batch
-  * products retain their existing query contract. No saved input is rewritten. */
+ /** Only the owner of this batch can supply its saved review context and
+  * initial original spans. No saved input is rewritten. */
  prepareQuery(input:QueryInput):QueryInput{
-  if(!this.requestCapacity?.())return input;
   const batchId=input.traceContext?.jobId;if(!batchId)return input;
+  const context=input.taskContext,capacity=this.requestCapacity?.();
+  if(!capacity&&context&&(!('materials' in context)||'originals' in context))return input;
   const row=this.store.db.prepare("SELECT f.id FROM task_records b JOIN task_records f ON f.operation_id=b.operation_id WHERE b.id=? AND b.kind='batch' AND f.kind='assistant.followup'").get(batchId);
   if(!row)return input;
   const snapshot=this.snapshot(this.tasks.get(String(row.id)));
   if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
-  return this.prepareRequest(input,snapshot.originals);
+  const saved=snapshot.queryContext;
+  if(saved&&!capacity)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(saved)));
+  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity,snapshot.materialRefs.length===1);
  }
- private prepareRequest(input:QueryInput,originals:Snapshot['originals']){
-  const capacity=this.requestCapacity?.();if(!capacity)return input;
-  const records=this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryInput(input,originals,records);
-  if(!assistantRequestUsage(prepared,records,capacity).fits)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
+ private prepareRequest(input:QueryInput,originals:Snapshot['originals'],capacity:AssistantRequestCapacity|undefined,allowCatalogPaging:boolean,currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
+  const context=input.taskContext;
+  if(!capacity){
+   if(!context||'originals' in context)return input;
+   const taskContext={...context,originals};return {...input,taskContext};
+  }
+  const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryWithinCapacity(input,originals,records,capacity,allowCatalogPaging);
+  if(!prepared)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
   return prepared;
  }
  /** Called by the existing Material poll and batch completion. The queue,
@@ -379,6 +415,8 @@ export class AssistantFollowup {
   let running=false;
   for(const row of pending){
    const task=this.tasks.get(String(row.id)),batchId=String(row.batch_id);
+   // An accepted owner retry returns a blocked analysis to waiting.
+   if(task.state==='blocked')continue;
    if(task.state==='stale'||task.state==='cancelled'){changes.settle(batchId,task.state);continue;}
    const progress=this.batch.progress(batchId);
    if(['cancelled','stale'].includes(progress.task.state)||progress.items.some(step=>['failed','blocked','cancelled','stale'].includes(step.state))){
@@ -417,6 +455,7 @@ export class AssistantFollowup {
  }
  private async consumeGroup(changes:AssistantChangeFeed,ready:ReturnType<AssistantChangeFeed['ready']>,excluded:Set<string>,all:QueryScope,active:()=>void,includeCatalog:boolean){
   const refs=unique(ready.map(candidate=>candidate.input.material!.ref));
+  const catalogEvidence=new Map<string,readonly string[]>();
   // Background context is a bounded page from the same authorized catalog.
   // Relevance and issue identity are left to the interpreter.
   let cursor:string|undefined;
@@ -426,7 +465,7 @@ export class AssistantFollowup {
     if(refs.length===5)break;
     if(refs.includes(material.ref)||excluded.has(material.origin.sourceId))continue;
     try{const view=this.understanding.read({ref:material.ref,scope:all,limit:10});
-     if(this.allowsAutomatic(view.disclosureDependencies.ids))refs.push(material.ref);
+     if(this.allowsAutomatic(view.disclosureDependencies.ids)){refs.push(material.ref);catalogEvidence.set(material.ref,view.disclosureDependencies.ids);}
     }catch(error){if(!(error instanceof StoreError&&error.statusCode===404))throw error;}
    }
    cursor=page.nextCursor??undefined;
@@ -436,17 +475,19 @@ export class AssistantFollowup {
   // Native notes are authorized as device originals; their Material catalog
   // source is a projection. Select exact dependency IDs through the existing
   // disclosure resolver instead of guessing source identities from that label.
-  const selected=refs.flatMap(ref=>this.understanding.read({ref,scope:all,limit:10}).disclosureDependencies.ids);
+  const selected=refs.flatMap(ref=>catalogEvidence.get(ref)??this.understanding.read({ref,scope:all,limit:10}).disclosureDependencies.ids);
   for(const record of this.store.evidenceMetadata(selected))if(record.source==='file'&&record.provenance)
    selected.push(...this.files.read({captureId:record.id,scope:all}).disclosureDependencies.ids);
   for(const card of this.cards.review(all,30).items)if(this.allowsAutomatic(card.evidenceDependencies.ids))selected.push(...card.evidenceDependencies.ids);
-  const evidenceIds=taskEvidenceIds(this.store,deps(selected));
-  if(!this.allowsAutomatic(evidenceIds))throw new StoreError('Assistant automatic context is no longer permitted',409);
-  const scope:QueryScope={kind:'selection',evidenceIds};
+  const lineage=taskEvidenceIds(this.store,deps(selected));
+  if(!this.allowsAutomatic(lineage))throw new StoreError('Assistant automatic context is no longer permitted',409);
+  // Internal artifact dependencies participate in policy and invalidation.
+  // The selected evidence scope only accepts public evidence identities.
+  const scope:QueryScope={kind:'selection',evidenceIds:lineage.filter(id=>Boolean(parseEvidenceId(id)))};
   const requestId='assistant-change:'+group.map(candidate=>candidate.task.id).sort().join(':');
   await this.analyze({operationId:requestId,requestId,scope,materialRefs:refs,mode:{kind:'change'}},
    {kind:'automatic',purpose:'assistant',roots:group.map(candidate=>candidate.input.root)},active,()=>{},
-   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}));
+   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}),!includeCatalog&&refs.length===1);
  }
  async close(){this.closed=true;await this.polling?.catch(()=>{});}
  private assertSnapshot(snapshot:Snapshot){
@@ -454,8 +495,7 @@ export class AssistantFollowup {
   const materialProducts=snapshot.materialRefs.map(ref=>{const view=this.understanding.read({ref,scope:snapshot.input.scope,limit:10});
    return {ref:view.material.ref,products:view.products.map(product=>product.ref),nextCursor:view.nextCursor,coverage:view.coverage};});
   if(canonicalRecipeJson(materialProducts)!==canonicalRecipeJson(snapshot.materialProducts))throw new StoreError('Understanding changed; analyze again',409);
-  const current=this.cards.review(snapshot.input.scope,30);
-  if(current.hasMore)throw new StoreError('Assistant cards changed; analyze again',409);
+  const current=this.cards.review(snapshot.input.scope);
   if(JSON.stringify(current.items.map(card=>[card.id,card.revision,card.state]))!==JSON.stringify(snapshot.cards.map(card=>[card.id,card.revision,card.state])))throw new StoreError('Assistant cards changed; analyze again',409);
   const commitments=this.commitments.page({scope:snapshot.input.scope,limit:30});
   if(commitments.nextCursor||JSON.stringify(commitments.items.map(item=>[item.id,item.revision]))!==JSON.stringify(snapshot.commitments.map(item=>[item.id,item.revision])))throw new StoreError('Commitments changed; analyze again',409);

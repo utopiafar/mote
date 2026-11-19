@@ -10,6 +10,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {ExecutionFailure} from '../src/execution-engine.js';
 import {TaskRecords} from '../src/task-records.js';
+import {invalidateTaskEvidence} from '../src/task-evidence.js';
 import {agentModelConnection} from '../src/model-authorization-host.js';
 import {hostRun} from './fixtures/host-run.js';
 import type {QueryRunLease} from '../src/query-agent.js';
@@ -72,6 +73,47 @@ test('a failed reducer retries without repeating successful items, and one item 
   assert.equal(f.batch.progress(one.id).reduce,undefined);
   assert.equal(f.batch.submit(single,manual).id,one.id);
   await new Promise(resolve=>setTimeout(resolve,25));assert.equal(calls.filter(q=>q==='Generated single query').length,1);
+});
+
+test('an item authority check revalidates its frozen originals once per check',async t=>{
+  let f!:Awaited<ReturnType<typeof fixture>>;
+  const checked:number[]=[];
+  f=await fixture(t,async input=>{
+    const reads=t.mock.method(f.node.featureServices.evidenceReader.memories,'readCurrentEvidence');
+    try{
+      assert.ok(input.assertContextAuthority);
+      input.assertContextAuthority();checked.push(reads.mock.callCount());
+      input.assertContextAuthority();checked.push(reads.mock.callCount());
+    }finally{reads.mock.restore();}
+    return answer(input);
+  });
+  const id=await f.note('item authority');
+  const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated query',evidenceIds:[id]}]},manual(f.node));
+  await until(()=>f.batch.progress(batch.id).task.state==='succeeded');
+  assert.deepEqual(checked,[1,2],'each fresh grant validates the current frozen input once');
+});
+
+test('batch admission retains all original pins for a long Material',async t=>{
+  const f=await fixture(t,async()=>assert.fail('The model is deliberately unavailable'),false);
+  const id=await f.note('x'.repeat(14_200));
+  await f.node.materialOrganizer.tick(100);
+  const prior=f.node.materials.list({kind:'mote.note',limit:10}).items.find(material=>material.origin.externalId===id);assert.ok(prior);
+  const blocks=Array.from({length:14_200},(_,index)=>({id:`generated-${index}`,kind:'text' as const,format:'plain',text:'x',memberIds:['original']}));
+  const material=f.node.materials.publish({id:prior.id,kind:prior.kind,schemaVersion:1,title:'Generated long Material',origin:prior.origin,blocks,
+    members:[{id:'original',kind:'capture',ref:'capture:'+id}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}},{expectedRevision:prior.revision});
+  const evidenceIds=f.node.materials.evidenceIds(material.ref);
+  assert.equal(evidenceIds.length,14_200);
+  const task=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated long review',evidenceIds}]},manual(f.node));
+  const tasks=new TaskRecords(f.node.store),item=tasks.get(String(f.batch.progress(task.id).items[0].input.itemId));
+  const saved=tasks.input<{evidenceIds:string[];processingEvidence:Record<string,string>}>(item.id,item.revision,ids=>{
+    assert.equal(ids.length,evidenceIds.length+1);assert.ok(ids.includes(id));
+  });
+  assert.ok(Buffer.byteLength(JSON.stringify(saved))>2_000_000);
+  assert.deepEqual(saved.evidenceIds,evidenceIds);
+  assert.ok(evidenceIds.every(pin=>saved.processingEvidence[pin]?.length===64));
+  invalidateTaskEvidence(f.node.store,[evidenceIds.at(-1)!]);
+  assert.equal(tasks.get(item.id).state,'stale');
+  assert.throws(()=>tasks.input(item.id,item.revision,()=>assert.fail('Withdrawn input is unavailable')),{statusCode:409});
 });
 
 test('cancel before start or during a model call prevents all late item and reduce publication',async t=>{
@@ -149,12 +191,16 @@ test('excluding contextual evidence during a call prevents publication even when
   const entered=gate(),release=gate(),calls:string[]=[];t.after(()=>release.release());
   const f=await fixture(t,async input=>{calls.push(input.question);entered.release();await release.promise;return answer(input);});
   const root=await f.note('root','generated-root'),context=await f.note('context','generated-context');f.command('on');
+  const disclosure=t.mock.method(f.node.modelAuthorizationHost,'disclosure');
   const batch=f.batch.submit({operationId:'workflow:'+randomUUID(),requestId:randomUUID(),items:[{question:'Generated contextual query',evidenceIds:[context]}]},
     {kind:'automatic',purpose:'working',roots:['capture:'+root]});
-  await reached(entered.promise);f.command('exclude',['device:generated-context']);release.release();
+  await reached(entered.promise);
+  assert.equal(disclosure.mock.callCount(),0,'an empty exclusion list requires no source lookup');
+  f.command('exclude',['device:generated-context']);release.release();
   await until(()=>!f.node.executor.isActiveStep(f.batch.progress(batch.id).items[0].id));
   assert.notEqual(f.batch.progress(batch.id).items[0].state,'succeeded');
   assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(batch.id)!.result_json,null);
+  assert.ok(disclosure.mock.callCount()>0,'the next boundary resolves contextual evidence under the changed exclusions');
   assert.deepEqual(calls,['Generated contextual query']);
 });
 

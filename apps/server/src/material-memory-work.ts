@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import type {MaterialStore} from './materials.js';
 import {materialRequirementsSchema} from './material-readiness.js';
@@ -71,6 +72,10 @@ export class MaterialMemoryWork {
   private rows(id:string){return this.store.db.prepare('SELECT * FROM material_memory_requests WHERE material_id=?').all(id) as WorkRow[];}
   private transaction<T>(run:()=>T):T{const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{const result=run();if(own)db.exec('COMMIT');return result;}catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}}
   private update(row:WorkRow,set:string,values:(string|number|null)[]=[]){return this.store.db.prepare(`UPDATE material_memory_requests SET ${set} WHERE material_id=? AND scope=? AND revision=?`).run(...values,row.material_id,row.scope,row.revision);}
+  private failedEnqueue(row:WorkRow,error:unknown){
+    const tooLarge=error instanceof StoreError&&error.statusCode===413;
+    this.update(row,'error=?,ready_at=?',[tooLarge?'memory_input_too_large':'memory_enqueue_failed',tooLarge?TERMINAL_AT:this.now()+RETRY_DELAY_MS]);
+  }
   private revoke(row:WorkRow){if(row.job_id)this.store.db.prepare('INSERT OR IGNORE INTO material_memory_revocations VALUES(?,?,?)').run(row.job_id,row.material_id,row.revision);}
   private available(row:WorkRow,sourceId:string,jobId?:string){
     if(row.binding_json){const binding=memoryRecipeBindingSchema.parse(JSON.parse(row.binding_json));if(!this.recipes?.enabled(sourceId,binding))return false;}
@@ -161,14 +166,16 @@ export class MaterialMemoryWork {
     this.store.db.prepare('DELETE FROM material_memory_revocations WHERE job_id=?').run(row.job_id);
   }return true;}
   private launch(runner:MaterialMemoryRunner,row:WorkRow,allowed:(id:string)=>boolean){
-    const id=row.job_id!;if(this.active.has(id))return;this.active.add(id);
+    const id=row.job_id!;if(this.disposed||this.active.has(id))return false;this.active.add(id);
     void Promise.resolve().then(()=>{
+      if(this.disposed)return;
       const current=this.rows(row.material_id).find(r=>r.scope===row.scope&&r.job_id===id&&r.auto_authorized);
       if(!current||!this.automaticEnabled()||!allowed(row.material_id))return;
       const material=this.materials.get(row.material_id);
       if(material?.revision!==current.revision||!this.readyForMemory(material.ref,current.scope)||!this.available(current,material.origin.sourceId,id))return;
       return runner.run(id);
-    }).catch(()=>this.update(row,"error='memory_run_failed'")).finally(()=>this.active.delete(id));
+    }).catch(()=>{if(!this.disposed)this.update(row,"error='memory_run_failed'");}).finally(()=>this.active.delete(id));
+    return true;
   }
   /** A product resume/retry has already changed its job state. Rejoin that
    * existing claimed queue entry after a previous pause/failure parked it;
@@ -202,19 +209,28 @@ export class MaterialMemoryWork {
   }
   /** Model-defined bounded packages; receipt claims and queue insertion are atomic. */
   async drainPlanned(runner:MaterialMemoryRunner,enabled:boolean,planner:MaterialMemoryPlanner,limit=64,allowed:(materialId:string)=>boolean=()=>true,onCreated?:(proposal:MemoryWorkProposal,job:{id:string})=>void,onSkipped?:(proposal:MemoryWorkProposal)=>void,allowCandidate:(candidate:MemoryWorkCandidate)=>boolean=()=>true):Promise<number>{
-    if(!this.cancelRevocations(runner,limit)||!enabled||this.planning)return 0;
-    this.rejoinResumed(runner,limit);
-    // Resume prior packages first; do not create ordinary per-material jobs.
-    for(const row of this.store.db.prepare('SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS NOT NULL AND ready_at<=? ORDER BY ready_at LIMIT ?').all(this.now(),limit) as WorkRow[]){
-      let job:{status:string;errorCode?:string};try{job=runner.state(row.job_id!);}catch{this.update(row,"ready_at=?,error='memory_job_unavailable'",[TERMINAL_AT]);continue;}
-      if(job.status==='completed')this.update(row,'ready_at=?,error=NULL',[TERMINAL_AT]);
-      else if(isConfigurationWait(job)&&configurationStillChanged(runner,row.job_id!))this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_configuration_changed']);
-      else if(['queued','running','waiting_for_model','waiting_for_input'].includes(job.status)){this.update(row,'ready_at=?',[this.now()+RESUME_DELAY_MS]);this.launch(runner,row,allowed);}
-      else this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_'+job.status]);
-    }
-    const catalog=this.catalog(limit,allowed,allowCandidate);if(!catalog.length)return 0;
+    if(this.disposed||!this.cancelRevocations(runner,limit)||!enabled||this.planning)return 0;
     this.planning=true;
-    try{return this.acceptPackages(runner,catalog,await planner(catalog),allowed,onCreated,onSkipped,allowCandidate);}finally{this.planning=false;}
+    try{
+      this.rejoinResumed(runner,limit);
+      // Resuming an accepted package can prepare many batches synchronously.
+      // Leave a turn for requests and lease renewals between packages.
+      for(const row of this.store.db.prepare('SELECT * FROM material_memory_requests WHERE auto_authorized=1 AND job_id IS NOT NULL AND ready_at<=? ORDER BY ready_at LIMIT ?').all(this.now(),limit) as WorkRow[]){
+        if(this.disposed)return 0;
+        let job:{status:string;errorCode?:string};try{job=runner.state(row.job_id!);}catch{this.update(row,"ready_at=?,error='memory_job_unavailable'",[TERMINAL_AT]);continue;}
+        if(job.status==='completed')this.update(row,'ready_at=?,error=NULL',[TERMINAL_AT]);
+        else if(isConfigurationWait(job)&&configurationStillChanged(runner,row.job_id!))this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_configuration_changed']);
+        else if(['queued','running','waiting_for_model','waiting_for_input'].includes(job.status)){
+          this.update(row,'ready_at=?',[this.now()+RESUME_DELAY_MS]);
+          if(this.launch(runner,row,allowed))await yieldTurn();
+        }
+        else this.update(row,'ready_at=?,error=?',[TERMINAL_AT,'memory_job_'+job.status]);
+      }
+      if(this.disposed)return 0;
+      const catalog=this.catalog(limit,allowed,allowCandidate);if(!catalog.length)return 0;
+      const proposals=await planner(catalog);
+      return this.disposed?0:this.acceptPackages(runner,catalog,proposals,allowed,onCreated,onSkipped,allowCandidate);
+    }finally{this.planning=false;}
   }
   /** Ready receipt inputs are independent tasks. Packing is transport capacity,
    * never a claim that their topics or evaluation times are interchangeable. */
@@ -258,7 +274,12 @@ export class MaterialMemoryWork {
           created=runner.create({evidenceIds,originKey:'memory-package:'+sha256(JSON.stringify(proposal.members)),contextTime:members[0].contextTime,recipes:binding?[{id:binding.recipe.id,version:binding.recipe.version}]:undefined,automaticGrants:grants,workPackage:memoryWorkPackageSchema.parse({id:packageId,goal:proposal.goal,instruction:proposal.instruction,inputs:members.map(({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint})=>({materialId,ref,sourceId,inputKey,scope,contextTime,fingerprint}))})});
           if(!this.inputs.claimMany(grants,created.id))throw new StoreError('Memory package authorization changed',409);
           for(const row of rows)if(!this.update(row,'job_id=?,error=NULL',[created.id]).changes)throw new StoreError('Memory package input changed',409);
-        });}catch(error){for(const row of rows)if(row)this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);onSkipped?.(proposal);continue;}
+        });}catch(error){
+          // Only a singleton failure establishes that this original is too
+          // large on its own. A rebuild can still change its selected ranges.
+          for(const row of rows)if(row)this.failedEnqueue(row,rows.length===1?error:undefined);
+          onSkipped?.(proposal);continue;
+        }
         if(!created)onSkipped?.(proposal);
         if(created){onCreated?.(proposal,created);this.launch(runner,{...rows[0],job_id:created.id},allowed);started++;}
       }
@@ -290,7 +311,7 @@ export class MaterialMemoryWork {
             return Boolean(this.update(row,'job_id=?,input_fingerprint=?,error=NULL',[job.id,selection.fingerprint]).changes);
           });
           if(!claimed){this.revoke({...row,job_id:job.id});continue;}row.job_id=job.id;
-        }catch{this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);continue;}
+        }catch(error){this.failedEnqueue(row,error);continue;}
       }
       let job:{status:string;errorCode?:string};
       try{job=runner.state(row.job_id!);}catch{this.update(row,"error='memory_job_unavailable',ready_at=?",[TERMINAL_AT]);continue;}

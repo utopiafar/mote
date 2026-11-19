@@ -303,7 +303,7 @@ export class MemoryLifecycle {
    * cancelling their durable checkpoints. A later start resumes them. */
   quiesce(){
     if(this.closed||this.quiescing)return this.interrupting??Promise.resolve();
-    this.quiescing=true;this.abort.abort();
+    this.quiescing=true;
     this.interrupting=(async()=>{try{await this.interrupt();}finally{this.interrupting=undefined;}})();
     return this.interrupting;
   }
@@ -315,9 +315,16 @@ export class MemoryLifecycle {
   }
   private async interrupt(){
     // Shutdown/fencing interrupts replayable work; explicit owner cancellation stays terminal.
-    const interrupted=[...this.running.keys()].flatMap(key=>{const window=this.state(key).active,id=window?'lifecycle:'+window.id:undefined;return id&&this.executor?.get(id)?.state==='running'?[id]:[];});
+    const interrupted=[...this.running.keys()].flatMap(key=>{
+      const state=this.state(key),window=state.active;
+      const id=window?'lifecycle:'+window.id:undefined;
+      return !state.cancelled&&window&&id&&this.executor?.get(id)?.state==='running'?[{key,id,windowId:window.id}]:[];
+    });
     this.abort.abort();await Promise.allSettled([...this.running.values()]);
-    for(const id of interrupted)if(this.executor?.get(id)?.state==='cancelled')this.executor.retry(id,false);
+    for(const {key,id,windowId} of interrupted){
+      const state=this.state(key);
+      if(!state.cancelled&&state.active?.id===windowId&&this.executor?.get(id)?.state==='cancelled')this.executor.retry(id,false);
+    }
   }
   async close(){
     if(this.closing)return this.closing;

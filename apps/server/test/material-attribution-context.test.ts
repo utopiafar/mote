@@ -10,6 +10,7 @@ import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
+import {ServerDiagnostics} from '../src/diagnostics.js';
 import {ProcessingRuntime} from '../src/processing-runtime.js';
 import {FileStore} from '../src/files.js';
 import {sha256} from '../src/evidence-store.js';
@@ -40,6 +41,11 @@ test('unknown stays readable; owner correction changes all projections and fence
   assert.equal(materials.read(corrected.ref).spans[0].attributionContext.ownerRelation,'third_party');
   assert.equal(materials.evidence(materials.evidenceIds(corrected.ref))[0].attributionContext?.ownerRelation,'third_party');
   assert.equal(reader.context([raw])[0].attributionContext?.ownerRelation,'third_party');
+  const contexts=t.mock.method(materials,'contextsForEvidence'),ids=[raw.id,...materials.evidenceIds(corrected.ref)];
+  const originals=reader.evidence(ids.map(id=>'capture:'+id));
+  assert.equal(contexts.mock.callCount(),1,'one batch shares the current attribution lookup');
+  assert.deepEqual(new Set(originals.map(record=>record.id)),new Set(ids));
+  assert.ok(originals.every(record=>record.attributionContext?.ownerRelation==='third_party'));
   assert.equal(materials.get(first.ref),undefined);assert.ok(oldAnchors.every(id=>!materials.isCurrentEvidence(id)));
   assert.notEqual(materials.input(corrected.ref,['body'])!.fingerprint,oldPin);
   assert.deepEqual(store.evidence([receipt.id])[0],raw);assert.deepEqual(store.db.prepare('SELECT hash FROM material_block_payloads').all(),payloads);
@@ -59,6 +65,20 @@ test('source defaults update existing and future materials; correction wins refr
   current=materials.correctContext(current.id,current.revision,null);assert.equal(current.attributionContext?.ownerRelation,'mixed');assert.equal(current.attributionContext?.basis,'owner_source');
   sources.update('fixture',{ownerRelation:null});current=materials.get(first.id)!;assert.equal(current.attributionContext?.ownerRelation,'unknown');assert.equal(current.attributionContext?.basis,'default');
   const future=materials.publish({...draft,id:materialId('fixture','future'),origin:{sourceId:'fixture',externalId:'future'}});assert.equal(future.attributionContext?.ownerRelation,'unknown');
+});
+
+test('Agent evidence shares Material exposure within a read and rechecks it after withdrawal',async t=>{
+  const {reader,materials,draft,store}=await fixture(t);
+  const diagnostics=new ServerDiagnostics({directory:join(store.directory,'logs'),enabled:false});await diagnostics.init();
+  t.after(()=>diagnostics.close());
+  const blocks=Array.from({length:5},(_,index)=>({...draft.blocks[0]!,id:`generated-${index}`}));
+  const material=materials.publish({...draft,blocks,artifacts:[{key:'body',state:'ready',blockIds:blocks.map(block=>block.id)}]});
+  const ids=materials.evidenceIds(material.ref),agent=reader.agent({diagnostics});
+  const exposures=t.mock.method(reader as unknown as {materialExposure:()=>boolean},'materialExposure');
+  assert.deepEqual((await agent.evidence({ids})).map(record=>record.id),ids);
+  assert.equal(exposures.mock.callCount(),1);
+  materials.retire(material.id,{expectedRevision:material.revision});
+  assert.deepEqual(await agent.evidence({ids}),[]);
 });
 
 test('source prose, document declarations and draft context cannot grant owner attribution',async t=>{

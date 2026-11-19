@@ -133,6 +133,7 @@ async function runCodex(t, query) {
   await writeFile(executable, `#!${process.execPath}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 let turns=0;
 readline.createInterface({input:process.stdin}).on('line',line=>{

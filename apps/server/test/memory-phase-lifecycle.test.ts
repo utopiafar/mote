@@ -39,6 +39,19 @@ test('extraction and independent review each receive three attempts without mult
  const children=f.store.db.prepare("SELECT attempts,state FROM execution_steps WHERE kind LIKE 'memory.phase.%'").all();assert.equal(children.length,2);assert.ok(children.every(child=>child.attempts===3&&child.state==='succeeded'));
 });
 
+test('a runnable Memory batch defers owner-question validation until it can affect the job',async t=>{
+ const f=await fixture(t),review=Promise.withResolvers<void>(),held=Promise.withResolvers<void>();
+ let validations=0;
+ f.pipeline.setOwnerQuestionHandler({create:()=>assert.fail('Only the pending question is needed'),pending:()=>{validations++;return true;}});
+ f.state.entered=review.resolve;f.state.held=held.promise;
+ const job=f.pipeline.create({evidenceIds:[f.record.id]}),completion=f.pipeline.run(job.id);
+ await review.promise;
+ try{assert.equal(f.pipeline.get(job.id).status,'running');assert.equal(validations,0);}
+ finally{held.resolve();}
+ const result=await completion;
+ assert.equal(result.status,'waiting_for_input');assert.equal(result.errorCode,'memory_owner_input_required');assert.ok(validations>0);
+});
+
 for(const encrypted of [false,true])test(`restart and owner retry preserve completed extraction and its independent receipt (${encrypted?'encrypted':'plain'})`,async t=>{
  const f=await fixture(t,encrypted);f.state.reviewFailures=3;
  const failed=await f.pipeline.run(f.pipeline.create({evidenceIds:[f.record.id]}).id);assert.equal(failed.status,'failed');assert.equal(f.state.extractCalls,1);assert.equal(f.state.reviewCalls,3);

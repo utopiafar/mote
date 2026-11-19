@@ -176,6 +176,18 @@ test('resource claims serialize shared evidence across connections without block
  await second.close();other.close();
 });
 
+test('slow input validation and running projection leave the newly admitted grant a full lease',async t=>{
+ const {engine,advance}=await fixture(t);let validations=0,executions=0;
+ engine.register({...base,validate:()=>{if(++validations===2)advance(31000);return true;},
+  project:step=>{if(step.state==='running')advance(31000);},
+  execute:async(_step,_signal,grant)=>{grant.assert();executions++;return null;}});
+ const id=engine.enqueue('generated-slow-admission','fixture',{});
+ await engine.tick();
+ assert.equal(executions,1);
+ assert.equal(engine.get(id)!.state,'succeeded');
+ assert.equal(engine.get(id)!.attempts,1);
+});
+
 test('an expired lease cannot commit even before another host reclaims it',async t=>{
  const {engine,advance}=await fixture(t);let calls=0;const committed:number[]=[];
  engine.register({...base,execute:async()=>{calls++;if(calls===1)advance(30001);return calls;},commit:(_step,result)=>{committed.push(Number(result));}});

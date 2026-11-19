@@ -26,6 +26,7 @@ export interface MemoryRuntimeRouteDependencies {
   readonly files:FileStore;
   readonly evidenceReader:MemoryInputSelection;
   readonly memories:MemoryStore;
+  readonly retryTopics:(operationId:string)=>void;
   readonly modelSettings:ModelSettingsStore;
   readonly modelAuthorizationHost:ModelAuthorizationHost;
   readonly availableModelConnections:()=>ModelConnection[];
@@ -130,6 +131,13 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
     child.post('/api/memory-jobs/:id/cancel',async req=>dependencies.pipeline().cancel(jobId(req.params)));
     child.post('/api/memory-jobs/:id/retry',async(req,reply)=>{
       const pipeline=dependencies.pipeline(),id=jobId(req.params),operationId='memory:'+id,control=dependencies.modelAuthorizationHost.control;
+      const {target}=z.object({target:z.literal('topics').optional()}).parse(req.query);
+      const job=pipeline.get(id);
+      if(target==='topics'||job.status==='completed'){
+        if(['paused','pausing','cancelled'].includes(job.status))throw new StoreError('Memory job is paused or cancelled',409);
+        dependencies.retryTopics(operationId);
+        return reply.code(202).send(job);
+      }
       // This owner action covers only the selected job. Existing steps retain
       // their original authority; previously denied steps have none to resume.
       const accepted=control.manualCommand('owner-memory-retry:'+randomUUID(),[operationId],dependencies.availableModelConnections(),()=>{

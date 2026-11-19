@@ -36,6 +36,27 @@ function fakeRunner(){
   return {runner,jobs,created,ran,cancelled};
 }
 
+for(const planned of [false,true])test(`an oversized ${planned?'planned':'legacy'} Memory input stays available without retrying its unchanged selection`,async t=>{
+  const {store,materials,work,draft,receive,advance}=fixture(t),fake=fakeRunner();
+  const material=materials.publish(draft());receive('large-original');work.observe(material.id,['source-body'],{inputKey:'large-original',change:'source'});
+  let attempts=0;
+  const runner={...fake.runner,create:(input:Parameters<MaterialMemoryRunner['create']>[0])=>{
+    if(++attempts===1)throw new StoreError('Generated input exceeds the per-job limit',413);
+    return fake.runner.create(input);
+  }};
+  const drain=()=>planned?work.drainBounded(runner,true):work.drain(runner,true);
+  await drain();
+  advance(120000);await drain();
+  assert.equal(attempts,1,'unchanged oversized input must not repeat a failed enqueue');
+  const row=store.db.prepare('SELECT job_id,error FROM material_memory_requests').get()!;
+  assert.equal(row.error,'memory_input_too_large');assert.equal(row.job_id,null);
+  assert.equal(work.inputs.available('generated-source','large-original'),true);
+  materials.publish(draft('Generated rebuilt selection'),{expectedRevision:material.revision});
+  work.observe(material.id,['source-body'],{inputKey:'large-original',change:'rebuild'});
+  assert.equal(await drain(),1,'a changed selection can still use the original available grant');
+  assert.equal(attempts,2);
+});
+
 for(const planned of [false,true])test(`a changed model configuration parks ${planned?'planned':'legacy'} Memory work until an explicit retry`,async t=>{
   const {store,materials,work,draft,receive,advance}=fixture(t),fake=fakeRunner(),material=materials.publish(draft());receive('raw');work.observe(material.id,['source-body'],{inputKey:'raw',change:'source'});
   const planner=async(catalog:import('../src/material-memory-work.js').MemoryWorkCandidate[])=>[{members:catalog.map(item=>item.key),goal:'Inspect generated original',instruction:'Preserve identity'}];
@@ -105,6 +126,22 @@ test('a planning race leaves every receipt unconsumed and planning metadata neve
   const material=materials.publish(draft());receive('fresh');work.observe(material.id,['source-body'],{inputKey:'fresh',change:'source'});
   assert.equal(await work.drainPlanned(fake.runner,true,async catalog=>{assert.ok(!JSON.stringify(catalog).includes('Generated material body'));work.observe(material.id,['source-body'],{inputKey:'fresh',change:'rebuild',automatic:false});return [{members:[catalog[0].key],goal:'Inspect',instruction:'Original only'}];}),0);
   assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()!.n,0);assert.equal(fake.created.length,0);
+});
+
+test('recovering a planned backlog leaves a turn between jobs and stops on disposal',async t=>{
+  const {store,materials,work,draft,receive,advance}=fixture(t),fake=fakeRunner();
+  for(const externalId of ['generated-first','generated-second']){
+    const material=materials.publish({...draft(),id:materialId('generated-source',externalId),origin:{sourceId:'generated-source',externalId}});
+    receive(externalId);work.observe(material.id,['source-body'],{inputKey:externalId,change:'source'});
+  }
+  assert.equal(work.drain(fake.runner,true),2);await new Promise(resolve=>setImmediate(resolve));
+  fake.ran.length=0;advance(6000);
+  const recovering=work.drainBounded(fake.runner,true);
+  await Promise.resolve();
+  assert.equal(fake.ran.length,1,'only the first stored job can open in the current turn');
+  work.dispose();await recovering;
+  assert.equal(fake.ran.length,1);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_input_authorizations WHERE job_id IS NOT NULL').get()?.n,2);
 });
 
 test('a failed member claim does not consume the successful prefix of a package',t=>{

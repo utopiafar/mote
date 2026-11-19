@@ -39,15 +39,26 @@ test('late snapshot extraction updates the file view and directory and remains s
  const found=await indexer.search({query:'searchable tail'});assert.ok(found.some(row=>row.ocrText.includes('searchable tail')));assert.equal(found.retrieval.mode,'lexical');assert.equal(found.retrieval.degraded,true);assert.equal(found.retrieval.reason,'embedding_not_configured');
  const result:any=await new FileEvidence(sources).read(ack.id,text.indexOf('searchable'),15);assert.equal(result.status,'ready');assert.equal(result.record.ocrText,'searchable tail');
 });
-test('embedding coverage counts current extracted chunks and identifies failures independently of extraction',async t=>{
- const {files,store,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated '.repeat(500)+'tail'),true),processing=new FileProcessing(testScope(t),files);
+test('chunk views share one current parent projection and preserve independent embedding coverage',async t=>{
+ const {files,store,sources,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated '.repeat(500)+'tail'),true),processing=new FileProcessing(testScope(t),files);
  const indexer=new Indexer(store,{model:'generated-embedding',baseUrl:'http://127.0.0.1:1',apiKey:''},undefined,files);cleanup.push(()=>processing.close(),()=>indexer.close());
  await processing.tick();const chunks=files.chunks(ack.id);assert.equal(chunks.length,2);
- assert.deepEqual(files.fileView(ack.id).coverage.embedding,{status:'pending',completed:0,total:2});
- files.indexed(chunks[0].id,[0.5,0.5],'generated-embedding');assert.equal(files.fileView(ack.id).coverage.embedding.status,'partial');assert.equal(files.fileView(ack.id).coverage.embedding.completed,1);assert.equal(files.fileView(ack.id).coverage.embedding.total,2);
- files.indexFailed(chunks[1].id);assert.match(files.fileView(ack.id).coverage.embedding.reason??'',/could not be embedded/);
- files.indexed(chunks[1].id,[0.5,0.5],'generated-embedding');assert.deepEqual(files.fileView(ack.id).coverage.embedding,{status:'ready',completed:2,total:2});
- assert.equal(files.fileView(ack.id).coverage.extraction.status,'ready');assert.notEqual(files.fileView(ack.id).coverage.semantic.status,'ready');
+ const reader=new EvidenceReader(store,sources,files),reads=t.mock.method(files,'fileView');
+ const view=()=>{
+  const before=reads.mock.callCount(),projected=reader.context(chunks);
+  assert.equal(reads.mock.callCount(),before+1);
+  assert.ok(projected.every(record=>record.fileView?.captureId===ack.id&&record.fileView.item.text===''));
+  assert.deepEqual(projected[0].fileView,projected[1].fileView);
+  return projected[0].fileView!;
+ };
+ assert.deepEqual(view().coverage.embedding,{status:'pending',completed:0,total:2});
+ files.indexed(chunks[0].id,[0.5,0.5],'generated-embedding');
+ const partial=view().coverage.embedding;assert.equal(partial.status,'partial');assert.equal(partial.completed,1);assert.equal(partial.total,2);
+ files.indexFailed(chunks[1].id);assert.match(view().coverage.embedding.reason??'',/could not be embedded/);
+ files.indexed(chunks[1].id,[0.5,0.5],'generated-embedding');
+ const final=view().coverage;assert.deepEqual(final.embedding,{status:'ready',completed:2,total:2});
+ assert.equal(final.extraction.status,'ready');assert.notEqual(final.semantic.status,'ready');
+ sources.update('fixture',{enabled:false});assert.ok(reader.context(chunks).every(record=>record.fileView===undefined));
 });
 test('a processor using the shared partial coverage contract cannot make Material or the directory claim full text',async t=>{
  const {files,store,cleanup}=fixture(t),ack=await upload(files,Buffer.from('Generated source bytes'),true),processing=new FileProcessing(testScope(t),files);cleanup.push(()=>processing.close());await processing.runtime.ready;

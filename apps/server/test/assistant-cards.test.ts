@@ -246,6 +246,32 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
    assert.equal(denied.statusCode,404,'a revision conflict cannot reveal a hidden card');
   }
  });
+
+ await t.test('internal review reuses overlapping original reads while preserving feedback and per-review scope',async t=>{
+  const previous=await capture('Generated review previous'),current=await capture('Generated review current'),id=randomUUID();
+  const initial=publish({...item(id,'previous',[previous],'Generated previous version'),evidence:[{id:previous,quote:'Generated review previous'}]},undefined,all);
+  const latest=publish({...item(id,'current',[current],'Generated current version'),evidence:[{id:current,quote:'Generated review current'}]},initial.revision,all);
+  const saved=cards.feedback(id,{expectedRevision:latest.revision,action:'correct',note:'Generated review correction'},all);
+  assert.deepEqual(saved.taskScope,{kind:'selection',evidenceIds:[current]});
+  const otherId=randomUUID();
+  publish({...item(otherId,'shared',[previous,current],'Generated overlapping card'),evidence:[{id:previous,quote:'Generated review previous'},{id:current,quote:'Generated review current'}]},undefined,all);
+  const memories=node.featureServices.evidenceReader.memories,read=memories.readEvidence.bind(memories),reads:string[][]=[];
+  const spy=t.mock.method(memories,'readEvidence',(ids:string[])=>{if(ids.includes(current)||ids.includes(previous))reads.push([...ids].sort());return read(ids);});
+  const reviews=cards.review(all,2).items;
+  assert.deepEqual(reviews.map(row=>row.id),[otherId,id]);
+  const review=reviews[1];
+  assert.equal(review.id,id);
+  assert.deepEqual(review.feedback,saved.feedback);
+  assert.deepEqual(review.disclosureDependencies.ids,[current,previous].sort());
+  assert.deepEqual(reads,[[current,previous].sort()]);
+  reads.length=0;
+  const restricted=cards.review({kind:'selection',evidenceIds:[current]},1).items[0];
+  spy.mock.restore();
+  assert.equal(restricted.id,id);
+  assert.deepEqual(restricted.feedback,[]);
+  assert.deepEqual(restricted.disclosureDependencies.ids,[current]);
+  assert.deepEqual(reads,[[current,previous].sort()]);
+ });
 });
 
 test('encrypted card bodies and feedback survive restart and maintenance deletion purges them',async t=>{

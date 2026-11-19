@@ -60,7 +60,13 @@ export class MemoryBindings {
     const declaredEngine=instance.capabilities.find(value=>value.id==='engine'),engine=declaredEngine?.state==='unsupported'?undefined:declaredEngine,repository=instance.capabilities.find(value=>value.id==='repository'),retrieval=instance.capabilities.find(value=>value.id==='retrieval'),available=instance.desired&&(engine?engine.state==='verified':repository?.state==='verified'&&retrieval?.state==='verified');
     return {id:'instance:'+instance.id,name:instance.name,mode:engine?'engine' as const:'modules' as const,instanceId:instance.id,modules:builtinModules.map(module=>(engine?module.stage!=='review':['repository','retrieval'].includes(module.stage))?{...module,id:instance.id+'.'+module.stage,name:instance.name,instanceId:instance.id,state:(engine??instance.capabilities.find(value=>value.id===module.stage))?.state??'unknown'}:module),capabilities:instance.capabilities,available,reason:available?undefined:'Enable this instance after verifying its actual capabilities',allowedActions:available?['prepare' as const]:[]};
   })];}
-  view():MemoryBindingView{const binding=this.binding(),plans=this.plans(),activePlan=plans.find(plan=>plan.id===binding.planId);if(!activePlan)throw new StoreError('The active Memory provider is missing; restore its retained artifact',503);
+  private activePlan(binding:Binding,plans:readonly MemoryPlanView[]){
+    const plan=plans.find(plan=>plan.id===binding.planId);
+    if(!plan)throw new StoreError('The active Memory provider is missing; restore its retained artifact',503);
+    return plan;
+  }
+  bindingMode(binding:Binding){return binding.planId===builtin.id?builtin.mode:this.activePlan(binding,this.plans()).mode;}
+  view():MemoryBindingView{const binding=this.binding(),plans=this.plans(),activePlan=this.activePlan(binding,plans);
     const preparation=this.preparation(),admission=this.automation.view(),enabled=!binding.namespace||this.plugins.instanceView(binding.namespace.instanceId).desired;
     return {revision:admission.revision,generation:binding.generation,mode:activePlan.mode,modules:activePlan.modules,activePlan,plans,admission:{...admission,...(!enabled&&admission.desired?{state:'blocked' as const,blockedReason:'The bound plugin is disabled; existing Memory remains readable'}:{})},preparation:preparation?.view,allowedActions:preparation&&!['applied','cancelled'].includes(preparation.view.state)?['stop',...preparation.view.allowedActions]:['pause','resume','stop','prepare']};
   }

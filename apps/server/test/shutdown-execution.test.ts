@@ -12,6 +12,7 @@ import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import type {FileProcessor} from '../src/file-processors.js';
+import {MediaAssets} from '../src/media-assets.js';
 
 const transcript:Transcript={durationMs:1000,segments:[{startMs:0,endMs:1000,text:'Generated shutdown fixture'}]};
 function deferred<T=void>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>resolve=done);return {promise,resolve};}
@@ -51,13 +52,41 @@ test('app.close stops publication polling before executor disposal and retains p
  assert.ok(next.executor.list({kind:'memory.provider-reconcile',limit:100}).items.length>0,'fresh process schedules retained reconciliation');
 });
 
+test('app.close preserves a Memory window when its pipeline stops accepting new work',async t=>{
+ const f=await fixture(t),entered=deferred(),pipelineQuiesced=deferred();
+ const agent={configured:true,query:async()=>{throw Error('No model in generated lifecycle shutdown fixture');},close:async()=>{}};
+ const node=await f.start(agent),view=(host:Node)=>host.lifecycle.view().extensions.find(item=>item.id==='consolidation')!;
+ const quiesce=node.memoryPipeline.quiesce.bind(node.memoryPipeline);
+ t.mock.method(node.memoryPipeline,'quiesce',()=>{quiesce();pipelineQuiesced.resolve();});
+ node.lifecycle.replace({id:'consolidation',version:view(node).version,stream:'memory',async run(_window,checkpoint){
+  checkpoint('completed');entered.resolve();await pipelineQuiesced.promise;
+  await node.memoryPipeline.run(randomUUID());
+ }});
+ const windowId=node.lifecycle.request('consolidation',[randomUUID()],'generated-start');
+ const running=node.lifecycle.tick();await entered.promise;
+ await node.app.close();await running;
+ const interrupted=view(node);
+ assert.equal(interrupted.active?.id,windowId);
+ assert.equal(interrupted.active?.checkpoint,'completed');
+ assert.equal(interrupted.failures,0);
+ assert.equal(interrupted.manualRetryRequired,false);
+ assert.equal(node.executor.get('lifecycle:'+windowId)?.state,'waiting');
+ const next=await f.start(agent);await next.lifecycle.tick();
+ assert.equal(view(next).lastRun?.id,windowId);
+ assert.equal(view(next).active,undefined);
+ assert.equal(view(next).failures,0);
+});
+
 // This total budget covers 184 generated intakes, preparation, close and restart.
 // Allow CI contention while completing the journey; this is not an app.close latency requirement.
 test('app.close preserves 180 model waits, queues, retry deadlines and explicit cancellation; restart resumes eligible files',{timeout:240000},async t=>{
  let ready=false,calls=0;
+ // This scenario drives admissions explicitly. A wall-clock poll can otherwise
+ // claim the queued file during fixture setup on slower or faster hosts.
+ t.mock.timers.enable({apis:['setInterval']});
+ t.mock.method(MediaAssets.prototype,'ready',()=>ready);
  const f=await fixture(t,[{id:'fixture.audio',name:'Generated model wait',version:'1',stage:'extract',serviceKind:'asr',localOnly:true,managedModel:'dialogue',mediaTypes:['audio/'],async process(){calls++;return transcript;}}]);
- const start=async()=>{const node=await f.start();node.featureServices.mediaAssets.ready=()=>ready;return node;};
- const node=await start();node.featureRoutes.stop();await configure(node,{audioProcessor:'fixture.audio'});const missing:string[]=[];
+ const node=await f.start();node.featureRoutes.stop();await configure(node,{audioProcessor:'fixture.audio'});const missing:string[]=[];
  for(let i=0;i<180;i++)missing.push(await upload(node,`missing-${i}.wav`));
  while(node.processing.prepare().length)await node.executor.tick();
  assert.equal(calls,0);for(const id of missing){assert.equal(fileStep(node,id).state,'blocked');assert.equal(fileStep(node,id).error,'model_missing');assert.equal(fileStep(node,id).attempts,0);}
@@ -65,12 +94,13 @@ test('app.close preserves 180 model waits, queues, retry deadlines and explicit 
  const retry=fileStep(node,backoff),deadline=Date.now()+3600000;
  f.store.db.prepare("UPDATE execution_steps SET error='provider_unavailable',attempts=2,available_at=?,recovery_deadline=? WHERE id=?").run(deadline,deadline+3600000,retry.id);node.executor.project(retry.id);
  node.executor.fail(fileStep(node,failed).id,'generated_failure');node.processing.cancel(cancelled);
+ assert.equal(fileStep(node,queued).state,'waiting');
  const before=f.store.db.prepare("SELECT * FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') ORDER BY id").all(),jobs=f.store.db.prepare('SELECT * FROM file_jobs ORDER BY capture_id').all();
  await node.app.close();
  assert.deepEqual(f.store.db.prepare("SELECT * FROM execution_steps WHERE kind IN ('files.pipeline','files.summary') ORDER BY id").all(),before);
  assert.deepEqual(f.store.db.prepare('SELECT * FROM file_jobs ORDER BY capture_id').all(),jobs);
  assert.throws(()=>node.executor.enqueue('late','files.pipeline',{}),{statusCode:503});assert.deepEqual(node.processing.prepare(),[]);
- ready=true;const next=await start();next.featureRoutes.stop();
+ ready=true;const next=await f.start();next.featureRoutes.stop();
  // tick() admits new work without waiting for older work. Include the separate
  // text task, which can already own the file pool before model waits resume.
  await next.executor.drain([...next.processing.prepare(),fileStep(next,queued).id]);await next.processing.tick();await next.processing.tick();
@@ -118,8 +148,14 @@ test('app.close preserves durable query work while keeping user cancellation ter
  await entered.promise;
  node.queryRuns.cancel(ids[5]);await yieldTurn();assert.equal(node.queryRuns.get(ids[4]).status,'running');
  await node.app.close();held.resolve();await yieldTurn();
- for(const id of ids.slice(0,5))assert.equal(node.queryRuns.get(id).status,'running');
- assert.equal(node.queryRuns.get(ids[5]).status,'cancelled');
+ const run=f.store.db.prepare("SELECT json_extract(json,'$.status') status FROM query_runs WHERE id=?");
+ const work=f.store.db.prepare("SELECT json_extract(json,'$.status') status FROM delegation_works WHERE id=?");
+ for(const id of ids.slice(0,5)){
+  assert.equal(run.get(id)?.status,'running');
+  assert.ok(['waiting','running'].includes(String(work.get('query:'+id)?.status)));
+ }
+ assert.equal(run.get(ids[5])?.status,'cancelled');
+ assert.equal(work.get('query:'+ids[5])?.status,'cancelled');
 });
 
 test('app.close retains import admission blocks instead of cancelling inactive imports',async t=>{

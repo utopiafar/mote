@@ -111,6 +111,16 @@ test('recovery observes each durable job once while in flight and never replays 
   assert.equal(f.platform.lifecycle.view().extensions.length,4);
 });
 
+test('startup recovery yields between durable jobs and quiesce fences the remainder',async t=>{
+  const f=await fixture(t),first=recoverableJob(f.store,randomUUID()),second=recoverableJob(f.store,randomUUID());
+  f.platform.prepare();f.platform.start();
+  assert.deepEqual(f.runs,[],'ready does not open the first job in the current turn');
+  await flush();assert.deepEqual(f.runs,[first]);
+  await f.platform.stop('disabled');assert.deepEqual(f.runs,[first]);
+  f.platform.start();await flush();
+  assert.deepEqual(f.runs,[first,second]);
+});
+
 test('mid-prepare failure releases the partial lifecycle and a retry installs one clean registration set',async t=>{
   const f=await fixture(t);
   f.integrationSettings.fail=true;

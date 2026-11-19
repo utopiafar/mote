@@ -117,6 +117,8 @@ export interface QueryGrants {
   /** Host-only additional original read grant. These exact ranges are a catalog,
    * not delivered evidence or extraction targets. No archive discovery is added. */
   evidenceReadRanges?: readonly {id:string;offset:number;length:number}[];
+  /** Host-only prompt representation of the same exact read catalog. */
+  evidenceReadRangeFormat?:'tuple'|'paged';
   /** Host-only dialogue snapshot for compaction; never an original-read grant. */
   historyContext?:{conversationId:string;revision:number;turns:{id:string;runId:string}[];evidenceDependencies:import('@mote/shared').EvidenceDependencies};
   /** Host-only original selection retained after ordinary deletion. Fresh

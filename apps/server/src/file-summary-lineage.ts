@@ -8,10 +8,7 @@ export function fileSummaryInputFingerprint(files:FileStore,id:string){
   const hash=createHash('sha256');
   const version=files.version(id),context=files.sources.contexts.identity(version.source_id);
   if(context)hash.update(JSON.stringify({sourceContext:context}));
-  for(let offset=0;;offset+=200){
-    const records=files.chunks(id,offset,200);if(!records.length)break;
-    for(const record of records)hash.update(JSON.stringify([record.id,record.ocrText,record.fileEvidence]));
-  }
+  for(const record of files.preferredChunks(id))hash.update(JSON.stringify([record.id,record.ocrText,record.fileEvidence]));
   return hash.digest('hex');
 }
 

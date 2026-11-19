@@ -10,6 +10,19 @@ import {prepareTaskContext} from '../dist/tasks/context-assembly.js';
 import {assembleHostContext,createHostRunSession} from '../dist/host/run-session.js';
 import {createHostOutputProvider} from '../dist/host/output.js';
 import {ActiveExecutionBudget} from '../dist/active-budget.js';
+import {createOfficialReadPacks} from '../dist/tools/official-read-packs.js';
+
+test('host request sizing shares tool registration across all selected definitions',()=>{
+ const controller=new AbortController(),id='00000000-0000-4000-8000-000000000001';
+ let checks=0;
+ const input={question:'Generated exact evidence review',evidenceIds:[id],evidenceReadRangeFormat:'paged',evidenceReadRanges:[{id,offset:0,length:5}],
+  toolContributions:[{descriptors:createOfficialReadPacks({}),lifecycle:{signal:controller.signal,assertCurrent(){checks++;}}}]};
+ const {tools}=assembleHostContext(input,[]);
+ assert.deepEqual(tools.map(tool=>tool[0]),['evidence','context_evidence','context_evidence_catalog']);
+ assert.equal(checks,2,'one registration checks authority before and after preparation');
+ controller.abort();
+ assert.throws(()=>assembleHostContext(input,[]),{name:'AbortError'});
+});
 
 test('proposal lifecycle has one instruction contract while the envelope supplies only host state',()=>{
  const input={question:'Generated plan',hostRetrieval:'none',hostControlChannel:{phase:'proposal',definitions:[],execute:async()=>({data:{}})}};
