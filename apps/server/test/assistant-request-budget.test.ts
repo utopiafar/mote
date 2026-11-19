@@ -30,9 +30,10 @@ async function fixture(t:TestContext,window=272000){
   if(previous)await completionGate;
   const message=body.input.findLast((item:any)=>item.type==='message'&&item.role==='user');
   const envelope=JSON.parse(message.content.find((part:any)=>part.type==='input_text').text);
-  const grant=envelope.authorizedContextRanges.ranges.at(-1);
+  const range=envelope.authorizedContextRanges.ranges.at(-1);
+  const grant=Array.isArray(range)?{id:range[0],offset:range[1],length:range[2]}:range;
   const output=previous?[{id:'generated-final',type:'message',role:'assistant',phase:'final_answer',status:'completed',content:[{type:'output_text',text:JSON.stringify({answer:JSON.stringify({reason:'Generated bounded review completed.',cards:[],commitments:[]}),citationIds:[]}),annotations:[]}]}]:[
-   {id:'generated-read',type:'function_call',call_id:'generated-read',name:'context_evidence',arguments:JSON.stringify({id:grant.id,offset:Math.max(0,grant.length-100),length:100}),status:'completed'},
+   {id:'generated-read',type:'function_call',call_id:'generated-read',name:'context_evidence',arguments:JSON.stringify({id:grant.id,offset:grant.offset+Math.max(0,grant.length-100),length:100}),status:'completed'},
   ];
   res.writeHead(200,{'content-type':'text/event-stream'});
   const send=(type:string,value:unknown)=>res.write(`event: ${type}\ndata: ${JSON.stringify({type,...value as object})}\n\n`);

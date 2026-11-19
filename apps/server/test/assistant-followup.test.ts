@@ -520,20 +520,37 @@ test('a review at capacity delivers exact original spans once and preserves its 
 
 test('a review can send compact quotes for all originals and defer full receipts that exceed capacity',async t=>{
  const f=await fixture(t),notes=[await f.add('Generated first exact original.'),await f.add('Generated second exact original.')];
- const evidenceIds=notes.map(note=>note.id),records=f.reader.memories.readCurrentEvidence(evidenceIds).map(record=>({...record,windowTitle:'Generated file metadata. '.repeat(50)}));
+ const evidenceIds=notes.map(note=>note.id),records=f.reader.memories.readCurrentEvidence(evidenceIds).map((record,index)=>({...record,windowTitle:`Generated file ${index} metadata. `.repeat(50)}));
  const originals=records.map(record=>({id:record.id,offset:0,quote:record.ocrText})),taskContext={turns:[],originals};
  const input:QueryInput={question:'Review all generated originals',evidenceIds,taskContext};
  const prepared=assistantQueryInput(input,originals,records),firstRange=prepared.evidenceRanges![0];
  const reserve={contextWindow:64000,maxOutputTokens:512,draftTokens:512};
- const compact=assistantRequestUsage({...prepared,taskContext:{turns:[]}},records,reserve);
- const first=assistantRequestUsage({...prepared,evidenceIds:[firstRange.id],evidenceRanges:[firstRange]},records,reserve);
+ const packed={...prepared,evidenceReadRangeFormat:'tuple' as const};
+ const compact=assistantRequestUsage({...packed,taskContext:{turns:[]}},records,reserve);
+ const first=assistantRequestUsage({...packed,evidenceIds:[firstRange.id],evidenceRanges:[firstRange]},records,reserve);
  const capacity={...reserve,contextWindow:Math.ceil((Math.floor((compact.inputTokens+first.inputTokens)/2)+reserve.maxOutputTokens)*10/9)};
- assert.equal(assistantRequestUsage({...prepared,taskContext:{turns:[]}},records,capacity).fits,false);
+ assert.equal(assistantRequestUsage({...packed,taskContext:{turns:[]}},records,capacity).fits,false);
  const selected=assistantQueryWithinCapacity(input,originals,records,capacity);assert.ok(selected);
  assert.deepEqual(selected.taskContext,taskContext,'every exact original and offset stays in the model context');
  assert.deepEqual(selected.evidenceIds,[firstRange.id]);
  assert.deepEqual(selected.evidenceRanges,[firstRange]);
  assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges,'all originals still have their full paged read grants');
+});
+
+test('Assistant packing keeps the complete range catalog when only its compact representation fits',async t=>{
+ const f=await fixture(t),note=await f.add('Generated exact original.');
+ const original=f.reader.memories.readCurrentEvidence([note.id])[0],records=[original,...Array.from({length:140},()=>({...original,id:randomUUID()}))];
+ const originals=[{id:original.id,offset:0,quote:original.ocrText}],context={turns:[],originals};
+ const input:QueryInput={question:'Review the generated original with paged context',evidenceIds:records.map(record=>record.id),taskContext:context};
+ const prepared=assistantQueryInput(input,originals,records),compact={...prepared,taskContext:{turns:[]}};
+ const reserve={contextWindow:64000,maxOutputTokens:512,draftTokens:512};
+ const objects=assistantRequestUsage(compact,records,reserve),tuples=assistantRequestUsage({...compact,evidenceReadRangeFormat:'tuple'},records,reserve);
+ const capacity={...reserve,contextWindow:Math.ceil((Math.floor((objects.inputTokens+tuples.inputTokens)/2)+reserve.maxOutputTokens)*10/9)};
+ assert.equal(assistantRequestUsage(compact,records,capacity).fits,false);
+ const selected=assistantQueryWithinCapacity(input,originals,records,capacity);assert.ok(selected);
+ assert.equal(selected.evidenceReadRangeFormat,'tuple');assert.ok(assistantRequestUsage(selected,records,capacity).fits);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
+ assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
 });
 
 test('the assembled batch passes the configured product budget to its query consumer',async t=>{

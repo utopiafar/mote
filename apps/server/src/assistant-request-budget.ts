@@ -48,13 +48,16 @@ export function assistantQueryWithinCapacity(input:QueryInput,originals:readonly
  // Keep its disclosure grants and remove only the second copy of those spans.
  const compact={...prepared,taskContext};
  if(assistantRequestUsage(compact,records,capacity).fits)return compact;
+ // Large scopes keep each exact grant but omit repeated range field names.
+ const packed:QueryInput={...compact,evidenceReadRangeFormat:'tuple'};
+ if(assistantRequestUsage(packed,records,capacity).fits)return packed;
  // If the expanded original metadata still exceeds capacity, keep every
  // exact quote in the task and let the model page their full read grants.
  // Use the longest affordable prefix for the initial rich receipts.
  let low=1,high=ranges.length-1,best:QueryInput|undefined;
  while(low<=high){
   const count=Math.floor((low+high)/2),evidenceRanges=ranges.slice(0,count);
-  const candidate={...prepared,evidenceIds:[...new Set(evidenceRanges.map(range=>range.id))],evidenceRanges};
+  const candidate={...packed,taskContext:context,evidenceIds:[...new Set(evidenceRanges.map(range=>range.id))],evidenceRanges};
   if(assistantRequestUsage(candidate,records,capacity).fits){best=candidate;low=count+1;}
   else high=count-1;
  }

@@ -48,10 +48,12 @@ test('a persisted capability manifest cannot resume across an actual contract ch
   await assert.rejects(startBridge(reader(),{...input,contextCapabilitySnapshot:saved},8),error=>error.code==='context_capabilities_changed');
 });
 
-test('a broader exact grant exposes only a catalog until successful model-selected original reads',async t=>{
- const input=bounds({evidenceReadRanges:grants}),bridge=await startBridge(reader(),input,12);t.after(()=>bridge.close());
+for(const format of [undefined,'tuple'])test(`a broader exact ${format??'object'} catalog exposes bodies only after successful original reads`,async t=>{
+ const input=bounds({evidenceReadRanges:grants,evidenceReadRangeFormat:format}),bridge=await startBridge(reader(),input,12);t.after(()=>bridge.close());
  const envelope=buildContextEnvelope(input,bridge.seedEvidence);
- assert.deepEqual(taskTools(input),['evidence','context_evidence']);assert.deepEqual(envelope.authorizedContextRanges.ranges,grants);
+ assert.deepEqual(taskTools(input),['evidence','context_evidence']);
+ assert.deepEqual(envelope.authorizedContextRanges.ranges,format==='tuple'?grants.map(({id,offset,length})=>[id,offset,length]):grants);
+ if(format==='tuple')assert.match(envelope.authorizedContextRanges.instruction,/\[id, offset, length\]/);
  assert.equal(envelope.untrustedEvidence.length,1);assert.equal(envelope.untrustedEvidence[0].ocrText,text.slice(target.offset,target.offset+target.length));
  const source=envelope.evidenceContexts[envelope.untrustedEvidence[0].commonContextRef];
  assert.equal(source.attributionContext.importStatements[0].instruction,instruction);
