@@ -418,7 +418,7 @@ export class FileStore {
     return {captureId:id,...manifest,hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job,artifacts,steps};
   }
   fileView(id:string){
-    const db=this.store.db,version=this.version(id),source=this.sources.getSource(version.source_id),detail=this.detail(id),reference=source.retention==='reference'||detail.item.layer==='reference';
+    const db=this.store.db,version=this.version(id),source=this.sources.getSource(version.source_id),detail=this.detail(id,false),reference=source.retention==='reference'||detail.item.layer==='reference';
     const document=detail.item.document?{...detail.item.document}:undefined;
     if(reference&&document)delete document.fileIndex;
     const item=sourceItemSchema.parse({...detail.item,...(reference?{layer:'reference',text:''}:{}),...(document?{document}:{})});

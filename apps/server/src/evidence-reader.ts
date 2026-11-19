@@ -320,7 +320,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       return {...page,items};
     }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{owned?.release();}
   }
-  context(records:CaptureRecord[]){return records.map(record=>{
+  context(records:CaptureRecord[]){
+    const fileViews=new Map<string,ReturnType<FileStore['fileView']>>();
+    return records.map(record=>{
     const formal=this.materials&&this.store.db.prepare('SELECT 1 FROM material_evidence WHERE id=?').get(record.id);
     const nativeFile=this.files&&this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
     const current=formal?this.materials!.isCurrentEvidence(record.id):nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance?.externalId&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
@@ -340,13 +342,18 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         }
       }
     }
-    const fileId=this.files?.readableFile(record.id),view=fileId?this.files!.fileView(fileId):undefined;
-    // FileView is navigation and coverage, not a second unbounded body delivery.
-    // Keep its existing schema while withholding item.text from a search receipt.
-    const item=view?.item.text?{...view.item,text:'',...(view.item.document?{document:{...view.item.document,fileIndex:undefined}}:{})}:view?.item;
-    const fileView=view&&item?{...view,item}:undefined;
+    const fileId=this.files?.readableFile(record.id);
+    let fileView=fileId?fileViews.get(fileId):undefined;
+    if(fileId&&!fileView){
+      // Each chunk still proves its current read authority. Related chunks in
+      // this synchronous projection can share the parent navigation view.
+      const view=this.files!.fileView(fileId);
+      const item=view.item.text?{...view.item,text:'',...(view.item.document?{document:{...view.item.document,fileIndex:undefined}}:{})}:view.item;
+      fileView={...view,item};fileViews.set(fileId,fileView);
+    }
     return {...record,...(fileView?{fileView,provenance:{...record.provenance!,originalAvailable:fileView.canOpenOriginal}}:{}),...(this.materials?{attributionContext:this.materials.contextForEvidence(record)}:{}),ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{}),evidencePresentation};
-  });}
+    });
+  }
   records(args:Range&{query?:string},search=false){
     const base=search&&args.query?this.store.searchPage({...args,includeTotal:false}):this.store.list({...args,includeTotal:false});
     const chunks=search&&args.query?this.files?.searchPage(args):undefined;

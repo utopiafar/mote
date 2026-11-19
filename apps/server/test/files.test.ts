@@ -141,11 +141,13 @@ test('processing settings never expose credentials or silently reuse them at ano
 
 test('HTTP binary ingest, authenticated playback cookie, range, unauthenticated denial and full client access and explicit source filters',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-file-http-')),configFile=join(dir,'mote.yaml');
- writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-files-owner-token-1234567890'},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
+ const token='generated-files-owner-token-1234567890';
+ writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
  const config=configurationFromFile(configFile);
  const {app,connections}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error();},close:async()=>{}}});t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
- const headers={authorization:`Bearer ${config.token}`};
- await app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'phone',name:'Generated',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'}});
+ const headers={authorization:`Bearer ${token}`};
+ const source=await app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'phone',name:'Generated',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'}});
+ assert.equal(source.statusCode,200,source.body);
  const bytes=Buffer.from('0123456789'),m=manifest(bytes);
  const started=await app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:m});assert.equal(started.statusCode,200,started.body);const session=started.json();
  assert.equal((await app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes})).statusCode,200);
