@@ -1,5 +1,6 @@
 import {assembleHostContext,estimateSerializedTokens,originalEvidenceReceipt,type ContextRecord,type QueryInput} from '@mote/agent';
 import {StoreError} from './evidence-store.js';
+import {canonicalRecipeJson} from './recipe-contract.js';
 
 export type AssistantRequestCapacity={contextWindow:number;maxOutputTokens:number;draftTokens:number;language?:QueryInput['language']};
 type Original={id:string;offset:number;quote:string};
@@ -34,4 +35,17 @@ export function assistantRequestUsage(input:QueryInput,records:readonly ContextR
  const inputTokens=estimateSerializedTokens({system,tools,prompt,outputSchema}).tokens,bufferTokens=Math.ceil(capacity.contextWindow/10);
  const totalTokens=inputTokens+capacity.maxOutputTokens+bufferTokens;
  return {inputTokens,outputTokens:capacity.maxOutputTokens,bufferTokens,totalTokens,fits:totalTokens<=capacity.contextWindow};
+}
+
+export function assistantQueryWithinCapacity(input:QueryInput,originals:readonly Original[],records:readonly ContextRecord[],capacity:AssistantRequestCapacity):QueryInput|undefined {
+ const prepared=assistantQueryInput(input,originals,records);
+ if(assistantRequestUsage(prepared,records,capacity).fits)return prepared;
+ const context=prepared.taskContext;
+ if(!prepared.evidenceRanges?.length||!context||!('originals' in context))return;
+ const {originals:duplicate,...taskContext}=context;
+ if(canonicalRecipeJson(duplicate)!==canonicalRecipeJson(originals))return;
+ // The host seed already carries each exact span, ID, offset and provenance.
+ // Keep its disclosure grants and remove only the second copy of those spans.
+ const compact={...prepared,taskContext};
+ if(assistantRequestUsage(compact,records,capacity).fits)return compact;
 }

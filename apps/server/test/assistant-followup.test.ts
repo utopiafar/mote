@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {estimateSerializedTokens,type QueryInput} from '@mote/agent';
+import {assembleHostContext,estimateSerializedTokens,originalEvidenceReceipt,type QueryInput} from '@mote/agent';
 import type {AttributionContext,QueryResult,QueryScope} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
@@ -19,6 +19,7 @@ import {materialId,MaterialStore} from '../src/materials.js';
 import {ImportAttributionStore} from '../src/import-attribution.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import {fixtureMemoryResult} from './fixtures/memory-result.js';
+import {assistantQueryInput,assistantQueryWithinCapacity,assistantRequestUsage} from '../src/assistant-request-budget.js';
 
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
@@ -490,6 +491,31 @@ test('a newly completed understanding product forces a fresh analysis before pub
  assert.equal(f.node.featureServices.assistantCards.page({scope:all}).items.length,0);
  const retry=await f.run([note.material.ref],context=>{assert.equal(context.materials[0].products[0].summary,'Generated requirement product');return answer();});
  assert.deepEqual(retry.cardIds,[]);
+});
+
+test('a review at capacity delivers exact original spans once and preserves its read grants',async t=>{
+ const f=await fixture(t),note=await f.add('Generated original with independent citations. '.repeat(25));
+ const record=f.reader.memories.readCurrentEvidence([note.id])[0];
+ const originals=[{id:record.id,offset:9,quote:record.ocrText.slice(9,809)}];
+ const context={turns:[],originals,scope:{kind:'all'},asOf:at};
+ const input:QueryInput={question:'Review the generated evidence',evidenceIds:[note.id],taskContext:context};
+ const prepared=assistantQueryInput(input,originals,[record]);
+ const reserve={contextWindow:64000,maxOutputTokens:512,draftTokens:512};
+ const full=assistantRequestUsage(prepared,[record],reserve);
+ const compactContext={turns:[],scope:context.scope,asOf:at};
+ const compact=assistantRequestUsage({...prepared,taskContext:compactContext},[record],reserve);
+ const capacity={...reserve,contextWindow:Math.ceil((Math.floor((full.inputTokens+compact.inputTokens)/2)+reserve.maxOutputTokens)*10/9)};
+ assert.equal(assistantRequestUsage(prepared,[record],capacity).fits,false);
+ const selected=assistantQueryWithinCapacity(input,originals,[record],capacity);assert.ok(selected);
+ assert.equal(assistantRequestUsage(selected,[record],capacity).fits,true);
+ assert.deepEqual(selected.taskContext,compactContext);
+ assert.deepEqual(selected.evidenceIds,prepared.evidenceIds);
+ assert.deepEqual(selected.evidenceRanges,prepared.evidenceRanges);
+ assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
+ const receipt=originalEvidenceReceipt(record,originals[0].offset,originals[0].quote.length);
+ assert.equal(receipt.ocrText,originals[0].quote);assert.equal(receipt.textRange.start,originals[0].offset);
+ assert.ok(assembleHostContext(selected,[receipt],reserve.draftTokens).prompt.includes(originals[0].quote));
+ assert.equal(assistantQueryWithinCapacity(input,originals,[record],{...capacity,contextWindow:512}),undefined);
 });
 
 test('the assembled batch passes the configured product budget to its query consumer',async t=>{

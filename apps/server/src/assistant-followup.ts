@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
-import {assistantQueryInput,assistantRequestUsage,type AssistantRequestCapacity} from './assistant-request-budget.js';
+import {assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
 import {parseArtifactRef,parseEvidenceId,queryScopeSchema,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
@@ -369,8 +369,8 @@ export class AssistantFollowup {
  }
  private prepareRequest(input:QueryInput,originals:Snapshot['originals'],currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
   const capacity=this.requestCapacity?.();if(!capacity)return input;
-  const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryInput(input,originals,records);
-  if(!assistantRequestUsage(prepared,records,capacity).fits)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
+  const records=currentRecords??this.reader.memories.readCurrentEvidence(input.evidenceIds??[]),prepared=assistantQueryWithinCapacity(input,originals,records,capacity);
+  if(!prepared)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(input.taskContext)));
   return prepared;
  }
  /** Called by the existing Material poll and batch completion. The queue,
