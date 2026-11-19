@@ -211,6 +211,22 @@ test('registration lifecycle signal/callback are checked before and after execut
   assert.equal(checks, 3);
 });
 
+test('checking all pins shares a lifecycle within one boundary and rejects a replaced sibling',()=>{
+ const registry=new ToolRegistry(),first=new AbortController(),second=new AbortController();
+ let checks=0;
+ const assertCurrent=()=>{checks++;};
+ registry.register(descriptor('generated_first'),{signal:first.signal,assertCurrent});
+ const remove=registry.register(descriptor('generated_shared'),{signal:first.signal,assertCurrent});
+ registry.register(descriptor('generated_separate'),{signal:second.signal,assertCurrent});
+ const snapshot=registry.snapshot(registry.registered());
+ snapshot.assertAllActive();assert.equal(checks,2);
+ snapshot.assertAllActive();assert.equal(checks,4,'each boundary rechecks both lifecycles');
+ remove();registry.register(descriptor('generated_shared'),{signal:first.signal,assertCurrent});
+ assert.throws(()=>snapshot.assertAllActive(),expectCode('stale_tool_pin'));
+ const fresh=registry.snapshot(registry.registered());second.abort();
+ assert.throws(()=>fresh.assertAllActive(),{name:'AbortError'});
+});
+
 test('a tool can reach only the Host operations it declared', async () => {
   const livePort = (reads = []) => ({
     ...port(),

@@ -27,8 +27,14 @@ function cancellationKind(signal: AbortSignal, fallback: Cancellation['kind']): 
   return kind === 'cancelled' || kind === 'deadline_exceeded' || kind === 'revoked' || kind === 'scope_stopped' ? kind : fallback;
 }
 
+function defaultToolDefinitions(input:QueryInput){
+  let available:ReturnType<typeof contextToolDefinitions>|undefined;
+  const definitions=()=>available??=contextToolDefinitions(input);
+  return taskTools(input,definitions).map(name=>definitions().find(tool=>tool[0]===name));
+}
+
 /** Host assembly is shared; engine-specific schemas remain in the adapter. */
-export function assembleHostContext(input: QueryInput, seeds: ContextRecord[], outputTokens = DEFAULT_MODEL_MAX_TOKENS, maxToolCalls?: number, tools: unknown = taskTools(input).map(name => contextToolDefinitions(input).find(tool => tool[0] === name))) {
+export function assembleHostContext(input: QueryInput, seeds: ContextRecord[], outputTokens = DEFAULT_MODEL_MAX_TOKENS, maxToolCalls?: number, tools: unknown = defaultToolDefinitions(input)) {
   const prepared = prepareTaskContext(input), system = systemInstructions(input, seeds);
   return {system, tools, ...assembleContext(input, seeds, system, tools, outputTokens, maxToolCalls, prepared)};
 }

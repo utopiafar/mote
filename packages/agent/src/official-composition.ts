@@ -328,8 +328,9 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       bridge = await startBridge(options.reader, {...input, signal, onTrace: trace}, options.maxToolCalls); assertCurrent();
       await nativeAssembly?.application?.prepare(bridge.nativeExposure);assertCurrent();
       const toolSnapshot=contextToolSnapshot(input);
-      const assertToolPins=()=>{assertCurrent();for(const pin of toolSnapshot.entries)try{toolSnapshot.assertActive(pin);}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}};
-      const definitions: RuntimeToolDefinition[] = contextToolDefinitions(input).filter(([name]) => taskTools(input).includes(name)).map(([name, description, fields]) => {
+      const assertToolPins=()=>{assertCurrent();try{toolSnapshot.assertAllActive();}catch{throw new ContextToolError('stale_tool_pin','The registered tool was revoked or replaced.','stop');}};
+      const allowedTools=new Set(taskTools(input));
+      const definitions: RuntimeToolDefinition[] = contextToolDefinitions(input).filter(([name]) => allowedTools.has(name)).map(([name, description, fields]) => {
         const pin=toolSnapshot.entries.find(tool=>tool.name===name);
         return pin?toRuntimeToolDefinition(pin):{name,description,inputSchema:toolInputSchema(fields),version:'1',fingerprint:hash([description,fields])};
       });

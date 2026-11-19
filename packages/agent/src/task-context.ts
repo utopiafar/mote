@@ -32,18 +32,18 @@ export const TASK_PROFILES = {
 installQueryTaskPack();
 installWorkingTaskPack();
 export function taskProfile(input:QueryInput){return prepareTaskContext(input).profile;}
-export function taskTools(input:QueryInput):string[]{
+export function taskTools(input:QueryInput,definitions=()=>contextToolDefinitions(input)):string[]{
   const profile=taskProfile(input);
   const controls=(input.hostControlChannel?.definitions??[]).map(tool=>tool.name);
   if(input.hostToolSelection!==undefined){
-    const available=new Set(contextToolDefinitions(input).map(([name])=>name));
+    const available=new Set(definitions().map(([name])=>name));
     return [...new Set(input.hostToolSelection.filter(name=>available.has(name)))];
   }
   if(profile.retrieval==='none')return controls;
   const contextReads=input.evidenceReadRanges?.length
     ?input.evidenceReadRangeFormat==='paged'?['context_evidence','context_evidence_catalog']:['context_evidence']:[];
   if(input.evidenceIds!==undefined)return [...(input.skill==='calendar-extraction'&&input.actionCatalog?['evidence','action_catalog']:['evidence']),...(input.executionLane==='interactive'&&input.conversation?.historyContext?['conversation_history','conversation_search']:[]),...contextReads,...(input.processingImages?.length&&imageToolAvailable(input)?['read_image']:[]),...controls];
-  return contextToolDefinitions(input).map(([name])=>name).filter(name=>name!=='action_catalog');
+  return definitions().map(([name])=>name).filter(name=>name!=='action_catalog');
 }
 /** Internal dispatch keeps every authorized capability; runtime declarations
  * use taskTools, which exposes only the native surface plus catalog controls. */

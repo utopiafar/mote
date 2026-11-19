@@ -56,6 +56,8 @@ export interface ToolSnapshot extends ToolSnapshotWire {
   /** Local liveness: throws unless the exact registration that produced this
    * snapshot still owns the pin's name/version/fingerprint. */
   assertActive(pin: RuntimeToolIdentity): void;
+  /** Check every pin and each shared lifecycle in this synchronous boundary. */
+  assertAllActive():void;
   /** Local dispatch bound to the original registration. Not serializable. */
   resolve(pin: RuntimeToolIdentity): ResolvedTool;
   toJSON(): ToolSnapshotWire;
@@ -208,7 +210,7 @@ export class ToolRegistry {
       entries: entries.map(({name, version, fingerprint, kind, exposure, requires}) => ({name, version, fingerprint, kind, exposure, requires: [...requires].sort()})),
     })).digest('hex');
     const captured = new Map(registrations.map(registration => [registration.descriptor.name, registration]));
-    const assertActive = (pin: RuntimeToolIdentity): void => {
+    const activeLifecycle = (pin: RuntimeToolIdentity): ToolLifecycle => {
       const registration = captured.get(pin.name);
       if (!registration || registration.descriptor.version !== pin.version || registration.fingerprint !== pin.fingerprint) {
         throw toolContractError('stale_tool_pin', 'This pin is not part of this snapshot.', {name: pin.name, version: pin.version});
@@ -217,7 +219,19 @@ export class ToolRegistry {
         throw toolContractError('stale_tool_pin', 'This capability registration was unloaded or replaced.', {name: pin.name, version: pin.version});
       }
       registration.lifecycle.signal?.throwIfAborted();
-      registration.lifecycle.assertCurrent?.();
+      return registration.lifecycle;
+    };
+    const assertActive = (pin:RuntimeToolIdentity):void => {activeLifecycle(pin).assertCurrent?.();};
+    const assertAllActive = ():void => {
+      const checked=new Map<ToolLifecycle['signal'],Set<()=>void>>();
+      for(const pin of entries){
+        const lifecycle=activeLifecycle(pin),check=lifecycle.assertCurrent;
+        if(!check)continue;
+        const checks=checked.get(lifecycle.signal)??new Set<()=>void>();
+        if(checks.has(check))continue;
+        lifecycle.assertCurrent!();
+        checks.add(check);checked.set(lifecycle.signal,checks);
+      }
     };
     const resolve = (pin: RuntimeToolIdentity): ResolvedTool => {
       assertActive(pin);
@@ -248,6 +262,7 @@ export class ToolRegistry {
     const snapshot = {schemaVersion: TOOL_SNAPSHOT_SCHEMA_VERSION, entries, fingerprint} as unknown as ToolSnapshot;
     Object.defineProperties(snapshot, {
       assertActive: {value: assertActive, enumerable: false},
+      assertAllActive: {value: assertAllActive, enumerable: false},
       resolve: {value: resolve, enumerable: false},
       toJSON: {value: wire, enumerable: false},
     });

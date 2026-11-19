@@ -52,8 +52,11 @@ export function pinContextTools(input:QueryInput,reader:ContextReader):QueryInpu
     return {...input,toolContributions:packs,contextCapabilitySnapshot:snapshot,[runTools]:assembly} as PinnedInput;
   }catch(error){assembly.release();throw error;}
 }
+function definitionsFor(input:QueryInput,snapshot:ToolSnapshot):Definition[]{
+  return [...snapshot.entries.map(entry=>[entry.name,entry.description,entry.fields] as Definition),...hostControlDefinitions(input.hostControlChannel)];
+}
 export function registeredContextToolDefinitions(input:QueryInput):Definition[]{
-  return [...contextToolSnapshot(input).entries.map(entry=>[entry.name,entry.description,entry.fields] as Definition),...hostControlDefinitions(input.hostControlChannel)];
+  return definitionsFor(input,contextToolSnapshot(input));
 }
 export const CAPABILITY_TOOLS:[string,string,Record<string,Record<string,unknown>>][]=[
   ['capability_discover','List registered read-only special capabilities as brief metadata. Pass an exact listed name to obtain its pinned version and argument schema before capability_execute. This host catalog cannot expand scope or authorize citations.',{name:{type:'string',description:'Exact registered capability name; omit for the brief list'}}],
@@ -61,8 +64,8 @@ export const CAPABILITY_TOOLS:[string,string,Record<string,Record<string,unknown
 ];
 
 export function contextToolDefinitions(input:QueryInput):Definition[]{
-  const registered=registeredContextToolDefinitions(input);
+  const snapshot=contextToolSnapshot(input),registered=definitionsFor(input,snapshot);
   if(input.hostContextToolMode==='all-native'||input.evidenceIds!==undefined||input.hostRetrieval==='none'||input.skill==='working-memory')return registered;
-  const native=new Set(contextToolSnapshot(input).entries.filter(entry=>entry.exposure==='native').map(entry=>entry.name));
+  const native=new Set(snapshot.entries.filter(entry=>entry.exposure==='native').map(entry=>entry.name));
   return [...registered.filter(([name])=>native.has(name)||name.startsWith('delegation_')),...CAPABILITY_TOOLS];
 }
