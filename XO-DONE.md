@@ -1,7 +1,7 @@
 # NV2 导航状态接口 — 完成记录
 
 - PR：https://github.com/utopiafar/mote/pull/1127
-- 冻结提交：`352a3ff89`（Add navigation state revisions, badges and ETag polling）
+- 冻结提交：`1cf62b019`（Match only the trusted storage foundation port）
 - 分支：`plan/nv2-nav-state`
 - 基线：`origin/main` `10ca691da`
 
