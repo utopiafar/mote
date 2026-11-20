@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "chat",
+      "label": "聊天",
+      "group": "daily",
+      "order": 10,
+      "icon": "message-circle",
+      "packageId": "mote.ask"
+    },
+    {
+      "id": "feed",
+      "label": "动态",
+      "group": "daily",
+      "order": 20,
+      "icon": "newspaper",
+      "packageId": "mote.assistant"
+    },
+    {
+      "id": "ideas",
+      "label": "点子",
+      "group": "daily",
+      "order": 30,
+      "icon": "lightbulb",
+      "packageId": "mote.assistant",
+      "badge": "ideas"
+    },
+    {
+      "id": "goals",
+      "label": "目标",
+      "group": "daily",
+      "order": 40,
+      "icon": "square-check",
+      "packageId": "mote.assistant"
+    },
+    {
+      "id": "library",
+      "label": "资料库",
+      "group": "daily",
+      "order": 50,
+      "icon": "layout-grid",
+      "packageId": "mote.library"
+    },
+    {
+      "id": "memory",
+      "label": "记忆",
+      "group": "manage",
+      "order": 10,
+      "icon": "brain",
+      "packageId": "mote.assistant"
+    },
+    {
+      "id": "skills",
+      "label": "技能",
+      "group": "manage",
+      "order": 20,
+      "icon": "puzzle",
+      "packageId": "mote.features"
+    },
+    {
+      "id": "connections",
+      "label": "连接",
+      "group": "manage",
+      "order": 30,
+      "icon": "plug",
+      "packageId": "mote.connections",
+      "badge": "connections"
+    },
+    {
+      "id": "settings",
+      "label": "设置",
+      "group": "manage",
+      "order": 40,
+      "icon": "sliders-horizontal",
+      "packageId": "mote.system"
+    }
+  ]
+}
