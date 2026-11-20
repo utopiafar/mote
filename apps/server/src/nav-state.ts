@@ -86,8 +86,8 @@ function storagePortName(root:Context){
   for(const name of Object.keys(root.reflect.props)){
     if(!name.startsWith('motePluginPort:'))continue;
     try{
-      const [provider]=JSON.parse(name.slice('motePluginPort:'.length)) as [{contributionId?:string}|undefined];
-      if(provider?.contributionId==='mote.platform.storage')return name;
+      const [provider]=JSON.parse(name.slice('motePluginPort:'.length)) as [{contributionId?:string;scope?:{packageId?:string}}|undefined];
+      if(provider?.contributionId==='mote.platform.storage'&&provider.scope?.packageId==='mote.vault-platform')return name;
     }catch{
       // A declared non-port property may share the prefix; it is not a storage port.
     }
