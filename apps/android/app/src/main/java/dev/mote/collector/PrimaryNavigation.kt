@@ -125,6 +125,7 @@ internal object NavBadgeRules {
  */
 internal object MoteLocalBadges {
     private val readers = ConcurrentHashMap<String, () -> Boolean>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     fun register(id: String, read: () -> Boolean): () -> Unit {
         readers[id] = read
@@ -132,6 +133,14 @@ internal object MoteLocalBadges {
     }
 
     fun active(id: String): Boolean = readers[id]?.let { runCatching(it).getOrDefault(false) } ?: false
+
+    /** A producer calls this after a local state change so the bar repaints at once. */
+    fun changed() { listeners.toList().forEach { runCatching(it) } }
+
+    fun observe(listener: () -> Unit): () -> Unit {
+        listeners += listener
+        return { listeners.remove(listener) }
+    }
 }
 
 /** Lucide names from the authored table resolved onto the shipped line icons. */
@@ -203,13 +212,15 @@ internal class MoteTabBar(private val activity: Activity, private val onSelect: 
     }
 
     /** The bar owns the navigation-bar inset; the shell must not add a second one. */
-    fun dockInsets(shell: View) {
+    fun dockInsets(shell: NativeAppShell) {
         val baseBottom = paddingBottom
         setOnApplyWindowInsetsListener { view, insets ->
             val bottom = if (Build.VERSION.SDK_INT >= 30) insets.getInsets(WindowInsets.Type.systemBars()).bottom
             else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
             view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, baseBottom + bottom)
-            shell.setPadding(shell.paddingLeft, shell.paddingTop, shell.paddingRight, if (visibility == GONE) bottom else 0)
+            // Zero the shell's stored bottom inset too: a later presentation refresh
+            // re-applies the shell bars and must not add a second strip below the bar.
+            shell.systemBars(shell.paddingLeft, shell.paddingTop, shell.paddingRight, if (visibility == GONE) bottom else 0)
             insets
         }
     }

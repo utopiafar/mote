@@ -108,6 +108,18 @@ class PrimaryNavigationTest {
         assertFalse("an unregistered reader is not attention", MoteLocalBadges.active("missing"))
     }
 
+    @Test fun aLocalBadgeChangeNotifiesTheShellUntilUnregistered() {
+        var calls = 0
+        val stop = MoteLocalBadges.observe { calls++ }
+        try {
+            MoteLocalBadges.changed()
+            MoteLocalBadges.changed()
+            assertEquals(2, calls)
+        } finally { stop() }
+        MoteLocalBadges.changed()
+        assertEquals("a stopped observer is not called again", 2, calls)
+    }
+
     @Test fun theGlobalRecordActionOnlyBelongsToTheLightHome() {
         for (page in listOf("overview", "actions", "archive", "files", "notes", "ask")) {
             assertFalse("Secondary content pages do not repeat the home record action: $page", MoteNavigation.centralAllowsAdd(page))

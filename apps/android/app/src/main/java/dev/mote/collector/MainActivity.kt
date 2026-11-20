@@ -87,6 +87,7 @@ class MainActivity : MoteActivity() {
     private var badgeLoading = false
     private val tabCentrals = linkedMapOf<Page, CentralContent>()
     private val tabCentralStates = mutableMapOf<Page, Bundle>()
+    private var localBadgeObserver: (() -> Unit)? = null
     private lateinit var homeRecordingBar: HomeRecordingBar
     private lateinit var todaySummary: TextView
     private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
@@ -274,6 +275,7 @@ class MainActivity : MoteActivity() {
         tabBar = MoteTabBar(this) { item -> selectTab(item) }
         root.footer(tabBar)
         tabBar.dockInsets(root)
+        localBadgeObserver = MoteLocalBadges.observe { handler.post { renderBadges() } }
         setContentView(root)
         // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
         libraryState = savedInstanceState?.getBundle("library"); logExportHours=savedInstanceState?.getInt("logExportHours",24)?.takeIf { it in listOf(1,24,168) } ?: 24
@@ -2027,7 +2029,7 @@ class MainActivity : MoteActivity() {
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { localBadgeObserver?.invoke(); localBadgeObserver = null; homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
