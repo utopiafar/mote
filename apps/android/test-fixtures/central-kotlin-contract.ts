@@ -9,6 +9,7 @@ import {buildApp} from '../../server/src/app.js';
 import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import {defaultConfig as desktopConfig} from '../../desktop/src/config.js';
 import {AssistantNoticePresenter,AssistantNotificationReader,type AssistantNoticeCursor} from '../../desktop/src/assistant-notification.js';
+import {pageRoutes} from '../../../packages/shared/src/page-routes.js';
 import {assistantProducer} from './assistant-producer.js';
 
 // Real Central routes feed the production Kotlin upload use case. Only the
@@ -16,6 +17,19 @@ import {assistantProducer} from './assistant-producer.js';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const all = process.argv.slice(2);
 assert.ok(all.length === 0 || all.length === 1 && all[0] === '--all-unit-tests', 'Expected only --all-unit-tests or no arguments');
+// Android cannot import the TypeScript table; its central page constants must
+// stay identical. A drifted constant fails here before any server or Gradle work.
+const kotlin = await readFile(resolve(root, 'apps/android/app/src/main/java/dev/mote/collector/MoteLink.kt'), 'utf8');
+function checkPageRouteConstants(source: string): void {
+  for (const [key, route] of Object.entries(pageRoutes)) {
+    const value = source.match(new RegExp('const val\\s+' + key + '\\s*=\\s*"([^"]*)"'))?.[1];
+    assert.equal(value, route, `Android CentralPageRoutes.${key} must match the shared page route #/${route}`);
+  }
+}
+checkPageRouteConstants(kotlin);
+const drifted = kotlin.replace('const val chat = "ask"', 'const val chat = "chat"');
+assert.notEqual(drifted, kotlin, 'The drift self-check needs the generated chat constant');
+assert.throws(() => checkPageRouteConstants(drifted), /CentralPageRoutes\.chat/);
 const directory = await mkdtemp(join(tmpdir(), 'mote-kotlin-contract-'));
 const token = randomBytes(32).toString('hex');
 const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
