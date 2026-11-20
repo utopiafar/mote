@@ -14,6 +14,7 @@ An extensible personal context center, one instance per owner. [Product](docs/pr
 ## Working references
 
 - Use existing module boundaries, UI terms and components. App-specific commands and limits are in `apps/<app>/AGENTS.md`.
+- Interface copy follows [design: interface copy](docs/design.md#interface-copy); new copy runs through `npm run check:ui-copy`.
 - Setup and profiles: [development](docs/development.md). Localization: [i18n](docs/internationalization.md). Rebuild shared/Agent libraries with `npm run build:libs` when affected or missing.
 
 ## Validation and reporting

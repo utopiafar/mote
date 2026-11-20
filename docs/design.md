@@ -28,6 +28,18 @@ Keep information and action meaning consistent across clients while respecting p
 
 For the MVP, Android keeps common media reading, playback and text correction native. Advanced speaker review, original comparison and model preparation use lightweight entries to the same Central's Web, retaining the selected object and authorization. This is the intended boundary; current entry coverage is in [Architecture](architecture.md).
 
+## Interface copy
+
+- Do not add subtitles, onboarding paragraphs or sentences that explain a boundary. If text is needed to understand the page, change the layout.
+- Do not show normal state. On an exception, state the object and its status, with at most one action.
+- Do not use these source constructions: `不是…而是`, `不代表`, `不等于`, `只表示`, `并不意味着`.
+- Length limits: buttons 6 characters; labels and filters 8; status 16; an empty state is one sentence of 12; an error is 24 plus one action.
+- Delete, external-send and payment promises keep their exact meaning. Shorten an individual promise only after the owner confirms it.
+- The central service returns status codes and data, not explanatory prose for people; clients render short labels.
+- Tests assert states and available actions, not exact explanatory copy.
+
+`npm run check:ui-copy` rejects new messages with banned constructions, more than 24 Han characters, a bare 请, a trailing arrow, or a lone character icon in hidden markup. The shorter per-control limits are review and screenshot criteria; the checker does not classify controls. Promises are listed in `scripts/ui-copy-promises.json`.
+
 ## Presentation extensions
 
 Theme packs provide exact versioned role data; layout profiles describe supported navigation and detail preferences. Trusted platform renderers bind them through the shared presentation host. Missing providers recover the pinned built-in choice with a reason; install order does not choose a provider. New renderer code ships in the trusted platform build, without arbitrary remote UI execution.
