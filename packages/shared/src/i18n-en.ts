@@ -8709,5 +8709,8 @@ export const english: Readonly<Record<string, string>> = {
   "你说": "You said",
   "用户发言": "User message",
   "Agent 报告": "Agent report",
-  "为什么现在": "Why now"
+  "为什么现在": "Why now",
+  "聊天": "Chat",
+  "点子": "Ideas",
+  "技能": "Skills"
 };

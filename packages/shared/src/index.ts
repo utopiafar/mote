@@ -192,6 +192,7 @@ export * from './evidence-ref.js';
 export type {InsightSnapshot} from './insight-snapshot.js';
 export * from './feature-packs.js';
 export * from './ui-presentation.js';
+export * from './ui-navigation.js';
 export * from './recordings.js';
 
 export * from './activity.js';
