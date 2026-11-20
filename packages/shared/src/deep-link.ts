@@ -1,5 +1,6 @@
 import {connectionServerUrl} from './connection.js';
 import {parseEvidenceId,parseEvidenceRef,formatEvidenceRef,parseArtifactRef} from './evidence-ref.js';
+import {pageHash,pageRoutes} from './page-routes.js';
 
 /** Instance scope one deep link is bound to: the canonical origin of the
  * central node that owns the addressed state. Mote keeps one instance per
@@ -93,9 +94,9 @@ function params(entries:Record<string,string>):string {
 export function deepLinkHash(route:MoteRoute):string {
   const checked=moteRoute(route);
   switch(checked.kind){
-    case 'conversation':return '#/ask?'+params({conversation:checked.id});
-    case 'run':return '#/activity?'+params({work:checked.id});
-    case 'reference':return '#/ask?'+params(checked.conversation?{evidence:checked.ref,conversation:checked.conversation}:{evidence:checked.ref});
+    case 'conversation':return pageHash('chat',{conversation:checked.id});
+    case 'run':return pageHash('activity',{work:checked.id});
+    case 'reference':return pageHash('chat',checked.conversation?{evidence:checked.ref,conversation:checked.conversation}:{evidence:checked.ref});
     case 'view':return '#/view?'+params({package:checked.view.packageId,route:checked.view.routeId,evidence:checked.view.ref});
   }
 }
@@ -112,7 +113,7 @@ export function parseDeepLinkHash(hash:unknown):MoteRoute|undefined {
   if(query.getAll('evidence').length>1||query.getAll('conversation').length>1||query.getAll('work').length>1||query.getAll('package').length>1||query.getAll('route').length>1)return;
   const evidence=query.get('evidence'),conversation=query.get('conversation');
   switch(path){
-    case '/ask':
+    case '/'+pageRoutes.chat:
       if(evidence!==null){
         const ref=parseMoteReference(evidence);
         if(!ref)return;
@@ -121,7 +122,7 @@ export function parseDeepLinkHash(hash:unknown):MoteRoute|undefined {
       }
       if(conversation!==null){const id=parseEvidenceId(conversation);return id?{kind:'conversation',id}:undefined;}
       return;
-    case '/activity':{
+    case '/'+pageRoutes.activity:{
       const work=query.get('work');
       return isMoteRunId(work)?{kind:'run',id:work}:undefined;
     }

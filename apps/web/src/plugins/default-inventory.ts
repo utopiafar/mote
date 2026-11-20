@@ -17,7 +17,6 @@ export const defaultWebPluginSources: readonly DefaultWebPluginSource[] = [
   { packageId: 'mote.assistant', exportName: 'assistant', load: () => import('./assistant') },
   { packageId: 'mote.notes', exportName: 'notes', load: () => import('./notes') },
   { packageId: 'mote.system', exportName: 'system', load: () => import('./system') },
-  { packageId: 'mote.home', exportName: 'home', load: () => import('./home') },
   { packageId: 'mote.search', exportName: 'search', load: () => import('./search') },
   { packageId: 'mote.ask', exportName: 'ask', load: () => import('./ask') },
   { packageId: 'mote.devices', exportName: 'devices', load: () => import('./devices') },

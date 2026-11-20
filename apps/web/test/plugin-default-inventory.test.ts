@@ -12,7 +12,8 @@ import {
 /** The current functional catalogue, kept explicitly so a missing entry fails
  * instead of being skipped when the inventory or a plugin shard shrinks. */
 const expectedPages = [
-  'agentView', 'notes', 'featureGuide', 'help', 'localPreferences', 'about', 'overview',
+  'agentView', 'notes', 'help', 'localPreferences', 'about',
+  'assistantMatters', 'assistantMemory', 'assistantWorkbench',
   'search', 'ask', 'devices', 'vault', 'statistics', 'sourceCatalog', 'recordings', 'sources',
   'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',
   'settings', 'coding', 'archive', 'connections', 'deviceConnections', 'developer',
@@ -35,6 +36,7 @@ test('default Web inventory owns every current page, collection, home and view e
   assert.deepEqual(plugins.map(plugin => plugin.id), defaultWebPluginSources.map(source => source.packageId),
     'the loader returns exactly the declared default packages in install order');
 
+  assert.ok(plugins.every(plugin=>plugin.id!=='mote.home'));
   const contributions = new Map<string, string>();
   for (const plugin of plugins) {
     for (const contribution of pluginContributions(plugin)) {

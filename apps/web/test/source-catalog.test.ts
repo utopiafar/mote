@@ -9,7 +9,6 @@ import type {FeatureCapability,FeatureInventory,RecordingStatus} from '@mote/sha
 import type {Api} from '../src/api.js';
 import {SourceCatalog} from '../src/plugins/sources/SourceCatalog.js';
 import {Sources} from '../src/plugins/sources/Sources.js';
-import {FeatureGuide} from '../src/FeatureGuide.js';
 import {webFeatures} from '../src/features/registry.js';
 import {resolveDiscoveryTarget} from '../src/discovery-availability.js';
 import {resources} from '../src/resource-cache.js';
@@ -17,7 +16,7 @@ import {resources} from '../src/resource-cache.js';
 const activityId='http:GET:/api/work-activity',codingId='http:GET:/api/coding/uploads';
 const capability=(id:string,version='1',state:FeatureCapability['state']='active'):FeatureCapability=>({id,version,state,featureId:id.startsWith('connector:')?'mote.connector.'+id.slice(10):'generated.catalog-server',surface:id.startsWith('connector:')?'ingress':'data'});
 const inventory=(capabilities:FeatureCapability[]):FeatureInventory=>({schemaVersion:1,revision:1,features:[],capabilities});
-const routes={activity:'activity',overview:'today',archive:'library',recordings:'generated/recordings',connections:'connections/access',deviceConnections:'connections/pair',imports:'library/import',lark:'connections/lark',sources:'connections',featureGuide:'guide'};
+const routes={activity:'activity',archive:'library',recordings:'generated/recordings',connections:'connections/access',deviceConnections:'connections/pair',imports:'library/import',lark:'connections/lark',sources:'connections'};
 const provider='generated-recorder',recorderKey=provider+'-recordings';
 const providerDetailId='connector:'+recorderKey;
 const recorder:RecordingStatus={provider,category:'recordings',label:'Generated recording provider',connected:false,selection:{enabled:false,start:'2026-01-01T00:00:00Z',autoSync:false,backupAudio:true},steps:[],counts:{transcripts:0,audio:0,pending:0,failed:0}};
@@ -63,7 +62,7 @@ async function fixture(t:import('node:test').TestContext,options:{capabilities:F
     configureLocale(()=>previousLocale);
     dom.window.close();
   });
-  const render=async(view:'catalog'|'guide'|'sources'='catalog')=>{await act(async()=>root.render(view==='sources'?React.createElement(Sources,{api,onOpen:()=>{},onImport:()=>{}}):React.createElement(view==='catalog'?SourceCatalog:FeatureGuide,{api,onPage:(page:string)=>pageCalls.push(page)})));};
+  const render=async(view:'catalog'|'sources'='catalog')=>{await act(async()=>root.render(view==='sources'?React.createElement(Sources,{api,onOpen:()=>{},onImport:()=>{}}):React.createElement(SourceCatalog,{api,onPage:(page:string)=>pageCalls.push(page)})));};
   const updateInventory=async(capabilities:FeatureCapability[])=>{
     currentInventory=inventory(capabilities);
     await act(async()=>resources(api).invalidate(key=>key==='/api/features'));
@@ -153,10 +152,6 @@ for(const scenario of ['local Coding missing','remote Coding missing','remote Co
   disabled(card(f.d,'Coding Agent 会话'));
   assert.equal(f.reads.some(path=>path.startsWith('/api/coding/uploads')),false,'catalog discovery only reads capability inventory');
   f.workAvailable();
-  await f.render('guide');
-  const guide=f.d.querySelector<HTMLElement>('[data-capability-id="A15"]')!;
-  assert.equal(guide.querySelector('a[href]'),null,'The full Guide preserves the same Coding availability boundary');
-  assert.ok(guide.querySelector('[aria-disabled="true"]'));
 });
 
 test('compatible Coding discovery opens Coding sync status and every internal link names a registered destination',async t=>{
@@ -174,36 +169,24 @@ test('compatible Coding discovery opens Coding sync status and every internal li
   await act(async()=>coding.click());
   assert.equal(location.hash,'#/library?view=coding-status');
   assert.deepEqual(f.pageCalls,[]);
-  await f.render('guide');
-  const guide=f.d.querySelector<HTMLAnchorElement>('[data-capability-id="A15"] a.guide-unit-link')!;
-  assert.ok(guide,'The full Guide exposes the installed Coding destination');
-  await act(async()=>guide.click());
-  assert.equal(location.hash,coding.getAttribute('href'),'Both entrypoints reach the same specific status view');
 });
 
 test('unregistered source destinations render disabled cards with no Today fallback',async t=>{
-  const f=await fixture(t,{capabilities:[capability(activityId),capability(codingId)],pageIds:['overview']});
+  const f=await fixture(t,{capabilities:[capability(activityId),capability(codingId)],pageIds:[]});
   await f.render();
   assert.equal(f.d.querySelectorAll('.discovery-source-catalog a[href]').length,0);
   for(const element of f.d.querySelectorAll<HTMLElement>('.discovery-source-card'))disabled(element);
   assert.deepEqual(f.pageCalls,[]);
 });
 
-test('SourceCatalog and the full Guide render English after a locale switch without changing capability or group identities',async t=>{
+test('SourceCatalog keeps the Coding link identity across a locale switch',async t=>{
   const f=await fixture(t,{capabilities:[capability(activityId),capability(codingId),capability(providerDetailId)],coding:true});
   await f.render();
   assert.match(f.d.body.textContent!,/添加来源/);
   f.setLocale('en');
   await f.render();
   assert.doesNotMatch(f.d.body.textContent!,/\p{Script=Han}/u);
-  await f.render('guide');
-  assert.equal(f.d.querySelectorAll('[data-guide-group]').length,16);
-  assert.equal(f.d.querySelectorAll('[data-capability-id]').length,77);
-  assert.equal(f.d.querySelector('[data-capability-id="A01"]'),null,'server-directory import is retired from the guide');
-  assert.doesNotMatch(f.d.body.textContent!,/\p{Script=Han}/u);
-  f.setLocale('zh-CN');
-  await f.render('guide');
-  assert.match(f.d.body.textContent!,/全部功能/);
+  assert.ok(f.d.querySelector('a[href="#/library?view=coding-status"]'));
 });
 
 for(const [title,setup,component] of [

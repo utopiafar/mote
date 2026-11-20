@@ -2,20 +2,13 @@ import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts
 import {initializeBrowserLogging,installGlobalErrorLogging,log} from './logger';
 import { ClientLoginApproval } from './plugins/agent-access/ClientLoginApproval';
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
+import {pageHash,pageRoutes} from '@mote/shared';
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
 ArrowRight,
-Activity as ActivityIcon,
-Database,
-FileText,
 Plus,
 Info,
-LayoutDashboard,
 Link2,
-MessageSquare,
-Monitor,
-ShieldCheck,
-Sparkles,
 X
 } from "lucide-react";
 import React,{
@@ -30,7 +23,6 @@ import { createRoot } from "react-dom/client";
 import type { ArchiveTab } from './plugins/library/Archive';
 import {
 ApiError,
-INSIGHT_HISTORY_PATH,
 createApi,
 errorMessage,
 queryString,
@@ -50,12 +42,13 @@ import { attachBootstrapLifetime } from './plugin-host/bootstrap';
 import { webFeatures,installedWebPlugins } from './features/registry';
 import { PresentationSurface } from './presentation';
 import { GlobalRetrieval } from './plugins/search';
-import { WorkspaceSidebar } from './WorkspaceSidebar';
-import { pageLabels,readPage,routes,type Page } from './navigation';
+import { WorkspaceMenu,WorkspaceSidebar } from './WorkspaceSidebar';
+import { NavStateContext,useNavState } from './use-nav-state';
+import { pageLabels,readPage,routes,workspaceNavigation,type Page } from './navigation';
 import { redirectDeviceRoute } from './device-route';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
 import { webViewPage } from './deep-link';
-import { isSettingsContext,primaryDestination,WorkspaceNavigation } from './WorkspaceNavigation';
+import { isSettingsContext,WorkspaceNavigation } from './WorkspaceNavigation';
 import { readResource,resources } from './resource-cache';
 import { intakePlugin } from './plugins/intake';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
@@ -71,7 +64,6 @@ import './art-direction.css';
 import './memory-presentation.css';
 import './presentation.css';
 import './final-web.css';
-import './feature-guide.css';
 import './library-final.css';
 import './recording-reader.css';
 import './device-workspace.css';
@@ -84,7 +76,6 @@ import './conversation-final.css';
 import './imports-final.css';
 import {QuickNoteDialog} from './plugins/notes';
 import {QuickNoteContext} from './quick-note-context';
-import {enterGuide,guideVisit} from './feature-guide-state';
 import { confirmNavigation,hasUnsavedChanges } from './unsaved';
 import {ImportNavigationContext,clearImportReturn,importOrigin,importOriginOpener,markImportReturn,refreshImportOrigin,rememberImportOrigin,type ImportOrigin} from './import-navigation';
 
@@ -92,6 +83,7 @@ import {ImportNavigationContext,clearImportReturn,importOrigin,importOriginOpene
 initializeBrowserLogging();
 installGlobalErrorLogging(window);
 
+const emptyInsights:Answer[]=[];
 const periodNames: Record<string, string> = {
   today: moteText("今天"),
   week: moteText("过去 7 天"),
@@ -106,7 +98,8 @@ const readConnection = () => {
   }
 };
 function App() {
-  useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
+  const registryRevision=useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
+  const navigation=useMemo(()=>workspaceNavigation(),[registryRevision]);
   const [connection, setConnection] = useState<Connection | null>(
     readConnection,
   );
@@ -175,7 +168,6 @@ function App() {
     totalDurationMs: 0,
     captures: 0,
   });
-  const [insights, setInsights] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
@@ -207,7 +199,6 @@ function App() {
     setLoading(false);
     setStatus(null);
     setDevices([]);
-    setInsights([]);
   }, []);
   useEffect(()=>{
     const handoff=()=>{
@@ -255,6 +246,7 @@ function App() {
     [connection, unauthorized],
   );
   apiRef.current=api;
+  const navState=useNavState(verified?api:null);
   useEffect(()=>api&&verified?installedWebPlugins.connect(api,connection?.viewScope):undefined,[api,verified,connection?.viewScope]);
   useEffect(()=>{
     const update=()=>{const resolved=readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);setPage(resolved.page);};
@@ -321,7 +313,6 @@ function App() {
         setDevices(value.items.map(device => ({...device,disconnected:disconnected.has(device.deviceId)})));
       }),
       ...(page === "activity" ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
-      ...(page === "overview" ? [load<{items: Answer[]}>(INSIGHT_HISTORY_PATH, value => setInsights(value.items))] : []),
     ]).then(results => {
       if (!active) return;
       const failure = results.find(result => result.status === "rejected");
@@ -364,9 +355,8 @@ function App() {
     if(!webFeatures.page(target.page)&&target.page!=='extensions'){setNotice(moteText('当前服务未提供此入口'));return;}
     const retainImportOrigin=page==='archive'&&['materials','records','memories'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
     if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return;
-    if(target.page==='featureGuide'&&page!=='featureGuide'&&api)enterGuide(api,location.hash);
     const origin=target.page==='imports'&&page!=='imports'&&api?rememberImportOrigin(api,currentHash.current,window.scrollY,document.activeElement,retainImportOrigin):undefined;
-    history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?'system/plugins':target.page),target.page==='archive'?target.collection:undefined));
+    history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?pageRoutes.skills:target.page),target.page==='archive'?target.collection:undefined));
     activeImportParent.current=undefined;
     currentHash.current=location.hash;
     currentHistoryState.current=history.state;
@@ -396,7 +386,7 @@ function App() {
     setPeriod(readPeriod(next));
     setVerified(false);
     setStatus(null);
-    setDevices([]); setInsights([]);
+    setDevices([]);
     updateEvidenceId(readEvidenceRoute(window.location.hash));
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setShowConnect(false);
@@ -410,24 +400,22 @@ function App() {
   const notesAvailable=Boolean(webFeatures.page('notes'));
   const returningImport=api&&page==='imports'?importOrigin(api,history.state,'moteImportOrigin'):undefined;
   const importReturnLabel=returningImport?readPage(returningImport.hash)==='archive'&&(!new URLSearchParams(returningImport.hash.split('?')[1]??'').get('view')||new URLSearchParams(returningImport.hash.split('?')[1]??'').get('view')==='materials')?'我的资料':'返回':'资料库';
-  const importNavigation={label:importReturnLabel,leave:()=>{if(!confirmNavigation())return;if(returningImport){allowedImportHash.current=returningImport.hash;history.back();}else{allowedImportHash.current='#/library?view=materials';window.location.hash=allowedImportHash.current;}}};
+  const importNavigation={label:importReturnLabel,leave:()=>{if(!confirmNavigation())return;if(returningImport){allowedImportHash.current=returningImport.hash;history.back();}else{allowedImportHash.current=pageHash('library',{view:'materials'});window.location.hash=allowedImportHash.current;}}};
   const pageLabel=page==='ask'&&new URLSearchParams(routeHash.split('?')[1]??'').has('question')?moteText('需要你补充'):pageLabels[page]??(page==='extensions'?moteText('自动记忆与插件'):undefined);
   useEffect(()=>{if(!notesAvailable)setQuickNoteApi(null);},[notesAvailable]);
   const openQuickNote=useCallback(()=>{if(!webFeatures.page('notes')){setNotice(moteText('当前服务未提供此入口'));return;}if(api&&verified)setQuickNoteApi(api);else setShowConnect(true);},[api,verified]);
   return (
     <>
+    <NavStateContext.Provider value={navState}>
     <QuickNoteContext.Provider value={openQuickNote}>
     <PresentationSurface
-      navigation={layout => <WorkspaceSidebar layout={layout} page={page} onPage={onPage} connection={connection} verified={verified} profile={status?.profile} onConnect={()=>setShowConnect(true)} onRefresh={refresh} refreshing={loading}/>}
+      navigation={()=> <WorkspaceSidebar groups={navigation} page={page} onPage={onPage}/> }
       toolbar={
         <header className="topbar">
-          {api&&verified&&page!=='featureGuide'&&guideVisit(api).returnAvailable&&webFeatures.page('featureGuide')&&<button className="guide-return" onClick={()=>{window.location.hash='#/guide';}}><span aria-hidden="true">← </span>{moteText('全部功能')}</button>}
-            <details className="shell-menu shell-mobile-menu"><summary aria-label={moteText('全部功能')}>{pageLabel??moteText("更多")}</summary><div>{Object.entries({overview:moteText("首页"),archive:moteText("资料库"),sources:moteText("来源"),ask:moteText("问一问"),connections:moteText("AI 接入"),activity:moteText("活动")}).map(([target,label])=><button key={target} onClick={event=>{event.currentTarget.closest("details")!.open=false;onPage(target);}}>{label}</button>)}
-              <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('featureGuide');}}>{moteText('全部功能')}</button>
-              <button onClick={event=>{event.currentTarget.closest('details')!.open=false;onPage('about');}}>{moteText('设置')}</button>
-              <button onClick={event=>{event.currentTarget.closest('details')!.open=false;setShowConnect(true);}}>{moteText('登录 Mote')}</button>
-              {connection&&<button onClick={refresh} disabled={loading}>{moteText('刷新资料')}</button>}
-            </div></details>
+          <WorkspaceMenu groups={navigation} page={page} onPage={onPage} pageLabel={pageLabel??moteText('更多')}>
+            <button type="button" onClick={()=>setShowConnect(true)}>{moteText('登录 Mote')}</button>
+            {connection&&<button type="button" onClick={refresh} disabled={loading}>{moteText('刷新资料')}</button>}
+          </WorkspaceMenu>
           <span className="breadcrumb"><strong>{pageLabel??moteText("当前服务未提供此入口")}</strong></span>
           <div className="topbar-actions"><GlobalRetrieval key={connection?.viewScope??'disconnected'} onPage={onPage}/><button className="button quick-note" disabled={!notesAvailable} title={notesAvailable?undefined:moteText('当前服务未提供此入口')} onClick={openQuickNote} aria-haspopup="dialog"><Plus size={16}/>{moteText("记录")}</button>
 
@@ -470,48 +458,10 @@ function App() {
             </div>
           )}
           {!webFeatures.page(page)?(page==='extensions'?<PluginCenterRescue onPage={onPage}/>:<section className="panel panel-pad"><h1>{moteText('当前服务未提供此入口')}</h1><button className="button" onClick={()=>onPage('archive')}>{moteText('资料库')}</button></section>):!connection && settingsContext ? <section className="panel settings-sign-in"><div className="page-heading"><h1>{moteText("登录后查看{0}", pageLabels[page])}</h1><p>{moteText("调整服务与资料管理方式，或管理当前登录。")}</p></div><button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText("登录 Mote")}<ArrowRight size={16}/></button></section> : !connection ? (
-            <>
-              <div className="greeting welcome simple-welcome archive-welcome">
-                <div>
-                  <div className="eyebrow">{moteText('个人资料库')}</div>
-                  <h1>
-                    {page === "overview" ? moteText("把记录留住，在需要时找到。") : moteText("登录后查看{0}", pageLabels[page])}
-                  </h1>
-                  <p>
-                    {moteText("汇集手机、电脑与文件里的记录。按来源浏览资料，也能直接提问，回到答案的出处。")}</p>
-                  <div className="welcome-archive-flow" aria-label={moteText("采集 · 汇聚 · 理解")}>
-                    <span><FileText size={17}/>{moteText("添加资料")}</span><ArrowRight size={14} aria-hidden="true"/>
-                    <span><Database size={17}/>{moteText("资料库")}</span><ArrowRight size={14} aria-hidden="true"/>
-                    <span><MessageSquare size={17}/>{moteText("问一问")}</span>
-                  </div>
-                  <button
-                    className="button"
-                    onClick={() => setShowConnect(true)}
-                  >
-                    <Link2 size={16} />
-                    {moteText("登录 Mote")}<ArrowRight size={16} />
-                  </button>
-                </div>
-
-              </div>
-              <div className="welcome-values simple-values">
-                <div>
-                  <ShieldCheck size={20} />
-                  <h3>{moteText("由你决定留下什么")}</h3>
-                  <p>{moteText("应用过滤与端点脱敏，先于资料上传。")}</p>
-                </div>
-                <div>
-                  <Database size={20} />
-                  <h3>{moteText("资料在你的节点")}</h3>
-                  <p>{moteText("可以导入、导出，也可以继续扩展来源。")}</p>
-                </div>
-                <div>
-                  <Sparkles size={20} />
-                  <h3>{moteText("答案带着来处")}</h3>
-                  <p>{moteText("Agent 读取证据，串起你的问题与记录。")}</p>
-                </div>
-              </div>
-            </>
+            <section className="panel panel-pad">
+              <h1>{moteText('登录后查看{0}',pageLabels[page])}</h1>
+              <button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText('登录 Mote')}</button>
+            </section>
           ) : (
             <>
               {error && <ErrorNotice text={error} retry={refresh} />}
@@ -523,7 +473,7 @@ function App() {
                 : api && (
                     <>
                       {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <LoadingLine label={moteText("正在读取节点状态…")}/>}
-                      <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision:timelineRevision+(page==='archive'&&archiveTab==='records'?revision:0),refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
+                      <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights:emptyInsights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision:timelineRevision+(page==='archive'&&archiveTab==='records'?revision:0),refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
                     </>
                   )}
             </>
@@ -532,6 +482,7 @@ function App() {
         </React.Suspense>
     </PresentationSurface>
     </QuickNoteContext.Provider>
+    </NavStateContext.Provider>
     {notesAvailable&&quickNoteApi===api&&api&&verified&&<QuickNoteDialog api={api} namespace={window.location.origin} revision={timelineRevision} onSaved={refresh} onClose={closeQuickNote}/>}
       {showConnect && (
         <LoginDialog
@@ -540,7 +491,7 @@ function App() {
           onClose={() => setShowConnect(false)}
         />
       )}
-      {evidenceId && api && verified && (
+      {page!=='unavailable' && evidenceId && api && verified && (
         <EvidenceDialog
           id={evidenceId}
           api={api}

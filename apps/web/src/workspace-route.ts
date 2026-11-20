@@ -6,8 +6,6 @@ export function canonicalDestination(page: string, collection: string, available
 }
 export function readWorkspaceRoute(hash: string, readPage: (hash: string) => string, available: readonly string[], viewRoute?: (view: MoteViewRoute) => string | undefined) {
   const query = new URLSearchParams(hash.split('?')[1] ?? '');
-  const raw=hash.replace(/^#\/?/,'').split('?')[0];
-  if (!raw) return canonicalDestination('overview', query.get('view') ?? 'materials', available);
   const page=readPage(hash);
   if (page === 'unavailable') {
     const route=parseDeepLinkHash(hash);

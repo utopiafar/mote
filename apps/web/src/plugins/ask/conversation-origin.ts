@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import type {Answer,Api} from '../../api';
 export interface OriginTurn {id:string;question:string;result?:Answer;evidenceDeleted?:boolean;evidenceStale?:boolean}
 interface Page {id:string;revision?:number;turns:OriginTurn[];nextCursor?:string|null}
@@ -20,4 +21,4 @@ export async function readOriginTurn(api:Api,conversationId:string,turnId:string
  const turn=anchored.turns.find(turn=>turn.id===turnId);
  return turn?(turn.evidenceDeleted?undefined:turn):undefined;
 }
-export function conversationTurnRoute(conversationId:string,turnId:string){return '#/ask?'+new URLSearchParams({conversation:conversationId,turn:turnId});}
+export function conversationTurnRoute(conversationId:string,turnId:string){return pageHash('chat',{conversation:conversationId,turn:turnId});}

@@ -199,7 +199,7 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
     <div><strong>{item.material.title}</strong><span>{item.reason==='memory_owner_input_required'?moteText('需要你补充'):itemStateLabel(item.state)}</span></div>
     <small>{moteText('正文提取')} · {statusLabels[item.coverage.extraction.status]} · {moteText('语义理解')} · {statusLabels[item.coverage.semantic.status]}</small>
     {item.reason&&<p>{reasonText(item.reason)}{modelReasons.has(item.reason)&&<> · <a className="text-button" href="#/system/models">{moteText('检查模型连接 →')}</a></>}</p>}
-    {item.result&&<div data-onboarding-result><p>{item.result.reason}</p>{item.result.cardIds.length>0&&<a className="text-button" href="#/today">{moteText('查看结果与依据 →')}</a>}</div>}
+    {item.result&&<div data-onboarding-result><p>{item.result.reason}</p></div>}
     {item.result&&Boolean(item.ownerQuestions?.length)&&<p role="status">{moteText('已有部分结果；需要你补充的问题只影响相关结论。')}</p>}
     {item.ownerQuestions?.map(question=><div key={question.id} data-onboarding-question><a className="text-button multiline" href={ownerQuestionRoute(question.id)}>{question.prompt}</a>{question.reason&&<p>{question.reason}</p>}</div>)}
     {item.memory&&item.memory.status!=='completed'&&<small>{moteText(item.reason==='memory_owner_input_required'?'处理进度':'处理中')} · {item.memory.completedBatches} / {item.memory.totalBatches}</small>}

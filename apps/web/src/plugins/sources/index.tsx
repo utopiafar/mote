@@ -1,4 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
+import { pageRoutes } from '@mote/shared';
 import React from 'react';
 import type { PageEntry, PageProps } from '../../features/types';
 import type { BuiltinWebPlugin } from '../types';
@@ -56,8 +57,9 @@ export const pages: PageEntry[] = [
   },
   {
     id: 'sources',
-    route: 'connections',
+    route: pageRoutes.connections,
     label: moteText('来源'),
+    navItem: 'connections',
     section: 'connections',
     order: 0,
     featureId: 'mote.sources',
@@ -65,7 +67,7 @@ export const pages: PageEntry[] = [
   },
   {
     id: 'lark',
-    route: 'connections/lark',
+    route: pageRoutes.lark,
     label: moteText('飞书'),
     section: 'connections',
     order: 3,

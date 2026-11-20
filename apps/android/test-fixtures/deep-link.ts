@@ -1,3 +1,4 @@
+import {pageRoutes} from '../../../packages/shared/src/page-routes.js';
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
@@ -16,9 +17,9 @@ const id = '6a1f2b3c-4d5e-46f7-8a9b-0c1d2e3f4a5b';
 const ref = 'capture:1b2c3d4e-5f6a-47b8-9c0d-1e2f3a4b5c6d';
 
 // Canonical literals — the same strings MoteLinkTest parses.
-assert.equal(serializeMoteLink({origin}, {kind:'conversation', id}), `${origin}/#/ask?conversation=${id}`);
+assert.equal(serializeMoteLink({origin}, {kind:'conversation', id}), `${origin}/#/${pageRoutes.chat}?conversation=${id}`);
 assert.equal(serializeMoteLink({origin}, {kind:'run', id:'generated-run-42'}), `${origin}/#/activity?work=generated-run-42`);
-assert.equal(serializeMoteLink({origin}, {kind:'reference', ref}), `${origin}/#/ask?evidence=${encodeURIComponent(ref)}`);
+assert.equal(serializeMoteLink({origin}, {kind:'reference', ref}), `${origin}/#/${pageRoutes.chat}?evidence=${encodeURIComponent(ref)}`);
 const viewLiteral = `${origin}/#/view?package=mote.notes&route=notes.editor&evidence=${encodeURIComponent(ref)}`;
 assert.equal(serializeMoteLink({origin}, {kind:'view', view:{packageId:'mote.notes', routeId:'notes.editor', ref}}), viewLiteral);
 assert.deepEqual(parseMoteLink(viewLiteral), {scope:{origin}, route:{kind:'view', view:{packageId:'mote.notes', routeId:'notes.editor', ref}}});

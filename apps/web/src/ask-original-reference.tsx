@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import {useEffect,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
@@ -6,7 +7,7 @@ type Origin={kind:'memory'|'capture'|'material'|'insight';id:string;materialOnly
 type MaterialSelection={kind:'selection';sourceIds:string[]};
 const referenceReturns=new WeakMap<Api,Map<string,string>>();
 export function rememberOriginalReturn(api:Api,kind:Origin['kind'],id:string){let values=referenceReturns.get(api);if(!values){values=new Map();referenceReturns.set(api,values);}values.set(kind+':'+id,window.location.hash);}
-export function originalReferenceRoute(kind:Origin['kind'],id:string){return '#/ask?'+new URLSearchParams({[kind==='memory'?'fromMemory':kind==='material'?'fromMaterial':kind==='insight'?'fromInsight':'fromCapture']:id});}
+export function originalReferenceRoute(kind:Origin['kind'],id:string){return pageHash('chat',{[kind==='memory'?'fromMemory':kind==='material'?'fromMaterial':kind==='insight'?'fromInsight':'fromCapture']:id});}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function readOrigin():Origin|null{const query=new URLSearchParams(window.location.hash.split('?')[1]);for(const [key,kind] of [['fromMemory','memory'],['fromMaterial','material'],['fromCapture','capture'],['fromInsight','insight']] as const){const id=query.get(key);if(id)return {kind,id,...(kind==='material'&&query.get('materialOnly')==='1'?{materialOnly:true as const}:{})};}return null;}
 const unavailable=()=>moteText('参考原件暂不可用，请清除参考后继续。');

@@ -10,7 +10,7 @@ import {useOperationUpdates} from '../../useOperationUpdates';
 import {readResource,resources} from '../../resource-cache';
 import {failureMessage} from '../../failure-message';
 import {ModelSelector} from '../../ModelSelector';
-import {conversationSettingsSchema, type ConversationSettings as StoredConversationSettings, type ServerConfiguration} from '@mote/shared';
+import {pageHash,conversationSettingsSchema, type ConversationSettings as StoredConversationSettings, type ServerConfiguration} from '@mote/shared';
 import {ConversationSettingsView} from './ConversationSettings';
 import {admitConversationMessage, definiteAdmissionFailure, messageStateLabel, pendingMessageStatus, readConversationMessage, type ConversationMessage, type ConversationMessageInput, type ConversationMessageScope, type ConversationMessageState} from './conversation-messages';
 import { moteText } from '@mote/shared/i18n';
@@ -79,7 +79,7 @@ function TaskAmendment({api,receipt,revision,onCancel,cancelling}:{api:Api;recei
  return <section className="conversation-task-amendment" aria-label={moteText('任务状态')}>
   <strong>{moteText('任务状态')}</strong>{' · '}<span role="status">{state==='completed'?moteText('已完成'):state==='running'?moteText('正在进行'):state==='waiting'?moteText('排队中'):state==='stale'?moteText('已失效'):state==='cancelled'?moteText('已取消'):state?moteText('未完成'):moteText('正在读取…')}</span>
   {read.error!==undefined&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
-  {item&&receipt.origin&&<a className="text-button" href={'#/ask?'+new URLSearchParams({conversation:receipt.origin.conversationId,turn:receipt.origin.turnId})}>{moteText('查看任务')}</a>}
+  {item&&receipt.origin&&<a className="text-button" href={pageHash('chat',{conversation:receipt.origin.conversationId,turn:receipt.origin.turnId})}>{moteText('查看任务')}</a>}
   {active&&receipt.state!=='cancelled'&&<button className="text-button" disabled={cancelling||read.loading} onClick={onCancel}>{moteText('停止这条回答')}</button>}
  </section>;
 }
@@ -316,7 +316,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     settledReceipts.current.add(current.id);
     const versions=queryRecovery.versions(api),sameContext=!owned||owned.contextVersion===versions.contextVersion,sameDraft=owned?.kind==='owned'&&owned.draftVersion===versions.draftVersion;
     if((current.status==='completed'||current.status==='failed')&&current.conversationId){
-      if(sameContext){setSelectedId(current.conversationId);window.history.replaceState(null,'','#/ask?'+new URLSearchParams({conversation:current.conversationId}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
+      if(sameContext){setSelectedId(current.conversationId);window.history.replaceState(null,'',pageHash('chat',{conversation:current.conversationId}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
       historyRequest.current?.abort();setLoadingPage(false);setHistoryError('');resources(api).invalidate(key=>key.startsWith('/api/conversations'));
     }
     if(owned?.kind==='owned'&&sameDraft){if(current.status==='completed'){setQuestion('');setAttachments([]);}else if(current.status==='failed')setQuestion(owned.question);}
@@ -356,7 +356,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
         queryRecovery.set(api,undefined);
         if(sameDraft){setQuestion('');setAttachments([]);storeImages(()=>[]);}
         setPendingQuestion('');setBusy(false);operation.current=null;setError('');setTurnError('');
-        if(sameContext){setSelectedId(accepted.conversationId);selectionMade.current=true;window.history.replaceState(null,'','#/ask?'+new URLSearchParams({conversation:accepted.conversationId}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
+        if(sameContext){setSelectedId(accepted.conversationId);selectionMade.current=true;window.history.replaceState(null,'',pageHash('chat',{conversation:accepted.conversationId}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
         historyRequest.current?.abort();setLoadingPage(false);setHistoryError('');
         resources(api).invalidate(key=>key.startsWith('/api/conversations'));detail.refresh();
         return;
@@ -419,7 +419,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
     setRun(null);setPollError('');setPollReceiptMissing(false);setError('');setTurnError('');setConfirmDelete(false);setQuestion('');setAttachments([]);storeImages(()=>[]);setPendingQuestion('');
     setOlder(null);setSelectedId(id);setSelectedOwnerQuestion(null);
-    window.location.hash='#/ask?'+new URLSearchParams({conversation:id});
+    window.location.hash=pageHash('chat',{conversation:id});
   }
   async function loadOlderTurns(){
     if(!conversation?.nextCursor||opening)return;
@@ -446,7 +446,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       selectionMade.current=true;olderRequest.current?.abort();setLoadingOlder(false);
       setRun(null);setPollError('');setPollReceiptMissing(false);setTurnError('');setOlder(null);setQuestion('');setAttachments([]);storeImages(()=>[]);setPendingQuestion('');setConfirmDelete(false);setSelectedOwnerQuestion(null);
       setSelectedId(created.id);history.refresh();main.refresh();
-      window.location.hash='#/ask?'+new URLSearchParams({conversation:created.id});
+      window.location.hash=pageHash('chat',{conversation:created.id});
     }catch(cause){if(!controller.signal.aborted)setError(conversationFailure(cause));}
     finally{if(operation.current===controller)operation.current=null;if(!controller.signal.aborted)setBusy(false);}
   }
@@ -516,7 +516,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
       const next=await api.request<{id:string}>('/api/conversations/main',{signal:controller.signal});
       if (controller.signal.aborted) return;
       setRun(null);selectionMade.current=true;setOlder(null);resources(api).invalidate(key=>key.startsWith('/api/conversations')||key.startsWith('/api/query-runs'));main.refresh();history.refresh();
-      if(typeof next?.id==='string'){setSelectedId(next.id);window.history.replaceState(null,'','#/ask?'+new URLSearchParams({conversation:next.id}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
+      if(typeof next?.id==='string'){setSelectedId(next.id);window.history.replaceState(null,'',pageHash('chat',{conversation:next.id}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
       setQuestion(''); setConfirmDelete(false);
     } catch (e) {if (!controller.signal.aborted) setError(conversationFailure(e));}
     finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
@@ -531,7 +531,7 @@ export function Conversations({api, configured, devices, renderAnswer,onOpen=()=
   function turnRelations(turn:ConversationTurn,conversationId:string):ReactNode{
     const ids=new Set([...(turn.amendedBy??[]),...(turn.supersededBy??[]),...(turn.steering?[turn.steering.targetMessageId]:[])]);
     const related=conversation?.turns.filter(item=>ids.has(item.id))??[];
-    return related.length?<div className="conversation-steering-links">{related.map(item=><a key={item.id} href={'#/ask?'+new URLSearchParams({conversation:conversationId,turn:item.id})}><ArrowRight size={14}/>{item.question}</a>)}</div>:null;
+    return related.length?<div className="conversation-steering-links">{related.map(item=><a key={item.id} href={pageHash('chat',{conversation:conversationId,turn:item.id})}><ArrowRight size={14}/>{item.question}</a>)}</div>:null;
   }
   return <div className={"conversation-layout final-conversation"+(historyOpen?" history-open":"")+(threadEmpty?" conversation-fresh":"")} aria-busy={loading||opening||recentRuns.loading}>
     <ConversationDialog open={pendingSwitch?.owner===api} title={moteText('还有未发送的内容')} onClose={()=>setPendingSwitch(null)} footer={<><button className="button" onClick={()=>setPendingSwitch(null)}>{moteText('继续编辑')}</button><button className="button primary" onClick={()=>{const next=pendingSwitch;setPendingSwitch(null);if(next?.owner===api){if(next.id===null)startNew(true);else open(next.id,true);}}}>{moteText('舍弃并切换')}</button></>}><p>{pendingSwitch?.id===null?moteText('还有未发送的问题。舍弃原输入并新建对话？'):moteText('有未保存的修改。离开并丢弃修改？')}</p></ConversationDialog>

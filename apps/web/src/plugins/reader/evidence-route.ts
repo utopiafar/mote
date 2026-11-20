@@ -1,4 +1,4 @@
-import {parseMoteReference} from '@mote/shared';
+import {pageHash,parseMoteReference} from '@mote/shared';
 function normalizePublicReference(value:string):string|null {
  return parseMoteReference(value)??null;
 }
@@ -9,7 +9,7 @@ export function readEvidenceRoute(hash:string):string|null {
 export function evidenceRoute(hash:string,id:string|null):string {
  const [base,search]=hash.split('?'),query=new URLSearchParams(search);
  if(id){const ref=normalizePublicReference(id);if(!ref)throw new Error('A typed evidence reference is required');query.set('evidence',ref);}else query.delete('evidence');
- return (base||'#/today')+(query.size?'?'+query:'');
+ return (base||pageHash('chat'))+(query.size?'?'+query:'');
 }
 /** One reversible detail entry retains its origin route and other query filters. */
 export function changeEvidenceRoute(browser:Pick<Window,'location'|'history'>,id:string|null,options?:{returnToCurrent?:boolean}):string|null {
@@ -21,7 +21,7 @@ export function changeEvidenceRoute(browser:Pick<Window,'location'|'history'>,id
   else browser.history.pushState({...state,moteEvidenceReturn:current},'',next);
  }else if(typeof state?.moteEvidenceParent==='string'&&readEvidenceRoute(state.moteEvidenceParent)&&evidenceRoute(current,null)===evidenceRoute(state.moteEvidenceParent,null)){
   browser.history.back();return readEvidenceRoute(state.moteEvidenceParent);
- }else if(typeof state?.moteEvidenceReturn==='string'&&evidenceRoute(current,null)===state.moteEvidenceReturn){browser.history.back();}
+ }else if(typeof state?.moteEvidenceReturn==='string'&&evidenceRoute(current,null)===evidenceRoute(state.moteEvidenceReturn,null)){browser.history.back();}
  else browser.history.replaceState(state,'',next);
  return readEvidenceRoute(next);
 }

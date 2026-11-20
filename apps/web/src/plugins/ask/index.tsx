@@ -1,4 +1,5 @@
 import {moteText} from '@mote/shared/i18n';
+import {pageRoutes} from '@mote/shared';
 import {useEffect,useMemo} from 'react';
 import type {Api} from '../../api';
 import {modelSetupHref} from '../models-processing/ModelStartGuide';
@@ -67,8 +68,9 @@ export function AskPage(props:PageProps){
 export const pages: PageEntry[] = [
   {
     id: 'ask',
-    route: 'ask',
-    label: moteText('问一问'),
+    route: pageRoutes.chat,
+    label: moteText('聊天'),
+    navItem: 'chat',
     featureId: 'mote.ask',
     render: (props: PageProps) => <AskPage {...props}/>,
   },

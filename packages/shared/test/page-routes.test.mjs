@@ -7,7 +7,7 @@ import {pageHash, pageRoutes} from '../dist/page-routes.js';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 
-/** Page entries declare their hash route as a literal next to the page id. */
+/** Collect literal routes and references to the shared table in page registrations. */
 async function declaredRoutes(directory) {
   const routes = new Set();
   for (const entry of await readdir(directory, {withFileTypes: true})) {
@@ -17,7 +17,9 @@ async function declaredRoutes(directory) {
       continue;
     }
     if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-    for (const match of (await readFile(path, 'utf8')).matchAll(/\broute\s*:\s*['"]([^'"]+)['"]/g)) routes.add(match[1]);
+    const source = await readFile(path, 'utf8');
+    for (const match of source.matchAll(/\broute\s*:\s*['"]([^'"]+)['"]/g)) routes.add(match[1]);
+    for (const match of source.matchAll(/\broute\s*:\s*pageRoutes\.(\w+)/g)) routes.add(pageRoutes[match[1]]);
   }
   return routes;
 }
@@ -34,7 +36,7 @@ test('every shared page route is registered by the central web surface', async (
 
 test('page hashes keep the route key and only add encoded query data', () => {
   const expected = {
-    chat: '#/ask',
+    chat: '#/chat',
     library: '#/library',
     models: '#/system/models',
     skills: '#/system/plugins',
@@ -44,8 +46,8 @@ test('page hashes keep the route key and only add encoded query data', () => {
     activity: '#/activity',
   };
   for (const key of Object.keys(pageRoutes)) assert.equal(pageHash(key), expected[key], key);
-  assert.equal(pageHash('chat', {evidence: 'capture:generated id'}), '#/ask?evidence=capture%3Agenerated+id');
-  assert.equal(pageHash('chat', {}), '#/ask');
+  assert.equal(pageHash('chat', {evidence: 'capture:generated id'}), '#/chat?evidence=capture%3Agenerated+id');
+  assert.equal(pageHash('chat', {}), '#/chat');
   assert.equal(pageHash('library', {loginTicket: 'generated-ticket'}), '#/library?loginTicket=generated-ticket');
   assert.throws(() => pageHash('generated-unknown'), /Invalid page route/);
 });

@@ -1,15 +1,14 @@
 import {featureRequirementsAvailable,type FeatureInventory} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
-import {useContext,useEffect,useLayoutEffect,useMemo,useSyncExternalStore} from 'react';
-import type {Api} from '../../api';
-import type {Material} from '../../Materials';
-import {materialKind} from '../../material-presentation';
-import {materialTextExcerpt,type MaterialExcerpt} from '../../material-preview-text';
-import {sourceMaterialExcerpt} from '../../material-source-preview';
-import {resources,type Resource,type ResourceSnapshot} from '../../resource-cache';
-import {HomePluginContext} from './context';
+import {useEffect,useLayoutEffect,useMemo,useState,useSyncExternalStore,type RefObject} from 'react';
+import type {Api} from './api';
+import type {Material} from './Materials';
+import {materialKind} from './material-presentation';
+import {materialTextExcerpt,type MaterialExcerpt} from './material-preview-text';
+import {sourceMaterialExcerpt} from './material-source-preview';
+import {resources,type Resource,type ResourceSnapshot} from './resource-cache';
 
-export interface MaterialPreviewItem extends Pick<Material,'id'|'ref'|'revision'|'kind'|'textLength'> {
+interface MaterialPreviewItem extends Pick<Material,'id'|'ref'|'revision'|'kind'|'textLength'> {
   readonly origin:Material['origin'];
 }
 
@@ -50,7 +49,7 @@ function thumbnailPump(){
   void next.job().catch(()=>{/* A missing thumbnail keeps the type icon. */}).finally(()=>{thumbnailActive--;thumbnailPump();});
  }
 }
-/** Thumbnail fetches share one plugin gate; queued work is dropped when its row goes away. */
+/** Thumbnail fetches share one queue; queued work is dropped when its row goes away. */
 function enqueueThumbnail(signal:AbortSignal,job:()=>Promise<void>){
  if(signal.aborted)return;
  const task={signal,job};
@@ -62,7 +61,7 @@ function enqueueThumbnail(signal:AbortSignal,job:()=>Promise<void>){
 /** One bounded preview read for one Material revision. The cache owns the
  * request, abort generation, thumbnail slot and object URL; React only renders
  * the snapshot and gates it against the currently visible identity. */
-class HomeMaterialEntry {
+class MaterialPreviewEntry {
   readonly #listeners=new Set<()=>void>();
   #params:Params={canRead:false,canPreview:false,near:false};
   #state:EntryState={inventory:EMPTY_INVENTORY,sourceView:false,thumbnails:false};
@@ -74,9 +73,9 @@ class HomeMaterialEntry {
   #thumbnailController?:AbortController;
   #imageObjectUrl?:string;
   #disposed=false;
-  #cache:HomeMaterialCache;
+  #cache:MaterialPreviewCache;
 
-  constructor(cache:HomeMaterialCache,readonly api:Api,readonly item:MaterialPreviewItem){this.#cache=cache;}
+  constructor(cache:MaterialPreviewCache,readonly api:Api,readonly item:MaterialPreviewItem){this.#cache=cache;}
 
   get key():string{return itemKey(this.item);}
   getSnapshot=():EntryState=>this.#state;
@@ -259,30 +258,29 @@ class HomeMaterialEntry {
   }
 }
 
-/** Plugin-owned preview cache per authenticated Api. Hidden documents suspend
+/** Preview cache per authenticated Api. Hidden documents suspend
  * inventory polling and in-flight row reads; resuming revalidates inventory
  * once and lets each visible row continue one exact revision. */
-export class HomeMaterialCache {
-  readonly #entries=new Map<string,HomeMaterialEntry>();
+class MaterialPreviewCache {
+  readonly #entries=new Map<string,MaterialPreviewEntry>();
   #inventory?:Resource<FeatureInventory>;
   #unsubscribeInventory?:()=>void;
   #inventoryPoller?:()=>void;
-  #inventoryNeeds=new Set<HomeMaterialEntry>();
+  #inventoryNeeds=new Set<MaterialPreviewEntry>();
   #inventoryAttaching=false;
   #visible=typeof document==='undefined'||!document.hidden;
   #started=false;
   #refs=0;
-  #disposed=false;
   #entriesChanged=():void=>{for(const entry of [...this.#entries.values()])entry.refresh();};
 
   constructor(readonly api:Api){}
 
-  get visible():boolean{return this.#started&&this.#visible&&!this.#disposed;}
+  get visible():boolean{return this.#started&&this.#visible;}
 
   /** Activation is reversible: hiding/unmounting stops the listener and
    * inventory poll while the same cache can be activated again. */
   start():void{
-    if(this.#disposed||this.#started)return;
+    if(this.#started)return;
     this.#started=true;
     this.#visible=typeof document==='undefined'||!document.hidden;
     if(typeof document!=='undefined')document.addEventListener('visibilitychange',this.#visibility);
@@ -307,14 +305,14 @@ export class HomeMaterialCache {
     queueMicrotask(()=>{if(!this.#refs)this.stop();});
   }
 
-  entry(api:Api,item:MaterialPreviewItem):HomeMaterialEntry{
+  entry(api:Api,item:MaterialPreviewItem):MaterialPreviewEntry{
     const key=itemKey(item);
     let entry=this.#entries.get(key);
-    if(!entry){entry=new HomeMaterialEntry(this,api,item);this.#entries.set(key,entry);}
+    if(!entry){entry=new MaterialPreviewEntry(this,api,item);this.#entries.set(key,entry);}
     return entry;
   }
 
-  releaseEntry(entry:HomeMaterialEntry):void{
+  releaseEntry(entry:MaterialPreviewEntry):void{
     if(this.#entries.get(entry.key)!==entry)return;
     this.#inventoryNeeds.delete(entry);
     entry.suspend();
@@ -325,7 +323,7 @@ export class HomeMaterialCache {
     return this.#inventory?.getSnapshot()??EMPTY_INVENTORY;
   }
 
-  observeInventory(entry:HomeMaterialEntry,wanted:boolean):void{
+  observeInventory(entry:MaterialPreviewEntry,wanted:boolean):void{
     if(wanted)this.#inventoryNeeds.add(entry);
     else this.#inventoryNeeds.delete(entry);
     this.#inventory??=resources(this.api).get<FeatureInventory>('/api/features');
@@ -334,7 +332,7 @@ export class HomeMaterialCache {
   }
 
   #attachInventory():void{
-    if(this.#disposed||!this.#started||this.#inventoryAttaching||!this.#visible||!this.#inventoryNeeds.size||!this.#inventory)return;
+    if(!this.#started||this.#inventoryAttaching||!this.#visible||!this.#inventoryNeeds.size||!this.#inventory)return;
     if(!this.#unsubscribeInventory){
       this.#inventoryAttaching=true;
       try{
@@ -366,47 +364,30 @@ export class HomeMaterialCache {
     this.#entries.clear();
     this.#detachInventory();
   }
-
-  dispose():void{
-    if(this.#disposed)return;
-    this.stop();
-    this.#disposed=true;
-    this.#clearEntries();
-  }
 }
 
-const caches=new WeakMap<Api,HomeMaterialCache>();
-function sharedMaterials(api:Api):HomeMaterialCache{
+const caches=new WeakMap<Api,MaterialPreviewCache>();
+function sharedMaterials(api:Api):MaterialPreviewCache{
   let cache=caches.get(api);
-  if(!cache){cache=new HomeMaterialCache(api);caches.set(api,cache);}
+  if(!cache){cache=new MaterialPreviewCache(api);caches.set(api,cache);}
   return cache;
 }
 
-/** Read the plugin cache for the current authenticated Api; a directly rendered
- * row without the page provider retains the shared cache for that mount. */
-export function useHomeMaterialCache(api:Api):HomeMaterialCache{
-  const context=useContext(HomePluginContext);
-  const shared=context?.controller.api===api?context.materials:undefined;
-  const standalone=useMemo(()=>shared?undefined:sharedMaterials(api),[shared,api]);
-  useEffect(()=>{
-    if(!standalone)return;
-    standalone.retain();
-    return()=>standalone.release();
-  },[standalone]);
-  return shared??standalone!;
-}
-
-export interface HomeMaterialPreview {
+interface MaterialPreview {
   readonly image?:string;
   readonly kindLabel:string;
   readonly text?:string;
   clearImage:()=>void;
 }
 
-/** The exact preview contract reused by Home and Library rows. Every value is
+/** The list preview for one exact Material revision. Every value is
  * gated by the current permission, node, revision and membership identity. */
-export function useMaterialPreview(api:Api,item:Material,canRead:boolean,canPreview:boolean,near:boolean):HomeMaterialPreview{
-  const cache=useHomeMaterialCache(api);
+export function useMaterialPreview(api:Api,item:Material,canRead:boolean,canPreview:boolean,near:boolean):MaterialPreview{
+  const cache=sharedMaterials(api);
+  useEffect(()=>{
+    cache.retain();
+    return()=>cache.release();
+  },[cache]);
   const entry=useMemo(()=>cache.entry(api,item),[cache,api,item.id,item.ref,item.revision]);
   useLayoutEffect(()=>entry.attach({canRead,canPreview,near}),[entry]);
   useLayoutEffect(()=>entry.update({canRead,canPreview,near}),[entry,canRead,canPreview,near]);
@@ -421,4 +402,17 @@ export function useMaterialPreview(api:Api,item:Material,canRead:boolean,canPrev
   const preview=state.preview&&same(state.preview,key)?state.preview.value:undefined;
   const text=!canRead?undefined:state.sourceView?source:item.kind==='mote.note'?preview?.material?.ref===item.ref?materialTextExcerpt(preview):undefined:item.kind==='mote.file'?preview?.material?.ref===item.ref?materialTextExcerpt({...preview,spans:preview.spans?.filter(span=>span.format==='plain'||span.format==='transcript')}):undefined:preview?.text;
   return {image,kindLabel,text,clearImage:entry.clearImage};
+}
+
+/** Rows beyond the margin stay unread; without IntersectionObserver every row is near. */
+export function useNearViewport(ref:RefObject<Element|null>,margin='200px'){
+ const [near,setNear]=useState(()=>typeof IntersectionObserver==='undefined');
+ useEffect(()=>{
+  const element=ref.current;
+  if(!element||typeof IntersectionObserver==='undefined'){setNear(true);return;}
+  const observer=new IntersectionObserver(entries=>setNear(entries.some(entry=>entry.isIntersecting)),{rootMargin:margin});
+  observer.observe(element);
+  return()=>observer.disconnect();
+ },[ref,margin]);
+ return near;
 }

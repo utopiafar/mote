@@ -48,7 +48,7 @@ it('opens explicitly typed local capture IDs directly in the central evidence re
   const url = new URL(chrome.mock.calls[0][0]);
   expect(url.origin).toBe('https://central.example');
   expect(url.pathname).toBe('/');
-  expect(url.hash.split('?')[0]).toBe('#/ask');
+  expect(url.hash.split('?')[0]).toBe(pageHash('chat'));
   expect(new URLSearchParams(url.hash.split('?')[1]).get('evidence')).toBe('capture:' + id);
   expect(url.search).toBe('');
   expect(fallback).not.toHaveBeenCalled();
@@ -57,7 +57,7 @@ it('retains exact pinned Material or capture identity and its conversation throu
  const conversationId='11111111-2222-4333-8444-555555555555',material='material:mat_'+'a'.repeat(64)+'@'+'b'.repeat(64);
  for(const reference of [material,'capture:'+conversationId])for(const login of ['ticket','request']){
   const chrome=vi.fn();await openCentralBrowser('https://central.example','ask','darwin',chrome,vi.fn(),reference,login==='ticket'?'generated-ticket':undefined,login==='request'?'generated-request':undefined,undefined,conversationId);
-  const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);expect(url.origin).toBe('https://central.example');expect(url.hash.split('?')[0]).toBe('#/ask');expect(params.get('evidence')).toBe(reference);expect(params.get('conversation')).toBe(conversationId);expect(params.get(login==='ticket'?'loginTicket':'loginRequest')).toBe('generated-'+login);expect(url.search).toBe('');expect(params.has('token')).toBe(false);
+  const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);expect(url.origin).toBe('https://central.example');expect(url.hash.split('?')[0]).toBe(pageHash('chat'));expect(params.get('evidence')).toBe(reference);expect(params.get('conversation')).toBe(conversationId);expect(params.get(login==='ticket'?'loginTicket':'loginRequest')).toBe('generated-'+login);expect(url.search).toBe('');expect(params.has('token')).toBe(false);
  }
 });
 it('rejects malformed Material revisions and conversation destinations before browser launch',async()=>{
@@ -83,12 +83,15 @@ it('hands off an expiring login code while preserving the requested evidence and
  const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);
  expect(params.get('loginTicket')).toBe(ticket);expect(params.get('evidence')).toBe('capture:11111111-2222-4333-8444-555555555555');expect(url.search).toBe('');expect(params.has('token')).toBe(false);
 });
-it.each(['overview', 'about', 'guide', 'activity', 'plugins'])('preserves the %s destination through both login handoffs', async page => {
+it.each([
+  ['overview', pageHash('chat')], ['guide', pageHash('chat')], ['ask',pageHash('chat')],
+  ['about', '#/about'], ['activity', pageHash('activity')], ['plugins', pageHash('skills')],
+])('keeps the %s entry valid through both login handoffs', async (page,route) => {
   for (const handoff of ['ticket', 'request']) {
     const chrome = vi.fn(), fallback = vi.fn();
     await openCentralBrowser('https://central.example', page, 'darwin', chrome, fallback, undefined, handoff === 'ticket' ? 'generated-ticket' : undefined, handoff === 'request' ? 'generated-request' : undefined);
     const url = new URL(chrome.mock.calls[0][0]);
-    expect(url.hash.split('?')[0]).toBe(page === 'plugins' ? '#/system/plugins' : '#/' + page);
+    expect(url.hash.split('?')[0]).toBe(route);
     expect(new URLSearchParams(url.hash.split('?')[1]).get(handoff === 'ticket' ? 'loginTicket' : 'loginRequest')).toBe('generated-' + handoff);
     expect(url.search).toBe('');
     expect(fallback).not.toHaveBeenCalled();
@@ -97,25 +100,23 @@ it.each(['overview', 'about', 'guide', 'activity', 'plugins'])('preserves the %s
 
 it.each([['sources','#/connections'],['actions','#/actions'],['models','#/system/models']])('keeps the existing %s destination through a real login handoff',async(page,route)=>{const chrome=vi.fn();await openCentralBrowser('http://127.0.0.1:47832',page,'darwin',chrome,vi.fn(),undefined,'generated-ticket');const url=new URL(chrome.mock.calls[0][0]);expect(url.hash.split('?')[0]).toBe(route);expect(new URLSearchParams(url.hash.split('?')[1]).get('loginTicket')).toBe('generated-ticket');expect(url.search).toBe('');});
 
-/** Addresses the baseline app (10ca691da) opened; the Mac ask entry keeps
- * '#ask' rather than the shared table's '#/ask'. */
-const previousAddresses:Readonly<Record<string,string>>={library:'#/library',models:'#/system/models',plugins:'#/system/plugins',sources:'#/connections',lark:'#/connections/lark',actions:'#/actions',ask:'#ask',activity:'#/activity'};
-
-it('opens every shared page route at the same address it used before',async()=>{
-  expect(Object.keys(centralPageRoutes).sort()).toEqual(Object.keys(previousAddresses).sort());
+it('opens every central entry at its shared page route',async()=>{
+  expect(centralPageRoutes).toEqual({
+    library:'library',models:'models',plugins:'skills',sources:'connections',lark:'lark',
+    actions:'actions',ask:'chat',activity:'activity',overview:'chat',guide:'chat',
+  });
   for(const [page,key] of Object.entries(centralPageRoutes)){
     const chrome=vi.fn();await openCentralBrowser('https://central.example',page,'darwin',chrome,vi.fn());
-    if(page!=='ask')expect(pageHash(key)).toBe(previousAddresses[page]);
-    expect(chrome).toHaveBeenCalledWith('https://central.example/'+previousAddresses[page]);
+    expect(chrome).toHaveBeenCalledWith('https://central.example/'+pageHash(key));
   }
 });
 
 it('keeps every shared page login handoff in the hash query without a bearer token',async()=>{
-  for(const [page] of Object.entries(centralPageRoutes))for(const handoff of ['ticket','request']){
+  for(const [page,key] of Object.entries(centralPageRoutes))for(const handoff of ['ticket','request']){
     const chrome=vi.fn();await openCentralBrowser('https://central.example',page,'darwin',chrome,vi.fn(),undefined,handoff==='ticket'?'generated-ticket':undefined,handoff==='request'?'generated-request':undefined);
     const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);
     expect(url.origin).toBe('https://central.example');expect(url.pathname).toBe('/');expect(url.search).toBe('');
-    expect(url.hash.split('?')[0]).toBe(previousAddresses[page]);
+    expect(url.hash.split('?')[0]).toBe(pageHash(key));
     expect(params.get(handoff==='ticket'?'loginTicket':'loginRequest')).toBe('generated-'+handoff);
     expect(params.has('token')).toBe(false);expect(url.href.includes('Bearer')).toBe(false);
   }

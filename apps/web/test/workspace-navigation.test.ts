@@ -6,42 +6,41 @@ import {JSDOM} from 'jsdom';
 import {isSettingsContext,primaryDestination,parentDestination,WorkspaceNavigation,SettingsLanding} from '../src/WorkspaceNavigation.js';
 import {webFeatures} from '../src/features/registry.js';
 import {configureLocale} from '@mote/shared/i18n';
+import {pageRoutes} from '@mote/shared';
+import {readPage} from '../src/navigation';
+import {readWorkspaceRoute} from '../src/workspace-route';
 import {assistantEntrypoints} from '../src/assistant-entrypoints';
 
-test('assistant pages return to Home and never appear in Settings even before any cards exist',async t=>{
- configureLocale(()=> 'zh-CN');
- const featureId='generated.assistant-navigation';
- const fiber=await webFeatures.install({id:featureId,version:'1',components:[]},[
-  {surface:'page',entry:{id:'overview',route:'today',label:'首页',featureId,render:()=>null}},
-  ...assistantEntrypoints.map(entry=>({surface:'page' as const,entry:{id:entry.pageId,route:entry.href.slice(2),label:entry.title,featureId,render:()=>null}})),
- ]);
- t.after(()=>fiber.dispose());
- for(const entry of assistantEntrypoints){
-  assert.equal(primaryDestination(entry.pageId),'overview',entry.title);
-  assert.equal(parentDestination(entry.pageId),'overview',entry.title);
-  assert.equal(isSettingsContext(entry.pageId),false,entry.title);
-  const d=new JSDOM(renderToStaticMarkup(React.createElement(WorkspaceNavigation,{page:entry.pageId,onPage:()=>{}}))).window.document;
-  assert.equal(d.querySelector('button[aria-label="返回首页"]')?.textContent,'返回上级');
- }
- const settings=renderToStaticMarkup(React.createElement(SettingsLanding,{onPage:()=>{}}));
- for(const entry of assistantEntrypoints)assert.equal(settings.includes(entry.title),false,entry.title+' belongs to Home');
-});
-
-test('the complete directory belongs to Home while installed settings keep their own task context',async t=>{
- configureLocale(()=> 'zh-CN');
- const featureId='generated.settings-context';
+test('the root resolves to Chat while retired pages stay unavailable', async t=>{
+ const featureId='mote.ask';
  const registration=await webFeatures.install({id:featureId,version:'1',components:[]},[
-  ...[{id:'overview',route:'today',label:'今天'},{id:'featureGuide',route:'guide',label:'全部功能'},
-    {id:'about',route:'preferences',label:'设置'},{id:'settings',route:'system/models',label:'模型与服务',section:'system'},
-    {id:'vault',route:'system/storage',label:'存储',section:'system'},{id:'generated-setting',route:'system/generated',label:'Generated settings',section:'system'}]
-    .map(entry=>({surface:'page' as const,entry:{...entry,featureId,render:()=>null}})),
+  {surface:'page',entry:{id:'ask',route:pageRoutes.chat,navItem:'chat',featureId,render:()=>null}},
  ]);
  t.after(()=>registration.dispose());
- for(const page of ['about','settings','vault','generated-setting'])assert.equal(isSettingsContext(page),true,page);
- assert.equal(isSettingsContext('featureGuide'),false);assert.equal(isSettingsContext('archive'),false);
- assert.equal(primaryDestination('featureGuide'),'overview');assert.equal(parentDestination('featureGuide'),'overview');
- const document=new JSDOM(renderToStaticMarkup(React.createElement(WorkspaceNavigation,{page:'featureGuide',onPage:()=>{}}))).window.document;
- assert.equal(document.querySelector('button'),null,'the final directory owns its context return in its heading instead of duplicating a Home-only back link');
+ for(const hash of ['', '#', '#/', '#/'+pageRoutes.chat]){
+  assert.equal(readWorkspaceRoute(hash,readPage,[]).page,'ask',hash);
+ }
+ for(const hash of ['#/today','#/ask','#/guide','#ask','#/ask?question=generated']){
+  assert.equal(readWorkspaceRoute(hash,readPage,[]).page,'unavailable',hash);
+  assert.equal(parentDestination('unavailable'),undefined);
+ }
+});
+
+test('registered assistant pages keep their workspace return and stay outside Settings',async t=>{
+ const featureId='mote.assistant';
+ const fiber=await webFeatures.install({id:featureId,version:'1',components:[]},
+  assistantEntrypoints.map(entry=>({surface:'page' as const,entry:{id:entry.pageId,route:entry.href.slice(2),label:entry.title,
+    ...(entry.pageId==='assistantMemory'?{navItem:'memory' as const}:{}),featureId,render:()=>null}})),
+ );
+ t.after(()=>fiber.dispose());
+ for(const entry of assistantEntrypoints){
+  const ownWorkspace=entry.pageId==='assistantMemory';
+  assert.equal(primaryDestination(entry.pageId),ownWorkspace?entry.pageId:'ask');
+  assert.equal(parentDestination(entry.pageId),ownWorkspace?undefined:'ask');
+  assert.equal(isSettingsContext(entry.pageId),false,entry.pageId);
+ }
+ const settings=renderToStaticMarkup(React.createElement(SettingsLanding,{onPage:()=>{}}));
+ for(const entry of assistantEntrypoints)assert.equal(settings.includes(entry.title),false,entry.pageId);
 });
 
 test('the legacy Coding page stays under Library and has a Library parent without a Settings card',async t=>{
@@ -65,12 +64,12 @@ test('AI access keeps its own route while source setup retains its parent',async
  configureLocale(()=> 'zh-CN');
  const featureId='generated.ai-access-navigation';
  const fiber=await webFeatures.install({id:featureId,version:'1',components:[]},[
-  {surface:'page',entry:{id:'sources',route:'sources',label:'来源',section:'connections',featureId,render:()=>null}},
-  {surface:'page',entry:{id:'connections',route:'connections',label:'AI 接入',section:'connections',featureId,render:()=>null}},
+  {surface:'page',entry:{id:'sources',route:pageRoutes.connections,label:'来源',navItem:'connections',section:'connections',featureId,render:()=>null}},
+  {surface:'page',entry:{id:'connections',route:'connections/access',label:'AI 接入',section:'connections',featureId,render:()=>null}},
   {surface:'page',entry:{id:'gmail',route:'sources/gmail',label:'Gmail',section:'connections',featureId,render:()=>null}},
  ]);
  t.after(()=>fiber.dispose());
- assert.equal(primaryDestination('connections'),'connections');
+ assert.equal(primaryDestination('connections'),'sources');
  assert.equal(parentDestination('connections'),undefined);
  const access=new JSDOM(renderToStaticMarkup(React.createElement(WorkspaceNavigation,{page:'connections',onPage:()=>{}}))).window.document;
  assert.equal(access.querySelector('button'),null,'the AI access component owns its detail/new-connection return without an unrelated source parent');

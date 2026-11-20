@@ -1,5 +1,5 @@
 import {decodeMemoryJob,decodeMemoryBatch} from './plugins/memory-private-storage.js';
-import {queryWorkProgress,type WorkActivity,type WorkActivityPage,type WorkArtifact,type WorkBranch,type WorkEvent,type WorkProgress,type WorkState,type WorkQueryEvent,type OperationSummary} from '@mote/shared';
+import {pageHash,queryWorkProgress,type WorkActivity,type WorkActivityPage,type WorkArtifact,type WorkBranch,type WorkEvent,type WorkProgress,type WorkState,type WorkQueryEvent,type OperationSummary} from '@mote/shared';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {moteText} from './i18n.js';
@@ -120,7 +120,7 @@ export class ActivityProjection {
    if(run){let resultSaved=false;runId=run.resultRunId??run.id;status=state(run.status);progress=queryWorkProgress(run.events,status==='completed');
     if(run.turnId){const turn=this.json<{question:string;result?:{citations:{id:string}[];runId:string};evidenceDeleted?:boolean}>('conversation_turns',run.turnId);if(turn&&!turn.evidenceDeleted){goal=turn.question;resultSaved=Boolean(turn.result);refs=turn.result?.citations.map(citation=>citation.id)??[];runId=turn.result?.runId??runId;}}
     if(operation.kind==='insight'&&run.resultRunId)resultSaved=Boolean(this.json('insights',run.resultRunId));
-    if(status==='completed'&&resultSaved)artifacts=[{id:run.turnId??run.resultRunId??run.id,kind:operation.kind==='query'?'answer':'insight',title:moteText(operation.kind==='query'?'回答已归档':'生活回顾已保存'),ref:run.turnId??run.resultRunId,...(run.conversationId?{href:'#/ask?conversation='+encodeURIComponent(run.conversationId)}:{})}];
+    if(status==='completed'&&resultSaved)artifacts=[{id:run.turnId??run.resultRunId??run.id,kind:operation.kind==='query'?'answer':'insight',title:moteText(operation.kind==='query'?'回答已归档':'生活回顾已保存'),ref:run.turnId??run.resultRunId,...(run.conversationId?{href:pageHash('chat',{conversation:run.conversationId})}:{})}];
     events=[...events,...run.events.filter(event=>event.message).map((event,index)=>({id:id+':public:'+index,type:'plan.updated' as const,at:event.at,summary:event.message}))];
    }
   }

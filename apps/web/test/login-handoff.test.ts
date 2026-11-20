@@ -1,10 +1,11 @@
+import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {consumeLoginTicket} from '../src/login-handoff.js';
 import {connectionStorageKey} from '../src/session.js';
 function browser(t:any,code:string){
  const saved=new Map<string,PropertyDescriptor|undefined>(),values=new Map<string,string>();
- let href='https://fixture.invalid/#/ask?evidence=capture%3Agenerated&loginTicket='+code;
+ let href='https://fixture.invalid/'+pageHash('chat',{evidence:'capture:generated',loginTicket:code});
  const storage={getItem:(key:string)=>values.get(key)??null,setItem:(key:string,v:string)=>{values.set(key,v);},removeItem:(key:string)=>{values.delete(key);}};
  const location={get href(){return href;},get hash(){return new URL(href).hash;},get pathname(){return '/';},get search(){return '';}};
  const globals={location,history:{replaceState:(_a:any,_b:any,url:string)=>{href=new URL(url,href).href;}},sessionStorage:storage,localStorage:storage};

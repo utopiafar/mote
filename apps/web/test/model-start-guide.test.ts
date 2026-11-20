@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
@@ -22,7 +23,7 @@ async function fixture(t:any){
 
 test('direct model settings keep setup steps without inventing a task return destination',async t=>{
  const {render}=await fixture(t),d=render();
- assert.equal(d.querySelector('a[href="#/ask"]'),null);
+ assert.equal(d.querySelector(`a[href="${pageHash('chat')}"]`),null);
  assert.equal(d.querySelectorAll('a').length,2);
  assert.ok([...d.querySelectorAll('a')].every(link=>!new URLSearchParams(link.getAttribute('href')!.split('?')[1]).has('returnTo')));
  assert.match(d.body.textContent!,/已有可用默认时可直接使用/);
@@ -45,6 +46,6 @@ for(const candidate of ['', 'https://example.invalid/task', '#/removed', '#/libr
  const {window,render}=await fixture(t);
  window.location.hash='#/system/models?category=providers&returnTo='+encodeURIComponent(candidate);
  const d=render();
- assert.equal(d.querySelector('a[href="#/ask"]'),null);
+ assert.equal(d.querySelector(`a[href="${pageHash('chat')}"]`),null);
  assert.match(d.querySelector('[role=status]')?.textContent??'',/原任务入口当前不可用/);
 });

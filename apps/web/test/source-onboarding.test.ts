@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -145,12 +146,12 @@ test('partial acquaintance shows available results and a concrete owner question
  const panel=d.querySelector('.source-onboarding')!;
  assert.match(panel.textContent!,/需要你补充/);assert.match(panel.textContent!,/已有部分结果；需要你补充的问题只影响相关结论。/);
  assert.match(panel.querySelector('[data-onboarding-result]')!.textContent!,/release checklist is available/);
- assert.equal(panel.querySelector('a[href="#/today"]')?.textContent,'查看结果与依据 →');
- const question=panel.querySelector<HTMLAnchorElement>('[data-onboarding-question] a')!;assert.ok(question);assert.equal(question.getAttribute('href'),'#/ask?question='+questionId);
+ assert.equal(panel.querySelector('[data-onboarding-result] a'),null);
+ const question=panel.querySelector<HTMLAnchorElement>('[data-onboarding-question] a')!;assert.ok(question);assert.equal(question.getAttribute('href'),pageHash('chat',{question:questionId}));
  assert.match(question.textContent!,/are you the participant/);assert.match(panel.querySelector('[data-onboarding-question]')!.textContent!,/does not establish/);
  assert.equal(panel.querySelector('[data-stage="semantic"]')?.getAttribute('data-state'),'partial');assert.match(panel.querySelector('[data-stage="semantic"]')!.textContent!,/0 \/ 1/);
  assert.doesNotMatch(panel.textContent!,/本次选择的资料已完成/);assert.equal(panel.querySelector('a[href="#/system/models"]'),null);
  assert.ok(button(d,'取消初次认识'));assert.equal(button(d,'继续初次认识'),undefined);
- await act(async()=>question.click());await flush();assert.equal(d.defaultView!.location.hash,'#/ask?question='+questionId);
+ await act(async()=>question.click());await flush();assert.equal(d.defaultView!.location.hash,pageHash('chat',{question:questionId}));
  assert.equal(calls.some(call=>call.method==='POST'&&(call.path.includes('/reply')||call.path.includes('/cancel'))),false);
 });

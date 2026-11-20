@@ -9,7 +9,7 @@ const Memories=lazy(()=>import('./memory/Memories').then(module=>({default:modul
 const memory=assistantEntrypoints.find(entry=>entry.pageId==='assistantMemory')!;
 /** Ready assistant pages register here; reserved pages stay unavailable until their owners register. */
 export const assistant:BuiltinWebPlugin={id:'mote.assistant',pages:[{
-  id:memory.pageId,route:memory.href.slice(2),featureId:'mote.assistant',requires:[...memory.requires??[]],
+  id:memory.pageId,route:memory.href.slice(2),navItem:'memory',featureId:'mote.assistant',requires:[...memory.requires??[]],
   get label(){return moteText('记忆与人物');},
   render:({api,range,onOpen,timelineRevision,refresh})=>createElement(Memories,{api,range,onOpen,refreshVersion:timelineRevision,onChanged:refresh}),
 },{
