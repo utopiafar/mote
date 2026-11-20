@@ -37,13 +37,15 @@ import {memorySchema,type Memory} from './memory-schema.js';
 import {releasedMemoryOriginal,memoryWithOriginalAvailability} from './memory-original-retention.js';
 import {combineSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
 import {installAssistantCardMaterialVisibility} from './assistant-card-storage.js';
-import type {CaptureRead,CaptureContextRead,SourceFileCatalogRead,MaterialRead,MemoryRead,MemoryReadSnapshots,MemoryInputSelection,MemoryReadSnapshot,MemoryReadExposure as MemoryExposure,MemoryCatalogMetadataReceipt} from './evidence-read-ports.js';
+import type {CaptureRead,CaptureContextRead,SourceFileCatalogRead,MaterialRead,MemoryRead,MemoryReadSnapshots,MemoryInputSelection,MemoryReadSnapshot,MemoryReadExposure,MemoryCatalogMetadataReceipt} from './evidence-read-ports.js';
 export type {MemoryReadSnapshot,MemoryCatalogMetadataReceipt} from './evidence-read-ports.js';
 const attributionMetadata=(context:AttributionContext)=>{const {ownerStatements:_,importStatements:__,sourceContextStatements:___,recordContextStatements:____,...metadata}=context;return JSON.stringify(metadata);};
 
 export {parseEvidenceRef} from '@mote/shared';
 type ScreenOriginalGrant={kind:'material'|'segment';ref:string;scope:Range};
 type MemoryPageArgs=NonNullable<Parameters<MemoryStore['page']>[0]>&Range;
+const ownerChatMemory=Symbol('owner chat Memory');
+type MemoryExposure=MemoryReadExposure&{[ownerChatMemory]?:true};
 class MemoryOriginalWithdrawn extends StoreError {
   constructor(){super('Memory invalidated by original deletion',410);}
 }
@@ -70,6 +72,7 @@ export interface EvidenceReaderAgentOptions {
   currentOperation?:()=> 'query'|'memory';
   currentContextTime?:()=>string|undefined;
   currentGrantContext?:()=>object|undefined;
+  currentOwnerChat?:()=>boolean;
   currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;
   currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined;
 }
@@ -267,7 +270,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   private memoryDetailVisible(id:string,scope:Range,ownerArchive:boolean,exposure:MemoryExposure,strictProof:boolean,pinned?:MemoryReadSnapshot['lineage'][string]){
     const args={...scope,query:undefined,cursor:undefined,id:formatEvidenceRef('memory',id),includeStale:true,includeHistory:true,level:'overview' as const,limit:1};
-    const available=this.memoryCatalogPage(args,ownerArchive).items.length>0;
+    const available=this.memoryCatalogPage(args,ownerArchive||exposure[ownerChatMemory]===true).items.length>0;
     if(!available){
       // A release receipt can only produce a scoped Gone error.
       if(!ownerArchive&&!exposure.reportWithdrawn)return false;
@@ -299,28 +302,33 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     };
     if(!this.memoryDeclarationsCurrent(card.evidence))return false;
     if(ownerArchive)return ids.every(id=>this.archivedEvidence([formatEvidenceRef('capture',id)],scope).length===1||retained(id));
-    const anchors=this.memories.readEvidenceIfCurrent(lineage.evidenceIds);
+    const allowPausedSource=exposure[ownerChatMemory]===true&&this.memorySourceRevokedIds([memoryId]).has(memoryId);
+    const readableFile=(id:string)=>allowPausedSource?this.files?.retainedMemoryFile(id):this.files?.readableFile(id);
+    const currentEvidence=(id:string)=>this.memories.isCurrentEvidence(id)||allowPausedSource&&Boolean(readableFile(id));
+    const captureAllowed=(record:CaptureRecord,operation=exposure.operation,screenOriginalGrant=false,metadataOnly=false)=>
+      this.captureExposure(record,operation,exposure.policy,'capture',screenOriginalGrant,metadataOnly,undefined,allowPausedSource);
+    const anchors=allowPausedSource?this.memories.readEvidence(lineage.evidenceIds):this.memories.readEvidenceIfCurrent(lineage.evidenceIds);
     if(!anchors||lineage.evidenceIds.some(id=>!anchors.some(anchor=>anchor.id===id)&&!retained(id))||anchors.some(anchor=>anchor.privacy.excluded))return false;
-    if(lineage.evidence.some(proof=>{const anchor=anchors.find(value=>value.id===proof.id);return anchor?(strictProof||anchor.provenance?.uri?.startsWith('material:'))&&memoryEvidenceFingerprint(anchor)!==proof.contentHash:!retained(proof.id);}))return false;
+    if(lineage.evidence.some(proof=>{const anchor=anchors.find(value=>value.id===proof.id);return anchor?(strictProof||allowPausedSource||anchor.provenance?.uri?.startsWith('material:'))&&memoryEvidenceFingerprint(anchor)!==proof.contentHash:!retained(proof.id);}))return false;
     const materialAncestors=new Set<string>();
     for(const id of lineage.evidenceIds){const release=releasedMemoryOriginal(this.store,id);if(release?.materialId)for(const original of release.identity.origins)materialAncestors.add(original);}
     for(const anchor of anchors){
-      if(!this.captureExposure(anchor,exposure.operation,exposure.policy))return false;
+      if(allowPausedSource&&!currentEvidence(anchor.id)||!captureAllowed(anchor))return false;
       if(anchor.provenance?.uri?.startsWith('material:'))for(const id of this.memories.dependencyIds(anchor.id))materialAncestors.add(id);
     }
     const direct=new Set(lineage.evidenceIds);
     for(const id of ids){
       // Raw lineage checks do not load the archived JSON/text/image payload.
-      const record=scopeRecord(this.store,id)??this.evidenceById([id],scope)[0];
+      const record=scopeRecord(this.store,id)??(allowPausedSource?this.archivedEvidence([formatEvidenceRef('capture',id)],scope):this.evidenceById([id],scope))[0];
       if(!record){if(retained(id,!direct.has(id)&&materialAncestors.has(id)?'material':undefined))continue;return false;}
-      if(!record||record.privacy.excluded||!withinEvidenceScope(record,scope)||!this.memories.isCurrentEvidence(id)||!fileAttachmentAvailable(this.store,id,true))return false;
+      if(record.privacy.excluded||!withinEvidenceScope(record,scope)||!currentEvidence(id)||!fileAttachmentAvailable(this.store,id,true))return false;
       const p=record.provenance;
-      if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted&&!this.files?.readableFile(id))return false;
+      if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted&&!readableFile(id))return false;
       if(direct.has(id)||!materialAncestors.has(id)){
-        if(!this.captureExposure(record,exposure.operation,exposure.policy))return false;
+        if(!captureAllowed(record))return false;
       }else if(record.source==='screen'||record.source==='ui_page'){
         // Preserve the existing screen-original policy, without granting a raw tool read.
-        if(!this.captureExposure(record,exposure.operation==='discover'?'expand':exposure.operation,exposure.policy,'capture',true,true))return false;
+        if(!captureAllowed(record,exposure.operation==='discover'?'expand':exposure.operation,true,true))return false;
       }else{
         // Source-wide policy still applies to every ancestor; raw-representation
         // denials do not revoke its separately permitted canonical Material.
@@ -367,9 +375,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   }
   /** Opening leads are saved with accepted queries. Recheck them before each
    * model boundary so a correction cannot replay an obsolete interpretation. */
-  currentMemoryLeadsAllowed(leads:NonNullable<import('@mote/agent').QueryInput['openingMemories']>,asOf?:string){
+  currentMemoryLeadsAllowed(leads:NonNullable<import('@mote/agent').QueryInput['openingMemories']>,asOf?:string,ownerChatScope?:Range){
     return leads.every(lead=>{
-      const page=this.memoryCatalogPage({id:formatEvidenceRef('memory',lead.id),status:'published',asOf,limit:1},false);
+      const page=this.memoryCatalogPage({...ownerChatScope,id:formatEvidenceRef('memory',lead.id),status:'published',asOf,limit:1},ownerChatScope!==undefined);
       if(!page.items.length)return false;
       const memory=this.memories.get(lead.id);
       const current=openingMemoryLead(memory);
@@ -379,6 +387,10 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
         JSON.stringify(current.admission)===JSON.stringify(lead.admission)&&
         (!memory.supersededBy||Date.parse(memory.supersededAt??'')>Date.now());
     });
+  }
+  /** Used by trusted owner chat preparation. Shared reads use MemoryRead. */
+  ownerChatMemoryPage(args:MemoryPageArgs={}){
+    return this.memoryPageAsync(args,false,undefined,{policy:defaultEvidenceExposurePolicy,operation:'discover',[ownerChatMemory]:true});
   }
   async memoryAsync(ref:string,scope:Range={},ownerArchive=false,snapshot?:MemoryReadSnapshot,exposure:MemoryExposure={policy:defaultEvidenceExposurePolicy,operation:'expand'}):Promise<Memory|undefined>{
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
@@ -399,7 +411,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     let owned=!snapshot&&(externalSearch||args.id!==undefined)?this.memoryBindings?.retainSnapshot(externalSearch?undefined:selectedId?[selectedId]:[]):undefined;
     let pin=snapshot??owned;
     try{
-      const catalogPage=(scope:MemoryPageArgs)=>ownerArchive?this.memoryPage({...scope,level:'overview'},true):this.agentMemoryPage({...scope,level:'overview'},exposure.policy,exposure.operation);
+      const catalogPage=(scope:MemoryPageArgs)=>ownerArchive?this.memoryPage({...scope,level:'overview'},true):this.agentMemoryPage({...scope,level:'overview'},exposure);
       const visibleMetadata=(page:ReturnType<MemoryStore['page']>,scope:MemoryPageArgs)=>({...page,items:ownerArchive?this.ownerMemoryListVisible(page.items,scope,pin):page.items.filter(value=>!pin?.lineage[value.id]||this.memoryLineageVisible(value.id,pin.lineage[value.id],scope,false,exposure))});
       const metadataPage=(scope:MemoryPageArgs)=>visibleMetadata(catalogPage(scope),scope);
       const pinnedMetadata=(current:any)=>pin?.metadata[current.id]?{...pin.metadata[current.id],disclosure:current.disclosure}:current;
@@ -426,7 +438,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
           const memory=await readBody(hit.key.memoryId);
           if(memory&&metadataPage(scope).items.length)selected.push(args.level==='detail'?memory:pinnedMetadata(metadata) as Memory);
         }
-        return {items:this.memoryListStillPresent(selected,ownerArchive),nextCursor:scanned<candidates.length?Buffer.from(JSON.stringify({kind:'provider-memory',signature,offset:scanned})).toString('base64url'):null};
+        return {items:this.memoryListStillPresent(selected,ownerArchive||exposure[ownerChatMemory]===true),nextCursor:scanned<candidates.length?Buffer.from(JSON.stringify({kind:'provider-memory',signature,offset:scanned})).toString('base64url'):null};
       }
       const candidates=catalogPage(args);
       // Ordinary pages pin just their candidates. Explicit query snapshots keep
@@ -440,7 +452,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
           if(memory&&metadataPage({...args,query:undefined,cursor:undefined,id:formatEvidenceRef('memory',metadata.id),limit:1}).items.length)items.push(memory);
         }else items.push(pinnedMetadata(metadata) as Memory);
       }
-      return {...page,items:args.level==='detail'?this.memoryListStillPresent(items,ownerArchive):items};
+      return {...page,items:args.level==='detail'?this.memoryListStillPresent(items,ownerArchive||exposure[ownerChatMemory]===true):items};
     }catch(error){if(error instanceof MemoryProviderError)throw new StoreError(error.message,error.code==='invalid_record'||error.code==='conflict'?502:503);throw error;}finally{owned?.release();}
   }
   /** Final synchronous fence for lists assembled across asynchronous reads. */
@@ -812,11 +824,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   /** Keep a retained card and its released ancestry together during paged
    * authorization. Original delivery receipts must be checked separately: this
    * groups derived claims and never grants a read of the original body. */
-  contextDependencyGroups(ids:readonly string[]):string[][] {
+  contextDependencyGroups(ids:readonly string[],ownerChat=false):string[][] {
     const remaining=new Set(ids),groups:string[][]=[],encoded=JSON.stringify([...remaining]);
+    const paused=ownerChat?this.memorySourceRevokedIds(ids):undefined;
     for(const row of this.store.db.prepare('SELECT id FROM memories WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id').all(encoded)){
       const id=String(row.id),dependencies=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(id).map(row=>String(row.evidence_id));
-      if(!dependencies.some(id=>releasedMemoryOriginal(this.store,id)))continue;
+      if(!paused?.has(id)&&!dependencies.some(id=>releasedMemoryOriginal(this.store,id)))continue;
       const group=[id,...dependencies];groups.push([...new Set(group)]);for(const member of group)remaining.delete(member);
     }
     const rest=[...remaining];for(let offset=0;offset<rest.length;offset+=256)groups.push(rest.slice(offset,offset+256));return groups;
@@ -824,7 +837,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   /** Validate every disclosed dependency without loading its body. Reuse only
    * within this synchronous check: the next external request/commit gets a fresh
    * view, including current source tombstones and attachment/Material policy. */
-  contextDependenciesAllowed(ids:readonly string[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,historical=false,retiredIds?:ReadonlySet<string>,releasedDeletionContextIds?:ReadonlySet<string>):boolean {
+  contextDependenciesAllowed(ids:readonly string[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,historical=false,retiredIds?:ReadonlySet<string>,releasedDeletionContextIds?:ReadonlySet<string>,ownerChatScope?:Range):boolean {
     const selected=[...new Set(ids)],encoded=JSON.stringify(selected),db=this.store.db;
     if(!selected.length)return true;
     const anchors=this.materials?db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM material_evidence e
@@ -857,13 +870,24 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       return current?allowMaterial(current):this.captureExposure(record,'expand',policy,'capture',true,true);
     };
     const retainedClaims=new Set<string>();
+    const pausedClaims=new Set<string>();
+    const paused=ownerChatScope?this.memorySourceRevokedIds(selected):undefined;
+    const withdrawn=ownerChatScope?this.withdrawnMemoryIds(selected):undefined;
     for(const row of db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(encoded)){
       const card=memorySchema.parse(JSON.parse(String(row.json))),dependencies=db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(card.id).map(row=>String(row.evidence_id));
+      if(ownerChatScope&&paused?.has(card.id)&&!withdrawn?.has(card.id)){
+        if(card.status!=='published'||card.supersededBy||!this.memoryLineageVisible(card.id,this.memoryLineage(card),ownerChatScope,false,{policy,operation:'expand',[ownerChatMemory]:true}))return false;
+        for(const id of dependencies)pausedClaims.add(id);
+        continue;
+      }
       if(!dependencies.some(id=>releasedMemoryOriginal(this.store,id)))continue;
       if(card.status!=='published'||card.supersededBy||!this.memoryLineageVisible(card.id,{dependencyIds:dependencies,evidenceIds:card.evidenceIds,evidence:card.evidence.map(value=>({id:value.id,contentHash:value.contentHash})),scopeRefs:card.scopeRefs},{},false,{policy,operation:'expand'}))return false;
       for(const id of dependencies)if(releasedMemoryOriginal(this.store,id))retainedClaims.add(id);
     }
     for(const id of selected){
+      // These ancestors support a verified Memory body. Actual original
+      // deliveries have their own check without the owner chat Memory grant.
+      if(pausedClaims.has(id))continue;
       const retired=historical&&retiredIds?.has(id)?retiredConversationRoot(this.store,id):undefined;
       if(retired){
         const source=retired.scope.sourceId?db.prepare("SELECT json_extract(json,'$.kind') kind FROM source_connections WHERE id=?").get(retired.scope.sourceId):undefined;
@@ -1009,26 +1033,27 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const currentContexts=new Map(ids.map((id,index)=>[id,contexts?.[index]&&attributionMetadata(attributionContextSchema.parse(contexts[index]))]));
     return receipt.members.every(member=>member.attribution===undefined||member.attribution===currentContexts.get(member.id));
   }
-  private materialMembersAvailable(material:MaterialRecord,metadataOnly=false):boolean {
+  private materialMembersAvailable(material:MaterialRecord,metadataOnly=false,allowPausedSource=false):boolean {
     if(!this.materials)return false;
     for(let offset=0;offset<material.memberCount;offset+=200){
       const page=this.materials.members(material.ref,{offset,limit:200});
       if(!page.items.length)return false;
       for(const member of page.items){
         if(member.kind==='capture'){
-          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id,metadataOnly)||this.files?.fileForRead(id)&&!this.files.readableFile(id))return false;
+          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id,metadataOnly))return false;
+          if(this.files?.fileForRead(id)&&!(allowPausedSource?this.files.retainedMemoryFile(id):this.files.readableFile(id)))return false;
         }
       }
     }
     return true;
   }
-  private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false,materialAccess?:Map<string,boolean>){
+  private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false,metadataOnly=false,materialAccess?:Map<string,boolean>,allowPausedSource=false){
     if(!fileAttachmentAvailable(this.store,record.id,metadataOnly))return false;
     const fileId=this.files?.fileForRead(record.id);
     // An exact image id can name a retained immutable historical original.
     // This does not admit historical files into discovery or redirect to the
     // latest version; the existing source/retention authority still decides.
-    if(fileId&&!this.files!.readableFile(record.id)&&!(representation==='image'&&fileId===record.id&&this.files!.readableHistoricalFile(fileId)))return false;
+    if(fileId&&!(allowPausedSource?this.files!.retainedMemoryFile(record.id):this.files!.readableFile(record.id))&&!(representation==='image'&&fileId===record.id&&this.files!.readableHistoricalFile(fileId)))return false;
     const provenance=record.provenance,materialRef=provenance?.uri?.startsWith('material:')?provenance.uri.split('#')[0]:undefined;
     const material=materialRef?this.materials?.get(materialRef):undefined;
     if(materialRef){
@@ -1041,7 +1066,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       // A single synchronous evidence read can share the current Material's
       // policy result. Each anchor still proves its own currentness.
       const cached=materialAccess?.get(current.ref);if(cached!==undefined)return cached;
-      const allowed=this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly);
+      const allowed=this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly,allowPausedSource);
       materialAccess?.set(current.ref,allowed);return allowed;
     }
     // A tombstone revokes model access to every historical revision of that
@@ -1076,12 +1101,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       original.provenance||material.kind!==`mote.${original.source}`)return;
     return original;
   }
-  private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false,selectionReady?:boolean,metadataOnly=false){
+  private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false,selectionReady?:boolean,metadataOnly=false,allowPausedSource=false){
     if(!this.derivedMaterialAllowed(material,policy))return false;
     // Reject a Coding projection that does not declare the current clean
     // dialogue contract before any model exposure.
     if(material.kind==='mote.coding-session'&&material.schemaVersion<CODING_DIALOGUE_SCHEMA_VERSION)return false;
-    if(!this.materialMembersAvailable(material,metadataOnly))return false;
+    if(!this.materialMembersAvailable(material,metadataOnly,allowPausedSource))return false;
     if(!planning&&required&&!(selectionReady??this.materials?.input(material.ref,required)?.ready))return false;
     if(operation==='memory'&&this.sourceItemRecipes){
       const original=this.authoredMaterialOriginal(material,metadataOnly);
@@ -1354,16 +1379,16 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     }
     return {items,nextCursor:cursor??null};
   }
-  private agentMemoryPage(args:Parameters<MemoryStore['page']>[0]&Range,policy:EvidenceExposurePolicy,operation:EvidenceOperation){
+  private agentMemoryPage(args:MemoryPageArgs,exposure:MemoryExposure){
     const limit=Math.min(100,Math.max(1,args.limit??30));
     const items:ReturnType<EvidenceReader['memoryPage']>['items']=[];
     let cursor=args.cursor;
     for(let scan=0;scan<20;scan++){
-      const page=this.memoryPage({...args,cursor,limit:100});
+      const page=this.memoryCatalogPage({...args,cursor,limit:100},exposure[ownerChatMemory]===true);
       for(let index=0;index<page.items.length;index++){
         const memory=page.items[index];
         const card=this.memories.get(memory.id);
-        if(!this.memoryLineageVisible(card.id,this.memoryLineage(card),args,false,{policy,operation},operation==='memory'))continue;
+        if(!this.memoryLineageVisible(card.id,this.memoryLineage(card),args,false,exposure,exposure.operation==='memory'))continue;
         items.push(memory);
         if(items.length===limit){
           const more=index<page.items.length-1||page.nextCursor!==null;
@@ -1527,9 +1552,15 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       memories:async args=>{
         const pin=this.memoryToolSnapshot(options.currentGrantContext?.());try{
         const id=args.id===undefined?undefined:formatEvidenceRef('memory',z.string().uuid().parse(args.id));
-        const page=await this.memoryPageAsync({...args,id,asOf:args.asOf??options.currentContextTime?.(),level:args.id?'detail':'overview'},false,pin.snapshot,{policy,operation:operation('discover')});
-        const refs=args.id?page.items.flatMap((m:any)=>(m.evidence??[]) as import('./memory-schema.js').MemoryEvidence[]):[];
+        const exposure:MemoryExposure={policy,operation:operation('discover')};
+        if(exposure.operation!=='memory'&&options.currentOwnerChat?.())exposure[ownerChatMemory]=true;
+        const page=await this.memoryPageAsync({...args,id,asOf:args.asOf??options.currentContextTime?.(),level:args.id?'detail':'overview'},false,pin.snapshot,exposure);
+        const refs:Memory['evidence']=args.id?page.items.flatMap(item=>item.evidence??[]):[];
         const references=refs.map(e=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}));
+        if(id&&exposure[ownerChatMemory]&&this.memorySourceRevokedIds(page.items.map(item=>item.id)).size){
+          const items=page.items.map((item:Memory)=>({...item,evidence:item.evidence.map(({quote,offset,length,image,fileEvidence,fileIndex,...proof})=>({...proof,originalAvailable:false}))}));
+          return {...page,items,references,...(args.includeEvidence?{sourceSpans:[],sourceCoverage:{references:refs.length,delivered:0,partial:refs.length>0}}:{})};
+        }
         if(!args.id||!args.includeEvidence)return {...page,references};
         const sourceSpans:import('@mote/agent').MemorySourceSpan[]=[];
         let partial=false;

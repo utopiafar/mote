@@ -47,7 +47,7 @@ export function nativeApplicationContext(input:QueryInput,dependencies:{store:St
     }
     // Keep each Memory closure intact; never split it into ID pages or merge an
     // actual raw body/pixel read into a Memory's retained-body permission.
-    assertModelEvidence({question:'',...scope,contextEvidenceDependencies:receipt.evidenceDependencies,contextSourceContextDependencies:[...receipt.sourceContextDependencies]});
+    assertModelEvidence({question:'',...scope,anchorEvidenceIds:input.anchorEvidenceIds,anchorMaterialRef:input.anchorMaterialRef,traceContext:input.traceContext,contextEvidenceDependencies:receipt.evidenceDependencies,contextSourceContextDependencies:[...receipt.sourceContextDependencies]});
     for(const id of receipt.originalEvidenceIds)assertModelEvidence({question:'',...scope,contextEvidenceDependencies:{version:1,complete:true,ids:[id]}});
   };
   const captureExposure=(receipt:NativeApplicationExposure):NativeApplicationExposure=>{

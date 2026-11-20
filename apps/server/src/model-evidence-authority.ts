@@ -19,10 +19,10 @@ export const contextFailure=(code:'context_lineage_incomplete'|'context_evidence
 export interface ModelEvidenceAuthorityDependencies {
   resolveLineage:(value:EvidenceDependencies|undefined)=>EvidenceDependencies|undefined;
   assertImageGrants:(materials:Parameters<typeof assertMemoryImageGrants>[1],images:Parameters<typeof assertMemoryImageGrants>[2])=>void;
-  reader:Pick<EvidenceReader,'sources'|'deletionContextAllowed'|'contextDependenciesAllowed'|'contextDependencyGroups'|'currentMemoryLeadsAllowed'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
+  reader:Pick<EvidenceReader,'sources'|'deletionContextAllowed'|'contextDependenciesAllowed'|'contextDependencyGroups'|'currentMemoryLeadsAllowed'|'hasWithdrawnMemory'|'evidence'|'memoryCatalogMetadataAllowed'|'processingEvidenceAllowed'|'memoryCatalogMetadata'|'queryMaterialReference'>;
   conversations:Pick<Conversations,'assertHistoryContext'|'historyOriginalDependencies'|'retiredSelection'>;
   sourceContexts:SourceContextStore;
-  authorization:Pick<BackgroundModelAuthorization,'currentId'|'assertDisclosure'|'allowsDisclosure'>;
+  authorization:Pick<BackgroundModelAuthorization,'currentId'|'currentKind'|'assertDisclosure'|'allowsDisclosure'>;
   host:Pick<ModelAuthorizationHost,'assertEvidence'>;
   readEvidence:(ids:string[])=>CaptureRecord[];
 }
@@ -33,6 +33,14 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     try{const source=evidenceReader.sources.getSource(id);return source.enabled&&source.retention!=='reference'&&(!modelAuthorization.currentId||modelAuthorization.allowsDisclosure({sourceId:id}));}catch{return false;}
   };
   const selectedQuerySources=(ids:readonly string[])=>[...new Set(ids)].filter(sourceAllowed);
+  const ownerChatMemoryScope=(input:QueryInput|undefined)=>{
+    const operation=input?.traceContext?.operationId,scope=input as QueryScope|undefined;
+    // Only the accepted Ask run's manual model authority can opt in. Explicit
+    // source and original selections retain their own live read grants.
+    if(modelAuthorization.currentKind!=='manual'||!operation?.startsWith('query:')||modelAuthorization.currentId!==`owner-${operation}`||
+      !scope||scope.sourceIds!==undefined||scope.evidenceIds!==undefined||scope.anchorEvidenceIds!==undefined||scope.anchorMaterialRef)return;
+    return {after:scope.after,before:scope.before,deviceId:scope.deviceId};
+  };
   const contextDependencies=(input:QueryInput|undefined)=>resolveLineage(combineDependencies([
     ...(input?.conversation?[input.conversation.evidenceDependencies??{version:1 as const,complete:false,ids:[]}]:[]),
     ...(input?.contextEvidenceDependencies?[input.contextEvidenceDependencies]:[]),
@@ -62,7 +70,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     const conversationText=Boolean(input?.conversation?.workingMemory?.text||input?.conversation?.turns.some(turn=>!turn.evidenceDeleted&&turn.answer));
     const taskText=Boolean(input?.taskContext?.previousSummary||input?.taskContext?.turns?.length);
     if((conversationText&&input?.conversation?.evidenceDependencies?.complete!==true)||((taskText||input?.openingMemories?.length)&&input?.contextEvidenceDependencies?.complete!==true)||input?.openingMemories?.length&&!input?.contextEvidenceDependencies?.ids.length)throw contextFailure('context_lineage_incomplete');
-    if(input?.openingMemories?.length&&!evidenceReader.currentMemoryLeadsAllowed(input.openingMemories,input.contextTime))throw contextFailure('context_evidence_restricted');
+    if(input?.openingMemories?.length&&!evidenceReader.currentMemoryLeadsAllowed(input.openingMemories,input.contextTime,ownerChatMemoryScope(input)))throw contextFailure('context_evidence_restricted');
   };
   // Exact public selections use the normal current-original exposure policy and
   // retain a content pin across preparation, outbound calls and publication.
@@ -100,10 +108,12 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     }
     // Derived nodes remain in the fence alongside every original ancestor.
     // Private metadata checks never disclose bodies or grant raw reads.
+    const ownerChatScope=ownerChatMemoryScope(input);
+    const policy=querySourcePolicy(input,sourceAllowed),deletionContextIds=new Set(input?.derivedContextEvidenceIds??[]);
     for(const group of modelContextGroups(input)){
       const retired=group.snapshot?conversations.assertHistoryContext(group.snapshot):undefined;
-      if(group.snapshot){const originals=conversations.historyOriginalDependencies(group.snapshot);if(!originals.complete||!evidenceReader.contextDependenciesAllowed(originals.ids,querySourcePolicy(input,sourceAllowed),true,retired))throw contextFailure('context_evidence_restricted');}
-      for(const ids of evidenceReader.contextDependencyGroups(group.ids))if(!evidenceReader.contextDependenciesAllowed(ids,querySourcePolicy(input,sourceAllowed),group.historical,retired,new Set(input?.derivedContextEvidenceIds??[])))throw contextFailure('context_evidence_restricted');
+      if(group.snapshot){const originals=conversations.historyOriginalDependencies(group.snapshot);if(!originals.complete||!evidenceReader.contextDependenciesAllowed(originals.ids,policy,true,retired))throw contextFailure('context_evidence_restricted');}
+      for(const ids of evidenceReader.contextDependencyGroups(group.ids,ownerChatScope!==undefined))if(!evidenceReader.contextDependenciesAllowed(ids,policy,group.historical,retired,deletionContextIds,ownerChatScope))throw contextFailure('context_evidence_restricted');
     }
     // The bridge may already hold restricted originals while deletion or a
     // Formal input/owner declaration changes. Check the frozen Memory grant at
@@ -123,6 +133,7 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     input.assertContextAuthority?.();
     assertModelContext(input);
     const policy=querySourcePolicy(input,sourceAllowed);
+    const ownerChatScope=ownerChatMemoryScope(input),deletionContextIds=new Set(input.derivedContextEvidenceIds??[]);
     // This is scheduling granularity, not a scope or processing limit. Inspect
     // every dependency while allowing lease renewal, cancellation and intake.
     for(const group of modelContextGroups(input)){
@@ -135,13 +146,20 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
           await yieldEventLoop();
         }
       }
-      for(const ids of evidenceReader.contextDependencyGroups(group.ids)){
+      for(const ids of evidenceReader.contextDependencyGroups(group.ids,ownerChatScope!==undefined)){
         input.signal?.throwIfAborted();
-        if(!evidenceReader.contextDependenciesAllowed(ids,policy,group.historical,retired,new Set(input.derivedContextEvidenceIds??[])))throw contextFailure('context_evidence_restricted');
+        if(!evidenceReader.contextDependenciesAllowed(ids,policy,group.historical,retired,deletionContextIds,ownerChatScope))throw contextFailure('context_evidence_restricted');
         await yieldEventLoop();
       }
     }
     await yieldEventLoop();input.signal?.throwIfAborted();
+    if(ownerChatScope&&input.openingMemories?.length&&!evidenceReader.currentMemoryLeadsAllowed(input.openingMemories,input.contextTime,ownerChatScope))throw contextFailure('context_evidence_restricted');
+  };
+  const assertOwnerChatMemoryBodies=(ids:string[],input:QueryInput)=>{
+    const scope=ownerChatMemoryScope(input);
+    if(!scope||!ids.length)return;
+    if(evidenceReader.hasWithdrawnMemory(ids))throw contextFailure('context_evidence_restricted');
+    assertModelEvidence({question:'',...scope,traceContext:input.traceContext,contextEvidenceDependencies:{version:1,complete:true,ids}});
   };
   const pinProcessingEvidence=(input:QueryInput):QueryInput=>{
     const supplied=input as QueryInput&{memoryCatalogMetadata?:MemoryCatalogMetadataReceipt};
@@ -150,5 +168,5 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
     const missing=input.evidenceIds.filter(id=>!input.processingEvidence?.[id]);
     return missing.length?{...input,processingEvidence:{...Object.fromEntries(readEvidence(missing).map(record=>[record.id,memoryEvidenceFingerprint(record)])),...input.processingEvidence}}:input;
   };
-  return {contextDependencies,sourceContextDependencies,selectedQuerySources,selectedQueryEvidence,selectedQueryMaterial,pinProcessingEvidence,assert:assertModelEvidence,assertAsync:assertModelEvidenceAsync};
+  return {contextDependencies,sourceContextDependencies,ownerChatMemoryScope,assertOwnerChatMemoryBodies,selectedQuerySources,selectedQueryEvidence,selectedQueryMaterial,pinProcessingEvidence,assert:assertModelEvidence,assertAsync:assertModelEvidenceAsync};
 }

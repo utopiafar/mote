@@ -44,7 +44,7 @@ async function fixture(t:any){
   store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memory.id,now,JSON.stringify(memory));store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memory.id,evidenceId);
   await provider.put({namespace,key:memoryProviderKey(memory),memory,opId:randomUUID()});return {memory,evidenceId};
  };
- return {app,store,reader,provider,bindings,namespace,bind,add,diagnostics};
+ return {app,store,sources,reader,provider,bindings,namespace,bind,add,diagnostics};
 }
 
 test('owner HTTP reads use real external bodies; provider failure cannot become SQL fallback',async t=>{
@@ -79,6 +79,27 @@ test('PF2 R3 single context read reports Gone when its external Memory original 
   assert.ok(!gone.body.includes(memory.statement));assert.ok(!gone.body.includes(memory.evidence[0].quote!));
  }
  assert.equal(intercepted.mock.callCount(),1,'an already withdrawn Memory never reads from its provider');
+});
+
+for(const change of ['pause','reference'] as const)test(`PF2F a shared external Memory read rechecks source ${change} before returning the body`,async t=>{
+ const f=await fixture(t),sourceId='generated-provider-source';
+ f.sources.register({id:sourceId,name:'Generated provider source',kind:'custom',deviceId:'generated-device',platform:'import'});
+ const {memory}=await f.add(sourceId);f.bind();
+ const ref='memory:'+memory.id,readContext=()=>f.app.inject({method:'POST',url:'/api/context/read',payload:{refs:[ref]}});
+ const available=await readContext();assert.equal(available.statusCode,200,available.body);
+ assert.ok(available.json().items[0].text.includes(memory.statement));
+ const providerRead=f.provider.read.bind(f.provider);
+ const intercepted=t.mock.method(f.provider,'read',async(input:Parameters<typeof providerRead>[0])=>{
+  const body=await providerRead(input);assert.ok(body);
+  f.sources.update(sourceId,change==='pause'?{enabled:false}:{retention:'reference'});
+  return body;
+ });
+ for(let attempt=0;attempt<2;attempt++){
+  const denied=await readContext();assert.equal(denied.statusCode,404,denied.body);
+  assert.ok(!denied.body.includes(memory.statement));assert.ok(!denied.body.includes(memory.evidence[0].quote!));
+ }
+ assert.equal(await f.reader.memoryAsync(ref),undefined);
+ assert.equal(intercepted.mock.callCount(),1);
 });
 
 test('owner HTTP rejects changed provider bodies, revisions and retrieval namespaces while the SQL copy stays readable',async t=>{

@@ -185,6 +185,22 @@ async function memoryFileInput(f:Awaited<ReturnType<typeof applicationFixture>>)
   return {sourceId,fileId,chunkId,text,statement,memory:published.json(),async release(){const response=await f.node.app.inject({method:'DELETE',url:'/api/files/'+fileId,headers:f.headers});assert.equal(response.statusCode,200,response.body);const retained=await f.node.app.inject({url:'/api/memories/'+extracted.id,headers:f.headers});assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().status,'published');assert.equal(retained.json().evidence[0].originalAvailable,false);}};
 }
 
+test('PF2F an installed APP owner conversation sends a paused Memory to its model without the original',{timeout:30000},async t=>{
+  let input:Awaited<ReturnType<typeof memoryFileInput>>;
+  const f=await applicationFixture(t,{respond:(request,response,index)=>{
+    assert.ok(JSON.stringify(request).includes(input.statement));
+    assert.ok(!JSON.stringify(request).includes(input.text));
+    if(index===1){writeMessagesResponse(response,{stage:0,model:'generated-native-model',tool:{name:'memories',args:{id:input.memory.id,includeEvidence:true}}});return;}
+    terminalResponse(response,index);
+  }});
+  input=await memoryFileInput(f);
+  const paused=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+input.sourceId,headers:f.headers,payload:{enabled:false}});
+  assert.equal(paused.statusCode,200,paused.body);
+  const result=await f.interact('GENERATED-APP-PAUSED-MEMORY');
+  assert.equal(result.status,'completed',JSON.stringify({result,run:f.node.queryRuns.get(result.runId)}));
+  assert.equal(f.requests.length,2);
+});
+
 test('installed APP Memory-only SDK history and independent Materials survive ordinary original release, but forgetting rejects late products and restoration',{timeout:30000},async t=>{
   const entered=gate(),release=gate();let input:Awaited<ReturnType<typeof memoryFileInput>>;
   const f=await applicationFixture(t,{respond:async(request,response,index)=>{

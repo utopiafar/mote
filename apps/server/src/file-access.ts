@@ -2,12 +2,12 @@ import type {DatabaseSync} from 'node:sqlite';
 
 /** Host-owned SQL expressions only. Device-origin absence is an observation,
  * not a revocation of a previously retained file. */
-export const readableFileSql=(capture:string)=>`EXISTS (SELECT 1 FROM file_versions fv
+export const readableFileSql=(capture:string,allowPausedSource=false)=>`EXISTS (SELECT 1 FROM file_versions fv
   JOIN file_heads fh ON fh.capture_id=fv.capture_id
   JOIN source_connections fs ON fs.id=fv.source_id
   JOIN source_heads sh ON sh.source_id=fv.source_id AND sh.external_id=fv.external_id
-  WHERE fv.capture_id=${capture} AND json_extract(fs.json,'$.enabled')=1
-    AND (json_extract(fs.json,'$.retention')!='reference' OR json_extract(fv.manifest,'$.item.layer')='reference')
+  WHERE fv.capture_id=${capture} ${allowPausedSource?'':`AND json_extract(fs.json,'$.enabled')=1
+    AND (json_extract(fs.json,'$.retention')!='reference' OR json_extract(fv.manifest,'$.item.layer')='reference')`}
     AND (sh.capture_id=fv.capture_id AND sh.deleted=0 OR fh.origin_missing=1 AND sh.deleted=1
       AND EXISTS(SELECT 1 FROM file_versions missing WHERE missing.capture_id=sh.capture_id AND missing.source_id=fv.source_id AND missing.external_id=fv.external_id)))`;
 

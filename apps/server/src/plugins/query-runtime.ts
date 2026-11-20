@@ -71,7 +71,7 @@ export interface QueryRuntimeDependencies {
   readonly conversationSettings:()=>ConversationSettings;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
-  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'pinProcessingEvidence'>;
+  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'ownerChatMemoryScope'|'assertOwnerChatMemoryBodies'|'pinProcessingEvidence'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
   readonly conversations:Pick<Conversations,'assertHistoryContext'|'historyOriginalDependencies'|'message'|'messageForRun'>;
@@ -96,7 +96,7 @@ export interface QueryRuntime {
  * receipts enter through the same plugin activation. */
 export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryRuntime {
   const {store,lifecycle,diagnostics,modelAuthorization,modelAuthorizationHost,executor,agentGate,modelSettings,agent,observabilityAssembly,assertModelEvidence,sourceContexts,assistantDrafts,conversations}=dependencies;
-  const {contextDependencies,sourceContextDependencies,pinProcessingEvidence}=dependencies.modelEvidenceAuthority;
+  const {contextDependencies,sourceContextDependencies,ownerChatMemoryScope,assertOwnerChatMemoryBodies,pinProcessingEvidence}=dependencies.modelEvidenceAuthority;
   const memoryModelAuthorityJobs=createMemoryModelAuthorityJobReader(store);
   const activeQueries=new Set<Promise<QueryResult>>();
   const controls=new ConversationRuntimeControls();
@@ -219,6 +219,8 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     // Confirmed body/image delivery is a separate role from derived Memory
     // ancestry. It can never borrow a card's released-original allowance.
     const assertOriginalDeliveries=()=>{if(originalIds.size)assertModelEvidence({question:'',...((input as ReaderQueryScope).sourceIds!==undefined?{sourceIds:(input as ReaderQueryScope).sourceIds}:{}),contextEvidenceDependencies:{version:1,complete:true,ids:[...originalIds]}});};
+    const ownerChatScope=ownerChatMemoryScope(input);
+    const ownerChatContext=ownerChatScope?{...ownerChatScope,traceContext:input.traceContext}:{};
     const memoryPins=new Map<string,{version?:number;fingerprint:string}>();
     const assertMemoryPins=()=>{for(const [id,pin] of memoryPins){const row=store.db.prepare('SELECT json FROM memories WHERE id=?').get(id);if(!row)throw contextFailure('context_evidence_restricted');const current=JSON.parse(String(row.json));if(current.fingerprint!==pin.fingerprint||pin.version!==undefined&&current.version!==pin.version)throw contextFailure('context_evidence_restricted');}};
     const observed:QueryInput&{processingDisclosedEvidenceIds?:string[]}={...input,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
@@ -259,6 +261,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       input.assertContextAuthority?.();
       assertMemoryPins();
       assertOriginalDeliveries();
+      if(memoryPins.size)assertOwnerChatMemoryBodies([...memoryPins.keys()],input);
       if(observed.conversation?.historyContext)conversations.assertHistoryContext(observed.conversation.historyContext);
     };
     observed.nativeApplicationContext=()=>nativeApplicationContext(observed,{store,conversations,assertModelEvidence,assertCurrent:()=>modelAuthorization.assertCurrent()});
@@ -286,7 +289,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       // They need correction fences even when no original quote was expanded.
       if(evidenceDependencies){
         const historicalIds=new Set([...(input.conversation?.historyContext?input.conversation.evidenceDependencies?.ids??[]:[]),...(input.historyContext?input.contextEvidenceDependencies?.ids??[]:[])]);
-        assertModelEvidence({question:'',...((input as ReaderQueryScope).sourceIds!==undefined?{sourceIds:(input as ReaderQueryScope).sourceIds}:{}),contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
+        assertModelEvidence({question:'',...ownerChatContext,...((input as ReaderQueryScope).sourceIds!==undefined?{sourceIds:(input as ReaderQueryScope).sourceIds}:{}),contextEvidenceDependencies:{...evidenceDependencies,ids:evidenceDependencies.ids.filter(id=>!historicalIds.has(id))}});
       }
       // Overwrite any Agent-supplied role claim. Only complete, observed Host
       // delivery plus pinned prior history can prove an empty original set.

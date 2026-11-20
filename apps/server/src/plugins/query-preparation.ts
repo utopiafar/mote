@@ -15,7 +15,7 @@ import {queryModelBudget} from '../query-model-budget.js';
 import {memoryEvidenceFingerprint} from '../memory.js';
 import {openingMemoryContext} from '../opening-memory.js';
 import {readCurrentMemoryPage} from '../current-memory.js';
-import type {MemoryRead} from '../evidence-read-ports.js';
+import type {EvidenceReader} from '../evidence-reader.js';
 import {parseQueuedQuery,insightSchema} from '../query-request.js';
 import {hasTimeOrDeviceScope,scopedHistoryTurns,type QueryScope} from '../query-scope.js';
 import type {createModelEvidenceAuthority} from '../model-evidence-authority.js';
@@ -34,9 +34,9 @@ export interface QueryPreparationDependencies {
   lifecycleSettings:()=>LifecycleSettings;
   conversationSettings:()=>ConversationSettings;
   archiveReader:ContextReader;
-  memoryReader:Pick<MemoryRead,'memoryPageAsync'>;
+  memoryReader:Pick<EvidenceReader,'memoryPageAsync'|'ownerChatMemoryPage'>;
   configured:()=>boolean;
-  authority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'selectedQuerySources'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
+  authority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'assert'|'contextDependencies'|'ownerChatMemoryScope'|'selectedQuerySources'|'selectedQueryEvidence'|'selectedQueryMaterial'>;
   query:(input:QueryInput)=>Promise<QueryResult>;
 }
 /** Prepare and pin the accepted request under its current coordinator lease. */
@@ -95,11 +95,14 @@ export function createQueryPreparation(dependencies:QueryPreparationDependencies
     const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
     const stepId=work.id+':coordinator:'+work.revision,fence=String(store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(stepId)?.fence??'');
     const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const own=!store.db.isTransaction;if(own)store.db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(stepId,fence))throw new StoreError('Query preparation grant expired',409);const result=write();if(own)store.db.exec('COMMIT');return result;}catch(error){if(own&&store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}};
+    const ownerChat=authority.ownerChatMemoryScope({question,...scope,traceContext:{operationId:work.operationId}});
+    const openingReader=ownerChat?{memoryPageAsync:memoryReader.ownerChatMemoryPage.bind(memoryReader)}:memoryReader;
     const opening=materialOnly?{leads:[],evidenceDependencies:{version:1 as const,complete:true,ids:[]}}:await openingMemoryContext({memories:async args=>{
-        const page=await readCurrentMemoryPage(memoryReader,{
+        const page=await readCurrentMemoryPage(openingReader,{
           kind:scope.evidenceIds!==undefined||sourceIds!==undefined?'selection':'all',...(sourceIds!==undefined?{sourceIds}:{}),...(scope.evidenceIds!==undefined?{evidenceIds:scope.evidenceIds}:{}),
           ...(scope.after?{after:scope.after}:{}),...(scope.before?{before:scope.before}:{}),...(scope.deviceId?{deviceId:scope.deviceId}:{}),
         },{id:args.id,query:args.query,contextPriority:args.contextPriority,tier:args.tier,kind:args.kind,layer:args.layer,asOf:args.asOf,cursor:args.cursor,limit:args.limit,level:args.id?'detail':'overview'});
+        if(ownerChat)return page;
         if(!archiveReader.memories)return {...page,items:[]};
         // Retain the existing per-run disclosure policy as well as the new
         // exact-selection filter; neither an archive row nor a scope grants it.
