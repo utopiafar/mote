@@ -261,7 +261,7 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
 
  await t.test('owner HTTP feed uses the same read state and rejects other credentials',async()=>{
   const id=randomUUID(),card=publish(item(id,'http',[originalB],'HTTP_BODY'),undefined,all);
-  const allQuery=new URLSearchParams({scope:JSON.stringify(all),limit:'100'}),feedbackQuery=new URLSearchParams({scope:JSON.stringify(all)});
+  const allQuery=new URLSearchParams({scope:JSON.stringify(all),limit:'50'}),feedbackQuery=new URLSearchParams({scope:JSON.stringify(all)});
   const before=await node.app.inject({url:'/api/assistant-cards?'+allQuery,headers});assert.equal(before.statusCode,200,before.body);
   assert.equal(before.json().items.find((value:{id:string})=>value.id===id).readAt,null);
   const read=await node.app.inject({method:'POST',url:`/api/assistant-cards/${id}/feedback?${feedbackQuery}`,headers,payload:{expectedRevision:card.revision,action:'read'}});assert.equal(read.statusCode,200,read.body);
@@ -272,7 +272,8 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
   const {invitation}=node.connections.invite({serverUrl:'https://fixture.invalid',label:'Generated collector'},'collector');
   const collector=await node.connections.redeem({code:invitation.code,deviceId:'generated-collector',deviceName:'Generated',platform:'android'});
   assert.equal((await node.app.inject({url:'/api/assistant-cards',headers:{authorization:'Bearer '+collector.token}})).statusCode,403);
-  const narrow=await node.app.inject({url:'/api/assistant-cards?'+new URLSearchParams({scope:JSON.stringify({kind:'selection',evidenceIds:[]})}),headers});assert.equal(narrow.statusCode,200,narrow.body);assert.deepEqual(narrow.json(),{items:[],nextCursor:null});
+  const narrow=await node.app.inject({url:'/api/assistant-cards?'+new URLSearchParams({scope:JSON.stringify({kind:'selection',evidenceIds:[]})}),headers});assert.equal(narrow.statusCode,200,narrow.body);
+  const narrowPage=narrow.json();assert.deepEqual(narrowPage.items,[]);assert.equal(narrowPage.nextCursor,null);assert.deepEqual(narrowPage.categories,[]);
   const hiddenOriginal=await capture('Generated hidden feedback original','generated-hidden-device'),hiddenId=randomUUID();
   publish({...item(hiddenId,'one',[hiddenOriginal],'Generated hidden card'),evidence:[{id:hiddenOriginal,quote:'Generated hidden feedback original'}]},undefined,all);
   const narrowQuery=new URLSearchParams({scope:JSON.stringify({kind:'selection',evidenceIds:[originalB]})});

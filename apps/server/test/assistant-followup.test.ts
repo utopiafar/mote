@@ -903,3 +903,12 @@ test('one oversized original stays visibly blocked and unclaimed while later wor
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM background_model_trigger_claims WHERE original=? AND purpose='assistant'").get('capture:'+oversized.id)!.n,1);
  assert.ok(f.seen.some(context=>context.originals.some(original=>original.quote.includes(oversized.text))));
 });
+
+test('model-supplied feed annotations are stored with the card and survive the public projection',async t=>{
+ const f=await fixture(t),note=await f.add('Generated feed annotation requirement.');
+ const result=await f.run([note.material.ref],context=>answer([card(evidence(context,'Generated feed annotation requirement.'),{
+  feed:{category:'工作',subject:'Alex',action:'提交',gist:'Generated key point'},
+ })]));
+ const saved=f.node.featureServices.assistantCards.get(result.cardIds[0],all);
+ assert.equal(saved.category,'工作');assert.equal(saved.subject,'Alex');assert.equal(saved.action,'提交');assert.equal(saved.gist,'Generated key point');
+});

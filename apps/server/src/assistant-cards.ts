@@ -1,6 +1,7 @@
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
+import {Temporal} from '@js-temporal/polyfill';
 import {z} from 'zod';
-import {codingNextStepSchema,evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type AssistantEvidenceOrigin,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {codingNextStepSchema,evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type AssistantEvidenceOrigin,type CaptureRecord,type FeedCategoryCount,type FeedItem,type FeedPage,type FeedQuery,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {type EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
 import {retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
@@ -16,6 +17,44 @@ const uuid=z.string().uuid();
 const version=z.string().min(1).max(200);
 const revision=z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const text=z.string().min(1).max(32000).refine(value=>value.trim().length>0,'Text cannot be blank');
+/** Model-supplied feed annotations are optional display evidence, not identity.
+ * An invalid value is dropped instead of rejecting the card around it. */
+const feedFieldLimits={category:8,subject:40,action:16,gist:120} as const;
+type FeedFields=Pick<FeedItem,'category'|'subject'|'action'|'gist'>;
+type FeedPosition={at:string;id:string;cardSeq?:number;insight?:{at:string;id:string}};
+type FeedEntry={at:number;position:FeedPosition;item?:FeedItem;card?:{row:CardRow;visible:VisibleVersion;fields:FeedFields}};
+const feedControl=/[\u0000-\u001f\u007f]/;
+const feedDocumentControl=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+function feedText(value:unknown,max:number){
+ if(typeof value!=='string')return;
+ const trimmed=value.trim();
+ if(!trimmed||trimmed.length>max||feedControl.test(trimmed))return;
+ return trimmed;
+}
+function feedDocument(value:unknown){
+ return typeof value==='string'?value.replace(feedDocumentControl,' ').trim():'';
+}
+function feedFields(value:{category?:string;subject?:string;action?:string;gist?:string}):FeedFields{
+ const fields:FeedFields={};
+ for(const key of ['category','subject','action','gist'] as const){
+  const field=feedText(value[key],feedFieldLimits[key]);
+  if(field!==undefined)fields[key]=field;
+ }
+ return fields;
+}
+function feedMatch(query:string,values:readonly (string|undefined)[]){
+ const needle=query.toLocaleLowerCase();
+ return values.some(value=>value?.toLocaleLowerCase().includes(needle));
+}
+type FeedWindowBounds={from?:number;to?:number};
+function feedWindow(window:FeedQuery['window'],timeZone:string,now:string):FeedWindowBounds{
+ const instant=Temporal.Instant.from(now),local=instant.toZonedDateTimeISO(timeZone),today=local.toPlainDate();
+ const start=(date:Temporal.PlainDate)=>date.toZonedDateTime({timeZone,plainTime:Temporal.PlainTime.from('00:00')}).epochMilliseconds;
+ const week=today.subtract({days:(today.dayOfWeek+6)%7});
+ if(window==='earlier')return {to:start(week)};
+ const from=window==='today'?today:window==='3d'?today.subtract({days:2}):week;
+ return {from:start(from),to:start(today.add({days:1}))};
+}
 function assertPublicationCurrent(check:AssertTaskCurrent,ids:readonly string[]){
  if(typeof check!=='function')throw new StoreError('Card publication requires current-state validation',409);
  const result:unknown=check(ids);
@@ -26,6 +65,8 @@ const publishSchema=z.object({
  title:z.string().min(1).max(500),body:text,
  reminderReason:z.string().min(1).max(2000).refine(value=>value.trim().length>0).optional(),
  codingNextStep:codingNextStepSchema.optional(),
+ category:z.string().max(32000).optional(),subject:z.string().max(32000).optional(),
+ action:z.string().max(32000).optional(),gist:z.string().max(32000).optional(),
  evidence:z.array(ownerQuestionEvidenceSchema.extend({id:uuid})).max(100),
  evidenceDependencies:evidenceDependenciesSchema,sourceContextDependencies:z.array(sourceContextDeclarationSchema).optional(),
 }).strict();
@@ -41,7 +82,7 @@ export const assistantCardFeedbackSchema=z.object({
 export type AssistantCardFeedback=z.infer<typeof assistantCardFeedbackSchema>;
 type CardRow={seq:number;id:string;cursor_key:string;kind:z.infer<typeof cardKind>;matter_id:string|null;revision:number;current_version:string;state:'open'|'resolved'|'stale';accepted_task_id:string|null;read_at:string|null;created_at:string;updated_at:string};
 type VersionRow={seq:number;card_id:string;version:string;request_hash:string;state:'open'|'resolved';stale:number;private_json:string|null;created_at:string};
-type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'|'codingNextStep'>&{historicalEvidenceIds?:string[]};
+type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'|'codingNextStep'|'category'|'subject'|'action'|'gist'>&{historicalEvidenceIds?:string[]};
 type VisibleVersion={snapshot:VersionRow;body:Body;ids:string[]};
 type ReviewEvidence={current:Map<string,CaptureRecord[]>;historical:Map<string,CaptureRecord[]>;selection?:Set<string>};
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
@@ -122,7 +163,10 @@ export class AssistantCards {
   if(row.private_json===null)throw new StoreError('Assistant card version is unavailable',409);
   return decodeMemoryPrivate<Body>(this.store,row.private_json);
  }
- private publicBody(body:Body){const {historicalEvidenceIds:_,...visible}=body;return visible;}
+ private publicBody(body:Body){
+  const {historicalEvidenceIds:_,category:__category,subject:__subject,action:__action,gist:__gist,...visible}=body;
+  return {...visible,...feedFields(body)};
+ }
  private evidenceOrigins(evidence:Body['evidence'],historical=false):AssistantEvidenceOrigin[]{
   const ids=[...new Set(evidence.map(proof=>proof.id))];
   const originals=historical?this.readEvidence(ids,true)??[]:this.reader.memories.readCurrentEvidence(ids);
@@ -223,7 +267,7 @@ export class AssistantCards {
    assertPublicationCurrent(assertCurrent,ids);this.assertValid(ids,scope,sourceIds,historical);assertSourceContextDependencies(this.reader.sources.contexts,pins);
    if(existing)this.expect(this.row(input.id),expectedRevision!);
    const at=this.now(),body=encodeMemoryPrivate(this.store,{title:input.title,body:input.body,evidence:input.evidence,...(input.reminderReason?{reminderReason:input.reminderReason}:{}),
-     ...(input.codingNextStep?{codingNextStep:input.codingNextStep}:{}),...(pins.length?{sourceContextDependencies:pins}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})});
+     ...(input.codingNextStep?{codingNextStep:input.codingNextStep}:{}),...feedFields(input),...(pins.length?{sourceContextDependencies:pins}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})});
    if(existing)this.store.db.prepare('UPDATE assistant_cards SET matter_id=?,current_version=?,state=?,revision=revision+1,updated_at=? WHERE id=?').run(input.matterId,input.version,input.state,at,input.id);
    else this.store.db.prepare('INSERT INTO assistant_cards(id,cursor_key,kind,matter_id,revision,current_version,state,accepted_task_id,read_at,created_at,updated_at) VALUES(?,?,?,?,1,?,?,NULL,NULL,?,?)').run(input.id,randomBytes(32).toString('hex'),input.kind,input.matterId,input.version,input.state,at,at);
    this.store.db.prepare('INSERT INTO assistant_card_versions(card_id,version,request_hash,state,private_json,created_at) VALUES(?,?,?,?,?,?)').run(input.id,input.version,hash,input.state,body,at);
@@ -390,6 +434,107 @@ export class AssistantCards {
    }
    const items=found.slice(0,selected.limit).map(({row,visible})=>this.view(row,scope,visible)),last=items.at(-1);
    return {items,nextCursor:found.length>selected.limit&&last?this.cursor(selected.scope,last.id):null};
+  });
+ }
+ private feedSign(value:unknown){
+  return createHmac('sha256',this.store.key??Buffer.from('mote.feed.cursor')).update(canonicalRecipeJson(value)).digest('hex');
+ }
+ private feedFilter(query:FeedQuery,timeZone:string){
+  return sha256(canonicalRecipeJson({scope:query.scope,kinds:query.kinds??null,window:query.window,timeZone,
+   unread:query.unread??null,category:query.category??null,q:query.q??null}));
+ }
+ private feedCursor(raw:string,filter:string){
+  try{
+   const parsed=z.object({at:z.string().datetime({offset:true}),id:z.string().min(1).max(200),
+    cardSeq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    insightAt:z.string().datetime({offset:true}).nullable(),insightId:z.string().min(1).max(128).nullable(),
+    filter:z.string().length(64),signature:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse(JSON.parse(Buffer.from(raw,'base64url').toString()));
+   const {signature,...value}=parsed,expected=Buffer.from(this.feedSign(value),'hex'),actual=Buffer.from(signature,'hex');
+   if(value.filter!==filter||expected.length!==actual.length||!timingSafeEqual(expected,actual))throw Error();
+   const at=Date.parse(value.at);if(!Number.isFinite(at))throw Error();
+   return {at,id:value.id};
+  }catch{throw new StoreError('Invalid assistant feed cursor');}
+ }
+ private feedRevision(){
+  const cards=this.store.db.prepare('SELECT coalesce(max(seq),0) AS seq,coalesce(max(revision),0) AS revision FROM assistant_cards').get() as {seq:number;revision:number};
+  const feedback=Number((this.store.db.prepare('SELECT coalesce(max(seq),0) AS n FROM assistant_card_feedback').get() as {n:number}).n);
+  let insights=0;
+  if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='insights'").get())
+   insights=Number((this.store.db.prepare('SELECT coalesce(max(rowid),0) AS n FROM insights').get() as {n:number}).n);
+  return `feed:${this.store.deletionRevision()}:${cards.seq}:${cards.revision}:${feedback}:${insights}`;
+ }
+ /** Discoveries are saved owner reports, not evidence-bearing cards. They are
+  * projected into the same list shape and filtered only by the same time window
+  * and search text; their own report remains the authoritative detail view. */
+ private feedDiscoveries(from:number|undefined,to:number|undefined,query:string|undefined){
+  if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='insights'").get())return [];
+  const where:string[]=[],values:string[]=[];
+  if(from!==undefined){where.push('julianday(created_at)>=julianday(?)');values.push(new Date(from).toISOString());}
+  if(to!==undefined){where.push('julianday(created_at)<julianday(?)');values.push(new Date(to).toISOString());}
+  const rows=this.store.db.prepare(`SELECT id,created_at,json FROM insights ${where.length?`WHERE ${where.join(' AND ')}`:''} ORDER BY created_at DESC,id DESC`).all(...values) as {id:string;created_at:string;json:string}[];
+  const entries:FeedEntry[]=[];
+  for(const row of rows){
+   const at=Date.parse(row.created_at);if(!Number.isFinite(at)||!uuid.safeParse(row.id).success)continue;
+   let value:{answer?:unknown;artifact?:{title?:unknown}};try{value=JSON.parse(row.json);}catch{continue;}
+   const answer=typeof value?.answer==='string'?value.answer:'';
+   const line=answer.split(/\r?\n/).map(item=>item.replace(/^#{1,6}\s+/,'').trim()).find(Boolean);
+   const title=feedText(value?.artifact?.title,500)??feedText(line?.slice(0,500),500);
+   const body=feedDocument(answer).slice(0,32000);
+   if(!title||!body||query&&!feedMatch(query,[title,body]))continue;
+   entries.push({at,position:{at:row.created_at,id:row.id,insight:{at:row.created_at,id:row.id}},item:{
+    id:row.id,kind:'discovery',matterId:null,version:row.id,state:'open',revision:0,title,body,evidence:[],
+    evidenceDependencies:{version:1,complete:true,ids:[]},feedback:[],readAt:null,acceptedTaskId:null,taskScope:null,taskEvidence:[],
+    evidenceOrigins:[],createdAt:row.created_at,updatedAt:row.created_at}});
+  }
+  return entries;
+ }
+ private feedCardItem(card:{row:CardRow;visible:VisibleVersion;fields:FeedFields},scope:QueryScope){
+  const item=this.view(card.row,scope,card.visible) as FeedItem,title=feedText(item.title,500)??item.title.slice(0,500),body=feedDocument(item.body)||item.body;
+  return {...item,title,body,...card.fields};
+ }
+ private feedNextCursor(page:FeedEntry[],filter:string){
+  const last=page.at(-1)!,card=[...page].reverse().find(entry=>entry.position.cardSeq!==undefined),
+   insight=[...page].reverse().find(entry=>entry.position.insight!==undefined);
+  const value={at:last.position.at,id:last.position.id,cardSeq:card?.position.cardSeq??Number.MAX_SAFE_INTEGER,
+   insightAt:insight?.position.insight?.at??null,insightId:insight?.position.insight?.id??null,filter};
+  return Buffer.from(JSON.stringify({...value,signature:this.feedSign(value)})).toString('base64url');
+ }
+ /** The owner feed is a read projection. Visibility, feedback and accepted-task
+  * links still come from one card snapshot; discoveries add a second ordered
+  * stream whose position is carried in the same signed cursor. */
+ feed(query:FeedQuery):FeedPage{
+  return this.transaction(()=>{
+   const scope=query.scope,timeZone=query.tz??scope.timeZone??'UTC',{from,to}=feedWindow(query.window,timeZone,this.now());
+   const revision=this.feedRevision(),empty:FeedPage={items:[],nextCursor:null,categories:[],revision};
+   if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return empty;
+   const kinds=query.kinds?new Set(query.kinds):undefined,includeDiscovery=Boolean(kinds?.has('discovery')),
+    cardKinds=kinds&&new Set<string>([...kinds].filter(kind=>kind!=='discovery'));
+   const evidence:ReviewEvidence={current:new Map(),historical:new Map(),selection:scope.evidenceIds&&new Set(taskEvidenceIds(this.store,{version:1,complete:true,ids:scope.evidenceIds}))};
+   const candidates:{row:CardRow;visible:VisibleVersion;fields:FeedFields}[]=[];
+   if(cardKinds===undefined||cardKinds.size>0){
+    for(const row of this.feedRows(Number.MAX_SAFE_INTEGER,100,scope,evidence.selection)){
+     if(cardKinds&&!cardKinds.has(row.kind)||query.unread&&row.read_at!==null)continue;
+     const at=Date.parse(row.created_at);
+     if(!Number.isFinite(at)||from!==undefined&&at<from||to!==undefined&&at>=to)continue;
+     const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,scope,false,evidence);
+     if(!visible||!this.feedEligible(row,visible.body))continue;
+     const fields=feedFields(visible.body);
+     if(query.q&&!feedMatch(query.q,[visible.body.title,fields.gist]))continue;
+     candidates.push({row,visible,fields});
+    }
+   }
+   const counts=new Map<string,number>();
+   for(const {fields} of candidates)if(fields.category)counts.set(fields.category,(counts.get(fields.category)??0)+1);
+   const categories:FeedCategoryCount[]=[...counts].map(([name,count])=>({name,count}))
+    .sort((a,b)=>b.count-a.count||(a.name<b.name?-1:a.name>b.name?1:0));
+   const selected=query.category?candidates.filter(candidate=>candidate.fields.category===query.category):candidates;
+   const entries:FeedEntry[]=selected.map(({row,visible,fields})=>({at:Date.parse(row.created_at),position:{at:row.created_at,id:row.id,cardSeq:row.seq},card:{row,visible,fields}}));
+   if(includeDiscovery&&!query.category)entries.push(...this.feedDiscoveries(from,to,query.q));
+   entries.sort((a,b)=>b.at-a.at||(a.position.id<b.position.id?1:a.position.id>b.position.id?-1:0));
+   const filter=this.feedFilter(query,timeZone),after=query.cursor?this.feedCursor(query.cursor,filter):undefined,
+    remaining=after?entries.filter(entry=>entry.at<after.at||entry.at===after.at&&entry.position.id<after.id):entries,
+    page=remaining.slice(0,query.limit);
+   return {items:page.map(entry=>entry.item??this.feedCardItem(entry.card!,scope)),nextCursor:remaining.length>query.limit&&page.length?this.feedNextCursor(page,filter):null,categories,revision};
   });
  }
  /** Internal analysis input. Read all visible cards and feedback in one
