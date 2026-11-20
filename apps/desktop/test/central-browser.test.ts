@@ -97,22 +97,25 @@ it.each(['overview', 'about', 'guide', 'activity', 'plugins'])('preserves the %s
 
 it.each([['sources','#/connections'],['actions','#/actions'],['models','#/system/models']])('keeps the existing %s destination through a real login handoff',async(page,route)=>{const chrome=vi.fn();await openCentralBrowser('http://127.0.0.1:47832',page,'darwin',chrome,vi.fn(),undefined,'generated-ticket');const url=new URL(chrome.mock.calls[0][0]);expect(url.hash.split('?')[0]).toBe(route);expect(new URLSearchParams(url.hash.split('?')[1]).get('loginTicket')).toBe('generated-ticket');expect(url.search).toBe('');});
 
+/** Addresses the baseline app (10ca691da) opened; the Mac ask entry keeps
+ * '#ask' rather than the shared table's '#/ask'. */
+const previousAddresses:Readonly<Record<string,string>>={library:'#/library',models:'#/system/models',plugins:'#/system/plugins',sources:'#/connections',lark:'#/connections/lark',actions:'#/actions',ask:'#ask',activity:'#/activity'};
+
 it('opens every shared page route at the same address it used before',async()=>{
-  const previous:Record<string,string>={library:'#/library',models:'#/system/models',plugins:'#/system/plugins',sources:'#/connections',lark:'#/connections/lark',actions:'#/actions',ask:'#/ask',activity:'#/activity'};
-  expect(Object.keys(centralPageRoutes).sort()).toEqual(Object.keys(previous).sort());
+  expect(Object.keys(centralPageRoutes).sort()).toEqual(Object.keys(previousAddresses).sort());
   for(const [page,key] of Object.entries(centralPageRoutes)){
     const chrome=vi.fn();await openCentralBrowser('https://central.example',page,'darwin',chrome,vi.fn());
-    expect(pageHash(key)).toBe(previous[page]);
-    expect(chrome).toHaveBeenCalledWith('https://central.example/'+previous[page]);
+    if(page!=='ask')expect(pageHash(key)).toBe(previousAddresses[page]);
+    expect(chrome).toHaveBeenCalledWith('https://central.example/'+previousAddresses[page]);
   }
 });
 
 it('keeps every shared page login handoff in the hash query without a bearer token',async()=>{
-  for(const [page,key] of Object.entries(centralPageRoutes))for(const handoff of ['ticket','request']){
+  for(const [page] of Object.entries(centralPageRoutes))for(const handoff of ['ticket','request']){
     const chrome=vi.fn();await openCentralBrowser('https://central.example',page,'darwin',chrome,vi.fn(),undefined,handoff==='ticket'?'generated-ticket':undefined,handoff==='request'?'generated-request':undefined);
     const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);
     expect(url.origin).toBe('https://central.example');expect(url.pathname).toBe('/');expect(url.search).toBe('');
-    expect(url.hash.split('?')[0]).toBe(pageHash(key));
+    expect(url.hash.split('?')[0]).toBe(previousAddresses[page]);
     expect(params.get(handoff==='ticket'?'loginTicket':'loginRequest')).toBe('generated-'+handoff);
     expect(params.has('token')).toBe(false);expect(url.href.includes('Bearer')).toBe(false);
   }

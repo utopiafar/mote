@@ -18,7 +18,8 @@ export async function openCentralBrowser(serverUrl: string, page: string | undef
   launchChrome: (url: string) => Promise<unknown>, openDefault: (url: string) => Promise<unknown>, evidenceId?: string, loginTicket?: string, loginRequestId?:string,workId?:string,conversationId?:string): Promise<void> {
   const origin = validateServerUrl(serverUrl);
   const route = page !== undefined && Object.hasOwn(centralPageRoutes, page) ? centralPageRoutes[page] : undefined;
-  let hash = route ? pageHash(route) : ['notes', 'vault'].includes(page ?? '') ? '#' + page : ['overview', 'about', 'guide'].includes(page ?? '') ? '#/' + page : '';
+  // The Mac ask entry keeps the '#ask' address it had before the shared table.
+  let hash = page === 'ask' ? '#ask' : route ? pageHash(route) : ['notes', 'vault'].includes(page ?? '') ? '#' + page : ['overview', 'about', 'guide'].includes(page ?? '') ? '#/' + page : '';
   if(conversationId!==undefined&&(page!=='ask'||workId!==undefined||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(conversationId)))throw Error('Invalid conversation destination');
   if(workId!==undefined){if(page!=='activity'||evidenceId!==undefined)throw Error('Invalid work destination');hash=deepLinkHash({kind:'run',id:validateCentralWorkId(workId)});}
   if (evidenceId !== undefined) {
