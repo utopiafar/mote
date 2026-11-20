@@ -2,6 +2,7 @@ import type {ObservationName,ObservationPhase} from './execution-observability.j
 import {ProviderFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
 import {AgentYieldError} from '@mote/agent';
 import {validationFeedback,validationLocation} from './memory-validation.js';
+import {filterBlockingJobLabels,isDiagnosticRouteTemplate,type BlockingJobLabel} from './blocking-monitor.js';
 import { moteText } from './i18n.js';
 import { MAX_LOG_FILE_BYTES,MAX_TRACE_EVENT_BYTES,type LogRetention,defaultLogMaxBytes } from './log-retention-config.mjs';
 import {DiagnosticLogStore,type CleanupPlan} from './diagnostic-log-store.mjs';
@@ -30,7 +31,7 @@ export interface AgentTraceInput {
 }
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['recording_metadata','recording_discover','recording_transcript','recording_media','recording_decode','recording_publish','capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
-const events = new Set(['task.loop_timing','task.lease_timing','task.lease_renewal','task.lease_recovered','memory.reader_timing','server.started','server.stopping','server.listening','server.stopped','server.stop_failed','server.start_failed','process.exited','process.spawn_failed','process.output_suppressed','process.output_dropped','config.shutdown_drain_failed','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.runtime_attempt_terminal','agent.runtime_run_terminal','agent.runtime_event_rejected','agent.fragment_timing','agent.harness_timing','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.yielded','agent.heartbeat','file.waiting','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
+const events = new Set(['event-loop.blocked','task.loop_timing','task.lease_timing','task.lease_renewal','task.lease_recovered','memory.reader_timing','server.started','server.stopping','server.listening','server.stopped','server.stop_failed','server.start_failed','process.exited','process.spawn_failed','process.output_suppressed','process.output_dropped','config.shutdown_drain_failed','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.runtime_attempt_terminal','agent.runtime_run_terminal','agent.runtime_event_rejected','agent.fragment_timing','agent.harness_timing','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.yielded','agent.heartbeat','file.waiting','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['configuration','port_in_use','data_directory_in_use','permission','startup','shutdown','validation','unauthorized','forbidden','not_found','conflict','source_context_changed','deleted','too_large','rate_limited','processor_response_unknown','processor_still_running','step_failed','step_pending','provider_timeout','provider_unavailable','provider_network','interrupted','input_changed','grant_revoked','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','queueWaitMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','maxCandidates','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount','clockForwardMs','clockBackwardMs','leaseRemainingMs','leaseOverdueMs','succeeded','skipped','dropped','intervalMs','delayMs'] as const;
@@ -75,7 +76,7 @@ const eventStage=(event:string):DiagnosticStage=>{
   if(prefix==='request')return 'request';
   if(prefix==='ingest'||prefix==='index'||prefix==='agent'||prefix==='source'||prefix==='maintenance'||prefix==='file')return prefix;
   if(prefix==='memory')return 'agent';
-  if(prefix==='server'||prefix==='queue'||prefix==='support'||prefix==='task')return 'system';
+  if(prefix==='server'||prefix==='queue'||prefix==='support'||prefix==='task'||prefix==='event-loop')return 'system';
   return 'unknown';
 };
 const validStage=(value:unknown):value is DiagnosticStage=>typeof value==='string'&&value!=='all'&&diagnosticStageFilters.includes(value as DiagnosticStageFilter);
@@ -110,7 +111,7 @@ async function readLogLine(file:FileHandle,range:LogLineRange):Promise<string> {
   // The scanner's chunk is valid until its next iteration; ordinary short lines need no extra I/O.
   return range.chunk?range.chunk.toString('utf8',range.offset!,range.offset!+range.length):readLogText(file,range.position,range.length);
 }
-export type EventFields = Metrics & { lane?:'background'|'interactive';unit?:'agent_fragment'|'harness_session';status?:'completed'|'failed'|'yielded';taskId?:string;taskKey?:string;attemptId?:string;name?:ObservationName;phase?:ObservationPhase;state?:'completed'|'failed'|'cas_missed'|'recovered'|'summary';requestId?:string;jobId?:string;batchId?:string;runId?:string;evidenceId?:string;validationCode?:string;toolErrorCode?:string;validationPhase?:'extract'|'review';fieldPath?:string;problem?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string;diagnostic?:FailureDiagnostics };
+export type EventFields = Metrics & { lane?:'background'|'interactive';unit?:'agent_fragment'|'harness_session';status?:'completed'|'failed'|'yielded';taskId?:string;taskKey?:string;attemptId?:string;name?:ObservationName;phase?:ObservationPhase;state?:'completed'|'failed'|'cas_missed'|'recovered'|'summary';requestId?:string;jobId?:string;batchId?:string;runId?:string;evidenceId?:string;validationCode?:string;toolErrorCode?:string;validationPhase?:'extract'|'review';fieldPath?:string;problem?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;routeTemplate?:string;jobLabels?:BlockingJobLabel[];category?:string;reason?:string;diagnostic?:FailureDiagnostics };
 export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'>;stage?:DiagnosticStage;truncated?:boolean;trace?:Record<string,unknown> }
 export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxTotalBytes?:number;retention?:LogRetention;maxEntries?:number;traceExpiresAt?:number;now?:()=>Date;traceEnabled?:boolean }
 
@@ -151,7 +152,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
   const [category,message]=fixed[status]??['internal',moteText("请求未完成，请使用请求编号查看诊断记录。")];
   return {status,category,message};
 }
-function fields(raw:unknown):EventFields {
+function fields(raw:unknown,event?:string):EventFields {
   if(!raw||typeof raw!=='object')return {};
   const value=raw as Record<string,unknown>,out:EventFields={};
   if(value.diagnostic)out.diagnostic=sanitizeFailureDiagnostics(value.diagnostic);
@@ -175,6 +176,11 @@ function fields(raw:unknown):EventFields {
   if(typeof value.method==='string'&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(value.method))out.method=value.method as EventFields['method'];
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;
   if(typeof value.route==='string'&&routes.has(value.route))out.route=value.route;
+  if(event==='request.completed'&&isDiagnosticRouteTemplate(value.routeTemplate))out.routeTemplate=value.routeTemplate;
+  if(event==='event-loop.blocked'){
+    const jobLabels=filterBlockingJobLabels(value.jobLabels);
+    if(jobLabels)out.jobLabels=jobLabels;
+  }
   if(typeof value.category==='string'&&categories.has(value.category))out.category=value.category;
   if(typeof value.reason==='string'&&(Object.hasOwn(responseReasons,value.reason)||['renewed','cas_missed','renew_exception','expired_fence','timer_late','window_summary','suppressed_summary'].includes(value.reason)))out.reason=value.reason;
   return out;
@@ -185,7 +191,7 @@ function cleanEvent(value:unknown):DiagnosticEvent|undefined {
   if(typeof v.event!=='string'||!events.has(v.event)||!levels.slice(0,4).includes(v.level as 'info')||typeof v.seq!=='number'||!Number.isSafeInteger(v.seq)||v.seq<1||typeof v.at!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.at)||!Number.isFinite(Date.parse(v.at))||typeof v.instanceId!=='string'||!uuid.test(v.instanceId))return;
   const trace=v.event==='agent.trace'&&v.trace&&typeof v.trace==='object'&&!Array.isArray(v.trace)?v.trace as Record<string,unknown>:undefined;
   if(v.event==='agent.trace'&&typeof trace?.type!=='string')return;
-  return {seq:v.seq,at:v.at,instanceId:v.instanceId,event:v.event,level:v.level as DiagnosticEvent['level'],stage:validStage(v.stage)?v.stage:eventStage(v.event),...fields(v),...(v.truncated===true?{truncated:true}: {}),...(trace?{trace}: {})};
+  return {seq:v.seq,at:v.at,instanceId:v.instanceId,event:v.event,level:v.level as DiagnosticEvent['level'],stage:validStage(v.stage)?v.stage:eventStage(v.event),...fields(v,v.event),...(v.truncated===true?{truncated:true}: {}),...(trace?{trace}: {})};
 }
 
 const traceStringLimit=1_000_000,traceArrayLimit=500,traceObjectLimit=250,traceDepthLimit=8;
@@ -348,7 +354,7 @@ export class ServerDiagnostics {
   record(event:string,value:EventFields={},level:DiagnosticEvent['level']='info') {
     if(event==='agent.trace'||this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
     const at=this.now().toISOString();
-    const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,stage:eventStage(event),...fields({requestId:this.context.getStore(),...value})};
+    const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,stage:eventStage(event),...fields({requestId:this.context.getStore(),...value},event)};
     const line=serializeDiagnosticEvent(entry,Math.min(maxEventBytes,this.maxBytes));
     this.retain(entry);
     this.enqueue({line,at,eventKey:entry.instanceId+':'+entry.seq,channel:entry.level});
