@@ -64,6 +64,8 @@ export const chromeChannels = {
   setup: 'mote:chrome-setup',
 } as const;
 
+/** Transitional bridge name kept for the frozen preload; MC2 removes it with
+ * the old renderer before the central main window ships. It has no handler. */
 export const askWorkspaceChannels = {
   request: 'mote:ask',
 } as const;

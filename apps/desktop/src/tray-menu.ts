@@ -2,6 +2,8 @@ import { moteText } from '@mote/shared/i18n';
 import type { CaptureStatusId, CaptureStatusRow } from '@mote/shared/native-status';
 import { captureNotification } from './capture-notification';
 
+export const localWindowSettings = 'settings';
+
 /** Stable identities let the host wire clicks and tests assert the template without Electron. */
 export type TrayMenuItemId = 'status' | 'system-settings' | 'pending' | 'note' | 'open' | 'central' | 'toggle' | 'send' | 'settings' | 'quit';
 export type TrayMenuItem =
@@ -47,7 +49,7 @@ export function trayMenuTemplate(input: TrayMenuInput): TrayMenuItem[] {
     { type: 'normal', id: 'toggle', label: input.running ? moteText('停止采集') : moteText('开始采集…'), enabled: true },
     { type: 'normal', id: 'send', label: moteText('立即发送'), enabled: input.canSend },
     { type: 'separator' },
-    { type: 'normal', id: 'settings', label: moteText('设置…'), enabled: true },
+    { type: 'normal', id: localWindowSettings, label: moteText('设置…'), enabled: true },
     { type: 'normal', id: 'quit', label: moteText('退出 Mote'), enabled: true },
   );
   return items;

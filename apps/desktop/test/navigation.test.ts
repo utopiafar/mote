@@ -1,14 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DesktopNavigation, needsCollectionSetup } from '../src/navigation';
+import { DesktopNavigation, desktopPages, needsCollectionSetup, restoreDesktopSection } from '../src/navigation';
 
-describe('desktop library navigation', () => {
-  it('starts in Workbench and keeps source controls under their primary destination', () => {
+describe('desktop local window navigation', () => {
+  it('starts in Sources and returns from its screen controls', () => {
     const navigation = new DesktopNavigation();
-    expect(navigation.page).toBe('overview');
-    navigation.navigate('sources');
+    expect(navigation.page).toBe('sources');
     expect(navigation.section).toBe('sources');
     expect(navigation.canGoBack).toBe(false);
-    navigation.navigate('permissions');
+    navigation.navigate('screen');
     expect(navigation.backTarget).toBe('sources');
     navigation.navigate(navigation.backTarget);
     expect(navigation.page).toBe('sources');
@@ -34,22 +33,31 @@ describe('desktop library navigation', () => {
     expect(navigation.navigate('notes', discard)).toBe(false);
     expect(discard).toHaveBeenCalledOnce();
     expect(navigation.page).toBe('privacy');
-    expect(navigation.section).toBe('settings');
+    expect(navigation.section).toBe('sources');
     expect(navigation.backTarget).toBe('settings');
     navigation.navigate('notes', () => true);
     expect(navigation.backTarget).toBe('privacy');
   });
 
-  it('keeps advanced pages in Settings and preserves an active question when connection is needed', () => {
+  it('returns to Send from the connection and its destination settings', () => {
     const navigation = new DesktopNavigation();
-    navigation.navigate('activity');
-    expect(navigation.section).toBe('settings');
-    navigation.navigate('ask');
+    navigation.navigate('work');
     navigation.navigate('connection');
-    expect(navigation.section).toBe('ask');
-    expect(navigation.backTarget).toBe('ask');
+    expect(navigation.section).toBe('work');
+    expect(navigation.backTarget).toBe('work');
     navigation.navigate(navigation.backTarget);
-    expect(navigation.section).toBe('ask');
+    expect(navigation.page).toBe('work');
+  });
+
+  it('restores a saved local section and falls back to Sources for a removed page', () => {
+    for (const page of ['permissions', 'work', 'storage', 'records']) {
+      expect(restoreDesktopSection(page)).toBe(page);
+    }
+    for (const page of [null, 'overview', 'ask', 'unknown']) {
+      expect(restoreDesktopSection(page)).toBe('sources');
+    }
+    expect(desktopPages).not.toContain('overview');
+    expect(desktopPages).not.toContain('ask');
   });
 });
 
@@ -61,9 +69,12 @@ it('offers a first collection setup without requiring a central connection, and 
   }
 });
 
-it('keeps delivery details subordinate to Content, Sources or Activity and defaults to Workbench',()=>{
- const navigation=new DesktopNavigation();navigation.navigate('uploads');expect(navigation.section).toBe('overview');expect(navigation.backTarget).toBe('overview');
- navigation.navigate('records');navigation.navigate('uploads');expect(navigation.section).toBe('records');expect(navigation.backTarget).toBe('records');
- navigation.navigate('work');navigation.navigate('uploads');expect(navigation.section).toBe('work');expect(navigation.backTarget).toBe('work');
- navigation.navigate('overview');navigation.navigate('screen');expect(navigation.section).toBe('overview');expect(navigation.backTarget).toBe('overview');
+it('returns to the section that opened delivery details', () => {
+  const navigation=new DesktopNavigation();
+  for (const section of ['sources', 'records', 'work'] as const) {
+    navigation.navigate(section);
+    navigation.navigate('uploads');
+    expect(navigation.section).toBe(section);
+    expect(navigation.backTarget).toBe(section);
+  }
 });

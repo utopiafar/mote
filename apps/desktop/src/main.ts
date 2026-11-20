@@ -19,7 +19,6 @@ import { createLibraryWorkspacePlugin, libraryReadCapability,libraryWriteCapabil
 import { createChromePlugin, chromeManageCapability, chromeReadCapability, type ChromePlugin } from './plugins/chrome';
 import { createSourcesPlugin, sourcesReadCapability, sourcesWriteCapability, type SourcesPlugin } from './plugins/sources';
 import { createCapturePlugin, createCaptureStages, captureReadCapability, captureWriteCapability, type CapturePlugin } from './plugins/capture';
-import { askCapability, createAskWorkspacePlugin } from './plugins/ask-workspace';
 import { createDeviceSettingsPlugin, deviceSettingsReadCapability, deviceSettingsWriteCapability } from './plugins/device-settings';
 import { createWorkHistoryWorkspacePlugin, workHistoryReadCapability } from './plugins/work-history-workspace';
 import { createLocalStorageBackupPlugin, localStorageBackupCapability } from './plugins/local-storage-backup';
@@ -440,7 +439,7 @@ else {
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     const mainSenderId = window.webContents.id;
-    host.registerWindow(mainSenderId, 'main', [hostCapability, notesReadCapability, notesWriteCapability, libraryReadCapability,libraryWriteCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, askCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
+    host.registerWindow(mainSenderId, 'main', [hostCapability, notesReadCapability, notesWriteCapability, libraryReadCapability,libraryWriteCapability, memoryReadCapability, sourcesReadCapability, sourcesWriteCapability, chromeReadCapability, chromeManageCapability, captureReadCapability, captureWriteCapability, deviceSettingsReadCapability, deviceSettingsWriteCapability, workHistoryReadCapability, localStorageBackupCapability, systemToolsReadCapability, systemToolsManageCapability, capabilityPublisherCapability]);
     window.once('closed', () => host.unregisterWindow(mainSenderId));
     window.on('close', event => { if (!quitting) { event.preventDefault(); host.onMainWindowClosed(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
@@ -585,14 +584,6 @@ else {
       if(connectionToken(settings)&&Date.now()>=nextAuthCheck&&!authCheck){const selected=settings;nextAuthCheck=Date.now()+15000;authCheck=testConnection(selected).catch(error=>{if(settings===selected&&error instanceof ConnectionError&&error.code==='AUTH')return endLogin();}).finally(()=>{authCheck=undefined;});}
       if(settings.token&&!settings.authSignedOut&&settings.authExpiresAt&&settings.authExpiresAt<=Date.now())void endLogin().catch(()=>{});
     },1000);authTimer.unref();app.once('before-quit',()=>clearInterval(authTimer));
-    const askPlugin = createAskWorkspacePlugin({
-      settings: () => settings,
-      installLogin,
-      endLogin,
-      browserLogin,
-      guard: () => { if (recoveryRequired) throw new Error(recoveryRequired); },
-    });
-    await askPlugin.register({host, ipcMain, appVersion: app.getVersion(), mainWindow: window, mainSenderId, pageUrl, trustedMain});
     registerHostIpc(hostChannels.dataFolder, async () => { await shell.openPath(dataDirectory); });
     registerHostIpc(hostChannels.exportMetadata, async () => {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
