@@ -22,7 +22,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.Lifecycle
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
-import dev.mote.collector.plugins.DailyHomePlugin
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativeRecordReceipt
 import dev.mote.collector.plugins.SystemEntriesPlugin
@@ -327,13 +326,10 @@ class PluginStageInstrumentedTest {
 
         val scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
         try {
-            val home = onTop("the plugin-owned home mounts Ask and the quick records") { activity ->
+            onTop("the tab shell mounts the five authored destinations") { activity ->
                 val mounted = tags(activity)
-                listOf("home-ask-action", "home-record-action", "home-photo-action", "home-audio-action").all { it in mounted }
+                listOf("local-tab:chat", "local-tab:feed", "local-tab:ideas", "local-tab:goals", "local-tab:library").all { it in mounted }
             }
-            assertTrue("the home owner is live", DailyHomePlugin.owner(context).active)
-            val homeScope = requireNotNull(host.scope(DailyHomePlugin.INSTANCE_ID))
-            assertSame("home keeps one durable owner scope", homeScope, host.scope(DailyHomePlugin.INSTANCE_ID))
             assertSame("system entries keep one durable owner scope", entriesScope, host.scope(SystemEntriesPlugin.INSTANCE_ID))
 
             // The widget, launcher shortcuts and notification actions share the plugin's definitions.
@@ -373,16 +369,15 @@ class PluginStageInstrumentedTest {
             assertFalse("an unsent Ask is not a local save", main { texts(ask) }.any { it.contains(MoteI18n.text("本机已保存")) })
             click(ask) { it.contentDescription == MoteI18n.text("返回上级") }
             onTop("Ask back returns to the same home task") { activity ->
-                activity is MainActivity && tags(activity).contains("home-ask-action")
+                activity is MainActivity && tags(activity).contains("local-tab:chat")
             }
 
             // Recreation recreates only the mounted views; the durable plugin owners remain.
             main { ask.recreate() }
             val recreated = onTop("the home remounts after Activity recreation") { activity ->
                 activity !== ask && activity is MainActivity &&
-                    tags(activity).contains("home-ask-action") && tags(activity).contains("home-record-action")
+                    tags(activity).contains("local-tab:chat") && tags(activity).contains("home-record-action")
             }
-            assertSame("recreation keeps the same home scope", homeScope, host.scope(DailyHomePlugin.INSTANCE_ID))
             assertSame("recreation keeps the same system-entry scope", entriesScope, host.scope(SystemEntriesPlugin.INSTANCE_ID))
             assertEquals("recreation does not create a record", 0, context.queue().depth())
             assertFalse("recreation does not invent a saved receipt", main { texts(recreated) }.any { it.contains(MoteI18n.text("本机已保存")) })
@@ -435,7 +430,7 @@ class PluginStageInstrumentedTest {
                 }
                 awaitHomeReadsSettled(fixture)
 
-                val home = onTop("the home Ask action is mounted") { activity -> tags(activity).contains("home-ask-action") }
+                val home = onTop("the home Ask action is mounted") { activity -> tags(activity).contains("local-tab:chat") }
                 click(home) { it.tag == "home-ask-action" }
                 var ask = awaitAskComposer()
                 val question = "生成的插件阶段草稿；未发送。"
@@ -443,7 +438,6 @@ class PluginStageInstrumentedTest {
                 until("the Ask plugin persists its private draft") { askState(fixture).optString("question") == question }
                 assertEquals("typing never submits a question", 0, fixture.queryPosts.get())
 
-                val homeScope = requireNotNull(host.scope(DailyHomePlugin.INSTANCE_ID))
                 val askScope = requireNotNull(host.scope(NativeAskPlugin.INSTANCE_ID))
                 val hiddenReadBaseline = fixture.homeReads()
 
@@ -460,7 +454,6 @@ class PluginStageInstrumentedTest {
                 assertEquals(question, state.optString("question"))
                 assertFalse("recreation never invents a run ticket", state.has("runId") || state.has("pending"))
                 assertEquals("recreation never sends the draft", 0, fixture.queryPosts.get())
-                assertSame("the home owner survives recreation", homeScope, host.scope(DailyHomePlugin.INSTANCE_ID))
                 assertSame("the Ask owner survives recreation", askScope, host.scope(NativeAskPlugin.INSTANCE_ID))
                 assertFalse(askScope.revoked)
 

@@ -36,7 +36,6 @@ internal object NativeDefaultPluginInventory {
         NativeDefaultPackage("dev.mote.notes", listOf(NotesPlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.library", listOf(NativeLibraryPlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.ask", listOf(NativeAskPlugin.CAPABILITY)),
-        NativeDefaultPackage("dev.mote.home", listOf(DailyHomePlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.work-discovery", listOf(NativeWorkDiscoveryPlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.managed-calendar", listOf(ManagedCalendarPlugin.CAPABILITY)),
         NativeDefaultPackage("dev.mote.plugin-center", listOf(PluginCenterPlugin.CAPABILITY)),

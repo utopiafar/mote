@@ -20,11 +20,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
-import dev.mote.collector.plugins.DailyHomeOwner
 import dev.mote.collector.plugins.AssistantPlugin
-import dev.mote.collector.plugins.DailyHomePlugin
-import dev.mote.collector.plugins.DailyHomeSections
 import dev.mote.collector.plugins.NativeAdministrationPlugin
+import dev.mote.collector.plugins.NativeAskPlugin
+import dev.mote.collector.plugins.NativeLibraryPlugin
 import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
@@ -44,7 +43,7 @@ class MainActivity : MoteActivity() {
     private var projectionRequestStamp: String? = null
     private var pageRuleImportTarget: Pair<String, String>? = null
     private var permissionReturnPage = Page.SETTINGS
-    private enum class ConnectionOrigin { LOCAL_ASK, LOCAL_ACTIVITY, CENTRAL_CALLER }
+    private enum class ConnectionOrigin { LOCAL_ASK, LOCAL_ACTIVITY, CENTRAL_CALLER, MANAGE_MENU }
     private var connectionOrigin: ConnectionOrigin? = null
     private var applyingConnectionFields = false
     private lateinit var status: TextView
@@ -79,7 +78,15 @@ class MainActivity : MoteActivity() {
     private var pendingCentralResult: Triple<Int, Int, Intent?>? = null
     private var pendingPageRuleResult: Pair<Int, Intent?>? = null
     private val scrollPositions = mutableMapOf<Page, Int>()
-    private lateinit var navigation: MotePrimaryNavigation
+    private lateinit var tabBar: MoteTabBar
+    private lateinit var navigationCatalog: MoteNavCatalog
+    private var navBadges = NavBadges()
+    private var selectedTabId = MoteNavigation.initialTabId()
+    private var lastTabPage = Page.ASK
+    private val badgeGate = TabReadGate(steadyMs = 30_000, maxBackoffMs = 120_000)
+    private var badgeLoading = false
+    private val tabCentrals = linkedMapOf<Page, CentralContent>()
+    private val tabCentralStates = mutableMapOf<Page, Bundle>()
     private lateinit var homeRecordingBar: HomeRecordingBar
     private lateinit var todaySummary: TextView
     private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
@@ -88,18 +95,15 @@ class MainActivity : MoteActivity() {
     private lateinit var homeSyncDetailStatus: TextView
     private lateinit var homeSyncRate: TextView
     private lateinit var homeSourceList: LinearLayout
+    private var sourceSignature: String? = null
     private val homeTask by lazy { UiTask(this) }
-    private var homeSections: DailyHomeSections? = null
-    private var homePlugin: DailyHomeOwner? = null
     private var captureRangeState: TextView? = null
-    private lateinit var homeNoticeRow: HomeNoticeRow
     internal fun isFirstUseRecordEntry() = firstUse
     private var libraryView: LibraryCaptureView? = null
     private var libraryState: Bundle? = null
     private var processingSave: Button? = null
     private var libraryRecordsRevision = -1L
     private var firstUse = true
-    private var homeArchiveEmpty = false
     private var homeHasRecords = false
     private val controls = mutableListOf<View>()
     private val controlPages = mutableMapOf<View, Page>()
@@ -111,7 +115,9 @@ class MainActivity : MoteActivity() {
     private var currentPage = Page.OVERVIEW
     private var draftGeneration = 0
     private enum class Page(private val titleKey: String, val parent: String? = null) {
-        OVERVIEW("首页"), MANAGE("我的 Mote", "OVERVIEW"), LIBRARY("资料与记忆", "MANAGE"), ASK("问一问", "OVERVIEW"), ACTIVITY("活动", "MANAGE"), NOTES("记录", "LIBRARY"), SOURCES("采集与同步", "MANAGE"), SETTINGS("设置", "MANAGE"),
+        OVERVIEW("首页"), MANAGE("我的 Mote", "OVERVIEW"), LIBRARY("资料库"), ASK("问一问"),
+        FEED("动态"), IDEAS("点子"), GOALS("目标"), MEMORY("记忆"), SKILLS("技能"),
+        ACTIVITY("活动", "MANAGE"), NOTES("记录", "LIBRARY"), SOURCES("采集与同步", "MANAGE"), SETTINGS("设置"),
         CONNECTION("连接与设备", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
         PROCESSING("图像质量与去重", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("采集范围", "SETTINGS"), PERMISSIONS("系统权限与后台运行", "SETTINGS"),
@@ -122,6 +128,11 @@ class MainActivity : MoteActivity() {
         val title get() = MoteI18n.text(titleKey)
         fun belongsToSettings(): Boolean = this == SETTINGS || parent?.let { valueOf(it).belongsToSettings() } == true
     }
+    private val centralTabPages = listOf(Page.FEED, Page.IDEAS, Page.GOALS, Page.MEMORY, Page.SKILLS)
+    private val dailyTabPages = setOf(Page.ASK, Page.FEED, Page.IDEAS, Page.GOALS, Page.LIBRARY)
+    private val placeholderTabs = mutableSetOf<Page>()
+    private val IDEAS_ROUTE = "assistant.ideas"
+    private val GOALS_ROUTE = "assistant.goals"
     private var logExportHours = 24
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig, val appCapture: AppCaptureEditor.State?)
     private lateinit var name: EditText
@@ -186,7 +197,7 @@ class MainActivity : MoteActivity() {
         val media: String, val config: CollectorConfig?, val syncQueue: String, val syncPolicy: String, val syncFacts: String, val captureAttention: Boolean,
         val notice: HomeNotice?)
     private val refresh = object : Runnable {
-        override fun run() { refreshStatus(); loadHomeContent(); handler.postDelayed(this, 2000) }
+        override fun run() { refreshStatus(); loadSourceRows(); refreshBadges(); handler.postDelayed(this, 2000) }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -194,6 +205,7 @@ class MainActivity : MoteActivity() {
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
         centralState = savedInstanceState?.getBundle("centralContent")
         activityState = savedInstanceState?.getBundle("activityContent")
+        centralTabPages.forEach { page -> savedInstanceState?.getBundle("central:${page.name}")?.let { tabCentralStates[page] = it } }
         permissionReturnPage = savedInstanceState?.getString("permissionReturnPage")?.let { value -> Page.entries.find { it.name == value } } ?: Page.SETTINGS
         connectionOrigin = savedInstanceState?.getString("connectionOrigin")?.let { value -> ConnectionOrigin.entries.find { it.name == value } }
             ?: if (savedInstanceState == null && intent.getStringExtra("page") == "CONNECTION" && intent.getBooleanExtra("returnToCentral", false)) ConnectionOrigin.CENTRAL_CALLER else null
@@ -226,14 +238,6 @@ class MainActivity : MoteActivity() {
             navigatePageBack(currentPage)
         }.apply { tag = "local-back" }
         headerHeading.addView(headerBackAction, LinearLayout.LayoutParams(dp(MoteTheme.controlHeight), -2))
-        headerMarkAction = LinearLayout(this).apply {
-            gravity = Gravity.CENTER; tag = "home-m-action"; visibility = View.GONE
-            contentDescription = MoteI18n.text("我的 Mote"); isFocusable = true
-            background = MoteUi.clickable(this@MainActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.PILL, false)
-            setOnClickListener { showPage(Page.MANAGE) }
-            addView(MoteComponents.mark(this@MainActivity).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(28), dp(28)))
-        }
-        headerHeading.addView(headerMarkAction, LinearLayout.LayoutParams(dp(48), dp(48)))
         headerTitle = TextView(this).apply { text = "Mote"; tag = "local-page-title"; MoteUi.type(this, NativeFontRole.APPBAR, medium = true); MoteUi.textColor(this, NativeColorRole.INK) }
         headerHeading.addView(headerTitle, LinearLayout.LayoutParams(0, -2, 1f))
         // H01: the home app bar carries only the brand entry and Central's original search.
@@ -241,6 +245,8 @@ class MainActivity : MoteActivity() {
             tag = "home-search-action"
         }
         headerActions.addView(headerSearchAction, LinearLayout.LayoutParams(dp(48), dp(48)))
+        headerMarkAction = manageAction("home-m-action")
+        headerActions.addView(headerMarkAction, LinearLayout.LayoutParams(dp(48), dp(48)))
         header.addView(headerHeading, LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(headerActions, LinearLayout.LayoutParams(-2, -2))
         homeHeader = header
@@ -264,17 +270,21 @@ class MainActivity : MoteActivity() {
         homeRecordingBar.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(10)
         }
-        navigation = MotePrimaryNavigation(this) { showPage(Page.valueOf(it.localPage)) }
-        root.navigation(navigation)
+        navigationCatalog = MoteNavCatalog.fromAssets(assets)
+        tabBar = MoteTabBar(this) { item -> selectTab(item) }
+        root.footer(tabBar)
+        tabBar.dockInsets(root)
         setContentView(root)
         // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
         libraryState = savedInstanceState?.getBundle("library"); logExportHours=savedInstanceState?.getInt("logExportHours",24)?.takeIf { it in listOf(1,24,168) } ?: 24
-        buildToday()
+        homeHasRecords = (LocalStatusProducer.get(this).state.value.active?.records ?: 0) > 0 || (LocalStatusProducer.get(this).state.value.sourcePending ?: 0) > 0
+        firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords)
         buildManagement()
         buildSettings()
-        val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: intent.getStringExtra("page")?.let { value -> requestedPage(value) } ?: Page.valueOf(MoteNavigation.initialLocalPage())
+        val restoredPage = savedInstanceState?.getString("page")?.let { value -> requestedPage(value) } ?: intent.getStringExtra("page")?.let { value -> requestedPage(value) } ?: Page.valueOf(MoteNavigation.initialLocalPage())
         val initialPage = restoredPage
         ensurePage(initialPage)
+        renderTabs()
         baseline = controlValues()
         retained?.let { retained ->
             if (retained.config == config) {
@@ -298,49 +308,103 @@ class MainActivity : MoteActivity() {
         dev.mote.collector.plugins.SystemEntriesPlugin.refresh(applicationContext)
     }
 
-    private fun buildToday() {
-        val local = LocalStatusProducer.get(this).state.value
-        homeHasRecords = (local.active?.records ?: 0) > 0 || (local.sourcePending ?: 0) > 0
-        firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
-        page(Page.OVERVIEW, null)
-        content.setPadding(dp(16), dp(8), dp(16), dp(28))
-        // The plugin owns the home reads and mounted sections; this Activity only routes actions.
-        val home = DailyHomePlugin.owner(this)
-        homePlugin = home
-        homeSections?.close()
-        val sections = home.sections()
-        homeSections = sections
-        // Look at the top, act at the bottom: one shared status notice here, Ask and quick records in the thumb zone.
-        homeNoticeRow = home.noticeRow(this, open = ::openHomeNotice, act = ::runHomeNotice)
-        content.addView(homeNoticeRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-        if (!loadedConfig.hasSyncConnection() && !settings.enabled) homeNoticeRow.bind(HomeNotice.connect())
-        // H08: waiting calendar items and existing discoveries lead the home list in the
-        // shared row style; the feed below groups recent originals by day. Neither block
-        // takes a position when its plugin has nothing to show.
-        val workDiscovery = NativeWorkDiscoveryPlugin.owner(this)
-        val workHomeSections = NativeWorkDiscoveryPlugin.homeSections(NativeWorkDiscoveryPlugin.availability(applicationContext))
-        if (NativeWorkDiscoveryPlugin.HomeSection.CALENDAR_NEEDS in workHomeSections) {
-            workDiscovery.homeCalendarNeeds(this) { startActivity(Intent(this, CalendarActionsActivity::class.java)) }.also {
-                sections.add(it); content.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+    private fun manageAction(tag: String): View = LinearLayout(this).apply {
+        gravity = Gravity.CENTER; this.tag = tag
+        contentDescription = MoteI18n.text("我的 Mote"); isFocusable = true
+        background = MoteUi.clickable(this@MainActivity, NativeColorRole.TRANSPARENT, NativeRadiusRole.PILL, false)
+        setOnClickListener { showManageMenu() }
+        addView(MoteComponents.mark(this@MainActivity).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(28), dp(28)))
+    }
+
+    /** Every page header carries the same top-right "m"; the Central header is composed
+     * by its own owner, so the shell adds only this action to it. */
+    private fun installManageAction(central: CentralContent) {
+        val header = central.root.findViewWithTag<View>("central-header") as? LinearLayout ?: return
+        if (header.findViewWithTag<View>("manage-m-action") != null) return
+        val target = if (header.orientation == LinearLayout.VERTICAL) header.getChildAt(header.childCount - 1) as? LinearLayout ?: header else header
+        target.addView(manageAction("manage-m-action"), LinearLayout.LayoutParams(dp(48), dp(48)))
+    }
+
+    private fun selectTab(item: MoteNavItem) {
+        when (item.id) {
+            "chat" -> showPage(Page.ASK)
+            "feed" -> showPage(Page.FEED)
+            "ideas" -> showPage(Page.IDEAS)
+            "goals" -> showPage(Page.GOALS)
+            "library" -> showPage(Page.LIBRARY)
+        }
+    }
+
+    /** A package that is neither registered in this build nor live contributes no entry. */
+    private fun navPackages(): Set<String> {
+        val packages = linkedSetOf("mote.features", "mote.connections", "mote.system")
+        if (runCatching { AssistantPlugin.owner(this).active }.getOrDefault(false)) packages += "mote.assistant"
+        if (runCatching { NativeAskPlugin.owner(this); true }.getOrDefault(false)) packages += "mote.ask"
+        if (runCatching { NativeLibraryPlugin.owner(this).active }.getOrDefault(false)) packages += "mote.library"
+        return packages
+    }
+
+    private fun renderTabs() {
+        if (!::tabBar.isInitialized || !::navigationCatalog.isInitialized) return
+        val daily = navigationCatalog.daily { it.packageId in navPackages() }
+        if (daily.none { it.id == selectedTabId }) selectedTabId = daily.firstOrNull()?.id ?: MoteNavigation.initialTabId()
+        tabBar.render(daily, navBadges.copy(library = MoteLocalBadges.active("library")), selectedTabId)
+    }
+
+    private fun renderBadges() {
+        if (!::tabBar.isInitialized) return
+        tabBar.setBadges(navBadges.copy(library = MoteLocalBadges.active("library")))
+    }
+
+    private fun showManageMenu() {
+        if (!::navigationCatalog.isInitialized) return
+        refreshBadges()
+        val items = navigationCatalog.manage { it.packageId in navPackages() }
+        MoteManageMenu(this) { item ->
+            when (item.id) {
+                "memory" -> showPage(Page.MEMORY)
+                "skills" -> showPage(Page.SKILLS)
+                "connections" -> showPage(Page.CONNECTION, connectionEntryOrigin = ConnectionOrigin.MANAGE_MENU)
+                "settings" -> showPage(Page.SETTINGS)
+            }
+        }.show(items, navBadges)
+    }
+
+    /**
+     * NV2 badges share the tab read cadence. A 403 stops reads until the session or
+     * authorization generation changes; any other failure keeps the last rendered
+     * values, so an offline phone still shows the previous counts.
+     */
+    private fun refreshBadges(force: Boolean = false) {
+        if (!::tabBar.isInitialized || !::settings.isInitialized || isFinishing || isDestroyed) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && !badgeGate.due(now)) return
+        val selection = runCatching { CentralAccess.resolve(this) }.getOrNull()
+        val client = selection?.client
+        if (client == null) { badgeGate.failure(now, null); return }
+        badgeGate.adopt(selection.generation, selection.server)
+        val at = SystemClock.elapsedRealtime()
+        if (badgeLoading || !badgeGate.due(at)) return
+        badgeLoading = true
+        val stamp = badgeGate.begin(at)
+        statusExecutor.execute {
+            val result = runCatching { client.get("/api/nav-state") }
+            handler.post {
+                badgeLoading = false
+                if (isDestroyed || isFinishing) return@post
+                val end = SystemClock.elapsedRealtime()
+                result.onSuccess { state ->
+                    badgeGate.success(end)
+                    if (badgeGate.current(stamp)) {
+                        navBadges = NavBadgeRules.read(state, navBadges)
+                        renderBadges()
+                    }
+                }.onFailure { error ->
+                    badgeGate.failure(end, (error as? CentralFailure)?.status)
+                    navBadges = NavBadgeRules.keep(navBadges)
+                }
             }
         }
-        if (NativeWorkDiscoveryPlugin.HomeSection.DISCOVERY in workHomeSections) {
-            workDiscovery.homeDiscovery(this) { id ->
-                startActivity(Intent(this,CentralActivity::class.java).putExtra("page","insights").apply{if(id!=null)putExtra("insightId",id)})
-            }.also { sections.add(it); content.addView(it) }
-        }
-        val feed = home.feed(this, archiveEmpty = { empty ->
-            homeArchiveEmpty = empty
-            firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(),settings.enabled,settings.lastCapture(),homeHasRecords,empty)
-        }) { original, origin ->
-            startActivity(Intent(this, CaptureRecordsActivity::class.java)
-                .putExtra("recordId", original.id).putExtra("directReader", true).putExtra("recordRemote", original.remote)
-                .putExtra("recordOrigin", origin).putExtra("recordDeviceId", original.deviceId)
-                .putExtra("recordSource", original.source).putExtra("recordDate", original.day))
-        }
-        sections.add(feed)
-        content.addView(feed)
-        sections.show()
     }
 
     private fun buildManagement() {
@@ -511,18 +575,18 @@ class MainActivity : MoteActivity() {
         applyingSettings = true
         RuntimeSettings.apply(this, next, expected = loadedConfig) { result ->
             applyingSettings = false
-            result.onSuccess { loadedConfig = next; commitSettingsSummaries(next); refreshStatus(); loadHomeContent(); onApplied() }
+            result.onSuccess { loadedConfig = next; commitSettingsSummaries(next); refreshStatus(); loadSourceRows(); onApplied() }
                 .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
         }
     }
 
-    private fun loadHomeContent() {
-        homeSections?.refresh()
-        if (!::homeSourceList.isInitialized || homeTask.busy || currentPage !in setOf(Page.OVERVIEW, Page.MANAGE, Page.SOURCES)) return
-        val home = homePlugin ?: return
+    /** The capture/sync page keeps its continuously-synced source rows; the render
+     * signature is the shared tab signature, so unchanged rows are not rebuilt. */
+    private fun loadSourceRows() {
+        if (!::homeSourceList.isInitialized || homeTask.busy || currentPage !in setOf(Page.MANAGE, Page.SOURCES)) return
         homeTask.start("", {}, {
             val store = applicationContext.localSources()
-            val sources = store.sources().map { source ->
+            store.sources().map { source ->
                 val sourceState = store.state(source.id)
                 val state = if (source.binaryFiles()) applicationContext.fileArchives().state(source.id).put("status", sourceState.optString("status")) else sourceState
                 source to state.apply {
@@ -533,25 +597,14 @@ class MainActivity : MoteActivity() {
                     }
                 }
             }
-            val captures = home.captures(LocalStatusProducer.get(applicationContext).state.value.revision.records,
-                applicationContext.recordDraftStore().draft(),
-                pendingRecovery = { QueueStorage(applicationContext).stageRecoveryPending() }) {
-                HomeLocalCaptures.exists(
-                    queue = { applicationContext.queue() },
-                    committedProbe = { QueueStorage(applicationContext).committedStored() })
-            }
-            Triple(sources, captures, applicationContext.localFileContents(3))
         }) { result ->
-            result.onSuccess { (sources, capturePage, files) ->
-                navigation.updateDraft(capturePage.optBoolean("hasDraft"))
-                // Unknown inventory must not invent an empty archive/first-use handoff, but it
-                // must still let independently readable drafts and source rows reach Home.
-                homeHasRecords = capturePage.isNull("hasAnyRecords") || capturePage.getBoolean("hasAnyRecords") || files.isNotEmpty() || sources.any { it.first.syncContinuously }
-                firstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
-                val sourceSignature = home.sourceSignature(sources.filter { it.first.syncContinuously }.map { (source, state) ->
+            result.onSuccess { sources ->
+                homeHasRecords = homeHasRecords || sources.any { it.first.syncContinuously }
+                val signature = TabLocalSignature.sources(sources.filter { it.first.syncContinuously }.map { (source, state) ->
                     Triple(source.id, source.name, LocalContentPresentation.sourceStatus(source, state) + state.optString("folderProgress").takeIf { it.isNotBlank() }?.let { "\n" + it }.orEmpty())
                 })
-                if (home.sourcesChanged(sourceSignature)) {
+                if (signature == sourceSignature) return@onSuccess
+                sourceSignature = signature
                 homeSourceList.removeAllViews()
                 if (sources.none { it.first.syncContinuously }) homeSourceList.addView(TextView(this).apply { text = MoteI18n.text("尚未添加文件夹。添加后可在这里查看范围和状态。"); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
                 sources.filter { it.first.syncContinuously }.forEach { (source, state) ->
@@ -559,10 +612,7 @@ class MainActivity : MoteActivity() {
                         startActivity(Intent(this, SourcesActivity::class.java).putExtra("sourceId", source.id))
                     }
                 }
-                }
-
-
-            }.onFailure { /* Local inventory failure must not erase independently loaded conversations. */ }
+            }.onFailure { /* A local inventory failure must not erase the last readable rows. */ }
         }
     }
 
@@ -625,7 +675,7 @@ class MainActivity : MoteActivity() {
     private fun buildLibrary() {
         page(Page.LIBRARY, null)
         content.setPadding(dp(20), dp(6), dp(20), dp(28))
-        val heading = designHeading(MoteI18n.text("资料与记忆"))
+        val heading = designHeading(MoteI18n.text("资料库"))
         heading.setPadding(0, 0, 0, 0)
         (heading.layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(10)
         val materials = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1275,7 +1325,12 @@ class MainActivity : MoteActivity() {
         (startRange.parent as ViewGroup).removeView(startRange); content.addView(startRange)
     }
 
-    private fun requestedPage(value: String): Page? = if (value in setOf("CAPTURE","OBSERVATIONS")) Page.PRIVACY else Page.entries.find { it.name == value }
+    private fun requestedPage(value: String): Page? = when (value) {
+        "CAPTURE", "OBSERVATIONS" -> Page.PRIVACY
+        // The old home and "my Mote" are gone; either saved destination opens the chat tab.
+        "OVERVIEW", "MANAGE" -> Page.ASK
+        else -> Page.entries.find { it.name == value }
+    }
 
     private fun showObservations() {
         if (applyingSettings || uiTask.busy) return
@@ -1719,7 +1774,7 @@ class MainActivity : MoteActivity() {
         dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result ->
             applyingSettings = false
             if (isDestroyed) return@pauseScreen
-            result.onSuccess { loadedConfig = settings.read(); refreshStatus(); loadHomeContent() }
+            result.onSuccess { loadedConfig = settings.read(); refreshStatus(); loadSourceRows() }
                 .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
         }
     }
@@ -1776,7 +1831,6 @@ class MainActivity : MoteActivity() {
                     homeSyncRate.text = MoteI18n.text("上传速率") + " · " + UploadMeter.label()
                     refreshManageMenu()
                     renderConnectionPage()
-                    homeNoticeRow.bind(snapshot.notice)
                     captureTitle.text = snapshot.title
                     if (captureAction.text != snapshot.action) {
                         captureAction.text = snapshot.action
@@ -1930,29 +1984,31 @@ class MainActivity : MoteActivity() {
         resumeUi()
     }
     private fun resumeUi() {
+        renderTabs()
         if (currentPage == Page.LIBRARY) libraryView?.resume()
         if (currentPage == Page.ASK) centralContent?.resume()
         if (currentPage == Page.ACTIVITY) activityContent?.resume()
+        tabCentrals[currentPage]?.resume()
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
-        if (currentPage == Page.OVERVIEW) homeSections?.show() else homeSections?.pause()
-        loadHomeContent()
+        loadSourceRows()
         updatePermissionStatuses()
+        refreshBadges(force = true)
         RuntimeSettings.observeProjectionConsent { if (::name.isInitialized) resumeProjectionAfterSettings() }
         RuntimeSettings.observeConfiguration {
             if (!applyingSettings && !isDestroyed) {
-                settingsSummaries.beginRead(); renderSettingsSummaries(); refreshStatus()
+                settingsSummaries.beginRead(); renderSettingsSummaries(); refreshStatus(); refreshBadges(force = true)
             }
         }
         localStateJob = observeLocalState { snapshot ->
             refreshStatus()
             if (::loadedConfig.isInitialized && snapshot.active != null) {
                 if (snapshot.active.records > 0 || (snapshot.sourcePending ?: 0) > 0) homeHasRecords = true
-                val nextFirstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords,homeArchiveEmpty)
+                val nextFirstUse = MoteNavigation.isFirstUse(loadedConfig.hasSyncConnection(), settings.enabled, settings.lastCapture(), homeHasRecords)
                 if (nextFirstUse != firstUse) {
                     firstUse = nextFirstUse
                 } else if (::todaySummary.isInitialized) { if (snapshot.imagesReading) MoteComponents.reading(todaySummary, snapshot.imageLabel()) else todaySummary.text = snapshot.imageLabel() }
             }
-            loadHomeContent()
+            loadSourceRows()
             if (snapshot.revision.records != libraryRecordsRevision) {
                 libraryRecordsRevision = snapshot.revision.records
                 if (currentPage == Page.LIBRARY) libraryView?.recordsChanged(snapshot.revision.records, snapshot.active?.records?.takeIf { snapshot.error == null })
@@ -1962,16 +2018,16 @@ class MainActivity : MoteActivity() {
     }
     override fun onPause() {
         resumed = false
-        homeSections?.pause()
         centralContent?.pause()
         activityContent?.pause()
+        tabCentrals.values.forEach { it.pause() }
         localStateJob?.cancel(); localStateJob = null
         RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null)
         handler.removeCallbacks(refresh); notePoll?.let(handler::removeCallbacks)
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { homeSections?.close(); homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -2001,21 +2057,26 @@ class MainActivity : MoteActivity() {
         initializing = true
         try {
             when (page) {
-                Page.OVERVIEW -> buildToday()
+                Page.OVERVIEW -> ensurePage(Page.ASK)
                 Page.MANAGE -> buildManagement()
                 Page.LIBRARY -> buildLibrary()
                 Page.ASK -> {
-                    val explicit = intent.getStringExtra("conversationId") != null || intent.getStringExtra("evidenceId") != null
-                    val central = CentralContent(this, centralState, initialPage = if (explicit) "ask" else "conversations", openLocalPage = {
+                    val central = CentralContent(this, centralState, initialPage = "ask", openLocalPage = {
                         val next = Page.valueOf(it)
                         showPage(next, connectionEntryOrigin = if (next == Page.CONNECTION) ConnectionOrigin.LOCAL_ASK else null)
                     })
                     centralContent = central
+                    installManageAction(central)
                     central.root.visibility = View.GONE
                     central.root.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                     pages[Page.ASK] = central.root
                     pagesHost.addView(central.root, FrameLayout.LayoutParams(-1, -1))
                 }
+                Page.FEED -> ensureTabPage(Page.FEED, AssistantPlugin.FEED_ROUTE)
+                Page.IDEAS -> ensureTabPage(Page.IDEAS, IDEAS_ROUTE)
+                Page.GOALS -> ensureTabPage(Page.GOALS, GOALS_ROUTE)
+                Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
+                Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
                 Page.ACTIVITY -> {
                     val central = CentralContent(this, activityState, initialPage = "activity", openLocalPage = { next -> showPage(Page.valueOf(next), connectionEntryOrigin = if (next == "CONNECTION") ConnectionOrigin.LOCAL_ACTIVITY else null) })
                     activityContent = central
@@ -2037,8 +2098,44 @@ class MainActivity : MoteActivity() {
         } finally { initializing = wasInitializing }
     }
 
+    private fun ensureTabPage(page: Page, initial: String) {
+        if (centralPageKnown(initial)) ensureCentralTab(page, initial) else buildTabPlaceholder(page)
+    }
+
+    /** Feed, ideas, goals and the manage destinations mount their owner's view in place. */
+    private fun ensureCentralTab(page: Page, initial: String) {
+        if (tabCentrals.containsKey(page)) return
+        val central = CentralContent(this, tabCentralStates[page], initialPage = initial, openLocalPage = { next ->
+            if (next == "OVERVIEW") showLastTab()
+            else runCatching { Page.valueOf(next) }.getOrNull()?.let { target ->
+                showPage(target, connectionEntryOrigin = if (target == Page.CONNECTION) ConnectionOrigin.LOCAL_ASK else null)
+            }
+        })
+        tabCentrals[page] = central
+        installManageAction(central)
+        central.root.visibility = View.GONE
+        central.root.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        pages[page] = central.root
+        pagesHost.addView(central.root, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    private fun centralPageKnown(page: String): Boolean =
+        CentralScreens.pages.any { it.first == page } || page in AssistantPlugin.PAGE_ROUTES
+
+    /** Later cards mount the real ideas/goals routes; until then the tab reads as empty, never as a broken page. */
+    private fun buildTabPlaceholder(page: Page) {
+        placeholderTabs += page
+        page(page, null)
+        content.setPadding(dp(MoteTheme.spacePage), dp(MoteTheme.spacePage), dp(MoteTheme.spacePage), dp(28))
+        content.addView(TextView(this).apply {
+            text = MoteI18n.text("暂无记录"); MoteUi.type(this, NativeFontRole.BODY); MoteUi.textColor(this, NativeColorRole.MUTED)
+        })
+    }
+
+    private fun showLastTab() = showPage(lastTabPage)
+
     private fun showPage(page: Page, discardConfirmed: Boolean = false, connectionEntryOrigin: ConnectionOrigin? = null) {
-        if (page != Page.OVERVIEW) homeSections?.pause() else homeSections?.show()
+        if (page == Page.OVERVIEW) { showPage(Page.ASK, discardConfirmed, connectionEntryOrigin); return }
         if (page == Page.DEVELOPER && !RuntimeProfile.current.developerTools) {
             showPage(Page.SETTINGS, discardConfirmed, connectionEntryOrigin)
             return
@@ -2051,6 +2148,7 @@ class MainActivity : MoteActivity() {
             return
         }
         ensurePage(page)
+        renderTabs()
         if (page == Page.PERMISSIONS) {
             if (currentPage != Page.PERMISSIONS) permissionReturnPage = currentPage
             updatePermissionStatuses()
@@ -2061,28 +2159,35 @@ class MainActivity : MoteActivity() {
             connectionOrigin = if (page == Page.CONNECTION) connectionEntryOrigin else null
             if (currentPage == Page.ASK) centralContent?.pause()
             if (currentPage == Page.ACTIVITY) activityContent?.pause()
+            tabCentrals[currentPage]?.pause()
             currentFocus?.clearFocus()
             getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(pagesHost.windowToken, 0)
         }
         val enteringAsk = page == Page.ASK && currentPage != page
         val enteringActivity = page == Page.ACTIVITY && currentPage != page
+        val enteringTabCentral = page in tabCentrals && currentPage != page
         currentPage = page
-        if (::homeRecordingBar.isInitialized) homeRecordingBar.setHome(page == Page.OVERVIEW)
+        if (page in dailyTabPages) lastTabPage = page
+        MoteNavigation.tabId(page.name)?.let { selectedTabId = it }
+        if (::tabBar.isInitialized) tabBar.select(selectedTabId)
+        if (::homeRecordingBar.isInitialized) homeRecordingBar.setHome(false)
         val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
-        headerTitle.text = if (page == Page.OVERVIEW) "Mote" else page.title
-        headerTitle.visibility = if (page == Page.OVERVIEW || designHeader) View.GONE else View.VISIBLE
-        NativePresentationStyles.bind(headerTitle, "local-heading") { (it as TextView).textSize = if (currentPage == Page.OVERVIEW) 17f else MoteTheme.fontAppbar.toFloat() }
+        val centralOwned = page == Page.ASK || page == Page.ACTIVITY || (page in centralTabPages && page !in placeholderTabs)
+        homeHeader.visibility = if (centralOwned) View.GONE else View.VISIBLE
+        headerTitle.text = page.title
+        headerTitle.visibility = if (designHeader) View.GONE else View.VISIBLE
+        NativePresentationStyles.bind(headerTitle, "local-heading") { (it as TextView).textSize = MoteTheme.fontAppbar.toFloat() }
         headerTitle.setPadding(0, dp(MoteTheme.spaceInline), dp(MoteTheme.spaceInline), dp(MoteTheme.spaceInline))
-        headerMarkAction.visibility = if (page == Page.OVERVIEW) View.VISIBLE else View.GONE
-        homeHeader.setPadding(dp(if (page == Page.OVERVIEW) 8 else if (page == Page.LIBRARY) 8 else if (designHeader) 6 else if (page.parent == null) MoteTheme.spacePage else 0), 0, dp(if (page == Page.OVERVIEW) 4 else if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0)
-        homeHeader.minimumHeight = dp(if (page == Page.OVERVIEW) 56 else 48)
+        headerMarkAction.visibility = if (homeHeader.visibility == View.VISIBLE) View.VISIBLE else View.GONE
+        homeHeader.setPadding(dp(if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0, dp(if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0)
+        homeHeader.minimumHeight = dp(48)
+        val manageEntry = page == Page.SETTINGS || (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU)
         headerBackAction.tag = "local-back:${page.name}"
-        headerBackAction.visibility = if (page.parent != null) View.VISIBLE else View.GONE
+        headerBackAction.visibility = if (page.parent != null || manageEntry) View.VISIBLE else View.GONE
         headerBackAction.contentDescription = if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER)
-            MoteI18n.text("返回上一页") else pageBackTarget(page)?.let { MoteI18n.text("返回{0}", it.title) }
-        homeHeader.visibility = if (page in setOf(Page.ASK, Page.ACTIVITY)) View.GONE else View.VISIBLE
-        headerDivider.visibility = if (page != Page.OVERVIEW && homeHeader.visibility == View.VISIBLE && !designHeader) View.VISIBLE else View.GONE
-        headerSearchAction.visibility = if (page in setOf(Page.OVERVIEW, Page.LIBRARY)) View.VISIBLE else View.GONE
+            MoteI18n.text("返回上一页") else pageBackTarget(page)?.let { MoteI18n.text("返回{0}", it.title) } ?: MoteI18n.text("返回上一页")
+        headerDivider.visibility = if (homeHeader.visibility == View.VISIBLE && !designHeader) View.VISIBLE else View.GONE
+        headerSearchAction.visibility = if (page == Page.LIBRARY) View.VISIBLE else View.GONE
         NativePresentationStyles.bind(headerSearchAction, "glyph-tint") {
             (it as ImageView).imageTintList = android.content.res.ColorStateList.valueOf(NativeColorRole.INK.color())
         }
@@ -2096,22 +2201,23 @@ class MainActivity : MoteActivity() {
             headerSearchAction.contentDescription = MoteI18n.text("搜索资料"); headerSearchAction.tag = "home-search-action"
             headerSearchAction.setOnClickListener { openCentral(MoteNavigation.SEARCH) }
         }
-        val compactHeader = page != Page.OVERVIEW && (resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f)
+        val compactHeader = resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f
         homeHeader.orientation = if (compactHeader) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         headerHeading.layoutParams = if (compactHeader) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f)
         headerActions.layoutParams = LinearLayout.LayoutParams(if (compactHeader) -1 else -2, -2)
-        headerActions.visibility = headerSearchAction.visibility
+        headerActions.visibility = View.VISIBLE
         pages.forEach { (key, view) ->
             view.visibility = if (key == page) View.VISIBLE else View.GONE
             view.importantForAccessibility = if (key == page) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
-        navigation.select(MoteNavigation.localTab(page.name))
         (pages[page] as? ScrollView)?.let { scroll -> scroll.post { scroll.scrollTo(0, scrollPositions[page] ?: 0) } }
         if (enteringAsk && resumed) centralContent?.resume()
         if (enteringActivity && resumed) activityContent?.resume()
+        if (enteringTabCentral && resumed) tabCentrals[page]?.resume()
         updateSaveBar()
         if (page == Page.LIBRARY) loadLocalLibrary()
-        if (page in setOf(Page.OVERVIEW, Page.MANAGE, Page.SOURCES)) loadHomeContent()
+        if (page in setOf(Page.MANAGE, Page.SOURCES)) loadSourceRows()
+        refreshBadges()
     }
 
     override fun onNewIntent(next: Intent) {
@@ -2133,20 +2239,27 @@ class MainActivity : MoteActivity() {
         when {
             currentPage == Page.ASK && centralContent?.back() == true -> Unit
             currentPage == Page.ACTIVITY && activityContent?.back() == true -> Unit
+            tabCentrals[currentPage]?.back() == true -> Unit
+            currentPage == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU -> showLastTab()
             currentPage.parent != null -> navigatePageBack(currentPage)
-            currentPage != Page.OVERVIEW -> showPage(Page.OVERVIEW)
-            else -> finish()
-        }
+            currentPage == Page.SETTINGS -> showLastTab()
+            currentPage in dailyTabPages -> finish()
+            currentPage != Page.OVERVIEW -> showLastTab()
+            else -> finish()        }
     }
 
     private fun pageBackTarget(page: Page): Page? = if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.LOCAL_ASK) Page.ASK
         else if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.LOCAL_ACTIVITY) Page.ACTIVITY
+        else if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU) null
+        else if (page == Page.SETTINGS) null
         else page.parent?.let(Page::valueOf)
 
     private fun navigatePageBack(page: Page) {
         if (page == Page.PRIVACY && ::appCaptureEditor.isInitialized && appCaptureEditor.backToList()) return
         if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER) returnConnectionToCaller()
-        else pageBackTarget(page)?.let { showPage(it) }
+        else if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU) showLastTab()
+        else if (page == Page.SETTINGS) showLastTab()
+        else pageBackTarget(page)?.let { target -> if (target == Page.OVERVIEW) showLastTab() else showPage(target) }
     }
 
     /** A real caller return uses the same unsaved-settings confirmation as page navigation. */
@@ -2175,6 +2288,7 @@ class MainActivity : MoteActivity() {
         outState.putBundle("activityContent", Bundle().also { state ->
             activityContent?.saveState(state) ?: activityState?.let(state::putAll)
         })
+        tabCentrals.forEach { (page, central) -> outState.putBundle("central:${page.name}", Bundle().also(central::saveState)) }
         super.onSaveInstanceState(outState)
     }
 

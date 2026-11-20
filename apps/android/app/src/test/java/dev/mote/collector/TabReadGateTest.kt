@@ -9,10 +9,10 @@ import org.junit.Test
  * `adopt` on each refresh, `due`/`begin` to claim a read, `current` before a late result applies,
  * `success`/`failure` for the outcome, `wake` when the home is hidden.
  */
-class HomeReadGateTest {
+class TabReadGateTest {
 
     /** Mirrors the four lines every home view runs around its read task. */
-    private class Section(val gate: HomeReadGate = HomeReadGate()) {
+    private class Section(val gate: TabReadGate = TabReadGate()) {
         var busy = false
         var reads = 0
         fun refresh(now: Long): Long? {
@@ -37,7 +37,7 @@ class HomeReadGateTest {
         assertTrue(section.gate.due(120_000))
     }
 
-    @Test fun returningToTheHomeReadsImmediately() {
+    @Test fun returningToTheTabReadsImmediately() {
         val section = Section()
         section.gate.adopt(1, "https://central")
         section.finish(section.refresh(0), 0)
@@ -115,7 +115,7 @@ class HomeReadGateTest {
     }
 
     @Test fun emptyArchiveProbeRunsOnceUntilItFindsData() {
-        val gate = HomeReadGate()
+        val gate = TabReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
         var probes = 0
@@ -141,7 +141,7 @@ class HomeReadGateTest {
     @Test fun anInFlightProbeCannotCommitIntoTheNextGeneration() {
         // Mirrors a worker thread running the archive probe while the UI thread adopts a new
         // connection: the old probe's answer must not mark the new generation done.
-        val gate = HomeReadGate()
+        val gate = TabReadGate()
         gate.adopt(1, "https://central")
         var probes = 0
         assertFalse(gate.archiveEmpty(true, gate.begin(0), 0) {
@@ -156,7 +156,7 @@ class HomeReadGateTest {
     }
 
     @Test fun anInconclusiveProbeRetriesOnTheNextRead() {
-        val gate = HomeReadGate()
+        val gate = TabReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
         var probes = 0
@@ -170,7 +170,7 @@ class HomeReadGateTest {
 
     @Test fun anInconclusiveProbeRecheckClearsTheEmptyConfirmation() {
         // A confirmed-empty archive whose recheck fails is unknown, not empty.
-        val gate = HomeReadGate()
+        val gate = TabReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
         assertTrue(gate.archiveEmpty(true, stamp, 0) { true })
@@ -186,7 +186,7 @@ class HomeReadGateTest {
     @Test fun aDeniedProbeFailsTheReadWithoutCommittingTheStop() {
         // The probe rethrows on the worker thread; a pause before the UI callback drops the
         // outcome and must not strand a stop — the UI failure path applies it instead.
-        val gate = HomeReadGate()
+        val gate = TabReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
         val thrown = assertThrows(CentralFailure::class.java) { gate.archiveEmpty(true, stamp, 0) { throw CentralFailure(403) } }
@@ -226,7 +226,7 @@ class HomeReadGateTest {
             if (path == "/api/status") JSONObject("""{"storage":{"captures":0}}""") else JSONObject("""{"items":[{"id":"x"}]}""")
         })
         // Through the gate: the malformed probe surfaces as a failure and the next read retries.
-        val gate = HomeReadGate()
+        val gate = TabReadGate()
         gate.adopt(1, "https://central")
         val stamp = gate.begin(0)
         var malformedCount = 0

@@ -148,7 +148,8 @@ class PluginNavigationContractTest {
 
     @Test fun approvedAndroidNavigationKeepsOneHomeAndStableRoutes() {
         assertTrue("Management destinations stay in the secondary menu", MoteNavigation.primaryTabs().isEmpty())
-        assertEquals("OVERVIEW", MoteNavigation.initialLocalPage())
+        assertEquals("The bottom shell opens the chat tab", "ASK", MoteNavigation.initialLocalPage())
+        assertEquals("chat", MoteNavigation.initialTabId())
         assertEquals(MotePrimaryTab.LIBRARY, MoteNavigation.centralTab("archive"))
         assertEquals(MotePrimaryTab.ACTIVITY, MoteNavigation.centralTab("activity"))
         assertEquals("overview", MoteNavigation.centralParent("actions"))
