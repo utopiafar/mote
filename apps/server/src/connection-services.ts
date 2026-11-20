@@ -176,6 +176,7 @@ export function buildConnectionServices(dependencies:ConnectionServicesDependenc
 
   const revision=createHash('sha256').update(JSON.stringify({
     control:readPluginRevision(store),
+    interval:connectorConfig?.syncIntervalMs??null,
     services:services.map(service=>[service.id,service.kind,service.state,service.jobs,service.tools,service.actions]),
     sources:sources.map(source=>[source.id,source.enabled,source.status?.state??null,source.status?.lastSyncAt??null,source.status?.coverage?.processed??null,source.updatedAt]),
   })).digest('base64url');
