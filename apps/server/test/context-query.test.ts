@@ -6,10 +6,12 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {CODING_DIALOGUE_SCHEMA_VERSION} from '@mote/shared';
 import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {createContextQuery} from '../src/plugins/query-context.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
+import {MaterialStore,materialId} from '../src/materials.js';
 
 const captured=(minutes:number)=>new Date(Date.parse('2026-09-18T00:00:00.000Z')+minutes*60000).toISOString();
 async function fixture(t:any){
@@ -40,8 +42,8 @@ async function coding(store:Store,minutes:number,projectKey:string,sessionId:str
 
 
 /** Complete generated storage fixture; the reader still enforces its original-evidence policy. */
-function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,details:{title:string;statement:string;uncertainty:string}){
- const records=store.evidence(evidenceIds);assert.equal(records.length,evidenceIds.length);
+function seedMemory(store:Store,id:string,evidenceIds:string[],createdAt:string,details:{title:string;statement:string;uncertainty:string},records=store.evidence(evidenceIds)){
+ assert.equal(records.length,evidenceIds.length);
  const value=memorySchema.parse({version:1,id,domain:'personal',tier:'episode',kind:'episodic',...details,
   status:'published',createdAt,evidenceIds,model:'generated-fixture',runId:randomUUID(),skillVersion:'generated-fixture@1',
   admission:{layer:'memory',reason:'Generated model selected evidence for this fixture',scope:'Generated fixture only',attribution:'observed'},
@@ -100,12 +102,22 @@ test('137 same-time records paginate without omissions under item and response b
 });
 
 test('memory references expand and strict device/time/coding scope applies before pagination',async t=>{
-  const {store,query}=await fixture(t);const evidence=await coding(store,1,'github:fixture/mote','same','Evidence');
-  const id=randomUUID();seedMemory(store,id,[evidence],captured(2),{title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture'});
+  const {store,sources}=await fixture(t),materials=new MaterialStore(store);
+  const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials),query=createContextQuery(store,sources,reader);
+  const projectKey='github:fixture/mote',evidence=await coding(store,1,projectKey,'same','Generated Coding event');
+  const member={id:'event',kind:'capture' as const,ref:'capture:'+evidence};
+  const material=materials.publish({id:materialId('coding','same'),kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,title:'Generated Coding session',
+    origin:{sourceId:'coding',externalId:'same',deviceId:'device-b',provider:'codex',projectKey,sessionId:'same',firstAt:captured(1),lastAt:captured(1)},
+    members:[member],blocks:[{id:'body',kind:'text',format:'markdown-fragment',text:'Generated Coding dialogue',memberIds:[member.id],evidenceContext:{observedAt:captured(1),document:{timeBasis:'unknown',contentRole:'transcript'}}}],
+    coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+  const anchor=materials.evidenceIds(material.ref)[0],id=randomUUID();
+  seedMemory(store,id,[anchor],captured(2),{title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture'},reader.memories.readEvidence([anchor]));
+  store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
   assert.equal(query.read(['memory:'+id]).items[0].id,id);
   assert.equal(query.read(['memory:'+id],0,4000,{deviceId:'device-a'}).items.length,0);
   assert.equal(query.read(['memory:'+id],0,4000,{sourceId:'other'}).items.length,0);
   assert.equal(query.read(['memory:'+id],0,4000,{deviceId:'device-b',sourceId:'coding'}).items[0].id,id);
+  assert.equal(query.read(['memory:'+id],0,4000,{projectKey,provider:'codex',sessionId:'same'}).items[0].id,id);
   assert.equal(query.read(['memory:'+id],0,4000,{after:captured(5)}).items.length,0);
   assert.equal(query.context({sourceId:'other'}).stableMemories.length,0);
   assert.equal(query.context({sourceId:'coding'}).stableMemories.length,1);

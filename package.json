@@ -16,6 +16,7 @@
     "start": "npm run start -w @mote/server",
     "desktop": "npm run start -w @mote/desktop",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "check:ui-copy": "node scripts/check-ui-copy.mjs",
     "check:local": "npm run check:i18n && npm run build:libs && npm run typecheck && npm test",
     "check:affected": "node scripts/release/check-affected.mjs",
     "typecheck": "tsc -b --stopBuildOnErrors && npm run check:architecture",

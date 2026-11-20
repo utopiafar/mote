@@ -22,6 +22,42 @@ function retirementStatements(selection:string,versionTable='assistant_card_evid
  ];
 }
 
+/** A source can supply an original without contributing a source-context pin. */
+function sourceEvidence(sourceId:string){
+ return `SELECT c.id FROM captures c JOIN (
+    SELECT evidence_id FROM assistant_card_evidence UNION SELECT evidence_id FROM assistant_card_feedback_evidence
+  ) d ON d.evidence_id=c.id WHERE json_extract(c.json,'$.provenance.sourceId')=${sourceId}
+  UNION SELECT capture_id FROM source_versions WHERE source_id=${sourceId}
+  UNION SELECT c.id FROM file_chunks c JOIN file_versions v ON v.capture_id=c.capture_id WHERE v.source_id=${sourceId}`;
+}
+
+function markCardEvidenceStale(evidence:string){
+ const versions=`SELECT e.card_id,e.version FROM assistant_card_evidence e JOIN assistant_card_versions v USING(card_id,version)
+  WHERE v.stale=0 AND e.evidence_id IN (${evidence})`;
+ const feedback=`SELECT e.feedback_seq FROM assistant_card_feedback_evidence e JOIN assistant_card_feedback f ON f.seq=e.feedback_seq
+  WHERE f.stale=0 AND e.evidence_id IN (${evidence})`;
+ return `UPDATE assistant_cards SET state=CASE WHEN (id,current_version) IN (${versions}) THEN 'stale' ELSE state END,
+   revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+   WHERE id IN (SELECT card_id FROM (${versions}) UNION SELECT card_id FROM assistant_card_feedback WHERE seq IN (${feedback}));
+  UPDATE assistant_card_versions SET stale=1 WHERE stale=0 AND (card_id,version) IN (${versions});
+  UPDATE assistant_card_feedback SET stale=1 WHERE stale=0 AND seq IN (${feedback});`;
+}
+
+/** Formal Material tables are optional in a maintenance-only vault. Once
+ * installed, their triggers persist for every writer of that vault. */
+export function installAssistantCardMaterialVisibility(db:Store['db']){
+ const anchors=(sourceId:string)=>`SELECT e.id FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE h.source_id=${sourceId}`;
+ db.exec(`CREATE TRIGGER IF NOT EXISTS assistant_cards_material_source_revoked AFTER UPDATE OF json ON source_connections
+  WHEN ${sourceAccessRevoked} BEGIN ${markCardEvidenceStale(anchors('new.id'))} END;
+ CREATE TRIGGER IF NOT EXISTS assistant_cards_material_source_deleted BEFORE DELETE ON source_connections BEGIN
+  ${retirementStatements(`evidence_id IN (${anchors('old.id')})`).join(';')}; END;
+ CREATE TRIGGER IF NOT EXISTS assistant_cards_material_anchor_deleted BEFORE DELETE ON material_evidence BEGIN
+  ${retirementStatements('evidence_id=old.id').join(';')}; END;`);
+}
+
+const sourceAccessRevoked=`(json_extract(old.json,'$.enabled')=1 AND json_extract(new.json,'$.enabled')=0)
+ OR (json_extract(old.json,'$.retention')!='reference' AND json_extract(new.json,'$.retention')='reference')`;
+
 /** Private version bodies and owner feedback are purged in the same transaction
  * as evidence deletion. Ordinary revisions mark historical versions stale;
  * identity/version receipts remain so a delayed replay cannot restore prose. */
@@ -135,6 +171,11 @@ export function installAssistantCards(store:Store){
   UPDATE assistant_card_versions SET stale=1 WHERE (card_id,version) IN (SELECT card_id,version FROM assistant_card_context WHERE source_id=new.id);
   UPDATE assistant_card_feedback SET stale=1 WHERE seq IN (SELECT feedback_seq FROM assistant_card_feedback_context WHERE source_id=new.id);
  END;`);
+ db.exec(`CREATE INDEX IF NOT EXISTS assistant_cards_feed ON assistant_cards(seq DESC) WHERE state!='stale';
+ CREATE TRIGGER IF NOT EXISTS assistant_cards_evidence_source_revoked AFTER UPDATE OF json ON source_connections
+  WHEN ${sourceAccessRevoked} BEGIN ${markCardEvidenceStale(sourceEvidence('new.id'))} END;
+ CREATE TRIGGER IF NOT EXISTS assistant_cards_evidence_source_deleted BEFORE DELETE ON source_connections BEGIN
+  ${retirementStatements(`evidence_id IN (${sourceEvidence('old.id')})`).join(';')}; END;`);
  store.registerStorage('assistant-cards',{
   assistant_cards:'length(CAST(id AS BLOB))+length(CAST(cursor_key AS BLOB))+length(CAST(kind AS BLOB))+coalesce(length(CAST(matter_id AS BLOB)),0)+length(CAST(current_version AS BLOB))+coalesce(length(CAST(accepted_task_id AS BLOB)),0)+256',
   assistant_card_versions:'length(CAST(card_id AS BLOB))+length(CAST(version AS BLOB))+length(CAST(request_hash AS BLOB))+coalesce(length(CAST(private_json AS BLOB)),0)+128',

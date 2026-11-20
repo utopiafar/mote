@@ -2,6 +2,19 @@ package dev.mote.collector
 
 import java.net.URI
 
+/** Central page paths shared with packages/shared/src/page-routes.ts. The TS
+ * contract test compares every constant; values change only with that table. */
+internal object CentralPageRoutes {
+    const val chat = "ask"
+    const val library = "library"
+    const val models = "system/models"
+    const val skills = "system/plugins"
+    const val connections = "connections"
+    const val lark = "connections/lark"
+    const val actions = "actions"
+    const val activity = "activity"
+}
+
 /** Android mirror of the shared deep-link schema (packages/shared deep-link.ts):
  * one link carries an instance scope plus a typed route over the same hash
  * vocabulary every end emits and parses. Links address committed central
@@ -119,9 +132,9 @@ object MoteLink {
 
     /** Canonical hash form shared with the central surface. */
     fun hash(route: Route): String = when (val r = validate(route)) {
-        is Route.Conversation -> "#/ask?conversation=" + encode(r.id)
-        is Route.Run -> "#/activity?work=" + encode(r.id)
-        is Route.Reference -> "#/ask?evidence=" + encode(r.ref) + (r.conversation?.let { "&conversation=" + encode(it) } ?: "")
+        is Route.Conversation -> "#/" + CentralPageRoutes.chat + "?conversation=" + encode(r.id)
+        is Route.Run -> "#/" + CentralPageRoutes.activity + "?work=" + encode(r.id)
+        is Route.Reference -> "#/" + CentralPageRoutes.chat + "?evidence=" + encode(r.ref) + (r.conversation?.let { "&conversation=" + encode(it) } ?: "")
         is Route.View -> "#/view?package=" + encode(r.packageId) + "&route=" + encode(r.routeId) + "&evidence=" + encode(r.ref)
     }
 

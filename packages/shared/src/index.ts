@@ -168,6 +168,7 @@ export type ActivityCounts = {activityEvents?:number;contentCaptures?:number};
 export type Activity = ActivityCounts & {apps:(ActivityCounts & {appId?:string;appName:string;durationMs:number;captures:number})[];devices:(ActivityCounts & {deviceId:string;deviceName:string;durationMs:number;captures:number})[];totalDurationMs:number;captures:number};
 export * from './connection.js';
 export * from './deep-link.js';
+export * from './page-routes.js';
 export * from './protocol.js';
 
 export * from './files.js';
@@ -192,6 +193,7 @@ export * from './evidence-ref.js';
 export type {InsightSnapshot} from './insight-snapshot.js';
 export * from './feature-packs.js';
 export * from './ui-presentation.js';
+export * from './ui-navigation.js';
 export * from './recordings.js';
 
 export * from './activity.js';
@@ -199,6 +201,7 @@ export * from './query-scope.js';
 export * from './model-budget.js';
 export * from './assistant-contracts.js';
 export * from './assistant-views.js';
+export * from './page-contracts.js';
 export * from './file-view.js';
 export * from './workspace-template.js';
 
@@ -216,3 +219,4 @@ export * from './http-failure.js';
 export * from './action-capabilities.js';
 export * from './action-grants.js';
 export * from './agent-runtime-status.js';
+export * from './nav-state.js';

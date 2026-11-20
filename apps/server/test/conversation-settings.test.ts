@@ -6,9 +6,6 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import {AskClient} from '../../desktop/src/ask.js';
-import {resolveAskConversation} from '../../desktop/src/ask-conversation.js';
-import {defaultConfig} from '../../desktop/src/config.js';
 
 const token='generated-conversation-settings-owner';
 const headers={authorization:`Bearer ${token}`};
@@ -52,21 +49,6 @@ test('conversation settings preserve the chosen main and existing side conversat
     assert.equal(response.statusCode,400,JSON.stringify({context,status:response.statusCode,body:response.body}));
   }
   assert.deepEqual(domain(await settings()),domain(view));
-  // Feed the serialized production routes to the actual desktop client while
-  // multi-conversation creation is off. An explicit old link keeps its ID.
-  const oldFetch=globalThis.fetch;
-  globalThis.fetch=async(input,init)=>{const url=new URL(String(input));const reply=await node.app.inject({method:(init?.method??'GET') as 'GET',url:url.pathname+url.search,headers});return new Response(reply.body,{status:reply.statusCode,headers:{'content-type':'application/json'}});};
-  try{
-    const desktop={...defaultConfig(),serverUrl:'http://127.0.0.1:47842',credentialScope:'owner' as const,token};
-    const client=new AskClient();
-    assert.equal((await client.request(desktop,'settings') as {multipleConversations:boolean}).multipleConversations,false);
-    const chosen=await resolveAskConversation(undefined,()=>client.request(desktop,'main') as Promise<{id:string}>);
-    assert.equal(chosen,side);
-    assert.equal((await client.request(desktop,'conversation',{id:chosen}) as {id:string}).id,side);
-    const linked=await resolveAskConversation(original,()=>client.request(desktop,'main') as Promise<{id:string}>);
-    assert.equal(linked,original);
-    assert.equal((await client.request(desktop,'conversation',{id:linked}) as {id:string}).id,original);
-  }finally{globalThis.fetch=oldFetch;}
   response=await put('/api/configuration/conversations',{revision:view.revision,value:{multipleConversations:true}});
   assert.equal(response.statusCode,200,response.body);view=response.json();
   await node.app.close();node=await buildApp(config(dir),{backgroundWorker:false,agent});

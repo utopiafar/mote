@@ -1,5 +1,12 @@
 import { validateServerUrl } from './config';
-import { deepLinkHash, formatEvidenceRef, parseEvidenceRef } from '@mote/shared';
+import { deepLinkHash, formatEvidenceRef, pageHash, parseEvidenceRef, type PageRouteKey } from '@mote/shared';
+
+/** Mac page ids that open a page from the shared route table. Legacy pages
+ * without a table entry keep their existing destination. */
+export const centralPageRoutes: Readonly<Record<string, PageRouteKey>> = {
+  library: 'library', models: 'models', plugins: 'skills', sources: 'connections',
+  lark: 'lark', actions: 'actions', ask: 'chat', activity: 'activity',
+};
 
 export function validateCentralWorkId(value:unknown):string{
   if(typeof value!=='string'||!value.trim()||value.length>512||/[\u0000-\u001f\u007f]/.test(value))throw Error('Invalid work reference');
@@ -10,7 +17,9 @@ export function validateCentralWorkId(value:unknown):string{
 export async function openCentralBrowser(serverUrl: string, page: string | undefined, platform: string,
   launchChrome: (url: string) => Promise<unknown>, openDefault: (url: string) => Promise<unknown>, evidenceId?: string, loginTicket?: string, loginRequestId?:string,workId?:string,conversationId?:string): Promise<void> {
   const origin = validateServerUrl(serverUrl);
-  let hash = page==='library'?'#/library':page==='models'?'#/system/models':page==='plugins'?'#/system/plugins':page==='sources'?'#/connections':page==='actions'?'#/actions':page === 'lark' ? '#/connections/lark' : ['ask', 'notes', 'vault'].includes(page ?? '') ? '#' + page : ['overview', 'about', 'guide', 'activity'].includes(page ?? '') ? '#/' + page : '';
+  const route = page !== undefined && Object.hasOwn(centralPageRoutes, page) ? centralPageRoutes[page] : undefined;
+  // The Mac ask entry keeps the '#ask' address it had before the shared table.
+  let hash = page === 'ask' ? '#ask' : route ? pageHash(route) : ['notes', 'vault'].includes(page ?? '') ? '#' + page : ['overview', 'about', 'guide'].includes(page ?? '') ? '#/' + page : '';
   if(conversationId!==undefined&&(page!=='ask'||workId!==undefined||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(conversationId)))throw Error('Invalid conversation destination');
   if(workId!==undefined){if(page!=='activity'||evidenceId!==undefined)throw Error('Invalid work destination');hash=deepLinkHash({kind:'run',id:validateCentralWorkId(workId)});}
   if (evidenceId !== undefined) {

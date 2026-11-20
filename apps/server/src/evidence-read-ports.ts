@@ -39,7 +39,12 @@ export interface MaterialRead {
 }
 
 export type MemoryReadSnapshot=ReturnType<MemoryBindings['retainSnapshot']>;
-export type MemoryReadExposure={policy:EvidenceExposurePolicy;operation:EvidenceOperation};
+export type MemoryReadExposure={
+  policy:EvidenceExposurePolicy;
+  operation:EvidenceOperation;
+  /** Let single contextual reads report a scoped original withdrawal as Gone. */
+  reportWithdrawn?:boolean;
+};
 export type MemoryReadQuery=Parameters<MemoryStore['page']>[0] & Range;
 /** Host-only metadata receipt; it grants neither body disclosure nor extraction. */
 export type MemoryCatalogMetadataReceipt={complete:boolean;members:{id:string;materialId?:string;sourceId?:string;attribution?:string}[];sourceContextDependencies:SourceContextDeclaration[]};

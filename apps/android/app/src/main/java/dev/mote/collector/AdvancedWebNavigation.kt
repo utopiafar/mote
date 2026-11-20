@@ -14,8 +14,8 @@ internal sealed interface AdvancedWebTarget {
     }
     data class Models(val preparation: Preparation) : AdvancedWebTarget
     fun hash(): String = when (this) {
-        is Recording -> "#/library?evidence=" + URLEncoder.encode("capture:$id", "UTF-8") + "&recordingTool=" + tool.query
-        is Models -> "#/system/models?category=" + preparation.category + "&prepare=" + preparation.role
+        is Recording -> "#/" + CentralPageRoutes.library + "?evidence=" + URLEncoder.encode("capture:$id", "UTF-8") + "&recordingTool=" + tool.query
+        is Models -> "#/" + CentralPageRoutes.models + "?category=" + preparation.category + "&prepare=" + preparation.role
     }
 }
 

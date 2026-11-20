@@ -66,6 +66,7 @@ import { ConnectionError,Connections,type ConnectionCredential } from './connect
 import type {RequestAuthority} from './plugins/central-contracts.js';
 import { resolveDependencies } from './conversation-lineage.js';
 import { safeError } from './diagnostics.js';
+import {createBlockingMonitor} from './blocking-monitor.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import {sourceScopedReader} from './query-source-scope.js';
 import type {QueryScope as ReaderQueryScope} from './query-scope.js';
@@ -353,9 +354,17 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant input is no longer permitted',409);
   });
   let assistantOnboarding:AssistantOnboarding|undefined;
+  const blockingMonitor=createBlockingMonitor(sample=>diagnostics.record('event-loop.blocked',sample,'warn'));
+  resources.beforeClose(blockingMonitor.close);
   // Reuse the existing Central poll; the routine does not depend on a material
   // change, and a change-feed failure cannot suppress a due occurrence.
-  setMaterialConsumerTick(()=>{try{assistantChanges.tick();tickAssistantFollowup();}finally{try{assistantRoutines.tick();}finally{void assistantOnboarding?.tick().catch(()=>{});}}});
+  setMaterialConsumerTick(()=>{
+    try{blockingMonitor.run('assistant-changes',()=>assistantChanges.tick());tickAssistantFollowup();}
+    finally{
+      try{blockingMonitor.run('assistant-routines',()=>assistantRoutines.tick());}
+      finally{void blockingMonitor.run('assistant-onboarding',()=>assistantOnboarding?.tick())?.catch(()=>{});}
+    }
+  });
   resources.beforeClose(()=>setMaterialConsumerTick(undefined));
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
@@ -387,7 +396,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
       if(artifact.kind!=='segment'||artifact.metadata.complete!==true)continue;
       const jobs=workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',inputs:[],artifactInputs:[{id,revision:artifact.revision}],config:{artifactId:id,modelFingerprint:semanticSelection().fingerprint}}]);
       if(operationId)linkOperationParent(store,operationId,executor.get(jobs.semantic)!.operationId);
-      await workflows.tick();
+      await blockingMonitor.run('processing',()=>workflows.tick());
       const row=store.db.prepare('SELECT state,json,error,available_at FROM processing_jobs WHERE id=?').get(jobs.semantic)!;
       if(row.state==='stale')continue;
       if(mode==='lifecycle'&&(row.state==='waiting'||row.state==='running'))throw new ExecutionFailure('waiting',String(row.error??'semantic_processing_pending'),Number(row.available_at)>Date.now()?Math.max(1000,Number(row.available_at)-Date.now()):5000);
@@ -412,8 +421,14 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
   startupApp=app;
   app.addHook('onReady',async()=>{batchProcessing.start();});
-  app.addHook('onReady',async()=>{try{assistantChanges.tick();}finally{assistantRoutines.tick();}});
-  app.addHook('onReady',async()=>{void sourcePipelines.tick().catch(()=>{});void materialOrganizer.tick(200).catch(()=>{});});
+  app.addHook('onReady',async()=>{
+    try{blockingMonitor.run('assistant-changes',()=>assistantChanges.tick());}
+    finally{blockingMonitor.run('assistant-routines',()=>assistantRoutines.tick());}
+  });
+  app.addHook('onReady',async()=>{
+    void blockingMonitor.run('source-pipelines',()=>sourcePipelines.tick()).catch(()=>{});
+    void blockingMonitor.run('material-organizer',()=>materialOrganizer.tick(200)).catch(()=>{});
+  });
   const sourceIntegrationFactory=createC10IntegrationFactory(()=>{
     const sourceAuthorization=c10Authorization;
     const platform=createC10Integration({
@@ -438,7 +453,10 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     requestLocale.run(locale, done);
   });
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);diagnostics.record('request.started',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url)},'debug');done();}));
-  app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
+  app.addHook('onResponse',async(req,reply)=>{
+    const routeTemplate=req.routeOptions.url;
+    diagnostics.record('request.completed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(routeTemplate),routeTemplate,statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');
+  });
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
   const validBearer=(req:{headers:{authorization?:string}})=>bootstrap.authorization.validOwnerBearer(req.headers.authorization);
   let playbackAuthorization:(req:FastifyRequest)=>boolean=()=>false;
@@ -607,14 +625,14 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     return capacity?{...capacity,draftTokens:settings.maxTokens,language:requestLocale.getStore()??'zh-CN'}:undefined;
   });
   const followup=assistantFollowup;
-  tickAssistantFollowup=()=>{void followup.tick(assistantChanges).catch(()=>{});};
+  tickAssistantFollowup=()=>{void blockingMonitor.run('assistant-followup',()=>followup.tick(assistantChanges)).catch(()=>{});};
   resources.beforeClose(async()=>{tickAssistantFollowup=()=>{};await followup.close();});
   app.addHook('onReady',async()=>{tickAssistantFollowup();});
   assistantOnboarding=new AssistantOnboarding(store,materials,evidenceReader,modelAuthorization,memoryPipeline,assistantFollowup,availableModelConnections,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Onboarding evidence is no longer permitted',409);
   },ref=>materialMemoryWork.sourceRequirements(ref),sourcePipelines.archive,ownerQuestionServices.port,diagnostics);
   resources.beforeClose(()=>assistantOnboarding!.close());
-  app.addHook('onReady',async()=>{void assistantOnboarding!.tick().catch(()=>{});});
+  app.addHook('onReady',async()=>{void blockingMonitor.run('assistant-onboarding',()=>assistantOnboarding!.tick()).catch(()=>{});});
   workDomains.contributeAssistantRoutes(backendContext,{store:assistantCards,notifications:assistantNotifications,workbench:assistantWorkbench,onboarding:assistantOnboarding,credential,assertRequestActive});
   const featureServices=Object.freeze({
     assistantCards,assistantNotifications,assistantCommitments,assistantFollowup,assistantWorkbench,assistantOnboarding,

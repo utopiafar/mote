@@ -226,7 +226,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
             artifact.optString("summary").takeIf { it.isNotBlank() }?.let { text(it, parent = card) }
             button(MoteI18n.text("查看成果"), parent = card) {
                 val href = artifact.optString("href")
-                val conversation = if (href.startsWith("#/ask?")) Uri.parse("https://mote.invalid/" + href.removePrefix("#/" )).getQueryParameter("conversation") else null
+                val conversation = if (href.startsWith("#/" + CentralPageRoutes.chat + "?")) Uri.parse("https://mote.invalid/" + href.removePrefix("#/" )).getQueryParameter("conversation") else null
                 if (!conversation.isNullOrBlank()) conversation(conversation, work.getString("id"))
                 else relatedDestination(work.getString("destination"))
             }

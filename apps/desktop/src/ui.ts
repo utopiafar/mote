@@ -2,8 +2,6 @@ import {createUpdateInstallUi} from './update-install-ui';
 import {renderStorageLocation} from './storage-location-ui';
 import {appendDiagnostic,renderReadableFailure} from './ui-diagnostic';
 import {sourceSelectionResult} from './source-selection-result';
-import {keepLanguageAskDraft,takeLanguageAskDraft,dropLanguageAskDraft} from './language-draft';
-import {AskDraftScopes} from './ask-draft-scope';
 import {createWorkPendingUi} from './work-pending-ui';
 import {queueImportPresentation} from './queue-import-presentation';
 import {createChromeCaptureUi} from './chrome-capture-ui';
@@ -17,19 +15,17 @@ import {createSourceWorkspaceUi} from './source-workspace-ui';
 import {createSourceFilePolicyDraft} from './source-file-policy-ui';
 import {normalizeSourceOptions} from './source-types';
 import {createSourceSyncPreview,renderSourceMaintenancePreview} from './source-maintenance-preview';
-import {createWorkbenchUi, type RecentConversation} from './workbench-ui';
 import {createSyncHistoryUi} from './sync-history-ui';
 import {createDesktopPresentation} from './presentation';
+import {localWindowSettings} from './tray-menu';
 import {createWorkActivityUi} from './work-activity-ui';
 import {createPermissionsUi} from './permissions-ui';
 import {createCaptureSyncUi} from './capture-sync-ui';
 import {nativeStatusSummary} from './native-status';
-import { renderAskAnswer, renderAskCitation, renderAskScope } from './ask-presentation';
-import {currentTurnCites,prependConversationTurns,resolveAskConversation} from './ask-conversation';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {createAppCaptureUi,describeCaptureSelection} from './app-capture-ui';
 import {normalizeAppCollectionRules} from './app-collection';
-import { DesktopNavigation, desktopPages, needsCollectionSetup, type DesktopPage } from './navigation';
+import { DesktopNavigation, desktopPages, needsCollectionSetup, restoreDesktopSection, type DesktopPage } from './navigation';
 import {showSkeleton} from './loading-ui';
 const desktopApi = window.mote;
 const captureContextUi=createCaptureContextUi(desktopApi,document,markSettingsDirty);
@@ -64,7 +60,8 @@ type Page = DesktopPage;
 const navigation = new DesktopNavigation();
 const quickNote = location.hash === '#quick-note';
 if (quickNote) document.body.classList.add('quick-note-window');
-let currentPage: Page = 'overview';
+const lastPageKey = 'mote-desktop-last-page';
+let currentPage: Page = navigation.page;
 let settingsDirty = false;
 let captureStorageDirectory = '';
 let settingsApplying = false;
@@ -72,18 +69,15 @@ let wasRunningBeforeSave = false;
 let pageRevision = 0;
 let pageEnteredAt = Date.now();
 const pageScroll = new Map<Page, number>();
-let skipNextAskRefresh=false;
-let askReadingOnLeave:AskReadingPosition|undefined;
 const settingsPages = new Set<Page>(['screen','connection', 'sync', 'capture', 'privacy', 'developer','storage','chrome']);
 const memoryTopicsUi=createMemoryTopicsUi(desktopApi,document.getElementById('memory-topics-dialog') as HTMLDialogElement);
-const workbenchUi=createWorkbenchUi(desktopApi,{question:openWorkbenchQuestion,conversation:openWorkbenchConversation,content:item=>void libraryUi.open(item),contents:()=>showPage('records')});
 let contentOrigin:Page='records';
-const libraryUi=createContentLibraryUi(desktopApi,()=>memoryTopicsUi.open(),(hasContent,rows,archiveDenied)=>{workbenchUi.setArchiveAuthorizationDenied(archiveDenied);workbenchUi.setHasContent(hasContent);workbenchUi.setHomeRows(rows);},{
+const libraryUi=createContentLibraryUi(desktopApi,()=>memoryTopicsUi.open(),{
   open(){contentOrigin=currentPage;const title=document.querySelector<HTMLElement>(`[data-page="${currentPage}"] [data-page-title]`)?.textContent?.trim()??moteText('内容');byId('content-detail-close').textContent='← '+title;showPage('content-reader');},
-  close(){if(currentPage==='content-reader')showPage(contentOrigin,true,false,true,true);},
+  close(){if(currentPage==='content-reader')showPage(contentOrigin,true,false,true);},
 });
 function refreshContent():Promise<void>{return libraryUi.refresh();}
-const sourceWorkspace=createSourceWorkspaceUi(desktopApi,{openDetail:()=>showPage('source-detail'),edit:id=>void editSource(id),toggle:row=>sourceAction(()=>desktopApi.updateSource(row.source.id,{...row.source,enabled:!row.source.enabled})),content:()=>{byId<HTMLSelectElement>('content-scope').value='local';showPage('records');},read:item=>libraryUi.open(item)});
+const sourceWorkspace=createSourceWorkspaceUi(desktopApi,{openDetail:()=>showPage('source-detail'),edit:id=>void editSource(id),toggle:row=>sourceAction(()=>desktopApi.updateSource(row.source.id,{...row.source,enabled:!row.source.enabled})),content:()=>showPage('records'),read:item=>libraryUi.open(item)});
 const workPendingUi=createWorkPendingUi(desktopApi,item=>void libraryUi.open(item),()=>showPage('uploads'));
 const chromeCaptureUi=createChromeCaptureUi(desktopApi);
 const syncHistoryUi = createSyncHistoryUi(desktopApi, page => showPage(page));
@@ -105,13 +99,12 @@ window.addEventListener('beforeunload',()=>{workActivityUi.dispose();permissions
 let setupReviewed = false;
 try { setupReviewed = localStorage.getItem('mote-desktop-collection-reviewed') === '1'; } catch { /* Collection remains usable without local storage. */ }
 
-function showPage(page: Page, focus = true, preserveSettingsDraft = false, refreshAskOnEntry = true, preserveContentPosition = false): boolean {
+function showPage(page: Page, focus = true, preserveSettingsDraft = false, preserveContentPosition = false): boolean {
   if(page==='compression'&&currentPage==='capture')preserveSettingsDraft=true;
   if (page === 'notes' && !quickNote && desktopApi.openQuickNote) { void desktopApi.openQuickNote(); return false; }
   if (quickNote && page !== 'notes') return false;
   if(page!==currentPage&&currentPage==='preferences'&&document.querySelector<HTMLElement>('[data-page=preferences]')?.dataset.dirty==='true'){if(!window.confirm(moteText('有未保存的修改。离开并丢弃修改？')))return false;byId('preferences-reset').click();}
   if (!navigation.navigate(page, () => preserveSettingsDraft || !settingsDirty || !settingsPages.has(currentPage) || window.confirm(moteText("有未保存的修改。离开并丢弃修改？")))) return false;
-  if(currentPage==='ask'&&page!=='ask')askReadingOnLeave=captureAskReading();
   if (settingsPages.has(currentPage)) pageScroll.delete(currentPage);
   else pageScroll.set(currentPage, window.scrollY);
   if (page !== currentPage) {
@@ -132,13 +125,15 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
   if (currentPage === 'work' && page !== 'work') {workActivityUi.hide();workPendingUi.hide();}
   if (currentPage === 'permissions' && page !== 'permissions') permissionsUi.hide();
   if (currentPage === 'content-reader' && page !== 'content-reader') libraryUi.close(false);
-  workbenchUi.leave(page);
   currentPage = page;document.body.dataset.workspacePage=page;
   if(initialized) renderOperations(currentStatus.operations??[]);
   if(page==='chrome')chromeCaptureUi.refresh();
   if (page === 'uploads') syncHistoryUi.show();
   if (page === 'work') {workActivityUi.show();workPendingUi.show();}
   const selected = navigation.section;
+  if (!quickNote && page === selected) {
+    try { localStorage.setItem(lastPageKey, page); } catch { /* Navigation still works without local storage. */ }
+  }
   presentation.update({section:selected});
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('aside [data-nav]'))) {
@@ -147,8 +142,8 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
     if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   }
   const heading = (target: Page) => document.querySelector<HTMLElement>(`[data-page="${target}"] [data-page-title]`)?.textContent?.trim() ?? '';
-  const title = heading(page), sectionTitle = heading(page==='connection'&&navigation.backTarget==='ask'?'ask':selected);
-  byId('workspace-location').textContent = page==='ask'?moteText('问一问'):page==='content-reader'?moteText('内容详情'):page === selected ? title : `${sectionTitle} / ${title}`;
+  const title = heading(page), sectionTitle = heading(selected);
+  byId('workspace-location').textContent = page==='content-reader'?moteText('内容详情'):page === selected ? title : `${sectionTitle} / ${title}`;
   byId('workspace-back').hidden = !navigation.canGoBack||['content-reader','source-detail','source-editor','source-connect'].includes(page);
   byId('source-feedback').hidden=!['sources','source-detail','source-editor','source-connect'].includes(page)||!byId('source-feedback').textContent;
   updateNoteAction();
@@ -157,23 +152,20 @@ function showPage(page: Page, focus = true, preserveSettingsDraft = false, refre
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'compression') {for(const [id,value] of [['compression-quality',currentStatus.config.jpegQuality],['compression-side',currentStatus.config.captureMaxSide]] as const){const select=byId<HTMLSelectElement>(id);if(!Array.from(select.options).some(option=>option.value===String(value)))select.add(new Option(String(value),String(value)));select.value=String(value);}invalidateCompression();}
-  if (page === 'ask' && refreshAskOnEntry) {if(skipNextAskRefresh){skipNextAskRefresh=false;if(askConversation&&askReadingOnLeave)restoreAskReadingPosition(askReadingOnLeave,askConversation,askGeneration);}else void refreshAsk();}
   if (page === 'capture-sync') captureSyncUi.show();
   if (page === 'permissions') permissionsUi.show();
   if (page === 'privacy'||page==='screen') void appCaptureUi.refreshApplications();
   if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records' && !preserveContentPosition) { void loadRecords(); void refreshContent(); }
-  if (page === 'overview' && initialized && !preserveContentPosition) { void libraryUi.refreshHome(); void refreshSources(); void workbenchUi.refresh(); }
   if (page === 'sources') void refreshSources();
   if (page === 'meeting') void refreshMeeting();
-  if (page === 'overview' && initialized) { const epoch=statusReadEpoch; void desktopApi.status().then(status=>{if(epoch===statusReadEpoch&&!busy)render(status);}).catch(() => {if(epoch===statusReadEpoch&&!busy)feedback(moteText("状态读取失败。"));}); }
   return true;
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]:not([data-presentation-nav])'))) button.addEventListener('click', () => {
   const page = button.dataset.nav as Page;
   if (pageNames.includes(page)) showPage(page);
 });
-byId('connection-central-content').addEventListener('click',()=>{byId<HTMLSelectElement>('content-scope').value='received';showPage('records');});
+byId('connection-central-content').addEventListener('click',()=>openCentral('library'));
 byId('settings-central-models').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('models')));
 byId('settings-central-plugins').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('plugins')));
 byId('chrome-back').addEventListener('click',()=>showPage(navigation.backTarget));
@@ -192,7 +184,7 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-ad
   if(action==='note')showPage('notes');
   else if(action==='screen')showPage('screen');
   else if(action==='source')showPage('sources');
-  else if(action==='folder'||action==='file')void beginSourceSelection(action==='folder'?'directory':'files',Boolean(button.closest('#home-onboarding')));
+  else if(action==='folder'||action==='file')void beginSourceSelection(action==='folder'?'directory':'files');
   else if(action==='lark'){
     if(!currentStatus?.config.serverUrl){showPage('connection');feedback(moteText('先连接你的中央，即可打开中央仓库。'));return;}
     void perform(()=>desktopApi.openCentral('lark'));
@@ -251,9 +243,9 @@ document.addEventListener('keydown', event => {
 desktopApi.onNavigate?.(page => {
   if(page==='capture-start'){if(showPage('screen',true,true))byId('start').click();}
   else if (page === 'central') openCentral('overview');
-  else if (pageNames.includes(page)) showPage(page);
+  // The host has already revealed the local window for these requests.
+  else if (page !== 'overview' && page !== localWindowSettings && pageNames.includes(page)) showPage(page);
 });
-showPage(quickNote ? 'notes' : 'overview', false);
 
 function feedback(message: string, success = false): void {
   const box = byId('feedback'); box.textContent = message; box.hidden = !message; box.className = success ? 'success' : '';
@@ -266,32 +258,30 @@ let recordsRevision = 0, recordsPage = 0, recordsNext: string | undefined;
 let recordsCursors: (string | undefined)[] = [undefined];
 const recordsDate = new Date();
 byId<HTMLInputElement>('records-day').value = `${recordsDate.getFullYear()}-${String(recordsDate.getMonth() + 1).padStart(2, '0')}-${String(recordsDate.getDate()).padStart(2, '0')}`;
-const ocrNames = { get pending() { return moteText("等待 OCR"); }, get completed() { return moteText("OCR 已完成"); }, get disabled() { return moteText("OCR 已关闭"); }, get failed() { return moteText("OCR 待重试"); }, get unknown() { return moteText("OCR 状态未知"); } };
-function ocrLabel(value: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation = 'central'): string {
+function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
   if(value.source==='ui_page')return moteText("页面内容采集");
-  if(location==='local')return value.localContentRelease?moteText(value.localContentRelease.pending?'本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。':'本机副本已清理'):moteText("本机截图 · 完整内容由中央识别");
-  return value.ocr.status === 'pending' && value.ocr.reason === 'charging' ? moteText("待接通电源后 OCR") : ocrNames[value.ocr.status];
+  return value.localContentRelease?moteText(value.localContentRelease.pending?'本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。':'本机副本已清理'):moteText("本机截图 · 完整内容由中央识别");
 }
 function resetRecords(): void { selectedSession = undefined; recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
-async function openRecord(item: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation, revision: number): Promise<void> {
+async function openRecord(item: import('./capture-browser').BrowserCapture, revision: number): Promise<void> {
   const panel = byId('record-detail'); panel.hidden = false;
   panel.setAttribute('aria-busy', 'true');
   byId('record-detail-title').textContent = item.appName || moteText("截图");
-  byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString(getLocale())} · ${ocrLabel(item, location)}`;
+  byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString(getLocale())} · ${ocrLabel(item)}`;
   showSkeleton(byId('record-detail-text'), moteText("正在读取记录详情…"));
   byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
   byId('record-detail-title').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
   const id = item.id; panel.dataset.recordId = id;
   let detailRead = false;
   try {
-    const detail = await desktopApi.captureDetail(location, id);
+    const detail = await desktopApi.captureDetail('local', id);
     if (revision !== recordsRevision || panel.dataset.recordId !== id || panel.hidden) return;
-    byId('record-detail-meta').textContent = `${new Date(detail.capturedAt).toLocaleString(getLocale())} · ${detail.deviceName || ''} · ${ocrLabel(detail, location)}${detail.syncError ? ' · ' + detail.syncError : ''}`;
-    byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? moteText("未识别到文字。") : ocrLabel(detail, location));
+    byId('record-detail-meta').textContent = `${new Date(detail.capturedAt).toLocaleString(getLocale())} · ${detail.deviceName || ''} · ${ocrLabel(detail)}${detail.syncError ? ' · ' + detail.syncError : ''}`;
+    byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? moteText("未识别到文字。") : ocrLabel(detail));
     detailRead = true;
     byId<HTMLImageElement>('record-detail-image').alt = moteText("正在加载原图…");
     if (!detail.hasImage) { byId<HTMLImageElement>('record-detail-image').alt=moteText("此采样没有图片"); return; }
-    const image = await desktopApi.captureImage(location, id, false);
+    const image = await desktopApi.captureImage('local', id, false);
     if (revision === recordsRevision && panel.dataset.recordId === id && !panel.hidden) { byId<HTMLImageElement>('record-detail-image').src = image; byId<HTMLImageElement>('record-detail-image').alt = moteText("当前选择的采集截图"); }
   } catch (error) { if (revision === recordsRevision && panel.dataset.recordId === id) {
     const message = error instanceof Error ? error.message : moteText("读取记录失败，请刷新后重试");
@@ -302,7 +292,6 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, loca
 }
 async function loadRecords(): Promise<void> {
   const revision = ++recordsRevision;
-  const location = readInput('records-location') as import('./capture-browser').CaptureLocation;
   byId('records-back').hidden = !selectedSession;
   byId('records-selection').textContent = selectedSession ? `${selectedSession.appName || moteText("应用未知")} · ${new Date(selectedSession.firstAt).toLocaleTimeString(getLocale())} — ${new Date(selectedSession.capturedAt).toLocaleTimeString(getLocale())}` : '';
   byId('record-detail').hidden = true; byId('records-grid').replaceChildren();
@@ -310,17 +299,17 @@ async function loadRecords(): Promise<void> {
   byId('records-status').setAttribute('aria-busy', 'true');
   byId<HTMLButtonElement>('records-previous').disabled = true; byId<HTMLButtonElement>('records-next').disabled = true;
   try {
-    const page = await desktopApi.browseCaptures({ source:readInput('records-source') as 'screen'|'ui_page', location, day: readInput('records-day'), cursor: recordsCursors[recordsPage], grouping: readInput('records-grouping') as 'sessions' | 'records', sessionId: selectedSession?.id });
+    const page = await desktopApi.browseCaptures({ source:readInput('records-source') as 'screen'|'ui_page', location:'local', day: readInput('records-day'), cursor: recordsCursors[recordsPage], grouping: readInput('records-grouping') as 'sessions' | 'records', sessionId: selectedSession?.id });
     if (revision !== recordsRevision) return;
     recordsNext = page.nextCursor;
-    byId('records-status').textContent = page.items.length ? moteText("{0} · 当天共 {1} 张截图", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount) : location === 'local' ? moteText("当天没有本机待处理截图。已同步的截图可切换到“中央已归档”查看。") : moteText("当天没有已归档截图。");
+    byId('records-status').textContent = page.items.length ? moteText("{0} · 当天共 {1} 张截图", moteText("本机保留"), page.totalCount) : moteText("当天没有截图记录。");
     byId('records-page').textContent = page.items.length ? moteText("第 {0} 页 · 每页最多 30 张", recordsPage + 1) : '';
     byId<HTMLButtonElement>('records-previous').disabled = recordsPage === 0;
     byId<HTMLButtonElement>('records-next').disabled = !recordsNext;
     if(readInput('records-source')==='ui_page')byId('records-status').textContent=moteText('页面记录：{0} 条',page.totalCount);
-    if (page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 列表已读取 {1} 条，正在加载缩略图…", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.items.length);
+    if (page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 列表已读取 {1} 条，正在加载缩略图…", moteText("本机保留"), page.items.length);
     if (page.sessions) {
-      byId('records-status').textContent = moteText("{0} · {1} 条记录 · {2} 个 Session", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount, page.sessionCount);
+      byId('records-status').textContent = moteText("{0} · {1} 条记录 · {2} 个 Session", moteText("本机保留"), page.totalCount, page.sessionCount);
       byId('records-page').textContent = moteText("第 {0} 页", recordsPage + 1);
       for (const session of page.sessions) {
         const card=document.createElement('button');card.type='button';card.className='record-session';
@@ -338,12 +327,12 @@ async function loadRecords(): Promise<void> {
       const caption = document.createElement('div'); caption.className = 'record-card-caption';
       const title = document.createElement('strong'); title.textContent = item.appName || moteText("截图");
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString(getLocale());
-      const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item, location)) : `${location === 'local' ? moteText("本机待同步 · ") : ''}${ocrLabel(item, location)}`;
+      const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item)) : moteText("本机待同步 · ") + ocrLabel(item);
       if(item.sizeBytes!==undefined)state.textContent+=` · ${(item.sizeBytes/1024).toFixed(1)} KiB`;
       caption.append(title, time, state); if(item.hasImage)card.append(image);card.append(caption); card.addEventListener('click', () => {
         selectedRecordButton?.classList.remove('selected'); selectedRecordButton?.setAttribute('aria-pressed', 'false');
         selectedRecordButton = card; card.classList.add('selected'); card.setAttribute('aria-pressed', 'true');
-        void openRecord(item, location, revision);
+        void openRecord(item, revision);
       });
       byId('records-grid').append(card); if(item.hasImage) images.push({ element: image, item }); else image.alt=moteText("无图片 · 点击查看采样记录");
     }
@@ -351,13 +340,13 @@ async function loadRecords(): Promise<void> {
     await Promise.all(Array.from({ length: Math.min(4, images.length) }, async () => {
       while (next < images.length && revision === recordsRevision) {
         const { element, item } = images[next++];
-        try { const image = await desktopApi.captureImage(location, item.id, true); if (revision === recordsRevision) element.src = image; }
+        try { const image = await desktopApi.captureImage('local', item.id, true); if (revision === recordsRevision) element.src = image; }
         catch { failed++; if (revision === recordsRevision) element.alt = moteText("缩略图暂不可用；点击查看详情或刷新"); }
         completed++;
         if (revision === recordsRevision) byId('records-status').textContent = moteText("正在加载缩略图 {0}/{1} · 失败 {2}", completed, images.length, failed);
       }
     }));
-    if (revision === recordsRevision && page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 当天共 {1} 张截图 · 缩略图成功 {2}/{3}{4}", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount, completed - failed, images.length, failed ? moteText(" · {0} 张失败，可刷新重试", failed) : '');
+    if (revision === recordsRevision && page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 当天共 {1} 张截图 · 缩略图成功 {2}/{3}{4}", moteText("本机保留"), page.totalCount, completed - failed, images.length, failed ? moteText(" · {0} 张失败，可刷新重试", failed) : '');
   } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : moteText("读取采集记录失败，请重试"); byId('records-page').textContent = ''; } }
   finally { if (revision === recordsRevision) {
     byId('records-status').setAttribute('aria-busy', 'false');
@@ -368,7 +357,6 @@ byId('records-back').addEventListener('click', resetRecords);
 byId('records-source').addEventListener('change', resetRecords);
 byId('records-grouping').addEventListener('change', resetRecords);
 byId('records-day').addEventListener('change', resetRecords);
-byId('records-location').addEventListener('change', resetRecords);
 byId('records-layout').addEventListener('change',()=>byId('records-grid').classList.toggle('record-list',readInput('records-layout')==='list'));
 byId('records-refresh').addEventListener('click', resetRecords);
 byId('records-previous').addEventListener('click', () => { if (recordsPage > 0) { recordsPage--; void loadRecords(); } });
@@ -430,7 +418,7 @@ const backupOperationUi=createBackupOperationUi();
 function renderOperations(jobs:NonNullable<import('./contracts').Status['operations']>):void {
   backupOperationUi.update(jobs);
   // Completed work belongs to the page where it began; active work and failures remain global.
-  const operations=jobs.filter(job=>job.state!=='completed'||currentPage!=='overview'&&job.startedAt>=pageEnteredAt);
+  const operations=jobs.filter(job=>job.state!=='completed'||job.startedAt>=pageEnteredAt);
   byId('background-progress').hidden = !operations.length;
   byId('background-progress').textContent = operations.map(job => job.state === 'running' ? `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${moteText(" · 已用 {0} 秒", Math.floor((Date.now() - job.startedAt) / 1000))}` : job.state === 'failed' ? moteText('操作未完成，请检查权限与配置后重试') : moteText('处理结束')).join('；');
 }
@@ -438,12 +426,8 @@ function render(status: import('./contracts').Status): void {
   syncHistoryUi.update(status);libraryUi.update(status);memoryTopicsUi.update(status);workActivityUi.update(status);
   if(currentStatus&&(currentStatus.authorizationGeneration!==status.authorizationGeneration||currentStatus.config.serverUrl!==status.config.serverUrl||currentStatus.config.tokenConfigured!==status.config.tokenConfigured||currentStatus.config.authSignedOut!==status.config.authSignedOut||currentStatus.config.authExpiresAt!==status.config.authExpiresAt)){
     sourceSyncPreview?.close();sourceWorkspace.clear();localSourceRows=[];invalidateSourceEditor();byId<HTMLTextAreaElement>('source-initial-description').value='';byId<HTMLTextAreaElement>('source-initial-description').disabled=true;sourceReadGeneration++;recordsRevision++;closeRecordDetail();byId('records-grid').replaceChildren();byId('record-detail-title').textContent='';byId('record-detail-meta').textContent='';byId('record-detail-text').textContent='';
-    const retained=askDraftScopes.switch(currentStatus,status,snapshotAskDraft());
-    askGeneration++;clearTimeout(askTimer);askConversation=undefined;askCursor=undefined;askMultipleConversations=false;skipNextAskRefresh=false;byId('ask-more').hidden=true;byId('ask-history').replaceChildren();restoreScopedAskDraft(retained);renderAsk();setText('ask-login-status','');setText('ask-error','');
   }
-  currentStatus = status;sourceSyncPreview?.revalidate();workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);if(!quickNote)workbenchUi.update(status);
-  askConnectionState();
-  maybeRestoreAskConversation();
+  currentStatus = status;sourceSyncPreview?.revalidate();workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);
   updateTokenField();
   renderOperations(status.operations??[]);
   byId('connection-device').textContent = moteText("设备：{0} · ID {1}。迁移已有设备时，请在中央邀请中选择此 ID。", status.config.deviceName, status.config.deviceId);
@@ -538,7 +522,7 @@ function render(status: import('./contracts').Status): void {
   if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 截图文字隐私审查 {3} s", c.saved, c.blocked, c.failed, (c.ocrMs / 1000).toFixed(1)), moteText("累计上传请求体约 {0} MiB；不代表远端存储量。", (c.uploadedBytes / 1048576).toFixed(2))); }
   else statistics.push(moteText("数值诊断未开启；如需持续处理计数、资源与耗时，请在开发者设置中启用。"));
   byId('collection-statistics').replaceChildren(...statistics.map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
-  if (!initialized) { fillConfig(status.config); initialized = true;void refreshContent();restoreLanguageAskDraft(); }
+  if (!initialized) { fillConfig(status.config); initialized = true;void refreshContent(); }
 }
 async function perform(action: () => Promise<unknown>,localFailure=false): Promise<void> {
   if (busy) return;
@@ -817,17 +801,16 @@ async function beginSourceSelection(mode:'files'|'directory',pick=false):Promise
   const continuingDraft=currentPage==='source-editor'&&!sourceEditingId;
   if(mode!==sourceMode||!continuingDraft){byId<HTMLInputElement>('source-continuous').checked=mode==='directory';if(sourceSelection)await desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId<HTMLInputElement>('source-name').value='';byId<HTMLTextAreaElement>('source-initial-description').value='';if(!continuingDraft)sourceFilePolicyDraft.reset();}
   configureSourceEditor(mode);if(!showPage('source-editor'))return;if(!pick)return;
-  await sourceAction(async()=>{const result=await desktopApi.selectSourceFiles(mode);if(result.canceled||!result.selectionId){if(!sourceSelection&&workbenchUi.cancelFirstFile())showPage('overview');return;}sourceSelection={id:result.selectionId,mode,names:result.names??[]};byId<HTMLInputElement>('source-name').value=sourceSelection.names.length===1?sourceSelection.names[0]:'';configureSourceEditor(mode);});
+  await sourceAction(async()=>{const result=await desktopApi.selectSourceFiles(mode);if(result.canceled||!result.selectionId)return;sourceSelection={id:result.selectionId,mode,names:result.names??[]};byId<HTMLInputElement>('source-name').value=sourceSelection.names.length===1?sourceSelection.names[0]:'';configureSourceEditor(mode);});
 }
 for(const mode of ['files','directory'] as const)byId('source-mode-'+mode).addEventListener('click',()=>void beginSourceSelection(mode));
 byId('source-change-selection').addEventListener('click',()=>void beginSourceSelection(sourceMode,true));
-byId('source-selection-cancel').addEventListener('click',()=>{if(sourceSelection)void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId('source-confirmation').hidden=true;restoreSourceRules();showPage(workbenchUi.cancelFirstFile()?'overview':'sources');});
+byId('source-selection-cancel').addEventListener('click',()=>{if(sourceSelection)void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId('source-confirmation').hidden=true;restoreSourceRules();showPage('sources');});
 function sourceSaveScope():string{return JSON.stringify([currentStatus.authorizationGeneration,currentStatus.config.serverUrl,currentStatus.config.deviceId,currentStatus.config.authSourceBinding??null,currentStatus.config.tokenConfigured]);}
 byId('source-confirm').addEventListener('click',()=>void sourceAction(async()=>{
   if(!sourceSelection)return;const selected=sourceSelection,scope={selectionId:selected.id,scope:sourceSaveScope()},oneTime=selected.mode==='files'&&!byId<HTMLInputElement>('source-continuous').checked;const result=await desktopApi.confirmSourceFiles(selected.id,{...sourceOptions(),initialSync:oneTime?'all':sourceOptions().initialSync,syncContinuously:byId<HTMLInputElement>('source-continuous').checked});
-  const sourceIds=sourceSelectionResult(result,scope,sourceSelection&&currentPage==='source-editor'?{selectionId:sourceSelection.id,scope:sourceSaveScope()}:undefined);if(!sourceIds)return;
-  const firstRoute=oneTime?workbenchUi.sourcesSaved(sourceIds):undefined;
-  sourceSelection=undefined;byId('source-confirmation').hidden=true;restoreSourceRules();byId<HTMLTextAreaElement>('source-initial-description').value='';await refreshContent();showPage(firstRoute??(oneTime?'records':'sources'));
+  if(!sourceSelectionResult(result,scope,sourceSelection&&currentPage==='source-editor'?{selectionId:sourceSelection.id,scope:sourceSaveScope()}:undefined))return;
+  sourceSelection=undefined;byId('source-confirmation').hidden=true;restoreSourceRules();byId<HTMLTextAreaElement>('source-initial-description').value='';await refreshContent();showPage(oneTime?'records':'sources');
 }));
 function sourceOptions(): import('./source-types').SourceOptions {
   return normalizeSourceOptions({name:readInput('source-name').trim()||undefined, ...(!sourceEditingId?{description:readInput('source-initial-description')}:{}),syncContinuously:sourceEditingId?byId<HTMLInputElement>('source-edit-continuous').checked:sourceSelection?byId<HTMLInputElement>('source-continuous').checked:true,centralProcessingConsent:true, initialSync: readInput('source-initial-sync') as 'all' | 'new_only', allowRead:readInput('source-retention')==='snapshot'&&byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) });
@@ -878,7 +861,7 @@ async function refreshSources(): Promise<void> {
   sourcesReading = true;const generation=sourceReadGeneration;
   try {
   const rows = await desktopApi.sources();if(generation!==sourceReadGeneration)return;localSourceRows = rows;sourceSyncPreview?.revalidate();
-  sourceWorkspace.update(rows);if(currentStatus)captureSyncUi.update(currentStatus,rows);workbenchUi.setHasSource(rows.some(row=>row.source.syncContinuously!==false));
+  sourceWorkspace.update(rows);if(currentStatus)captureSyncUi.update(currentStatus,rows);
   } finally { sourcesReading = false; }
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
@@ -1361,311 +1344,9 @@ byId('review-refresh').addEventListener('click', async()=>{
  for(const item of items){const row=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');const previewButton=document.createElement('button');previewButton.type='button';previewButton.textContent=moteText("查看原图");previewButton.onclick=async()=>{const img=document.createElement('img');img.alt=moteText("本机待复核截图");img.style.maxWidth='100%';img.src=await desktopApi.captureImage('local',item.id,false);row.append(img);previewButton.disabled=true;};label.textContent=`${item.capturedAt} · ${item.appName} · ${item.id}`;button.type='button';button.textContent=moteText("复核后允许上传此记录");button.onclick=async()=>{await window.mote.approveReview(item.id);row.remove();};const discard=document.createElement('button');discard.type='button';discard.textContent=moteText("丢弃，不上传");discard.onclick=async()=>{await desktopApi.rejectReview(item.id);row.remove();};row.append(label,previewButton,button,discard);root.append(row);}
  if(!items.length)root.textContent=moteText("没有待复核记录");
 });
-let askRun: import('./ask').AskRun | undefined;
-let askConversation: import('./ask').AskConversation | undefined;
-let askScopeUnavailable = false;
-let askView:'history'|'conversation'='history';
-let askMultipleConversations=false;
-let askSubmittedQuestion='',askStopPending=false,askRunLookupPending=false,askPendingMessage='';
-let askBusy = false, askGeneration = 0, askCursor: string | undefined;
-type AskPendingInput = {id: string; question: string; conversationId?: string};
-let askPendingInput: AskPendingInput | undefined;
-let askTimer: ReturnType<typeof setTimeout> | undefined;
-type AskReadingPosition = {oldestTurnId?:string;scrollY:number;anchor?:{turnId:string;top:number}};
-type AskWindowDraft = {question:string;view:'history'|'conversation';conversationId?:string;reading?:AskReadingPosition;pending?:AskPendingInput;running?:{id:string;conversationId?:string;stopPending:boolean};submittedQuestion:string;pendingMessage:string};
-const askDraftScopes=new AskDraftScopes<AskWindowDraft>();
-let askRestoringConversationId:string|undefined,askRestoreAttempt=-1;
-let askRestoringReading:AskReadingPosition|undefined;
-function captureAskReading():AskReadingPosition|undefined {
-  if(!askConversation)return undefined;
-  const visible=Array.from(byId('ask-messages').querySelectorAll<HTMLElement>('[data-ask-turn]')).find(node=>{const rect=node.getBoundingClientRect();return rect.bottom>0&&rect.top<window.innerHeight;});
-  return {oldestTurnId:askConversation.turns[0]?.id,scrollY:window.scrollY,...(visible?.dataset.askTurn?{anchor:{turnId:visible.dataset.askTurn,top:visible.getBoundingClientRect().top}}:{})};
+function initialDesktopPage(): Page {
+  if (quickNote) return 'notes';
+  try { return restoreDesktopSection(localStorage.getItem(lastPageKey)); }
+  catch { return restoreDesktopSection(null); }
 }
-function restoreAskReadingPosition(reading:AskReadingPosition,conversation:import('./ask').AskConversation,generation:number):void {
-  requestAnimationFrame(()=>{if(generation!==askGeneration||askConversation!==conversation||currentPage!=='ask')return;const anchor=reading.anchor&&Array.from(byId('ask-messages').querySelectorAll<HTMLElement>('[data-ask-turn]')).find(node=>node.dataset.askTurn===reading.anchor!.turnId);if(anchor&&reading.anchor)window.scrollBy({top:anchor.getBoundingClientRect().top-reading.anchor.top,behavior:'instant'});else window.scrollTo({top:reading.scrollY,behavior:'instant'});});
-}
-function snapshotAskDraft():AskWindowDraft|undefined {
-  const question=readInput('ask-question'),conversationId=askConversation?.id??askRestoringConversationId??askPendingInput?.conversationId??askRun?.conversationId;
-  const running=askRun?.status==='running'?{id:askRun.id,...(askRun.conversationId?{conversationId:askRun.conversationId}:{}),stopPending:askStopPending}:undefined;
-  if(!question&&!conversationId&&!askPendingInput&&!running)return undefined;
-  const reading=askConversation?(currentPage==='ask'?captureAskReading():askReadingOnLeave):askRestoringReading;
-  return {question,view:askView,...(conversationId?{conversationId}:{}),...(reading?{reading}:{}),...(askPendingInput?{pending:{...askPendingInput}}:{}),...(running?{running}:{}),submittedQuestion:askSubmittedQuestion,pendingMessage:askPendingMessage};
-}
-function restoreScopedAskDraft(saved:AskWindowDraft|undefined):void {
-  byId<HTMLTextAreaElement>('ask-question').value=saved?.question??'';
-  askView=saved?.view??'history';askPendingInput=saved?.pending;askSubmittedQuestion=saved?.submittedQuestion??'';askPendingMessage=saved?.pendingMessage??'';
-  askRestoringConversationId=saved?.conversationId;askRestoringReading=saved?.reading;askReadingOnLeave=saved?.reading;askRestoreAttempt=-1;askScopeUnavailable=Boolean(askRestoringConversationId);
-  askRun=saved?.running?{id:saved.running.id,status:'running',events:[],...(saved.running.conversationId?{conversationId:saved.running.conversationId}:{})}:undefined;
-  askStopPending=Boolean(saved?.running?.stopPending);askRunLookupPending=Boolean(saved?.running);
-}
-function maybeRestoreAskConversation():void {
-  const id=askRestoringConversationId;
-  if(!id||askBusy||!currentStatus?.config.tokenConfigured||currentStatus.config.authSignedOut||askRestoreAttempt===askGeneration)return;
-  askRestoreAttempt=askGeneration;
-  void askAction(()=>loadAskConversation(id));
-}
-function languageDraftScope():string{return JSON.stringify([currentStatus.config.serverUrl,currentStatus.config.deviceId,currentStatus.config.authSourceBinding??null]);}
-window.addEventListener('mote-language-changing',event=>{const draft=snapshotAskDraft();if(!draft)return;try{keepLanguageAskDraft(sessionStorage,{scope:languageDraftScope(),question:draft.question,view:draft.view,...(draft.conversationId?{conversationId:draft.conversationId}:{}),...(draft.reading?{reading:draft.reading}:{}),...(draft.submittedQuestion?{submittedQuestion:draft.submittedQuestion}:{}),...(draft.running?{unresolvedRun:{id:draft.running.id,...(draft.running.conversationId?{conversationId:draft.running.conversationId}:{}),...(draft.running.stopPending?{stopPending:true as const}:{})}}:{}),...(draft.pending?{pendingRequest:draft.pending}:{})});}catch{event.preventDefault();}});
-window.addEventListener('mote-language-change-failed',()=>{try{dropLanguageAskDraft(sessionStorage);}catch{}});
-function restoreLanguageAskDraft():void{try{const saved=takeLanguageAskDraft(sessionStorage,languageDraftScope());if(!saved)return;restoreScopedAskDraft({question:saved.question,view:saved.pendingRequest||saved.unresolvedRun?'conversation':saved.view,...(saved.conversationId?{conversationId:saved.conversationId}:{}),...(saved.reading?{reading:saved.reading}:{}),...(saved.pendingRequest?{pending:saved.pendingRequest}:{}),...(saved.unresolvedRun?{running:{id:saved.unresolvedRun.id,...(saved.unresolvedRun.conversationId?{conversationId:saved.unresolvedRun.conversationId}:{}),stopPending:Boolean(saved.unresolvedRun.stopPending)}}:{}),submittedQuestion:saved.submittedQuestion??'',pendingMessage:''});renderAsk();maybeRestoreAskConversation();}catch{/* No unrelated session may be restored. */}}
-
-function mayReplaceAskDraft(next:string):boolean {
-  const draft=readInput('ask-question');
-  return !draft.trim()||draft===next||window.confirm(moteText('还有未发送的问题。舍弃原输入并新建对话？'));
-}
-function openWorkbenchQuestion(question:string):boolean {
-  if(askBusy||askPendingInput||askRun?.status==='running'||!mayReplaceAskDraft(question))return false;
-  if(!showPage('ask',true,false,false))return false;
-  askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askRestoringConversationId=undefined;askRestoringReading=undefined;askReadingOnLeave=undefined;skipNextAskRefresh=false;askScopeUnavailable=false;askPendingInput=undefined;
-  askView='conversation';askSubmittedQuestion='';byId<HTMLTextAreaElement>('ask-question').value=question;renderAsk();void refreshAsk();
-  byId('ask-question').focus();return true;
-}
-function openWorkbenchConversation(id:string):void {
-  if(askBusy||askPendingInput||askRun?.status==='running')return;
-  const switching=(askConversation?.id??askRestoringConversationId)!==id;
-  if(switching&&!mayReplaceAskDraft(''))return;
-  if(!showPage('ask',true,false,false))return;
-  if(switching)byId<HTMLTextAreaElement>('ask-question').value='';
-  askGeneration++;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askRestoringConversationId=id;askRestoringReading=undefined;askReadingOnLeave=undefined;skipNextAskRefresh=false;askScopeUnavailable=true;askPendingInput=undefined;
-  askView='conversation';askSubmittedQuestion='';renderAsk();void askAction(()=>loadAskConversation(id));
-}
-const askCall = async <T>(command: import('./ask').AskCommand, input?: Parameters<typeof desktopApi.ask>[1]): Promise<T> => {
-  const generation = askGeneration;
-  try { return await desktopApi.ask(command, input) as T; }
-  catch (error) {
-    if (generation === askGeneration && ['conversation', 'history', 'runs', 'run'].includes(command)) { askScopeUnavailable = true; renderAsk(); }
-    throw error;
-  }
-};
-function failedAskQuestion():string|undefined{const last=askConversation?.turns.at(-1);return askRun?.status==='failed'&&askSubmittedQuestion?askSubmittedQuestion:last?.status==='failed'?last.question:undefined;}
-function askControls(): void {
-  const running = askRun?.status === 'running';
-  workbenchUi.setBusy(askBusy||Boolean(running)||Boolean(askPendingInput));
-  byId<HTMLButtonElement>('ask-send').disabled = askBusy || running || Boolean(askPendingInput) || Boolean(askRestoringConversationId) || !currentStatus?.config.tokenConfigured || Boolean(currentStatus.config.authSignedOut) || !readInput('ask-question').trim();
-  byId('ask-draft-state').textContent=readInput('ask-question').trim()?moteText('未发送 · 此窗口中的草稿'):'';
-  byId('ask-resume-current').hidden=askView!=='history'||!askPendingInput&&!running;
-  byId('ask-refresh').hidden=askView==='history'&&!byId('ask-error').textContent;
-  byId('ask-new').hidden=!currentStatus?.config.serverUrl||!askMultipleConversations;
-  byId<HTMLButtonElement>('ask-new').disabled = askBusy || running || Boolean(askPendingInput);
-  byId<HTMLButtonElement>('ask-login').disabled = askBusy;
-  byId<HTMLButtonElement>('ask-logout').disabled = askBusy;
-  byId('ask-edit-failed').hidden=askBusy||running||Boolean(askPendingInput)||!failedAskQuestion();
-  byId('ask-stop').hidden = !running;byId<HTMLButtonElement>('ask-stop').disabled=askBusy||askStopPending;
-  byId('ask-pending').hidden=!askPendingInput&&!askStopPending&&!askRunLookupPending;
-  byId('ask-pending-original').textContent=askPendingInput?.question??'';
-  byId('ask-pending-message').textContent=askPendingMessage||(askRunLookupPending?moteText('请刷新检查结果，避免重复发送。'):askStopPending?moteText('停止结果尚未确认。'):moteText('结果尚未确认，请检查或重试原请求。'));
-  byId<HTMLButtonElement>('ask-check-existing').disabled=askBusy;byId<HTMLButtonElement>('ask-retry-existing').disabled=askBusy;byId('ask-retry-existing').hidden=!askPendingInput;
-  byId<HTMLButtonElement>('ask-turns-more').disabled = askBusy || running;
-  byId('ask-turns-more').hidden = !askConversation?.nextCursor;
-  for (const button of Array.from(byId('ask-history').querySelectorAll('button'))) button.disabled = askBusy || running || Boolean(askPendingInput);
-}
-function renderAsk(): void {
-  byId('ask-title').hidden=askView!=='history';byId('ask-back').hidden=askView==='history';
-  byId('ask-history-panel').hidden=askView!=='history';byId('ask-conversation-panel').hidden=askView==='history';
-  byId('ask-conversation-title').textContent=askConversation?.title??'';byId('ask-conversation-title').hidden=!askConversation;
-  byId('ask-fresh').hidden=Boolean(askConversation||askRun);
-  byId<HTMLTextAreaElement>('ask-question').placeholder=askConversation?moteText('接着问…'):moteText('想找回什么？');
-  const renderedConversation=askConversation;
-  const referenceTitles=new Map((renderedConversation?.turns??[]).flatMap(turn=>turn.evidenceDeleted?[]:turn.result?.citations??[]).map(citation=>[citation.id,citation.appName]));
-  byId('ask-scope').replaceChildren(renderAskScope(document, renderedConversation?.scope, id => void askAction(() => openAskEvidence(id,renderedConversation)), askScopeUnavailable,referenceTitles));
-  const messages = byId('ask-messages'); messages.replaceChildren();
-  for (const [index,turn] of (askConversation?.turns ?? []).entries()) {
-    const article = document.createElement('article'), question = document.createElement('h3');
-    article.dataset.askTurn=turn.id;
-    question.textContent = turn.question;question.hidden=index===0&&askConversation?.title===turn.question;
-    const openEvidence = (id: string) => void askAction(() => openAskEvidence(id,renderedConversation,turn.id));
-    const citations=turn.evidenceDeleted?[]:turn.result?.citations??[];
-    article.append(question, renderAskAnswer(document, turn.evidenceDeleted?moteText('内容已按隐私要求清除。'):turn.result?.answer ?? moteText('回答未完成'),citations,openEvidence));
-    if(!turn.evidenceDeleted&&turn.error)appendDiagnostic(article,JSON.stringify(turn.error,null,2));
-    if(!turn.evidenceDeleted&&(turn.evidenceUnavailable||turn.evidenceStale)){const notice=document.createElement('p');notice.className='ask-history-note';notice.textContent=turn.evidenceUnavailable?moteText('引用原文已删除，历史问答仍保留。'):moteText('这是历史版本，当前资料已更新。');article.append(notice);}
-    if(citations.length){const list=document.createElement('div');list.className='ask-references';const label=document.createElement('p');label.textContent=moteText('依据');list.append(label);citations.forEach((citation,index)=>list.append(renderAskCitation(document,citation,openEvidence,index+1)));article.append(list);}
-    messages.append(article);
-  }
-  if(askRun?.status==='running'&&askSubmittedQuestion){const pending=document.createElement('article'),question=document.createElement('h3');question.textContent=askSubmittedQuestion;pending.append(question);messages.append(pending);}
-  setText('ask-progress', !askRun ? '' : askRun.status === 'running'&&askRunLookupPending?moteText('请刷新检查结果，避免重复发送。'):askRun.status === 'running'&&askStopPending?moteText('正在停止，等待中央确认…'):askRun.status === 'running' ? moteText('正在读取资料') : askRun.status === 'cancelled' ? moteText('已停止回答') : askRun.status === 'failed' ? moteText('回答未完成') : moteText('回答已完成'));
-  if(askRun&&(askRun.error||askRun.events?.length))appendDiagnostic(byId('ask-progress'),JSON.stringify({id:askRun.id,status:askRun.status,error:askRun.error,events:askRun.events},null,2));
-  askControls();
-}
-function askFailure(error:unknown):void{const message=askView==='history'?moteText('对话暂不可读取，请稍后重试。'):askPendingInput||askRunLookupPending||askStopPending?moteText('请刷新检查结果，避免重复发送。'):moteText('请求失败，请重试');renderReadableFailure(byId('ask-error'),message,error instanceof Error?error.message:String(error));}
-async function loadAskConversation(id: string): Promise<void> {
-  const generation = askGeneration;
-  const reading=askRestoringConversationId===id?askRestoringReading:undefined;
-  let conversation = await askCall<import('./ask').AskConversation>('conversation', {id});
-  if(generation!==askGeneration)return;
-  if(conversation.id!==id)throw Error(moteText('对话状态已变化，请重新读取后继续。'));
-  const seen=new Set<string>();
-  while(reading?.oldestTurnId&&!conversation.turns.some(turn=>turn.id===reading.oldestTurnId)&&conversation.nextCursor){
-    if(generation!==askGeneration)return;
-    const cursor=conversation.nextCursor;if(seen.has(cursor))throw Error(moteText('对话状态已变化，请重新读取后继续。'));seen.add(cursor);
-    const older=await askCall<import('./ask').AskConversation>('conversation',{id,cursor});
-    if(generation!==askGeneration)return;
-    conversation=prependConversationTurns(conversation,older);
-  }
-  if (generation !== askGeneration) return;
-  if(reading?.oldestTurnId&&!conversation.turns.some(turn=>turn.id===reading.oldestTurnId))throw Error(moteText('对话状态已变化，请重新读取后继续。'));
-  askConversation = conversation;if(askRestoringConversationId===id){askRestoringConversationId=undefined;askRestoringReading=undefined;}askScopeUnavailable = false; renderAsk();
-  if(reading){
-    pageScroll.set('ask',reading.scrollY);askReadingOnLeave=reading;
-    if(currentPage!=='ask')skipNextAskRefresh=true;
-    else restoreAskReadingPosition(reading,conversation,generation);
-  }
-}
-async function olderAskTurns(): Promise<void> {
-  const current = askConversation, generation = askGeneration;
-  if (!current?.nextCursor) return;
-  const page = await askCall<import('./ask').AskConversation>('conversation', {id: current.id, cursor: current.nextCursor});
-  if (generation !== askGeneration || askConversation !== current) return;
-  try { askConversation = prependConversationTurns(current, page); }
-  catch (error) { askScopeUnavailable = true; renderAsk(); throw error; }
-  askScopeUnavailable = false; renderAsk();
-}
-async function askHistory(append = false): Promise<void> {
-  const generation = askGeneration;
-  const page = await askCall<{items: RecentConversation[]; nextCursor?: string}>('history', append && askCursor ? {cursor: askCursor} : undefined);
-  if (generation !== askGeneration) return;
-  if(!append)workbenchUi.setHistory(page.items);
-  const history = byId('ask-history'); if (!append) history.replaceChildren();
-  for (const item of page.items) {
-    const button=document.createElement('button');button.type='button';button.className='home-conversation';button.dataset.conversationId=item.id;
-    const icon=document.createElement('span');icon.className='home-conversation-icon';icon.setAttribute('aria-hidden','true');icon.textContent='◌';
-    const copy=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small'),arrow=document.createElement('span');title.textContent=item.title;const details:string[]=[];
-    if(item.turnCount!==undefined)details.push(moteText('{0} 轮对话',item.turnCount));if(item.updatedAt&&Number.isFinite(Date.parse(item.updatedAt)))details.push(new Date(item.updatedAt).toLocaleString(getLocale(),{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}));
-    meta.textContent=details.join(' · ');copy.append(title,meta);arrow.className='chevron';arrow.setAttribute('aria-hidden','true');arrow.textContent='›';button.append(icon,copy,arrow);
-    button.addEventListener('click',()=>{if(askBusy||askPendingInput||askRun?.status==='running')return;const switching=(askConversation?.id??askRestoringConversationId)!==item.id;if(switching&&!mayReplaceAskDraft(''))return;if(switching){byId<HTMLTextAreaElement>('ask-question').value='';askPendingInput=undefined;askSubmittedQuestion='';askRestoringReading=undefined;}askView='conversation';void askAction(async()=>{if(switching){askConversation=undefined;askRun=undefined;}askRestoringConversationId=item.id;askScopeUnavailable=true;renderAsk();await loadAskConversation(item.id);});});
-    history.append(button);
-  }
-  if(!history.children.length){const empty=document.createElement('p');empty.className='home-empty';empty.textContent=moteText('还没有对话');history.append(empty);}
-  askCursor = page.nextCursor; byId('ask-more').hidden = !askCursor; askControls();
-}
-async function askAction(action: () => Promise<void>): Promise<void> {
-  if (askBusy) return; const generation=askGeneration;askBusy = true; askControls(); setText('ask-error', '');
-  try { await action(); } catch (error) { if(generation===askGeneration){if(askPendingInput)askPendingMessage='';askFailure(error);} }
-  finally { askBusy = false; askControls();maybeRestoreAskConversation(); }
-}
-async function refreshAskSettings():Promise<void>{
-  try{const value=await askCall<import('@mote/shared').ConversationSettings>('settings');askMultipleConversations=value?.multipleConversations===true;}
-  catch{askMultipleConversations=false;}
-}
-async function refreshAsk(): Promise<void> {
-  if(askPendingInput){askView='conversation';renderAsk();await askAction(checkPendingAsk);return;}
-  const connected = askConnectionState();
-  if (!connected) {
-    clearTimeout(askTimer);
-    setText('ask-login-status', ''); setText('ask-error', '');
-    return;
-  }
-  if(askRestoringConversationId){const id=askRestoringConversationId;await askAction(()=>loadAskConversation(id));return;}
-  await askAction(async () => {
-    const generation=askGeneration;
-    setText('ask-login-status', moteText('正在连接中央…'));
-    try { await askHistory(); } catch (error) { if(generation===askGeneration)setText('ask-login-status', moteText('请求失败，请重试')); throw error; }
-    if(generation!==askGeneration)return;
-    await refreshAskSettings();
-    if(generation!==askGeneration)return;
-    setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));
-    const page = await askCall<{items: import('./ask').AskRun[]}>('runs');
-    if(generation!==askGeneration)return;
-    if(!askRun)askRun=page.items.find(item=>item.status==='running');
-    if (askRun?.status==='running'&&askRun.conversationId){askView='conversation';await loadAskConversation(askRun.conversationId);}
-    else if(askConversation)await loadAskConversation(askConversation.id);
-    if(generation!==askGeneration)return;
-    renderAsk(); if (askRun?.status === 'running') scheduleAskPoll();
-  });
-}
-async function loadAskAfterLogin():Promise<void>{
-  if(askRestoringConversationId||askPendingInput||askRun)return;
-  const generation=askGeneration;
-  await askHistory();
-  await refreshAskSettings();
-  if(generation!==askGeneration)return;
-  askView='history';renderAsk();
-}
-async function refreshAskStatus():Promise<void>{const previous=currentStatus;const next=await desktopApi.status();if(currentStatus===previous)render(next);}
-function askConnectionState(): boolean {
-  const connected = Boolean(currentStatus?.config.serverUrl);
-  byId('ask-disconnected').hidden = connected;
-  byId('ask-workspace').hidden = !connected;
-  byId('node-login-panel').hidden = !connected || currentStatus.config.tokenConfigured;
-  byId('ask-logout').hidden = !connected || !currentStatus.config.tokenConfigured;
-  byId('ask-new').hidden = !connected || !askMultipleConversations;
-  return connected;
-}
-function scheduleAskPoll(): void {
-  clearTimeout(askTimer); const generation = askGeneration;
-  askTimer = setTimeout(async () => {
-    if (currentPage !== 'ask' || !askRun || generation !== askGeneration) return;
-    try {
-      const run = await askCall<import('./ask').AskRun>('run', {id: askRun.id});
-      if (generation !== askGeneration) return;if(run.notFound){askRunLookupPending=true;askPendingMessage=moteText('请刷新检查结果，避免重复发送。');renderAsk();return;}askRun = run;askRunLookupPending=false;if(run.status!=='running')askStopPending=false;
-      if (run.status !== 'running' && run.conversationId) {
-        const conversation = await askCall<import('./ask').AskConversation>('conversation', {id: run.conversationId});
-        if (generation !== askGeneration) return; askConversation = conversation; askScopeUnavailable = false; await askHistory();if(generation!==askGeneration)return;
-      }
-      setText('ask-error', ''); renderAsk();
-      if (run.status === 'running') scheduleAskPoll();
-    } catch (error) { if (generation !== askGeneration) return; askFailure(error); if (askRun?.status === 'running') scheduleAskPoll(); }
-  }, 1000);
-}
-byId('ask-form').addEventListener('submit', event => {
-  event.preventDefault(); if (askBusy || askPendingInput || askRun?.status === 'running' || askRestoringConversationId || !currentStatus?.config.tokenConfigured || currentStatus.config.authSignedOut) return;
-  const question = readInput('ask-question').trim(); if (!question) return;
-  void askAction(async () => {
-    const generation=askGeneration;
-    // An ordinary Ask with no explicit conversation uses the server's current
-    // main. The selection is read once and sent explicitly; the legacy
-    // no-conversation query contract remains untouched.
-    const conversationId=askConversation?.id??await resolveAskConversation(undefined,()=>askCall('main'));
-    if(generation!==askGeneration)return;
-    const input = askPendingInput?.question === question && askPendingInput.conversationId === conversationId ? askPendingInput : {id: crypto.randomUUID(), question, conversationId};
-    askPendingInput = input;askPendingMessage=moteText('正在提交问题…');askSubmittedQuestion=question;askRun=undefined;askStopPending=false;askRunLookupPending=false;renderAsk();
-    let admitted:import('./ask').AskRun;try { admitted = await askCall('start', input); }
-    catch (error) { if(generation!==askGeneration)throw error;admitted = await askCall('start', input); } // Same admission ID after an ambiguous network response.
-    if(generation!==askGeneration)return;
-    await acceptPendingAsk(input,admitted);
-  });
-});
-byId('ask-refresh').addEventListener('click', () => void refreshAsk());
-byId('ask-more').addEventListener('click', () => void askAction(() => askHistory(true)));
-byId('ask-turns-more').addEventListener('click', () => void askAction(olderAskTurns));
-async function acceptPendingAsk(input:NonNullable<typeof askPendingInput>,run:import('./ask').AskRun):Promise<void>{
-  const generation=askGeneration;
-  if(askPendingInput!==input)return;askRun=run;askSubmittedQuestion=input.question;askPendingInput=undefined;askPendingMessage='';askStopPending=false;askRunLookupPending=false;
-  if(readInput('ask-question').trim()===input.question)byId<HTMLTextAreaElement>('ask-question').value='';
-  renderAsk();if(run.conversationId)await loadAskConversation(run.conversationId);if(generation!==askGeneration)return;if(run.status==='running')scheduleAskPoll();else await askHistory();
-}
-async function checkPendingAsk():Promise<void>{
-  const input=askPendingInput,id=input?.id??(askStopPending||askRunLookupPending?askRun?.id:undefined),generation=askGeneration;if(!id)return;
-  askPendingMessage=moteText('正在检查结果…');askControls();const run=await askCall<import('./ask').AskRun>('run',{id});if(generation!==askGeneration||input&&askPendingInput!==input)return;
-  if(run.notFound){askRunLookupPending=!input;askPendingMessage=input?moteText('尚未找到这次提交；可以用原请求重试。'):moteText('请刷新检查结果，避免重复发送。');askControls();return;}
-  if(input)await acceptPendingAsk(input,run);else if(askRun?.id===id){askRun=run;askStopPending=false;askRunLookupPending=false;askPendingMessage='';renderAsk();if(run.conversationId)await loadAskConversation(run.conversationId);if(generation!==askGeneration)return;if(run.status==='running')scheduleAskPoll();}
-}
-byId('ask-edit-failed').addEventListener('click',()=>{const question=failedAskQuestion();if(!question||askBusy||askPendingInput||askRun?.status==='running')return;if(readInput('ask-question').trim()&&readInput('ask-question')!==question&&!window.confirm(moteText('将失败问题带回输入框，会替换当前草稿。继续？')))return;byId<HTMLTextAreaElement>('ask-question').value=question;askControls();byId('ask-question').focus();});
-byId('ask-check-existing').addEventListener('click',()=>void askAction(checkPendingAsk));
-byId('ask-retry-existing').addEventListener('click',()=>void askAction(async()=>{const input=askPendingInput,generation=askGeneration;if(input){const run=await askCall<import('./ask').AskRun>('start',input);if(generation===askGeneration)await acceptPendingAsk(input,run);}}));
-byId('ask-stop').addEventListener('click', () => void askAction(async () => { if(!askRun||askStopPending)return;const id=askRun.id,generation=askGeneration;askStopPending=true;askPendingMessage='';renderAsk();const run=await askCall<import('./ask').AskRun>('cancel',{id});if(generation!==askGeneration||askRun?.id!==id)return;askRun=run;askRunLookupPending=false;askStopPending=run.status==='running';renderAsk();scheduleAskPoll(); }));
-byId('ask-new').addEventListener('click', () => { if (askBusy || askPendingInput || askRun?.status === 'running'||!askMultipleConversations||!mayReplaceAskDraft('')) return; const generation=++askGeneration;void askAction(async()=>{const {id}=await askCall<{id:string}>('new-conversation');if(generation!==askGeneration)return;clearTimeout(askTimer);askRun=undefined;askConversation=undefined;askRestoringConversationId=undefined;askRestoringReading=undefined;askScopeUnavailable=false;askPendingInput=undefined;askSubmittedQuestion='';askView='conversation';byId<HTMLTextAreaElement>('ask-question').value='';await loadAskConversation(id);byId('ask-question').focus();}); });
-byId('ask-resume-current').addEventListener('click',()=>{askView='conversation';renderAsk();});
-byId('ask-back').addEventListener('click',()=>{askView='history';renderAsk();void askAction(()=>askHistory());});
-byId('ask-question').addEventListener('input',askControls);
-const askReferenceDialog=byId<HTMLDialogElement>('ask-reference-dialog');
-byId('ask-reference-back').addEventListener('click',()=>askReferenceDialog.close());
-async function openAskEvidence(id:string,rendered:import('./ask').AskConversation|undefined,turnId?:string):Promise<void>{
-  if(!rendered||askConversation!==rendered||currentPage!=='ask')return;
-  const conversationId=rendered.id,generation=askGeneration;
-  const current=()=>generation===askGeneration&&askConversation===rendered&&currentPage==='ask';
-  if(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(id)){await desktopApi.openCentral('ask',id,conversationId);return;}
-  const unavailable=(message:string)=>{byId('ask-reference-message').textContent=message;if(!askReferenceDialog.open)askReferenceDialog.showModal();};
-  const result=await askCall<{id:string;available:boolean}>('reference',{id,conversationId});
-  if(!current())return;
-  if(result.id!==id)throw Error(moteText('对话状态已变化，请重新读取后继续。'));
-  if(!result.available){unavailable(moteText('引用原文已删除，历史问答仍保留。'));return;}
-  if(turnId){
-    const retained=await currentTurnCites(conversationId,turnId,id,cursor=>askCall('conversation',{id:conversationId,...(cursor?{cursor}:{})}),current);
-    if(!current())return;
-    if(!retained){unavailable(moteText('原始轮次暂不可读。'));return;}
-  }
-  await desktopApi.openCentral('ask',id,conversationId);
-}
-byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央…')); try { await askCall('login', {token,durationMs:Number(readInput('ask-lifetime'))}); } catch (error) { setText('ask-login-status', moteText('先登录中央，各页面会共用这次登录')); throw error; } await refreshAskStatus();setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));await loadAskAfterLogin(); }); });
-byId('ask-browser-login').addEventListener('click',()=>void askAction(async()=>{await askCall('login-browser',{durationMs:Number(readInput('ask-lifetime'))});await refreshAskStatus();await loadAskAfterLogin();setText('ask-login-status',moteText('已登录 · {0}',currentStatus.config.serverUrl));}));
-byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout');await refreshAskStatus();setText('ask-login-status', moteText('已退出中央登录')); }));
+showPage(initialDesktopPage(), false);

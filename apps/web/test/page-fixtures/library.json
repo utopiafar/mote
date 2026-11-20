@@ -1,0 +1,142 @@
+{
+  "route": "#/library",
+  "waitFor": ".content[data-session='ready'][aria-busy='false'] .library-materials .original-note-row",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": { "configured": false, "model": null, "provider": "" },
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{ "status": "text_ready", "count": 3 }]
+        },
+        "index": { "mode": "text", "model": null },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": [{
+          "deviceId": "generated-library-device",
+          "deviceName": "样例设备",
+          "platform": "macos",
+          "status": "paused",
+          "queueDepth": 0,
+          "lastSeenAt": "2026-11-20T09:00:00+08:00"
+        }]
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": { "instances": [] }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": [
+          { "id": "http:GET:/api/library/browse", "featureId": "mote.materials", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/capture-browser/timeline", "featureId": "mote.capture", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/capture-browser/timeline/members", "featureId": "mote.capture", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/coding/uploads", "featureId": "mote.coding", "version": "1", "surface": "data", "state": "active" }
+        ]
+      }
+    },
+    "GET /api/library/browse": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": "generated-library-revision",
+        "types": [],
+        "sources": [],
+        "sourcesTruncated": false,
+        "noteOrigin": { "origin": "notes", "label": "记录", "count": 3 },
+        "items": [
+          {
+            "entryType": "capture",
+            "ref": "capture:00000000-0000-4000-8000-000000000001",
+            "contentAt": "2026-11-20T08:30:00+08:00",
+            "revision": "generated-note-1",
+            "capture": {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "capturedAt": "2026-11-20T08:30:00+08:00",
+              "deviceId": "generated-library-device",
+              "deviceName": "样例设备",
+              "platform": "macos",
+              "source": "note",
+              "appName": "Mote",
+              "windowTitle": "样例会议记录",
+              "durationMs": 0,
+              "hasImage": false,
+              "ocr": { "status": "not_applicable" },
+              "textPreview": "对照资料列表，记录需要复查的页面状态。"
+            }
+          },
+          {
+            "entryType": "capture",
+            "ref": "capture:00000000-0000-4000-8000-000000000002",
+            "contentAt": "2026-11-19T17:15:00+08:00",
+            "revision": "generated-note-2",
+            "capture": {
+              "id": "00000000-0000-4000-8000-000000000002",
+              "capturedAt": "2026-11-19T17:15:00+08:00",
+              "deviceId": "generated-library-device",
+              "deviceName": "样例设备",
+              "platform": "macos",
+              "source": "note",
+              "appName": "Mote",
+              "windowTitle": "样例阅读笔记",
+              "durationMs": 0,
+              "hasImage": false,
+              "ocr": { "status": "not_applicable" },
+              "textPreview": "把原文摘录和自己的想法分开记录。"
+            }
+          },
+          {
+            "entryType": "capture",
+            "ref": "capture:00000000-0000-4000-8000-000000000003",
+            "contentAt": "2026-11-19T14:00:00+08:00",
+            "revision": "generated-note-3",
+            "capture": {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "capturedAt": "2026-11-19T14:00:00+08:00",
+              "deviceId": "generated-library-device",
+              "deviceName": "样例设备",
+              "platform": "macos",
+              "source": "note",
+              "appName": "Mote",
+              "windowTitle": "样例项目草稿",
+              "durationMs": 0,
+              "hasImage": false,
+              "ocr": { "status": "not_applicable" },
+              "textPreview": "整理导入的资料，留出时间检查来源。"
+            }
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  }
+}
