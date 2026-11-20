@@ -227,6 +227,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     assertEvidence:ids=>{if(readingForModel())modelAuthorizationHost.assertEvidence(ids);},
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
     currentContextTime:()=>modelContext.getStore()?.contextTime,
+    currentOwnerChat:()=>modelEvidenceAuthority.ownerChatMemoryScope(modelContext.getStore())!==undefined,
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs});
   let historyBeforeSeq:((workId:string)=>number|undefined)|undefined;
   const historyRead=conversationHistoryReader({store,conversations,current:()=>modelContext.getStore(),assert:assertModelEvidence,cursorSecret:facts.owner.token,historyBeforeSeq:workId=>historyBeforeSeq?.(workId)});

@@ -50,12 +50,13 @@ test('async authority rechecks permissions after yielding between dependency pag
 
 });
 
-for(const change of ['original deletion','source pause','source reference'] as const)test(`PF2 R3 ${change} revokes a prepared Memory lead at the model boundary`,async t=>{
+for(const change of ['original deletion','source pause','source reference'] as const)test(`PF2F ${change} preserves only eligible owner-chat Memory leads at the model boundary`,async t=>{
  const {node,authority,publish}=await fixture(t),sourceId='generated-memory-lead-source';
  node.sources.register({id:sourceId,name:'Generated Memory lead source',kind:'custom',deviceId:'generated',platform:'import'});
  const original=await node.sources.upsert(sourceId,{externalId:'generated-item',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated model lead original'});
  const memory=await publish(original.id),lead=openingMemoryLead(memory);assert.ok(lead);
- const input:QueryInput={question:'Generated question prepared with a Memory lead',openingMemories:[lead],contextEvidenceDependencies:{version:1,complete:true,ids:[memory.id,original.id]}};
+ const operationId='query:'+randomUUID();
+ const input:QueryInput={question:'Generated question prepared with a Memory lead',executionLane:'interactive',traceContext:{operationId},openingMemories:[lead],contextEvidenceDependencies:{version:1,complete:true,ids:[memory.id,original.id]}};
  authority.assert(input);await authority.assertAsync(input);
  if(change==='original deletion')assert.deepEqual(node.store.delete(original.id),{deleted:1});
  else node.sources.update(sourceId,change==='source pause'?{enabled:false}:{retention:'reference'});
@@ -63,6 +64,17 @@ for(const change of ['original deletion','source pause','source reference'] as c
  assert.equal(reader.currentMemoryLeadsAllowed(input.openingMemories!),false);
  assert.throws(()=>authority.assert(input),{code:'context_evidence_restricted'});
  await assert.rejects(authority.assertAsync(input),{code:'context_evidence_restricted'});
+ await node.modelAuthorizationHost.manual('owner-'+operationId,node.featureServices.availableModelConnections(),async()=>{
+  if(change!=='original deletion'){
+   authority.assert(input);await authority.assertAsync(input);
+   const scoped={...input,sourceIds:[sourceId]};
+   assert.throws(()=>authority.assert(scoped),{code:'context_evidence_restricted'});
+   await assert.rejects(authority.assertAsync(scoped),{code:'context_evidence_restricted'});
+   assert.deepEqual(node.store.delete(original.id),{deleted:1});
+  }
+  assert.throws(()=>authority.assert(input),{code:'context_evidence_restricted'});
+  await assert.rejects(authority.assertAsync(input),{code:'context_evidence_restricted'});
+ });
 });
 
 test('original-only model preparation yields before reading a withdrawn exact selection',async t=>{

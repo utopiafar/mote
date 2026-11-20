@@ -13,16 +13,19 @@ import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {releasedMemoryOriginal} from '../src/memory-original-retention.js';
 import {materialId} from '../src/materials.js';
-import type {QueryInput} from '@mote/agent';
+import type {ContextReader,QueryInput} from '@mote/agent';
 import {parseAnswer} from '@mote/agent';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
 import {createContextQuery} from '../src/plugins/query-context.js';
 
-async function fixture(t:TestContext,query?: (input:QueryInput)=>Promise<any>){
+async function fixture(t:TestContext,query?: (input:QueryInput,reader?:ContextReader)=>Promise<any>,useHostReader=false){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-original-release-')),token='generated-owner-'+randomUUID();
  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const modelErrors:string[]=[];
- const boot=()=>buildApp({...config,...(query?{model:'generated'}:{})},{backgroundWorker:false,agent:{configured:Boolean(query),query:query?async input=>{try{return await query(input);}catch(error){modelErrors.push(error instanceof Error?error.stack??error.message:String(error));throw error;}}:async()=>{throw Error('No model in original-release fixtures');},async close(){}}});let node=await boot();
+ const invoke=async(input:QueryInput,reader?:ContextReader)=>{try{if(!query)throw Error('No model in original-release fixtures');return await query(input,reader);}catch(error){modelErrors.push(error instanceof Error?error.stack??error.message:String(error));throw error;}};
+ const boot=()=>buildApp({...config,...(query?{model:'generated'}:{})},{backgroundWorker:false,...(useHostReader?{
+  createModelAgent:async(_settings,reader,host)=>({configured:true,query:input=>host!.runModel!(()=>invoke(input,reader),input.signal),async close(){}}),
+ }:{agent:{configured:Boolean(query),query:input=>invoke(input),async close(){}}})});let node=await boot();
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
  const headers={authorization:'Bearer '+token},request=async(url:string,method='GET',payload?:unknown)=>node.app.inject({url,method:method as 'GET',headers,...(payload===undefined?{}:{payload})});
  const id=randomUUID(),text='The generated owner prefers quiet mornings for careful work.';
@@ -81,7 +84,7 @@ for(const change of ['pause','reference'] as const)test(`PF2 R3 source ${change}
  sources.register({id:sourceId,name:'Generated revocable source',kind:'custom',deviceId:f.capture.deviceId,platform:'import'});
  const original=await sources.upsert(sourceId,{externalId:'generated-item',revision:'1',observedAt:f.capture.capturedAt,kind:'message',layer:'original',text:'Generated revocable original'});
  const {memory}=await f.publish(original.id),ref='memory:'+memory.id;
- const sharedRead=evidenceContext.ports.memoryRead,query=createContextQuery(store,sources,featureServices.evidenceReader);
+ const reader=featureServices.evidenceReader,sharedRead=evidenceContext.ports.memoryRead,query=createContextQuery(store,sources,reader);
  const contextRead=()=>f.request('/api/context/read','POST',{refs:[ref]});
  assert.equal(sharedRead.memory(ref)?.statement,memory.statement);
  assert.equal(sharedRead.memory(ref,{sourceId:'another-source'}),undefined);
@@ -90,10 +93,89 @@ for(const change of ['pause','reference'] as const)test(`PF2 R3 source ${change}
  assert.ok(available.json().items[0].text.includes(memory.statement));
  const revoked=await f.request('/api/sources/'+sourceId,'PATCH',change==='pause'?{enabled:false}:{retention:'reference'});
  assert.equal(revoked.statusCode,200,revoked.body);
+ assert.equal(reader.memory(ref),undefined);
+ assert.equal(await reader.memoryAsync(ref),undefined);
  assert.equal(sharedRead.memory(ref),undefined);
+ assert.equal(await sharedRead.memoryAsync(ref),undefined);
  assert.deepEqual(query.read([ref]),{items:[],missingRefs:[ref],truncated:false});
+ assert.deepEqual(await query.readAsync([ref]),{items:[],missingRefs:[ref],truncated:false});
  const denied=await contextRead();assert.equal(denied.statusCode,404,denied.body);
  assert.ok(!denied.body.includes(memory.statement));assert.ok(!denied.body.includes(original.text));
+});
+
+for(const change of ['pause','reference'] as const)test(`PF2F owner chat recalls ${change} source Memory and drops it after original deletion`,async t=>{
+ const sourceId='generated-chat-file-source';
+ const originalText='A generated source archive mentions a moonlit observatory.';
+ let memory:{id:string;statement:string};
+ let visible=true,calls=0;
+ const f=await fixture(t,async(input,reader)=>{
+  calls++;
+  assert.ok(reader);
+  const lead=input.openingMemories?.find(item=>item.id===memory.id);
+  assert.equal(lead?.statement,visible?memory.statement:undefined);
+  if(input.question==='Follow up on the generated preference.')assert.ok(input.conversation?.turns.some(turn=>turn.answer===memory.statement));
+  const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
+  const bridge=await startBridge(reader,input,6);
+  try{
+   const read=await fetch(bridge.url+'/memories',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({id:memory.id,includeEvidence:true})});
+   const packet=await read.json();
+   assert.equal(read.status,200,JSON.stringify(packet));
+   assert.deepEqual(packet.data.items.map((item:{statement:string})=>item.statement),visible?[memory.statement]:[]);
+   assert.deepEqual(packet.data.sourceEvidence,[]);
+   assert.ok(!JSON.stringify(packet).includes(originalText));
+   return {answer:lead?.statement??'Generated answer using available context.',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies};
+  }finally{await bridge.close();}
+ },true);
+ f.node.sources.register({id:sourceId,name:'Generated chat file source',kind:'local-files',deviceId:f.capture.deviceId,platform:'import',retention:'archive'});
+ const bytes=Buffer.from(originalText),begun=f.node.files.begin({sourceId,item:{externalId:'generated-chat-file',revision:'1',observedAt:f.capture.capturedAt,kind:'file',layer:'original',text:'',mimeType:'text/plain'},relativePath:'generated-chat-file.txt',sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});
+ f.node.files.part(begun.uploadId,0,bytes,()=>{});
+ const file=await f.node.files.commit(begun.uploadId,()=>{}),artifact=randomUUID(),chunk=randomUUID();
+ f.node.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifact,file.id,'text',f.capture.capturedAt,'generated',JSON.stringify({complete:true}));
+ f.node.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,text,metadata) VALUES(?,?,?,?,?)').run(chunk,artifact,file.id,originalText,'{}');
+ ({memory}=await f.publish(chunk));
+ const patch=await f.request('/api/sources/'+sourceId,'PATCH',change==='pause'?{enabled:false}:{retention:'reference'});
+ assert.equal(patch.statusCode,200,patch.body);
+ for(const path of ['/api/memories','/api/context-trees/topics/nodes/personal']){
+  const archive=await f.request(path);
+  assert.equal(archive.statusCode,200,archive.body);
+  assert.ok(archive.json().items.some((item:{id:string})=>item.id===memory.id));
+ }
+
+ const conversationId=(await f.request('/api/conversations/main')).json().id;
+ const admitted=await f.request('/api/conversations/messages','POST',{conversationId,clientRequestId:randomUUID(),question:'Recall the generated preference.',scope:{kind:'all'}});
+ assert.equal(admitted.statusCode,202,admitted.body);
+ const deadline=Date.now()+10000;
+ let message:{status:string};
+ do{
+  const read=await f.request('/api/conversations/'+conversationId+'/messages/'+admitted.json().id);
+  assert.equal(read.statusCode,200,read.body);
+  message=read.json();
+  if(['completed','failed','cancelled'].includes(message.status))break;
+  await new Promise(resolve=>setTimeout(resolve,10));
+ }while(Date.now()<deadline);
+ assert.equal(message.status,'completed',JSON.stringify(message)+' '+f.modelErrors.join('\n'));
+ assert.equal(f.node.conversations.message(admitted.json().id).result?.answer,memory.statement);
+ assert.equal(calls,1);
+ const followup=await f.request('/api/query','POST',{conversationId,question:'Follow up on the generated preference.'});
+ assert.equal(followup.statusCode,200,followup.body+' '+f.modelErrors.join('\n'));
+ assert.equal(followup.json().answer,memory.statement);
+ assert.equal(calls,2);
+
+ const removed=await f.request('/api/files/'+file.id,'DELETE');
+ assert.equal(removed.statusCode,200,removed.body);
+ const gone=await f.request('/api/memories/'+memory.id);
+ assert.equal(gone.statusCode,410,gone.body);
+ assert.ok(!gone.body.includes(memory.statement));
+ assert.ok(!gone.body.includes(originalText));
+ visible=false;
+ const later=await f.request('/api/query','POST',{question:'Use available generated Memories.'});
+ assert.equal(later.statusCode,200,later.body+' '+f.modelErrors.join('\n'));
+ assert.ok(!later.body.includes(memory.statement));
+ assert.equal(calls,3);
+ assert.equal((await f.request('/api/memories/'+memory.id,'DELETE')).statusCode,200);
+ const forgotten=await f.request('/api/memories/'+memory.id);
+ assert.equal(forgotten.statusCode,404,forgotten.body);
+ assert.ok(!forgotten.body.includes(memory.statement));
 });
 
 test('Memory reads enforce scope and current exposure, and an original deletion grants no query disclosure',async t=>{

@@ -526,9 +526,11 @@ export class FileStore {
   }
   /** Only the preferred transcript/text of the retained current file revision is independent evidence.
    * Identity/permission checks need attachment lineage metadata, never parent bodies. */
-  isCurrentEvidence(id:string):boolean {
+  isCurrentEvidence(id:string):boolean {return this.currentFileEvidence(id,false);}
+  private currentFileEvidence(id:string,allowPausedSource:boolean):boolean {
     if(!fileAttachmentAvailable(this.store,id,true))return false;
-    return Boolean((this.currentEvidenceStatement??=this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id')} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`)).get(id));
+    const prepare=()=>this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${readableFileSql('c.capture_id',allowPausedSource)} AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`);
+    return Boolean((allowPausedSource?prepare():this.currentEvidenceStatement??=prepare()).get(id));
   }
   currentEvidenceIds(ids:readonly string[]):Set<string> {
     if(!ids.length)return new Set();
@@ -551,10 +553,15 @@ export class FileStore {
     return current;
   }
   /** Resolve a currently permitted file or chunk; an identity is never a path grant. */
-  readableFile(id:string):string|undefined {
+  readableFile(id:string):string|undefined {return this.currentFile(id,false);}
+  /** Current lineage proof for a retained Memory. Callers that open files or
+   * chunks still use readableFile to enforce the source's body grant. */
+  retainedMemoryFile(id:string):string|undefined {return this.currentFile(id,true);}
+  private currentFile(id:string,allowPausedSource:boolean):string|undefined {
     const captureId=this.fileForRead(id);if(!captureId||!fileAttachmentAvailable(this.store,captureId,true))return;
-    if(!(this.readableFileStatement??=this.store.db.prepare(`SELECT 1 WHERE ${readableFileSql('?')}`)).get(captureId))return;
-    if(id!==captureId&&!this.isCurrentEvidence(id)&&!this.store.isCurrentEvidence(id))return;
+    const prepare=()=>this.store.db.prepare(`SELECT 1 WHERE ${readableFileSql('?',allowPausedSource)}`);
+    if(!(allowPausedSource?prepare():this.readableFileStatement??=prepare()).get(captureId))return;
+    if(id!==captureId&&!this.currentFileEvidence(id,allowPausedSource)&&!this.store.isCurrentEvidence(id))return;
     return captureId;
   }
   /** An owner may explicitly open a retained historical version while the
