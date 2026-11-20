@@ -213,13 +213,13 @@ export const goalActionSchema=z.enum(['complete','dismiss','reject','follow']);
 export type GoalAction=z.infer<typeof goalActionSchema>;
 
 export const goalGroupKeySchema=z.discriminatedUnion('kind',[
-  z.object({kind:z.literal('matter'),id:z.string().uuid(),title:pageText(120),template:goalTemplateSchema.optional()}).strict(),
+  z.object({kind:z.literal('matter'),id:z.string().uuid(),title:pageText(500),template:goalTemplateSchema.optional()}).strict(),
   z.object({kind:z.literal('person'),name:pageText(80)}).strict(),
   z.object({kind:z.literal('none')}).strict(),
 ]);
 export type GoalGroupKey=z.infer<typeof goalGroupKeySchema>;
 
-export const goalDueSchema=z.object({text:pageText(120),at:timestamp.nullable()}).strict();
+export const goalDueSchema=z.object({text:pageText(500),at:timestamp.nullable()}).strict();
 export type GoalDue=z.infer<typeof goalDueSchema>;
 
 export const goalProgressSchema=z.object({
@@ -273,7 +273,7 @@ export type GoalFollowInput=z.infer<typeof goalFollowInputSchema>;
 /** A hand-entered goal is always the owner's; the server fixes direction. */
 export const goalCreateInputSchema=z.object({
   title:pageText(80),
-  due:z.object({text:pageText(120),at:timestamp.nullable().optional()}).strict().optional(),
+  due:z.object({text:pageText(500),at:timestamp.nullable().optional()}).strict().optional(),
 }).strict();
 export type GoalCreateInput=z.infer<typeof goalCreateInputSchema>;
 
@@ -300,7 +300,7 @@ export const serviceItemSchema=z.object({
   kind:serviceKindSchema,
   state:serviceStateSchema,
   jobs:z.array(connectionJobSchema).max(50),
-  tools:z.array(pageText(120)).max(100),
+  tools:z.array(pageText(300)).max(100),
   actions:z.array(serviceActionSchema).min(1).max(6).refine(values=>uniqueValues(values),{message:'Actions must be unique'}),
 }).strict();
 export type ServiceItem=z.infer<typeof serviceItemSchema>;
