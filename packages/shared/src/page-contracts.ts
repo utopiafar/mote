@@ -71,7 +71,7 @@ export type AssistantEvidenceOriginView=z.infer<typeof assistantEvidenceOriginSc
 
 export const matterEvidenceViewSchema=z.object({
   id:z.string().uuid(),
-  title:z.string().max(500),
+  title:z.string().max(1000),
   sourceId:sourceIdSchema.optional(),
   deviceId:sourceIdSchema.optional(),
   at:timestamp,
@@ -300,7 +300,7 @@ export const serviceItemSchema=z.object({
   kind:serviceKindSchema,
   state:serviceStateSchema,
   jobs:z.array(connectionJobSchema).max(50),
-  tools:z.array(pageText(300)).max(100),
+  tools:z.array(pageText(512)).max(100),
   actions:z.array(serviceActionSchema).min(1).max(6).refine(values=>uniqueValues(values),{message:'Actions must be unique'}),
 }).strict();
 export type ServiceItem=z.infer<typeof serviceItemSchema>;
