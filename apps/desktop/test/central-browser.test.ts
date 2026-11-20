@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
-import { openCentralBrowser } from '../src/central-browser';
+import { pageHash } from '@mote/shared';
+import { centralPageRoutes, openCentralBrowser } from '../src/central-browser';
 it('opens the requested central page in Chrome without credentials', async () => {
   const chrome = vi.fn().mockResolvedValue(undefined), fallback = vi.fn();
   await openCentralBrowser('https://central.example', 'notes', 'darwin', chrome, fallback);
@@ -95,6 +96,27 @@ it.each(['overview', 'about', 'guide', 'activity', 'plugins'])('preserves the %s
 });
 
 it.each([['sources','#/connections'],['actions','#/actions'],['models','#/system/models']])('keeps the existing %s destination through a real login handoff',async(page,route)=>{const chrome=vi.fn();await openCentralBrowser('http://127.0.0.1:47832',page,'darwin',chrome,vi.fn(),undefined,'generated-ticket');const url=new URL(chrome.mock.calls[0][0]);expect(url.hash.split('?')[0]).toBe(route);expect(new URLSearchParams(url.hash.split('?')[1]).get('loginTicket')).toBe('generated-ticket');expect(url.search).toBe('');});
+
+it('opens every shared page route at the same address it used before',async()=>{
+  const previous:Record<string,string>={library:'#/library',models:'#/system/models',plugins:'#/system/plugins',sources:'#/connections',lark:'#/connections/lark',actions:'#/actions',ask:'#/ask',activity:'#/activity'};
+  expect(Object.keys(centralPageRoutes).sort()).toEqual(Object.keys(previous).sort());
+  for(const [page,key] of Object.entries(centralPageRoutes)){
+    const chrome=vi.fn();await openCentralBrowser('https://central.example',page,'darwin',chrome,vi.fn());
+    expect(pageHash(key)).toBe(previous[page]);
+    expect(chrome).toHaveBeenCalledWith('https://central.example/'+previous[page]);
+  }
+});
+
+it('keeps every shared page login handoff in the hash query without a bearer token',async()=>{
+  for(const [page,key] of Object.entries(centralPageRoutes))for(const handoff of ['ticket','request']){
+    const chrome=vi.fn();await openCentralBrowser('https://central.example',page,'darwin',chrome,vi.fn(),undefined,handoff==='ticket'?'generated-ticket':undefined,handoff==='request'?'generated-request':undefined);
+    const url=new URL(chrome.mock.calls[0][0]),params=new URLSearchParams(url.hash.split('?')[1]);
+    expect(url.origin).toBe('https://central.example');expect(url.pathname).toBe('/');expect(url.search).toBe('');
+    expect(url.hash.split('?')[0]).toBe(pageHash(key));
+    expect(params.get(handoff==='ticket'?'loginTicket':'loginRequest')).toBe('generated-'+handoff);
+    expect(params.has('token')).toBe(false);expect(url.href.includes('Bearer')).toBe(false);
+  }
+});
 
 it('opens the retained source-detail Central library action through either login handoff',async()=>{
  for(const login of ['ticket','request']){const chrome=vi.fn();await openCentralBrowser('https://central.example','library','darwin',chrome,vi.fn(),undefined,login==='ticket'?'generated-ticket':undefined,login==='request'?'generated-request':undefined);const url=new URL(chrome.mock.calls[0][0]);expect(url.hash.split('?')[0]).toBe('#/library');expect(new URLSearchParams(url.hash.split('?')[1]).get(login==='ticket'?'loginTicket':'loginRequest')).toBe('generated-'+login);expect(url.search).toBe('');}
