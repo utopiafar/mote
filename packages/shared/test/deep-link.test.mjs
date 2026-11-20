@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {deepLinkHash,parseDeepLinkHash,serializeMoteLink,parseMoteLink,resolveMoteLink,parseMoteReference,isMoteRunId,moteRoute} from '../dist/deep-link.js';
 
+import {pageHash} from '../dist/page-routes.js';
+
+const chat=pageHash('chat');
 const origin='https://central.example';
 const scope={origin};
 
@@ -33,9 +36,9 @@ test('every route kind serializes to the shared hash vocabulary and parses back 
     const link=parseMoteLink(serializeMoteLink(scope,route));
     assert.deepEqual(link,{scope,route});
   }
-  assert.equal(deepLinkHash({kind:'conversation',id:evidenceId}),'#/ask?conversation='+evidenceId);
+  assert.equal(deepLinkHash({kind:'conversation',id:evidenceId}),pageHash('chat',{conversation:evidenceId}));
   assert.equal(deepLinkHash({kind:'run',id:'r1'}),'#/activity?work=r1');
-  assert.equal(deepLinkHash({kind:'reference',ref}),'#/ask?evidence='+encodeURIComponent(ref));
+  assert.equal(deepLinkHash({kind:'reference',ref}),pageHash('chat',{evidence:ref}));
 });
 
 test('serialization rejects routes that could parse to another object',()=>{
@@ -59,29 +62,30 @@ test('serialization rejects routes that could parse to another object',()=>{
 test('strict parsing rejects malformed hashes and foreign URL shapes',()=>{
   const id=randomUUID(),ref='capture:'+id;
   for(const hash of [
-    '#/ask','#/ask?conversation=','#/ask?conversation='+id+'x','#/ask?conversation='+id+'&conversation='+id,
-    '#/ask?evidence=','#/ask?evidence='+id,'#/ask?evidence='+ref+'&evidence='+ref,
-    '#/ask?evidence='+ref+'&conversation=oops','#/ask?work=x','#/activity','#/activity?work=','#/activity?work=a&work=b',
+    '#/ask?conversation='+id,'#ask?evidence='+ref,
+    chat,chat+'?conversation=',chat+'?conversation='+id+'x',chat+'?conversation='+id+'&conversation='+id,
+    chat+'?evidence=',chat+'?evidence='+id,chat+'?evidence='+ref+'&evidence='+ref,
+    chat+'?evidence='+ref+'&conversation=oops',chat+'?work=x','#/activity','#/activity?work=','#/activity?work=a&work=b',
     '#/view?package=p&route=r','#/view?package=&route=r&evidence='+ref,'#/view?package=p&route=r&evidence='+id,
-    '#/unknown?conversation='+id,'','#','#/','notes','#/ask%3Fconversation='+id,
+    '#/unknown?conversation='+id,'','#','#/','notes',chat+'%3Fconversation='+id,
   ])assert.equal(parseDeepLinkHash(hash),undefined,hash);
   for(const link of [
     'https://central.example',
     'https://central.example/notes',
     'https://central.example/?x=1#/ask?conversation='+id,
-    'https://user@central.example/#/ask?conversation='+id,
-    'ftp://central.example/#/ask?conversation='+id,
-    'http://remote.example/#/ask?conversation='+id,
-    'central.example/#/ask?conversation='+id,
-    ' https://central.example/#/ask?conversation='+id,
+    'https://user@central.example/'+chat+'?conversation='+id,
+    'ftp://central.example/'+chat+'?conversation='+id,
+    'http://remote.example/'+chat+'?conversation='+id,
+    'central.example/'+chat+'?conversation='+id,
+    ' https://central.example/'+chat+'?conversation='+id,
   ])assert.equal(parseMoteLink(link),undefined,link);
   assert.equal(parseMoteLink(null),undefined);
 });
 
 test('transport extras ride along without changing route identity',()=>{
   const id=randomUUID(),ref='capture:'+id;
-  assert.deepEqual(parseDeepLinkHash(`#/ask?conversation=${id}&loginTicket=t&loginRequest=r`),{kind:'conversation',id});
-  assert.deepEqual(parseDeepLinkHash(`#/ask?evidence=${ref}&loginTicket=t`),{kind:'reference',ref});
+  assert.deepEqual(parseDeepLinkHash(`${chat}?conversation=${id}&loginTicket=t&loginRequest=r`),{kind:'conversation',id});
+  assert.deepEqual(parseDeepLinkHash(`${chat}?evidence=${ref}&loginTicket=t`),{kind:'reference',ref});
   assert.deepEqual(parseDeepLinkHash(`#/activity?work=run-1&loginTicket=t&search=x`),{kind:'run',id:'run-1'});
 });
 
@@ -110,7 +114,7 @@ test('resolution keeps the exact target or refuses without retargeting',()=>{
 test('draft vocabulary never appears in link identity',()=>{
   const id=randomUUID();
   for(const key of ['draft','questionDraft','moteDraft','localOnly']){
-    assert.deepEqual(parseDeepLinkHash(`#/ask?conversation=${id}&${key}=v`),{kind:'conversation',id});
+    assert.deepEqual(parseDeepLinkHash(`${chat}?conversation=${id}&${key}=v`),{kind:'conversation',id});
   }
   assert.equal(isMoteRunId('ok-run'),true);
   assert.equal(isMoteRunId('a\nb'),false);

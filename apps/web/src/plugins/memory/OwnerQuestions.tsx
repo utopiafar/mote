@@ -7,7 +7,6 @@ import {useResource} from '../../useResource';
 import {resources} from '../../resource-cache';
 import {ConversationHeading} from '../ask/ConversationShell';
 import {ownerQuestionListPath,ownerQuestionRoute,ownerQuestionListOrigin,clearOwnerQuestionListOrigin,readOwnerQuestion} from '../../owner-question-route';
-import {guideVisit} from '../../feature-guide-state';
 import { Loading } from '../../Loading';
 
 type Reply={requestId:string;expectedRevision:number;action:'answer'|'unknown'|'defer';answer?:string;choiceId?:string};
@@ -42,7 +41,7 @@ const stateLabel=(state:OwnerQuestion['state'])=>({open:moteText('待回答'),de
 export function OwnerQuestionWorkspace({api,id,onOpen}:{api:Api;id:string;onOpen:(ref:string)=>void}){
   useOwnerQuestionStyle();
   useEffect(()=>()=>{queueMicrotask(()=>{if(readOwnerQuestion(window.location.hash)===null)clearOwnerQuestionListOrigin(api);});},[api]);
-  const returnTo=id?questionOrigins.get(api)?.get(id)?.hash??ownerQuestionRoute():ownerQuestionListOrigin(api)??(guideVisit(api).returnAvailable?'#/guide':'#/');
+  const returnTo=id?questionOrigins.get(api)?.get(id)?.hash??ownerQuestionRoute():ownerQuestionListOrigin(api)??'#/';
   return <div className="owner-question-workspace"><div className="owner-question-workspace-header">{!id&&<h1>{moteText('需要你补充')}</h1>}<a className="text-button" href={returnTo} onClick={()=>{const position=id?questionOrigins.get(api)?.get(id):undefined;if(position)questionReturns.set(api,position);}}>← {moteText('返回')}</a></div>{id?<OwnerQuestionConversation key={id} api={api} id={id} onOpen={onOpen} standalone/>:<OwnerQuestionLinks api={api} history standalone/>}</div>;
 }
 

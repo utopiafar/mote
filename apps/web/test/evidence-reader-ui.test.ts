@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -106,7 +107,7 @@ test('the aside shows only declared descriptions and every conversation that cit
  const {document:d}=await fixture(t,capture,undefined,path=>{reads.push(path);return pages[path];});await settle();
  assert.deepEqual(Array.from(factRow(d,'资料说明')!.querySelectorAll('dd p')).map(item=>item.textContent),['Generated owner description\nsecond line']);
  assert.deepEqual(Array.from(factRow(d,'引用它的对话')!.querySelectorAll('a')).map(item=>[item.textContent,item.getAttribute('href')]),[
-  ['Generated anchored talk','#/ask?conversation=generated-anchor'],['Generated cited talk','#/ask?conversation=generated-cited'],['Generated material talk','#/ask?conversation=generated-material']]);
+  ['Generated anchored talk',pageHash('chat',{conversation:'generated-anchor'})],['Generated cited talk',pageHash('chat',{conversation:'generated-cited'})],['Generated material talk',pageHash('chat',{conversation:'generated-material'})]]);
  assert.deepEqual(reads,Object.keys(pages),'every page is read once, in cursor order');
 });
 

@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import {useEffect,useState} from 'react';
 import type {Api} from './api';
 import {LoadingText} from './Loading';
@@ -32,6 +33,6 @@ export function ReferencingConversations({api,captureId,materialRef}:{api:Api;ca
   if(!state.items)return <LoadingText/>;
   if(!state.items.length)return <>0</>;
   return <ul className="evidence-conversations">{state.items.map(item=><li key={item.id}>
-    <a href={'#/ask?conversation='+encodeURIComponent(item.id)} onClick={event=>{if(!confirmNavigation())event.preventDefault();}}>{item.title}</a>
+    <a href={pageHash('chat',{conversation:item.id})} onClick={event=>{if(!confirmNavigation())event.preventDefault();}}>{item.title}</a>
   </li>)}</ul>;
 }

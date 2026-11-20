@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {recordingToolFromHash,preparationTargetFromHash} from '../src/advanced-web-target';
@@ -6,7 +7,7 @@ import type {PageEntry} from '../src/features/types';
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 test('advanced recording targets require the exact capture, canonical page and a single allowed tool',()=>{
  const valid='#/library?evidence=capture%3A'+id+'&recordingTool=speakers';assert.equal(recordingToolFromHash(valid,id),'speakers');
- for(const hash of [valid.replace(id,other),valid+'&recordingTool=compare',valid+'&evidence=capture%3A'+id,valid.replace('speakers','delete'),valid.replace('#/library','#/ask'),valid.replace('capture%3A','memory%3A')])assert.equal(recordingToolFromHash(hash,id),null,hash);
+ for(const hash of [valid.replace(id,other),valid+'&recordingTool=compare',valid+'&evidence=capture%3A'+id,valid.replace('speakers','delete'),valid.replace('#/library',pageHash('chat')),valid.replace('capture%3A','memory%3A')])assert.equal(recordingToolFromHash(hash,id),null,hash);
 });
 test('preparation targets are exact roles for the actual models category and never execution records',()=>{
  for(const [kind,role]of [['audio','dialogue'],['images','ocr'],['images','local-image']] as const)assert.equal(preparationTargetFromHash('#/system/models?category='+kind+'&prepare='+role,kind),role);

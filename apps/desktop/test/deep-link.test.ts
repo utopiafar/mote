@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import {expect,it,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
 import {parseMoteLink,serializeMoteLink,deepLinkHash,type MoteLink} from '@mote/shared';
@@ -30,7 +31,7 @@ it('emits canonical links that the shared schema parses back to the exact target
 it('parses links serialized under the shared schema and opens them canonically',async()=>{
   const conversationId=randomUUID(),ref='capture:'+randomUUID();
   const link=parseMoteLink(serializeMoteLink({origin},{kind:'conversation',id:conversationId})) as MoteLink;
-  expect(desktopDeepLinkTarget(link,origin)).toEqual({status:'open',url:origin+'/#/ask?conversation='+conversationId});
+  expect(desktopDeepLinkTarget(link,origin)).toEqual({status:'open',url:origin+'/'+pageHash('chat',{conversation:conversationId})});
   const view={packageId:'mote.generated',routeId:'generated.editor',ref};
   const viewLink=parseMoteLink(serializeMoteLink({origin},{kind:'view',view})) as MoteLink;
   // No desktop plugin view routes exist yet, so the view lands on the reader.

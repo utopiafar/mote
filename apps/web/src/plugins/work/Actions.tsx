@@ -1,5 +1,5 @@
 import {ActionCapabilitySettings} from './ActionCapabilitySettings';
-import {formatEvidenceRef} from '@mote/shared';
+import {formatEvidenceRef,pageHash} from '@mote/shared';
 import {Todos} from './Todos';
 import { moteText } from '@mote/shared/i18n';
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
@@ -77,7 +77,7 @@ export function Actions({api,onOpen}:{api:ReturnType<typeof createApi>;onOpen:(i
  const openSettings=()=>{if(!timeZoneDraft&&data)setTimeZoneEdit({api,revision:data.revision,authorizationRevision:data.authorizationRevision,initialTimeZone:data.settings.timeZone,settings:structuredClone(data.settings)});setSettingsOpen(true);};
  const settingsDraft=timeZoneDraft?.settings??data?.settings;
  return <section className="actions-page actions-final">
- {!selectedCalendarId&&<><a className="back-link" href={returnTo??"#/today"}>← {returnTo?moteText('返回原文'):moteText('首页')}</a><header className="actions-final-heading"><h1>{moteText('待办与日程')}</h1>{workspaceTab==='calendar'?<button className="text-button" onClick={openSettings}>{moteText('日程设置')}</button>:<button className="button" onClick={()=>setNewTodoRequest(value=>value+1)}>{moteText('添加待办')}</button>}</header><nav className="actions-primary-tabs" aria-label={moteText('待办与日程')}>{[['todos',moteText('待办')],['calendar',moteText('日程')]].map(([value,label])=><button key={value} aria-selected={workspaceTab===value} onClick={()=>{if(value===workspaceTab||confirmNavigation()){setWorkspaceTab(value);setError('');}}}>{label}</button>)}</nav></>}
+ {!selectedCalendarId&&<><a className="back-link" href={returnTo??pageHash('chat')}>← {returnTo?moteText('返回原文'):moteText('聊天')}</a><header className="actions-final-heading"><h1>{moteText('待办与日程')}</h1>{workspaceTab==='calendar'?<button className="text-button" onClick={openSettings}>{moteText('日程设置')}</button>:<button className="button" onClick={()=>setNewTodoRequest(value=>value+1)}>{moteText('添加待办')}</button>}</header><nav className="actions-primary-tabs" aria-label={moteText('待办与日程')}>{[['todos',moteText('待办')],['calendar',moteText('日程')]].map(([value,label])=><button key={value} aria-selected={workspaceTab===value} onClick={()=>{if(value===workspaceTab||confirmNavigation()){setWorkspaceTab(value);setError('');}}}>{label}</button>)}</nav></>}
  {workspaceTab==='todos'&&!selectedCalendarId?<Todos api={api} onOpen={onOpen} newRequest={newTodoRequest} sourceEvidence={sourceEvidence} onCreateReturn={sourceEvidence?()=>{if(returnTo)window.location.hash=returnTo;else{const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);query.delete('todoEvidence');query.delete('returnTo');window.history.replaceState(null,'',route+(query.size?'?'+query:''));}}:undefined}/>:<>
  {(error||read.error!==undefined||deviceRead.error!==undefined||focused.error!==undefined)&&<p className="notice error" role="alert">{error||actionFailure(read.error??deviceRead.error??focused.error)}<button className="text-button" disabled={busy} onClick={()=>void refresh()}>{moteText('重新读取')}</button></p>}
  {read.loading&&!data&&<Loading/>}{feedError!==undefined&&<p role="status">{moteText('进度连接暂时中断，正在自动重连。')}</p>}

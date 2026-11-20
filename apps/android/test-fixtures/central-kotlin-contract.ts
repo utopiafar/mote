@@ -27,7 +27,7 @@ function checkPageRouteConstants(source: string): void {
   }
 }
 checkPageRouteConstants(kotlin);
-const drifted = kotlin.replace('const val chat = "ask"', 'const val chat = "chat"');
+const drifted = kotlin.replace(`const val chat = "${pageRoutes.chat}"`, 'const val chat = "drifted-chat"');
 assert.notEqual(drifted, kotlin, 'The drift self-check needs the generated chat constant');
 assert.throws(() => checkPageRouteConstants(drifted), /CentralPageRoutes\.chat/);
 const directory = await mkdtemp(join(tmpdir(), 'mote-kotlin-contract-'));

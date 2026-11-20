@@ -5,7 +5,7 @@ import java.net.URI
 /** Central page paths shared with packages/shared/src/page-routes.ts. The TS
  * contract test compares every constant; values change only with that table. */
 internal object CentralPageRoutes {
-    const val chat = "ask"
+    const val chat = "chat"
     const val library = "library"
     const val models = "system/models"
     const val skills = "system/plugins"
@@ -165,7 +165,7 @@ object MoteLink {
         val evidence = params["evidence"]?.firstOrNull()
         val conversation = params["conversation"]?.firstOrNull()
         return when (path) {
-            "/ask" -> when {
+            "/${CentralPageRoutes.chat}" -> when {
                 evidence != null -> {
                     val ref = reference(evidence) ?: return null
                     if (conversation == null) Route.Reference(ref) else uuidId(conversation)?.let { Route.Reference(ref, it) }
@@ -173,7 +173,7 @@ object MoteLink {
                 conversation != null -> uuidId(conversation)?.let { Route.Conversation(it) }
                 else -> null
             }
-            "/activity" -> params["work"]?.firstOrNull()?.takeIf(::runId)?.let { Route.Run(it) }
+            "/${CentralPageRoutes.activity}" -> params["work"]?.firstOrNull()?.takeIf(::runId)?.let { Route.Run(it) }
             "/view" -> {
                 val p = params["package"]?.firstOrNull(); val r = params["route"]?.firstOrNull()
                 if (p == null || r == null || evidence == null || !token.matches(p) || !token.matches(r)) null

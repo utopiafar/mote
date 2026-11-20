@@ -3,7 +3,7 @@
  * the revised page names (chat is the former ask page). Deep-link route kinds
  * stay in deep-link.ts. */
 export const pageRoutes = {
-  chat: 'ask',
+  chat: 'chat',
   library: 'library',
   models: 'system/models',
   skills: 'system/plugins',

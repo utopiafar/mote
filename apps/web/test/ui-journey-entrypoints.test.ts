@@ -4,21 +4,22 @@ import React, {act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale, getLocale} from '@mote/shared/i18n';
-import {Overview} from '../src/Overview';
+import {deepLinkHash,pageHash} from '@mote/shared';
 import {Insights} from '../src/plugins/discovery/Insights';
 import {Conversations} from '../src/plugins/ask/Conversations';
 import {Connections} from '../src/plugins/sources/Connections';
 import {webFeatures} from '../src/features/registry';
 import { featuresReady } from '../src/features/bootstrap.js';
 import {readPage} from '../src/navigation';
+import {readWorkspaceRoute} from '../src/workspace-route';
 import {primaryDestination} from '../src/WorkspaceNavigation';
-import {ApiError, type Api, type Answer, type Status} from '../src/api';
+import {ApiError, type Api, type Answer} from '../src/api';
 import type {PageProps} from '../src/features/types';
 import {modelView} from './fixtures/model-settings';
 
 const when = '2026-10-25T00:00:00Z';
 const captureId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-async function fixture(t: import('node:test').TestContext, hash = '#/today') {
+async function fixture(t: import('node:test').TestContext, hash = pageHash('chat')) {
   await featuresReady;
   const dom = new JSDOM('<!doctype html><div id="root"></div>', {url: 'http://localhost/' + hash, pretendToBeVisual: true});
   const before = new Map<string, PropertyDescriptor | undefined>(), previousLocale = getLocale();
@@ -40,6 +41,21 @@ async function fixture(t: import('node:test').TestContext, hash = '#/today') {
 }
 const button = (d: Document, label: string) => [...d.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!;
 const askSettings={revision:1,domains:[{id:'conversations',effective:{multipleConversations:true,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}},saved:{},fields:[],status:'applied'}]};
+
+test('NV3-05 native entrypoints and assistant links resolve to mounted Web pages',async()=>{
+  await featuresReady;
+  for(const [hash,page] of [
+    [pageHash('chat',{loginRequest:'generated-request'}),'ask'],
+    [deepLinkHash({kind:'conversation',id:captureId}),'ask'],
+    [deepLinkHash({kind:'reference',ref:'capture:'+captureId,conversation:captureId}),'ask'],
+    [pageHash('library',{evidence:'capture:'+captureId,recordingTool:'speakers'}),'archive'],
+    [pageHash('models',{category:'audio',prepare:'dialogue'}),'settings'],
+  ]){
+    assert.equal(readWorkspaceRoute(hash,readPage,[]).page,page);
+    assert.ok(webFeatures.page(page),hash);
+  }
+});
+
 function apiWith(read: (path: string, init?: RequestInit) => unknown): Api {
   return {request: async (path: string, init?: RequestInit) => {
     if (path.startsWith('/api/operations/changes')) return {ids: [], cursor: 0, hasMore: false, reset: false};
@@ -54,8 +70,8 @@ function apiWith(read: (path: string, init?: RequestInit) => unknown): Api {
   }, setAgentTimeout: () => {}} as Api;
 }
 
-test('a Home finding opens that exact report, reaches its evidence and does not start a new analysis', async t => {
-  const {root, d, tick} = await fixture(t), opened: string[] = [], writes: string[] = [];
+test('an exact finding opens its report and evidence without starting a new analysis', async t => {
+  const {root, d, tick} = await fixture(t, '#/library/insights?insight=chosen-report'), opened: string[] = [], writes: string[] = [];
   let finishBackground!: (value: unknown) => void;
   const background = new Promise(resolve => { finishBackground = resolve; });
   const report: Answer = {runId: 'chosen-report', answer: 'Generated chosen finding', trace: [], citations: [{id: captureId, appName: 'Generated note', capturedAt: when, excerpt: 'Generated source evidence'}]};
@@ -72,11 +88,7 @@ test('a Home finding opens that exact report, reaches its evidence and does not 
     if (path.startsWith('/api/library/browse')) return {items: [],nextCursor:null};
     return {items: []};
   });
-  await act(async () => root.render(React.createElement(Overview, {api, status: {} as Status, devices: [], insights: [other, report], onPage: () => {}, onOpen: ref => opened.push(ref), range: {}, onMedia: () => {}})));
-  const card = d.querySelector<HTMLAnchorElement>('.home-insight')!;
-  assert.match(card.textContent!, /Generated chosen finding/);
-  await act(async () => card.click()); await tick();
-  assert.equal(location.hash, '#/library/insights?insight=chosen-report');
+  assert.equal(readPage(location.hash),'insights');
   await act(async () => root.render(React.createElement(Insights, {api, range: {}, configured: true, onOpen: ref => opened.push(ref), onSettings: () => {}, onChanged: () => {}})));
   assert.match(d.querySelector('.insight-report')!.textContent!, /Generated chosen finding/);
   assert.doesNotMatch(d.querySelector('.insight-report')!.textContent!, /Generated unrelated report/);
@@ -128,6 +140,7 @@ test('source device pairing and AI access use distinct routes and inventories wi
     if (path === '/api/connectors/lark') return {};
     if (path === '/api/sources') return {items: []};
     if (path === '/api/configuration') return {groups: []};
+    if (path === '/api/connections/mcp/calendar' && !init?.method) return {items: []};
     if (path === '/api/connections') return {items: credentials, mcp: {enabled: true, writeEnabled: true, writeSourceIds: ['generated-source']}};
     writes.push({path, ...(init?.body ? {body: JSON.parse(String(init.body))} : {})});
     return {revoked: true};
@@ -155,7 +168,7 @@ test('source device pairing and AI access use distinct routes and inventories wi
   assert.deepEqual(writes, []);
 
   await act(async () => { location.hash = '#/connections/access'; }); await renderRoute();
-  assert.equal(primaryDestination('connections'), 'connections');
+  assert.equal(primaryDestination('connections'), 'sources');
   assert.equal(d.querySelector('h1')!.textContent, 'AI 接入');
   assert.equal(d.querySelector('[aria-label="设备权限"]'), null);
   assert.equal(d.querySelector('[aria-label="MCP 访问权限"]'), null, 'authority controls appear only in the explicit creation flow');
@@ -180,7 +193,7 @@ test('source device pairing and AI access use distinct routes and inventories wi
 
 for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored ${kind} conversation submits its current scope and clears only the next turn`, async t => {
   const conversationId = 'generated-' + kind;
-  const {root, d, tick} = await fixture(t, '#/ask?' + new URLSearchParams({conversation: conversationId, questionDraft: 'Generated follow-up'}));
+  const {root, d, tick} = await fixture(t, pageHash('chat',{conversation: conversationId, questionDraft: 'Generated follow-up'}));
   const materialRef='material:mat_'+'a'.repeat(64)+'@'+'b'.repeat(64);
   const scope = kind === 'anchor' ? {anchorEvidenceIds: [captureId]} : kind === 'material'?{anchorMaterialRef:materialRef}:{evidenceIds: [captureId]};
   const summary = {id: conversationId, title: 'Generated restored conversation', createdAt: when, updatedAt: when, turnCount: 1, scope, status: 'completed'};
@@ -218,10 +231,11 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
   await tick();
   assert.equal(button(d, clearLabel).disabled, false);
   await act(async () => button(d, clearLabel).click());
-  assert.match(scopeBar().textContent!, /全部资料/);
+  assert.equal(scopeBar(),null);
+  assert.equal(d.querySelector<HTMLSelectElement>('.conversation-source-scope select')?.value,'all');
   assert.match(d.querySelector('.conversation-messages')!.textContent!, /Generated original answer/, 'clearing the next turn does not rewrite historical answers');
   await act(async () => {
-    location.hash = '#/ask?' + new URLSearchParams({conversation: conversationId, questionDraft: 'Generated unscoped follow-up'});
+    location.hash = pageHash('chat',{conversation: conversationId, questionDraft: 'Generated unscoped follow-up'});
     window.dispatchEvent(new window.HashChangeEvent('hashchange'));
   }); await tick();
   await submit();
@@ -233,13 +247,13 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
 });
 
 test('an in-flight chat upload and drafts remain owned by their authenticated API across a node switch',async t=>{
- const {root,d,tick}=await fixture(t,'#/ask?questionDraft=Generated%20owner%20A%20draft');let finish!:(value:unknown)=>void,signal:AbortSignal|undefined,sourceId='';const pending=new Promise(resolve=>finish=resolve),oldReads:string[]=[];
+ const {root,d,tick}=await fixture(t,pageHash('chat',{questionDraft:'Generated owner A draft'}));let finish!:(value:unknown)=>void,signal:AbortSignal|undefined,sourceId='';const pending=new Promise(resolve=>finish=resolve),oldReads:string[]=[];
  const oldApi=apiWith((path,init)=>{oldReads.push(path);if(path==='/api/sources'&&init?.method==='POST'){sourceId=JSON.parse(String(init.body)).id;signal=init.signal as AbortSignal;return pending;}return {items:[]};});
  const currentApi=apiWith(()=>({items:[]}));
  const view=(api:Api)=>React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:(answer:Answer)=>answer.answer});
  await act(async()=>root.render(view(oldApi)));assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner A draft');
  const picker=d.querySelector<HTMLInputElement>('.conversation-content input[type=file]')!;Object.defineProperty(picker,'files',{configurable:true,value:[new File(['generated'],'generated.png',{type:'image/png'})]});await act(async()=>picker.dispatchEvent(new window.Event('change',{bubbles:true})));assert.ok(signal);
- await act(async()=>{location.hash='#/ask?questionDraft=Generated%20owner%20B%20draft';root.render(view(currentApi));});assert.equal(signal!.aborted,true);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner B draft');
+ await act(async()=>{location.hash=pageHash('chat',{questionDraft:'Generated owner B draft'});root.render(view(currentApi));});assert.equal(signal!.aborted,true);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner B draft');
  await act(async()=>finish({id:sourceId}));await tick();assert.equal(d.querySelectorAll('.chat-attachment').length,0);assert.equal(oldReads.some(path=>path.startsWith('/api/file-sync/')),false,'an aborted old owner upload cannot continue admission');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner B draft');
  await act(async()=>root.render(view(oldApi)));assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner A draft');
  assert.equal(d.querySelectorAll('.chat-attachment:not(.chat-image-upload)').length,0,'the aborted upload is never admitted as an attachment');

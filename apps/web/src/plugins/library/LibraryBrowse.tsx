@@ -24,7 +24,7 @@ import { useResource } from '../../useResource';
 import {useImportReturnRead} from '../../useImportReturnRead';
 import {captureImportSnapshot,importSnapshot} from '../../import-navigation';
 import {readPage} from '../../navigation';
-import { useMaterialPreview, useNearViewport } from '../../HomeMaterialRow';
+import { useMaterialPreview, useNearViewport } from '../../material-preview';
 import { Loading } from '../../Loading';
 function libraryTypeLabel(value:string){
     const labels:Record<LibraryMaterialType,string>={note:moteText('记录'),document:moteText('文档'),image:moteText('图片'),coding:moteText('Coding 会话'),transcript:moteText('转写'),email:moteText('邮件'),calendar:moteText('日程'),reference:moteText('引用')};

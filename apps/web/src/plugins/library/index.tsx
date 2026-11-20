@@ -1,4 +1,5 @@
 import {moteText} from '@mote/shared/i18n';
+import {pageRoutes} from '@mote/shared';
 import type {PageEntry,PageProps} from '../../features/types';
 import type {BuiltinWebPlugin} from '../types';
 import {Archive} from './Archive';
@@ -17,8 +18,9 @@ export {builtinCollections} from './collections';
 export const pages: PageEntry[] = [
   {
     id: 'archive',
-    route: 'library',
+    route: pageRoutes.library,
     label: moteText('资料库'),
+    navItem: 'library',
     section: 'library',
     order: 0,
     featureId: 'mote.library',

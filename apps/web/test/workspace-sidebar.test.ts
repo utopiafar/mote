@@ -1,52 +1,134 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { JSDOM } from 'jsdom';
-import { desktopUiLayout, uiDestinationPresentation } from '@mote/shared';
-import { configureLocale } from '@mote/shared/i18n';
-import { WorkspaceSidebar } from '../src/WorkspaceSidebar';
-import { webPresentation } from '../src/presentation';
+import test, {type TestContext} from 'node:test';
+import React, {act, useContext, useSyncExternalStore} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {createRoot} from 'react-dom/client';
+import {JSDOM} from 'jsdom';
+import {navigationFor, pageHash, type NavItemId, type NavState} from '@mote/shared';
+import {WorkspaceSidebar} from '../src/WorkspaceSidebar';
+import {featuresReady} from '../src/features/bootstrap';
+import {WebFeatureHost} from '../src/features/host';
+import {webFeatures} from '../src/features/registry';
+import {readPage, workspaceNavigation} from '../src/navigation';
+import {NavStateContext, useNavState} from '../src/use-nav-state';
+import type {Api} from '../src/api';
 
-function render(page: string) {
-  const markup = renderToStaticMarkup(React.createElement(WorkspaceSidebar, {
-    layout: desktopUiLayout, page, onPage: () => {}, connection: null, verified: false, onConnect: () => {},
-  }));
-  return new JSDOM(markup).window.document;
+const ids=(d:Document,group:'daily'|'manage')=>
+  [...d.querySelectorAll(`[data-nav-group="${group}"] [data-nav-item]`)].map(button=>button.getAttribute('data-nav-item'));
+
+test('NV3-01 Chat is selected and the two groups follow the shared manifest and mounted pages',async()=>{
+  await featuresReady;
+  const groups=workspaceNavigation();
+  const markup=renderToStaticMarkup(React.createElement(WorkspaceSidebar,{groups,page:readPage(''),onPage:()=>{}}));
+  const dom=new JSDOM(markup);
+  try{
+    const d=dom.window.document;
+    const expected=navigationFor({
+      enabledPackages:new Set(webFeatures.registry.inventory().features.map(feature=>feature.id)),
+      registered:new Set<NavItemId>(['chat','library','memory','skills','connections','settings']),
+    });
+    assert.deepEqual(ids(d,'daily'),expected.daily.map(item=>'id' in item?item.id:item.pageId));
+    assert.deepEqual(ids(d,'manage'),expected.manage.map(item=>item.id));
+    assert.deepEqual(ids(d,'daily'),['chat','library']);
+    assert.deepEqual(ids(d,'manage'),['memory','skills','connections','settings']);
+    assert.equal(d.querySelector('[data-nav-item="chat"]')?.getAttribute('aria-current'),'page');
+    assert.ok(d.querySelector('#primary-navigation .brand svg'));
+    assert.equal(d.querySelector('#primary-navigation .brand')?.textContent,'');
+    assert.equal(d.querySelector('.node-state, .workspace-node-menu, [data-nav-item="feed"], [data-nav-item="ideas"], [data-nav-item="goals"]'),null);
+    for(const button of d.querySelectorAll('[data-nav-item]'))assert.ok(button.querySelector('svg'));
+    assert.equal(readPage(pageHash('chat')),'ask');
+  }finally{dom.window.close();}
+});
+
+async function fixture(t:TestContext){
+  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true});
+  const previous=new Map<string,PropertyDescriptor|undefined>();
+  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){
+    previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));
+    Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});
+  }
+  const root=createRoot(dom.window.document.getElementById('root')!);
+  const host=new WebFeatureHost();
+  t.after(async()=>{
+    await act(async()=>root.unmount());
+    await host.close();
+    for(const [key,value] of previous){
+      if(value)Object.defineProperty(globalThis,key,value);
+      else Reflect.deleteProperty(globalThis,key);
+    }
+    dom.window.close();
+  });
+  const install=(featureId:string,navItem:NavItemId)=>host.install({id:featureId,version:'1',components:[]},[
+    {surface:'page',entry:{id:'generated-'+navItem,navItem,featureId,render:()=>null}},
+  ]);
+  return {root,d:dom.window.document,host,install};
 }
 
-test('web and Mac share the desktop primary and lower navigation destinations', () => {
-  assert.equal(webPresentation.getSnapshot().layout.id, desktopUiLayout.id);
-  assert.deepEqual(webPresentation.getSnapshot().layout.primary, ['home', 'library', 'sources', 'ask']);
-  assert.deepEqual(webPresentation.getSnapshot().layout.secondary, ['connections', 'activity']);
-});
-
-test('the sidebar keeps four primary text labels and moves AI access and activity to the bottom', () => {
-  configureLocale(() => 'zh-CN');
-  const document = render('sources');
-  const primary = Array.from(document.querySelectorAll('#primary-navigation > nav button'));
-  assert.deepEqual(primary.map(button => button.textContent), ['首页', '资料库', '来源', '问一问']);
-  assert.deepEqual(primary.map(button => button.querySelector('svg') !== null), [true, true, true, true]);
-  assert.equal(document.querySelector('.nav-glyph'), null);
-  assert.equal(primary.find(button => button.getAttribute('aria-current') === 'page')?.textContent, '来源');
-
-  const lower = Array.from(document.querySelectorAll('.sidebar-bottom > button'));
-  assert.deepEqual(lower.map(button => button.textContent), ['AI 接入', '活动', '设置']);
-  assert.deepEqual(lower.map(button => button.querySelector('svg') !== null), [true, true, true]);
-  assert.equal(lower[0].className, 'utility-nav');
-  assert.equal(lower[1].className, 'utility-nav');
-  assert.match(lower[0].innerHTML, /lucide-bot/);
-  assert.match(lower[1].innerHTML, /lucide-activity/);
-});
-
-test('AI access and activity report their own selected state in the lower region', () => {
-  configureLocale(() => 'zh-CN');
-  for (const [page, label] of [['connections', 'AI 接入'], ['activity', '活动']] as const) {
-    const document = render(page);
-    const active = Array.from(document.querySelectorAll('.sidebar-bottom > button'))
-      .filter(button => button.getAttribute('aria-current') === 'page');
-    assert.deepEqual(active.map(button => button.textContent), [label]);
-    assert.equal(document.querySelector('#primary-navigation > nav [aria-current=page]'), null);
-    assert.equal(uiDestinationPresentation[page === 'connections' ? 'connections' : 'activity'].label, label);
+test('NV3-02 removing the Feed plugin closes its slot without disturbing neighboring destinations',async t=>{
+  const {root,d,host,install}=await fixture(t);
+  await install('mote.ask','chat');
+  const feed=await install('mote.assistant','feed');
+  await install('mote.library','library');
+  const destinations:string[]=[];
+  function Shell(){
+    useSyncExternalStore(host.registry.subscribe,host.registry.getRevision,host.registry.getRevision);
+    return React.createElement(WorkspaceSidebar,{groups:workspaceNavigation(host),page:'generated-chat',onPage:page=>destinations.push(page)});
   }
+  await act(async()=>root.render(React.createElement(Shell)));
+  assert.deepEqual(ids(d,'daily'),['chat','feed','library']);
+  await act(async()=>feed.dispose());
+  assert.deepEqual(ids(d,'daily'),['chat','library']);
+  assert.equal(d.querySelectorAll('[data-nav-group="daily"] button').length,2);
+  await act(async()=>d.querySelector<HTMLButtonElement>('[data-nav-item="library"]')!.click());
+  assert.deepEqual(destinations,['generated-library']);
+});
+
+test('NV3-03 one visible poll updates badges and revisions, and zero removes the badges',async t=>{
+  const {root,d,host,install}=await fixture(t);
+  await install('mote.assistant','ideas');
+  await install('mote.connections','connections');
+  t.mock.timers.enable({apis:['setTimeout']});
+  let hidden=false;
+  Object.defineProperty(d,'hidden',{get:()=>hidden});
+  let server:NavState={
+    revisions:{library:'l1',cards:'c1',commitments:'g1',matters:'t1',memory:'m1',sources:'s1',plugins:'p1'},
+    badges:{ideas:3,connections:true},
+  };
+  const reads:string[]=[];
+  const api={request:async(path:string,init:RequestInit)=>{
+    reads.push(path);
+    assert.equal(init.method,undefined);
+    return server;
+  }} as Api;
+  function PageRevision(){
+    return React.createElement('output',{'data-revision':useContext(NavStateContext)?.revisions.cards});
+  }
+  function Shell(){
+    return React.createElement(NavStateContext.Provider,{value:useNavState(api)},
+      React.createElement(WorkspaceSidebar,{groups:workspaceNavigation(host),page:'generated-ideas',onPage:()=>{}}),
+      React.createElement(PageRevision));
+  }
+  await act(async()=>root.render(React.createElement(Shell)));
+  assert.equal(d.querySelector('[data-nav-badge="ideas"]')?.textContent,'3');
+  assert.ok(d.querySelector('[data-nav-badge="connections"]'));
+  assert.equal(d.querySelector('output')?.dataset.revision,'c1');
+  assert.deepEqual(reads,['/api/nav-state']);
+  server={revisions:{...server.revisions,cards:'c2'},badges:{ideas:0,connections:false}};
+  await act(async()=>t.mock.timers.tick(29_999));
+  assert.equal(reads.length,1);
+  await act(async()=>t.mock.timers.tick(1));
+  assert.equal(reads.length,2);
+  assert.equal(d.querySelector('[data-nav-badge]'),null);
+  assert.equal(d.querySelector('output')?.dataset.revision,'c2');
+  await act(async()=>{
+    hidden=true;
+    d.dispatchEvent(new window.Event('visibilitychange'));
+    t.mock.timers.tick(60_000);
+  });
+  assert.equal(reads.length,2);
+  await act(async()=>{
+    hidden=false;
+    d.dispatchEvent(new window.Event('visibilitychange'));
+  });
+  assert.deepEqual(reads,Array(3).fill('/api/nav-state'));
 });

@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import '@mote/shared/i18n-all';
 import {modelView} from './fixtures/model-settings';
 import test from 'node:test';
@@ -31,7 +32,7 @@ function apiWith(read:(path:string,init?:RequestInit)=>unknown,owner?:string):Ap
 }
 async function fixture(t:any){
  let locale:'zh-CN'|'en'='zh-CN';configureLocale(()=>locale);
- const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/ask',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();
+ const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/'+pageHash('chat'),pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();
  for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  dom.window.HTMLElement.prototype.scrollIntoView=()=>{};
  const {createRoot}=await import('react-dom/client'),{Conversations}=await import('../src/plugins/ask/Conversations.js'),{AnswerView}=await import('../src/shell-components.js');
@@ -175,8 +176,8 @@ test('draft survives background/locale refresh and supplemental routing, while n
  await f.type('Generated preserved draft');const input=f.input(),cite=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;cite.focus();await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));
  assert.equal(f.input(),input);assert.equal(input.value,'Generated preserved draft');assert.equal(cite.isConnected,true);assert.equal(f.d.activeElement,cite);
  f.locale('en');await f.render(api);assert.equal(f.input().value,'Generated preserved draft');assert.match(f.d.querySelector('.inline-citation')!.textContent!,/Source/);f.locale('zh-CN');await f.render(api);
- await act(async()=>{f.dom.window.history.replaceState(null,'','#/ask?question=generated-question');f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});
- assert.equal(f.input(),null);await act(async()=>{f.dom.window.history.replaceState(null,'','#/ask');f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});assert.equal(f.input().value,'Generated preserved draft');
+ await act(async()=>{f.dom.window.history.replaceState(null,'',pageHash('chat',{question:'generated-question'}));f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});
+ assert.equal(f.input(),null);await act(async()=>{f.dom.window.history.replaceState(null,'',pageHash('chat'));f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});assert.equal(f.input().value,'Generated preserved draft');
  revision=2;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));assert.equal(f.d.querySelectorAll('.conversation-turn').length,1);assert.equal(f.d.querySelectorAll('.inline-citation').length,0);assert.match(f.d.body.textContent!,/相关证据已删除/);assert.equal(f.input().value,'Generated preserved draft');
  await f.click('新对话');assert.equal(f.input().value,'Generated preserved draft');await f.click('舍弃并切换');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});assert.equal(f.input().value,'');await f.type('Generated new draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.equal(f.input().value,'Generated new draft');await f.click('舍弃并切换');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});assert.equal(f.input().value,'');
  await f.type('Generated deleted draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('[aria-label="对话更多"]')!.click());await f.click('删除这段对话');await f.click('删除对话');assert.equal(f.input().value,'');

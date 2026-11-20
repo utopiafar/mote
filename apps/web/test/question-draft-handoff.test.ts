@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -47,8 +48,8 @@ test('Home/search replacement keeps cancelled work and submits no image after ex
 
 test('a failed image alone is guarded, then discarded from the remounted composer only after confirmation',async t=>{
  const{root,d,w}=await fixture(t),api=owner((path,init)=>{if(path==='/api/sources')return JSON.parse(String(init.body));throw new ApiError('Generated upload failure',503);});
- w.location.hash='#/ask';await view(root,api);await chooseFile(d,'failed-only.png');assert.ok(d.querySelector('.chat-image-upload[data-status=failed]'));
- let prompts=0;w.confirm=()=>{prompts++;return false;};await changeHash(d,api,'New search');assert.equal(prompts,1);assert.equal(w.location.hash,'#/ask');assert.ok(d.querySelector('.chat-image-upload[data-status=failed]'));
+ w.location.hash=pageHash('chat');await view(root,api);await chooseFile(d,'failed-only.png');assert.ok(d.querySelector('.chat-image-upload[data-status=failed]'));
+ let prompts=0;w.confirm=()=>{prompts++;return false;};await changeHash(d,api,'New search');assert.equal(prompts,1);assert.equal(w.location.hash,pageHash('chat'));assert.ok(d.querySelector('.chat-image-upload[data-status=failed]'));
  w.confirm=()=>true;await changeHash(d,api,'New search');assert.equal(Boolean(d.querySelector('.chat-attachment')),false);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New search');
  await act(async()=>root.render(null));await view(root,api);assert.equal(Boolean(d.querySelector('.chat-attachment')),false);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New search');
 });
@@ -56,7 +57,7 @@ test('a failed image alone is guarded, then discarded from the remounted compose
 test('discarding a pending upload fences its late receipt while preserving an unresolved query',async t=>{
  const{root,d,w}=await fixture(t);let finish!:(value:unknown)=>void,manifest:any,signal:AbortSignal|undefined;const upload=new Promise(resolve=>finish=resolve),posts:any[]=[];
  const api=owner((path,init)=>{if(path==='/api/sources')return JSON.parse(String(init.body));if(path==='/api/file-sync/v1/uploads'){manifest=JSON.parse(String(init.body));signal=init.signal as AbortSignal;return upload;}if(path==='/api/query-runs'){posts.push(JSON.parse(String(init.body)));throw new ApiError('Generated rejection',400);}throw Error(path);});
- w.location.hash='#/ask';await view(root,api);await chooseFile(d,'held.png');assert.equal(d.querySelector('.chat-image-upload')?.getAttribute('data-status'),'uploading');assert.ok(signal);
+ w.location.hash=pageHash('chat');await view(root,api);await chooseFile(d,'held.png');assert.equal(d.querySelector('.chat-image-upload')?.getAttribute('data-status'),'uploading');assert.ok(signal);
  const retained={kind:'owned' as const,id:'old-run',body:'exact old request',question:'Earlier submitted question',attachments:[],unknown:true,...queryRecovery.versions(api)};await act(async()=>queryRecovery.set(api,retained));
  w.confirm=()=>true;await changeHash(d,api,'New search while old receipt is pending');assert.equal(signal!.aborted,true);assert.equal(queryRecovery.get(api),retained);
  const id='22222222-2222-4222-8222-222222222222';await act(async()=>finish({ack:{id,captureId:id,sourceId:manifest.sourceId,externalId:manifest.item.externalId,revision:manifest.item.revision,sha256:manifest.sha256,sizeBytes:manifest.sizeBytes,receipt:{version:2,id,kind:'file-revision',state:'received',duplicate:false,sourceId:manifest.sourceId,externalId:manifest.item.externalId,revision:manifest.item.revision}}}));
@@ -71,21 +72,21 @@ test('an old pending query cannot reclaim the new Home/search question after its
  const retained={kind:'owned' as const,id:run.id,body:'old exact body',question:'Old question',attachments:[],unknown:true,run,conversationId:run.conversationId,...queryRecovery.versions(api)};
  queryRecovery.set(api,retained);unsentDrafts.set(api,{question:'Old unsent draft',attachments:[]});w.confirm=()=>true;
  await changeHash(d,api,'New independent search question');await strictView(root,api);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New independent search question');
- await act(async()=>finish({...run,status:'completed'}));assert.equal(queryRecovery.get(api),undefined);assert.equal(w.location.hash,'#/ask');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New independent search question');
+ await act(async()=>finish({...run,status:'completed'}));assert.equal(queryRecovery.get(api),undefined);assert.equal(w.location.hash,pageHash('chat'));assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New independent search question');
  await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(posts.length,1);assert.equal(posts[0].question,'New independent search question');assert.equal(posts[0].conversationId,mainId);
 });
 
 test('a directly opened questionDraft route replaces old attachments before StrictMode restoration',async t=>{
  const{root,d,w}=await fixture(t),api=owner();unsentDrafts.set(api,{question:'Old draft',attachments:[{id:'11111111-1111-4111-8111-111111111111',name:'old.png',mimeType:'image/png'}]});
- w.location.hash='#/ask?questionDraft=Direct%20new%20question';await strictView(root,api);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Direct new question');assert.equal(Boolean(d.querySelector('.chat-attachment')),false);assert.deepEqual(unsentDrafts.get(api)?.attachments,[]);
+ w.location.hash=pageHash('chat',{questionDraft:'Direct new question'});await strictView(root,api);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Direct new question');assert.equal(Boolean(d.querySelector('.chat-attachment')),false);assert.deepEqual(unsentDrafts.get(api)?.attachments,[]);
 });
 
 test('a search handoff while Ask is already showing history starts a new conversation and drops old scope',async t=>{
  const{root,d,w}=await fixture(t),posts:any[]=[],oldId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',when='2026-10-29T01:00:00Z',base=owner((path,init)=>{if(path==='/api/conversations/messages'){posts.push(JSON.parse(String(init.body)));throw new ApiError('Generated rejection',400);}throw Error(path);});
  const summary={id:oldId,title:'Previous conversation',createdAt:when,updatedAt:when,turnCount:1,scope:{evidenceIds:['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']},status:'completed'};
  const api={...base,request:async(path:string,init?:RequestInit)=>{if(path==='/api/conversations?limit=30')return{items:[summary]};if(path==='/api/conversations/'+oldId)return{...summary,revision:1,turns:[{id:'old-turn',question:'Previous question',status:'completed',result:{answer:'Previous answer',citations:[],trace:[],runId:'old'}}]};return base.request(path,init);}} as Api;
- w.location.hash='#/ask';await strictView(root,api);await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.ok(d.querySelector('#conversation-turn-old-turn'));assert.ok(d.querySelector('nav[aria-label="查询范围"]'));
+ w.location.hash=pageHash('chat');await strictView(root,api);await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.ok(d.querySelector('#conversation-turn-old-turn'));assert.ok(d.querySelector('nav[aria-label="查询范围"]'));
  await changeHash(d,api,'A new search question');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'A new search question');assert.equal(Boolean(d.querySelector('#conversation-turn-old-turn')),false);assert.equal(Boolean(d.querySelector('nav[aria-label="查询范围"]')),false);
  await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(posts.length,1);assert.equal(posts[0].question,'A new search question');assert.equal(posts[0].conversationId,mainId);assert.ok(!posts[0].scope?.evidenceIds?.length);
 });

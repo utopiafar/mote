@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {pageHash,pageRoutes} from '@mote/shared';
 import { canonicalDestination, readWorkspaceRoute, workspaceHash } from '../src/workspace-route';
 const collections = ['materials', 'records', 'segments', 'sources', 'files', 'activity', 'media', 'memories', 'extension'];
-const readPage = (hash:string)=>hash.replace(/^#\//,'').split('?')[0]==='library'?'archive':'overview';
+const readPage=(hash:string)=>{
+  const route=hash.replace(/^#\/?/,'').split('?')[0]||pageRoutes.chat;
+  return route===pageRoutes.library?'archive':route===pageRoutes.chat?'ask':'unavailable';
+};
 test('collection links use explicit query parameters while retired path aliases fall through', () => {
   for(const collection of ['files','segments','materials','memories']){
     assert.deepEqual(readWorkspaceRoute('#/library?view='+collection,readPage,collections),{page:'archive',collection});
-    assert.deepEqual(readWorkspaceRoute('#/library/'+collection,readPage,collections),{page:'overview',collection:'materials'});
+    assert.deepEqual(readWorkspaceRoute('#/library/'+collection,readPage,collections),{page:'unavailable',collection:'materials'});
   }
 });
 test('canonical destinations no longer rewrite retired page names',()=>{
@@ -26,11 +30,11 @@ test('switching library types preserves direct evidence and other filters', () =
   assert.equal(query.get('view'),'files');
   assert.equal(query.get('evidence'),'abc');
   assert.equal(query.get('after'),'2026-01-01');
-  assert.equal(workspaceHash('today'),'#/today');
+  assert.equal(workspaceHash(pageRoutes.chat),pageHash('chat'));
 });
 
-test('overview is the default while explicit library and raw links retain their meaning',()=>{
-  for(const hash of ['', '#', '#/'])assert.deepEqual(readWorkspaceRoute(hash,readPage,collections),{page:'overview',collection:'materials'});
+test('Chat is the default while explicit library and raw links retain their meaning',()=>{
+  for(const hash of ['', '#', '#/'])assert.deepEqual(readWorkspaceRoute(hash,readPage,collections),{page:'ask',collection:'materials'});
   assert.deepEqual(readWorkspaceRoute('#/library',readPage,collections),{page:'archive',collection:'materials'});
   assert.deepEqual(readWorkspaceRoute('#/library?view=records',readPage,collections),{page:'archive',collection:'records'});
 });

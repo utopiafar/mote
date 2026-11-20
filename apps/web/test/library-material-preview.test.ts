@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {LibraryMaterialRow} from '../src/plugins/library/LibraryBrowse';
-import {HomeMaterialRow,type RecentMaterial} from '../src/HomeMaterialRow';
+import type {Material} from '../src/Materials';
 import {type Api,ApiError} from '../src/api';
 const capture='11111111-1111-4111-8111-111111111111';
-const item={id:'generated-material',ref:'material:generated-material@revision-one',revision:'revision-one',kind:'mote.file',schemaVersion:1,title:'Generated original image',textLength:20,createdAt:'2026-10-29T00:00:00Z',updatedAt:'2026-10-29T00:00:00Z',origin:{sourceId:'generated-source'}} as RecentMaterial;
+const item={id:'generated-material',ref:'material:generated-material@revision-one',revision:'revision-one',kind:'mote.file',schemaVersion:1,title:'Generated original image',textLength:20,createdAt:'2026-10-29T00:00:00Z',updatedAt:'2026-10-29T00:00:00Z',coverage:{state:'complete'},retention:{original:'retained'},origin:{sourceId:'generated-source'}} as Material;
 
 async function fixture(t:TestContext){
  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost',pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>(),opened:string[]=[],urls:Blob[]=[],revoked:string[]=[],commits:(string|null)[]=[];
@@ -15,7 +15,7 @@ async function fixture(t:TestContext){
  const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!);
  t.after(async()=>{await act(async()=>root.unmount());URL.createObjectURL=create;URL.revokeObjectURL=revoke;for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});
  function ObserveCommit(){React.useLayoutEffect(()=>{commits.push(dom.window.document.querySelector('img')?.getAttribute('src')??null);});return null;}
- const render=async(api:Api,canPreview=true,material=item,canRead=true)=>{await act(async()=>root.render(React.createElement(React.Fragment,null,React.createElement(HomeMaterialRow,{api,item:material,canPreview,canRead,onOpen:ref=>opened.push(ref)}),React.createElement(ObserveCommit))));};
+ const render=async(api:Api,canPreview=true,material=item,canRead=true)=>{await act(async()=>root.render(React.createElement(React.Fragment,null,React.createElement(LibraryMaterialRow,{api,item:material,selected:false,preview:{image:canPreview,read:canRead},onSelect:ref=>opened.push(ref)}),React.createElement(ObserveCommit))));};
  return {d:dom.window.document,root,render,opened,urls,revoked,commits};
 }
 function apiFor(reads:string[],options:{size?:number;retained?:boolean;capabilities?:string[];featuresError?:boolean;raw?:Api['raw']}={}){
@@ -30,16 +30,16 @@ function apiFor(reads:string[],options:{size?:number;retained?:boolean;capabilit
  },raw:options.raw??(async(path:string)=>{reads.push(path);return new Response(new Uint8Array([1,2,3,4]),{headers:{'Content-Type':'image/jpeg'}});})} as Api;
 }
 
-test('Home preview pins membership and text to the visible revision and opens the canonical material',async t=>{
+test('Library preview pins membership and text to the visible revision and opens the canonical material',async t=>{
  const f=await fixture(t),reads:string[]=[];await f.render(apiFor(reads));
  assert.ok(reads.includes('/api/materials/generated-material/members?revision=revision-one&offset=0&limit=1'));
  assert.ok(reads.includes('/api/materials/generated-material/read?revision=revision-one&offset=0&length=240'));
- assert.ok(reads.includes('/api/files/'+capture+'/thumbnail'));assert.equal(reads.some(path=>path.endsWith('/content')),false);assert.equal(f.urls[0].type,'image/jpeg');assert.equal(f.d.querySelector('img')?.getAttribute('src'),'blob:generated-1');assert.match(f.d.querySelector('.home-material-excerpt')!.textContent!,/Generated exact original excerpt/);
+ assert.ok(reads.includes('/api/files/'+capture+'/thumbnail'));assert.equal(reads.some(path=>path.endsWith('/content')),false);assert.equal(f.urls[0].type,'image/jpeg');assert.equal(f.d.querySelector('img')?.getAttribute('src'),'blob:generated-1');assert.match(f.d.querySelector('.library-record-preview')!.textContent!,/Generated exact original excerpt/);
  await act(async()=>f.d.querySelector('button')!.click());assert.deepEqual(f.opened,[item.ref]);
  await f.render(apiFor([], {retained:false}));assert.equal(f.d.querySelector('img'),null);assert.deepEqual(f.revoked,['blob:generated-1']);
 });
 
-test('missing originals and server-rejected thumbnails never fetch an original for Home',async t=>{
+test('missing originals and server-rejected thumbnails never fetch an original for Library',async t=>{
  const f=await fixture(t);
  const missing:string[]=[];await f.render(apiFor(missing,{retained:false}));
  assert.equal(missing.some(path=>path.endsWith('/content')||path.endsWith('/thumbnail')),false);assert.equal(f.d.querySelector('img'),null);assert.ok(f.d.querySelector('button'));
@@ -47,7 +47,7 @@ test('missing originals and server-rejected thumbnails never fetch an original f
  const reads:string[]=[];await f.render(apiFor(reads),false);assert.equal(reads.some(path=>path.includes('/members?')||path.startsWith('/api/files/')),false);
 });
 
-test('a late thumbnail from the previous node cannot populate the new node Home thumbnail',async t=>{
+test('a late thumbnail from the previous node cannot populate the new node Library thumbnail',async t=>{
  const f=await fixture(t);let resolve!: (response:Response)=>void,signal:AbortSignal|undefined;
  const old=apiFor([],{raw:async(_path,init)=>{signal=init?.signal??undefined;return new Promise(done=>resolve=done);}});
  await f.render(old);await f.render(apiFor([],{retained:false}));assert.equal(signal?.aborted,true);
@@ -66,19 +66,19 @@ test('authored note previews honor typed spans and keep owner JSON body literal 
  const f=await fixture(t),body='{"captureId":"This JSON is owner-authored body"}',note={...item,kind:'mote.note',schemaVersion:2,ref:'material:generated-material@note-one',revision:'note-one',title:'Generated short note'};
  const response=(ref:string,text:string)=>({material:{ref},text:text+'{"captureId":"generated-storage-metadata"}',spans:[{kind:'text',format:'plain',pageRange:{start:0,end:text.length}},{kind:'text',format:'json',pageRange:{start:text.length,end:text.length+42}}]});
  let finish!:(value:unknown)=>void;const old={request:async()=>new Promise(resolve=>finish=resolve)} as Api;await f.render(old,false,note);
- const reads:string[]=[],current={request:async(path:string)=>{reads.push(path);return response(note.ref,body);}}as Api;await f.render(current,false,note);assert.equal(f.d.querySelector('.home-material-excerpt')!.textContent,body);assert.doesNotMatch(f.d.body.textContent!,/generated-storage-metadata/);assert.ok(reads[0].includes('revision=note-one&offset=0&length=240'));
- await act(async()=>finish(response(note.ref,'Generated old owner body')));assert.equal(f.d.querySelector('.home-material-excerpt')!.textContent,body);
- const replacement={...note,ref:'material:generated-material@note-two',revision:'note-two'};await f.render(current,false,replacement);assert.equal(f.d.querySelector('.home-material-excerpt'),null,'a mismatched response ref cannot stand in for the replacement');
+ const reads:string[]=[],current={request:async(path:string)=>{reads.push(path);return response(note.ref,body);}}as Api;await f.render(current,false,note);assert.equal(f.d.querySelector('.library-record-preview')!.textContent,body);assert.doesNotMatch(f.d.body.textContent!,/generated-storage-metadata/);assert.ok(reads[0].includes('revision=note-one&offset=0&length=240'));
+ await act(async()=>finish(response(note.ref,'Generated old owner body')));assert.equal(f.d.querySelector('.library-record-preview')!.textContent,body);
+ const replacement={...note,ref:'material:generated-material@note-two',revision:'note-two'};await f.render(current,false,replacement);assert.equal(f.d.querySelector('.library-record-preview'),null,'a mismatched response ref cannot stand in for the replacement');
 });
 
-test('Home and Library reuse exact declared file source presentation and discard late owner or changed-ref excerpts',async t=>{
+test('Library uses exact declared file source presentation and discard late owner or changed-ref excerpts',async t=>{
  const f=await fixture(t),file={...item,coverage:{state:'complete' as const},retention:{original:'retained' as const},id:'mat_'+'a'.repeat(64),revision:'b'.repeat(64),ref:'material:mat_'+'a'.repeat(64)+'@'+'b'.repeat(64),schemaVersion:2},body='{"captureId":"This JSON is original text, not host metadata"}';
  const inventory={schemaVersion:1,revision:1,features:[],capabilities:[{id:'http:GET:/api/materials/:id/source-view',version:'1',state:'active',surface:'data',featureId:'mote.sources'}]};
  const response=(ref:string,text:string)=>({material:{...file,ref,blockCount:2},items:[{type:'source',blockId:'source-metadata',text:''},{type:'text',blockId:'body',text}],next:null});let finish!:(value:unknown)=>void,aborted=false;
  const old={request:async(path:string,init?:RequestInit)=>path==='/api/features'?inventory:path.includes('/source-view?')?new Promise(resolve=>{finish=resolve;init?.signal?.addEventListener('abort',()=>aborted=true);}):{material:{ref:file.ref},text:'host envelope',spans:[{kind:'text',format:'json',pageRange:{start:0,end:13}}]}} as Api;
- await f.render(old,false,file);assert.equal(f.d.querySelector('.home-material-excerpt'),null);const reads:string[]=[],current={request:async(path:string)=>{reads.push(path);return path==='/api/features'?inventory:path.includes('/source-view?')?response(file.ref,body):{material:{ref:file.ref},text:'host envelope',spans:[{kind:'text',format:'json',pageRange:{start:0,end:13}}]};}} as Api;await f.render(current,false,file);assert.equal(f.d.querySelector('.home-material-excerpt')!.textContent,body);assert.equal(aborted,true);await act(async()=>finish(response(file.ref,'Old owner body')));assert.equal(f.d.querySelector('.home-material-excerpt')!.textContent,body);
- await act(async()=>f.root.render(React.createElement(LibraryMaterialRow,{api:current,item:file,selected:false,onSelect:()=>{},preview:{read:true,image:false}})));assert.equal(f.d.querySelector('.library-record-preview')!.textContent,body);assert.ok(reads.some(path=>path.includes('/source-view?revision='+file.revision)));
- await f.render(current,false,{...file,ref:file.ref+'changed',revision:'c'.repeat(64)});assert.equal(f.d.querySelector('.home-material-excerpt'),null);
+ await f.render(old,false,file);assert.equal(f.d.querySelector('.library-record-preview'),null);const reads:string[]=[],current={request:async(path:string)=>{reads.push(path);return path==='/api/features'?inventory:path.includes('/source-view?')?response(file.ref,body):{material:{ref:file.ref},text:'host envelope',spans:[{kind:'text',format:'json',pageRange:{start:0,end:13}}]};}} as Api;await f.render(current,false,file);assert.equal(f.d.querySelector('.library-record-preview')!.textContent,body);assert.equal(aborted,true);await act(async()=>finish(response(file.ref,'Old owner body')));assert.equal(f.d.querySelector('.library-record-preview')!.textContent,body);
+ assert.ok(reads.some(path=>path.includes('/source-view?revision='+file.revision)));
+ await f.render(current,false,{...file,ref:file.ref+'changed',revision:'c'.repeat(64)});assert.equal(f.d.querySelector('.library-record-preview'),null);
 });
 
 function viewport(){
@@ -102,7 +102,7 @@ function installViewport(t:TestContext){
  t.after(()=>{if(prior)Object.defineProperty(globalThis,'IntersectionObserver',prior);else Reflect.deleteProperty(globalThis,'IntersectionObserver');});
  return vp;
 }
-const fileItem=(index:number)=>({id:'generated-material-'+index,ref:'material:generated-material-'+index+'@revision-'+index,revision:'revision-'+index,kind:'mote.file',schemaVersion:1,title:'Generated image '+index,textLength:0,createdAt:'2026-10-29T00:00:00Z',updatedAt:'2026-10-29T00:00:00Z',origin:{sourceId:'generated-source'}}) as RecentMaterial;
+const fileItem=(index:number)=>({id:'generated-material-'+index,ref:'material:generated-material-'+index+'@revision-'+index,revision:'revision-'+index,kind:'mote.file',schemaVersion:1,title:'Generated image '+index,textLength:0,createdAt:'2026-10-29T00:00:00Z',updatedAt:'2026-10-29T00:00:00Z',coverage:{state:'complete'},retention:{original:'retained'},origin:{sourceId:'generated-source'}}) as Material;
 const fileCapture=(index:number)=>'10000000-1000-4000-8000-'+String(100000000000+index);
 
 test('image rows fetch members, files and bounded thumbnails only near the viewport, and every pending or in-flight read is withdrawn off-screen',async t=>{
@@ -120,10 +120,10 @@ test('image rows fetch members, files and bounded thumbnails only near the viewp
    init?.signal?.addEventListener('abort',()=>{if(pending.delete(path)){inFlight--;reject(init.signal!.reason??new DOMException('Aborted','AbortError'));}});
   });
  }} as Api;
- await act(async()=>f.root.render(React.createElement(React.Fragment,null,items.map(material=>React.createElement(HomeMaterialRow,{key:material.ref,api,item:material,canRead:true,canPreview:true,onOpen:()=>{}})))));
+ await act(async()=>f.root.render(React.createElement(React.Fragment,null,items.map(material=>React.createElement(LibraryMaterialRow,{key:material.ref,api,item:material,selected:false,preview:{image:true,read:true},onSelect:()=>{}})))));
  assert.equal(reads.filter(path=>path.includes('/members?')).length,0,'off-screen rows never start preview reads');
  assert.equal(rawCalls.length,0);
- const rows=Array.from(f.d.querySelectorAll('.home-material-row'));assert.equal(rows.length,24);
+ const rows=Array.from(f.d.querySelectorAll('.library-catalog-row'));assert.equal(rows.length,24);
  await act(async()=>{for(const el of rows.slice(0,6))vp.set(el,true);});
  assert.equal(new Set(reads.filter(path=>path.includes('/members?'))).size,6);
  assert.equal(new Set(reads.filter(path=>/^\/api\/files\/[0-9a-f-]{36}$/.test(path))).size,6);
@@ -143,8 +143,8 @@ test('image rows fetch members, files and bounded thumbnails only near the viewp
  await act(async()=>vp.set(rows[0],true));await act(async()=>{for(const release of [...pending.values()])release();});
  assert.equal(f.d.querySelectorAll('img').length,6);
  const replaced=items.map((material,index)=>index===2?fileItem(200):material);
- await act(async()=>f.root.render(React.createElement(React.Fragment,null,replaced.map(material=>React.createElement(HomeMaterialRow,{key:material.ref,api,item:material,canRead:true,canPreview:true,onOpen:()=>{}})))));
- const nextRows=Array.from(f.d.querySelectorAll('.home-material-row'));
+ await act(async()=>f.root.render(React.createElement(React.Fragment,null,replaced.map(material=>React.createElement(LibraryMaterialRow,{key:material.ref,api,item:material,selected:false,preview:{image:true,read:true},onSelect:()=>{}})))));
+ const nextRows=Array.from(f.d.querySelectorAll('.library-catalog-row'));
  await act(async()=>vp.set(nextRows[2],true));await act(async()=>{for(const release of [...pending.values()])release();});
  assert.equal(f.d.querySelectorAll('img').length,6);
  const created=f.urls.length;
@@ -160,7 +160,7 @@ test('file rows without the thumbnail capability or with a failed inventory keep
   const reads:string[]=[],rawCalls:string[]=[];
   await f.render(apiFor(reads,{...options,raw:async(path)=>{rawCalls.push(path);return new Response(new Uint8Array([1]));}}));
   assert.equal(rawCalls.length,0);assert.equal(reads.some(path=>path.endsWith('/content')||path.endsWith('/thumbnail')),false);
-  assert.equal(f.d.querySelector('img'),null);assert.ok(f.d.querySelector('.home-material-icon svg'),'the type icon stands in for the image');
+  assert.equal(f.d.querySelector('img'),null);assert.ok(f.d.querySelector('.library-record-icon svg'),'the type icon stands in for the image');
  }
 });
 

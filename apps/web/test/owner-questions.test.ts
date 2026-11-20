@@ -4,7 +4,8 @@ import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
 import {OwnerQuestionConversation,OwnerQuestionLinks} from '../src/plugins/memory/index.js';
-import {ownerQuestionRoute,readOwnerQuestion,ownerQuestionListPath} from '../src/owner-question-route.js';
+import {pageHash} from '@mote/shared';
+import {openOwnerQuestionList,ownerQuestionRoute,readOwnerQuestion,ownerQuestionListPath} from '../src/owner-question-route.js';
 import {ApiError,type Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 import type {OwnerQuestion} from '@mote/shared';
@@ -20,7 +21,7 @@ configureLocale(()=> 'zh-CN');
 const when='2026-01-01T00:00:00Z';
 const generated:OwnerQuestion={id:'00000000-0000-4000-8000-000000000001',provider:{id:'fixture.material',version:'1'},operationId:'generated-operation',workId:'fixture-work',materialId:'generated-material',materialRef:'material:generated@revision',title:'合成工作复盘',prompt:'讲述工作压力的是你吗？',reason:'全文没有可靠的身份对应。',evidence:[{id:'fixture-evidence',quote:'说话人1：这周怎么样？我有点工作压力。',ref:'capture:00000000-0000-4000-8000-000000000009'}],choices:[{id:'narrator',label:'我是讲述者',answer:'这份资料里，讲述工作压力的是我。'},{id:'responder',label:'我是回应的人',answer:'这份资料里，我是回应和提问的人。'}],state:'open',revision:1,createdAt:when,updatedAt:when,messages:[{role:'assistant',text:'讲述工作压力的是你吗？',createdAt:when}]};
 async function fixture(t:import('node:test').TestContext){
- const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/ask',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();
+ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'+pageHash('chat'),pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();
  for(const [key,value] of Object.entries({window:dom.window,location:dom.window.location,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  const {createRoot}=await import('react-dom/client');
  dom.window.HTMLElement.prototype.scrollIntoView=()=>{};
@@ -276,14 +277,24 @@ test('standalone Ask questions retain feature capability withdrawal and cannot a
  const {root,d,w}=await fixture(t);await featuresReady;const {Ask}=await import('../src/plugins/ask/Ask');let enabled=true;
  const capabilities=['http:GET:/api/owner-questions','http:GET:/api/owner-questions/:id','http:POST:/api/owner-questions/:id/reply'];
  const api={request:async(path:string)=>{if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:enabled?capabilities.map(id=>({id,version:'1',surface:'data',featureId:'mote.owner-questions',state:'active'})):[]};if(path.startsWith('/api/materials/'))return {material:{ref:'material:replacement@new',title:'Generated replacement title'}};if(path.startsWith('/api/owner-questions?'))return {items:[generated],nextCursor:null};return generated;}} as Api;
- w.history.replaceState(null,'','#/ask?question='+generated.id);await act(async()=>root.render(React.createElement(Ask,{api,status:{agent:{configured:false}} as any,devices:[],onOpen:()=>{},onInsights:()=>{},onSettings:()=>{}})));assert.ok(d.querySelector('.owner-question-workspace h1'));assert.equal(d.querySelector('.conversation-toolbar'),null);assert.equal(d.querySelector('.model-notice'),null);assert.doesNotMatch(d.body.textContent!,/Generated replacement title/);
+ w.history.replaceState(null,'','#/chat?question='+generated.id);await act(async()=>root.render(React.createElement(Ask,{api,status:{agent:{configured:false}} as any,devices:[],onOpen:()=>{},onInsights:()=>{},onSettings:()=>{}})));assert.ok(d.querySelector('.owner-question-workspace h1'));assert.equal(d.querySelector('.conversation-toolbar'),null);assert.equal(d.querySelector('.model-notice'),null);assert.doesNotMatch(d.body.textContent!,/Generated replacement title/);
  enabled=false;await act(async()=>resources(api).get('/api/features').refresh());assert.equal(d.querySelector('.owner-question-form'),null);assert.match(d.body.textContent!,/专用视图暂不可用/);
 });
 
-test('a Home supplemental-question visit returns to that Home before a later guide visit gets its own return',async t=>{
- const {root,d,w}=await fixture(t),{OwnerQuestionWorkspace}=await import('../src/plugins/memory/index'),{openOwnerQuestionList}=await import('../src/owner-question-route'),{guideVisit}=await import('../src/feature-guide-state');const api={request:async()=>({items:[],nextCursor:null})} as Api;
- guideVisit(api).returnAvailable=true;w.history.replaceState(null,'','#/today');openOwnerQuestionList(api);await act(async()=>root.render(React.createElement(OwnerQuestionWorkspace,{api,id:'',onOpen:()=>{}})));assert.equal(d.querySelector('.owner-question-workspace-header a')!.getAttribute('href'),'#/today','an old guide visit cannot steal a new Home return');
- await act(async()=>{w.history.replaceState(null,'','#/guide');root.render(null);});await act(async()=>{w.history.replaceState(null,'','#/ask?question=');root.render(React.createElement(OwnerQuestionWorkspace,{api,id:'',onOpen:()=>{}}));});assert.equal(d.querySelector('.owner-question-workspace-header a')!.getAttribute('href'),'#/guide');
+test('supplemental questions keep the exact origin and direct visits return to Chat',async t=>{
+ const {root,d,w}=await fixture(t),{OwnerQuestionWorkspace}=await import('../src/plugins/memory/index');
+ const api={request:async()=>({items:[],nextCursor:null})} as Api;
+ const view=()=>React.createElement(OwnerQuestionWorkspace,{api,id:'',onOpen:()=>{}});
+ const origin=pageHash('library',{view:'materials'});
+ w.history.replaceState(null,'',origin);
+ openOwnerQuestionList(api);
+ await act(async()=>root.render(view()));
+ assert.equal(w.location.hash,ownerQuestionRoute());
+ assert.equal(d.querySelector('.owner-question-workspace-header a')!.getAttribute('href'),origin);
+ await act(async()=>{w.history.replaceState(null,'',origin);root.render(null);});
+ await act(async()=>{w.history.replaceState(null,'',ownerQuestionRoute());root.render(view());});
+ assert.equal(d.querySelector('.owner-question-workspace-header a')!.getAttribute('href'),'#/');
+ assert.equal(readOwnerQuestion('#/ask?question=generated'),null);
 });
 
 test('question A then B returns consume their own scroll ticket once and later list polling never jumps back',async t=>{

@@ -592,7 +592,7 @@ internal class CentralContent(
         }) { id ->
             check(origin == server && expected == accessGeneration)
             browserLoginId = id; browserVerifier = verifier; browserGeneration = expected; browserDurationMs = durationMs
-            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(origin + "/#/ask?loginRequest=" + id)))
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(origin + "/#/" + CentralPageRoutes.chat + "?loginRequest=" + id)))
         }
     }
     private fun pollBrowserLogin() {

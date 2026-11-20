@@ -46,6 +46,24 @@
         }]
       }
     },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 3,
+          "connections": true
+        }
+      }
+    },
     "GET /api/plugins/presentation": {
       "status": 200,
       "body": { "instances": [] }

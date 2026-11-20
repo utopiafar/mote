@@ -1,3 +1,4 @@
+import {pageHash} from '@mote/shared';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readOriginTurn,conversationTurnRoute} from '../src/plugins/ask/conversation-origin';
@@ -7,7 +8,7 @@ test('saved origin finds exact older turn, never a similar question, and rejects
  const requests:string[]=[];
  const api={request:async(path:string)=>{requests.push(path);return path.includes('?')?{id:'c',revision:1,turns:[wanted]}:{id:'c',revision:1,turns:[{id:'new',question:'same question'}],nextCursor:'older'};}} as Api;
  assert.deepEqual(await readOriginTurn(api,'c','old',signal),wanted);assert.equal(requests.length,2);
- assert.equal(conversationTurnRoute('c','old'),'#/ask?conversation=c&turn=old');
+ assert.equal(conversationTurnRoute('c','old'),pageHash('chat',{conversation:'c',turn:'old'}));
  for(const replacement of [{id:'c',revision:2,turns:[wanted]},{id:'other',revision:1,turns:[wanted]}]){
   const changed={request:async(path:string)=>path.includes('?')?replacement:{id:'c',revision:1,turns:[],nextCursor:'older'}} as Api;
   await assert.rejects(readOriginTurn(changed,'c','old',signal));
@@ -35,7 +36,7 @@ test('saved record warns when its authorized source turn is historical without r
   const notice=dom.window.document.querySelector('[role="status"]');
   assert.equal(notice?.textContent,'这是历史版本，当前资料已更新。');
   assert.match(dom.window.document.querySelector('.note-origin')!.textContent!,/Generated question.*Generated historical answer \[1\]/s);
-  assert.equal(dom.window.document.querySelector('a')?.getAttribute('href'),'#/ask?conversation=conversation&turn=turn');
+  assert.equal(dom.window.document.querySelector('a')?.getAttribute('href'),pageHash('chat',{conversation:'conversation',turn:'turn'}));
   assert.equal(dom.window.document.querySelectorAll('nav button').length,1);
  }finally{
   await React.act(async()=>root.unmount());dom.window.close();configureLocale(()=>locale);
@@ -123,7 +124,7 @@ async function originClockFixture(t:import('node:test').TestContext){
 }
 
 test('saved exact-turn reader stops hidden timer GETs for 60s and coalesces foreground before keeping visible 5s',async t=>{
- const f=await originClockFixture(t);await f.render();await f.tick();assert.ok(f.d.querySelector('.quoted-answer-markdown'));assert.equal(f.d.querySelector('a')!.getAttribute('href'),'#/ask?conversation=generated-conversation&turn=exact-older-turn');
+ const f=await originClockFixture(t);await f.render();await f.tick();assert.ok(f.d.querySelector('.quoted-answer-markdown'));assert.equal(f.d.querySelector('a')!.getAttribute('href'),pageHash('chat',{conversation:'generated-conversation',turn:'exact-older-turn'}));
  const count=(path:string)=>f.reads.filter(read=>read.path===path).length;assert.equal(count(f.base),1);assert.equal(count(f.base+'?cursor=older-page'),1);
  await f.visibility(true);await f.tick(60000);assert.equal(count(f.base),1);assert.equal(count(f.base+'?cursor=older-page'),1);
  await f.visibility(false);await f.visibility(false);await f.tick();assert.equal(count(f.base),2);assert.equal(count(f.base+'?cursor=older-page'),2);
