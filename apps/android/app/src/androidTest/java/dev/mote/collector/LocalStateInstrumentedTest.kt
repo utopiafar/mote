@@ -40,7 +40,7 @@ class LocalStateInstrumentedTest {
     }
     /**
      * The real Home wiring: `QueueStorage.stageRecoveryPending` on the selected location
-     * bypasses `RevisionCache` even at an unchanged records revision, and each cycle reopens
+     * bypasses `TabRevisionCache` even at an unchanged records revision, and each cycle reopens
      * the queue through `openQueue` — which is also what retries the replay. A malformed
      * accepted input keeps the truthful committed answer publishing; a repaired input commits.
      */
@@ -59,11 +59,11 @@ class LocalStateInstrumentedTest {
             assertFalse(storage.stageRecoveryPending())
             assertFalse(storage.committedStored())
             val revision = LocalStateChanges.revisions.value.records
-            val cache = RevisionCache()
+            val cache = TabRevisionCache()
             val collect = {
-                HomeLocalCaptures.collect(cache, revision, JSONObject(),
+                TabLocalCaptures.collect(cache, revision, JSONObject(),
                     pendingRecovery = { QueueStorage(context).stageRecoveryPending() }) {
-                    HomeLocalCaptures.exists(
+                    TabLocalCaptures.exists(
                         queue = { QueueStorage(context).openQueue() },
                         committedProbe = { QueueStorage(context).committedStored() })
                 }
