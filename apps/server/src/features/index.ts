@@ -4,6 +4,7 @@ import type {FastifyInstance} from 'fastify';
 import {collectorIngressWrite} from '../ingress.js';
 import {PluginResourceScope} from '@mote/plugin-host';
 import type {HostContributionDescriptor} from '../feature-inventory.js';
+import {navStateFromContext,registerNavStateRoutes} from '../nav-state.js';
 
 /** One selected feature's HTTP contribution. The route table is mounted once
  * before listen and dispatches against its domain activation on every request. */
@@ -26,7 +27,12 @@ export class FeatureRoutes {
   private disposals=new Map<string,Promise<void>>();
   private scopes=new Set<FeatureScope>();
   private closing?:Promise<void>;
-  constructor(private root:Context,private app:FastifyInstance,private onError:(error:unknown)=>void=()=>{}){}
+  constructor(private root:Context,private app:FastifyInstance,private onError:(error:unknown)=>void=()=>{}){
+    // The navigation poll is a core owner surface: mount it beside the feature
+    // table so a disabled feature cannot take the whole shell down.
+    const navState=navStateFromContext(root,onError);
+    if(navState)registerNavStateRoutes(app,navState);
+  }
   contributions():HostContributionDescriptor[]{
     const inventory=this.registry.inventory();
     return inventory.features.map(feature=>({
