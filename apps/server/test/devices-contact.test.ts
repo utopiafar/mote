@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import type {DeviceRecord} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
+import {seedSourceBar} from './fixtures/source-bar-emulator.js';
 
 const agent:QueryAgent={configured:false,query:async()=>{throw Error('No model calls in generated device tests');},close:async()=>{}};
 async function fixture(t:TestContext){
@@ -15,8 +16,8 @@ async function fixture(t:TestContext){
   const node=await buildApp(config,{agent,backgroundWorker:false});
   t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${config.privateCredential!.token}`};
-  const post=async(payload:unknown)=>{
-    const response=await node.app.inject({method:'POST',url:'/api/devices/heartbeat',headers,payload});
+  const post=async(payload:unknown,authorization=headers.authorization)=>{
+    const response=await node.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:{authorization},payload});
     assert.equal(response.statusCode,200,response.body);
     assert.deepEqual(response.json(),{ok:true});
   };
@@ -35,7 +36,7 @@ const beat=(deviceId:string,mode?:Mode,intervalMinutes=1)=>({
 });
 const minute=60_000;
 
-test('central calculates contact loss from generated heartbeat sequences without changing reported capture status',async t=>{
+test('LB1-05 Central calculates contact loss from generated heartbeats and sync receipts',async t=>{
   const f=await fixture(t),start=Date.parse('2026-11-06T00:00:00.000Z');
   t.mock.timers.enable({apis:['Date'],now:start});
   await f.post(beat('realtime','realtime',1440));
@@ -74,6 +75,52 @@ test('central calculates contact loss from generated heartbeat sequences without
   assert.equal((await f.list()).items.find(device=>device.deviceId==='batch')?.status,'capturing');
   t.mock.timers.setTime(start+365*24*60*minute+181*minute);
   assert.deepEqual(await lost(),['batch','realtime'],'the latest contact and each reported interval set new deadlines');
+});
+
+test('LB1-02 filters the generated emulator corpus by exact device and external source',async t=>{
+  const {node,headers}=await fixture(t);
+  await node.materialOrganizer.close();
+  const {notes,sourceId,sourceRef}=await seedSourceBar(node,headers);
+  const browse=async(query:Record<string,string>)=>{
+    const response=await node.app.inject({url:'/api/library/browse?'+new URLSearchParams(query),headers});
+    assert.equal(response.statusCode,200,response.body);
+    return response.json<{items:{ref:string}[]}>().items.map(item=>item.ref).sort();
+  };
+  assert.deepEqual(await browse({}),[...notes.values(),sourceRef].sort());
+  for(const [deviceId,ref] of notes)assert.deepEqual(await browse({deviceId}),[ref]);
+  assert.deepEqual(await browse({sourceId}),[sourceRef]);
+  assert.deepEqual(await browse({deviceId:sourceId}),[]);
+});
+
+test('LB1-04 default owner invitation is single use and adds one Android identity before its heartbeat',async t=>{
+  const {node,headers,post,list}=await fixture(t);
+  const device=beat('lb1-emulator-android','manual');
+  const inventory=async()=>{
+    const response=await node.app.inject({url:'/api/connections',headers});
+    assert.equal(response.statusCode,200,response.body);
+    return response.json<{items:{id:string;deviceId?:string;deviceName?:string;platform?:string;scope:string}[]}>().items;
+  };
+  assert.deepEqual(await inventory(),[]);
+  const invitation=await node.app.inject({
+    method:'POST',url:'/api/connections/invitations',headers,
+    payload:{serverUrl:'http://127.0.0.1:46281',label:'Generated emulator invitation'},
+  });
+  assert.equal(invitation.statusCode,200,invitation.body);
+  assert.deepEqual(await inventory(),[],'minting the invitation does not add a device');
+  const payload={code:invitation.json().invitation.code,deviceId:device.deviceId,deviceName:device.deviceName,platform:device.platform};
+  const redeem=()=>node.app.inject({method:'POST',url:'/api/connections/redeem',payload});
+  const redeemed=await redeem();
+  assert.equal(redeemed.statusCode,200,redeemed.body);
+  assert.equal(redeemed.json().scope,'owner');
+  assert.equal((await redeem()).statusCode,410);
+  const items=await inventory();
+  assert.deepEqual(items.map(({id,deviceId,deviceName,platform,scope})=>({id,deviceId,deviceName,platform,scope})),[
+    {id:redeemed.json().credentialId,deviceId:device.deviceId,deviceName:device.deviceName,platform:'android',scope:'owner'},
+  ]);
+  assert.deepEqual(await list(),{items:[],disconnectedDeviceIds:[]});
+  await post({...device,status:'paused'},'Bearer '+redeemed.json().token);
+  assert.deepEqual((await list()).items.map(item=>[item.deviceId,item.status]),[[device.deviceId,'paused']]);
+  assert.deepEqual((await inventory()).map(({id,deviceId})=>[id,deviceId]),[[items[0].id,device.deviceId]]);
 });
 
 test('source bar can read a newly paired identity before heartbeat, then read reported status and keep archived notes after removal',async t=>{

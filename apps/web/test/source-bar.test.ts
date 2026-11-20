@@ -186,24 +186,33 @@ test('LB1-02 selects exact Library source and device scopes and keeps settings s
     ]);
 });
 
-test('device preferences read the latest heartbeat and expose only supported Central actions', async t => {
+test('LB1-01 updates from device heartbeats while settings keep pause, resume and sync on the device', async t => {
     const { root, document } = await fixture(t);
     const { api, state, writes } = generatedCentral();
-    state.devices = [device('phone', 'android', { status: 'paused', sync })];
+    state.devices = [device('phone', 'android', { sync }), device('mac', 'macos')];
+    state.connections = [paired('phone-owner', 'phone')];
     const render = (revision: number) => act(async () =>
         root.render(React.createElement(SourceBar, { api, serverUrl: origin, revision, onFilterChange: () => {} })));
     await render(0);
+    const status = () => [...document.querySelectorAll<HTMLElement>('.library-source-bar [data-source-status]')];
+    assert.deepEqual(status(), []);
     await click(grab(document, '[data-device-id="phone"] button[aria-haspopup="dialog"]'));
     const settings = grab(document, '.device-settings');
     const interval = grab(settings, 'dd').textContent;
     assert.ok(interval);
-    assert.equal(settings.querySelector('select,button'), null);
+    assert.equal(settings.querySelector('select, input, [role="switch"]'), null);
+    assert.equal(settings.querySelectorAll('button').length, 1, 'the paired device has only the remove action');
+    assert.ok(grab(settings, '.field-note').textContent?.trim());
+
+    state.devices[0] = device('phone', 'android', { status: 'paused', sync });
+    await render(1);
+    assert.deepEqual(status().map(label => label.dataset.sourceStatus), ['paused']);
     assert.equal(grab<HTMLElement>(chip(document, 'device', 'phone'), '[data-source-status]').dataset.sourceStatus, 'paused');
 
-    state.devices = [device('phone', 'android', { sync: { ...sync, mode: 'manual' } })];
-    await render(1);
+    state.devices[0] = device('phone', 'android', { sync: { ...sync, mode: 'manual' } });
+    await render(2);
     assert.notEqual(grab(settings, 'dd').textContent, interval);
-    assert.equal(chip(document, 'device', 'phone').querySelector('[data-source-status]'), null);
+    assert.deepEqual(status(), []);
     assert.deepEqual(writes, []);
 });
 
@@ -244,22 +253,35 @@ test('LB1-04 reuses the pairing form, observes redemption and joins the first he
     assert.equal(grab<HTMLElement>(chip(document, 'device', 'paired-phone'), '[data-source-status]').dataset.sourceStatus, 'paused');
 });
 
-test('LB1-05 uses Central contact loss and leaves unreported or manual contact deadlines alone', async t => {
+test('LB1-05 consumes Central contact loss and recovery without inferring a deadline in the browser', async t => {
     const { root, document } = await fixture(t);
     const { api, state } = generatedCentral();
     state.devices = [
         device('lost-contact', 'android', { sync }),
         device('manual', 'android', { sync: { ...sync, mode: 'manual' } }),
+        device('unreported', 'android'),
         device('sends-error', 'macos', { sync: { ...sync, state: 'error' } }),
         device('reported-offline', 'ios', { status: 'offline' }),
     ];
+    const render = (revision: number) => act(async () =>
+        root.render(React.createElement(SourceBar, { api, serverUrl: origin, revision, onFilterChange: () => {} })));
+    const status = (id: string) => chip(document, 'device', id).querySelector<HTMLElement>('[data-source-status]')?.dataset.sourceStatus;
+    await render(0);
+    assert.equal(status('lost-contact'), undefined, 'an old timestamp alone is not a Central offline signal');
+
     state.offline = ['lost-contact'];
-    await act(async () => root.render(React.createElement(SourceBar, { api, serverUrl: origin, onFilterChange: () => {} })));
+    await render(1);
     for (const id of ['lost-contact', 'reported-offline']) {
-        assert.equal(grab<HTMLElement>(chip(document, 'device', id), '[data-source-status]').dataset.sourceStatus, 'offline');
+        assert.equal(status(id), 'offline');
     }
-    assert.equal(grab<HTMLElement>(chip(document, 'device', 'sends-error'), '[data-source-status]').dataset.sourceStatus, 'error');
-    assert.equal(chip(document, 'device', 'manual').querySelector('[data-source-status]'), null);
+    assert.equal(status('sends-error'), 'error');
+    assert.equal(status('manual'), undefined);
+    assert.equal(status('unreported'), undefined);
+
+    state.offline = [];
+    await render(2);
+    assert.equal(status('lost-contact'), undefined);
+    assert.equal(status('reported-offline'), 'offline');
 });
 
 test('device removal confirms exact credentials, refreshes partial failure and leaves archived reports intact', async t => {
