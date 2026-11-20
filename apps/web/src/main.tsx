@@ -6,9 +6,14 @@ import {pageHash,pageRoutes} from '@mote/shared';
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
 ArrowRight,
+Database,
+FileText,
 Plus,
 Info,
 Link2,
+MessageSquare,
+ShieldCheck,
+Sparkles,
 X
 } from "lucide-react";
 import React,{
@@ -458,10 +463,43 @@ function App() {
             </div>
           )}
           {!webFeatures.page(page)?(page==='extensions'?<PluginCenterRescue onPage={onPage}/>:<section className="panel panel-pad"><h1>{moteText('当前服务未提供此入口')}</h1><button className="button" onClick={()=>onPage('archive')}>{moteText('资料库')}</button></section>):!connection && settingsContext ? <section className="panel settings-sign-in"><div className="page-heading"><h1>{moteText("登录后查看{0}", pageLabels[page])}</h1><p>{moteText("调整服务与资料管理方式，或管理当前登录。")}</p></div><button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText("登录 Mote")}<ArrowRight size={16}/></button></section> : !connection ? (
-            <section className="panel panel-pad">
-              <h1>{moteText('登录后查看{0}',pageLabels[page])}</h1>
-              <button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText('登录 Mote')}</button>
-            </section>
+            <>
+              <div className="greeting welcome simple-welcome archive-welcome">
+                <div>
+                  <div className="eyebrow">{moteText("个人资料库")}</div>
+                  <h1>
+                    {page === "ask" ? moteText("把记录留住，在需要时找到。") : moteText("登录后查看{0}", pageLabels[page])}
+                  </h1>
+                  <p>{moteText("汇集手机、电脑与文件里的记录。按来源浏览资料，也能直接提问，回到答案的出处。")}</p>
+                  <div className="welcome-archive-flow" aria-label={moteText("采集 · 汇聚 · 理解")}>
+                    <span><FileText size={17}/>{moteText("添加资料")}</span><ArrowRight size={14} aria-hidden="true"/>
+                    <span><Database size={17}/>{moteText("资料库")}</span><ArrowRight size={14} aria-hidden="true"/>
+                    <span><MessageSquare size={17}/>{moteText("问一问")}</span>
+                  </div>
+                  <button className="button" onClick={() => setShowConnect(true)}>
+                    <Link2 size={16} />
+                    {moteText("登录 Mote")}<ArrowRight size={16} />
+                  </button>
+                </div>
+              </div>
+              <div className="welcome-values simple-values">
+                <div>
+                  <ShieldCheck size={20} />
+                  <h3>{moteText("由你决定留下什么")}</h3>
+                  <p>{moteText("应用过滤与端点脱敏，先于资料上传。")}</p>
+                </div>
+                <div>
+                  <Database size={20} />
+                  <h3>{moteText("资料在你的节点")}</h3>
+                  <p>{moteText("可以导入、导出，也可以继续扩展来源。")}</p>
+                </div>
+                <div>
+                  <Sparkles size={20} />
+                  <h3>{moteText("答案带着来处")}</h3>
+                  <p>{moteText("Agent 读取证据，串起你的问题与记录。")}</p>
+                </div>
+              </div>
+            </>
           ) : (
             <>
               {error && <ErrorNotice text={error} retry={refresh} />}
