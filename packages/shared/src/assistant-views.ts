@@ -21,6 +21,7 @@ export type CommitmentChanges={title?:string;status?:CommitmentStatus;deadline?:
 export type CommitmentEvent={commitmentId:string;eventId:string;occurredAt:string|null;summary:string;
  evidence:{id:string;offset:number;quote:string;ref?:string}[];evidenceDependencies:EvidenceDependencies;sourceContextDependencies?:SourceContextDeclaration[];
  changes:CommitmentChanges;origin:'proposal'|'owner';kind?:'commitment'|'progress'|'status'|'reminder';targetEventId?:string;createdAt:string};
+export type CommitmentDirection='theirs'|'mine';
 export type Commitment={id:string;revision:number;title:string;status:CommitmentStatus;deadline?:{text:string;at:string|null}|null;
- dueState:'none'|'unknown'|'closed'|'overdue'|'upcoming';matterId:string|null;personMemoryId:string|null;todoId:string|null;
+ dueState:'none'|'unknown'|'closed'|'overdue'|'upcoming';matterId:string|null;personMemoryId:string|null;todoId:string|null;direction?:CommitmentDirection;
  timeline:CommitmentEvent[];evidenceDependencies:EvidenceDependencies;sourceContextDependencies:SourceContextDeclaration[];createdAt:string;updatedAt:string};

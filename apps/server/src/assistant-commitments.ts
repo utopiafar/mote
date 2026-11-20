@@ -24,7 +24,10 @@ const proof=ownerQuestionEvidenceSchema.extend({id:uuid,offset:z.number().int().
 const common={commitmentId:uuid,eventId:uuid,occurredAt:timestamp.nullable(),summary:text(8000),
  evidence:z.array(proof).min(1).max(100),evidenceDependencies:evidenceDependenciesSchema,
  sourceContextDependencies:z.array(sourceContextDeclarationSchema).max(100).optional(),changes};
-export const commitmentProposalSchema=z.object({...common,kind:z.enum(['commitment','progress','status','reminder'])}).strict().superRefine((value,ctx)=>{
+/** The model decides who made the promise. This is stored in the event body,
+ * never as a column, so old commitments simply fall back to the owner. */
+export const commitmentProposalSchema=z.object({...common,kind:z.enum(['commitment','progress','status','reminder']),
+ direction:z.enum(['theirs','mine']).optional()}).strict().superRefine((value,ctx)=>{
  if(value.kind==='commitment'&&(!value.changes.title||value.changes.status==='completed'||value.changes.status==='cancelled'))
   ctx.addIssue({code:z.ZodIssueCode.custom,message:'A new commitment needs a title and cannot start completed or cancelled'});
  if(value.kind==='reminder'&&Object.keys(value.changes).length)
@@ -174,11 +177,15 @@ export class AssistantCommitments {
   // Corrections are timeline assertions too. Apply every event at its own
   // sequence position so a newer owner correction is not overwritten by an
   // earlier proposal that happened to be published after its target.
+  // Direction is body-only metadata. Read it from each saved proposal event
+  // rather than the shared timeline projection, which is the browser contract.
+  let direction:'theirs'|'mine'='mine';
   for(const item of timeline)Object.assign(current,item.changes);
+  for(const row of rows){const body=this.body(row);if(body.origin==='proposal'&&body.direction)direction=body.direction;}
   if(!current.title)throw new StoreError('Commitment not found',404);
   const dueState=!current.deadline?'none':!current.deadline.at?'unknown':current.status==='completed'||current.status==='cancelled'?'closed':Date.parse(current.deadline.at)<=Date.parse(this.now())?'overdue':'upcoming';
   return {id:row.id,revision:row.revision,title:current.title,status:current.status,deadline:current.deadline,dueState,
-   matterId:current.matterId,personMemoryId:current.personMemoryId,todoId:current.todoId,timeline,
+   matterId:current.matterId,personMemoryId:current.personMemoryId,todoId:current.todoId,direction,timeline,
    evidenceDependencies:{version:1 as const,complete:true,ids:[...new Set(timeline.flatMap(item=>item.evidenceDependencies.ids))].sort()},
    sourceContextDependencies:combineSourceContextDependencies(timeline.map(item=>item.sourceContextDependencies)),
    createdAt:row.created_at,updatedAt:row.updated_at};

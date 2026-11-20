@@ -5,6 +5,8 @@ import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
 import {AssistantFollowup} from './assistant-followup.js';
 import {registerAssistantFollowupRoutes} from './assistant-followup-routes.js';
+import {AssistantGoals} from './assistant-goals.js';
+import {registerAssistantGoalRoutes} from './assistant-goal-routes.js';
 import {queryModelBudget} from './query-model-budget.js';
 import {codexContextCapacity} from '@mote/agent';
 import type {ConversationSettings} from '@mote/shared';
@@ -342,10 +344,12 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     if(!record||!withinEvidenceScope(record,scope)||!evidenceReader.contextDependenciesAllowed([record.id],new EvidenceExposurePolicy())||!automaticEvidenceAllowed([record.id]))return;
     return {revision:item.revision,calendar:item.calendar};
   },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
+  const assistantGoals=new AssistantGoals(store,assistantCommitments,assistantMatters,assistantRoutines,evidenceReader,()=>workDomains.actions);
   contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>{
     const owner=(req:FastifyRequest)=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);};
     registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner});
     registerAssistantFollowupRoutes(app,()=>assistantFollowup!,()=>assistantChanges,owner);
+    registerAssistantGoalRoutes(app,{goals:assistantGoals,owner});
   }}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
