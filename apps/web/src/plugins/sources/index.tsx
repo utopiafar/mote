@@ -2,14 +2,14 @@ import { moteText } from '@mote/shared/i18n';
 import React from 'react';
 import type { PageEntry, PageProps } from '../../features/types';
 import type { BuiltinWebPlugin } from '../types';
-import { Connections } from './Connections';
+import { Connections, DevicePairing } from './Connections';
 import { SourceCatalog } from './SourceCatalog';
 import { Sources } from './Sources';
 
 const LarkSettings = React.lazy(() => import('./LarkSettings').then(module => ({ default: module.LarkSettings })));
 const RecordingsSettings = React.lazy(() => import('../../RecordingsSettings').then(module => ({ default: module.RecordingsSettings })));
 
-export { Connections } from './Connections';
+export { Connections, DevicePairing } from './Connections';
 export { Gmail } from './Gmail';
 export { GoogleCalendarSettings } from './GoogleCalendarSettings';
 export { LarkJobStatus, LarkSettings, larkError } from './LarkSettings';
@@ -96,7 +96,7 @@ export const connectionsPages: PageEntry[] = [
     section: 'connections',
     order: 1,
     featureId: 'mote.connections',
-    render: ({ api, devices }: PageProps) => <Connections key="device" mode="device" api={api} serverUrl={window.location.origin} devices={devices}/>,
+    render: ({ api, devices }: PageProps) => <DevicePairing key="device" api={api} serverUrl={window.location.origin} devices={devices}/>,
   },
 ];
 

@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import type {DeviceRecord} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 
@@ -22,7 +23,7 @@ async function fixture(t:TestContext){
   const list=async()=>{
     const response=await node.app.inject({url:'/api/devices',headers});
     assert.equal(response.statusCode,200,response.body);
-    return response.json() as {items:Array<{deviceId:string;status:string;sync?:unknown;lastSeenAt:string}>;disconnectedDeviceIds:string[]};
+    return response.json() as {items:DeviceRecord[];disconnectedDeviceIds:string[]};
   };
   return {node,headers,post,list};
 }
@@ -73,4 +74,64 @@ test('central calculates contact loss from generated heartbeat sequences without
   assert.equal((await f.list()).items.find(device=>device.deviceId==='batch')?.status,'capturing');
   t.mock.timers.setTime(start+365*24*60*minute+181*minute);
   assert.deepEqual(await lost(),['batch','realtime'],'the latest contact and each reported interval set new deadlines');
+});
+
+test('source bar can read a newly paired identity before heartbeat, then read reported status and keep archived notes after removal',async t=>{
+  const {node,headers,list}=await fixture(t);
+  const device=beat('generated-paired-phone','interval',40),url='/api/connections';
+  const invitation=await node.app.inject({
+    method:'POST',url:url+'/collector-invitations',headers,
+    payload:{serverUrl:'https://generated.invalid',label:'Generated source bar device'},
+  });
+  assert.equal(invitation.statusCode,200,invitation.body);
+  const redeemed=await node.app.inject({
+    method:'POST',url:url+'/redeem',payload:{
+      code:invitation.json().invitation.code,deviceId:device.deviceId,deviceName:device.deviceName,platform:device.platform,
+    },
+  });
+  assert.equal(redeemed.statusCode,200,redeemed.body);
+  const {token,credentialId}=redeemed.json() as {token:string;credentialId:string};
+  const inventory=async()=>{
+    const response=await node.app.inject({url,headers});
+    assert.equal(response.statusCode,200,response.body);
+    return response.json().items as {id:string;deviceId:string;deviceName:string;platform:string;scope:string;revokedAt?:string}[];
+  };
+  const [connection]=await inventory();
+  assert.equal(connection.id,credentialId);
+  assert.equal(connection.deviceId,device.deviceId);
+  assert.equal(connection.deviceName,device.deviceName);
+  assert.equal(connection.platform,device.platform);
+  assert.equal(connection.scope,'collector');
+  assert.equal(connection.revokedAt,undefined);
+  assert.deepEqual(await list(),{items:[],disconnectedDeviceIds:[]},'redeeming does not manufacture a heartbeat');
+
+  const collector={authorization:'Bearer '+token};
+  const report=async(status:'paused'|'capturing')=>{
+    const response=await node.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:collector,payload:{...device,status}});
+    assert.equal(response.statusCode,200,response.body);
+    const {items,disconnectedDeviceIds}=await list();
+    assert.equal(items.length,1);
+    assert.equal(items[0].deviceId,connection.deviceId);
+    assert.equal(items[0].status,status);
+    assert.deepEqual(items[0].sync,device.sync);
+    assert.deepEqual(disconnectedDeviceIds,[]);
+  };
+  await report('paused');
+  await report('capturing');
+
+  const noteId=randomUUID();
+  for(const [id,deviceId] of [[noteId,device.deviceId],[randomUUID(),'generated-other-phone']]){
+    const note=await node.app.inject({
+      method:'POST',url:'/api/notes',headers:{...headers,'x-mote-ingress-version':'2'},
+      payload:{id,deviceId,deviceName:'Generated phone',platform:device.platform,capturedAt:new Date().toISOString(),text:'Generated source bar note'},
+    });
+    assert.equal(note.statusCode,201,note.body);
+  }
+  const revoked=await node.app.inject({method:'DELETE',url:url+'/'+credentialId,headers});
+  assert.equal(revoked.statusCode,200,revoked.body);
+  assert.ok((await inventory())[0].revokedAt);
+  assert.ok((await list()).items.some(item=>item.deviceId===device.deviceId));
+  const archived=await node.app.inject({url:'/api/library/browse?deviceId='+encodeURIComponent(device.deviceId),headers});
+  assert.equal(archived.statusCode,200,archived.body);
+  assert.deepEqual(archived.json().items.map((item:{ref:string})=>item.ref),['capture:'+noteId]);
 });
