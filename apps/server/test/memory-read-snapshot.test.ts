@@ -10,6 +10,7 @@ import {EvidenceStore as Store,StoreError} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {registerEvidenceRoutes} from '../src/evidence-routes.js';
+import {createContextTrees} from '../src/context-trees.js';
 import {MemoryBindings} from '../src/memory-bindings.js';
 import {MemoryAutomation} from '../src/memory-automation.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
@@ -101,6 +102,46 @@ test('a selected current-memory page pins only its one requested body',async t=>
  assert.equal(log.byIdMemories(),1);assert.equal(log.byIdCatalog(),1);
 });
 
+test('PF2-04 tree traversal executes a linear number of statements over ten thousand memories',async t=>{
+ const f=await fixture(t,1),trees=createContextTrees(),[seed]=f.added;
+ const insert=f.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)');
+ const dependency=f.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)');
+ const add=(count:number)=>{
+  f.store.db.exec('BEGIN IMMEDIATE');
+  for(let i=0;i<count;i++){
+   const id=randomUUID();insert.run(id,seed!.memory.createdAt,JSON.stringify({...seed!.memory,id,title:'Generated tree memory '+id}));
+   dependency.run(id,seed!.evidenceId);
+  }
+  f.store.db.exec('COMMIT');
+ };
+ let executed=0;
+ const prepare=f.store.db.prepare.bind(f.store.db);
+ const statements=t.mock.method(f.store.db,'prepare',(sql:string)=>{
+  const statement=prepare(sql);
+  for(const name of ['all','get','run','iterate'] as const){
+   const method=statement[name].bind(statement);
+   Object.defineProperty(statement,name,{value:(...args:Parameters<typeof method>)=>{executed++;return method(...args);}});
+  }
+  return statement;
+ });
+ const traverse=async count=>{
+  executed=0;
+  const seen=new Set<string>();let cursor:string|undefined;
+  do{
+   const page=await trees.page(f.reader,'topics','personal',{limit:100,cursor});
+   for(const memory of page.items){assert.ok(!seen.has(memory.id));seen.add(memory.id);}
+   cursor=page.nextCursor??undefined;
+  }while(cursor);
+  assert.equal(seen.size,count);
+  return executed;
+ };
+ add(2499);const small=await traverse(2500);
+ add(7500);const large=await traverse(10000);
+ assert.ok(small>0&&large<=4*small+20,`statements at 2,500 and 10,000: ${small}, ${large}`);
+ assert.ok(large<=1500,`10,000 memories executed ${large} statements`);
+ statements.mock.restore();
+});
+
 test('missing ids return 404 and an empty selection pins nothing',async t=>{
  const f=await fixture(t,200);
  const empty=f.bindings.retainSnapshot([]);
@@ -174,6 +215,9 @@ test('bound provider reads keep the pinned key, release ownership and late-revoc
  f.store.delete(revokedTarget!.evidenceId);
  resume();
  const fenced=await pending;
- assert.equal(fenced.statusCode,404,fenced.body);
+ assert.equal(fenced.statusCode,410,fenced.body);
+ assert.ok(!fenced.body.includes(revokedTarget!.memory.statement));
  assert.equal(retained(),false,'the owned pin is released after the fenced read');
+ f.reader.memories.delete(revokedTarget!.memory.id);
+ assert.equal((await f.app.inject({url:'/api/memories/'+revokedTarget!.memory.id})).statusCode,404);
 });

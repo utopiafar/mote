@@ -63,6 +63,24 @@ test('owner HTTP reads use real external bodies; provider failure cannot become 
  await assert.rejects(exportBoundMemories(f.bindings),{statusCode:502});
 });
 
+test('PF2 R3 single context read reports Gone when its external Memory original is deleted during the provider read',async t=>{
+ const f=await fixture(t),{memory,evidenceId}=await f.add();f.bind();
+ const readContext=()=>f.app.inject({method:'POST',url:'/api/context/read',payload:{refs:['memory:'+memory.id]}});
+ const available=await readContext();assert.equal(available.statusCode,200,available.body);
+ assert.ok(available.json().items[0].text.includes(memory.statement));
+ const providerRead=f.provider.read.bind(f.provider);
+ const intercepted=t.mock.method(f.provider,'read',async(input:Parameters<typeof providerRead>[0])=>{
+  const body=await providerRead(input);assert.ok(body);
+  assert.deepEqual(f.store.delete(evidenceId),{deleted:1});
+  return body;
+ });
+ for(let attempt=0;attempt<2;attempt++){
+  const gone=await readContext();assert.equal(gone.statusCode,410,gone.body);
+  assert.ok(!gone.body.includes(memory.statement));assert.ok(!gone.body.includes(memory.evidence[0].quote!));
+ }
+ assert.equal(intercepted.mock.callCount(),1,'an already withdrawn Memory never reads from its provider');
+});
+
 test('owner HTTP rejects changed provider bodies, revisions and retrieval namespaces while the SQL copy stays readable',async t=>{
  const f=await fixture(t),{memory}=await f.add();f.bind();
  const read=f.provider.read.bind(f.provider),search=f.provider.search.bind(f.provider);
