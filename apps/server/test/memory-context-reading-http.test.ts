@@ -174,12 +174,12 @@ test('releasing a read context original purges its private draft; explicit Mater
  const dependent=f.done.memoryIds.map((id:string)=>f.node.memories.get(id)).find((memory:any)=>memory.evidenceIds.includes(f.otherId))!;
  const deleted=await f.api('DELETE','/api/captures/'+f.otherCaptureId);assert.equal(deleted.statusCode,200,deleted.body);
  assert.equal(f.node.store.db.prepare('SELECT json FROM memory_extraction_drafts WHERE batch_id=?').get(leaf.id),undefined,'a retired context original cannot remain in a reusable private target draft');
- const retained=await f.api('GET','/api/memories/'+dependent.id);assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().status,'published');assert.equal(retained.json().evidence.find((proof:any)=>proof.id===f.otherId).originalAvailable,false);assert.equal((await f.api('GET','/api/captures/'+f.otherCaptureId)).statusCode,404);
+ const withdrawn=await f.api('GET','/api/memories/'+dependent.id);assert.equal(withdrawn.statusCode,410,withdrawn.body);assert.ok(!withdrawn.body.includes(dependent.statement));assert.equal((await f.api('GET','/api/captures/'+f.otherCaptureId)).statusCode,404);
  f.node.materials.forget(f.otherMaterialRef.split('@')[0].replace('material:',''));const removed=await f.api('GET','/api/memories/'+dependent.id);assert.equal(removed.statusCode,404,removed.body);
  assert.ok(f.node.memories.list().some(memory=>memory.title==='Generated toy-cat reaction'&&memory.status==='published'),'the separately supported target event remains available');
 });
 
-test('a reviewer-only context read gains durable dependencies; releasing its original keeps the published Memory until the owner removes its whole import source',{timeout:30000},async t=>{
+test('a reviewer-only context read gains durable dependencies; ordinary deletion and import forgetting have distinct outcomes',{timeout:30000},async t=>{
  const f=await fixture(t,'review-only-context');assert.equal(f.done.status,'completed',failureSummary(f));
  const middle=f.calls.filter(call=>call.target.length===1&&call.target[0].offset===256&&call.target[0].length===256);assert.deepEqual(middle.map(call=>call.phase),['extract','review']);
  assert.ok(middle.every(call=>!call.seedIds.includes(f.otherId)),'neither phase receives the additional original as an initial seed');
@@ -190,7 +190,7 @@ test('a reviewer-only context read gains durable dependencies; releasing its ori
  const dependent=f.done.memoryIds.map((id:string)=>f.node.memories.get(id)).find((memory:any)=>memory.evidenceIds.includes(f.otherId))!;assert.ok(dependent);
  const deleted=await f.api('DELETE','/api/captures/'+f.otherCaptureId);assert.equal(deleted.statusCode,200,deleted.body);
  assert.equal(f.node.store.db.prepare('SELECT json FROM memory_extraction_drafts WHERE batch_id=?').get(leaf.id),undefined);
- const retained=await f.api('GET','/api/memories/'+dependent.id);assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().status,'published');assert.equal(retained.json().evidence.find((proof:any)=>proof.id===f.otherId).originalAvailable,false);assert.equal((await f.api('GET','/api/captures/'+f.otherCaptureId)).statusCode,404);
+ const withdrawn=await f.api('GET','/api/memories/'+dependent.id);assert.equal(withdrawn.statusCode,410,withdrawn.body);assert.ok(!withdrawn.body.includes(dependent.statement));assert.equal((await f.api('GET','/api/captures/'+f.otherCaptureId)).statusCode,404);
  const binding=f.node.memoryBindings.binding(),key=memoryProviderKey(dependent);assert.equal((await f.node.memoryBindings.read(dependent.id,binding,key)).id,dependent.id);
  f.node.store.db.exec(`CREATE TEMP TRIGGER generated_import_source_failure BEFORE DELETE ON source_connections WHEN old.id='${f.material.origin.sourceId}' BEGIN SELECT RAISE(ABORT,'generated import source failure');END;`);assert.notEqual((await f.api('DELETE','/api/imports/'+f.importId)).statusCode,200);assert.equal((await f.node.memoryBindings.read(dependent.id,binding,key)).id,dependent.id,'failed source withdrawal rolls back Memory and its provider revocation with the source');assert.equal(f.node.sources.getSource(f.material.origin.sourceId).enabled,true);f.node.store.db.exec('DROP TRIGGER generated_import_source_failure');
  const forgotten=await f.api('DELETE','/api/imports/'+f.importId);assert.equal(forgotten.statusCode,200,forgotten.body);assert.equal(forgotten.json().retainedSharedSource,false);const removed=await f.api('GET','/api/memories/'+dependent.id);assert.equal(removed.statusCode,404,removed.body);await f.node.memoryPublication.reconcile();

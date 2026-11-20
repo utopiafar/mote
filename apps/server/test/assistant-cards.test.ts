@@ -122,6 +122,41 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
   assert.throws(()=>cards.get(id,all),{statusCode:404});
  });
 
+ await t.test('PF2-01 owner deletion withdraws a dependent card on the next feed read',async()=>{
+  const original=await capture('Generated deletion original');
+  const removed=publish({...item(randomUUID(),'1',[original],'Generated withdrawn card'),evidence:[{id:original,quote:'Generated deletion original'}]},undefined,all);
+  const kept=publish(item(randomUUID(),'1',[originalB],'Generated independent card'),undefined,all);
+  const feed=()=>node.app.inject({url:'/api/assistant-cards?scope='+encodeURIComponent(JSON.stringify(all)),headers});
+  assert.ok((await feed()).json().items.some((card:{id:string})=>card.id===removed.id));
+  const deletion=await node.app.inject({method:'DELETE',url:'/api/captures/'+original,headers});
+  assert.equal(deletion.statusCode,200,deletion.body);assert.deepEqual(deletion.json(),{deleted:1});
+  const after=await feed();assert.equal(after.statusCode,200,after.body);
+  const ids=after.json().items.map((card:{id:string})=>card.id);
+  assert.ok(!ids.includes(removed.id));assert.ok(ids.includes(kept.id));
+  assert.doesNotMatch(after.body,/Generated withdrawn card/);
+  assert.throws(()=>cards.get(removed.id,all),{statusCode:404});
+ });
+
+ for(const grant of ['pause','reference'] as const)await t.test(`PF2-02 source ${grant} hides cards with and without a source-context pin`,async()=>{
+  const sourceId='generated-withdrawn-card-source-'+grant,quote='Generated authorized source original';
+  node.sources.register({id:sourceId,name:'Generated withdrawable source',kind:'custom',deviceId:'generated-device',platform:'import'});
+  const original=await node.sources.upsert(sourceId,{externalId:'document',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:quote});
+  const plain=publish({...item(randomUUID(),'1',[original.id],'Generated evidence-only card'),evidence:[{id:original.id,quote}]},undefined,all);
+  const pinned=publish({...item(randomUUID(),'1',[original.id],'Generated source-pinned card'),evidence:[{id:original.id,quote}],sourceContextDependencies:[node.sources.contexts.metadataIdentity(sourceId)]},undefined,all);
+  const selected:QueryScope={kind:'selection',sourceIds:[sourceId]};
+  assert.deepEqual(cards.page({scope:selected}).items.map(card=>card.id),[pinned.id,plain.id]);
+  const patch=grant==='pause'?{enabled:false}:{retention:'reference'};
+  const revoked=await node.app.inject({method:'PATCH',url:'/api/sources/'+sourceId,headers,payload:patch});
+  assert.equal(revoked.statusCode,200,revoked.body);
+  for(const [key,value] of Object.entries(patch))assert.equal(revoked.json()[key],value);
+  assert.deepEqual(cards.page({scope:selected}).items,[]);
+  assert.ok(!cards.page({scope:all}).items.some(card=>card.id===plain.id||card.id===pinned.id));
+  for(const id of [plain.id,pinned.id]){
+   assert.equal(node.store.db.prepare('SELECT state FROM assistant_cards WHERE id=?').get(id)?.state,'stale');
+   assert.throws(()=>cards.get(id,all),{statusCode:404});
+  }
+ });
+
  await t.test('source revision marks a card stale while preserving authorized historical versions',async()=>{
   const sourceId='generated-card-source';
   node.sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:'generated-source-device',platform:'import'});
@@ -272,6 +307,32 @@ test('assistant cards retain scoped versions and feedback, resolve safely, and r
   assert.deepEqual(restricted.disclosureDependencies.ids,[current]);
   assert.deepEqual(reads,[[current,previous].sort()]);
  });
+});
+
+test('PF2-03 a page checks at most its size plus one among ten thousand cards',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-card-page-mark-')),store=new Store(directory),sources=new SourceStore(store),reader=new EvidenceReader(store,sources),cards=new AssistantCards(store,reader);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ const sourceId='generated-card-page-source',at='2026-10-01T00:00:00.000Z';
+ sources.register({id:sourceId,name:'Generated card page source',kind:'custom',deviceId:'generated',platform:'import'});
+ const original=await sources.upsert(sourceId,{externalId:'document',revision:'1',observedAt:at,kind:'message',layer:'original',text:'Generated card page original'});
+ const saveCard=store.db.prepare("INSERT INTO assistant_cards(id,cursor_key,kind,revision,current_version,state,created_at,updated_at) VALUES(?,hex(randomblob(32)),'activity',1,'1','open',?,?)");
+ const saveVersion=store.db.prepare("INSERT INTO assistant_card_versions(card_id,version,request_hash,state,private_json,created_at) VALUES(?,'1','generated','open',?,?)");
+ const saveEvidence=store.db.prepare("INSERT INTO assistant_card_evidence(card_id,version,evidence_id) VALUES(?,'1',?)");
+ const live:string[]=[],size=25;
+ store.db.exec('BEGIN IMMEDIATE');
+ for(let i=0;i<10000;i++){
+  const id=randomUUID();saveCard.run(id,at,at);
+  saveVersion.run(id,'json:'+JSON.stringify({title:'Generated page card',body:'Generated page body',evidence:[]}),at);
+  if(i<=size)live.unshift(id);else saveEvidence.run(id,original.id);
+ }
+ store.db.exec('COMMIT');
+ sources.update(sourceId,{enabled:false});
+ assert.equal(store.db.prepare("SELECT count(*) n FROM assistant_cards WHERE state='stale'").get()?.n,10000-live.length);
+ const visibility=t.mock.method(reader,'contextDependenciesAllowed');
+ const page=cards.page({scope:all,limit:size});
+ assert.deepEqual(page.items.map(card=>card.id),live.slice(0,size));assert.ok(page.nextCursor);
+ assert.equal(visibility.mock.callCount(),size+1);
+ assert.deepEqual(cards.page({scope:all,limit:size,cursor:page.nextCursor!}).items.map(card=>card.id),live.slice(size));
 });
 
 test('encrypted card bodies and feedback survive restart and maintenance deletion purges them',async t=>{

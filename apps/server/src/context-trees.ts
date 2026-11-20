@@ -5,11 +5,12 @@ import type {EvidenceStore as Store} from './evidence-store.js';
 import {moteText} from './i18n.js';
 import type {FastifyInstance} from 'fastify';
 import type {MemoryRead,MemoryReadSnapshots} from './evidence-read-ports.js';
+import type {EvidenceReader} from './evidence-reader.js';
 import type {Memory} from './memory-schema.js';
 import {navigationScopeSchema} from './context-navigation.js';
 import {StoreError,sha256} from './evidence-store.js';
 import {formatEvidenceRef} from '@mote/shared';
-export type TreeMemoryRead=Pick<MemoryRead,'memoryPageAsync'> & Pick<MemoryReadSnapshots,'memoryBindings'>;
+export type TreeMemoryRead=Pick<MemoryRead,'memoryPageAsync'> & Pick<MemoryReadSnapshots,'memoryBindings'> & Pick<EvidenceReader,'memoryListStillPresent'>;
 
 const identity=z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/);
 const selector=z.object({domain:z.enum(['personal','coding']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),codingKind:z.enum(['pitfall','decision','principle','preference']).optional(),memoryIds:z.array(z.string().uuid()).max(20000).optional()}).strict();
@@ -111,29 +112,42 @@ export class ContextTreeRegistry {
     const navigation=Object.fromEntries(Object.keys(navigationScopeSchema.shape).filter(key=>scope[key as keyof typeof scope]!==undefined).map(key=>[key,scope[key as keyof typeof scope]]));
     const tree=automatic?(await this.automaticTrees(reader,navigation))?.find(tree=>tree.id===treeId):this.trees.get(treeId),node=tree?.nodes.find(value=>value.id===nodeId);
     if(!tree||!node||!automatic&&!await this.registeredTreeVisible(reader,navigation,tree))throw new StoreError('Context tree node not found',404);
-    const snapshot=reader.memoryBindings?.retainSnapshot();
+    // A tree cursor pins the provider binding. The shared reader pins each
+    // candidate page, so traversing the tree does not rebuild the full library.
+    const snapshot=reader.memoryBindings?.retainSnapshot([]);
+    const items:Memory[]=[];
+    let nextCursor:string|null=null;
     try{
       const signature=sha256(JSON.stringify({tree,node,revision:this.revision,scope,binding:snapshot?.binding}));
       let start:string|null=null,offset=0,expectedPage:string|undefined;
       if(cursor){try{const p=positionSchema.parse(JSON.parse(Buffer.from(cursor,'base64url').toString()));if(p.signature!==signature)throw Error();start=p.start;offset=p.offset;expectedPage=p.page;}catch{throw new StoreError('Context tree changed; restart browsing',409);}}
-      const items:Memory[]=[];let scanned=0;
       const encode=(page:string)=>Buffer.from(JSON.stringify({signature,start,offset,page})).toString('base64url');
-      const matches=(memory:Memory)=>{const s=node.select;return (!s.domain||memory.domain===s.domain)&&(!s.kind||memory.kind===s.kind)&&(!s.codingKind||memory.coding?.kind===s.codingKind)&&(!s.memoryIds||s.memoryIds.includes(memory.id));};
-      while(scanned<1000){
-        const page=await reader.memoryPageAsync({...scope,includeHistory:scope.includeHistory==='true',includeStale:scope.includeStale==='true',cursor:start??undefined,limit:100},ownerArchive,snapshot);
+      const selectedIds=node.select.memoryIds&&new Set(node.select.memoryIds);
+      const matches=(memory:Memory)=>{const s=node.select;return (!s.domain||memory.domain===s.domain)&&(!s.kind||memory.kind===s.kind)&&(!s.codingKind||memory.coding?.kind===s.codingKind)&&(!selectedIds||selectedIds.has(memory.id));};
+      scan: for(let batch=0;batch<10;batch++){
+        const page=await reader.memoryPageAsync({...scope,includeHistory:scope.includeHistory==='true',includeStale:scope.includeStale==='true',cursor:start??undefined,limit:100},ownerArchive);
+        const current=reader.memoryBindings?.retainSnapshot([]);
+        try{
+          if(JSON.stringify(current?.binding)!==JSON.stringify(snapshot?.binding))throw new StoreError('Context tree changed; restart browsing',409);
+        }finally{current?.release();}
         const hash=sha256(JSON.stringify(page.items.map(item=>[item.id,item.revision??item.fingerprint,item.status])));
         if(expectedPage&&expectedPage!==hash)throw new StoreError('Context tree contents changed; restart browsing',409);
         expectedPage=undefined;
         for(;offset<page.items.length;offset++){
-          const item=page.items[offset];scanned++;
+          const item=page.items[offset];
           if(matches(item))items.push(item);
-          if(items.length===limit){offset++;return {items,nextCursor:offset<page.items.length?encode(hash):page.nextCursor?Buffer.from(JSON.stringify({signature,start:page.nextCursor,offset:0,page:''})).toString('base64url'):null};}
+          if(items.length===limit){
+            offset++;
+            nextCursor=offset<page.items.length?encode(hash):page.nextCursor?Buffer.from(JSON.stringify({signature,start:page.nextCursor,offset:0,page:''})).toString('base64url'):null;
+            break scan;
+          }
         }
-        if(!page.nextCursor)return {items,nextCursor:null};
+        if(!page.nextCursor){nextCursor=null;break;}
         start=page.nextCursor;offset=0;
+        nextCursor=encode('');
       }
-      return {items,nextCursor:encode('')};
     }finally{snapshot?.release();if(automatic&&!(await this.automaticTrees(reader,navigation))?.some(current=>JSON.stringify(current)===JSON.stringify(tree)))throw new StoreError('Automatic topic inputs changed; restart browsing',409);}
+    return {items:reader.memoryListStillPresent(items,ownerArchive),nextCursor};
   }
 }
 /** Fixed read-only capability for the context plugin. The registry instance is

@@ -83,6 +83,7 @@ export class AssistantCards {
  private valid(ids:readonly string[],scope:QueryScope,historical=false,sourceIds:readonly string[]=[],review?:ReviewEvidence):boolean{
   // Empty selections remain empty, including cards with no evidence.
   if(scope.kind==='selection'&&((scope.sourceIds&&scope.sourceIds.length===0)||(scope.evidenceIds&&scope.evidenceIds.length===0)))return false;
+  if(this.reader.hasWithdrawnMemory(ids))return false;
   if(!this.reader.contextDependenciesAllowed(ids,undefined,historical))return false;
   if(!historical&&this.store.db.prepare(`SELECT 1 FROM memories WHERE id IN (SELECT value FROM json_each(?))
    AND (coalesce(json_extract(json,'$.status'),'')!='published' OR json_extract(json,'$.supersededBy') IS NOT NULL) LIMIT 1`).get(JSON.stringify(ids)))return false;
@@ -98,11 +99,15 @@ export class AssistantCards {
   }
   for(const record of records){
    if(record.privacy?.excluded||!withinEvidenceScope(record,scope))return false;
+   const sourceId=record.provenance?.sourceId;
+   if(sourceId&&this.store.db.prepare(`SELECT 1 FROM source_connections WHERE id=? AND
+    (json_extract(json,'$.enabled')=0 OR (json_extract(json,'$.retention')='reference' AND ? IS NOT 'reference'))`)
+    .get(sourceId,record.provenance?.layer??null))return false;
    if(scope.kind==='selection'&&scope.sourceIds!==undefined&&(!record.provenance?.sourceId||!scope.sourceIds.includes(record.provenance.sourceId)))return false;
    if(selected&&!selected.has(record.id))return false;
   }
   for(const sourceId of sourceIds){
-   try{this.reader.sources.getSource(sourceId);}catch{return false;}
+   try{if(!this.reader.sources.getSource(sourceId).enabled)return false;}catch{return false;}
    if(scope.kind==='selection'&&scope.sourceIds!==undefined&&!scope.sourceIds.includes(sourceId))return false;
    if((scope.deviceId!==undefined||scope.after!==undefined||scope.before!==undefined||scope.evidenceIds!==undefined)&&!records.some(record=>record.provenance?.sourceId===sourceId))return false;
   }
@@ -347,9 +352,23 @@ export class AssistantCards {
    for(const row of rows){if(this.visibleVersion(row,scope))return true;before=row.seq;}
   }
  }
- private *feedRows(before:number,batch:number){
+ private *feedRows(before:number,batch:number,scope?:QueryScope,selection?:ReadonlySet<string>){
+  const filters:string[]=[],values:string[]=[];
+  if(scope?.kind==='selection'&&scope.sourceIds){
+   filters.push("coalesce(json_extract(c.json,'$.provenance.sourceId'),'') NOT IN (SELECT value FROM json_each(?))");
+   values.push(JSON.stringify(scope.sourceIds));
+  }
+  if(selection){filters.push('c.id NOT IN (SELECT value FROM json_each(?))');values.push(JSON.stringify([...selection]));}
+  if(scope?.deviceId){filters.push('c.device_id!=?');values.push(scope.deviceId);}
+  // These predicates only reject known mismatches. Derived records, source pins
+  // and request-time disclosure still go through the shared visibility check.
+  const rowsBefore=this.store.db.prepare(`SELECT a.* FROM assistant_cards a WHERE a.seq<? AND a.state!='stale'
+   AND EXISTS(SELECT 1 FROM assistant_card_versions v WHERE v.card_id=a.id AND v.version=a.current_version AND v.stale=0 AND v.private_json IS NOT NULL)
+   ${filters.length?`AND NOT EXISTS(SELECT 1 FROM assistant_card_evidence e JOIN captures c ON c.id=e.evidence_id
+    WHERE e.card_id=a.id AND e.version=a.current_version AND (${filters.join(' OR ')}))`:''}
+   ORDER BY a.seq DESC LIMIT ?`);
   for(;;){
-   const rows=this.store.db.prepare("SELECT * FROM assistant_cards WHERE seq<? AND state!='stale' ORDER BY seq DESC LIMIT ?").all(before,batch) as CardRow[];
+   const rows=rowsBefore.all(before,...values,batch) as CardRow[];
    for(const row of rows)yield row;
    if(rows.length<batch)return;
    before=rows.at(-1)!.seq;
@@ -360,13 +379,16 @@ export class AssistantCards {
   return this.transaction(()=>{
    let before=Number.MAX_SAFE_INTEGER;
    if(selected.cursor)before=this.cursorRow(selected.cursor,selected.scope).seq;
-   const found:ReturnType<AssistantCards['view']>[]=[],batch=Math.max(30,selected.limit+1);
-   for(const row of this.feedRows(before,batch)){
-    const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,selected.scope);
-    if(visible&&this.feedEligible(row,visible.body))found.push(this.view(row,selected.scope,visible));
+   const scope=selected.scope;
+   if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return {items:[],nextCursor:null};
+   const evidence:ReviewEvidence={current:new Map(),historical:new Map(),selection:scope.evidenceIds&&new Set(taskEvidenceIds(this.store,{version:1,complete:true,ids:scope.evidenceIds}))};
+   const found:{row:CardRow;visible:VisibleVersion}[]=[];
+   for(const row of this.feedRows(before,selected.limit+1,scope,evidence.selection)){
+    const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,scope,false,evidence);
+    if(visible&&this.feedEligible(row,visible.body))found.push({row,visible});
     if(found.length>selected.limit)break;
    }
-   const items=found.slice(0,selected.limit),last=items.at(-1);
+   const items=found.slice(0,selected.limit).map(({row,visible})=>this.view(row,scope,visible)),last=items.at(-1);
    return {items,nextCursor:found.length>selected.limit&&last?this.cursor(selected.scope,last.id):null};
   });
  }
