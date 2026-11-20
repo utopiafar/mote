@@ -1,14 +1,18 @@
-export const desktopPages = ['restore','export-result','mac-options','preferences','backup','storage','chrome','source-detail','source-editor','source-connect','content-reader', 'screen', 'meeting', 'ask', 'statistics', 'overview', 'notes', 'records', 'uploads', 'sources', 'work', 'settings', 'capture-sync', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
+export const desktopSections = ['sources', 'permissions', 'work', 'storage', 'records'] as const;
+export type DesktopSection = typeof desktopSections[number];
+export const desktopPages = [...desktopSections, 'restore', 'export-result', 'mac-options', 'preferences', 'backup', 'chrome', 'source-detail', 'source-editor', 'source-connect', 'content-reader', 'screen', 'meeting', 'statistics', 'notes', 'uploads', 'settings', 'capture-sync', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression'] as const;
 export type DesktopPage = typeof desktopPages[number];
-export type DesktopSection = 'overview' | 'records' | 'ask' | 'sources' | 'work' | 'settings';
 
-const roots = new Set<DesktopPage>(['overview', 'records', 'ask', 'sources', 'work', 'settings']);
-const advanced = new Set<DesktopPage>(['mac-options','preferences','backup','storage','chrome','capture-sync','statistics', 'activity', 'developer', 'about', 'compression']);
+const roots = new Set<DesktopPage>(desktopSections);
+
+export function restoreDesktopSection(remembered: string | null): DesktopSection {
+  return desktopSections.find(section => section === remembered) ?? desktopSections[0];
+}
 
 /** UI routes only. Captured content never influences navigation or authorization. */
 export class DesktopNavigation {
-  page: DesktopPage = 'overview';
-  section: DesktopSection = 'overview';
+  page: DesktopPage = desktopSections[0];
+  section: DesktopSection = desktopSections[0];
   private trail: DesktopPage[] = [];
 
   get backTarget(): DesktopPage { return this.trail.at(-1) ?? this.section; }
@@ -23,7 +27,6 @@ export class DesktopNavigation {
     } else {
       if (this.trail.at(-1) === next) this.trail.pop();
       else this.trail.push(this.page);
-      if (advanced.has(next)) this.section = 'settings';
     }
     this.page = next;
     return true;

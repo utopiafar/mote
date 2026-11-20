@@ -4,26 +4,23 @@ import type {DesktopApi,Status} from './contracts';
 import type {ContentItem,ContentDetail,CentralContentPage} from './content-library';
 import type {SyncContent} from './sync-content';
 import {showSkeleton} from './loading-ui';
-/** Home and Content share one evidence reader; no markup from evidence becomes UI. */
-export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,homeContentChanged?:(hasContent:boolean|undefined,rows:readonly ContentItem[],archiveAuthorizationDenied:boolean)=>void,reader?:{open():void;close():void}){
+/** Local content and its evidence reader; no markup from evidence becomes UI. */
+export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,reader?:{open():void;close():void}){
   const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
   const dialog=el<HTMLDialogElement>('content-detail-dialog');
   const releaseDialog=document.getElementById('content-release-dialog') as HTMLDialogElement|null;
   let releaseTarget:{key:string;generation:number}|undefined;
   const cancelRelease=()=>{releaseTarget=undefined;if(releaseDialog?.open)releaseDialog.close();};
   document.getElementById('content-memories')?.addEventListener('click',()=>openMemories?.());
-  let generation=0,homeGeneration=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
+  let generation=0,detailGeneration=0,status:Status|undefined,localOffset=0,remoteCursor:string|undefined,localMore=false,remoteMore=false;
   let archiveGeneration=0,archiveAuthorizationDenied=false,detailIsCentral=false;
   let archiveRequest=0,archiveResponse=0,archiveConflict=0;
   let archiveConfirmation:{scope:number}|undefined;
-  let loadedScope='',homeStale=false,deferredContent=false,deferredHome=false;
-  const homeVisible=()=>!el('home-recent').closest('[hidden]');
-  let items:ContentItem[]=[],homeItems:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;
+  let loadedScope='',deferredContent=false;
+  let items:ContentItem[]=[],selected:ContentItem|undefined,selectedButton:HTMLElement|undefined,chunkOffset=0,centralId:string|undefined;
   const sourceName=(source:ContentItem['source'])=>({screen:moteText('截图'),ui_page:moteText('页面内容采集'),note:moteText('记录'),activity:moteText('应用活动'),notification:moteText('通知'),media:moteText('媒体状态'),file:moteText('文件'),calendar:moteText('日历'),coding:moteText('编码对话')} as Partial<Record<ContentItem['source'],string>>)[source]??moteText('内容');
-  function renderFeed(id:string,rows:ContentItem[],known=true){
-    const compact=id==='home-recent',root=el(id);root.replaceChildren();
-    if(compact)homeContentChanged?.(known?rows.length>0:undefined,rows,archiveAuthorizationDenied);
-    if(compact&&!rows.length){if(known){const empty=document.createElement('p');empty.className='home-empty';empty.textContent=moteText('还没有本机内容');root.append(empty);}return;}
+  function renderFeed(id:string,rows:ContentItem[]){
+    const root=el(id);root.replaceChildren();
     if(!rows.length){const empty=document.createElement('div');empty.className='content-empty';const title=document.createElement('strong');title.textContent=moteText('还没有内容，从一个小动作开始');const copy=document.createElement('p');copy.textContent=moteText('同步文件夹、导入文件、记录屏幕或写一条记录。内容会先保存在本机。');empty.append(title,copy);root.append(empty);return;}
     for(const item of rows){const button=document.createElement('button');button.type='button';button.className='content-row';button.dataset.contentKey=item.key;
       const icon=document.createElement('span');icon.className='content-type';icon.textContent=sourceName(item.source);
@@ -46,20 +43,11 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     const centralIds=new Set(sorted.filter(item=>item.key.startsWith('capture:')).map(item=>item.key.slice(8)));
     return sorted.filter(item=>!item.key.startsWith('queue:')||!centralIds.has(item.key.slice(6)));
   }
-  function renderHome(rows:ContentItem[],unavailable=false){
-    homeItems=rows;renderFeed('home-recent',rows.slice(0,3),!unavailable);
-    if(unavailable){
-      const notice=document.createElement('p');notice.className='home-empty';notice.textContent=moteText('内容暂不可完整读取，请重试。');
-      const retry=document.createElement('button');retry.type='button';retry.className='text-button';retry.textContent=moteText('重试');retry.addEventListener('click',()=>{retry.disabled=true;void refreshHome();});
-      el('home-recent').append(notice,retry);
-    }
-  }
   function denyArchive(){
     archiveAuthorizationDenied=true;archiveGeneration++;remoteMore=false;remoteCursor=undefined;
     items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);if(!items.length)el('content-feed').replaceChildren();
     el('content-more').hidden=!localMore;
     el('content-status').textContent=moteText('无法访问采集记录，请检查中央连接权限');el('content-status').classList.remove('visually-hidden');el('content-status').setAttribute('aria-busy','false');
-    renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')),true);
     if(dialog.open&&(selected?.key.startsWith('capture:')||detailIsCentral))close();
   }
   function confirmArchive(repeat=false){
@@ -88,28 +76,10 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     if(result.value.authorizationDenied){denyArchive();return true;}
     archiveAuthorizationDenied=false;return false;
   }
-  // The workbench is independent of the Content workspace's selected filter and pagination.
-  async function refreshHome(){
-    if(document.hidden){deferredHome=true;return;}
-    homeStale=false;const version=++homeGeneration,archiveVersion=archiveGeneration,request=status?.config.tokenConfigured?++archiveRequest:undefined;
-    let denied=false;
-    const [local,remote]=await Promise.allSettled([api.localContent(0),request!==undefined?api.centralContent().then(value=>{denied=observeArchive({status:'fulfilled',value},request,archiveVersion);return value;}):undefined]);
-    if(version!==homeGeneration)return;
-    const rows:ContentItem[]=[];
-    if(local.status==='fulfilled')rows.push(...local.value.items);else rows.push(...homeItems.filter(row=>!row.key.startsWith('capture:')));
-    if(remote.status==='fulfilled'&&remote.value&&archiveVersion===archiveGeneration){
-      if(!remote.value.authorizationDenied)rows.push(...remote.value.items);
-    }
-    const ignoredDenial=remote.status==='fulfilled'&&remote.value?.authorizationDenied&&!denied;
-    const discarded=remote.status==='fulfilled'&&remote.value&&!remote.value.authorizationDenied&&archiveVersion!==archiveGeneration;
-    if(ignoredDenial&&!archiveAuthorizationDenied)rows.push(...homeItems.filter(row=>row.key.startsWith('capture:')));
-    renderHome(mergeRows(rows),local.status==='rejected'||remote.status==='rejected'||Boolean(ignoredDenial)||Boolean(discarded)||denied&&!rows.length);
-  }
   async function refresh(append=false){
     if(document.hidden){deferredContent=true;return;}
     lastRefresh=Date.now();if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=undefined;}
-    const version=++generation,homeVersion=homeGeneration,archiveVersion=archiveGeneration;const scope=el<HTMLSelectElement>('content-scope').value,query=el<HTMLInputElement>('content-search').value;
-    for(const button of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-content-scope]')))button.setAttribute('aria-pressed',String(button.dataset.contentScope===scope));
+    const version=++generation,archiveVersion=archiveGeneration;const scope=el<HTMLSelectElement>('content-scope').value,query=el<HTMLInputElement>('content-search').value;
     const scopeKey=JSON.stringify([scope,query.trim()]),previous=loadedScope===scopeKey?items:[];
     if(!append){localOffset=0;remoteCursor=undefined;localMore=false;remoteMore=false;items=[];}
     showSkeleton(el('content-status'),moteText('正在读取内容…'));
@@ -137,7 +107,6 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
     if(scope!=='local'&&archiveAuthorizationDenied)error=moteText('无法访问采集记录，请检查中央连接权限');
     items=mergeRows([...items,...rows]);loadedScope=scopeKey;renderFeed('content-feed',items);
     if(error&&!items.length)el('content-feed').replaceChildren();
-    if(scope==='all'&&!query.trim()){if(!ignoredDenial&&homeVersion===homeGeneration){homeGeneration++;const unavailable=l.status==='rejected'||r.status==='rejected'||Boolean(discarded)||archiveAuthorizationDenied&&!items.length;renderHome(mergeRows([...items,...(l.status==='rejected'?homeItems.filter(row=>!row.key.startsWith('capture:')):[])]),unavailable);}}else if(homeVisible())void refreshHome();else{homeStale=true;homeGeneration++;}
     el('content-more').hidden=!localMore&&!remoteMore;
     el('content-status').textContent=error||(!status?.config.tokenConfigured?moteText('本机内容可离线阅读；连接中央后显示已归档内容。'):moteText('接收与整理分别进行，点开内容查看实际状态。'));
     el('content-status').classList.toggle('visually-hidden',!error);
@@ -179,7 +148,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       el('content-original').hidden=!result.hasImage;if(result.image)el<HTMLImageElement>('content-detail-image').src=result.image;
       el('content-detail-central').hidden=!centralId;
       if('nextChunkOffset'in result&&result.nextChunkOffset!==undefined){el('content-detail-next').hidden=false;el('content-detail-next').dataset.offset=String(result.nextChunkOffset);}
-    }catch(error){if(version!==detailGeneration||!dialog.open)return;renderReadableFailure(el('content-detail-status'),moteText('内容暂不可完整读取，请重试。'),error instanceof Error?error.message:String(error));clearDetail();el('content-detail-title').textContent=moteText('内容暂不可用');if(item.localContentRelease){el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale()),item.archiveAcknowledgment?.origin].filter(Boolean).join(' · ');el('content-detail-original-state').textContent=moteText(item.localContentRelease.pending?'本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。':'本机原件不在此设备，连接原中央后可按当前权限读取。');}el<HTMLDetailsElement>('content-processing').open=true;if(item.key.startsWith('capture:')){items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);renderHome(homeItems.filter(row=>!row.key.startsWith('capture:')));}}
+    }catch(error){if(version!==detailGeneration||!dialog.open)return;renderReadableFailure(el('content-detail-status'),moteText('内容暂不可完整读取，请重试。'),error instanceof Error?error.message:String(error));clearDetail();el('content-detail-title').textContent=moteText('内容暂不可用');if(item.localContentRelease){el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale()),item.archiveAcknowledgment?.origin].filter(Boolean).join(' · ');el('content-detail-original-state').textContent=moteText(item.localContentRelease.pending?'本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。':'本机原件不在此设备，连接原中央后可按当前权限读取。');}el<HTMLDetailsElement>('content-processing').open=true;if(item.key.startsWith('capture:')){items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);}}
     finally{if(version===detailGeneration&&dialog.open)el('content-detail-status').setAttribute('aria-busy','false');}
   }
   function clearDetail(){document.getElementById('content-detail-release')?.setAttribute('hidden','');document.getElementById('content-detail-save-original')?.setAttribute('hidden','');el('content-detail-facts').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-range').textContent='';el('content-detail-range').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-body').textContent='';el('content-detail-metadata').textContent='';el('content-detail-source').textContent='';el('content-detail-title').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');centralId=undefined;detailIsCentral=false;el<HTMLDetailsElement>('content-original').open=false;}
@@ -191,7 +160,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   releaseDialog?.addEventListener('cancel',cancelRelease);
   document.getElementById('content-release-confirm')?.addEventListener('click',()=>void(async()=>{
     const target=releaseTarget;releaseTarget=undefined;releaseDialog?.close();if(!target||target.key!==selected?.key||target.generation!==detailGeneration)return;
-    const version=++detailGeneration;clearDetail();items=items.filter(item=>item.key!==target.key);homeItems=homeItems.filter(item=>item.key!==target.key);renderFeed('content-feed',items);renderHome(homeItems);
+    const version=++detailGeneration;clearDetail();items=items.filter(item=>item.key!==target.key);renderFeed('content-feed',items);
     try{await api.releaseLocalContent(target.key);if(version!==detailGeneration)return;close();window.dispatchEvent(new window.CustomEvent('mote-local-content-released'));await refresh();}
     catch(error){if(version!==detailGeneration||!dialog.open)return;await readSelected();window.dispatchEvent(new window.CustomEvent('mote-local-content-released'));void refresh();if(dialog.open)renderReadableFailure(el('content-detail-status'),moteText('操作失败'),error instanceof Error?error.message:String(error));}
   })());
@@ -201,7 +170,6 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
   el('content-detail-central').addEventListener('click',()=>{if(centralId)void api.openCentral(undefined,centralId);});
   el<HTMLDetailsElement>('content-original').addEventListener('toggle',()=>{if(el<HTMLDetailsElement>('content-original').open&&!el<HTMLImageElement>('content-detail-image').src)void readSelected(true);});
   el('content-refresh').addEventListener('click',()=>void refresh());el('content-scope').addEventListener('change',()=>void refresh());el('content-more').addEventListener('click',()=>void refresh(true));
-  for(const button of Array.from(document.querySelectorAll<HTMLButtonElement>('[data-content-scope]')))button.addEventListener('click',()=>{el<HTMLSelectElement>('content-scope').value=button.dataset.contentScope!;void refresh();});
   let searchTimer:ReturnType<typeof setTimeout>|undefined;
   el('content-search').addEventListener('input',()=>{generation++;if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchTimer=undefined;void refresh();},180);});
   let signature='',lastRefresh=0,refreshTimer:ReturnType<typeof setTimeout>|undefined;
@@ -214,10 +182,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,hom
       return;
     }
     if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=undefined;}
-    const home=deferredHome||homeStale,content=deferredContent;
-    deferredHome=false;deferredContent=false;homeStale=false;
-    if(homeVisible()){if(home||content)void refreshHome();return;}
-    if(content)void refresh();
+    if(deferredContent){deferredContent=false;void refresh();}
   });
-  return {open(item:ContentItem){cancelRelease();selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,refreshHome,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.queueBytes,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];homeItems=[];loadedScope='';generation++;homeGeneration++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);renderFeed('home-recent',[],false);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}if(homeStale&&homeVisible())void refreshHome();},close};
+  return {open(item:ContentItem){cancelRelease();selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.queueBytes,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];loadedScope='';generation++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}},close};
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { captureStatusRow } from '@mote/shared/native-status';
 import { captureStatusRowFor } from '../src/capture-notification';
-import { trayMenuHeadline, trayMenuTemplate, type TrayMenuInput, type TrayMenuItem } from '../src/tray-menu';
+import { localWindowSettings, trayMenuHeadline, trayMenuTemplate, type TrayMenuInput, type TrayMenuItem } from '../src/tray-menu';
 import type { Status } from '../src/contracts';
 
 function desktopStatus(overrides: Record<string, unknown> = {}): Status {
@@ -95,6 +95,11 @@ describe('Mac tray menu template', () => {
     const send = (items: TrayMenuItem[]) => items.find(item => item.type === 'normal' && item.id === 'send');
     expect(send(menu({ canSend: true }))).toMatchObject({ enabled: true });
     expect(send(menu({ canSend: false }))).toMatchObject({ enabled: false });
+  });
+
+  it('keeps the local Settings entry available while the device needs to reconnect', () => {
+    const items = menu({ row: captureStatusRow('reconnect'), canSend: false });
+    expect(items).toContainEqual({ type: 'normal', id: localWindowSettings, label: '设置…', enabled: true });
   });
 });
 

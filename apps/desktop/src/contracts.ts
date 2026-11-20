@@ -102,7 +102,8 @@ export interface DesktopApi {
   syncHistoryContents(input: import('./contracts/sync-history').SyncHistoryContentQuery): Promise<import('./contracts/sync-history').SyncHistoryContentPage>;
   syncHistoryContent(runId: string, key: string, chunkOffset?: number, includeImage?:boolean): Promise<import('./contracts/content').SyncContent>;
   syncHistoryPending(): Promise<{source:import('./contracts/sync-history').SyncSource;pending:number;review:number;blocked:number;retrying:number}[]>;
-  ask(command: import('./contracts/ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
+  /** Transitional preload bridge for the removed Ask workspace; MC2 removes it with the old renderer. */
+  ask(command: 'reference' | 'history' | 'runs' | 'main' | 'settings' | 'new-conversation' | 'conversation' | 'run' | 'start' | 'cancel' | 'login' | 'logout' | 'login-browser', input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string; durationMs?: number}): Promise<unknown>;
   permissionStatus(): Promise<import('./contracts/permissions').PermissionStatus>;
   permissionSettings(kind: import('./contracts/permissions').PermissionKind): Promise<void>;
   requestPermission(kind: import('./contracts/permissions').PermissionKind): Promise<void>;
