@@ -6,6 +6,7 @@ import type {CaptureContextRead,MemoryRead,MemoryReadSnapshot} from './evidence-
 import type {SourceStore} from './sources.js';
 import type {EvidenceStore as Store} from './evidence-store.js';
 import {StoreError,type Range} from './evidence-store.js';
+import {defaultEvidenceExposurePolicy} from './evidence-exposure.js';
 
 export type ContextQueryInput = Range & {
   query?:string;
@@ -270,11 +271,12 @@ export class ContextQuery {
   }
 
   /** One request pins the same provider and immutable catalog for every ref. */
-  async readAsync(refs:string[],offset=0,length=4000,scope:Range={},snapshot?:MemoryReadSnapshot):Promise<ContextReadPage>{
+  async readAsync(refs:string[],offset=0,length=4000,scope:Range={},snapshot?:MemoryReadSnapshot,reportWithdrawn=false):Promise<ContextReadPage>{
     const owned=snapshot?undefined:this.retainMemorySnapshot(),pin=snapshot??owned;
     try{
       const bodies=new Map<string,Memory|undefined>();
-      for(const ref of refs.slice(0,5))if(parseEvidenceRef(ref)?.kind==='memory')bodies.set(ref,await this.memory.memoryAsync(ref,scope,false,pin));
+      const exposure=reportWithdrawn?{policy:defaultEvidenceExposurePolicy,operation:'expand' as const,reportWithdrawn}:undefined;
+      for(const ref of refs.slice(0,5))if(parseEvidenceRef(ref)?.kind==='memory')bodies.set(ref,await this.memory.memoryAsync(ref,scope,false,pin,exposure));
       return this.readResolved(refs,offset,length,scope,bodies);
     }finally{owned?.release();}
   }

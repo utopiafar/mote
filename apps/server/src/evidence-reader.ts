@@ -170,9 +170,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   memory(ref:string,scope:Range={},ownerArchive=false){
     if(this.memoryBindings?.binding().namespace)throw new StoreError('External Memory bodies require an asynchronous provider read',503);
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
-    const args={...scope,id:ref,includeStale:true,includeHistory:true,level:'overview' as const,limit:1};
-    if(!this.memoryCatalogPage(args,ownerArchive,true).items.length)return;
-    if(this.withdrawnMemoryIds([parsed.id]).size){if(ownerArchive)throw new MemoryOriginalWithdrawn();return;}
+    if(!this.memoryDetailVisible(parsed.id,scope,ownerArchive,{policy:defaultEvidenceExposurePolicy,operation:'expand',reportWithdrawn:true},true))return;
     return memoryWithOriginalAvailability(this.store,this.memories.get(parsed.id));
   }
   /** The release receipt is written before the original disappears and names
@@ -215,15 +213,15 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     return counts;
   }
   memoryPage(args:MemoryPageArgs={},ownerArchive=false){return this.memoryCatalogPage(args,ownerArchive);}
-  private memoryCatalogPage(args:MemoryPageArgs,ownerArchive:boolean,includeWithdrawn=false){
+  private memoryCatalogPage(args:MemoryPageArgs,ownerArchive:boolean,visibility:'available'|'withdrawn'='available'){
     if((args.level==='detail'||args.query)&&this.memoryBindings?.binding().namespace)throw new StoreError('External Memory bodies and retrieval require an asynchronous provider read',503);
     const id=args.id===undefined?undefined:evidenceRefId(args.id,'memory');
     if(args.id!==undefined&&!id)return {items:[],nextCursor:null};
     const page=this.memories.page({...args,id,level:'overview'});
     const ids=page.items.map(value=>value.id);
-    const withdrawn=includeWithdrawn?new Set<string>():this.withdrawnMemoryIds(ids);
-    const revoked=ownerArchive||includeWithdrawn?new Set<string>():this.memorySourceRevokedIds(ids);
-    const candidates=page.items.filter(value=>!withdrawn.has(value.id)&&!revoked.has(value.id));
+    const withdrawn=this.withdrawnMemoryIds(ids),withdrawnOnly=visibility==='withdrawn';
+    const revoked=ownerArchive?new Set<string>():this.memorySourceRevokedIds(ids);
+    const candidates=page.items.filter(value=>withdrawn.has(value.id)===withdrawnOnly&&!revoked.has(value.id));
     // Every dependency must remain in scope, including filters not indexed by MemoryStore.
     const scoped=['deviceId','source','sourceId','appId','collection','projectKey','repositoryKey','provider','sessionId','after','before','ocrStatus'].some(key=>args[key as keyof Range]!==undefined);
     let items=candidates;
@@ -232,13 +230,13 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const originals=this.memoryOriginalsInScope([...dependencies.values()].flat(),args,ownerArchive);
       items=candidates.filter(value=>{
         const originalsOfMemory=dependencies.get(value.id);
-        return originalsOfMemory?.length&&originalsOfMemory.every(id=>originals.has(id)||includeWithdrawn&&(()=>{
+        return originalsOfMemory?.length&&originalsOfMemory.every(id=>originals.has(id)||withdrawnOnly&&(()=>{
           const release=releasedMemoryOriginal(this.store,id);
           return release?.memoryFingerprints[value.id]===this.memories.get(value.id).fingerprint&&withinEvidenceScope(release.record,args);
         })());
       });
     }
-    return {...page,items:args.level==='detail'?items.map(value=>memoryWithOriginalAvailability(this.store,this.memories.get(value.id))):items};
+    return {...page,items:!withdrawnOnly&&args.level==='detail'?items.map(value=>memoryWithOriginalAvailability(this.store,this.memories.get(value.id))):items};
   }
   get disposed(){return this.lifecycleDisposed;}
   /** Release only this reader's retained snapshots. Borrowed Store/source/file/
@@ -263,6 +261,23 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     if(value){this.memorySnapshots.delete(context);this.retainedSnapshots.delete(value);value.release();}
   }
   private memoryToolSnapshot(context?:object){const retained=context&&this.memorySnapshots.get(context),owned=retained?undefined:this.memoryBindings?.retainSnapshot();return {snapshot:retained??owned,release:()=>owned?.release()};}
+  private memoryLineage(card:Memory){
+    const dependencyIds=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(card.id).map(row=>String(row.evidence_id));
+    return {dependencyIds,evidenceIds:card.evidenceIds,evidence:card.evidence.map(value=>({id:value.id,contentHash:value.contentHash})),scopeRefs:card.scopeRefs};
+  }
+  private memoryDetailVisible(id:string,scope:Range,ownerArchive:boolean,exposure:MemoryExposure,strictProof:boolean,pinned?:MemoryReadSnapshot['lineage'][string]){
+    const args={...scope,query:undefined,cursor:undefined,id:formatEvidenceRef('memory',id),includeStale:true,includeHistory:true,level:'overview' as const,limit:1};
+    const available=this.memoryCatalogPage(args,ownerArchive).items.length>0;
+    if(!available){
+      // A release receipt can only produce a scoped Gone error.
+      if(!ownerArchive&&!exposure.reportWithdrawn)return false;
+      if(!this.memoryCatalogPage(args,ownerArchive,'withdrawn').items.length)return false;
+    }
+    if(!ownerArchive&&!this.memoryLineageVisible(id,this.memoryLineage(this.memories.get(id)),scope,false,exposure,strictProof))return false;
+    if(pinned&&!this.memoryLineageVisible(id,pinned,scope,ownerArchive,exposure))return false;
+    if(!available)throw new MemoryOriginalWithdrawn();
+    return true;
+  }
   /** One visibility rule for live cards, frozen snapshots and integration admission.
    * An ancestor is a revocation dependency, not a grant to read its raw body.
    * Only the exact current evidence cited by this card can cover that ancestor. */
@@ -354,7 +369,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
    * model boundary so a correction cannot replay an obsolete interpretation. */
   currentMemoryLeadsAllowed(leads:NonNullable<import('@mote/agent').QueryInput['openingMemories']>,asOf?:string){
     return leads.every(lead=>{
-      const page=this.memoryCatalogPage({id:formatEvidenceRef('memory',lead.id),status:'published',asOf,limit:1},false,true);
+      const page=this.memoryCatalogPage({id:formatEvidenceRef('memory',lead.id),status:'published',asOf,limit:1},false);
       if(!page.items.length)return false;
       const memory=this.memories.get(lead.id);
       const current=openingMemoryLead(memory);
@@ -369,13 +384,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
     const owned=!snapshot&&this.memoryBindings?this.memoryBindings.retainSnapshot([parsed.id]):undefined,pin=snapshot??owned;
     try{
-      const args={...scope,query:undefined,cursor:undefined,id:ref,includeStale:true,includeHistory:true,level:'overview' as const,limit:1};
-      const visible=()=>{
-        const current=ownerArchive?this.memoryCatalogPage(args,true,true).items[0]:this.agentMemoryPage(args,exposure.policy,exposure.operation).items[0];
-        if(!current||pin?.lineage[parsed.id]&&!this.memoryLineageVisible(parsed.id,pin.lineage[parsed.id],scope,ownerArchive,exposure))return;
-        if(this.withdrawnMemoryIds([parsed.id]).size){if(ownerArchive)throw new MemoryOriginalWithdrawn();return;}
-        return current;
-      };
+      const visible=()=>this.memoryDetailVisible(parsed.id,scope,ownerArchive,exposure,exposure.operation==='memory',pin?.lineage[parsed.id]);
       if(!visible())return;const key=pin?.catalog[parsed.id];if(pin&&!key)return;
       const body=pin?.records?.[parsed.id]??(pin?.binding.namespace?await this.memoryBindings!.read(parsed.id,pin.binding,key):this.memories.get(parsed.id));
       const memory=memorySchema.parse(body);
@@ -1353,9 +1362,8 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       const page=this.memoryPage({...args,cursor,limit:100});
       for(let index=0;index<page.items.length;index++){
         const memory=page.items[index];
-        const ids=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(memory.id).map(row=>String(row.evidence_id));
         const card=this.memories.get(memory.id);
-        if(!this.memoryLineageVisible(card.id,{dependencyIds:ids,evidenceIds:card.evidenceIds,evidence:card.evidence.map(value=>({id:value.id,contentHash:value.contentHash})),scopeRefs:card.scopeRefs},args,false,{policy,operation},operation==='memory'))continue;
+        if(!this.memoryLineageVisible(card.id,this.memoryLineage(card),args,false,{policy,operation},operation==='memory'))continue;
         items.push(memory);
         if(items.length===limit){
           const more=index<page.items.length-1||page.nextCursor!==null;

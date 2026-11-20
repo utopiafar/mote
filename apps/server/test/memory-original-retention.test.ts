@@ -16,6 +16,7 @@ import {materialId} from '../src/materials.js';
 import type {QueryInput} from '@mote/agent';
 import {parseAnswer} from '@mote/agent';
 import {authorizeFixtureModels} from './fixtures/model-authorization.js';
+import {createContextQuery} from '../src/plugins/query-context.js';
 
 async function fixture(t:TestContext,query?: (input:QueryInput)=>Promise<any>){
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-original-release-')),token='generated-owner-'+randomUUID();
@@ -41,6 +42,10 @@ test('PF2-06 ordinary original deletion withdraws the Memory from its tree and r
  const tree=()=>f.request('/api/context-trees/topics/nodes/personal?includeHistory=true&includeStale=true');
  const visible=await tree();assert.equal(visible.statusCode,200,visible.body);assert.ok(visible.json().items.some((item:{id:string})=>item.id===f.memory.id));
  assert.equal((await f.request(path)).json().status,'published');
+ const ref='memory:'+f.memory.id;
+ const contextRead=(refs=[ref],deviceId=f.capture.deviceId)=>f.request('/api/context/read','POST',{refs,deviceId});
+ const readBefore=await contextRead();assert.equal(readBefore.statusCode,200,readBefore.body);
+ assert.ok(readBefore.json().items[0].text.includes(f.memory.statement));
  const removed=await f.request('/api/captures/'+f.id,'DELETE');assert.equal(removed.statusCode,200,removed.body);assert.deepEqual(removed.json(),{deleted:1});
  const after=await tree();assert.equal(after.statusCode,200,after.body);assert.deepEqual(after.json().items.map((item:{id:string})=>item.id),[independent.id]);
  for(const suffix of ['', '/text', '/evidence', '?deviceId='+f.capture.deviceId]){
@@ -48,13 +53,47 @@ test('PF2-06 ordinary original deletion withdraws the Memory from its tree and r
   assert.ok(!gone.body.includes(f.memory.statement));assert.ok(!gone.body.includes(f.capture.ocrText));
  }
  assert.equal((await f.request(path+'?deviceId=other-device')).statusCode,404);
+ const gone=await contextRead();assert.equal(gone.statusCode,410,gone.body);assert.equal(gone.json().error,'deleted');
+ assert.ok(!gone.body.includes(f.memory.statement));assert.ok(!gone.body.includes(f.capture.ocrText));
+ assert.equal((await contextRead([ref],'other-device')).statusCode,404);
+ const sharedRead=f.node.evidenceContext.ports.memoryRead;
+ assert.throws(()=>sharedRead.memory(ref,{deviceId:f.capture.deviceId}),{statusCode:410});
+ assert.equal(sharedRead.memory(ref,{deviceId:'other-device'}),undefined);
+ const query=createContextQuery(f.node.store,f.node.sources,f.node.featureServices.evidenceReader);
+ assert.throws(()=>query.read([ref]),{statusCode:410});
+ const batch=await contextRead([ref,'memory:'+independent.id]);assert.equal(batch.statusCode,200,batch.body);
+ assert.deepEqual(batch.json().items.map((item:{id:string})=>item.id),[independent.id]);
+ assert.deepEqual(batch.json().missingRefs,[ref]);assert.ok(!batch.body.includes(f.memory.statement));
  const current=()=>readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'all'},{level:'detail'});
  assert.deepEqual((await current()).items.map(item=>item.id),[independent.id]);
  const list=await f.request('/api/memories?level=detail&includeStale=true&includeHistory=true');
  assert.equal(list.statusCode,200,list.body);assert.deepEqual(list.json().items.map((item:{id:string})=>item.id),[independent.id]);
  await f.restart();assert.deepEqual((await current()).items.map(item=>item.id),[independent.id]);
  assert.equal((await f.request(path)).statusCode,410);assert.equal((await f.request('/api/captures/'+f.id)).statusCode,404);
+ assert.equal((await contextRead()).statusCode,410);
  assert.equal((await f.request(path,'DELETE')).statusCode,200);assert.equal((await f.request(path)).statusCode,404);
+ const forgotten=await contextRead();assert.equal(forgotten.statusCode,404,forgotten.body);
+ assert.ok(!forgotten.body.includes(f.memory.statement));assert.ok(!forgotten.body.includes(f.capture.ocrText));
+});
+
+for(const change of ['pause','reference'] as const)test(`PF2 R3 source ${change} revokes shared Memory single reads`,async t=>{
+ const f=await fixture(t),{store,sources,evidenceContext,featureServices}=f.node,sourceId='generated-revocable-memory';
+ sources.register({id:sourceId,name:'Generated revocable source',kind:'custom',deviceId:f.capture.deviceId,platform:'import'});
+ const original=await sources.upsert(sourceId,{externalId:'generated-item',revision:'1',observedAt:f.capture.capturedAt,kind:'message',layer:'original',text:'Generated revocable original'});
+ const {memory}=await f.publish(original.id),ref='memory:'+memory.id;
+ const sharedRead=evidenceContext.ports.memoryRead,query=createContextQuery(store,sources,featureServices.evidenceReader);
+ const contextRead=()=>f.request('/api/context/read','POST',{refs:[ref]});
+ assert.equal(sharedRead.memory(ref)?.statement,memory.statement);
+ assert.equal(sharedRead.memory(ref,{sourceId:'another-source'}),undefined);
+ assert.ok(query.read([ref]).items[0].text.includes(memory.statement));
+ const available=await contextRead();assert.equal(available.statusCode,200,available.body);
+ assert.ok(available.json().items[0].text.includes(memory.statement));
+ const revoked=await f.request('/api/sources/'+sourceId,'PATCH',change==='pause'?{enabled:false}:{retention:'reference'});
+ assert.equal(revoked.statusCode,200,revoked.body);
+ assert.equal(sharedRead.memory(ref),undefined);
+ assert.deepEqual(query.read([ref]),{items:[],missingRefs:[ref],truncated:false});
+ const denied=await contextRead();assert.equal(denied.statusCode,404,denied.body);
+ assert.ok(!denied.body.includes(memory.statement));assert.ok(!denied.body.includes(original.text));
 });
 
 test('Memory reads enforce scope and current exposure, and an original deletion grants no query disclosure',async t=>{
@@ -83,7 +122,10 @@ for(const route of ['capture-chunk','file-history'] as const)test(`${route} ordi
  const upload=async(revision:string,previousRevision:string|null)=>{const bytes=Buffer.from('Generated complete file '+revision),begun=f.node.files.begin({sourceId,previousRevision,item:{externalId:'generated-file',revision,observedAt:'2026-10-01T10:00:00Z',kind:'file',layer:'original',text:'',mimeType:'text/plain'},relativePath:'generated.txt',sizeBytes:bytes.length,sha256:sha256(bytes)},()=>{});f.node.files.part(begun.uploadId,0,bytes,()=>{});return f.node.files.commit(begun.uploadId,()=>{});};
  const file=await upload('v1',null),artifact=randomUUID(),chunk=randomUUID();f.node.store.db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifact,file.id,'text','2026-10-01T10:00:00Z','generated',JSON.stringify({complete:true}));f.node.store.db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,text,metadata) VALUES(?,?,?,?,?)').run(chunk,artifact,file.id,'Generated author prefers quiet mornings.','{}');
  const {memory}=await f.publish(chunk),projection=f.node.materials.publish({id:materialId(sourceId,'generated-projection'),kind:'mote.note',schemaVersion:1,title:'Generated file projection',origin:{sourceId,externalId:'generated-projection'},members:[{id:file.id,kind:'capture',ref:'capture:'+file.id}],blocks:[{id:'body',kind:'text',format:'plain',text:'Generated file-associated owner preference.',memberIds:[file.id]}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}}),projected=await f.publish(f.node.materials.evidenceIds(projection.ref)[0]);assert.ok((await readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'selection',sourceIds:[sourceId]},{level:'detail'})).items.some(value=>value.id===memory.id));
+ const contextRead=()=>f.request('/api/context/read','POST',{refs:['memory:'+memory.id]});
+ const available=await contextRead();assert.equal(available.statusCode,200,available.body);
  const removed=await f.request(route==='capture-chunk'?'/api/captures/'+chunk:'/api/files/'+file.id,'DELETE');assert.equal(removed.statusCode,200,removed.body);assert.equal((await f.request('/api/memories/'+memory.id)).statusCode,410);assert.ok(!(await readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'selection',sourceIds:[sourceId]},{level:'detail'})).items.some(value=>value.id===memory.id));
+ const gone=await contextRead();assert.equal(gone.statusCode,410,gone.body);assert.ok(!gone.body.includes(memory.statement));
  assert.equal(f.node.files.readableFile(chunk),undefined);
  if(route==='file-history'){
   f.node.store.db.exec(`CREATE TEMP TRIGGER generated_forget_failure BEFORE DELETE ON memories WHEN old.id='${memory.id}' BEGIN SELECT RAISE(ABORT,'generated forget failure');END;`);
@@ -95,7 +137,10 @@ for(const route of ['capture-chunk','file-history'] as const)test(`${route} ordi
 
 test('an authored Material alias releases the original and invalidates its Memory; Material privacy forgetting still finds it',async t=>{
  const f=await fixture(t);await f.node.materialOrganizer.tick(100);const material=f.node.materials.list({kind:'mote.note'}).items.find(value=>value.origin.externalId===f.id)!;assert.ok(material);const anchor=f.node.materials.evidenceIds(material.ref,['record'])[0]!,{memory}=await f.publish(anchor);
+ const contextRead=()=>f.request('/api/context/read','POST',{refs:['memory:'+memory.id]});
+ const available=await contextRead();assert.equal(available.statusCode,200,available.body);
  const removed=await f.request('/api/captures/'+anchor,'DELETE');assert.equal(removed.statusCode,200,removed.body);assert.equal((await f.request('/api/memories/'+memory.id)).statusCode,410);assert.ok(!(await readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'all'},{level:'detail'})).items.some(value=>value.id===memory.id));assert.equal(f.node.materials.get(material.ref),undefined);
+ const gone=await contextRead();assert.equal(gone.statusCode,410,gone.body);assert.ok(!gone.body.includes(memory.statement));
  assert.equal((await f.request('/api/memories/'+f.memory.id)).statusCode,410,'the alias also releases its underlying original');
  f.node.materials.forget(material.id);assert.equal((await f.request('/api/memories/'+memory.id)).statusCode,404);assert.equal((await f.request('/api/memories/'+f.memory.id)).statusCode,410,'the raw-supported card is outside the forgotten Material');await checkPortableAfterForget(f.node.store);await f.restart();assert.equal((await f.request('/api/memories/'+memory.id)).statusCode,404);
 });
@@ -142,26 +187,31 @@ test('the real owner source-forget command resolves released source identity aft
 });
 
 
-for(const raw of [false,true])test(`an in-flight owner query using ${raw?'Memory plus delivered original':'only Memory'} ${raw?'rejects':'retains'} a late plain answer after ordinary original release`,async t=>{
+for(const raw of [false,true])test(`an in-flight owner query with ${raw?'a prepared Memory lead and a delivered original':'only a prepared Memory lead'} rejects a late answer after ordinary original release`,async t=>{
+ const lateAnswer='Generated late plain advice without any original quotation or citation.';
  let delivered=false,calls=0;const f=await fixture(t,async input=>{
   calls++;
+  assert.ok(input.openingMemories?.some(lead=>lead.id===f.memory.id&&lead.statement===f.memory.statement));
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js');const bridge=await startBridge(f.node.featureServices.evidenceReader.agent({diagnostics:f.node.diagnostics}),input,6);
   try{
    const tool=async(name:string,args:unknown)=>{const result=await fetch(bridge.url+'/'+name,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});assert.equal(result.status,200);return result.json();};
    const memory=await tool('memories',{id:f.memory.id});
-   if(calls===1)assert.equal(memory.data.items[0].id,f.memory.id);
-   else {assert.deepEqual(memory.data.items,[]);assert.ok(input.conversation?.turns.some(turn=>turn.answer.includes('Generated late plain advice')));}
+   assert.equal(memory.data.items[0].id,f.memory.id);
    if(raw){const original=await tool('evidence',{ids:[f.id]});assert.equal(original.data[0].ocrText,f.capture.ocrText);delivered=true;}
-   if(calls===1)assert.equal((await f.request('/api/captures/'+f.id,'DELETE')).statusCode,200);
-   return {...parseAnswer(JSON.stringify({answer:'Generated late plain advice without any original quotation or citation.',citationIds:[]}),bridge.records),trace:[],runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies,originalEvidenceDependencies:{version:1,complete:true,ids:[]}};
+   assert.equal((await f.request('/api/captures/'+f.id,'DELETE')).statusCode,200);
+   return {...parseAnswer(JSON.stringify({answer:lateAnswer,citationIds:[]}),bridge.records),trace:[],runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies,originalEvidenceDependencies:{version:1,complete:true,ids:[]}};
   }finally{await bridge.close();}
  });
- await authorizeFixtureModels(f.node);const response=await f.request('/api/query','POST',{question:'Use the generated available Memory and evidence as needed.'});assert.equal(response.statusCode,raw?409:200,response.body+' '+JSON.stringify(f.node.store.db.prepare("SELECT json_extract(json,'$.status') status,json_extract(json,'$.error') error FROM query_runs").all()));assert.equal(delivered,raw);assert.equal((await f.request('/api/captures/'+f.id)).statusCode,404);assert.ok(!(await readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'all'},{level:'detail'})).items.some(value=>value.id===f.memory.id));
- if(!raw){
-  assert.deepEqual(response.json().originalEvidenceDependencies,{version:1,complete:true,ids:[]});const conversationId=response.json().conversationId,turn=f.node.conversations.get(conversationId).turns[0];assert.ok(turn.historyEvidenceDependencies?.complete);assert.ok(turn.historyEvidenceDependencies?.ids.includes(f.memory.id));assert.ok(!turn.historyEvidenceDependencies?.ids.includes(f.id));
-  await f.restart();const follow=await f.request('/api/query','POST',{question:'Continue from the generated retained Memory.',conversationId});assert.equal(follow.statusCode,200,follow.body);assert.equal(calls,2);assert.deepEqual(follow.json().originalEvidenceDependencies,{version:1,complete:true,ids:[]});
-  assert.equal((await f.request('/api/memories/'+f.memory.id,'DELETE')).statusCode,200);assert.ok(f.node.conversations.get(conversationId).turns.every(value=>!value.result||value.evidenceDeleted),'explicit forgetting still withdraws saved Memory-only context');
- }
+ await authorizeFixtureModels(f.node);
+ const conversationId=(await f.request('/api/conversations/main')).json().id;
+ const response=await f.request('/api/query','POST',{question:'Use the generated available Memory and evidence as needed.',conversationId});
+ assert.equal(response.statusCode,409,response.body+' '+f.modelErrors.join('\n'));
+ if(!raw)assert.equal(response.json().error,'context_evidence_restricted');
+ assert.ok(!response.body.includes(lateAnswer));assert.equal(calls,1);assert.equal(delivered,raw);
+ assert.equal((await f.request('/api/captures/'+f.id)).statusCode,404);
+ assert.ok(!(await readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'all'},{level:'detail'})).items.some(value=>value.id===f.memory.id));
+ await f.restart();
+ assert.ok(f.node.conversations.get(conversationId).turns.every(turn=>!turn.result),'a late answer using a withdrawn opening lead is never saved');
 });
 
 

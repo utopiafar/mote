@@ -65,6 +65,7 @@ test('query discovery uses published screen views while selected originals remai
   const agent=reader.agent({diagnostics,allowQueryImages:()=>true,currentGrantContext:()=>queryContext.getStore()??runContext});
   const restrictedMemoryId=randomUUID();
   seedMemory(store,restrictedMemoryId,[screenIds[0]],'2026-09-20T03:00:00.000Z',{title:'Generated raw screenshot memory',statement:'SCREEN_MEMORY_ANCHOR',uncertainty:'Generated exposure fixture only'});
+  assert.equal(reader.memory('memory:'+restrictedMemoryId),undefined);
   assert.deepEqual((await agent.search({query:'EXPOSURE_ANCHOR',limit:5})).map(record=>record.id),[noteId]);
   assert.deepEqual((await agent.search({query:'Available OCR'})).map(record=>record.id),[materials.evidenceIds(material.ref)[0]],
     'processed screen Material text is discoverable without exposing a raw screenshot');
@@ -157,6 +158,7 @@ test('trusted rules are explicit over source, operation, phase and representatio
   const reader=new EvidenceReader(store,sources),agent=reader.agent({diagnostics});
   const restrictedMemoryId=randomUUID();
   seedMemory(store,restrictedMemoryId,[id],'2026-09-20T03:00:00.000Z',{title:'Generated raw Coding memory',statement:'CODING_MEMORY_ANCHOR',uncertainty:'Generated exposure fixture only'});
+  assert.equal(reader.memory('memory:'+restrictedMemoryId),undefined);
   assert.equal((await agent.search({query:'CODING_RAW_ANCHOR'})).length,0);
   assert.equal((await agent.evidence({ids:[id]})).length,0);
   assert.deepEqual((await agent.sourceItems!({sourceId:'generated-coding'})).items,[]);
