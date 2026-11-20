@@ -3,11 +3,11 @@ package dev.mote.collector
 import org.json.JSONObject
 
 /**
- * Shared read cadence for the home blocks. While the home is visible a block reads at most once
- * per [steadyMs]; failures back off exponentially up to [maxBackoffMs]; a 403 stops the block
+ * Shared read cadence for the tab destinations. While a tab is visible its read runs at most once
+ * per [steadyMs]; failures back off exponentially up to [maxBackoffMs]; a 403 stops the read
  * until the session or authorization generation changes or the owner explicitly retries through
- * [retry] — leaving and returning to the home never revives the stop on its own. Returning to the
- * home otherwise reads at once. Stamps let a late response check whether it still belongs to the
+ * [retry] — leaving and returning to the tab never revives the stop on its own. Returning to the
+ * tab otherwise reads at once. Stamps let a late response check whether it still belongs to the
  * current generation.
  */
 /**
@@ -24,7 +24,7 @@ internal object HomeArchiveProbe {
     }
 }
 
-internal class HomeReadGate(private val steadyMs: Long = 60_000, private val maxBackoffMs: Long = 300_000, private val probeRecheckMs: Long = 300_000) {
+internal class TabReadGate(private val steadyMs: Long = 60_000, private val maxBackoffMs: Long = 300_000, private val probeRecheckMs: Long = 300_000) {
     @Volatile private var generation = -1L
     @Volatile private var origin = ""
     @Volatile private var epoch = 0L
@@ -109,3 +109,7 @@ internal class HomeReadGate(private val steadyMs: Long = 60_000, private val max
         return empty
     }
 }
+
+/** The legacy home views stay compiled but unmounted until AN3, AN4 and AN7 delete them. */
+@Deprecated("Use TabReadGate", ReplaceWith("TabReadGate"))
+internal typealias HomeReadGate = TabReadGate

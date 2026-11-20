@@ -9,18 +9,18 @@ import org.junit.rules.TemporaryFolder
 import java.util.UUID
 
 /**
- * Drives the same `HomeLocalCaptures.collect` call `MainActivity.loadHomeContent` issues each
+ * Drives the same `TabLocalCaptures.collect` call `MainActivity source rows` issues each
  * refresh cycle: the queue is opened for the existence check only when the local-records
  * revision changed; drafts and the source rows pass through every cycle.
  */
-class HomeLocalSignatureTest {
+class TabLocalSignatureTest {
 
-    private fun collect(cache: RevisionCache, revision: Long, draft: JSONObject = JSONObject(),
+    private fun collect(cache: TabRevisionCache, revision: Long, draft: JSONObject = JSONObject(),
                         pendingRecovery: () -> Boolean = { false }, exists: () -> Boolean) =
-        HomeLocalCaptures.collect(cache, revision, draft, pendingRecovery, exists)
+        TabLocalCaptures.collect(cache, revision, draft, pendingRecovery, exists)
 
     @Test fun anUnchangedRecordsRevisionNeverReopensTheQueue() {
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         var reads = 0
         val exists = { reads++; true }
         repeat(5) {
@@ -30,7 +30,7 @@ class HomeLocalSignatureTest {
     }
 
     @Test fun deletingEveryRecordRechecksFirstUse() {
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         var records = 3
         var reads = 0
         val exists = { reads++; records > 0 }
@@ -46,7 +46,7 @@ class HomeLocalSignatureTest {
     }
 
     @Test fun theDraftFlagFollowsAnyDraftContent() {
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         assertFalse(collect(cache, 1) { true }.getBoolean("hasDraft"))
         assertTrue(collect(cache, 1, JSONObject().put("text", "a note")) { true }.getBoolean("hasDraft"))
         assertTrue(collect(cache, 1, JSONObject().put("description", "desc")) { true }.getBoolean("hasDraft"))
@@ -71,10 +71,10 @@ class HomeLocalSignatureTest {
         // check the home caches by revision must see it without waiting for the clock to pass.
         val dir = folder.newFolder()
         val queue = DurableQueue(dir, cipher)
-        val cache = RevisionCache()
-        assertFalse(collect(cache, 3) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        val cache = TabRevisionCache()
+        assertFalse(collect(cache, 3) { TabLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
         queue.enqueue(note().put("capturedAt", java.time.Instant.now().plusSeconds(3600).toString()), null)
-        assertTrue("a future-dated record is a stored record", collect(cache, 4) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        assertTrue("a future-dated record is a stored record", collect(cache, 4) { TabLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
     }
 
     @Test fun aFailedListingDoesNotCacheAsEmpty() {
@@ -82,16 +82,16 @@ class HomeLocalSignatureTest {
         // be retained by the revision cache once storage is readable again.
         val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
         queue.enqueue(note(), null)
-        val cache = RevisionCache()
-        assertTrue(collect(cache, 5) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        val cache = TabRevisionCache()
+        assertTrue(collect(cache, 5) { TabLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
         val hidden = java.io.File(dir.parentFile, dir.name + ".hidden")
         check(dir.renameTo(hidden)); check(java.io.File(dir.path).createNewFile())
         try {
-            assertThrows(Exception::class.java) { collect(cache, 6) { HomeLocalCaptures.exists({ queue }, committed(dir)) } }
+            assertThrows(Exception::class.java) { collect(cache, 6) { TabLocalCaptures.exists({ queue }, committed(dir)) } }
         } finally {
             check(java.io.File(dir.path).delete()); check(hidden.renameTo(dir))
         }
-        assertTrue("the failed read never cached, so the same revision rechecks", collect(cache, 6) { HomeLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        assertTrue("the failed read never cached, so the same revision rechecks", collect(cache, 6) { TabLocalCaptures.exists({ queue }, committed(dir)) }.getBoolean("hasAnyRecords"))
     }
 
     @Test fun anInterruptedCaptureRecoveredOnOpenAdvancesTheRecordRevision() {
@@ -109,19 +109,19 @@ class HomeLocalSignatureTest {
         }
         val registry = CaptureStageRegistry(listOf(stage))
         val dir = folder.newFolder()
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         val revisionBefore = LocalStateChanges.revisions.value.records
-        assertFalse(collect(cache, revisionBefore) { HomeLocalCaptures.exists({ DurableQueue(dir, cipher) }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        assertFalse(collect(cache, revisionBefore) { TabLocalCaptures.exists({ DurableQueue(dir, cipher) }, committed(dir)) }.getBoolean("hasAnyRecords"))
         val queue = DurableQueue(dir, cipher, captureStages = registry)
         assertThrows(IllegalStateException::class.java) { queue.enqueue(note(), null) }
         val recovered = DurableQueue(dir, cipher, captureStages = registry)
         assertTrue("the replay committed a record while no listener existed", recovered.unreportedRecordWrites)
-        assertTrue(HomeLocalCaptures.exists({ recovered }, committed(dir)))
+        assertTrue(TabLocalCaptures.exists({ recovered }, committed(dir)))
         // The same wiring QueueStorage.openQueue performs after installing onMutation.
         if (recovered.unreportedRecordWrites) { recovered.unreportedRecordWrites = false; LocalStateChanges.changed(records = true) }
         val revisionAfter = LocalStateChanges.revisions.value.records
         assertTrue("recovery advanced the record revision", revisionAfter > revisionBefore)
-        assertTrue("the recovered record is seen at the new revision", collect(cache, revisionAfter) { HomeLocalCaptures.exists({ recovered }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        assertTrue("the recovered record is seen at the new revision", collect(cache, revisionAfter) { TabLocalCaptures.exists({ recovered }, committed(dir)) }.getBoolean("hasAnyRecords"))
     }
 
     private fun crashingStage(crashes: java.util.concurrent.atomic.AtomicInteger) = object : CaptureStage {
@@ -145,14 +145,14 @@ class HomeLocalSignatureTest {
         val broken = DurableQueue(dir, cipher, captureStages = registry)
         assertNotNull("the failed replay stays pending on the queue", broken.pendingStageFailure)
         assertFalse("the failed replay reads the committed inventory instead of throwing",
-            HomeLocalCaptures.exists({ broken }, committed(dir)))
+            TabLocalCaptures.exists({ broken }, committed(dir)))
         assertEquals("the failed open replays nothing", 0, crashes.get())
         // The same construction QueueStorage.openQueue performs: replay now succeeds and its
         // record write is reported through the constructor-installed listener itself.
         val recovered = DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
         assertNull(recovered.pendingStageFailure)
         assertFalse("the constructor listener already reported the replay", recovered.unreportedRecordWrites)
-        assertTrue(HomeLocalCaptures.exists({ recovered }, committed(dir)))
+        assertTrue(TabLocalCaptures.exists({ recovered }, committed(dir)))
         assertTrue("recovery advanced the records revision without an extra open", LocalStateChanges.revisions.value.records > revisionBefore)
     }
 
@@ -183,7 +183,7 @@ class HomeLocalSignatureTest {
             .put("checkpoint", JSONObject().put("stages", JSONArray()))
         java.io.File(dir, ".capture-stages.journal").writeBytes(cipher.open(committed.toString().toByteArray(Charsets.UTF_8)))
         val recovered = DurableQueue(dir, cipher, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) })
-        assertTrue(HomeLocalCaptures.exists({ recovered }, committed(dir)))
+        assertTrue(TabLocalCaptures.exists({ recovered }, committed(dir)))
         assertEquals("the already-committed output is not reported twice", revisionAfterFailure, LocalStateChanges.revisions.value.records)
     }
 
@@ -199,11 +199,11 @@ class HomeLocalSignatureTest {
         java.io.File(dir, ".capture-stages.journal").writeBytes(cipher.open(journal.toString().toByteArray(Charsets.UTF_8)))
         assertThrows(Exception::class.java) { DurableQueue(dir, cipher) }
         assertTrue("a failed replay reads the committed inventory instead of reporting empty",
-            HomeLocalCaptures.exists({ DurableQueue(dir, cipher) }, committed(dir)))
+            TabLocalCaptures.exists({ DurableQueue(dir, cipher) }, committed(dir)))
         assertFalse("an empty committed view stays false through the same probe",
-            HomeLocalCaptures.exists({ error("generated replay failure") }, committed(folder.newFolder())))
+            TabLocalCaptures.exists({ error("generated replay failure") }, committed(folder.newFolder())))
         assertThrows(Exception::class.java) {
-            HomeLocalCaptures.exists({ error("generated replay failure") }) { error("generated unreadable directory") }
+            TabLocalCaptures.exists({ error("generated replay failure") }) { error("generated unreadable directory") }
         }
     }
 
@@ -217,20 +217,20 @@ class HomeLocalSignatureTest {
         val dir = folder.newFolder()
         val openQueue = { DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) }) }
         val pending = { java.io.File(dir, ".capture-stages.inbox").exists() || java.io.File(dir, ".capture-stages.journal").exists() }
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         val revision = LocalStateChanges.revisions.value.records
-        assertFalse(collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
+        assertFalse(collect(cache, revision, pendingRecovery = pending) { TabLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null) }
         crashes.incrementAndGet()
         // The pending inbox reopens and its replay still fails: the payload keeps publishing the
         // truthful committed answer — nothing yet — while the inbox stays pending for the retry,
         // so the same refresh's draft/source state still reaches the home.
         assertFalse("a still-failing replay reports the committed inventory, not a freeze",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { TabLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertTrue("the failed input remains pending for the next cycle", pending())
         crashes.set(0)
         assertTrue("the next cycle replays the inbox into a committed record",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { TabLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertTrue("the recovered write advanced the records revision", LocalStateChanges.revisions.value.records > revision)
     }
 
@@ -242,7 +242,7 @@ class HomeLocalSignatureTest {
         val dir = folder.newFolder()
         val openQueue = { DurableQueue(dir, cipher, captureStages = registry, initialOnMutation = { LocalStateChanges.changed(records = it, storage = true) }) }
         val pending = { java.io.File(dir, ".capture-stages.inbox").exists() || java.io.File(dir, ".capture-stages.journal").exists() }
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         openQueue().enqueue(note(), null)
         // Two crashes: the enqueue consumes one, so the first reopening collect still replays
         // into a failure — the existing record must stay truthful while recovery remains pending.
@@ -250,11 +250,11 @@ class HomeLocalSignatureTest {
         assertThrows(IllegalStateException::class.java) { openQueue().enqueue(note(), null) }
         val revision = LocalStateChanges.revisions.value.records
         assertTrue("the committed record answers truthfully while the failed inbox retries",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { TabLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertTrue("the first reopen still failed, so the input remains pending", pending())
         crashes.set(0)
         assertTrue("the retried replay commits the second record",
-            collect(cache, revision, pendingRecovery = pending) { HomeLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
+            collect(cache, revision, pendingRecovery = pending) { TabLocalCaptures.exists({ openQueue() }, committed(dir)) }.getBoolean("hasAnyRecords"))
         assertEquals(2, openQueue().depth())
         assertTrue("the second commit advanced the records revision", LocalStateChanges.revisions.value.records > revision)
     }
@@ -264,13 +264,13 @@ class HomeLocalSignatureTest {
         // journal that lands an event then throws — must not flip a previously observed archive
         // to empty. The bypassed cycle preserves the last known answer and still publishes the
         // independent draft state; with no prior answer at all the failure stays unknown.
-        val cache = RevisionCache()
+        val cache = TabRevisionCache()
         assertTrue(collect(cache, 9) { true }.getBoolean("hasAnyRecords"))
         val pending = { true }
         val broken = { error("generated storage failure") }
         assertTrue("an undetermined read keeps the last known answer, not a false empty",
             collect(cache, 9, draft = JSONObject().put("text", "draft"), pendingRecovery = pending, exists = broken).getBoolean("hasAnyRecords"))
-        val fresh = RevisionCache()
+        val fresh = TabRevisionCache()
         var attempts = 0
         repeat(2) {
             val snapshot = collect(fresh, 9, draft = JSONObject().put("text", "draft"), pendingRecovery = pending) {
@@ -292,24 +292,37 @@ class HomeLocalSignatureTest {
         // Mirrors the activity's nullable initial signature: an empty first render must still
         // build so the "no folders yet" guidance is not skipped.
         var rendered: String? = null
-        val first = HomeLocalSignature.sources(emptyList())
+        val first = TabLocalSignature.sources(emptyList())
         assertTrue("an empty list must still build its guidance row", first != rendered)
         rendered = first
-        assertFalse("the same empty list does not rebuild", HomeLocalSignature.sources(emptyList()) != rendered)
+        assertFalse("the same empty list does not rebuild", TabLocalSignature.sources(emptyList()) != rendered)
     }
 
     @Test fun sourceSignaturesTrackOnlyRenderedContent() {
         val rows = listOf(Triple("s1", "Photos", "已同步"), Triple("s2", "Docs", "扫描中\n12/40"))
-        val signature = HomeLocalSignature.sources(rows)
-        assertEquals(signature, HomeLocalSignature.sources(rows))
-        assertNotEquals(signature, HomeLocalSignature.sources(rows.reversed()))
-        assertNotEquals("progress text is part of the row", signature, HomeLocalSignature.sources(listOf(Triple("s1", "Photos", "已同步"), Triple("s2", "Docs", "扫描中\n13/40"))))
-        assertNotEquals("a removed row changes the list", signature, HomeLocalSignature.sources(rows.drop(1)))
+        val signature = TabLocalSignature.sources(rows)
+        assertEquals(signature, TabLocalSignature.sources(rows))
+        assertNotEquals(signature, TabLocalSignature.sources(rows.reversed()))
+        assertNotEquals("progress text is part of the row", signature, TabLocalSignature.sources(listOf(Triple("s1", "Photos", "已同步"), Triple("s2", "Docs", "扫描中\n13/40"))))
+        assertNotEquals("a removed row changes the list", signature, TabLocalSignature.sources(rows.drop(1)))
         assertNotEquals(
             "separators inside a value cannot collide with boundaries",
-            HomeLocalSignature.sources(listOf(Triple("a\u0001b", "c", "d"))),
-            HomeLocalSignature.sources(listOf(Triple("a", "b\u0001c", "d"))),
+            TabLocalSignature.sources(listOf(Triple("a\u0001b", "c", "d"))),
+            TabLocalSignature.sources(listOf(Triple("a", "b\u0001c", "d"))),
         )
+    }
+
+    @Test fun tabSignaturesTrackTheAuthoredRowsAndTheirVisibleBadges() {
+        val items = listOf(
+            MoteNavItem("ideas", "点子", "daily", 30, "lightbulb", "mote.assistant", "ideas"),
+            MoteNavItem("library", "资料库", "daily", 50, "layout-grid", "mote.library"),
+        )
+        val signature = TabLocalSignature.tabs(items, NavBadges(ideas = 6))
+        assertEquals("an unchanged table and badge do not rebuild", signature, TabLocalSignature.tabs(items, NavBadges(ideas = 6)))
+        assertNotEquals("a changed count rebuilds", signature, TabLocalSignature.tabs(items, NavBadges(ideas = 7)))
+        assertNotEquals("a local library dot rebuilds", signature, TabLocalSignature.tabs(items, NavBadges(ideas = 6, library = true)))
+        assertNotEquals("membership and order are part of the signature", signature, TabLocalSignature.tabs(items.reversed(), NavBadges(ideas = 6)))
+        assertNotEquals("an authored label is part of the signature", signature, TabLocalSignature.tabs(listOf(items[0].copy(label = "想法"), items[1]), NavBadges(ideas = 6)))
     }
 
 }
