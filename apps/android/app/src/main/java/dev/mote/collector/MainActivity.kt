@@ -88,6 +88,8 @@ class MainActivity : MoteActivity() {
     private val tabCentrals = linkedMapOf<Page, CentralContent>()
     private val tabCentralStates = mutableMapOf<Page, Bundle>()
     private var localBadgeObserver: (() -> Unit)? = null
+    private var renderedTabs: String? = null
+    private var currentTabs: List<MoteNavItem> = emptyList()
     private lateinit var homeRecordingBar: HomeRecordingBar
     private lateinit var todaySummary: TextView
     private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
@@ -350,12 +352,22 @@ class MainActivity : MoteActivity() {
         if (!::tabBar.isInitialized || !::navigationCatalog.isInitialized) return
         val daily = navigationCatalog.daily { it.packageId in navPackages() }
         if (daily.none { it.id == selectedTabId }) selectedTabId = daily.firstOrNull()?.id ?: MoteNavigation.initialTabId()
-        tabBar.render(daily, navBadges.copy(library = MoteLocalBadges.active("library")), selectedTabId)
+        val shown = navBadges.copy(library = MoteLocalBadges.active("library"))
+        currentTabs = daily
+        val signature = TabLocalSignature.tabs(daily, shown)
+        if (signature != renderedTabs) {
+            renderedTabs = signature
+            tabBar.render(daily, shown, selectedTabId)
+        } else {
+            tabBar.select(selectedTabId)
+        }
     }
 
     private fun renderBadges() {
         if (!::tabBar.isInitialized) return
-        tabBar.setBadges(navBadges.copy(library = MoteLocalBadges.active("library")))
+        val shown = navBadges.copy(library = MoteLocalBadges.active("library"))
+        renderedTabs = TabLocalSignature.tabs(currentTabs, shown)
+        tabBar.setBadges(shown)
     }
 
     private fun showManageMenu() {
