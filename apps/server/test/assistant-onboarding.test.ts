@@ -35,9 +35,9 @@ const gate=()=>{let release!:()=>void;const promise=new Promise<void>(done=>{rel
 type Context={materials:{ref:string;title:string;origin:{sourceId:string}}[];originals:{id:string;offset:number;quote:string}[];cards:{id:string}[];memories:{statement:string}[]};
 const empty=(input:QueryInput,answer:string):QueryResult=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??input.evidenceIds??[])]}});
 
-/** Real SQLite, owner HTTP command, Memory executor, follow-up parser and card store.
+/** Real SQLite, owner HTTP command, Memory executor, batch and card store.
  * Only the two model boundaries are controlled. No real profile is opened. */
-async function fixture(t:TestContext,options:{noSuggestions?:boolean;observations?:boolean;feed?:boolean}={}){
+async function fixture(t:TestContext,options:{noSuggestions?:boolean;observations?:boolean;feed?:boolean;unreviewedMemory?:boolean}={}){
  t.mock.timers.enable({apis:['Date'],now:new Date(now)});
  const directory=mkdtempSync(join(tmpdir(),'mote-onboarding-'));
  const calls:{kind:'memory'|'assistant';ids:string[];sourceIds:string[]}[]=[],contexts:Context[]=[];
@@ -67,7 +67,7 @@ async function fixture(t:TestContext,options:{noSuggestions?:boolean;observation
   const card={action:'new',cardId:null,relatedCardIds:[],title:context.materials[0].title,
    body:'Generated useful follow-up based on the selected original.',reason:'Generated explicit fixture interpretation.',evidence:[original],matterId:null};
   return empty(input,JSON.stringify({reason:'Generated historical review with original time preserved.',
-   cards:[{...card,destination:'idea'},...(options.feed?[{...card,destination:'feed',title:'Generated source update'}]:[])],commitments:[]}));
+   cards:[card],activities:options.feed?[{...card,title:'Generated source update'}]:[]}));
  };
  const start=async()=>{
   store=new Store(directory,{dataKey:'43'.repeat(32),contentEncryptionEnabled:true});sources=new SourceStore(store);materials=new MaterialStore(store);
@@ -78,12 +78,13 @@ async function fixture(t:TestContext,options:{noSuggestions?:boolean;observation
   memory=fixtureMemoryPipeline({store,memories:reader.memories,executor:engine,models:{configured:()=>true,model:()=> 'generated-32k'},
    admission:{materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>reader.materialAllowedForMemory(ref,undefined,required),
     materialRequirements:()=>['source-body'],evidenceAllowedForMemory:id=>reader.contextDependenciesAllowed([id])},
-   phases:{query:memoryQuery,review:(input,result)=>reviewMemory(input,result,async request=>memoryQuery(request as MemoryPipelineQuery))}});
+   phases:{query:memoryQuery,...(!options.unreviewedMemory?{review:(input,result)=>reviewMemory(input,result,request=>memoryQuery(request as MemoryPipelineQuery))}:{})}});
   batch=new BatchProcessing(store,engine,control,async input=>{try{return await model(input,'assistant');}catch(error){modelFailure=error;throw error;}},assertCurrent,()=>control.assertCurrent(connection),()=>{},()=>undefined,()=>1,false,reader.memories,{
    assertDependencies:(id,ids)=>followup.assertBatchDependencies(id,ids),valid:()=>true,project:()=>{},commit:()=>{},
   });
   followup=new AssistantFollowup(store,materials,reader,cards,new AssistantCommitments(store,reader),new AssistantMatters(store),batch,assertCurrent);
   onboarding=new AssistantOnboarding(store,materials,reader,control,memory,followup,()=>[connection],assertCurrent,()=>['source-body']);
+  onboarding.bindOutputs(batch,cards);
   app=Fastify({logger:false});app.setErrorHandler((error,_request,reply)=>reply.code(error instanceof StoreError?error.statusCode:400).send({error:error.message}));
   registerAssistantOnboardingRoutes(app,onboarding,request=>{if(request.headers.authorization!==headers.authorization)throw new StoreError('Owner required',403);});
   await app.ready();
@@ -149,7 +150,8 @@ test('two selected historical sources give a useful partial result, then resume 
  const notifications=new AssistantNotifications(f.cards,()=>notificationSettingsSchema.parse({}));assert.deepEqual(notifications.snapshot(all).items,[]);
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM background_model_receipts WHERE eligible=1').get()!.n,0,'historical permission creates no automatic receipts');
  assert.ok(f.contexts.every(context=>context.materials.every(material=>material.origin.sourceId==='work'||material.origin.sourceId==='life')));
- assert.ok(f.contexts.every(context=>context.memories.length===0),'proposed memories stay outside normal follow-up context');
+ assert.ok(f.contexts.some(context=>context.memories.some(memory=>memory.statement.includes('Generated work requirement'))),
+  'independently reviewed, published Memory is available to the analysis');
  assert.deepEqual(await f.view(run.id),{state:'completed',counts:{sources:2,materials:2,memories:2,ideas:2,feed:0}});
  const narrow=await f.read(run.id,{kind:'selection',sourceIds:['work']});assert.equal(narrow.coverage.sync.total,1);assert.equal(narrow.coverage.semantic.completed,1);assert.equal(narrow.items[0].result,undefined,'mixed-context result stays hidden without misreporting selected processing coverage');assert.doesNotMatch(JSON.stringify(narrow),/Generated life|confirm the trip/);
  const lifeOnly=await f.read(run.id,{kind:'selection',sourceIds:['life']});assert.equal(lifeOnly.items.length,1);assert.equal(lifeOnly.items[0].result,undefined,'a mixed-source analysis is withheld in a narrow read');
@@ -199,23 +201,29 @@ test('CN2-01 selects only three requested sources in the 30-day window and caps 
  assert.deepEqual(f.calls,[],'pending extraction cannot disclose originals to a model');
 });
 
-test('CN2-02 routes nine observations to pending Memory and counts ideas and activity separately',async t=>{
- const f=await fixture(t,{observations:true,feed:true});
- const observations=Array.from({length:9},(_,index)=>'Generated observation '+(index+1)+'.');
- await f.add('observations',observations.join('\n'));
- const run=await f.post(['observations']);
- await f.until(async()=>(await f.read(run.id)).state==='completed');
- assert.deepEqual(await f.view(run.id),{state:'completed',counts:{sources:1,materials:1,memories:9,ideas:1,feed:1}});
- const pending=f.reader.memories.page({status:'proposed',layer:'observation'}).items;
- assert.equal(pending.length,9);
- assert.equal(new Set(pending.map(memory=>memory.id)).size,9);
- assert.equal(f.reader.memories.page({status:'published'}).items.length,0);
- assert.equal(f.cards.page({scope:all}).items.filter(card=>card.kind==='suggestion').length,1);
- const activity=f.cards.feed(feedQuerySchema.parse({scope:JSON.stringify(all),window:'today',kinds:'activity'}));
- assert.equal(activity.items.length,1);assert.equal(activity.items[0].kind,'activity');
- assert.equal(f.store.db.prepare('SELECT count(*) n FROM assistant_commitments').get()!.n,0);
- await f.restart();
- assert.equal((await f.view(run.id)).counts.memories,9,'the saved outputs remain countable after restart');
+test('CN2-02 routes nine observations through normal Memory review and counts ideas and activity separately',async t=>{
+ for(const status of ['proposed','published'] as const)await t.test(status,async t=>{
+  // Without a qualifying review receipt, the existing Memory fixture saves proposals.
+  const f=await fixture(t,{observations:true,feed:true,unreviewedMemory:status==='proposed'});
+  const observations=Array.from({length:9},(_,index)=>'Generated observation '+(index+1)+'.');
+  // The unreviewed extraction contract accepts up to eight candidates per batch.
+  const inputs=status==='proposed'?[observations.slice(0,8),observations.slice(8)]:[observations];
+  for(const [index,lines] of inputs.entries())await f.add('observations',lines.join('\n'),'ready',String(index));
+  const run=await f.post(['observations']);
+  await f.until(async()=>(await f.read(run.id)).state==='completed');
+  assert.deepEqual(await f.view(run.id),{state:'completed',counts:{sources:1,materials:inputs.length,memories:9,ideas:inputs.length,feed:inputs.length}});
+  const memories=f.reader.memories.page({status,layer:'observation'}).items;
+  assert.equal(memories.length,9);
+  assert.equal(new Set(memories.map(memory=>memory.id)).size,9);
+  assert.equal(f.reader.memories.page({status:status==='proposed'?'published':'proposed'}).items.length,0);
+  if(status==='published')assert.ok(memories.every(memory=>f.reader.memories.get(memory.id).reviewReceipt?.reviewRunId));
+  assert.equal(f.cards.page({scope:all}).items.filter(card=>card.kind==='suggestion').length,inputs.length);
+  const activity=f.cards.feed(feedQuerySchema.parse({scope:JSON.stringify(all),window:'today',kinds:'activity'}));
+  assert.equal(activity.items.length,inputs.length);assert.ok(activity.items.every(item=>item.kind==='activity'));
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM assistant_commitments').get()!.n,0);
+  await f.restart();
+  assert.equal((await f.view(run.id)).counts.memories,9,'the saved outputs remain countable after restart');
+ });
 });
 
 test('owner cancellation during either model phase prevents late Memory and assistant publication',async t=>{
@@ -247,7 +255,7 @@ test('CN2-03 cancellation retains completed coverage and a new owner start can c
 });
 
 test('CN2-04 a new run reuses the reviewed coverage after the owner confirms an observation',async t=>{
- const f=await fixture(t,{observations:true,noSuggestions:true});
+ const f=await fixture(t,{observations:true,noSuggestions:true,unreviewedMemory:true});
  await f.add('repeat','Generated confirmed observation.');
  const first=await f.post(['repeat']);
  await f.until(async()=>(await f.read(first.id)).state==='completed');
@@ -286,11 +294,18 @@ test('CN2-05 a revoked source cannot commit held Memory and the healthy source s
  await f.add('revoked','Generated held original.','ready','selected','2020-01-03T00:00:00Z');
  const run=await f.post(['revoked','healthy']);
  await f.until(()=>f.calls.some(call=>call.sourceIds.includes('revoked')));await hold.entered.promise;
+ f.store.db.exec('BEGIN IMMEDIATE');
+ f.sources.reportStatus('revoked',{state:'permission_required',code:'generated-rolled-back-expiration'});
+ f.store.db.exec('ROLLBACK');
+ await Promise.resolve();
+ const active=await f.read(run.id);
+ assert.equal(active.counts.skippedSources,undefined,'a rolled-back source write cannot withdraw the in-flight job');
+ assert.equal(active.items.find(item=>item.material.sourceId==='revoked')?.memory?.status,'running');
  f.sources.reportStatus('revoked',{state:'permission_required',code:'generated-expired'});
  hold.release.release();
  await f.until(async()=>(await f.read(run.id)).state==='completed');
  assert.deepEqual(await f.view(run.id),{state:'completed',counts:{sources:1,materials:1,memories:1,ideas:1,feed:0,skippedSources:1}});
- const [memory]=f.reader.memories.page({status:'proposed'}).items;
+ const [memory]=f.reader.memories.page({status:'published'}).items;
  assert.match(f.reader.memories.get(memory.id).statement,/Generated second original/);
  assert.equal(f.calls.filter(call=>call.sourceIds.includes('revoked')).length,1,'revocation fences the independent review and commit');
 });
@@ -340,7 +355,7 @@ test('an interrupted progress write rolls back assistant admission instead of le
   WHEN new.followup_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'Generated checkpoint failure'); END;`);
  const run=await f.post(['checkpoint']);
  await f.until(async()=>{const progress=await f.read(run.id);return progress.failed===1;});
- assert.equal(f.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.followup'").get()!.n,0);
+ assert.equal(f.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.onboarding.analysis'").get()!.n,0);
  assert.equal(f.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='batch.item'").get()!.n,0);
  assert.equal(f.calls.filter(call=>call.kind==='assistant').length,0,'failed admission does not send a model request');
  assert.equal(f.reader.memories.page().items.length,1,'the earlier reviewed Memory checkpoint is retained');
@@ -369,7 +384,7 @@ test('assembled server mounts owner-only onboarding commands without enabling au
 test('a completed zero-batch Memory job recovers its valid saved empty follow-up after a transient result write failure without a new model call',async t=>{
  const f=await fixture(t,{noSuggestions:true});await f.add('save-recovery','Generated current original with no supported suggestion.');
  const first=await f.post(['save-recovery']);await f.until(async()=>(await f.read(first.id)).state==='completed');
- f.store.db.exec("CREATE TEMP TRIGGER generated_followup_save_failure BEFORE UPDATE OF state ON task_records WHEN old.kind='assistant.followup' AND new.state='succeeded' BEGIN SELECT RAISE(ABORT,'generated transient result write failure'); END");
+ f.store.db.exec("CREATE TEMP TRIGGER generated_followup_save_failure BEFORE UPDATE OF state ON task_records WHEN old.kind='assistant.onboarding.analysis' AND new.state='succeeded' BEGIN SELECT RAISE(ABORT,'generated transient result write failure'); END");
  const second=await f.post(['save-recovery']);await f.until(async()=>(await f.read(second.id)).failed===1);
  const failed=await f.read(second.id),item=failed.items[0];assert.equal(item.reason,'understanding_unavailable');assert.equal(item.memory?.status,'completed');assert.equal(item.memory?.totalBatches,0);
  const batch=f.store.db.prepare("SELECT b.state FROM task_records f JOIN task_records b ON b.operation_id=f.operation_id WHERE f.id=? AND b.kind='batch'").get(item.taskId!);assert.equal(batch?.state,'succeeded');
