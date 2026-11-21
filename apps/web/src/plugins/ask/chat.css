@@ -82,6 +82,58 @@
   border-radius: var(--mote-radius-container);
 }
 
+.chat-about-reference {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 480px);
+  padding: 12px 14px;
+  color: var(--mote-ink);
+  background: var(--mote-surface-raised);
+  border: 1px solid var(--mote-hair);
+  border-radius: var(--mote-radius-container);
+}
+
+.chat-about-reference > svg { color: var(--mote-muted); }
+.chat-about-reference strong { display: block; font-size: var(--mote-font-row); overflow-wrap: anywhere; }
+.chat-about-reference small { color: var(--mote-muted); font-size: var(--mote-font-support); }
+.chat-about-reference[data-state="expired"] strong { color: var(--mote-muted); }
+
+.chat-about-tag {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  align-self: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 45%;
+  padding: 4px 4px 4px 9px;
+  color: var(--mote-ink);
+  background: var(--mote-tint);
+  border-radius: var(--mote-radius-control);
+  font-size: var(--mote-font-support);
+  white-space: nowrap;
+}
+
+.chat-about-tag > span { overflow: hidden; text-overflow: ellipsis; }
+.chat-about-tag > button {
+  display: inline-grid;
+  flex: 0 0 20px;
+  place-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--mote-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--mote-radius-control);
+  cursor: pointer;
+}
+.chat-about-tag > button:hover { color: var(--mote-ink); background: var(--mote-surface-hover); }
+.chat-about-tag[data-state="expired"] { color: var(--mote-muted); }
+
 .chat-time {
   display: block;
   align-self: center;

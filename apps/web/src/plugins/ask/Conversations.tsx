@@ -13,6 +13,7 @@ import {ConversationSettingsView} from './ConversationSettings';
 import {ConversationDialog} from './ConversationTurnDetails';
 import {ConversationSourceScope, type SourceScopeChoice} from './ConversationSourceScope';
 import {ChatComposer, createChatDraft} from './ChatComposer';
+import {ChatAboutReference,ChatAboutTag,readChatAbout,useChatAbout,verifyChatAbout} from './ChatAbout';
 import {ChatRevisionChanged, ChatSearch, chatPath, chatRevoked, mergeChatPages, readChatPage, samePage,
   type ChatPage, type ChatScope, type ChatTurn} from './ChatHistory';
 import {ChatMessage} from './ChatMessage';
@@ -101,6 +102,8 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const [highlight, setHighlight] = useState<{id: string}>();
   const [routeTurn, setRouteTurn] = useHashChoice('turn', readTurn);
   const [routeConversation] = useHashChoice('conversation', readConversation);
+  const [aboutValue, setAboutValue] = useHashChoice('about', readChatAbout);
+  const about = useChatAbout(api, aboutValue);
   const target = highlight?.id ?? (routeConversation === main.data?.id ? routeTurn ?? undefined : undefined);
   const reference = useOriginalReference(api);
   const referenceKey = useRef(reference.key);
@@ -120,7 +123,15 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
 
   const storedScope = freshContext ? undefined : head?.scope;
   const sourceScope = reference.scope ?? storedScope;
-  const outgoingScope = admissionScope(sourceScope, scopeChoice);
+  const aboutScope = about?.status === 'ready' && about.sourceIds?.length
+    ? {kind:'selection' as const, timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone, sourceIds:about.sourceIds}
+    : undefined;
+  const outgoingScope = aboutScope ?? admissionScope(sourceScope, scopeChoice);
+  const aboutAnchor = about?.status === 'ready'
+    ? about.anchorMaterialRef ? {anchorMaterialRef:about.anchorMaterialRef}
+      : about.anchorEvidenceIds?.length ? {anchorEvidenceIds:about.anchorEvidenceIds}
+      : undefined
+    : undefined;
   const recovery = useSyncExternalStore(
     useCallback(listener => queryRecovery.subscribe(api, listener), [api]),
     useCallback(() => queryRecovery.get(api), [api]),
@@ -374,11 +385,15 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
     scrollToBottom.current = true;
     try {
       const scope = original?.scope ? admissionScope(original.scope, undefined) : outgoingScope;
-      if (!original && !scopeChoice) await reference.verify(controller.signal);
+      if (!original && !scopeChoice) {
+        if (about?.status === 'ready') await verifyChatAbout(api,about,controller.signal);
+        else await reference.verify(controller.signal);
+      }
       controller.signal.throwIfAborted();
-      const anchor = original ? original.scope : scopeChoice ? undefined : reference.origin
-        ? {anchorMaterialRef: reference.materialRef, anchorEvidenceIds: reference.ids.length ? reference.ids : undefined}
-        : storedScope;
+      const anchor = original ? original.scope : scopeChoice ? undefined : aboutAnchor
+        ?? (reference.origin
+          ? {anchorMaterialRef: reference.materialRef, anchorEvidenceIds: reference.ids.length ? reference.ids : undefined}
+          : storedScope);
       const attachments = original ? original.attachments ?? [] : unsentDrafts.get(api)?.attachments ?? [];
       const clientRequestId = crypto.randomUUID();
       const modelProfileId = original ? original.modelProfileId : model;
@@ -449,7 +464,12 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
     queryRecovery.contextChanged(api);
     setScopeChoice(value);
     reference.clear();
+    if (aboutValue !== null) setAboutValue(null);
   }
+  const clearAbout = () => {
+    queryRecovery.contextChanged(api);
+    setAboutValue(null);
+  };
   const changeModel = useCallback((value: string) => {queryRecovery.draftEdited(api); setModel(value);}, [api]);
   const changeOverride = useCallback((value: string) => {queryRecovery.draftEdited(api); setOverride(value);}, [api]);
 
@@ -477,6 +497,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
       scrollToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
     }}>
       <div className="conversation-messages chat-thread">
+        {about && <ChatAboutReference about={about}/>}
         {preparing && !readError && <Loading label={moteText('正在打开对话…')}/>}
         {thread?.nextCursor && <button className="text-button chat-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
           {loadingOlder ? <LoadingText/> : moteText('加载更早的消息')}
@@ -522,6 +543,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
           <ConversationSourceScope api={api} scope={outgoingScope} onChange={changeScope} disabled={preparing || busy}/>
           <button type="button" className="text-button" onClick={() => setContextSettings(true)}>{moteText('上下文设置')}</button>
         </>}
+        scopeTag={about ? <ChatAboutTag about={about} onClear={clearAbout} disabled={busy}/> : undefined}
         reference={referenceOrigin ? <nav className="filter-bar ask-original-reference" aria-label={moteText('参考记录')}>
           <span>{reference.title || moteText('参考资料')}</span>
           {reference.loading && <LoadingText/>}
