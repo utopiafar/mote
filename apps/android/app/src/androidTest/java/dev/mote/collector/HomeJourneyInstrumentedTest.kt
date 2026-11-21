@@ -287,8 +287,8 @@ class HomeJourneyInstrumentedTest {
         Fixture().use { fixture ->
             connect(fixture)
             ActivityScenario.launch(MainActivity::class.java).use {
-                val home = onTop("Home is ready") { activity -> shown(activity).any { it.tag == "home-ask-action" } }
-                click(home) { it.tag == "home-ask-action" }
+                val home = onTop("Primary navigation is ready") { activity -> shown(activity).any { it.tag == "local-tab:chat" } }
+                click(home) { it.tag == "local-tab:chat" }
                 val ask = onTop("Ask opens the main conversation") { activity ->
                     activity is MainActivity && "生成的评审回答" in texts(activity)
                 }

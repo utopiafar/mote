@@ -28,6 +28,7 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   await running.app.close();
   running=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);return answer('Synthetic continued answer');})});
   const list=await running.app.inject({url:'/api/conversations',headers});assert.equal(list.statusCode,404);
+  assert.equal((await running.app.inject({url:'/api/conversations?limit=30',headers})).statusCode,404);
   assert.equal((await running.app.inject({method:'POST',url:'/api/conversations',headers,payload:{}})).statusCode,404);
   assert.equal((await running.app.inject({method:'PUT',url:'/api/conversations/main',headers,payload:{id:conversationId}})).statusCode,404);
   assert.equal((await running.app.inject({method:'DELETE',url:`/api/conversations/${conversationId}`,headers})).statusCode,404);

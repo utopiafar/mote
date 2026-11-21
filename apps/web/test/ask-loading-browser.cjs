@@ -56,7 +56,7 @@ async function run(){
     if(path==='/api/capture-browser/'+record.id){
      json(res,{...record,ocrText:'Generated evidence body for retrieval journey',privacy:{collection:'note',redacted:false},indexingStatus:'text_ready'});return;
     }
-    if(path==='/api/actions'){json(res,{items:[]});return;}
+    if(path==='/api/actions/by-evidence/'+record.id){json(res,{items:[]});return;}
     if(path==='/api/memories'){json(res,{items:[],nextCursor:null});return;}
     if(path==='/api/nav-state'){json(res,{revisions:{library:'1',cards:'1',commitments:'1',matters:'1',memory:'1',sources:'1',plugins:'1'},badges:{ideas:0,connections:false}});return;}
     if(path==='/api/plugins/presentation'){json(res,{instances:[]});return;}
@@ -65,7 +65,7 @@ async function run(){
     if(path==='/api/status'){json(res,{profile:'generated-fixture',agent:{configured:true,model:'generated-model',provider:'custom',agentTimeoutMs:120000},storage:{captures:0,blobs:0,bytes:0,imageBytes:0,logicalBytes:0,imagesEncrypted:false,indexing:[]},index:{mode:'none',model:null},insightIntervalHours:0,serverTime:when});return;}
     if(path==='/api/devices'){json(res,{items:[]});return;}
     if(path==='/api/devices/first-data'){json(res,{state:'waiting',originalAvailable:false,checkedDevices:0,checkedRecords:0,windowLimited:false});return;}
-    if(path==='/api/features'){json(res,{schemaVersion:1,revision:1,features:[],capabilities:['/api/owner-questions','/api/library/browse','/api/capture-browser/timeline','/api/capture-browser/timeline/members','/api/media-activity','/api/activity'].map(path=>({id:'http:GET:'+path,version:'1',surface:'data',featureId:'generated-fixture',state:'active'}))});return;}
+    if(path==='/api/features'){json(res,{schemaVersion:1,revision:1,features:[],capabilities:['/api/library/browse','/api/capture-browser/timeline','/api/capture-browser/timeline/members','/api/media-activity','/api/activity'].map(path=>({id:'http:GET:'+path,version:'1',surface:'data',featureId:'generated-fixture',state:'active'}))});return;}
     const collection=path==='/api/media-activity'?'media':path==='/api/activity'?'activity':path==='/api/capture-browser/timeline'?'records':null;
     if(collection){
      counts[collection]++;collectionPaths[collection].push(req.url);pending.add(req);
@@ -173,7 +173,7 @@ async function run(){
  assert.equal(await js(`document.querySelector('.workspace-sidebar [data-nav-item="chat"][aria-current="page"]')?.textContent.trim()`),'聊天');
  assert.equal(await js(`document.querySelector('.chat-page textarea').value`),draft,'navigation retains the earlier chat draft');
  await js(`(()=>{const input=document.querySelector('.chat-page textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))`);
+ await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))`);
  assert.equal(await js(`document.activeElement===document.querySelector('.global-retrieval input')`),true);
  await js(`(()=>{const input=document.querySelector('.global-retrieval input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'generated');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
  await delay(60);await js(`document.querySelector('.global-retrieval').requestSubmit()`);

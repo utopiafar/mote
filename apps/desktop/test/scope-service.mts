@@ -22,12 +22,20 @@ const answer=()=>({answer:'Generated scope response',citations:[],trace:[],runId
 const node=await buildApp(config,{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{seen.push({question:input.question,evidenceIds:input.evidenceIds,anchorEvidenceIds:input.anchorEvidenceIds});return answer();},close:async()=>{}}});
 const headers={authorization:`Bearer ${token}`};
 const readPaths=new Set<string>();
+const ids:Record<string,string>={};
 let failure=0;
 node.app.addHook('onRequest',async(request,reply)=>{
  if(request.url.startsWith('/fixture/')){
   if(request.headers.authorization!=='Bearer '+token)return reply.code(403).send({});
   if(request.url==='/fixture/seen')return reply.send(seen);
   if(request.url==='/fixture/fail'){failure=Number((request.headers['x-fixture-status']??403));return reply.send({ok:true});}
+  if(request.method==='POST'&&request.url==='/fixture/main'){
+   const kind=(request.body as {kind?:string}|undefined)?.kind;
+   if(!kind||!Object.hasOwn(ids,kind))return reply.code(400).send({error:'unknown_generated_conversation'});
+   const id=ids[kind];
+   node.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(id);
+   return reply.send({id});
+  }
  }
  if(failure&&request.method==='GET'&&readPaths.has(new URL(request.url,'http://fixture').pathname)){
   const code=failure;
@@ -41,7 +49,6 @@ for(let i=0;i<2;i++){
  const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-scope',deviceName:'Generated scope',platform:'android',capturedAt:'2026-10-01T00:00:00Z',text:'Generated scope original '+i}});assert.equal(response.statusCode,201,response.body);
 }
 await node.materialOrganizer.tick(100);
-const ids:Record<string,string>={};
 for(const kind of ['anchor','strict','plain']){
  const scope=kind==='anchor'?{anchorEvidenceIds:[evidenceIds[0]]}:kind==='strict'?{evidenceIds:[evidenceIds[1]]}:{};
  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated '+kind,...scope}});assert.equal(response.statusCode,200,response.body);

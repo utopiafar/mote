@@ -61,15 +61,16 @@ app.on('browser-window-created',(_event,window)=>{
   await js(`document.querySelector('#ask-question').value='Mac ${kind} continuation';document.querySelector('#ask-form').requestSubmit();document.querySelector('#ask-form').requestSubmit()`);
   await until(async()=>(await read(kind)).turnCount===before+1,'Mac '+kind+' committed');
   await until(()=>js(`document.querySelector('#ask-progress').innerText.includes('回答已完成')&&!document.querySelector('#ask-send').disabled`),'Mac completed');
-  await wjs(`location.hash='#/ask'`);
+  assert.equal((await api('/fixture/main',{kind})).id,fixture.ids[kind]);
+  const chatUrl=new URL(openedUrl);
+  chatUrl.hash='/chat';
+  await web.loadURL(chatUrl.href);
   // Close evidence overlay through its real control if the route retains it.
   await wjs(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==='关闭');b?.click()})()`);
-  await until(()=>wjs(`document.querySelectorAll('.conversation-item').length===3`),'Web history');
-  await wjs(`([...document.querySelectorAll('.conversation-item')].find(b=>b.textContent.includes('Generated ${kind}'))).click()`);
-  await until(()=>wjs(`document.querySelectorAll('.conversation-turn').length>0&&document.querySelector('[aria-label="向 Mote 提问"]')&&!document.querySelector('[aria-label="向 Mote 提问"]').disabled`),'Web conversation');
+  await until(()=>wjs(`document.querySelector('.chat-page[aria-busy="false"]')&&[...document.querySelectorAll('.asked-question')].some(row=>row.textContent==='Mac ${kind} continuation')`),'Web main conversation');
   assert.ok(await wjs(`Boolean(document.querySelector('nav[aria-label="${kind==='anchor'?'参考记录':'查询范围'}"]'))`));
   await wjs(`(()=>{const e=document.querySelector('[aria-label="向 Mote 提问"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Web ${kind} continuation');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  await wjs(`document.querySelector('[aria-label="发送问题"]').click()`);
+  await wjs(`document.querySelector('[aria-label="发送"]').click()`);
   await until(async()=>(await read(kind)).turnCount===before+2,'Web '+kind+' committed');
   await js(`document.querySelector('#ask-question').value='Generated retained draft';document.querySelector('#ask-refresh').click()`);
   await until(()=>js(`document.querySelector('#ask-messages').innerText.includes('Web ${kind} continuation')&&!document.querySelector('#ask-new').disabled`),'Mac refresh sees Web');
