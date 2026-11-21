@@ -48,7 +48,7 @@ test('CP3-02 configuration description codes render as short client labels',asyn
     return d.body.textContent!;
   };
   const container=await render('container-storage');
-  assert.match(container,/页面与文件同一份配置/);assert.match(container,/容器内路径/);
+  assert.match(container,/页面与文件同配置/);assert.match(container,/容器内路径/);
   assert.doesNotMatch(container,/页面与手改文件使用同一份配置|路径属于中央容器/);
   const host=await render('host-storage');
   assert.match(host,/本机路径/);assert.doesNotMatch(host,/SQLite、图片与日志路径/);

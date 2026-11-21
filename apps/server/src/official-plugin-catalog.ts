@@ -67,7 +67,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     tag: 'v0.1.0',
     localDirectory: 'official-plugins/feishu-session',
     name: moteText('飞书会话'),
-    description: moteText('在已有飞书账号上归档已勾选会话'),
+    description: moteText('归档所选会话；发送需第二次授权并经行动平台逐条确认'),
     group: 'connectors',
     runtime: 'service',
     packageId: 'mote.official.feishu-session',

@@ -43,7 +43,7 @@ function ConfigurationRegistry({config,domain:id}:{config:ServerConfiguration;do
 }
 export function configurationDescription(code:ServerConfiguration['description']):string {
  switch(code){
-  case 'shared-configuration':return moteText('页面与文件同一份配置');
+  case 'shared-configuration':return moteText('页面与文件同配置');
  }
 }
 export function storageDescription(code:ServerConfiguration['storage']['description']):string {

@@ -238,7 +238,7 @@ export class LarkConnector{
   private registerSources(){
     const add=(id:string,name:string,kind:'lark-docs'|'lark-calendar')=>{this.ctx.sources.register({id,name,kind,deviceId:'lark-server',platform:'import',retention:kind==='lark-docs'?'archive':'snapshot'});};
     if(hasDocumentSelection(this.saved.selection))add(this.sourceId('docs'),moteText('飞书文档'),'lark-docs');
-    for(const id of this.saved.selection.calendarIds)add(this.sourceId('calendar',id),`飞书日历 · ${id.slice(0,80)}`,'lark-calendar');
+    for(const id of this.saved.selection.calendarIds)add(this.sourceId('calendar',id),moteText('飞书日历 · {0}',id.slice(0,80)),'lark-calendar');
   }
   private reportSources(state:'syncing'|'error',code?:string,documentsOnly=false){if(!this.saved.account)return;for(const source of this.ctx.sources.listSources()){if(source.enabled&&(state!=='error'||source.status?.state==='syncing')&&(source.id===this.sourceId('docs')||!documentsOnly&&this.saved.selection.calendarIds.some(id=>source.id===this.sourceId('calendar',id))))this.ctx.sources.reportStatus(source.id,{state,...(code?{code}:{})});}}
   private documents(signal?:AbortSignal){
