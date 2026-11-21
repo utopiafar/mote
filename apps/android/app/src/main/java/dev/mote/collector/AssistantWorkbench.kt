@@ -33,6 +33,13 @@ internal class AssistantWorkbench(private val screens: CentralScreens) {
     private var busy = false
     private var notice: String? = null
 
+    fun selectMatter(id: String, selected: WorkspaceTemplate) {
+        require(MoteLink.uuidId(id) == id && selected != WorkspaceTemplate.PERSON)
+        template = selected
+        target = id
+        notice = null
+    }
+
     fun mount(body: LinearLayout) {
         container = body
         current = null
