@@ -1,6 +1,7 @@
 import {SourceMaterialToolsContext} from './features/source-material';
 import {originalReferenceRoute,rememberOriginalReturn} from './ask-original-reference';
-import {openQuestionDraft} from './open-question-draft';
+import {chatHref} from './chat-link';
+import {unsentDrafts,unsentImages} from './plugins/ask/chat-drafts';
 import {confirmNavigation} from './unsaved';
 import { useEffect,useRef,useState } from 'react';
 import {noteMaterialPage,noteAssetTarget,noteQuoteCaptureId,type NoteReadSpan} from './note-material-render';
@@ -192,7 +193,7 @@ export function MaterialDetail({ api, material, onOpen, onOpenSavedOrigin, onSav
     finally {
         setIndexBusy(false);
     } };
-    return <SourceMaterialToolsContext.Provider value={{target:sourceTools}}><article className={'panel panel-pad material-detail'+(ownerNote?' note-material-reader':'')}>{!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref&&read.error===undefined&&read.data?.material.ref===material.ref&&<><button type="button" className="button material-reader-acquaintance" onClick={()=>{if(confirmNavigation())openQuestionDraft(api,moteText('请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。'),{kind:'material',ref:selected.ref});}}>{moteText('初次认识')}</button><a className="button material-reader-ask" href={originalReferenceRoute('material',selected.ref)} onClick={event=>{if(!confirmNavigation()){event.preventDefault();return;}rememberOriginalReturn(api,'material',selected.ref);}}>{moteText('围绕这份资料提问')} ↗</a></>}<h2>{selected.title}</h2><p>{materialKind(selected.kind, catalog?.label)}{!ownerNote&&<> · {sourceDisplay(selected.origin.sourceId)}</>}{(selected.origin.lastAt??selected.origin.firstAt)&&<> · {dateTime((selected.origin.lastAt??selected.origin.firstAt)!)}</>}</p>
+    return <SourceMaterialToolsContext.Provider value={{target:sourceTools}}><article className={'panel panel-pad material-detail'+(ownerNote?' note-material-reader':'')}>{!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref&&read.error===undefined&&read.data?.material.ref===material.ref&&<><button type="button" className="button material-reader-acquaintance" onClick={()=>{if(!confirmNavigation())return;const draft=unsentDrafts.get(api);if((draft?.question||draft?.attachments.length||unsentImages.get(api)?.length)&&!window.confirm(moteText('有未保存的修改。离开并丢弃修改？')))return;unsentDrafts.delete(api);unsentImages.delete(api);window.location.hash=chatHref({kind:'material',ref:selected.ref.slice('material:'.length)});}}>{moteText('初次认识')}</button><a className="button material-reader-ask" href={originalReferenceRoute('material',selected.ref)} onClick={event=>{if(!confirmNavigation()){event.preventDefault();return;}rememberOriginalReturn(api,'material',selected.ref);}}>{moteText('围绕这份资料提问')} ↗</a></>}<h2>{selected.title}</h2><p>{materialKind(selected.kind, catalog?.label)}{!ownerNote&&<> · {sourceDisplay(selected.origin.sourceId)}</>}{(selected.origin.lastAt??selected.origin.firstAt)&&<> · {dateTime((selected.origin.lastAt??selected.origin.firstAt)!)}</>}</p>
     {['pending', 'running'].includes(selected.indexing?.state ?? '') && <p role="status">{moteText('资料已发布，检索索引正在处理中。')}</p>}
     {selected.indexing?.state === 'failed' && <p role="status">{moteText('检索索引未完成，正文可正常查看。')}{!agent && !historical && current.error === undefined && current.data?.ref === material.ref && <button className="button" disabled={indexBusy} onClick={() => void retryIndex()}>{moteText('仅重试检索索引')}</button>}</p>}
     {indexError && <p role="alert">{indexError}</p>}

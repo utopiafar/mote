@@ -346,7 +346,7 @@ open class RecordEditorActivity : MoteActivity() {
                 try { temp.writeBytes(notes.bytes(id)); MediaMetadataRetriever().apply { setDataSource(temp.absolutePath) }.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() } finally { temp.delete() }
             }.getOrNull()
             if (duration != null && duration > 0) {
-                val label = HomeRecordingBarPolicy.label(duration)
+                val label = StatusStripPolicy.label(duration)
                 audioMeta[id] = label; runOnUiThread { view.text = label }
             }
         }

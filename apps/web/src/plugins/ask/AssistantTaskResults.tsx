@@ -1,13 +1,29 @@
 import React,{useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import type {AssistantTaskRecord,AssistantActionDraft,QueryScope} from '@mote/shared';
+import {FileText} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {Answer,Api} from '../../api';
 import {FeaturePanels} from '../../features/runtime';
 import {AssistantActionResults} from '../work/AssistantActionResults';
+import {ChatProgress} from './ChatProgress';
 
 export type AssistantTaskResultItem={task:Pick<AssistantTaskRecord,'id'|'state'> & Partial<AssistantTaskRecord>;workId?:string;expectedRevision?:number;result?:Answer;error?:string;actionDrafts?:AssistantActionDraft[]};
 type Item=AssistantTaskResultItem;
 type Page={items:Item[]};
+
+function TaskStatus({task}:{task:Item['task']}){
+ const {state,goal}=task;
+ if(state==='completed')return <span role="status">{moteText('已完成')}</span>;
+ if(state==='running'||state==='waiting'||state==='cancelled'){
+  const status=state==='running'?moteText('正在进行'):state==='waiting'?moteText('排队中'):moteText('已取消');
+  return <ChatProgress state={state} label={goal?goal+' · '+status:status}/>;
+ }
+ return <>
+  {goal&&<p>{goal}</p>}
+  <strong>{moteText('任务状态')}</strong>{' · '}
+  <span role="status">{state==='stale'?moteText('已失效'):moteText('未完成')}</span>
+ </>;
+}
 
 /** Re-read the durable task, including after a lost response or a reload. */
 export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,renderAnswer,onOpen,onFound}:{
@@ -44,20 +60,23 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
   finally{if(openRequest.current===controller)openRequest.current=null;}
  })();};
  return <>
-  {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id}>
-   {task.goal&&<p>{task.goal}</p>}
-   <strong>{moteText('任务状态')}</strong>{' · '}
-   <span role="status">{task.state==='completed'?moteText('已完成'):task.state==='running'?moteText('正在进行'):
-    task.state==='waiting'?moteText('排队中'):task.state==='stale'?moteText('已失效'):
-    task.state==='cancelled'?moteText('已取消'):moteText('未完成')}</span>
+  {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id} data-state={task.state}>
+   {(task.state!=='completed'||!result)&&<TaskStatus task={task}/>}
    {task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {reason==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {reason==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}
    {task.state==='needs_input'&&reason&&reason!=='no_usable_evidence'&&reason!=='model_context_budget_unavailable'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {task.state==='failed'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {task.state==='needs_input'&&workId&&<FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.work.activity',schemaVersion:1,representation:'overview',ref:workId,revision:String(task.revision),title:'',text:''}}/>}
-   {task.state==='completed'&&result&&renderAnswer(result,ref=>open(task.id,ref))}
-   {task.state==='completed'&&result&&Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
+   {task.state==='completed'&&result&&<details className="chat-task-result" data-message-kind="result">
+    <summary><FileText size={18} aria-hidden="true"/><span><strong>{task.goal||moteText('结果')}</strong>
+      <small>
+       <TaskStatus task={task}/>
+       {result.citations.length>0&&<> · {moteText('引用 {0} 份资料', result.citations.length)}</>}
+      </small></span><span>{moteText('打开')}</span></summary>
+    {renderAnswer(result,ref=>open(task.id,ref))}
+    {Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
+   </details>}
   </section>)}
   {error&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
  </>;

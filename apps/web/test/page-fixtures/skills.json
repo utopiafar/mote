@@ -1,0 +1,309 @@
+{
+  "route": "#/system/plugins",
+  "waitFor": ".content[data-page='extensions'][data-session='ready'][aria-busy='false'] .skills-page [data-page-id='generated-reader-instance/reading-list']",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "version": 1,
+        "revision": 3,
+        "domains": [
+          {
+            "id": "ui",
+            "saved": { "pinnedPages": ["generated-reader-instance/reading-list"] },
+            "effective": { "pinnedPages": ["generated-reader-instance/reading-list"] },
+            "fields": [{ "path": "pinnedPages", "effect": "immediate" }],
+            "status": "applied"
+          }
+        ]
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": { "configured": true, "model": "fixture-model", "provider": "fixture" },
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{ "status": "text_ready", "count": 3 }]
+        },
+        "index": { "mode": "text", "model": null },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": { "items": [] }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": { "ideas": 6, "connections": true }
+      }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": { "schemaVersion": 1, "revision": 1, "features": [], "capabilities": [] }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": [
+          {
+            "packageId": "mote.page.generated-reader",
+            "packageVersion": "1.0.0",
+            "installationId": "generated-reader-installation",
+            "instanceId": "generated-reader-instance",
+            "activationId": "00000000-0000-4000-8000-000000000001",
+            "releaseDigest": "generated-release-digest",
+            "name": "阅读清单",
+            "pages": [
+              {
+                "id": "reading-list",
+                "version": "1",
+                "title": "阅读清单",
+                "entryUrl": "/plugin-pages/generated-reader-instance/00000000-0000-4000-8000-000000000001/reading-list",
+                "methods": []
+              }
+            ],
+            "themes": [],
+            "layouts": []
+          }
+        ]
+      }
+    },
+    "GET /api/plugins": {
+      "status": 200,
+      "body": {
+        "revision": 5,
+        "installation": { "supported": true, "runtime": "worker", "restartRequired": false },
+        "packages": [
+          {
+            "id": "mote.connector.generated-notion",
+            "name": "Notion",
+            "version": "1.0.0",
+            "source": { "repository": "generated-fixture/notion", "tag": "generated-1", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+            "runtime": "service",
+            "state": "installed",
+            "desired": true,
+            "observed": "ready",
+            "issues": [],
+            "instanceIds": ["generated-notion-instance"],
+            "allowedActions": ["configure", "uninstall"]
+          },
+          {
+            "id": "mote.page.generated-export",
+            "name": "Markdown 导出",
+            "version": "1.0.0",
+            "source": { "repository": "generated-fixture/export", "tag": "generated-1", "commit": "cccccccccccccccccccccccccccccccccccccccc", "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+            "runtime": "service",
+            "state": "installed",
+            "desired": true,
+            "observed": "ready",
+            "issues": [],
+            "instanceIds": ["generated-export-instance"],
+            "allowedActions": ["configure", "uninstall"]
+          },
+          {
+            "id": "mote.page.generated-reader",
+            "name": "阅读清单",
+            "version": "1.0.0",
+            "source": { "repository": "generated-fixture/reader", "tag": "generated-1", "commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
+            "runtime": "service",
+            "state": "installed",
+            "desired": true,
+            "observed": "ready",
+            "issues": [],
+            "instanceIds": ["generated-reader-instance"],
+            "allowedActions": ["configure", "uninstall"]
+          }
+        ],
+        "instances": [
+          {
+            "id": "generated-notion-instance",
+            "packageId": "mote.connector.generated-notion",
+            "name": "Notion",
+            "revision": 4,
+            "scope": "default",
+            "configurationSchema": [],
+            "configuration": {},
+            "secretStatus": {},
+            "capabilities": [{ "id": "source.connector", "state": "verified" }],
+            "desired": true,
+            "observed": "ready",
+            "issues": [],
+            "allowedActions": ["configure", "check", "disable"]
+          },
+          {
+            "id": "generated-export-instance",
+            "packageId": "mote.page.generated-export",
+            "name": "Markdown 导出",
+            "revision": 2,
+            "scope": "default",
+            "configurationSchema": [],
+            "configuration": {},
+            "secretStatus": {},
+            "capabilities": [{ "id": "outbound.export", "state": "verified" }],
+            "desired": true,
+            "observed": "ready",
+            "issues": [],
+            "allowedActions": ["configure", "disable"]
+          },
+          {
+            "id": "generated-reader-instance",
+            "packageId": "mote.page.generated-reader",
+            "name": "阅读清单",
+            "revision": 2,
+            "scope": "default",
+            "configurationSchema": [],
+            "configuration": {},
+            "secretStatus": {},
+            "capabilities": [],
+            "desired": true,
+            "observed": "ready",
+            "issues": [],
+            "allowedActions": ["configure", "disable"]
+          }
+        ],
+        "catalog": [],
+        "sourceContributions": [
+          {
+            "packageId": "mote.connector.generated-notion",
+            "packageName": "Notion",
+            "contributionId": "generated-notion",
+            "title": "Notion",
+            "body": "Generated fixture",
+            "note": "",
+            "icon": "notion",
+            "kinds": ["generated"],
+            "target": { "pageId": "sources", "href": "#/connections" },
+            "state": "enabled",
+            "instanceId": "generated-notion-instance"
+          }
+        ]
+      }
+    },
+    "GET /api/plugin-builds": {
+      "status": 200,
+      "body": [
+        {
+          "id": "bundled:lark",
+          "packageId": "mote.connector.lark",
+          "installationId": "bundled:lark",
+          "revision": 2,
+          "desired": { "packageId": "mote.connector.lark", "version": "1", "configurationRevision": 0 },
+          "retired": false,
+          "observed": "active",
+          "blockers": [],
+          "operationId": "generated-build-lark",
+          "restartRequired": false,
+          "name": "飞书会话",
+          "version": "1",
+          "runtime": "host",
+          "source": null,
+          "configuration": {},
+          "configurationSchema": [],
+          "capabilities": [],
+          "issues": [],
+          "allowedActions": ["enable", "disable"],
+          "package": false
+        },
+        {
+          "id": "bundled:google-calendar",
+          "packageId": "mote.connector.google-calendar",
+          "installationId": "bundled:google-calendar",
+          "revision": 2,
+          "desired": { "packageId": "mote.connector.google-calendar", "version": "1", "configurationRevision": 0 },
+          "retired": false,
+          "observed": "active",
+          "blockers": [],
+          "operationId": "generated-build-calendar",
+          "restartRequired": false,
+          "name": "谷歌日历",
+          "version": "1",
+          "runtime": "host",
+          "source": null,
+          "configuration": {},
+          "configurationSchema": [],
+          "capabilities": [],
+          "issues": [],
+          "allowedActions": ["enable", "disable"],
+          "package": false
+        },
+        {
+          "id": "bundled:feishu-recordings",
+          "packageId": "mote.connector.feishu-recordings",
+          "installationId": "bundled:feishu-recordings",
+          "revision": 2,
+          "desired": { "packageId": "mote.connector.feishu-recordings", "version": "1", "configurationRevision": 0 },
+          "retired": false,
+          "observed": "active",
+          "blockers": [],
+          "operationId": "generated-build-recordings",
+          "restartRequired": false,
+          "name": "会议纪要",
+          "version": "1",
+          "runtime": "host",
+          "source": null,
+          "configuration": {},
+          "configurationSchema": [],
+          "capabilities": [],
+          "issues": [],
+          "allowedActions": ["enable", "disable"],
+          "package": false
+        }
+      ]
+    },
+    "GET /api/assistant/routines": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "revision": 1,
+            "enabled": true,
+            "nextDue": "2026-11-27T09:00:00.000Z",
+            "goal": "整理发布进展",
+            "scope": { "kind": "all" },
+            "schedule": { "revision": 1, "timeZone": "Asia/Shanghai", "trigger": { "kind": "weekly", "weekday": 5, "localTime": "17:00" } },
+            "matterId": null,
+            "event": null
+          },
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "revision": 1,
+            "enabled": false,
+            "nextDue": null,
+            "goal": "看一遍家庭群",
+            "scope": { "kind": "selection", "sourceIds": ["generated-family-source"] },
+            "schedule": { "revision": 1, "timeZone": "Asia/Shanghai", "trigger": { "kind": "daily", "localTime": "08:00" } },
+            "matterId": null,
+            "event": null
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  }
+}

@@ -26,8 +26,8 @@ const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButton
 const configuration=(notifications:{enabled:boolean;timeZone:string;quietHours:{start:string;end:string}|null},revision=4):ServerConfiguration=>({
  version:1,revision,configFile:'/generated/mote.yaml',lastError:null,
  domains:[{id:'notifications',saved:notifications,effective:notifications,fields:[],status:'applied'}],
- profile:'fixture',runtime:'native',hostConfigFile:null,ownerCredential:{configured:true,source:'programmatic'},baseDir:'/generated',readOnly:false,restartRequired:false,description:'',
- storage:{dataDir:'/generated/data',sqlitePath:'/generated/data/mote.sqlite',assetDir:'/generated/assets',logDir:'/generated/logs',kind:'local-directory',source:null,mountPath:null,description:''},
+ profile:'fixture',runtime:'native',hostConfigFile:null,ownerCredential:{configured:true,source:'programmatic'},baseDir:'/generated',readOnly:false,restartRequired:false,description:'shared-configuration',
+ storage:{dataDir:'/generated/data',sqlitePath:'/generated/data/mote.sqlite',assetDir:'/generated/assets',logDir:'/generated/logs',kind:'local-directory',source:null,mountPath:null,description:'host-storage'},
 });
 const status={profile:'fixture',agent:{configured:true,model:'generated-model',provider:'generated'},storage:{captures:3,blobs:0,bytes:41200000000,imageBytes:0,logicalBytes:0,imagesEncrypted:false,indexing:[{status:'text_ready',count:3}]},index:{mode:'text',model:null},insightIntervalHours:0,serverTime:'2026-11-21T09:00:00+08:00'} as Status;
 

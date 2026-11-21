@@ -13,12 +13,12 @@ import {
  * instead of being skipped when the inventory or a plugin shard shrinks. */
 const expectedPages = [
   'agentView', 'notes', 'help', 'localPreferences', 'about', 'notifications',
-  'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed',
-  'search', 'ask', 'devices', 'vault', 'statistics', 'sourceCatalog', 'recordings', 'sources',
+  'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed', 'assistantIdeas',
+  'search', 'ask', 'vault', 'statistics', 'sourceCatalog', 'sources',
   'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',
-  'settings', 'coding', 'archive', 'connections', 'deviceConnections', 'developer',
+  'settings', 'archive', 'connections', 'deviceConnections', 'developer',
 ];
-const expectedCollections = ['materials', 'records', 'segments', 'sources', 'files', 'activity', 'media', 'memories', 'coding-status'];
+const expectedCollections = ['materials', 'records', 'segments', 'sources', 'files', 'activity', 'media', 'coding-status'];
 const expectedHomes = ['agent-view'];
 const expectedRenderers = [
   'source-item.calendar', 'source-item.calendar.v2', 'source-item.file', 'source-item.file.v2',
@@ -26,8 +26,7 @@ const expectedRenderers = [
   'source-item.metric', 'source-item.metric.v2', 'source-item.memory', 'source-item.memory.v2',
 ];
 const expectedPanels = [
-  'memory.saved', 'operation.saved', 'owner-questions.standalone-history',
-  'owner-questions.standalone-detail', 'owner-questions.history', 'owner-questions.conversation',
+  'memory.saved', 'operation.saved', 'owner-questions.standalone-detail', 'owner-questions.conversation',
   'owner-questions.work', 'owner-questions.material',
 ];
 

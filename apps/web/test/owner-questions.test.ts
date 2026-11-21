@@ -166,7 +166,7 @@ test('Activity contribution follows operation children across regrouped public w
  await act(async()=>root.render(contribution.render({api,value:{...value,ref:'direct-generated-work',operationIds:[]},onOpen:()=>{}})));
  assert.equal(new URLSearchParams(reads.at(-1)!.split('?')[1]).get('workId'),'direct-generated-work');
 });
-test('Ask host shows waiting questions in existing history and routes back to an ordinary conversation',async t=>{
+test('the supplemental question detail opens from the chat route without a second pending list and returns to the main chat',async t=>{
  const {root,d,w}=await fixture(t);await featuresReady;
  const ids=['http:GET:/api/owner-questions','http:GET:/api/owner-questions/:id','http:POST:/api/owner-questions/:id/reply'];
  const api={request:async(path:string)=>{
@@ -174,17 +174,20 @@ test('Ask host shows waiting questions in existing history and routes back to an
   if(path.startsWith('/api/owner-questions?'))return {items:[generated],nextCursor:null};
   if(path.startsWith('/api/owner-questions/'))return generated;
   if(path==='/api/model-settings')return modelView();
-  if(path==='/api/conversations?limit=30')return {items:[{id:'fixture-chat',title:'已有合成对话',createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed'}]};
+  if(path==='/api/conversations/main')return {id:'fixture-chat'};
   if(path==='/api/conversations/fixture-chat')return {id:'fixture-chat',title:'已有合成对话',createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed',revision:1,turns:[{id:'turn',question:'合成提问',scope:{},result:{answer:'合成回答',citations:[],trace:[],runId:'generated-run'},status:'completed',createdAt:when}]};
   if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});
   return {items:[]};
  },setAgentTimeout:()=>{}} as Api;
- await act(async()=>{w.location.hash=ownerQuestionRoute(generated.id);});
+ async function navigate(hash:string){await act(async()=>{w.history.replaceState(null,'',hash);w.dispatchEvent(new w.HashChangeEvent('hashchange'));});}
+ await navigate(ownerQuestionRoute(generated.id));
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:false,devices:[],renderAnswer:answer=>answer.answer})));
- assert.equal(d.querySelectorAll('.conversation-history').length,1);assert.equal(d.querySelector('.owner-question-conversation h2')?.textContent,generated.title);assert.equal(d.querySelector('.owner-question-history a')?.getAttribute('href'),ownerQuestionRoute(generated.id));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-list button.conversation-item')!.click());
+ assert.equal(d.querySelector('.chat-page'),null);
+ assert.equal(d.querySelector('.owner-question-conversation h1')?.textContent,generated.title);
+ assert.equal(d.querySelector('.owner-question-history'),null,'the chat route no longer hosts a separate pending list');
+ await navigate(pageHash('chat'));
  assert.equal(d.querySelector('.owner-question-conversation'),null);assert.match(d.querySelector('.conversation-messages')?.textContent??'',/合成回答/);assert.equal(readOwnerQuestion(w.location.hash),null);
- assert.ok(webFeatures.views('panel',{kind:'mote.ask.history',schemaVersion:1,representation:'workspace'}).some(entry=>entry.id==='owner-questions.history'));
+ assert.deepEqual(webFeatures.views('panel',{kind:'mote.ask.history',schemaVersion:1,representation:'workspace'}),[]);
 });
 test('owner question contributions dispose as one feature and match only explicit host contexts',async()=>{
  const host=new WebFeatureHost();

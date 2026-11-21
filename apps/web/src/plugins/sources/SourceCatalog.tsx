@@ -30,8 +30,8 @@ export function SourceCatalog({ api, onPage }: {
     const discovery = useDiscoveryState(api),returnReadReady=useImportReturnRead(api,'/api/features');
     const [choice,setChoice]=useState<{api:Api;recordings:boolean}>();
     const recordings=choice?.api===api&&choice.recordings;
-    // ConnectorRegistry mounts its status transport globally; it does not publish HTTP route capabilities.
-    const recordingTarget={pageId:'recordings',href:'#/connections/recordings'};
+    // Recording settings live in the Library source panel; ConnectorRegistry still owns each provider status.
+    const recordingTarget={pageId:'archive',href:'#/library?recordings=1'};
     const recordingAvailability=resolveDiscoveryTarget(recordingTarget,discovery);
     const registry = useResource<Record<string, RecordingStatus|{connected?:boolean;state?:string}>>(api, recordingAvailability.state==='available'?'/api/connectors/status':null);
     const lark = useResource<LarkStatus>(api, '/api/connectors/lark');
@@ -82,7 +82,7 @@ function RecorderCard({statusKey,status}:{statusKey:string;status:RecordingStatu
 
  const identityMatches=/^[a-z][a-z0-9-]{0,63}$/.test(statusKey)&&statusKey===status.provider+'-recordings';
  if(!identityMatches)return <article className="source-catalog-entry"><div className="panel discovery-source-card discovery-link-unavailable" aria-disabled="true">{content}<small className="discovery-availability">{discoveryAvailabilityText('unavailable')}</small></div></article>;
- return <article className="source-catalog-entry"><DiscoveryLink className="panel discovery-source-card" disabledAs="div" target={{pageId:'recordings',href:'#/connections/recordings?provider='+encodeURIComponent(status.provider),requires:[{id:'connector:'+statusKey,version:'1',host:'server'}]}}>{content}</DiscoveryLink></article>;
+ return <article className="source-catalog-entry"><DiscoveryLink className="panel discovery-source-card" disabledAs="div" target={{pageId:'archive',href:'#/library?recordings='+encodeURIComponent(status.provider),requires:[{id:'connector:'+statusKey,version:'1',host:'server'}]}}>{content}</DiscoveryLink></article>;
 }
 
 function RecorderHelp({status}:{status:RecordingStatus}){return <><p>{moteText('选择首次历史范围和持续同步，归档转写并备份原始音频。')}</p><p>{status.provider==='dingtalk'?moteText('中央需 DWS CLI 授权；真实账号适配仍待验证。'):status.provider==='feishu'?moteText('中央需 Lark CLI 的妙记读取与媒体导出授权。'):moteText('按此来源说明完成中央账号授权。')}</p></>;}

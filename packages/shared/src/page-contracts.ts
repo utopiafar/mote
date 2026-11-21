@@ -181,6 +181,8 @@ export const ideasViewSchema=z.object({
   revision:pageRevision,
   /** A scoped view cannot supply a watermark for the unscoped ignore command. */
   watermark:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  /** Latest clarification update included here; zero when none are visible. */
+  questionWatermark:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   mine:z.array(ideaItemSchema),
   yours:z.array(ideaItemSchema),
   started:z.array(startedIdeaSchema),
@@ -190,9 +192,13 @@ export type IdeasView=z.infer<typeof ideasViewSchema>;
 export const ideasQuerySchema=z.object({scope:scopeParam}).strict();
 export type IdeasQuery=z.infer<typeof ideasQuerySchema>;
 
-/** Ignore only what the surface has already seen. Newer cards stay. */
+/** Ignore only what the surface has already seen. Newer cards and
+ * clarifications stay. `viewRevision` is the `revision` of the view that issued
+ * the command; it keeps same-millisecond views from widening each other. */
 export const ideasIgnoreAllInputSchema=z.object({
   upToSeq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  upToQuestionAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  viewRevision:pageRevision.optional(),
 }).strict();
 export type IdeasIgnoreAllInput=z.infer<typeof ideasIgnoreAllInputSchema>;
 

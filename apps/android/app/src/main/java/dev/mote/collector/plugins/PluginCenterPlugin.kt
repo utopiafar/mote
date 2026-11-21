@@ -37,8 +37,8 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     fun close() { poll?.let(handler::removeCallbacks); poll = null }
     fun clearPrivateState() { close(); inventory = null; binding = null; pending = null; retryPanel = null; listVisible = false }
     fun resume() { if (listVisible && inventory != null) load() }
-    fun show() { clearPrivateState(); memoryOnly = false; memoryBack = null; if (tab == "memory") tab = "discover"; load() }
-    fun showMemory(back: () -> Unit) { clearPrivateState(); memoryOnly = true; memoryBack = back; tab = "memory"; load() }
+    fun show() { clearPrivateState(); memoryOnly = false; memoryBack = null; if (tab == "memory") tab = "discover"; ui.detailTitle(MoteI18n.text("技能")); load() }
+    fun showMemory(back: () -> Unit) { clearPrivateState(); memoryOnly = true; memoryBack = back; tab = "memory"; ui.detailTitle(MoteI18n.text("自动记忆")); load() }
     /** Advanced owner path under Runtime and diagnostics. Official catalog stays on the plugins surface. */
     fun showTrustedGithubInstall() {
         clearPrivateState(); memoryOnly = false; memoryBack = null; listVisible = false; body.removeAllViews(); screens.clearBack()
@@ -105,7 +105,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
             ui.text(MoteI18n.text("自动记忆"), NativeFontRole.TITLE_MOBILE)
             memory(); schedulePoll(); return
         }
-        ui.text(MoteI18n.text("插件中心"), NativeFontRole.TITLE_MOBILE)
+        ui.text(MoteI18n.text("技能"), NativeFontRole.TITLE_MOBILE)
         ui.button(MoteI18n.text("刷新")) { load() }
         val tabs = listOf("discover" to MoteI18n.text("官方目录"), "installed" to MoteI18n.text("已安装"))
         val select = Spinner(ui).apply {

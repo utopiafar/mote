@@ -1,4 +1,5 @@
 import type {PluginCatalogEntry} from '@mote/shared';
+import {moteText} from './i18n.js';
 
 /** A catalog entry may also name a fixed directory in this repository. Only
  * this server-side declaration can select a local artifact; resolve/install
@@ -14,7 +15,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'mem0ai/mem0',
     tag: 'ts-v3.3.1',
     name: 'Mem0',
-    description: '外部正文与检索模块（官方 Memory 配方）',
+    description: moteText('外部正文与检索模块（官方 Memory 配方）'),
     group: 'memory',
     runtime: 'worker',
     packageId: 'mote.mem0',
@@ -24,7 +25,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'vectorize-io/hindsight',
     tag: 'v0.10.2',
     name: 'Hindsight',
-    description: '外部完整引擎（官方 Memory 配方）',
+    description: moteText('外部完整引擎（官方 Memory 配方）'),
     group: 'memory',
     runtime: 'worker',
     packageId: 'mote.hindsight',
@@ -34,8 +35,8 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'mote/official-fixture-connector',
     tag: 'v0.1.0',
     localDirectory: 'test-fixtures/official-fixture-connector',
-    name: '官方连接器夹具',
-    description: '验收用最小官方连接器：安装后在「添加来源」声明式出现入口',
+    name: moteText('官方连接器夹具'),
+    description: moteText('验收用最小官方连接器'),
     group: 'connectors',
     runtime: 'service',
     packageId: 'mote.official.fixture-connector',
@@ -45,8 +46,8 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'mote/official-notion-connector',
     tag: 'v0.1.0',
     localDirectory: 'official-plugins/notion',
-    name: 'Notion 只读',
-    description: '只读归档已选择的页面或数据库（官方连接器）',
+    name: moteText('Notion 只读'),
+    description: moteText('只读归档已选择的页面或数据库（官方连接器）'),
     group: 'connectors',
     runtime: 'service',
     packageId: 'mote.official.notion',
@@ -55,8 +56,8 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'mote/official-slack-connector',
     tag: 'v0.1.0',
     localDirectory: 'official-plugins/slack',
-    name: 'Slack 归档',
-    description: '个人 Slack 归档；发送需第二次授权并经行动平台逐条确认',
+    name: moteText('Slack 归档'),
+    description: moteText('个人 Slack 归档；发送需第二次授权并经行动平台逐条确认'),
     group: 'connectors',
     runtime: 'service',
     packageId: 'mote.official.slack',
@@ -65,8 +66,8 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'mote/official-feishu-session-connector',
     tag: 'v0.1.0',
     localDirectory: 'official-plugins/feishu-session',
-    name: '飞书会话',
-    description: '在已有飞书账号上归档已勾选会话；发送需第二次授权并经行动平台逐条确认',
+    name: moteText('飞书会话'),
+    description: moteText('归档所选会话；发送需第二次授权并经行动平台逐条确认'),
     group: 'connectors',
     runtime: 'service',
     packageId: 'mote.official.feishu-session',
@@ -75,8 +76,8 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
     repository: 'mote/official-markdown-export',
     tag: 'v0.1.0',
     localDirectory: 'official-plugins/markdown-export',
-    name: 'Markdown / Obsidian 导出',
-    description: '按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）',
+    name: moteText('Markdown / Obsidian 导出'),
+    description: moteText('按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）'),
     group: 'outbound-processing',
     runtime: 'service',
     packageId: 'mote.official.markdown-export',
@@ -86,7 +87,7 @@ export const OFFICIAL_PLUGIN_CATALOG: readonly OfficialPluginCatalogEntry[] = Ob
 /** Public catalog projection. A repository-relative artifact location stays
  * server-side; clients only receive the pinned synthetic identity. */
 export function officialPluginCatalog(): PluginCatalogEntry[] {
-  return OFFICIAL_PLUGIN_CATALOG.filter(entry=>!entry.hidden).map(({localDirectory:_localDirectory,hidden:_hidden,...entry})=>({...entry}));
+  return OFFICIAL_PLUGIN_CATALOG.filter(entry=>!entry.hidden).map(({localDirectory:_localDirectory,hidden:_hidden,...entry})=>({...entry,name:moteText(entry.name),description:moteText(entry.description)}));
 }
 
 /** Exact identity match for an in-repository official artifact. A wrong tag is

@@ -1,0 +1,331 @@
+{
+  "route": "#/chat",
+  "waitFor": ".chat-page:has(.chat-task-result):has([data-message-kind=\"calendar\"][data-state=\"succeeded\"]):has([data-message-kind=\"calendar\"][data-state=\"uncertain\"]):has([data-progress=\"determinate\"])",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": {
+          "configured": true,
+          "model": "fixture-model",
+          "provider": "fixture"
+        },
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [
+            {
+              "status": "text_ready",
+              "count": 3
+            }
+          ]
+        },
+        "index": {
+          "mode": "text",
+          "model": null
+        },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": []
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 3,
+          "connections": true
+        }
+      }
+    },
+    "GET /api/conversations/main": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000001"
+      }
+    },
+    "GET /api/conversations/10000000-0000-4000-8000-000000000001": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "title": "整理样例评审清单",
+        "createdAt": "2026-11-20T09:00:00+08:00",
+        "updatedAt": "2026-11-20T09:00:00+08:00",
+        "turnCount": 5,
+        "scope": {},
+        "status": "completed",
+        "revision": 7,
+        "nextCursor": null,
+        "turns": [
+          {
+            "id": "10000000-0000-4000-8000-000000000002",
+            "question": "把样例评审的材料整理成一页提纲，重点放成本",
+            "createdAt": "2026-11-20T08:52:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "先读了同步协议草案、上次评审记录和成本表。成本一节有个数字和成本表对不上，已在提纲里标出。",
+              "runId": "generated-answer-2",
+              "citations": [],
+              "trace": [],
+              "draft": {
+                "requestId": "10000000-0000-4000-8000-000000000011",
+                "revision": 0,
+                "goal": "发布评审提纲",
+                "scope": {
+                  "kind": "all"
+                },
+                "input": "current-instruction",
+                "capabilities": [
+                  "assistant.task.start"
+                ]
+              }
+            }
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000003",
+            "question": "跑了 5 公里，膝盖有点酸",
+            "createdAt": "2026-11-20T09:40:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "记下了，今天跑了 5 公里。",
+              "runId": "generated-answer-3",
+              "citations": [],
+              "trace": []
+            }
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000004",
+            "question": "周三下午留两小时准备样例评审",
+            "createdAt": "2026-11-20T09:42:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "已处理这个日程。",
+              "runId": "generated-answer-4",
+              "citations": [],
+              "trace": [],
+              "currentAction": {
+                "id": "10000000-0000-4000-8000-000000000013",
+                "kind": "calendar.create"
+              }
+            }
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000006",
+            "question": "周四上午留一小时复盘",
+            "createdAt": "2026-11-20T09:44:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "已收到这个日程请求。",
+              "runId": "generated-answer-6",
+              "citations": [],
+              "trace": [],
+              "currentAction": {
+                "id": "10000000-0000-4000-8000-000000000014",
+                "kind": "calendar.create"
+              }
+            }
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000005",
+            "question": "再查一下上次定价讨论的结论",
+            "createdAt": "2026-11-20T09:46:00+08:00",
+            "status": "running",
+            "version": 1,
+            "runId": "10000000-0000-4000-8000-000000000015"
+          }
+        ]
+      }
+    },
+    "GET /api/operations/changes": {
+      "status": 200,
+      "body": {
+        "ids": [],
+        "cursor": 0,
+        "hasMore": false,
+        "reset": false
+      }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": []
+      }
+    },
+    "GET /api/model-settings/profiles/env%3Adeployment/models": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/conversations/10000000-0000-4000-8000-000000000001/messages/10000000-0000-4000-8000-000000000005": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000005",
+        "conversationId": "10000000-0000-4000-8000-000000000001",
+        "status": "running",
+        "revision": 1
+      }
+    },
+    "GET /api/conversations/10000000-0000-4000-8000-000000000001/messages/10000000-0000-4000-8000-000000000002/assistant-tasks": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "task": {
+              "id": "10000000-0000-4000-8000-000000000012",
+              "state": "completed",
+              "goal": "发布评审提纲"
+            },
+            "result": {
+              "answer": "评审要点：先核对成本，再确定后续安排。",
+              "runId": "generated-answer-12",
+              "citations": [],
+              "trace": []
+            }
+          }
+        ]
+      }
+    },
+    "GET /api/actions": {
+      "status": 200,
+      "body": {
+        "connectorTargets": [
+          {
+            "name": "示例日历",
+            "capability": {"id": "calendar.manage", "version": 1},
+            "target": {
+              "executionLocation": "central-connector",
+              "packageId": "generated.calendar",
+              "instanceId": "10000000-0000-4000-8000-000000000016",
+              "instanceRevision": 1,
+              "capabilityId": "calendar.manage",
+              "capabilityVersion": 1
+            }
+          }
+        ]
+      }
+    },
+    "GET /api/actions/10000000-0000-4000-8000-000000000013": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000013",
+        "kind": "calendar.create",
+        "status": "succeeded",
+        "version": 4,
+        "ownerInstruction": {
+          "conversationId": "10000000-0000-4000-8000-000000000001",
+          "messageId": "10000000-0000-4000-8000-000000000004"
+        },
+        "target": {
+          "executionLocation": "central-connector",
+          "packageId": "generated.calendar",
+          "instanceId": "10000000-0000-4000-8000-000000000016",
+          "instanceRevision": 1,
+          "capabilityId": "calendar.manage",
+          "capabilityVersion": 1
+        },
+        "event": {
+          "title": "准备发布评审",
+          "start": "2026-11-25T14:00:00+08:00",
+          "end": "2026-11-25T16:00:00+08:00",
+          "timeZone": "Asia/Shanghai",
+          "allDay": false,
+          "location": "",
+          "description": ""
+        }
+      }
+    },
+    "GET /api/actions/10000000-0000-4000-8000-000000000014": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000014",
+        "kind": "calendar.create",
+        "status": "uncertain",
+        "version": 2,
+        "ownerInstruction": {
+          "conversationId": "10000000-0000-4000-8000-000000000001",
+          "messageId": "10000000-0000-4000-8000-000000000006"
+        },
+        "target": {
+          "executionLocation": "central-connector",
+          "packageId": "generated.calendar",
+          "instanceId": "10000000-0000-4000-8000-000000000016",
+          "instanceRevision": 1,
+          "capabilityId": "calendar.manage",
+          "capabilityVersion": 1
+        },
+        "event": {
+          "title": "样例评审复盘",
+          "start": "2026-11-26T10:00:00+08:00",
+          "end": "2026-11-26T11:00:00+08:00",
+          "timeZone": "Asia/Shanghai",
+          "allDay": false,
+          "location": "",
+          "description": ""
+        }
+      }
+    },
+    "GET /api/work-activity/query%3A10000000-0000-4000-8000-000000000015": {
+      "status": 200,
+      "body": {
+        "id": "query:10000000-0000-4000-8000-000000000015",
+        "goal": "查找定价讨论",
+        "state": "running",
+        "progress": {
+          "mode": "determinate",
+          "unit": "records",
+          "total": 5,
+          "completed": 2,
+          "failed": 0,
+          "needsInput": 0,
+          "excluded": 0
+        },
+        "branches": []
+      }
+    }
+  }
+}
