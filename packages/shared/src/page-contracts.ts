@@ -11,7 +11,8 @@ import {sourceIdSchema} from './sources.js';
  * meaning that surfaces exchange; they confer no evidence permission.
  *
  * Existing owner endpoints reused by page actions (no new transport):
- * - start an idea / accept a card: POST /api/assistant/tasks {cardId, expectedRevision}
+ * - start an idea / accept a card: POST /api/assistant/tasks {cardId, expectedRevision, requestId, goal, scope}
+ *   Use the card detail's taskScope for the acceptance scope.
  * - later or ignore an idea: POST /api/assistant-cards/:id/feedback
  * - answer an idea: the chat's about=question:<id> or about=card:<id>
  * - complete, dismiss or reject a goal: AssistantCommitments.correct with
@@ -161,6 +162,7 @@ export const ideaItemSchema=z.object({
   title:pageText(80),
   detail:pageText(200).optional(),
   revision:recordRevision,
+  /** Card publication sequence. Owner-question items use zero. */
   seq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   actions:z.array(ideaActionSchema).min(1).max(4).refine(values=>uniqueValues(values),{message:'Actions must be unique'}),
 }).strict();
@@ -177,10 +179,11 @@ export type StartedIdea=z.infer<typeof startedIdeaSchema>;
 
 export const ideasViewSchema=z.object({
   revision:pageRevision,
+  /** A scoped view cannot supply a watermark for the unscoped ignore command. */
   watermark:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  mine:z.array(ideaItemSchema).max(1000),
-  yours:z.array(ideaItemSchema).max(1000),
-  started:z.array(startedIdeaSchema).max(1000),
+  mine:z.array(ideaItemSchema),
+  yours:z.array(ideaItemSchema),
+  started:z.array(startedIdeaSchema),
 }).strict();
 export type IdeasView=z.infer<typeof ideasViewSchema>;
 

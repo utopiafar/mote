@@ -3,6 +3,7 @@ import {createProcessingPluginHost} from './plugins/processing-plugin-host.js';
 import {AssistantWorkbench} from './assistant-workbench.js';
 import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
+import {AssistantIdeas,registerAssistantIdeaRoutes} from './assistant-ideas.js';
 import {AssistantFollowup} from './assistant-followup.js';
 import {registerAssistantFollowupRoutes} from './assistant-followup-routes.js';
 import {AssistantGoals} from './assistant-goals.js';
@@ -346,11 +347,13 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     return {revision:item.revision,calendar:item.calendar};
   },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
   const assistantGoals=new AssistantGoals(store,assistantCommitments,assistantMatters,assistantRoutines,evidenceReader,()=>workDomains.actions);
-  contributeDomainRoutes(backendContext,{'mote.ask':{mount:app=>{
+  const assistantIdeas=new AssistantIdeas(store,assistantCards,ownerQuestions,assistantTasks,evidenceReader);
+  contributeDomainRoutes(backendContext,{'mote.ask':{mount:(app,scope)=>{
     const owner=(req:FastifyRequest)=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);};
     registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner});
     registerAssistantFollowupRoutes(app,()=>assistantFollowup!,()=>assistantChanges,owner);
     registerAssistantGoalRoutes(app,{goals:assistantGoals,owner});
+    registerAssistantIdeaRoutes(app,assistantIdeas,owner,scope);
   }}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
