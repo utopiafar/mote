@@ -8,7 +8,11 @@ const deviceIdPrefix = '--mote-device-id=';
 const candidate = process.argv.find(value => value.startsWith(deviceIdPrefix))?.slice(deviceIdPrefix.length) ?? '';
 const deviceId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate) ? candidate : '';
 
-contextBridge.exposeInMainWorld('moteDesktop', Object.freeze({
-  deviceId,
-  openLocalWindow: () => ipcRenderer.send(openLocalWindowChannel),
-}));
+// `nodeIntegrationInSubFrames` stays off, but an explicit guard keeps the
+// bridge and the device id out of any future subframe as well.
+if (process.isMainFrame) {
+  contextBridge.exposeInMainWorld('moteDesktop', Object.freeze({
+    deviceId,
+    openLocalWindow: () => ipcRenderer.send(openLocalWindowChannel),
+  }));
+}

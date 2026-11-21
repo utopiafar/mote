@@ -1,3 +1,4 @@
+import type { Session } from 'electron';
 import { validateServerUrl } from './config';
 import { deepLinkHash, formatEvidenceRef, pageHash, parseEvidenceRef, type PageRouteKey } from '@mote/shared';
 
@@ -14,12 +15,49 @@ export function validateCentralWorkId(value:unknown):string{
   return value;
 }
 
+/** The Central page keeps a session separate from the trusted local window, so
+ * remote-origin permissions, cache and cookies never share the local policy. */
+export const centralWindowSessionPartition = 'persist:mote-central';
+
 /** The main window renders the paired Central page as untrusted content. It
  * never receives Node or the local preload, and its window keeps only these
  * minimum capabilities. */
 export const centralWindowWebPreferences = {
   contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+  partition: centralWindowSessionPartition,
 } as const;
+
+/** A configured address is only a Central origin once the owner has paired and
+ * is signed in; a new or signed-out profile goes to the offline page instead. */
+export function pairedCentralOrigin(serverUrl: string | undefined, credential: string | undefined): string | undefined {
+  if (!serverUrl || !credential) return undefined;
+  try { return validateServerUrl(serverUrl); } catch { return undefined; }
+}
+
+/** The Central session denies every permission except sanitized clipboard
+ * writes from the paired Central origin. Clipboard reads, media, geolocation,
+ * notifications, fullscreen, devices and display capture stay closed. */
+export function centralPermissionAllowed(permission: string, requestingOrigin: string | undefined, allowedOrigin: string | undefined): boolean {
+  return permission === 'clipboard-sanitized-write' && allowedOrigin !== undefined && requestingOrigin === allowedOrigin;
+}
+
+type CentralSession = Pick<Session,
+  'setPermissionCheckHandler' | 'setPermissionRequestHandler' | 'setDevicePermissionHandler' | 'setDisplayMediaRequestHandler'>;
+
+/** Install the complete permission boundary on the one session used by the
+ * untrusted Central window. The request handler is not optional: Electron's
+ * check handler alone does not cover the request path. */
+export function installCentralSessionGuards(session: CentralSession, allowedOrigin: () => string | undefined): void {
+  session.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
+    centralPermissionAllowed(permission, requestingOrigin, allowedOrigin()));
+  session.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    let requestingOrigin: string | undefined;
+    try { requestingOrigin = details?.requestingUrl ? new URL(details.requestingUrl).origin : undefined; } catch { requestingOrigin = undefined; }
+    callback(centralPermissionAllowed(permission, requestingOrigin, allowedOrigin()));
+  });
+  session.setDevicePermissionHandler(() => false);
+  session.setDisplayMediaRequestHandler((_request, callback) => callback({}));
+}
 
 /** Keep in sync with central-window-preload.ts; the sandboxed preload cannot
  * import this module without pulling Node-only configuration code with it. */

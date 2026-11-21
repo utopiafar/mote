@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  centralNavigationDecision, CentralWindowFallback, centralWindowOpenLocalChannel, centralWindowUrl,
-  centralWindowWebPreferences, trustedCentralWindowSender,
+  centralNavigationDecision, CentralWindowFallback, centralWindowOpenLocalChannel, centralWindowSessionPartition,
+  centralWindowUrl, centralWindowWebPreferences, centralPermissionAllowed, installCentralSessionGuards,
+  pairedCentralOrigin, trustedCentralWindowSender,
 } from '../src/central-browser';
 
 const electron = vi.hoisted(() => ({
@@ -21,6 +22,16 @@ vi.mock('electron', () => ({
 const origin = 'https://central.example';
 const offlineUrl = new URL('../src/offline.html', import.meta.url).href;
 const generatedDeviceId = '11111111-2222-4333-8444-555555555555';
+
+/** The preload checks Electron's frame flag; the Node test runner has no frame. */
+function setMainFrame(value: boolean): () => void {
+  const previous = Object.getOwnPropertyDescriptor(process, 'isMainFrame');
+  Object.defineProperty(process, 'isMainFrame', { value, configurable: true });
+  return () => {
+    if (previous) Object.defineProperty(process, 'isMainFrame', previous);
+    else Reflect.deleteProperty(process, 'isMainFrame');
+  };
+}
 
 describe('MC2-01 Central main-window navigation', () => {
   it('keeps the paired origin inside and hands other web destinations to the browser', () => {
@@ -47,8 +58,14 @@ describe('MC2-01 Central main-window navigation', () => {
 describe('MC2-02 Central main-window preload', () => {
   it('exposes only deviceId and openLocalWindow, and sends only the fixed local-window channel', async () => {
     const previous = [...process.argv];
+    const restoreFrame = setMainFrame(true);
+    electron.exposed.length = 0;
     process.argv.push('--mote-device-id=' + generatedDeviceId);
-    try { await import('../src/central-window-preload'); } finally { process.argv.splice(0, process.argv.length, ...previous); }
+    vi.resetModules();
+    try { await import('../src/central-window-preload'); } finally {
+      process.argv.splice(0, process.argv.length, ...previous);
+      restoreFrame();
+    }
     expect(electron.exposed).toHaveLength(1);
     const [{ name, api }] = electron.exposed;
     expect(name).toBe('moteDesktop');
@@ -65,7 +82,73 @@ describe('MC2-02 Central main-window preload', () => {
     expect(centralWindowOpenLocalChannel).toBe('mote:central:open-local-window');
     expect(centralWindowWebPreferences).toEqual({
       contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+      partition: centralWindowSessionPartition,
     });
+    expect(centralWindowSessionPartition).toMatch(/^persist:/);
+  });
+
+  it('exposes nothing when the preload runs in a subframe', async () => {
+    const restoreFrame = setMainFrame(false);
+    electron.exposed.length = 0;
+    vi.resetModules();
+    try { await import('../src/central-window-preload'); } finally { restoreFrame(); }
+    expect(electron.exposed).toHaveLength(0);
+  });
+});
+
+describe('MC2 Central session permission boundary', () => {
+  it('allows only sanitized clipboard writes from the paired origin', () => {
+    expect(centralPermissionAllowed('clipboard-sanitized-write', origin, origin)).toBe(true);
+    for (const permission of [
+      'clipboard-read', 'media', 'geolocation', 'notifications', 'fullscreen',
+      'idle-detection', 'midi', 'pointerLock', 'openExternal', 'fileSystem',
+    ]) expect(centralPermissionAllowed(permission, origin, origin)).toBe(false);
+    expect(centralPermissionAllowed('clipboard-sanitized-write', 'https://elsewhere.example', origin)).toBe(false);
+    expect(centralPermissionAllowed('clipboard-sanitized-write', origin, undefined)).toBe(false);
+  });
+
+  it('installs check, request, device and display-media handlers on the Central session', () => {
+    let check: ((contents: unknown, permission: string, requestingOrigin: string) => boolean) | undefined;
+    let request: ((contents: unknown, permission: string, callback: (granted: boolean) => void, details: { requestingUrl?: string }) => void) | undefined;
+    let device: (() => boolean) | undefined;
+    let display: ((request: unknown, callback: (streams: Record<string, never>) => void) => void) | undefined;
+    installCentralSessionGuards({
+      setPermissionCheckHandler: handler => { check = handler as typeof check; },
+      setPermissionRequestHandler: handler => { request = handler as typeof request; },
+      setDevicePermissionHandler: handler => { device = handler as typeof device; },
+      setDisplayMediaRequestHandler: handler => { display = handler as typeof display; },
+    } as unknown as Parameters<typeof installCentralSessionGuards>[0], () => origin);
+
+    expect(check!(null, 'media', origin)).toBe(false);
+    expect(check!(null, 'clipboard-read', origin)).toBe(false);
+    expect(check!(null, 'clipboard-sanitized-write', origin)).toBe(true);
+    expect(check!(null, 'clipboard-sanitized-write', 'https://elsewhere.example')).toBe(false);
+
+    const denied = vi.fn();
+    request!(null, 'media', denied, { requestingUrl: origin + '/#/chat' });
+    expect(denied).toHaveBeenCalledWith(false);
+    const allowed = vi.fn();
+    request!(null, 'clipboard-sanitized-write', allowed, { requestingUrl: origin + '/#/chat' });
+    expect(allowed).toHaveBeenCalledWith(true);
+    const foreign = vi.fn();
+    request!(null, 'clipboard-sanitized-write', foreign, { requestingUrl: 'https://elsewhere.example/' });
+    expect(foreign).toHaveBeenCalledWith(false);
+    const missing = vi.fn();
+    request!(null, 'clipboard-sanitized-write', missing, {});
+    expect(missing).toHaveBeenCalledWith(false);
+
+    expect(device!()).toBe(false);
+    const streams = vi.fn();
+    display!(null, streams);
+    expect(streams).toHaveBeenCalledWith({});
+  });
+
+  it('requires both a configured address and a signed-in credential', () => {
+    expect(pairedCentralOrigin(origin, 'generated-credential')).toBe(origin);
+    expect(pairedCentralOrigin(origin, undefined)).toBeUndefined();
+    expect(pairedCentralOrigin(undefined, 'generated-credential')).toBeUndefined();
+    expect(pairedCentralOrigin('javascript:alert(1)', 'generated-credential')).toBeUndefined();
+    expect(pairedCentralOrigin('https://user:secret@central.example', 'generated-credential')).toBeUndefined();
   });
 });
 
