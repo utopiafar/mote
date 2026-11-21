@@ -230,6 +230,25 @@
         ]
       }
     },
+    "GET /api/actions": {
+      "status": 200,
+      "body": {
+        "connectorTargets": [
+          {
+            "name": "示例日历",
+            "capability": {"id": "calendar.manage", "version": 1},
+            "target": {
+              "executionLocation": "central-connector",
+              "packageId": "generated.calendar",
+              "instanceId": "10000000-0000-4000-8000-000000000016",
+              "instanceRevision": 1,
+              "capabilityId": "calendar.manage",
+              "capabilityVersion": 1
+            }
+          }
+        ]
+      }
+    },
     "GET /api/actions/10000000-0000-4000-8000-000000000013": {
       "status": 200,
       "body": {
@@ -242,8 +261,12 @@
           "messageId": "10000000-0000-4000-8000-000000000004"
         },
         "target": {
-          "deviceId": "fixture",
-          "calendarId": "示例日历"
+          "executionLocation": "central-connector",
+          "packageId": "generated.calendar",
+          "instanceId": "10000000-0000-4000-8000-000000000016",
+          "instanceRevision": 1,
+          "capabilityId": "calendar.manage",
+          "capabilityVersion": 1
         },
         "event": {
           "title": "准备发布评审",
@@ -268,8 +291,12 @@
           "messageId": "10000000-0000-4000-8000-000000000006"
         },
         "target": {
-          "deviceId": "fixture",
-          "calendarId": "示例日历"
+          "executionLocation": "central-connector",
+          "packageId": "generated.calendar",
+          "instanceId": "10000000-0000-4000-8000-000000000016",
+          "instanceRevision": 1,
+          "capabilityId": "calendar.manage",
+          "capabilityVersion": 1
         },
         "event": {
           "title": "样例评审复盘",

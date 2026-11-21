@@ -13,7 +13,7 @@ type Page={items:Item[]};
 
 function TaskStatus({task}:{task:Item['task']}){
  const {state,goal}=task;
- if(state==='completed')return null;
+ if(state==='completed')return <span role="status">{moteText('已完成')}</span>;
  if(state==='running'||state==='waiting'||state==='cancelled'){
   const status=state==='running'?moteText('正在进行'):state==='waiting'?moteText('排队中'):moteText('已取消');
   return <ChatProgress state={state} label={goal?goal+' · '+status:status}/>;
@@ -61,7 +61,7 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
  })();};
  return <>
   {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id} data-state={task.state}>
-   <TaskStatus task={task}/>
+   {(task.state!=='completed'||!result)&&<TaskStatus task={task}/>}
    {task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {reason==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {reason==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}
@@ -70,7 +70,10 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
    {task.state==='needs_input'&&workId&&<FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.work.activity',schemaVersion:1,representation:'overview',ref:workId,revision:String(task.revision),title:'',text:''}}/>}
    {task.state==='completed'&&result&&<details className="chat-task-result" data-message-kind="result">
     <summary><FileText size={18} aria-hidden="true"/><span><strong>{task.goal||moteText('结果')}</strong>
-      {result.citations.length>0&&<small>{moteText('引用 {0} 份资料', result.citations.length)}</small>}</span><span>{moteText('打开')}</span></summary>
+      <small>
+       <TaskStatus task={task}/>
+       {result.citations.length>0&&<> · {moteText('引用 {0} 份资料', result.citations.length)}</>}
+      </small></span><span>{moteText('打开')}</span></summary>
     {renderAnswer(result,ref=>open(task.id,ref))}
     {Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
    </details>}

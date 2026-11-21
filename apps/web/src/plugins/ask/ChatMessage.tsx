@@ -1,6 +1,7 @@
 import {useCallback, useRef, useState, type ReactNode} from 'react';
 import {CalendarDays, Copy, MoreHorizontal} from 'lucide-react';
-import {pageHash, type ActionProposal, type CurrentActionReference, type WorkActivity} from '@mote/shared';
+import {isCentralConnectorActionTarget, pageHash, type ActionConnectorChoice, type ActionProposal,
+  type CurrentActionReference, type WorkActivity} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {dateTime, type Answer, type Api} from '../../api';
 import {actionEventTime, calendarStateLabel} from '../../action-presentation';
@@ -23,6 +24,10 @@ function CalendarReceipt({api, reference, conversationId, turnId}: {
   const item = read.data;
   const action = !read.error && item?.id === reference.id && item.kind === reference.kind &&
     item.ownerInstruction?.conversationId === conversationId && item.ownerInstruction.messageId === turnId ? item : undefined;
+  const target = action?.target ?? action?.related?.target;
+  const connectorTarget = isCentralConnectorActionTarget(target) ? target : undefined;
+  const actionList = useResource<{connectorTargets?: ActionConnectorChoice[]}>(api,
+    connectorTarget && action?.status !== 'stale' ? '/api/actions' : null);
   if (read.loading && !item) return <p role="status" className="chat-message-status">{moteText('正在读取…')}</p>;
   if (!action) return <div className="chat-card" data-message-kind="calendar" data-state="read-failed" role="alert">
     <CalendarDays size={18}/><span>{moteText('日程读取失败')}</span>
@@ -46,8 +51,14 @@ function CalendarReceipt({api, reference, conversationId, turnId}: {
     }
   }
 
-  const target = action.target ?? action.related?.target;
-  const destination = target?.calendarId ?? (target && 'instanceId' in target ? target.instanceId : undefined);
+  const connector = connectorTarget && actionList.error === undefined
+    ? actionList.data?.connectorTargets?.find(({target: candidate}) =>
+      candidate.executionLocation === connectorTarget.executionLocation && candidate.packageId === connectorTarget.packageId &&
+      candidate.instanceId === connectorTarget.instanceId && candidate.instanceRevision === connectorTarget.instanceRevision &&
+      candidate.capabilityId === connectorTarget.capabilityId && candidate.capabilityVersion === connectorTarget.capabilityVersion &&
+      candidate.calendarId === connectorTarget.calendarId)
+    : undefined;
+  const destination = connectorTarget ? connector?.name ?? moteText('中央连接器') : target?.calendarId;
   const state = action.kind === 'calendar.create' && action.status === 'succeeded' && !action.resolution
     ? moteText('已创建') : calendarStateLabel(action);
   const canStop = !action.cancelRequestedAt && (action.status === 'approved' || action.status === 'executing');

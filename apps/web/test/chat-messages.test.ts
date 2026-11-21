@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {act} from 'react';
 import sharp from 'sharp';
-import {pageHash} from '@mote/shared';
+import {isCentralConnectorActionTarget, pageHash, type ActionProposal} from '@mote/shared';
 import type {Answer} from '../src/api';
 import {ApiError} from '../src/api';
 import {resources} from '../src/resource-cache';
@@ -89,39 +89,49 @@ test('CH1-03 sends a follow-up through the message queue and shows the real Stee
     assert.equal(f.d.querySelectorAll('[data-message-kind="progress"]').length, 1);
   });
 
-test('CH1-04 the calendar card uses the Action receipt time and calendar, and retries a failed read', async t => {
+test('CH1-04 the calendar card uses the Action receipt time and connector name, and retries a failed read', {timeout: 30000}, async t => {
+  const server = await currentOwnerCalendarFixture(t);
+  const accepted = await server.post();
+  const message = await server.settled(accepted.message.id);
+  const id = message.result?.currentAction?.id;
+  assert.ok(id);
   const f = await chatDom(t);
-  const id = '10000000-0000-4000-8000-000000000004';
-  let unread = true, actionReads = 0;
+  await f.waitFor(() => server.node.actions.get(id).status === 'succeeded', 'durable successful write outcome');
+  const actionPath = '/api/actions/' + id;
+  const receipt = await server.api('GET', actionPath);
+  assert.equal(receipt.statusCode, 200, receipt.body);
+  const {target} = receipt.json<ActionProposal>();
+  assert.ok(isCentralConnectorActionTarget(target));
+  assert.equal(target.calendarId, undefined);
+
+  const releaseInventory = gate();
+  t.after(releaseInventory.release);
+  let actionReads = 0;
   const writes: string[] = [];
-  const result = {answer: 'Generated model text cannot assert a calendar write', runId: 'calendar', citations: [], trace: [],
-    currentAction: {id, kind: 'calendar.create'}};
-  const api = generatedApi((path, init) => {
+  const central = injectedApi(server.node.app, server.headers, (path, init) => {
     if (init.method === 'POST') writes.push(path);
-    if (path.endsWith('/main')) return {id: chatId};
-    if (path === chatPath()) return {id: chatId, scope: {}, revision: 1,
-      turns: [{id: turnId, status: 'completed', question: 'Generated calendar request', createdAt: at, result}]};
-    assert.equal(path, '/api/actions/' + id);
-    actionReads++;
-    if (unread) throw new ApiError('Generated action read failure', 503);
-    return {id, kind: 'calendar.create', status: 'succeeded', version: 4,
-      ownerInstruction: {conversationId: chatId, messageId: turnId},
-      target: {deviceId: 'generated', calendarId: 'Generated calendar'},
-      event: {title: 'Generated review', start: '2026-11-25T14:00:00+08:00', end: '2026-11-25T16:00:00+08:00',
-        timeZone: 'Asia/Shanghai', allDay: false, location: '', description: ''}};
   });
-  await f.render(api);
-  assert.ok(f.d.querySelector('[data-message-kind="calendar"][data-state="read-failed"][role="alert"]'));
+  await f.render({...central, request: async <T>(path: string, init?: RequestInit) => {
+    if (path === actionPath && ++actionReads === 1) throw new ApiError('Generated action read failure', 503);
+    if (path === '/api/actions') await releaseInventory.promise;
+    return central.request<T>(path, init);
+  }});
+  const failedReceipt = '[data-message-kind="calendar"][data-state="read-failed"][role="alert"]';
+  await f.waitFor(() => f.d.querySelector(failedReceipt), 'failed calendar receipt read');
   assert.equal(f.d.querySelector('.chat-answer'), null);
-  unread = false;
-  await f.click('[data-message-kind="calendar"] button');
-  const card = f.element('[data-action-id="' + id + '"][data-state="succeeded"]');
-  assert.match(card.textContent!, /14:00.*16:00/);
-  assert.match(card.textContent!, /Generated calendar/);
-  assert.match(card.textContent!, /已创建/);
-  assert.match(card.querySelector('a')!.hash, new RegExp(id));
+  await f.click(failedReceipt + ' button');
+  const selector = '[data-action-id="' + id + '"][data-state="succeeded"]';
+  await f.waitFor(() => f.d.querySelector(selector), 'successful calendar receipt');
+  const card = f.element(selector);
+  assert.match(card.textContent!, /15:00.*16:00/);
+  assert.equal(card.querySelector('[role="status"]')?.textContent, '已创建');
+  assert.ok(!card.textContent!.includes(target.instanceId), 'the connector ID stays hidden while its name is loading');
+  releaseInventory.release();
+  await f.waitFor(() => card.textContent?.includes('Generated owner calendar'), 'calendar name from the Action list');
+  assert.equal(card.querySelector('a')?.getAttribute('href'), pageHash('actions', {action: id}));
   assert.equal(actionReads, 2);
   assert.deepEqual(writes, []);
+  assert.equal(server.calls.length, 1);
 });
 
 test('CH1-04 a lost connector receipt shows the exact event for verification', {timeout: 30000}, async t => {

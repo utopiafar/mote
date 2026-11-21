@@ -34,6 +34,7 @@ test('the original turn restores a persisted result and rechecks its citation be
  await render(root,api,opened);
  assert.match(d.body.textContent!,/Generated grounded result/);assert.match(d.body.textContent!,/Generated quotation/);assert.equal(d.querySelector('.assistant-task-result')?.getAttribute('data-state'),'completed');
  const resultCard=d.querySelector<HTMLDetailsElement>('.chat-task-result')!;assert.equal(resultCard.open,false);
+ assert.equal(resultCard.querySelector('summary [role="status"]')?.textContent,'已完成');
  await act(async()=>resultCard.querySelector('summary')!.click());assert.equal(resultCard.open,true);
  assert.equal(d.querySelector<HTMLButtonElement>('.assistant-draft-actions .primary')!.disabled,true,'a recovered task is not started again');
  const citation=d.querySelector<HTMLButtonElement>('.citation')!;await act(async()=>citation.click());
