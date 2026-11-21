@@ -208,11 +208,10 @@ test('GO2-04 adding one sentence and a deadline puts it under things I do',async
   assert.equal(ui.d.querySelector('.action-final-dialog'),null);
 });
 
-test('GO2-04 an unlinked manual Todo opens chat with that Todo as its reference',async t=>{
-  const f=await chatDom(t,'#/goals');
+async function goalsServer(t:import('node:test').TestContext,name:string){
   const {buildApp}=await import('../../server/src/app');
-  const directory=mkdtempSync(join(tmpdir(),'mote-goals-about-'));
-  const token='generated-goals-about-owner';
+  const directory=mkdtempSync(join(tmpdir(),`mote-${name}-`));
+  const token=`generated-${name}-owner`;
   const node=await buildApp({
     path:join(directory,'mote.yaml'),
     privateCredential:{token,tokenPath:'fixture'},
@@ -225,7 +224,12 @@ test('GO2-04 an unlinked manual Todo opens chat with that Todo as its reference'
     try{await node.app.close();}
     finally{rmSync(directory,{recursive:true,force:true});}
   });
-  const headers={authorization:'Bearer '+token};
+  return {node,headers:{authorization:'Bearer '+token}};
+}
+
+test('GO2-04 an unlinked manual Todo opens chat with that Todo as its reference',async t=>{
+  const f=await chatDom(t,'#/goals');
+  const {node,headers}=await goalsServer(t,'goals-about');
   const requests:Call[]=[];
   const api=injectedApi(node.app,headers,(path,init)=>requests.push({path,method:init.method??'GET'})) as Api;
   await act(async()=>f.root.render(React.createElement(GoalsPage,{api,onOpen:()=>{}})));
@@ -322,7 +326,7 @@ test('GO2 links carry the item or matter to chat, library and the workbench proj
   const ui=await fixture(t,state);await ui.render();
   const release=group(ui.d,'matter:'+ids.release)!;
   const title=release.querySelector<HTMLAnchorElement>('a.goals-group-title')!;
-  assert.equal(title.getAttribute('href'),'#/assistant/workbench?matter='+ids.release);
+  assert.equal(title.getAttribute('href'),'#/assistant/workbench?matter='+ids.release+'&template=project');
   const materials=release.querySelector<HTMLAnchorElement>('a[aria-label="相关资料"]')!;
   assert.equal(materials.getAttribute('href'),'#/library?matter='+ids.release);
   const matterChat=release.querySelector<HTMLAnchorElement>('a[aria-label="去聊"]')!;
@@ -343,20 +347,28 @@ test('the empty goal page keeps one sentence and still offers the add control',a
   assert.ok(ui.d.querySelector('button[aria-label="添加目标"]'));
 });
 
-test('the workbench reads the project matter from the goals route',async t=>{
-  assert.equal(workbenchMatterTarget('#/assistant/workbench?matter='+ids.release),ids.release);
+test('a matter route without a template retries the saved template read before opening the workbench',async t=>{
+  const hash='#/assistant/workbench?matter='+ids.release;
+  assert.equal(workbenchMatterTarget(hash),ids.release);
   assert.equal(workbenchMatterTarget('#/assistant/workbench?matter=generated'),undefined);
-  configureLocale(()=> 'zh-CN');
-  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/assistant/workbench?matter='+ids.release,pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>();
-  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
-  Object.assign(dom.window.HTMLElement.prototype,{attachEvent:()=>{},detachEvent:()=>{},scrollIntoView:()=>{}});dom.window.scrollTo=()=>{};
-  const calls:string[]=[],root=createRoot(dom.window.document.getElementById('root')!);
-  const api={request:async(path:string)=>{calls.push(path);return {};}} as Api;
-  t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of prior)if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);dom.window.close();});
-  await act(async()=>root.render(React.createElement(AssistantWorkbenchPage,{api,range:{}})));
-  const request=calls.find(path=>path.startsWith('/api/assistant/workbench?'))!;assert.ok(request);
-  const value=JSON.parse(new URLSearchParams(request.split('?')[1]).get('request')!) as {template:string;matterId:string};
-  assert.equal(value.template,'project');assert.equal(value.matterId,ids.release);
+  const f=await chatDom(t,hash),calls:string[]=[];
+  let unavailable=true;
+  const api={request:async(path:string)=>{
+    calls.push(path);
+    if(!path.startsWith('/api/assistant/matters/'+ids.release+'?'))return {};
+    if(unavailable)throw new ApiError('Generated missing matter',404);
+    return {matter:matter(ids.release,'Generated release')};
+  }} as Api;
+  const range={after:at};
+  await act(async()=>f.root.render(React.createElement(AssistantWorkbenchPage,{api,range})));
+  const request=()=>calls.find(path=>path.startsWith('/api/assistant/workbench?'));
+  await f.waitFor(()=>f.d.querySelector('[role=alert] button'),'the matter read failure offers a retry');
+  assert.equal(request(),undefined,'a missing template never sends a guessed workbench request');
+  unavailable=false;
+  await f.click('[role=alert] button');
+  await f.waitFor(request,'the retry opens the saved project template');
+  assert.deepEqual(JSON.parse(new URLSearchParams(request()!.split('?')[1]).get('request')!),
+    {template:'project',matterId:ids.release,scope:{...all,...range}});
 });
 
 test('GO3-04 the workbench reads the travel matter template from the goals route',async t=>{
@@ -366,26 +378,69 @@ test('GO3-04 the workbench reads the travel matter template from the goals route
   assert.equal(workbench.request.personMemoryId,undefined);
 });
 
+test('GO3-04 clicking a goal for a matter beyond the first page opens its saved travel template',async t=>{
+  const {featuresReady}=await import('../src/features/bootstrap');
+  await featuresReady;
+  const f=await chatDom(t,'#/goals');
+  const {node,headers}=await goalsServer(t,'goals-paged-workbench');
+  const central=injectedApi(node.app,headers);
+  const create=(goal:string,template:Matter['template'])=>central.request<Matter>('/api/assistant/matter-commands',{
+    method:'POST',body:JSON.stringify({type:'create',requestId:randomUUID(),goal,template,scope:all}),
+  });
+  t.mock.timers.enable({apis:['Date'],now:Date.parse(at)});
+  const travel=await create('Generated trip','travel');
+  t.mock.timers.tick(1000);
+  for(let index=0;index<100;index++)await create('Generated project '+index,'project');
+  t.mock.timers.reset();
+
+  const list='/api/assistant/matters?'+new URLSearchParams({scope:JSON.stringify(all),limit:'100'});
+  const first=await central.request<{items:Matter[];nextCursor:string|null}>(list);
+  assert.equal(first.items.length,100);
+  assert.ok(first.items.every(item=>item.id!==travel.id));
+  assert.ok(first.nextCursor);
+  const second=await central.request<{items:Matter[]}>(list+'&'+new URLSearchParams({cursor:first.nextCursor}));
+  assert.equal(second.items.find(item=>item.id===travel.id)?.template,'travel');
+
+  const evidenceId=randomUUID(),text='Generated promise to book the trip';
+  await central.request('/api/notes',{method:'POST',body:JSON.stringify({id:evidenceId,deviceId:'generated-device',
+    deviceName:'Generated',platform:'import',capturedAt:at,text})});
+  node.featureServices.assistantCommitments.publish({
+    commitmentId:randomUUID(),eventId:randomUUID(),kind:'commitment',occurredAt:null,summary:text,
+    changes:{title:text,matterId:travel.id,status:'confirmed'},
+    evidence:[{id:evidenceId,quote:text,offset:0}],evidenceDependencies:{version:1,complete:true,ids:[evidenceId]},
+  },undefined,all,()=>{});
+
+  const views:WorkspaceView[]=[];
+  const api={...central,request:async<T>(path:string,init?:RequestInit):Promise<T>=>{
+    const value=await central.request<T>(path,init);
+    if(path.startsWith('/api/assistant/workbench?'))views.push(value as WorkspaceView);
+    return value;
+  }} as Api;
+  const props:PageProps={api,range:{},status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},
+    insights:[],onPage:()=>{},onOpen:ref=>f.opened.push(ref),archiveTab:'materials',setArchiveTab:()=>{},
+    timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'session',changeSessionLifetime:()=>{}};
+  const renderRoute=()=>f.root.render(React.createElement(React.Suspense,{fallback:null},
+    React.createElement(FeaturePage,{page:readPage(f.w.location.hash),props})));
+  assert.equal(readPage(f.w.location.hash),'assistantGoals');
+  await act(async()=>renderRoute());
+  const title=`.goals-group[data-group="matter:${travel.id}"] a.goals-group-title`;
+  await f.waitFor(()=>f.d.querySelector(title),'the travel matter appears in goals');
+  assert.equal(f.element(title).textContent,travel.goal);
+  await f.click(title);
+  await f.waitFor(()=>readPage(f.w.location.hash)==='assistantWorkbench','the goal link opens the workbench');
+  await act(async()=>renderRoute());
+  await f.waitFor(()=>views.length>0,'the workbench receives the Central response');
+  assert.deepEqual(views.map(view=>view.descriptor.id),['assistant.workbench.travel']);
+  assert.deepEqual(views[0].request,{template:'travel',matterId:travel.id,scope:all});
+  await f.waitFor(()=>f.d.querySelector('.declarative-detail')?.textContent?.includes(travel.goal),
+    'the workbench renders the same matter');
+});
+
 test('GO3-05 clicking a person row in Memory opens that person’s workbench',async t=>{
   const {featuresReady}=await import('../src/features/bootstrap');
   await featuresReady;
   const f=await chatDom(t,'#/assistant/memory');
-  const {buildApp}=await import('../../server/src/app');
-  const directory=mkdtempSync(join(tmpdir(),'mote-memory-workbench-'));
-  const token='generated-memory-workbench-owner';
-  const node=await buildApp({
-    path:join(directory,'mote.yaml'),
-    privateCredential:{token,tokenPath:'fixture'},
-    initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},
-      server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},
-      models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},
-        embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}},
-  },{backgroundWorker:false,agent:{configured:false,query:async()=>assert.fail('Unexpected model call'),close:async()=>{}}});
-  t.after(async()=>{
-    try{await node.app.close();}
-    finally{rmSync(directory,{recursive:true,force:true});}
-  });
-  const headers={authorization:'Bearer '+token};
+  const {node,headers}=await goalsServer(t,'memory-workbench');
   const noteId=randomUUID(),title='Generated Mina',promise='Generated design handoff';
   const body=title+' will provide the design handoff.';
   const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{

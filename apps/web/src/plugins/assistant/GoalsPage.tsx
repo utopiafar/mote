@@ -22,7 +22,7 @@ type Section='theirs'|'mine'|'unconfirmed';
 const emptyDraft=():Draft=>({title:'',due:''});
 const itemCount=(group:GoalGroup)=>group.theirs.length+group.mine.length+group.unconfirmed.length;
 const templateLabels:Record<MatterTemplate,string>={project:'项目',travel:'旅行',reading:'阅读'};
-const matterHref=(id:string,template:MatterTemplate)=>'#/assistant/workbench?'+new URLSearchParams({matter:id,...(template==='project'?{}:{template})});
+const matterHref=(id:string,template?:MatterTemplate)=>'#/assistant/workbench?'+new URLSearchParams({matter:id,...(template?{template}:{})});
 const libraryHref=(id:string)=>pageHash('library',{matter:id});
 const groupTitle=(group:GoalGroup)=>group.key.kind==='matter'?group.key.title:group.key.kind==='person'?group.key.name:moteText('其他');
 const groupId=(group:GoalGroup)=>group.key.kind==='matter'?'matter:'+group.key.id:group.key.kind==='person'?'person:'+group.key.name:'none';
@@ -135,7 +135,7 @@ export function GoalsPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
   };
   const head=(group:GoalGroup)=>{
     const matter=group.key.kind==='matter'?matters.get(group.key.id):undefined;
-    const template=matter?.template??(group.key.kind==='matter'?group.key.template:undefined)??'project';
+    const template=matter?.template??(group.key.kind==='matter'?group.key.template:undefined);
     return <header className="goals-group-head">
       {group.key.kind==='matter'?<a className="goals-group-title" href={matterHref(group.key.id,template)}>{groupTitle(group)}</a>:<h2 className="goals-group-title">{groupTitle(group)}</h2>}
       <span className="goals-count">{moteText('{0} 件',itemCount(group))}</span>
