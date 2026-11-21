@@ -10,7 +10,6 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.mote.collector.ui.MoteComponents
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
@@ -181,20 +180,14 @@ class Ua08AcceptanceCaptureInstrumentedTest {
         }
     }
 
-    @Test fun a05BackReturnsToTheConversationList() {
+    @Test fun a05MainConversationOpensDirectlyAndBackLeavesAsk() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("ua08Fixture") == "true")
         perTheme { s, theme ->
-            click(s, "Back to the conversation list") { it.contentDescription?.toString() == "返回上级" }
-            ready(s, "Conversation list rows are loaded") { a ->
-                !a.isWorking && shown(a).any { it.contentDescription?.toString()?.startsWith("暖气费是怎么约定的？") == true } &&
-                    shown(a).none { it is TextView && it.text.contains("正在读取对话") || it.tag == MoteComponents.LOADING_TAG }
-            }
-            instrumentation.waitForIdleSync()
-            shot(s, "list-$theme")
-            assertTrue("No history action on the thread", seen { it.contentDescription?.toString() == "对话历史" }.not())
-            assertTrue("No new conversation action on the thread", seen { it.contentDescription?.toString() == "新对话" }.not())
-            click(s, "Reopen the generated conversation") { it.contentDescription?.toString()?.startsWith("暖气费是怎么约定的？") == true }
-            ready(s, "Conversation reopened") { a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString().contains("按实际用量分摊") } }
+            assertFalse(seen { it.contentDescription?.toString() == "对话历史" })
+            assertFalse(seen { it.contentDescription?.toString() == "新对话" })
+            shot(s, "chat-main-$theme")
+            click(s, "Back leaves the root conversation") { it.contentDescription?.toString() == "返回上级" }
+            until("Back closes the standalone Ask host") { s.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
         }
     }
 

@@ -45,7 +45,7 @@ enum HomeDestination: Equatable, Identifiable {
     case profile
     // Destination: 中央原文搜索（IOS-SEARCH）
     case search
-    // Destination: IOS11 iOS 对话列表
+    // Destination: iOS 问一问的主对话
     case ask(OriginalAskScope?)
     // Destination: iOS 编辑器，拍照与录音先打开编辑器。
     case editor(EditorIntent)
@@ -135,8 +135,8 @@ struct HomeDestinationView: View {
         case .original(let id):
             OriginalRootView(id: id, onDeleted: { dismiss() }, onAsk: onAsk)
         case .ask(let scope):
-            // IOS12: 问一问 opens history; rows and the composer push the
-            // conversation page. Scoped ask roots at a fresh conversation.
+            // 问一问 opens the server's main conversation. Scoped ask roots at
+            // a fresh conversation.
             ConversationFlowView(scope: scope, onDismiss: { dismiss() }, onAddImage: {})
         case .profile:
             ProfileMenuView(onOpenConnection: onOpenConnection, onAsk: onAsk)

@@ -391,9 +391,6 @@
 .evidence-facts .evidence-ocr-status { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin:0; padding:0; background:none; border:0; }
 .evidence-facts .evidence-ocr-status p { margin:0; }
 .evidence-facts .evidence-description { white-space:pre-wrap; }
-.evidence-conversations { display:flex; flex-direction:column; gap:6px; margin:0; padding:0; list-style:none; }
-.evidence-conversations a { color:inherit; text-decoration:none; }
-.evidence-conversations a:hover,.evidence-conversations a:focus-visible { color:var(--mote-accent); }
 .evidence-aside .reader-source-details dl>div { display:flex; flex-direction:column; gap:2px; padding:8px 0; }
 .evidence-aside .reader-source-details dd { text-align:left; }
 .evidence-aside .reader-source-details>pre,.evidence-aside .evidence-canonical pre { max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }

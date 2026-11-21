@@ -33,7 +33,7 @@ final class MoteReaderPreviewUITests: XCTestCase {
             let detail = launch(appearance: appearance)
             detail.buttons["更多"].tap()
             detail.buttons["详情"].tap()
-            for text in ["详情", "本机已保存", "中央已接收", "已整理，可搜索", "14:20", "14:22", "14:25", "来源", "记录 · 我的 iPhone", "引用它的对话", "2"] {
+            for text in ["详情", "本机已保存", "中央已接收", "已整理，可搜索", "14:20", "14:22", "14:25", "来源", "记录 · 我的 iPhone"] {
                 XCTAssertTrue(detail.staticTexts[text].firstMatch.waitForExistence(timeout: 3), "\(text) is missing")
             }
             waitForTarget(detail.buttons["关闭"])

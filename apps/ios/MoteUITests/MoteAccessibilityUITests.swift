@@ -7,8 +7,7 @@ import XCTest
 final class MoteAccessibilityUITests: XCTestCase {
     private let namedControls: [(String, [String], [String])] = [
         ("home", ["-MoteHomePreview", "-MoteHomeState", "normal"], ["我的 Mote", "搜索", "拍照", "录音"]),
-        ("history", ["-MoteHistoryPreview", "-MoteHistoryState", "list"], ["返回", "添加图片"]),
-        ("history-typing", ["-MoteHistoryPreview", "-MoteHistoryState", "typing"], ["发送"]),
+        ("chat-main", ["-MoteConversationPreview", "-MoteConversationState", "flow"], ["返回", "添加图片"]),
         ("ask-streaming", ["-MoteConversationPreview", "-MoteConversationState", "streaming"], ["停止"]),
         ("ask-answered", ["-MoteConversationPreview", "-MoteConversationState", "answered"], ["复制", "更多"]),
         ("ask-anchored", ["-MoteConversationPreview", "-MoteConversationState", "anchored"], ["清除范围"]),
@@ -94,8 +93,7 @@ final class MoteAccessibilityUITests: XCTestCase {
             ("recording", ["-MoteRecordingPreview", "-MoteRecordingTestInput", "-MoteRecordingState", "inApp"]),
             ("share", ["-MoteSharePreview", "-MoteShareState", "link"]),
             ("share-answer", ["-MoteSharePreview", "-MoteShareState", "answer"]),
-            ("history", ["-MoteHistoryPreview", "-MoteHistoryState", "list"]),
-            ("history-typing", ["-MoteHistoryPreview", "-MoteHistoryState", "typing"]),
+            ("chat-main", ["-MoteConversationPreview", "-MoteConversationState", "flow"]),
             ("ask", ["-MoteConversationPreview", "-MoteConversationState", "answered"]),
             ("ask-streaming", ["-MoteConversationPreview", "-MoteConversationState", "streaming"]),
             ("reader", ["-MoteReaderPreview", "-MoteReaderState", "reader"]),

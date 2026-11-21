@@ -68,7 +68,8 @@ node.app.post('/api/fixture/transcript',async()=>{controlState='ready';const pri
 node.app.post('/api/fixture/conversation',async req=>{
  const record=fixture.records.find(r=>r.index===req.body.index&&r.long);if(!record)throw Error('Unknown generated long source');
  const material=node.materials.get(record.materialId);if(!material)throw Error('Material missing');
- const result=new Conversations(node.store).append(undefined,{question:'合成引用对话',timeZone:'UTC'},{answer:'生成资料的完整原文有来源可查。['+material.ref+']',citations:[{id:material.ref,capturedAt:record.item.observedAt,appName:record.title,excerpt:record.item.text.slice(0,180)}],trace:[],runId:randomUUID()});
+ const conversations=new Conversations(node.store);
+ const result=conversations.append(conversations.get(conversations.main().id),{question:'合成引用对话',timeZone:'UTC'},{answer:'生成资料的完整原文有来源可查。['+material.ref+']',citations:[{id:material.ref,capturedAt:record.item.observedAt,appName:record.title,excerpt:record.item.text.slice(0,180)}],trace:[],runId:randomUUID()});
  return {materialRef:material.ref,recordId:node.store.db.prepare('SELECT capture_id FROM source_heads WHERE source_id=? AND external_id=?').get(record.sourceId,record.item.externalId)?.capture_id,conversation:result};
 });
 await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(ready+'.tmp',JSON.stringify({url:node.app.listeningOrigin}),{mode:0o600});renameSync(ready+'.tmp',ready);

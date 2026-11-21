@@ -4,18 +4,26 @@ import {join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import {Conversations} from '../../server/src/conversations.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import type {QueryInput} from '@mote/agent';
 const ready=process.argv[2];if(!ready)throw Error('Private ready file required');
 const dataDir=await mkdtemp(join(tmpdir(),'mote-scope-service-')),token=randomUUID()+randomUUID();
-const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={
+ path:join(dataDir,'mote.yaml'),
+ privateCredential:{token,tokenPath:'generated-only'},
+ initialDocument:{
+  version:1,revision:0,storage:{dataDir,maxExportBytes:1_000_000},
+  server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
+  execution:{insightIntervalHours:0}
+ }
+};
 const seen:{question:string;evidenceIds?:string[]|null;anchorEvidenceIds?:string[]|null}[]=[];
 const answer=()=>({answer:'Generated scope response',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
 const node=await buildApp(config,{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{seen.push({question:input.question,evidenceIds:input.evidenceIds,anchorEvidenceIds:input.anchorEvidenceIds});return answer();},close:async()=>{}}});
 const headers={authorization:`Bearer ${token}`};
-// This generated scenario exercises the multi-conversation composer action.
-const configuration=(await node.app.inject({url:'/api/configuration',headers})).json();
-assert.equal((await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:configuration.revision,value:{multipleConversations:true}}})).statusCode,200);
+const readPaths=new Set<string>();
+const ids:Record<string,string>={};
 let failure=0;
 node.app.addHook('onRequest',async(request,reply)=>{
  if(request.url.startsWith('/fixture/')){
@@ -23,7 +31,18 @@ node.app.addHook('onRequest',async(request,reply)=>{
   if(request.url==='/fixture/seen')return reply.send(seen);
   if(request.url==='/fixture/fail'){failure=Number((request.headers['x-fixture-status']??403));return reply.send({ok:true});}
  }
- if(failure&&request.url.startsWith('/api/conversations')){const code=failure;failure=0;return reply.code(code).send({error:'Generated unavailable scope'});}
+ if(failure&&request.method==='GET'&&readPaths.has(new URL(request.url,'http://fixture').pathname)){
+  const code=failure;
+  failure=0;
+  return reply.code(code).send({error:'Generated unavailable scope'});
+ }
+});
+node.app.post('/fixture/main',async(request,reply)=>{
+ const kind=(request.body as {kind?:string}|undefined)?.kind;
+ if(!kind||!Object.hasOwn(ids,kind))return reply.code(400).send({error:'unknown_generated_conversation'});
+ const id=ids[kind];
+ node.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(id);
+ return {id};
 });
 const evidenceIds:string[]=[];
 for(let i=0;i<2;i++){
@@ -31,12 +50,15 @@ for(let i=0;i<2;i++){
  const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-scope',deviceName:'Generated scope',platform:'android',capturedAt:'2026-10-01T00:00:00Z',text:'Generated scope original '+i}});assert.equal(response.statusCode,201,response.body);
 }
 await node.materialOrganizer.tick(100);
-const ids:Record<string,string>={};
+const stored=new Conversations(node.store);
 for(const kind of ['anchor','strict','plain']){
  const scope=kind==='anchor'?{anchorEvidenceIds:[evidenceIds[0]]}:kind==='strict'?{evidenceIds:[evidenceIds[1]]}:{};
- const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated '+kind,...scope}});assert.equal(response.statusCode,200,response.body);
- ids[kind]=response.json().conversationId;
- assert.ok(ids[kind],response.body);
+ const {id}=stored.create();
+ const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:id,question:'Generated '+kind,...scope}});
+ assert.equal(response.statusCode,200,response.body);
+ assert.equal(response.json().conversationId,id);
+ ids[kind]=id;
+ readPaths.add(['','api','conversations',ids[kind]].join('/'));
  if(kind==='anchor')for(let i=1;i<21;i++)node.conversations.append(node.conversations.get(ids[kind]),{question:'Generated anchor older '+i,...scope},answer());
 }
 await node.app.listen({host:'127.0.0.1',port:0});

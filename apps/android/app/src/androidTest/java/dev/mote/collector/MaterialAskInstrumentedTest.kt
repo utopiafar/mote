@@ -99,10 +99,9 @@ class MaterialAskInstrumentedTest {
                     readyAny(s,"Actual original reader"){a -> shownViews(a).filterIsInstance<TextView>().any { it.text.toString().contains("暖气费按实际用量分摊") }}
                     clickAny(s,"Open the actual original More sheet"){it.tag=="capture-reader-more" && it.contentDescription?.toString()=="更多"}
                     clickWindowText("详情")
-                    until("Receipt timeline and references are visible"){main{windows().any{it is TextView&&it.text.toString()=="本机已保存"}&&windows().any{it is TextView&&it.text.toString()=="中央已接收"}&&windows().any{it is TextView&&it.text.toString()=="引用它的对话"}}}
+                    until("Receipt timeline is visible"){main{windows().any{it is TextView&&it.text.toString()=="本机已保存"}&&windows().any{it is TextView&&it.text.toString()=="中央已接收"}&&!windows().any{it is TextView&&it.text.toString()=="引用它的对话"}}}
                     instrumentation.waitForIdleSync()
                     s.onActivity { a ->
-                        assertTrue(windows().filterIsInstance<TextView>().any { it.text.toString()=="2" })
                         assertFalse(windows().filterIsInstance<TextView>().any { it.text.toString()=="关闭" })
                         assertFalse(a.isFinishing)
                     }

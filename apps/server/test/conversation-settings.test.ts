@@ -11,7 +11,7 @@ const token='generated-conversation-settings-owner';
 const headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}});
 
-test('conversation settings preserve the chosen main and existing side conversations across a restart',async t=>{
+test('conversation settings preserve context values and multipleConversations no longer opens a list',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-settings-'));
   const agent={configured:true,close:async()=>{},query:async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[]}})};
   let node=await buildApp(config(dir),{backgroundWorker:false,agent});
@@ -24,25 +24,23 @@ test('conversation settings preserve the chosen main and existing side conversat
   assert.deepEqual(domain(view),{multipleConversations:false,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}});
   const mainResponse=await get('/api/conversations/main');assert.equal(mainResponse.statusCode,200,mainResponse.body);
   const original=mainResponse.json().id;
-  assert.equal((await node.app.inject({method:'POST',url:'/api/conversations',headers,payload:{}})).statusCode,409);
+  assert.equal((await node.app.inject({method:'POST',url:'/api/conversations',headers,payload:{}})).statusCode,404);
+  assert.equal((await put('/api/conversations/main',{id:original})).statusCode,404);
   let response=await put('/api/configuration/conversations',{revision:view.revision,value:{multipleConversations:true}});
   assert.equal(response.statusCode,200,response.body);view=response.json();
   assert.equal((await get('/api/conversations/main')).json().id,original);
-  const sideResponse=await node.app.inject({method:'POST',url:'/api/conversations',headers,payload:{}});
-  assert.equal(sideResponse.statusCode,201,sideResponse.body);const side=sideResponse.json().id;
-  const accepted=await node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{conversationId:side,clientRequestId:randomUUID(),question:'Generated side question',scope:{kind:'all'}}});
-  assert.equal(accepted.statusCode,202,accepted.body);
-  response=await put('/api/conversations/main',{id:side});assert.equal(response.statusCode,200,response.body);
-  assert.equal(response.json().id,side);
+  // Three saved side conversations exist in the store, but no route lists them.
+  const sideIds:string[]=[];
+  for(const question of ['Generated side one','Generated side two','Generated side three'])sideIds.push(node.conversations.append(undefined,{question},{answer:'Generated side answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}}).conversationId);
+  assert.equal((await get('/api/conversations')).statusCode,404);
+  assert.equal((await get(`/api/conversations/${sideIds[0]}`)).json().turns[0].question,'Generated side one');
+  assert.equal((await get(`/api/conversations/${original}`)).statusCode,200);
+  assert.equal((await get('/api/conversations/main')).json().id,original);
   response=await put('/api/configuration/conversations',{revision:view.revision,value:{multipleConversations:false,context:{historyRatio:0.1,lowWatermarkRatio:0.25,contextWindow:8000,contextWindowSource:'configured'}}});
   assert.equal(response.statusCode,200,response.body);view=response.json();
-  assert.equal((await get('/api/conversations/main')).json().id,side);
-  assert.equal((await get(`/api/conversations/${original}`)).statusCode,200);
-  assert.equal((await get(`/api/conversations/${side}`)).json().turns[0].question,'Generated side question');
-  assert.equal((await node.app.inject({method:'POST',url:'/api/conversations',headers,payload:{}})).statusCode,409);
+  assert.equal((await get('/api/conversations/main')).json().id,original);
+  assert.equal((await get(`/api/conversations/${sideIds[2]}`)).json().turns[0].question,'Generated side three');
   const missing=await get(`/api/conversations/${randomUUID()}`);assert.equal(missing.statusCode,404);
-  response=await put('/api/conversations/main',{id:randomUUID()});assert.equal(response.statusCode,404);
-  assert.equal((await get('/api/conversations/main')).json().id,side);
 
   for(const context of [{historyRatio:-0.1},{historyRatio:1.1},{lowWatermarkRatio:1},{contextWindowSource:'unknown'},{contextWindowSource:'configured',contextWindow:null},{contextWindow:0},{window:'unknown'}]){
     response=await put('/api/configuration/conversations',{revision:view.revision,value:{context}});
@@ -52,10 +50,11 @@ test('conversation settings preserve the chosen main and existing side conversat
   response=await put('/api/configuration/conversations',{revision:view.revision,value:{multipleConversations:true}});
   assert.equal(response.statusCode,200,response.body);view=response.json();
   await node.app.close();node=await buildApp(config(dir),{backgroundWorker:false,agent});
-  assert.equal((await get('/api/conversations/main')).json().id,side);
+  assert.equal((await get('/api/conversations/main')).json().id,original);
   assert.deepEqual(domain(await settings()),domain(view));
+  assert.equal((await get('/api/conversations')).statusCode,404);
   assert.equal((await get(`/api/conversations/${original}`)).statusCode,200);
-  assert.equal((await get(`/api/conversations/${side}`)).json().turns[0].question,'Generated side question');
+  assert.equal((await get(`/api/conversations/${sideIds[0]}`)).json().turns[0].question,'Generated side one');
 });
 
 test('default Ask selects the main conversation while unnamed legacy and run queries stay independent',async t=>{
@@ -66,7 +65,6 @@ test('default Ask selects the main conversation while unnamed legacy and run que
   t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   const get=(url:string)=>node.app.inject({url,headers});
   const post=(url:string,payload:unknown)=>node.app.inject({method:'POST',url,headers,payload});
-  const put=(url:string,payload:unknown)=>node.app.inject({method:'PUT',url,headers,payload});
   const settle=async(id:string)=>{for(let attempt=0;attempt<200;attempt++){const run=(await get(`/api/query-runs/${id}`)).json();if(run.status!=='running')return run;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated query did not settle');};
   const main=(await get('/api/conversations/main')).json().id;
   const selected=randomUUID();
@@ -78,13 +76,11 @@ test('default Ask selects the main conversation while unnamed legacy and run que
   assert.equal((await settle(first.id)).status,'completed');
   const detail=await get(`/api/conversations/${main}`);assert.equal(detail.json().title,'Generated first main question');assert.deepEqual(detail.json().scope.evidenceIds,[selected]);
 
-  const settings=(await get('/api/configuration')).json();
-  assert.equal((await put('/api/configuration/conversations',{revision:settings.revision,value:{multipleConversations:true}})).statusCode,200);
-  const side=(await post('/api/conversations',{})).json().id;
-  assert.equal((await put('/api/conversations/main',{id:side})).statusCode,200);
+  const side=node.conversations.append(undefined,{question:'Generated side conversation'},{answer:'Generated side answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}}).conversationId;
+  assert.equal((await get('/api/conversations/main')).json().id,main);
 
   // A retry keeps targeting the conversation captured by its first receipt,
-  // even after the owner selected a different main conversation.
+  // even when a known side conversation also exists.
   response=await post('/api/query-runs',first);assert.equal(response.statusCode,202,response.body);assert.equal(response.json().conversationId,main);
   assert.equal((await post('/api/query-runs',{...first,input:{question:'Changed retry'}})).statusCode,409);
   const next={id:randomUUID(),input:{question:'Generated new main question',conversationId:side}};

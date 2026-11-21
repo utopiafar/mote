@@ -13,6 +13,7 @@ import {AgentNotConfiguredError,type ContextReader,type QueryInput} from '@mote/
 import type {ModelSettings} from '@mote/shared/models';
 import {AgentRuntimeRegistry,type AgentRuntimeRegistryDependencies} from '../src/agent-runtime-registry.js';
 import {buildApp} from '../src/app.js';
+import {Conversations} from '../src/conversations.js';
 import {registerBuiltinDomains,type ConfigurationPlatformOptions} from '../src/config.js';
 import {ConfigService} from '../src/config-service.js';
 import {ConcurrencyGate} from '../src/concurrency.js';
@@ -96,7 +97,7 @@ test('normal buildApp rejects unauthenticated and unconfigured queries without p
   assert.equal((await node.app.inject({method:'POST',url:'/api/query',payload})).statusCode,401);
   const unavailable=await node.app.inject({method:'POST',url:'/api/query',headers:f.headers,payload});
   assert.equal(unavailable.statusCode,503,unavailable.body);
-  const history=(await node.app.inject({url:'/api/conversations',headers:f.headers})).json();
+  const history=new Conversations(node.store).list();
   for(const summary of history.items){const conversation=(await node.app.inject({url:'/api/conversations/'+summary.id,headers:f.headers})).json();assert.ok(conversation.turns.every((turn:any)=>!turn.result),'failure records are allowed; successful empty answers are not');}
 });
 
