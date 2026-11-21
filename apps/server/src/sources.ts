@@ -15,6 +15,7 @@ type Version={capture_id:string;hash:string};
 export type SourceRegistration=z.infer<typeof sourceConnectionSchema>;
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
+  private readonly authorizationListeners=new Set<(id:string)=>void>();
   readonly capabilities=sourceCapabilities.clone();
   readonly contexts:SourceContextStore;
   constructor(public store:Store,public pipelines?:SourcePipelineRuntime,private readonly memoryInputs:MemoryInputAuthorization|undefined=pipelines?.memoryWork.inputs){this.contexts=new SourceContextStore(store);}
@@ -53,13 +54,25 @@ export class SourceStore {
     // starts the new range; ordinary pause/resume keeps the current checkpoint.
     if((existing.initialSync??'all')!==(input.initialSync??'all')){value.syncScopeVersion=(existing.syncScopeVersion??0)+1;value.syncPolicyVersion=(existing.syncPolicyVersion??0)+1;if(value.status){const {coverage,...status}=value.status;value.status=status;}}
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-    try{authorize?.(existing);this.save(value);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
+    try{authorize?.(existing);this.save(value,existing);if('ownerRelation' in patch&&patch.ownerRelation!==(existing.ownerRelation??null))
       (this.pipelines?.materials??new MaterialStore(this.store)).refreshSourceContext(id);
       authorize?.(value);if(own)db.exec('COMMIT');return this.present(value);
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:{...this.capabilities.describe(value),...(value.kind==='coding-agent'?{codingEvidenceFieldsVersion:1 as const}:{})}}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
-  private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
+  /** Notify consumers with frozen source selections in the source write transaction. */
+  onAuthorizationChange(listener:(id:string)=>void){
+    this.authorizationListeners.add(listener);
+    return ()=>{this.authorizationListeners.delete(listener);};
+  }
+  private save(value:SourceConnection,previous?:SourceConnection){
+    const {capabilities,...persisted}=value;
+    this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));
+    if(previous&&(previous.enabled!==value.enabled||previous.retention!==value.retention||previous.syncScopeVersion!==value.syncScopeVersion||
+      (previous.status?.state==='permission_required')!==(value.status?.state==='permission_required'))){
+      for(const listener of this.authorizationListeners)listener(value.id);
+    }
+  }
   /** Read-only pin checked again inside each actual write, including queued intake. */
   assertSyncScope(id:string,expectedVersion:number){
     const value=this.getSource(id);if(!value.enabled||(value.syncScopeVersion??0)!==expectedVersion)throw new StoreError('Source synchronization scope changed',409);
@@ -69,7 +82,7 @@ export class SourceStore {
     this.control(()=>{
       const value=expectedScopeVersion===undefined?this.getSource(id):this.assertSyncScope(id,expectedScopeVersion),input=sourceStatusSchema.parse(status),coverage=input.coverage??value.status?.coverage;
       const next={...value,status:{...input,...(coverage?{coverage}:{})},updatedAt:new Date().toISOString()};
-      this.save(next);
+      this.save(next,value);
     });
   }
   /** Explicit range/authorization changes withdraw coverage and advance the
@@ -78,7 +91,7 @@ export class SourceStore {
     this.control(()=>{
       const value=this.getSource(id),next={...value,syncScopeVersion:(value.syncScopeVersion??0)+1,updatedAt:new Date().toISOString()};
       if(value.status){const {coverage,...status}=value.status;next.status=status;}
-      this.save(next);
+      this.save(next,value);
     });
   }
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
