@@ -7657,5 +7657,13 @@ export const german: Readonly<Record<string, string>> = {
   "目前没有处理任务": "Keine Verarbeitungsaufgaben",
   "开始和结束时间不能相同。": "Start- und Endzeit müssen sich unterscheiden.",
   "当前服务只读，无法保存。": "Dieser Dienst ist schreibgeschützt; Änderungen können nicht gespeichert werden.",
-  "{0}–{1} 安静": "{0}–{1} ruhig"
+  "{0}–{1} 安静": "{0}–{1} ruhig",
+  "全部忽略": "Alle ignorieren",
+  "需要你": "Für dich",
+  "我来做": "Von mir",
+  "已开始": "Begonnen",
+  "搜索点子": "Ideen durchsuchen",
+  "没有新点子": "Keine neuen Ideen",
+  "稍后": "Später",
+  "这张卡片暂时不能开始。": "Diese Karte kann noch nicht starten."
 };

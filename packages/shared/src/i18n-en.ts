@@ -7657,5 +7657,13 @@ export const english: Readonly<Record<string, string>> = {
   "目前没有处理任务": "No processing tasks",
   "开始和结束时间不能相同。": "Start and end times must differ.",
   "当前服务只读，无法保存。": "This service is read-only; changes cannot be saved.",
-  "{0}–{1} 安静": "{0}–{1} quiet"
+  "{0}–{1} 安静": "{0}–{1} quiet",
+  "全部忽略": "Ignore all",
+  "需要你": "Needs you",
+  "我来做": "For me",
+  "已开始": "Started",
+  "搜索点子": "Search ideas",
+  "没有新点子": "No new ideas",
+  "稍后": "Later",
+  "这张卡片暂时不能开始。": "This card cannot start yet."
 };

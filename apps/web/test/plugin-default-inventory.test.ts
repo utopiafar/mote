@@ -13,7 +13,7 @@ import {
  * instead of being skipped when the inventory or a plugin shard shrinks. */
 const expectedPages = [
   'agentView', 'notes', 'help', 'localPreferences', 'about', 'notifications',
-  'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed',
+  'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed', 'assistantIdeas',
   'search', 'ask', 'devices', 'vault', 'statistics', 'sourceCatalog', 'recordings', 'sources',
   'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',
   'settings', 'coding', 'archive', 'connections', 'deviceConnections', 'developer',
@@ -26,8 +26,7 @@ const expectedRenderers = [
   'source-item.metric', 'source-item.metric.v2', 'source-item.memory', 'source-item.memory.v2',
 ];
 const expectedPanels = [
-  'memory.saved', 'operation.saved', 'owner-questions.standalone-history',
-  'owner-questions.standalone-detail', 'owner-questions.history', 'owner-questions.conversation',
+  'memory.saved', 'operation.saved', 'owner-questions.standalone-detail', 'owner-questions.history', 'owner-questions.conversation',
   'owner-questions.work', 'owner-questions.material',
 ];
 
