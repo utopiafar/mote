@@ -139,7 +139,7 @@ class ConnectionActivity : MoteActivity() {
             }) { result ->
                 working = false
                 result.onSuccess { server ->
-                    MoteDialogBuilder(this).setTitle(MoteI18n.text("恢复已兑换连接")).setMessage(MoteI18n.text("{0}\n\n将重新校验已保存的凭据", server))
+                    MoteDialogBuilder(this).setTitle(MoteI18n.text("恢复已兑换连接")).setMessage(MoteI18n.text("{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。", server))
                         .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("恢复")) { _, _ ->
                             val chosenName = name.text.toString().trim(); val debug = allowHttp.isChecked
                             working = true; applying = true; MoteComponents.working(status, MoteI18n.text("正在重新校验设备连接…"))

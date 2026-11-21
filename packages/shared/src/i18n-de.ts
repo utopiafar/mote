@@ -7607,7 +7607,6 @@ export const german: Readonly<Record<string, string>> = {
   "切换会舍弃当前输入和图片": "Wechseln verwirft Eingabe und Bilder",
   "记录已移除，物理擦除未核验": "Eintrag entfernt; physische Löschung unbestätigt",
   "{0} 条待处理 · 待发 {1} 条": "{0} Einträge offen · {1} ausstehend",
-  "中央版本不支持检查": "Zentrale Version unterstützt diese Prüfung nicht",
   "部分系统事件未保存": "Einige Systemereignisse nicht gespeichert",
   "本机最近上传结果": "Letzte Uploads dieses Geräts",
   "上传历史保留 30 天": "Upload-Verlauf 30 Tage aufbewahrt",
@@ -7651,7 +7650,6 @@ export const german: Readonly<Record<string, string>> = {
   "记录属于原节点，需先同步": "Eintrag gehört zum ursprünglichen Knoten; zuerst synchronisieren",
   "规则草稿与内容授权分开": "Regelentwurf und Inhaltsfreigabe sind getrennt",
   "迁移设置，系统权限需重授": "Einstellungen migriert; Systemrechte neu erteilen",
-  "所选 {0} 条，保留图不删除": "{0} ausgewählt; behaltene Bilder bleiben",
   "同状态合并为 {0} 次观察": "Gleicher Zustand zu {0} Beobachtungen zusammengefasst",
   "双指缩放，双击复位": "Zum Zoomen kneifen; Doppeltippen zum Zurücksetzen",
   "后台处理，可离开本页": "Verarbeitung im Hintergrund; Seite kann verlassen werden",
@@ -7669,7 +7667,6 @@ export const german: Readonly<Record<string, string>> = {
   "确认后此来源保留正文原件": "Bestätigen, um Textoriginale zu behalten",
   "检查中央可见状态": "Zentrale Sichtbarkeit prüfen",
   "ZIP 为明文，不含中央归档": "ZIP ist Klartext und ohne zentrale Archive",
-  "{0}\n\n将重新校验已保存的凭据": "{0}\\n\\nGespeicherte Zugangsdaten werden erneut geprüft",
   "本机删除不影响中央原件": "Lokales Löschen lässt das zentrale Original",
   "已安排补传 {0} 条记录": "Erneutes Senden für {0} Einträge geplant",
   "会话按应用与间隔分段": "Sitzungen nach App und Abstand getrennt",
@@ -7710,7 +7707,6 @@ export const german: Readonly<Record<string, string>> = {
   "记录：{0}\n{1}\nID：{2}": "Eintrag: {0}\n{1}\nID: {2}",
   "历史结果保留；查看当前资料": "Früheres Ergebnis behalten. Aktuelles Material ansehen.",
   "首次回溯 {0} 天": "Erster Rückblick: {0} Tage",
-  "断开后停止读取，归档保留": "Trennen stoppt das Lesen; Archive bleiben.",
   "已于 {0} 开始": "Gestartet um {0}",
   "需麦克风与系统音频权限": "Mikrofon- und Systemaudio-Zugriff erforderlich",
   "录制并上传到中央；需先告知在场的人": "Aufnehmen und zentral hochladen; vorher Anwesende informieren.",
@@ -7721,5 +7717,8 @@ export const german: Readonly<Record<string, string>> = {
   "真实接入会产生模型费用": "Eine echte Verbindung verursacht Modellkosten.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Nur eine lokale Kopie mit bestätigtem Upload löschen. Zeit, Quelle und Empfangsbeleg bleiben erhalten; das Central-Archiv und Ihre Quelldateien bleiben unberührt.",
   "纠正此段文字": "Diesen Text korrigieren",
-  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nBehalten {1} · ausstehend {2} · offen {3}"
+  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nBehalten {1} · ausstehend {2} · offen {3}",
+  "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态": "Der zentrale Knoten unterstützt keine beidseitigen Prüfungen. Knoten aktualisieren; lokaler Status unverändert.",
+  "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。": "{0} Aufzeichnungen ausgewählt. {1}Behaltene Vergleichsbilder werden nicht gelöscht. Synchronisierte zentrale Kopien bleiben unberührt. Wiederhergestellte Aufzeichnungen setzen ihren ursprünglichen Sync- und OCR-Workflow fort.",
+  "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。": "{0}\n\nPrüft die eingelösten, verschlüsselt gespeicherten Anmeldedaten erneut online. Nach der Bestätigung werden ungebundene lokale Aufzeichnungen diesem Knoten zugeordnet und entsprechend den Synchronisierungseinstellungen gesendet."
 };

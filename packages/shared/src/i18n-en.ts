@@ -7607,7 +7607,6 @@ export const english: Readonly<Record<string, string>> = {
   "切换会舍弃当前输入和图片": "Switching discards the current input and images",
   "记录已移除，物理擦除未核验": "Record removed; physical erasure unverified",
   "{0} 条待处理 · 待发 {1} 条": "{0} records need attention · {1} pending",
-  "中央版本不支持检查": "Central version does not support this check",
   "部分系统事件未保存": "Some system events were not saved",
   "本机最近上传结果": "Recent uploads from this device",
   "上传历史保留 30 天": "Upload history kept for 30 days",
@@ -7651,7 +7650,6 @@ export const english: Readonly<Record<string, string>> = {
   "记录属于原节点，需先同步": "Record belongs to the original node; sync it first",
   "规则草稿与内容授权分开": "Rule drafts and content authorization are separate",
   "迁移设置，系统权限需重授": "Settings migrate; system permissions must be regranted",
-  "所选 {0} 条，保留图不删除": "{0} selected; kept images stay",
   "同状态合并为 {0} 次观察": "Same state merged into {0} observations",
   "双指缩放，双击复位": "Pinch to zoom; double-tap to reset",
   "后台处理，可离开本页": "Processing in the background; you can leave",
@@ -7669,7 +7667,6 @@ export const english: Readonly<Record<string, string>> = {
   "确认后此来源保留正文原件": "Confirm to keep text originals for this source",
   "检查中央可见状态": "Check central visibility",
   "ZIP 为明文，不含中央归档": "ZIP is plaintext and excludes central archives",
-  "{0}\n\n将重新校验已保存的凭据": "{0}\\n\\nSaved credentials will be revalidated",
   "本机删除不影响中央原件": "Local deletion keeps the central original",
   "已安排补传 {0} 条记录": "Re-upload scheduled for {0} records",
   "会话按应用与间隔分段": "Sessions split by app and gap",
@@ -7710,7 +7707,6 @@ export const english: Readonly<Record<string, string>> = {
   "记录：{0}\n{1}\nID：{2}": "Record: {0}\n{1}\nID: {2}",
   "历史结果保留；查看当前资料": "Historical result kept. View the current material.",
   "首次回溯 {0} 天": "First lookback: {0} days",
-  "断开后停止读取，归档保留": "Disconnecting stops reading; archives stay.",
   "已于 {0} 开始": "Started at {0}",
   "需麦克风与系统音频权限": "Microphone and system audio access required",
   "录制并上传到中央；需先告知在场的人": "Record and upload centrally; tell everyone present first.",
@@ -7721,5 +7717,8 @@ export const english: Readonly<Record<string, string>> = {
   "真实接入会产生模型费用": "A real connection incurs model costs.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Clear only a local copy whose upload was confirmed. Keep its time, source and receipt; the Central archive and your source files are unaffected.",
   "纠正此段文字": "Correct this text",
-  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nKept {1} · pending {2} · attention {3}"
+  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nKept {1} · pending {2} · attention {3}",
+  "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态": "Node does not support two-sided checks. Upgrade it; local state unchanged.",
+  "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。": "Selected {0} records. {1}Retained comparison images are not deleted. Synced central copies are unaffected. Restored records resume their original sync and OCR workflow.",
+  "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。": "{0}\n\nReverifies the redeemed, encrypted credential online. After confirmation, unbound local records are assigned to this node and sent according to sync settings."
 };

@@ -721,7 +721,7 @@ internal class CentralAdmin(
                 }
             }
             ui.button(MoteI18n.text("查看来源与归档")) { ui.navigate("sources") }
-            ui.button(MoteI18n.text("断开连接")) { screens.confirm(MoteI18n.text("断开连接"), MoteI18n.text("断开后停止读取，归档保留")) {
+            ui.button(MoteI18n.text("断开连接")) { screens.confirm(MoteI18n.text("断开连接"), MoteI18n.text("断开会停止读取并暂停这些来源，保留已归档资料。飞书端授权及 CLI 凭据仍保留，可在飞书中单独撤销。")) {
                 ui.work(MoteI18n.text("正在处理…"), { api.delete("/api/connectors/lark") }) { lark() }
             } }
         }

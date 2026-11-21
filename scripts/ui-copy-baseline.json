@@ -5653,5 +5653,20 @@
     "rule": "trailing-arrow",
     "location": "message",
     "text": "麦克风与系统音频权限 ↗"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。"
   }
 ]

@@ -7606,7 +7606,6 @@
   "切换会舍弃当前输入和图片": "Changer abandonne la saisie et les images en cours",
   "记录已移除，物理擦除未核验": "Enregistrement retiré ; effacement physique non vérifié",
   "{0} 条待处理 · 待发 {1} 条": "{0} enregistrements à traiter · {1} en attente",
-  "中央版本不支持检查": "Version centrale non compatible avec ce contrôle",
   "部分系统事件未保存": "Certains événements système ne sont pas enregistrés",
   "本机最近上传结果": "Envois récents de cet appareil",
   "上传历史保留 30 天": "Historique d'envoi conservé 30 jours",
@@ -7650,7 +7649,6 @@
   "记录属于原节点，需先同步": "L'enregistrement appartient au nœud d'origine ; synchronisez-le",
   "规则草稿与内容授权分开": "Brouillons de règles et autorisation distincts",
   "迁移设置，系统权限需重授": "Réglages migrés ; permissions système à redonner",
-  "所选 {0} 条，保留图不删除": "{0} sélectionnés ; les images gardées restent",
   "同状态合并为 {0} 次观察": "Même état fusionné en {0} observations",
   "双指缩放，双击复位": "Pincez pour zoomer ; double-touchez pour réinitialiser",
   "后台处理，可离开本页": "Traitement en arrière-plan ; vous pouvez quitter",
@@ -7668,7 +7666,6 @@
   "确认后此来源保留正文原件": "Confirmez pour garder les originaux du texte",
   "检查中央可见状态": "Vérifier la visibilité centrale",
   "ZIP 为明文，不含中央归档": "Le ZIP est en clair et exclut les archives centrales",
-  "{0}\n\n将重新校验已保存的凭据": "{0}\\n\\nLes identifiants enregistrés seront revérifiés",
   "本机删除不影响中央原件": "La suppression locale conserve l'original central",
   "已安排补传 {0} 条记录": "Renvoi prévu pour {0} enregistrements",
   "会话按应用与间隔分段": "Sessions divisées par app et intervalle",
@@ -7709,7 +7706,6 @@
   "记录：{0}\n{1}\nID：{2}": "Enregistrement : {0}\n{1}\nID : {2}",
   "历史结果保留；查看当前资料": "Résultat historique conservé. Voir le document actuel.",
   "首次回溯 {0} 天": "Premier historique : {0} jours",
-  "断开后停止读取，归档保留": "La déconnexion arrête la lecture ; les archives restent.",
   "已于 {0} 开始": "Démarré à {0}",
   "需麦克风与系统音频权限": "Accès au micro et à l'audio système requis",
   "录制并上传到中央；需先告知在场的人": "Enregistrer et envoyer au central ; prévenez les personnes présentes.",
@@ -7720,5 +7716,8 @@
   "真实接入会产生模型费用": "Une connexion réelle entraîne des coûts de modèle.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Supprimer uniquement une copie locale dont le téléversement a été confirmé. La date, la source et le reçu sont conservés ; les archives Central et vos fichiers source restent inchangés.",
   "纠正此段文字": "Corriger ce texte",
-  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nConservés {1} · en attente {2} · à traiter {3}"
+  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nConservés {1} · en attente {2} · à traiter {3}",
+  "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态": "Le nœud ne prend pas en charge les vérifications des deux côtés. Mettez-le à niveau ; état local inchangé.",
+  "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。": "{0} enregistrements sélectionnés. {1}Les images de comparaison conservées ne sont pas supprimées. Les copies centrales synchronisées ne sont pas affectées. Les enregistrements restaurés reprennent leur flux de synchronisation et d'OCR d'origine.",
+  "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。": "{0}\n\nRevérifie en ligne l'identifiant échangé et chiffré. Après confirmation, les enregistrements locaux non liés sont assignés à ce nœud et envoyés selon les paramètres de synchronisation."
 }

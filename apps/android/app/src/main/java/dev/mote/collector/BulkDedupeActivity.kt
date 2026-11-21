@@ -262,7 +262,7 @@ class BulkDedupeActivity : MoteActivity() {
         val items = rows.filter { id(it) in selected }
         if (items.isEmpty()) { Toast.makeText(this, MoteI18n.text("先选择图片"), Toast.LENGTH_SHORT).show(); return }
         val verb = when (action) { "move" -> MoteI18n.text("移入待决定区"); "restore" -> MoteI18n.text("恢复到本机采集队列"); else -> MoteI18n.text("永久删除本机记录及图片") }
-        MoteDialogBuilder(this).setTitle(MoteI18n.text("确认{0}？", verb)).setMessage(MoteI18n.text("所选 {0} 条，保留图不删除", items.size, if (action in listOf("delete", "purge")) MoteI18n.text("无法撤销。") else ""))
+        MoteDialogBuilder(this).setTitle(MoteI18n.text("确认{0}？", verb)).setMessage(MoteI18n.text("所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。", items.size, if (action in listOf("delete", "purge")) MoteI18n.text("无法撤销。") else ""))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确认")) { _, _ ->
                 val job = UUID.randomUUID().toString()
                 submit(workDataOf("action" to action, "job" to job), JSONObject().put("job", job).put("items", JSONArray(items)))

@@ -23,6 +23,15 @@ class UiCopyRulesTest {
         (0 until array.length()).map(array::getString).toSet()
     }
 
+    /** Complete consequence copy owned by main; the shared checker freezes these catalog entries in the baseline. */
+    private val consequential: Set<String> = setOf(
+        "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态",
+        "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。",
+        "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。",
+        "请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。",
+        "断开会停止读取并暂停这些来源，保留已归档资料。飞书端授权及 CLI 凭据仍保留，可在飞书中单独撤销。",
+    )
+
     @Test fun androidMessagesPassTheInterfaceCopyRules() {
         val sourceRoot = File("src/main/java")
         val sources = sourceRoot.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
@@ -40,9 +49,9 @@ class UiCopyRulesTest {
                 message == "操作已请求；重复点击会合并，等待网络条件或当前操作完成"
             val problem = when {
                 banned.any(message::contains) || notInsteadOfBut.containsMatchIn(message) -> "banned phrase"
-                message.replace(permittedQing, "").contains("请") -> "polite request"
+                message.replace(permittedQing, "").contains("请") && message !in consequential -> "polite request"
                 trailingArrow.containsMatchIn(message) -> "trailing arrow"
-                hanCount > 24 && message !in promises && !protectedRecoveryStatus -> "too long ($hanCount)"
+                hanCount > 24 && message !in promises && message !in consequential && !protectedRecoveryStatus -> "too long ($hanCount)"
                 else -> null
             }
             problem?.let { "$path: $it: \"$message\"" }

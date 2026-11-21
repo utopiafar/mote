@@ -7607,7 +7607,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "切换会舍弃当前输入和图片": "Cambiar descarta la entrada e imágenes actuales",
   "记录已移除，物理擦除未核验": "Registro eliminado; borrado físico sin verificar",
   "{0} 条待处理 · 待发 {1} 条": "{0} registros pendientes · {1} por enviar",
-  "中央版本不支持检查": "La versión central no admite esta comprobación",
   "部分系统事件未保存": "Algunos eventos del sistema no se guardaron",
   "本机最近上传结果": "Envíos recientes de este dispositivo",
   "上传历史保留 30 天": "Historial de envíos 30 días",
@@ -7651,7 +7650,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "记录属于原节点，需先同步": "El registro pertenece al nodo original; sincronízalo primero",
   "规则草稿与内容授权分开": "Borradores de reglas y autorización separados",
   "迁移设置，系统权限需重授": "Ajustes migrados; permisos del sistema a reconceder",
-  "所选 {0} 条，保留图不删除": "{0} seleccionados; las imágenes conservadas permanecen",
   "同状态合并为 {0} 次观察": "Mismo estado fusionado en {0} observaciones",
   "双指缩放，双击复位": "Pellizca para zoom; doble toque para restablecer",
   "后台处理，可离开本页": "Procesando en segundo plano; puedes salir",
@@ -7669,7 +7667,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "确认后此来源保留正文原件": "Confirma para conservar originales de texto",
   "检查中央可见状态": "Comprobar visibilidad central",
   "ZIP 为明文，不含中央归档": "El ZIP es texto plano y excluye archivos centrales",
-  "{0}\n\n将重新校验已保存的凭据": "{0}\\n\\nSe revalidarán las credenciales guardadas",
   "本机删除不影响中央原件": "Borrar localmente conserva el original central",
   "已安排补传 {0} 条记录": "Reenvío programado para {0} registros",
   "会话按应用与间隔分段": "Sesiones divididas por app e intervalo",
@@ -7710,7 +7707,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "记录：{0}\n{1}\nID：{2}": "Registro: {0}\n{1}\nID: {2}",
   "历史结果保留；查看当前资料": "Resultado histórico conservado. Ver el material actual.",
   "首次回溯 {0} 天": "Primera revisión: {0} días",
-  "断开后停止读取，归档保留": "Desconectar detiene la lectura; los archivos permanecen.",
   "已于 {0} 开始": "Iniciado a las {0}",
   "需麦克风与系统音频权限": "Se requiere acceso al micrófono y audio del sistema",
   "录制并上传到中央；需先告知在场的人": "Graba y sube al central; avisa antes a los presentes.",
@@ -7721,5 +7717,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "真实接入会产生模型费用": "Una conexión real genera costes de modelo.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Eliminar solo una copia local cuya carga se haya confirmado. Se conservan la fecha, la fuente y el recibo; no se modifican el archivo de Central ni tus archivos de origen.",
   "纠正此段文字": "Corregir este texto",
-  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nConservados {1} · pendientes {2} · por tratar {3}"
+  "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nConservados {1} · pendientes {2} · por tratar {3}",
+  "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态": "El nodo no admite comprobaciones en ambos extremos. Actualizarlo; el estado local no cambió.",
+  "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。": "Seleccionados {0} registros. {1}Las imágenes retenidas de comparación no se eliminan. Las copias centrales sincronizadas no se ven afectadas. Los registros restaurados retoman su flujo original de sincronización y OCR.",
+  "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。": "{0}\n\nReverifica en línea la credencial canjeada y guardada cifrada. Tras confirmar, los registros locales no vinculados se asignan a este nodo y se envían según la configuración de sincronización."
 };
