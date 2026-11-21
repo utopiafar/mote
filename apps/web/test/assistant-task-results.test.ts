@@ -32,7 +32,10 @@ test('the original turn restores a persisted result and rechecks its citation be
  const {root,d}=await fixture(t),opened:string[]=[];let current=true,reads=0;
  const api={request:async(path:string)=>{assert.match(path,/assistant-tasks\?scope=/);reads++;return {items:[current?{...task('completed'),result:answer}:task('stale')]};}} as Api;
  await render(root,api,opened);
- assert.match(d.body.textContent!,/Generated grounded result/);assert.match(d.body.textContent!,/Generated quotation/);assert.match(d.body.textContent!,/已完成/);
+ assert.match(d.body.textContent!,/Generated grounded result/);assert.match(d.body.textContent!,/Generated quotation/);assert.equal(d.querySelector('.assistant-task-result')?.getAttribute('data-state'),'completed');
+ const resultCard=d.querySelector<HTMLDetailsElement>('.chat-task-result')!;assert.equal(resultCard.open,false);
+ assert.equal(resultCard.querySelector('summary [role="status"]')?.textContent,'已完成');
+ await act(async()=>resultCard.querySelector('summary')!.click());assert.equal(resultCard.open,true);
  assert.equal(d.querySelector<HTMLButtonElement>('.assistant-draft-actions .primary')!.disabled,true,'a recovered task is not started again');
  const citation=d.querySelector<HTMLButtonElement>('.citation')!;await act(async()=>citation.click());
  assert.deepEqual(opened,['capture:'+evidenceId]);assert.equal(reads,2,'opening rechecks the task result');

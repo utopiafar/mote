@@ -12,7 +12,6 @@ export function ConversationSettingsView({api,settings,revision,onSaved}:{api:Ap
   const [draft,setDraft]=useState<Settings>(settings??conservative);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   useEffect(()=>{setDraft(settings??conservative);setError('');setNotice('');},[api,settings]);
-  const change=(value:Partial<Settings>)=>setDraft(current=>({...current,...value}));
   const changeContext=(value:Partial<Settings['context']>)=>setDraft(current=>({...current,context:{...current.context,...value}}));
   async function save(){
     if(busy)return;
@@ -31,9 +30,7 @@ export function ConversationSettingsView({api,settings,revision,onSaved}:{api:Ap
     }catch(cause){setError(errorMessage(cause));}
     finally{setBusy(false);}
   }
-  return <section className="conversation-settings" aria-label={moteText('对话设置')}><form onSubmit={event=>{event.preventDefault();void save();}}>
-    <p>{moteText('默认打开主对话。多个对话默认关闭；关闭不会删除已有对话。')}</p>
-    <label className="preference-toggle"><span><strong>{moteText('允许多个对话')}</strong><small>{moteText('开启后可以新建独立对话。关闭后历史仍可查看，默认提问回到主对话。')}</small></span><input type="checkbox" role="switch" disabled={busy} checked={draft.multipleConversations} onChange={event=>change({multipleConversations:event.target.checked})}/></label>
+  return <section className="conversation-settings" aria-label={moteText('上下文设置')}><form onSubmit={event=>{event.preventDefault();void save();}}>
     <fieldset disabled={busy}><legend>{moteText('上下文设置')}</legend>
       <p className="fine-print">{moteText('服务端按当前模型窗口和完整请求预算计算历史目标；这里只保存比例与窗口偏好，不在浏览器中估算。')}</p>
       <div className="conversation-settings-grid">
