@@ -7657,5 +7657,15 @@ export const german: Readonly<Record<string, string>> = {
   "目前没有处理任务": "Keine Verarbeitungsaufgaben",
   "开始和结束时间不能相同。": "Start- und Endzeit müssen sich unterscheiden.",
   "当前服务只读，无法保存。": "Dieser Dienst ist schreibgeschützt; Änderungen können nicht gespeichert werden.",
-  "{0}–{1} 安静": "{0}–{1} ruhig"
+  "{0}–{1} 安静": "{0}–{1} ruhig",
+  "外部服务": "Externe Dienste",
+  "取数": "Abruf",
+  "工具": "Werkzeuge",
+  "试运行": "Probelauf",
+  "上次": "Zuletzt",
+  "在中央打开": "In Central öffnen",
+  "还没有连接": "Noch keine Verbindungen",
+  "尚未连接中央": "Central nicht verbunden",
+  "重新授权": "Erneut autorisieren",
+  "无法打开中央页面": "Central-Seite kann nicht geöffnet werden"
 };

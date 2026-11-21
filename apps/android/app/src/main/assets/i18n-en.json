@@ -7656,5 +7656,15 @@
   "目前没有处理任务": "No processing tasks",
   "开始和结束时间不能相同。": "Start and end times must differ.",
   "当前服务只读，无法保存。": "This service is read-only; changes cannot be saved.",
-  "{0}–{1} 安静": "{0}–{1} quiet"
+  "{0}–{1} 安静": "{0}–{1} quiet",
+  "外部服务": "External services",
+  "取数": "Fetch",
+  "工具": "Tools",
+  "试运行": "Dry run",
+  "上次": "Last",
+  "在中央打开": "Open in Central",
+  "还没有连接": "No connections yet",
+  "尚未连接中央": "Central not connected",
+  "重新授权": "Reauthorize",
+  "无法打开中央页面": "Cannot open the Central page"
 }
