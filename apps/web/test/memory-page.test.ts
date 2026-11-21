@@ -10,14 +10,14 @@ import type {Api} from '../src/api.js';
 import {modelView} from './fixtures/model-settings';
 
 const at='2026-11-20T09:00:00+08:00';
-const ids={standing:'10000000-0000-4000-8000-000000000001',person:'10000000-0000-4000-8000-000000000002',matter:'10000000-0000-4000-8000-000000000003',preference:'10000000-0000-4000-8000-000000000004',pending:'10000000-0000-4000-8000-000000000005',manual:'10000000-0000-4000-8000-000000000006'};
+const ids={standing:'10000000-0000-4000-8000-000000000001',person:'10000000-0000-4000-8000-000000000002',matter:'10000000-0000-4000-8000-000000000003',preference:'10000000-0000-4000-8000-000000000004',pending:'10000000-0000-4000-8000-000000000005',manual:'10000000-0000-4000-8000-000000000006',pendingStanding:'10000000-0000-4000-8000-000000000007'};
 function memory(id:string,title:string,extra:Record<string,unknown>={}){
- return {id,title,statement:title+'：生成内容',uncertainty:'生成夹具',status:'published',version:1,fingerprint:'a'.repeat(64),createdAt:at,updatedAt:at,evidenceIds:['30000000-0000-4000-8000-000000000001'],evidence:[],admission:{layer:'memory',reason:'生成夹具',scope:'生成范围',attribution:'user'},...extra};
+ return {id,title,statement:title+'：生成内容',uncertainty:'生成夹具',status:'published',version:1,domain:'personal',fingerprint:'a'.repeat(64),createdAt:at,updatedAt:at,evidenceIds:['30000000-0000-4000-8000-000000000001'],evidence:[],admission:{layer:'memory',reason:'生成夹具',scope:'生成范围',attribution:'user'},...extra};
 }
 const standing=memory(ids.standing,'早上 9 点前不排会',{contextPriority:'standing'});
 const person=memory(ids.person,'周雨',{admission:{layer:'memory',reason:'生成夹具',scope:'生成范围',attribution:'observed'}});
 const matter=memory(ids.matter,'0.1 发布',{evidenceIds:['30000000-0000-4000-8000-000000000004']});
-const preference=memory(ids.preference,'回复短一些',{coding:{kind:'preference',scope:'session',applicability:'生成范围',validation:'observed'}});
+const preference=memory(ids.preference,'回复短一些',{domain:'coding',coding:{kind:'preference',scope:'session',applicability:'生成范围',validation:'observed'}});
 const pending=memory(ids.pending,'周末通常不看工作消息',{status:'proposed',admission:{layer:'memory',reason:'生成夹具',scope:'生成范围',attribution:'inferred'}});
 const base=[standing,person,matter,preference,pending];
 const commitment={id:'20000000-0000-4000-8000-000000000001',revision:1,title:'周五前给出设计稿',personMemoryId:ids.person,matterId:'20000000-0000-4000-8000-000000000002',status:'pending_confirmation',deadline:{text:'周五',at:null},dueState:'unknown',evidenceDependencies:{version:1,complete:true,ids:['30000000-0000-4000-8000-000000000004']},timeline:[]};
@@ -97,20 +97,45 @@ test('ME1-03 pending 不对 rejects through the existing deletion operation and 
  assert.equal([...d.querySelectorAll('.memory-page-row')].some(row=>row.textContent?.includes(pending.title)),false);
 });
 
-test('ME1-04 pending 确认 publishes the stored version and moves the row to its type',async t=>{
- const{root,d}=await fixture(t);let list=[...base],body='';
+test('ME1-04 pending 确认 publishes the stored version and moves a personal preference to 偏好',async t=>{
+ const{root,d}=await fixture(t);const pendingStanding=memory(ids.pendingStanding,'生成夹具：晨间专注时间',{status:'proposed',contextPriority:'standing'});
+ let list=[...base,pendingStanding];const writes:string[]=[],published=new Map<string,Record<string,unknown>>();
  const owner=api((path,init)=>{
-  if(init?.method==='POST'&&path===`/api/memories/${ids.pending}/publish`){body=String(init.body);list=[{...pending,status:'published',contextPriority:'standing'},...base.filter(item=>item.id!==ids.pending)];return{...pending,status:'published',contextPriority:'standing'};}
+  const match=/^\/api\/memories\/([^/]+)\/publish$/.exec(path);
+  if(init?.method==='POST'&&match){
+   const current=list.find(item=>item.id===match[1]);assert.ok(current);
+   writes.push(String(init.body));
+   // The existing owner publish route advances the stored record's status and
+   // version and returns it unchanged otherwise: it never adds contextPriority
+   // or coding to a proposal that did not already have them.
+   const saved={...current,status:'published',version:(current.version??1)+1,updatedAt:at};
+   published.set(current.id,saved);list=list.map(item=>item.id===current.id?saved:item);return saved;
+  }
   return undefined;
  },()=>list) as Api;
  await render(root,owner);
- await click(d,'确认');
- assert.equal(body,'{"version":1}');
- await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20));});
+ const rows=()=>[...d.querySelectorAll<HTMLElement>('.memory-page-row')];
+ const row=(title:string)=>rows().find(item=>item.textContent?.includes(title));
+ const confirmRow=async(title:string)=>{await act(async()=>{row(title)!.querySelector<HTMLButtonElement>('.memory-page-pending .button')!.click();});await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20));});};
+ assert.equal(row(pending.title)?.dataset.type,'proposed');
+ assert.equal(row(pendingStanding.title)?.dataset.type,'proposed');
+ await confirmRow(pending.title);
+ assert.deepEqual(writes,['{"version":1}']);
+ const saved=published.get(pending.id)!;
+ assert.equal(saved.status,'published');
+ assert.equal(saved.domain,'personal');
+ assert.equal(saved.contextPriority,undefined);
+ assert.equal(saved.coding,undefined);
  assert.match(d.querySelector('.notice[role=status]')!.textContent!,/已确认/);
- const confirmed=[...d.querySelectorAll<HTMLElement>('.memory-page-row')].find(row=>row.textContent?.includes(pending.title))!;
- assert.equal(confirmed.dataset.type,'standing');
- assert.equal(confirmed.querySelector('.memory-page-pending'),null);
+ assert.equal(row(pending.title)?.querySelector('.memory-page-pending'),null,'the confirmed record leaves the pending controls');
+ await click(d,'偏好');
+ assert.equal(row(pending.title)?.dataset.type,'preference','the confirmed personal preference moves to 偏好');
+ await click(d,'待确认');
+ assert.equal(row(pending.title),undefined,'the confirmed record leaves 待确认');
+ await confirmRow(pendingStanding.title);
+ await click(d,'常驻');
+ assert.equal(row(pendingStanding.title)?.dataset.type,'standing','a proposal that already stored the standing type keeps it');
+ assert.equal(row(pending.title),undefined,'the personal preference is not counted as standing');
 });
 
 test('ME1-05 a person row opens the existing Memory person detail with its commitments',async t=>{

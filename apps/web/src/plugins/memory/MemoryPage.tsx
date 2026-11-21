@@ -45,7 +45,9 @@ function ownerKey(api:Api){let key=owners.get(api);if(key===undefined){key=++nex
 /** The Memory page groups the existing owner reads into the prototype's
  * standing/person/matter/preference/pending views. Person and matter
  * membership comes from stored commitment references; it is never inferred
- * from prose. */
+ * from prose. Preference uses the stored personal/coding domain (and the
+ * coding preference kind), so a confirmed proposal keeps the type it already
+ * had instead of falling back to "all". */
 export function MemoryPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
   return <MemoryPageOwner key={ownerKey(api)} api={api} onOpen={onOpen}/>;
 }
@@ -88,7 +90,8 @@ function MemoryPageOwner({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
       :item.contextPriority==='standing'?'standing'
       :personIds.has(item.id)?'people'
       :item.coding?.kind==='preference'?'preference'
-      :item.evidenceIds?.some(id=>matterEvidence.has(id))?'matters':'all';
+      :item.evidenceIds?.some(id=>matterEvidence.has(id))?'matters'
+      :item.domain==='personal'?'preference':'all';
     return classify;
   },[personIds,matterEvidence]);
   const counts=useMemo(()=>{
