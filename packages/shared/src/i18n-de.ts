@@ -7648,5 +7648,14 @@ export const german: Readonly<Record<string, string>> = {
   "搜索动态": "Neuigkeiten durchsuchen",
   "3 天": "3 Tage",
   "按组织": "Nach Organisation",
-  "没有新动态": "Keine neuen Meldungen"
+  "没有新动态": "Keine neuen Meldungen",
+  "搜索技能": "Fähigkeiten durchsuchen",
+  "加载失败": "Laden fehlgeschlagen",
+  "固定到侧栏": "In Seitenleiste anheften",
+  "取消固定": "Anheften aufheben",
+  "例行": "Routinen",
+  "第三方": "Drittanbieter",
+  "还没有例行。": "Noch keine Routinen.",
+  "没有匹配的技能。": "Keine passenden Fähigkeiten.",
+  "返回技能": "Zurück zu den Fähigkeiten"
 };

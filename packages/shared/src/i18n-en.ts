@@ -7648,5 +7648,14 @@ export const english: Readonly<Record<string, string>> = {
   "搜索动态": "Search updates",
   "3 天": "3 days",
   "按组织": "By organization",
-  "没有新动态": "No new updates"
+  "没有新动态": "No new updates",
+  "搜索技能": "Search skills",
+  "加载失败": "Failed to load",
+  "固定到侧栏": "Pin to sidebar",
+  "取消固定": "Unpin",
+  "例行": "Routines",
+  "第三方": "Third-party",
+  "还没有例行。": "No routines yet.",
+  "没有匹配的技能。": "No matching skills.",
+  "返回技能": "Back to skills"
 };
