@@ -1,4 +1,5 @@
 import {codingProjectContext} from './coding-project.js';
+import {moteText} from './i18n.js';
 import {codingMessages,codingSessionRelations} from './coding-session-context.js';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
@@ -195,7 +196,7 @@ type CodingSourceRegistries=Pick<Context,'moteMaterialCatalog'|'moteSourceRecipe
 export function installCodingSource(registries:CodingSourceRegistries,options:{accepting?:boolean}={}){
   const dispose:Array<()=>void>=[],keep=(stop:()=>void)=>{dispose.push(stop);};
   try{
-    keep(registries.moteMaterialCatalog.register({id:'mote.coding-session',kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,label:'Coding Agent 会话'}));
+    keep(registries.moteMaterialCatalog.register({id:'mote.coding-session',kind:'mote.coding-session',schemaVersion:CODING_DIALOGUE_SCHEMA_VERSION,label:moteText('Coding Agent 会话')}));
     keep(registries.moteSourceRecipes.registerRawWriter({id:'mote.source-archive-writer',version:'1',kind:'raw-writer'},(archive,source,items,groups)=>archive.receive(source.id,items,groups)));
     keep(registries.moteSourceRecipes.registerRawReader({id:'mote.source-archive-reader',version:'1',kind:'raw-reader'},readCodingSnapshot));
     keep(registries.moteSourceRecipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));

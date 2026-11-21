@@ -27,7 +27,7 @@ async function fixture(t:any){
   return {root,d:dom.window.document};
 }
 function configuration(revision:number,savedSeconds=900):ServerConfiguration {
-  return {version:1,revision,configFile:'/generated/mote.yaml',hostConfigFile:null,ownerCredential:{configured:true,source:'programmatic'},lastError:null,profile:'test',runtime:'native',baseDir:'/generated',readOnly:false,restartRequired:savedSeconds!==300,description:'Generated fixture',storage:{dataDir:'/generated',sqlitePath:'/generated/mote.sqlite',assetDir:'/generated/files',logDir:'/generated/logs',kind:'local-directory',source:'/generated',mountPath:null,description:'Generated'},domains:[{id:'connectors',saved:{syncIntervalMs:savedSeconds*1000},effective:{syncIntervalMs:300000},fields:[{path:'syncIntervalMs',effect:'restart'}],status:savedSeconds!==300?'restart-required':'applied'}]};
+  return {version:1,revision,configFile:'/generated/mote.yaml',hostConfigFile:null,ownerCredential:{configured:true,source:'programmatic'},lastError:null,profile:'test',runtime:'native',baseDir:'/generated',readOnly:false,restartRequired:savedSeconds!==300,description:'shared-configuration',storage:{dataDir:'/generated',sqlitePath:'/generated/mote.sqlite',assetDir:'/generated/files',logDir:'/generated/logs',kind:'local-directory',source:'/generated',mountPath:null,description:'host-storage'},domains:[{id:'connectors',saved:{syncIntervalMs:savedSeconds*1000},effective:{syncIntervalMs:300000},fields:[{path:'syncIntervalMs',effect:'restart'}],status:savedSeconds!==300?'restart-required':'applied'}]};
 }
 const button=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===label)!;
 
@@ -38,6 +38,20 @@ test('effective configuration displays canonical field paths and effects without
   await act(async()=>root.render(React.createElement(AdvancedConfiguration,{api,includeRuntime:false})));
   for(const text of ['generated.immediate','立即生效','generated.request','后续请求生效','generated.restart','重启后生效'])assert.ok(d.body.textContent!.includes(text),text);
   assert.doesNotMatch(d.body.textContent!,/启动环境|MOTE_|envFile|envVar/);
+});
+
+test('CP3-02 configuration description codes render as short client labels',async t=>{
+  const {root,d}=await fixture(t);
+  const render=async(description:'container-storage'|'host-storage')=>{
+    const base=configuration(1),view:ServerConfiguration={...base,description:'shared-configuration',storage:{...base.storage,kind:description==='container-storage'?'docker-volume':'local-directory',description}};
+    await act(async()=>root.render(React.createElement(AdvancedConfiguration,{api:{request:async()=>view} as Api,includeRuntime:false})));
+    return d.body.textContent!;
+  };
+  const container=await render('container-storage');
+  assert.match(container,/页面与文件同配置/);assert.match(container,/容器内路径/);
+  assert.doesNotMatch(container,/页面与手改文件使用同一份配置|路径属于中央容器/);
+  const host=await render('host-storage');
+  assert.match(host,/本机路径/);assert.doesNotMatch(host,/SQLite、图片与日志路径/);
 });
 
 test('configuration page saves an edited field into the shared file with its original revision',async t=>{

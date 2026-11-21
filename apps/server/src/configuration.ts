@@ -1,4 +1,3 @@
-import {moteText} from './i18n.js';
 import {join,resolve} from 'node:path';
 import type {ServerConfiguration} from '@mote/shared';
 import {serverConfigDomain,storageConfigDomain,diagnosticsConfigDomain,type ConfigurationBootstrap} from './config.js';
@@ -23,15 +22,13 @@ export function serverConfiguration(bootstrap:ConfigurationBootstrap,service:Con
     ...view,profile:server.profile,runtime,baseDir,hostConfigFile:server.hostConfigFile||null,
     ownerCredential:{configured:Boolean(bootstrap.owner.token),source:bootstrap.owner.source},
     readOnly:false,restartRequired:view.domains.some(domain=>domain.status==='restart-required'),
-    description:moteText('页面与手改文件使用同一份配置；保存后按各项生效方式应用。'),
+    description:'shared-configuration',
     storage:{
       dataDir,sqlitePath:join(dataDir,'mote.sqlite'),assetDir:join(dataDir,'files','objects'),
       logDir:diagnostics.directory?resolve(baseDir,diagnostics.directory):join(dataDir,'logs'),
       kind:storage.kind==='unknown'&&runtime==='native'?'local-directory':storage.kind,
       source:storage.source||(runtime==='native'?dataDir:null),mountPath:storage.mount||null,
-      description:runtime==='docker'
-        ?moteText('路径属于中央容器；存储来源与挂载点由部署工具提供。命名卷是 Docker 卷标识，不是宿主机目录；未提供的宿主位置不会被猜测。')
-        :moteText('SQLite、图片与日志路径属于运行中央进程的机器。存储来源是部署声明，未扫描磁盘或推断 NAS 挂载。'),
+      description:runtime==='docker'?'container-storage':'host-storage',
     },
   };
 }

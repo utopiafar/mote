@@ -68,7 +68,6 @@ export function AssistantDraftActions({api,conversationId,turnId,draft,renderAns
     }finally{setBusy(false);}
   };
   if(draft.input==='current-instruction')return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>
-    <p>{draft.goal}</p>
     {renderAnswer&&onOpen&&<AssistantTaskResults api={api} conversationId={conversationId} turnId={turnId} scope={draft.scope}
       refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found}/>}
   </section>;

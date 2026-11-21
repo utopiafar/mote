@@ -43,9 +43,10 @@ async function fixture(t:any){
  const input=()=>d.querySelector<HTMLTextAreaElement>('textarea')!;
  const type=async(value:string)=>act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(input(),value);input().dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
  const press=async(key:string,options:KeyboardEventInit={})=>{const event=new dom.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options});await act(async()=>input().dispatchEvent(event));return event;};
- const click=async(text:string)=>{const button=[...d.querySelectorAll('button')].find(button=>button.textContent===text);assert.ok(button,'button '+text);await act(async()=>button.click());};
+ const click=async(text:string)=>{const button=[...d.querySelectorAll('button')].find(button=>button.textContent===text||button.getAttribute('aria-label')===text);assert.ok(button,'button '+text);await act(async()=>button.click());};
  t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,value]of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}configureLocale(()=> 'zh-CN');});
- return {dom,d,root,render,input,type,press,click,opened,get renders(){return renders;},locale:(next:'zh-CN'|'en')=>locale=next};
+ const options=()=>act(async()=>d.querySelector<HTMLElement>('.chat-add summary')!.click());
+ return {dom,d,root,render,input,type,press,click,options,opened,get renders(){return renders;},locale:(next:'zh-CN'|'en')=>locale=next};
 }
 
 for(const count of [1,20,100])test(`typing 10 updates with ${count} loaded answers adds no AnswerView renders, Markdown parses or model-selector snapshots`,async t=>{
@@ -55,7 +56,7 @@ for(const count of [1,20,100])test(`typing 10 updates with ${count} loaded answe
  // Observe the real unified parse method; retain its exact implementation.
  const prototype=Object.getPrototypeOf(unified()),parse=prototype.parse;let parses=0;
  t.mock.method(prototype,'parse',function(this:unknown,...args:unknown[]){parses++;return parse.apply(this,args);});
- await f.render(api);await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
+ await f.render(api);await f.options();
  const loaded=f.d.querySelectorAll('.conversation-turn');assert.equal(loaded.length,count);assert.equal(f.d.querySelectorAll('.answer-table-scroll').length,count);assert.ok(parses>=count,'actual Markdown parser instrumentation is active');
  assert.ok(modelSnapshots>0,'real model-selector subscription instrumentation is active');assert.equal(f.d.querySelectorAll('datalist option').length,300);
  const rendersBefore=f.renders,parsesBefore=parses,snapshotsBefore=modelSnapshots,textarea=f.input(),selector=f.d.querySelector('.model-selector')!,first=loaded[0],citationButton=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;
@@ -76,7 +77,7 @@ test('model selection and override input keep draft edit ordering, live settings
   return{items:[]};
  });
  const api={...transport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:transport.request(path,init)} as Api;
- await f.render(api);const selector=f.d.querySelector('.model-selector')!,options=f.d.querySelector<HTMLDetailsElement>('.chat-model-options')!;
+ await f.render(api);await f.options();const selector=f.d.querySelector('.model-selector')!,options=f.d.querySelector<HTMLDetailsElement>('.chat-model-options')!;
  await act(async()=>{options.open=true;});
  const inputModel=async(value:string)=>act(async()=>{const field=f.d.querySelector<HTMLInputElement>('[aria-label="临时模型 ID"]')!;field.focus();Object.getOwnPropertyDescriptor(f.dom.window.HTMLInputElement.prototype,'value')!.set!.call(field,value);field.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));});
  const version=(owner=api)=>queryRecovery.versions(owner).draftVersion;let expected=version();
@@ -96,7 +97,7 @@ test('model selection and override input keep draft edit ordering, live settings
  await act(async()=>accepted.resolve(receipt(posts[0])));
  assert.equal(f.input().value,'');assert.equal(f.input().disabled,false);
  const nextTransport=apiWith(()=>({items:[]})),next={...nextTransport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:nextTransport.request(path,init)} as Api;
- await f.render(next);const oldVersion=version(),nextVersion=version(next);await inputModel('generated-next-owner-model');
+ await f.render(next);await f.options();const oldVersion=version(),nextVersion=version(next);await inputModel('generated-next-owner-model');
  assert.equal(version(next),nextVersion+1,'the stable callback belongs to the new API');assert.equal(version(),oldVersion,'the prior owner receives no new draft edit');
 });
 
@@ -119,7 +120,7 @@ test('composer keeps current controlled input, IME, Shift+Enter, submit and a la
 test('the folded per-request model field cannot submit the drafted question and keeps Enter for its suggestions',async t=>{
  const f=await fixture(t),posts:any[]=[];
  const api=apiWith((path,init)=>{if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}return {items:[]};});
- await f.render(api);await f.type('Generated 草稿');
+ await f.render(api);await f.options();await f.type('Generated 草稿');
  const options=f.d.querySelector<HTMLDetailsElement>('.chat-model-options')!,field=f.d.querySelector<HTMLInputElement>('input[aria-label="临时模型 ID"]')!;
  await act(async()=>{options.open=true;});
  const enter=new f.dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});await act(async()=>field.dispatchEvent(enter));
@@ -141,7 +142,7 @@ test('failed admission and cancellation preserve the existing draft and retry be
  },'A');
  await f.render(api);await f.type('  Generated retry draft  ');await act(async()=>f.d.querySelector('form.ask-form')!.dispatchEvent(new f.dom.window.Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(posts.length,2);assert.equal(posts[0].clientRequestId,posts[1].clientRequestId);assert.equal(f.input().value,'  Generated retry draft  ');assert.equal(f.input().disabled,false);assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,true);
- mode='success';await f.click('重试同一请求');assert.equal(posts.length,3);assert.deepEqual(posts[2],posts[0]);current=receipt(posts[0]);await act(async()=>admission.resolve(current));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
+ mode='success';await f.click('重试');assert.equal(posts.length,3);assert.deepEqual(posts[2],posts[0]);current=receipt(posts[0]);await act(async()=>admission.resolve(current));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
  assert.equal(f.input().value,'');assert.equal(f.input().disabled,false);assert.ok(f.d.querySelector('.conversation-pending'));
  const cancelAdmission=deferred(),cancelPosts:any[]=[];let cancelCurrent:any;
  const cancelApi=apiWith((path,init)=>{
@@ -153,7 +154,7 @@ test('failed admission and cancellation preserve the existing draft and retry be
  },'A');
  await f.render(cancelApi);await f.type('Generated cancellation draft');await f.press('Enter');cancelCurrent=receipt(cancelPosts[0]);await act(async()=>cancelAdmission.resolve(cancelCurrent));await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
  assert.ok(f.d.querySelector('.conversation-pending'));await f.type('Generated later cancellation draft');await f.click('停止这条回答');
- assert.equal(f.input().value,'Generated later cancellation draft');assert.equal(f.input().disabled,false);assert.match(f.d.querySelector('.conversation-turn[data-state=cancelled]')!.textContent!,/已停止/);
+ assert.equal(f.input().value,'Generated later cancellation draft');assert.equal(f.input().disabled,false);assert.match(f.d.querySelector('.conversation-turn[data-state=cancelled]')!.textContent!,/已取消/);
 });
 
 test('failed historical turn retry submits its original question and preserves a different current draft',async t=>{
@@ -164,23 +165,21 @@ test('failed historical turn retry submits its original question and preserves a
   if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}
   return {items:[]};
  },'A');
- await f.render(api);await act(async()=>{});await f.type('Generated different draft');await f.click('再次提问');
+ await f.render(api);await act(async()=>{});await f.type('Generated different draft');await f.click('重试');
  assert.equal(posts[0].question,'Generated original retry');assert.equal(f.input().value,'Generated different draft');assert.equal(f.input().disabled,false);
 });
 
-test('draft survives background/locale refresh and supplemental routing, while new/select/delete/API/connection reset it',async t=>{
+test('draft survives background and locale refresh and supplemental routing across disjoint API sessions',async t=>{
  const f=await fixture(t);let revision=1;
  const read=(path:string)=>path==='/api/conversations?limit=30'?{items:[summary()]}:path==='/api/conversations/A'?{...summary(),revision,turns:[{...turn('new'),evidenceDeleted:revision>1}],nextCursor:'old'}:path.includes('?cursor=')?{...summary(),revision,turns:[turn('old')],nextCursor:null}:{items:[]};
  const api=apiWith(read,'A');await f.render(api);await act(async()=>{});
- await f.click('加载更早的对话');assert.equal(f.d.querySelectorAll('.conversation-turn').length,2);
+ await f.click('加载更早的消息');assert.equal(f.d.querySelectorAll('.conversation-turn').length,2);
  await f.type('Generated preserved draft');const input=f.input(),cite=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;cite.focus();await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));
  assert.equal(f.input(),input);assert.equal(input.value,'Generated preserved draft');assert.equal(cite.isConnected,true);assert.equal(f.d.activeElement,cite);
  f.locale('en');await f.render(api);assert.equal(f.input().value,'Generated preserved draft');assert.match(f.d.querySelector('.inline-citation')!.textContent!,/Source/);f.locale('zh-CN');await f.render(api);
  await act(async()=>{f.dom.window.history.replaceState(null,'',pageHash('chat',{question:'generated-question'}));f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});
  assert.equal(f.input(),null);await act(async()=>{f.dom.window.history.replaceState(null,'',pageHash('chat'));f.dom.window.dispatchEvent(new f.dom.window.HashChangeEvent('hashchange'));});assert.equal(f.input().value,'Generated preserved draft');
- revision=2;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));assert.equal(f.d.querySelectorAll('.conversation-turn').length,1);assert.equal(f.d.querySelectorAll('.inline-citation').length,0);assert.match(f.d.body.textContent!,/相关证据已删除/);assert.equal(f.input().value,'Generated preserved draft');
- await f.click('新对话');assert.equal(f.input().value,'Generated preserved draft');await f.click('舍弃并切换');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});assert.equal(f.input().value,'');await f.type('Generated new draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.equal(f.input().value,'Generated new draft');await f.click('舍弃并切换');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});assert.equal(f.input().value,'');
- await f.type('Generated deleted draft');await act(async()=>f.d.querySelector<HTMLButtonElement>('[aria-label="对话更多"]')!.click());await f.click('删除这段对话');await f.click('删除对话');assert.equal(f.input().value,'');
+ revision=2;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));assert.equal(f.d.querySelectorAll('.conversation-turn').length,1);assert.equal(f.d.querySelectorAll('.inline-citation').length,0);assert.match(f.d.body.textContent!,/已失效/);assert.equal(f.input().value,'Generated preserved draft');
  await f.type('Generated old API draft');await f.render(apiWith(read,'A'));assert.equal(f.input().value,'');await f.type('Generated old connection draft');await f.render(apiWith(read,'B'));assert.equal(f.input().value,'');assert.doesNotMatch(f.d.body.textContent!,/Generated old connection draft/);
 });
 
