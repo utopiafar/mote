@@ -92,9 +92,8 @@ class MainActivity : MoteActivity() {
     private var currentTabs: List<MoteNavItem> = emptyList()
     private lateinit var statusStrip: StatusStrip
     private lateinit var todaySummary: TextView
-    private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
-    private lateinit var manageSendSwitch: MoteComponents.MoteSwitch
-    private lateinit var manageScreenPermission: LinearLayout
+    private var localLibraryBadge: (() -> Unit)? = null
+    private var captureAttention = false
     private lateinit var homeSyncDetailStatus: TextView
     private lateinit var homeSyncRate: TextView
     private lateinit var homeSourceList: LinearLayout
@@ -277,6 +276,7 @@ class MainActivity : MoteActivity() {
         root.footer(tabBar)
         tabBar.dockInsets(root)
         localBadgeObserver = MoteLocalBadges.observe { handler.post { renderBadges() } }
+        localLibraryBadge = MoteLocalBadges.register("library") { captureAttention }
         setContentView(root)
         // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
         libraryState = savedInstanceState?.getBundle("library"); logExportHours=savedInstanceState?.getInt("logExportHours",24)?.takeIf { it in listOf(1,24,168) } ?: 24
@@ -438,31 +438,6 @@ class MainActivity : MoteActivity() {
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("动态与建议"), MoteGlyph.PULSE) { openCentral(AssistantPlugin.FEED_ROUTE) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("事项与规则"), MoteGlyph.LIBRARY) { openCentral(AssistantPlugin.MATTERS_ROUTE) })
         val captureGroup = menuGroup(24)
-        val screenTrailing = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        manageScreenSwitch = MoteComponents.switch(this, checked = false, description = MoteI18n.text("屏幕采集")) { on -> setScreenCapture(on) }
-        screenTrailing.addView(manageScreenSwitch)
-        manageScreenPermission = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-        }
-        manageScreenPermission.addView(TextView(this).apply {
-            text = MoteI18n.text("等待采集权限")
-            MoteUi.type(this, NativeFontRole.BODY)
-            MoteUi.textColor(this, NativeColorRole.WARNING)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
-        manageScreenPermission.addView(MoteComponents.smallButton(this, MoteI18n.text("处理")) {
-            val action = ManageMenu.screenPermissionAction(loadedConfig.effectiveMode() == "projection")
-            runCaptureAction(action)
-        }, LinearLayout.LayoutParams(-2, dp(48)))
-        screenTrailing.addView(manageScreenPermission)
-        addGroupRow(captureGroup, MoteComponents.row(this, MoteGlyph.SCREEN, MoteI18n.text("屏幕采集"),
-            trailing = screenTrailing, verticalPaddingDp = 0).apply { tag = "menu:屏幕采集" })
-        manageSendSwitch = MoteComponents.switch(this, checked = false, description = MoteI18n.text("发送")) { changeSendPause() }
-        addGroupRow(captureGroup, MoteComponents.row(this, MoteGlyph.SEND, MoteI18n.text("发送"),
-            trailing = manageSendSwitch, verticalPaddingDp = 0).apply { tag = "menu:发送" })
         addGroupRow(captureGroup, menuOption(MoteI18n.text("采集与同步"), MoteGlyph.REFRESH) {
             startActivity(Intent(this, SourcesActivity::class.java))
         })
@@ -471,7 +446,6 @@ class MainActivity : MoteActivity() {
         addGroupRow(moreGroup, MoteComponents.row(this, MoteGlyph.GLOBE, MoteI18n.text("中央工作台"),
             trailing = MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16),
             onClick = { openCentral("overview") }).apply { tag = "menu:中央工作台" })
-        refreshManageMenu()
         // Operational inventory remains available under capture and sync, outside the light home/menu.
         ensurePage(Page.SOURCES)
         content = (pages.getValue(Page.SOURCES) as ScrollView).getChildAt(0) as LinearLayout
@@ -521,52 +495,6 @@ class MainActivity : MoteActivity() {
             MoteAddAction.NOTE -> openRecordEditor()
             MoteAddAction.FEISHU -> openCentral("lark")
         }
-    }
-
-    private fun changeSendPause() {
-        if (uiTask.busy) { refreshManageMenu(); return }
-        uiTask.start(MoteI18n.text("正在保存发送状态…"), {}, {
-            SendPauseControl.set(applicationContext, !Settings(applicationContext).read().syncPaused)
-            Settings(applicationContext).read()
-        }) { result ->
-            result.onSuccess { current -> loadedConfig = current; commitSettingsSummaries(current); refreshStatus() }
-                .onFailure {
-                    refreshManageMenu()
-                    toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失"))
-                }
-        }
-    }
-
-    private fun setScreenCapture(on: Boolean) {
-        if (applyingSettings || uiTask.busy) { refreshManageMenu(); return }
-        if (on) {
-            if (!settings.enabled) {
-                refreshManageMenu()
-                showPage(Page.PRIVACY)
-            } else if (settings.screenPausedAt() != null) {
-                resumeCapture()
-            } else if (!loadedConfig.screenCollectionEnabled) {
-                val next = loadedConfig.copy(screenCollectionEnabled = true)
-                changeRuntimeConfig(next) {
-                    if (next.effectiveMode() == "projection" && !ProjectionService.running) requestProjectionConsent()
-                }
-            }
-        } else if (settings.enabled && loadedConfig.screenCollectionEnabled) {
-            pauseScreenCapture()
-        } else if (loadedConfig.screenCollectionEnabled) {
-            changeRuntimeConfig(loadedConfig.copy(screenCollectionEnabled = false))
-        }
-    }
-
-    private fun refreshManageMenu() {
-        if (!::manageScreenSwitch.isInitialized) return
-        val live = loadedConfig.screenCollectionEnabled &&
-            (if (loadedConfig.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
-        val state = ManageMenu.state(settings.enabled, loadedConfig.screenCollectionEnabled, live, loadedConfig.syncPaused)
-        manageScreenSwitch.setChecked(state.screenOn)
-        manageSendSwitch.setChecked(state.sendOn)
-        manageScreenSwitch.visibility = if (state.screenPermission) View.GONE else View.VISIBLE
-        manageScreenPermission.visibility = if (state.screenPermission) View.VISIBLE else View.GONE
     }
 
     private fun menuGroup(topMarginDp: Int): LinearLayout {
@@ -1765,16 +1693,6 @@ class MainActivity : MoteActivity() {
             }
         }
     }
-    private fun pauseScreenCapture() {
-        if (applyingSettings || uiTask.busy) return
-        applyingSettings = true
-        dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result ->
-            applyingSettings = false
-            if (isDestroyed) return@pauseScreen
-            result.onSuccess { loadedConfig = settings.read(); refreshStatus(); loadSourceRows() }
-                .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
-        }
-    }
     private fun takeCaptureAction(source: Intent) {
         val action = source.getStringExtra("captureAction")?.let { name -> CaptureOverview.Action.entries.find { it.name == name } } ?: return
         source.removeExtra("captureAction")
@@ -1827,7 +1745,10 @@ class MainActivity : MoteActivity() {
                     if (::statusStrip.isInitialized) statusStrip.setDraft(snapshot.hasDraft)
                     homeSyncDetailStatus.text = snapshot.syncFacts
                     homeSyncRate.text = MoteI18n.text("上传速率") + " · " + UploadMeter.label()
-                    refreshManageMenu()
+                    if (snapshot.captureAttention != captureAttention) {
+                        captureAttention = snapshot.captureAttention
+                        MoteLocalBadges.changed()
+                    }
                     renderConnectionPage()
                     captureTitle.text = snapshot.title
                     if (captureAction.text != snapshot.action) {
@@ -1992,7 +1913,7 @@ class MainActivity : MoteActivity() {
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { localBadgeObserver?.invoke(); localBadgeObserver = null; homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { localBadgeObserver?.invoke(); localBadgeObserver = null; localLibraryBadge?.invoke(); localLibraryBadge = null; homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
