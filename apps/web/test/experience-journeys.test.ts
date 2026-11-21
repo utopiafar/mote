@@ -7,7 +7,7 @@ import type {QueryInput} from '@mote/agent';
 import {resources} from '../src/resource-cache.js';
 import {
     answer, createNote, experienceApp, generatedGoogle, mountExperience, postQuestion, seedCard, seedCommitment,
-    seedMemory, seedNotionPlugin, settledTurn,
+    seedMemory, settledTurn,
 } from './experience-fixtures.js';
 
 const isDisposition = (input: QueryInput) => input.question.includes('mote.conversation-disposition');
@@ -134,19 +134,28 @@ test('QA1-02 J2 every morning: land in chat, start one idea, ignore two, then re
 });
 
 test('QA1-03 J3 delegate one task: assignment, progress line, mid-course supplement and the result card', {timeout: 120000}, async t => {
+    let planningNote = '', supplemented = false;
     const {api} = await experienceApp(t, {
         query: input => {
             if (isDisposition(input)) return answer(JSON.stringify({kind: 'independent'}));
             if (isBackground(input)) return backgroundResult('Generated outline with cost focus');
-            if (input.question.includes('重点放成本')) return answer('Generated supplement acknowledged');
-            return {...answer('Generated planning answer'), draftProposal: {goal: 'Generated review outline'}};
+            if (input.question.includes('重点放成本')) {supplemented = true; return answer('Generated supplement acknowledged');}
+            return {...answer('Generated planning answer', {evidenceDependencies: {version: 1, complete: true, ids: [planningNote]}}), draftProposal: {goal: 'Generated review outline'}};
         },
     });
+    planningNote = await createNote(api, 'Generated review planning evidence');
     const taskId = randomUUID();
-    let taskCompleted = false;
+    let taskStarted = false, taskCompleted = false;
     const request = api.request;
     api.request = (async (path: string, init?: RequestInit) => {
+        if (path === '/api/assistant/commands') {
+            const value = await request(path, init);
+            const command = JSON.parse(String(init?.body)) as {capability?: string};
+            if (command.capability === 'assistant.task.start') taskStarted = true;
+            return value;
+        }
         if (path.includes('/assistant-tasks?')) {
+            if (!taskStarted) return {items: []};
             return taskCompleted
                 ? {items: [{task: {id: taskId, state: 'completed', goal: 'Generated review outline'},
                     result: {answer: 'Generated outline with cost focus', citations: [], trace: [], runId: randomUUID()}}]}
@@ -159,10 +168,21 @@ test('QA1-03 J3 delegate one task: assignment, progress line, mid-course supplem
     await ui.field('textarea[aria-label="向 Mote 提问"]', 'Generated assignment to prepare the review');
     await ui.submit(ui.d.querySelector<HTMLFormElement>('form.ask-form')!);
     await ui.until(() => Boolean(ui.d.querySelector('.assistant-draft')), 'assistant draft');
-    // The mid-course supplement changes the working instruction before start.
-    await ui.field('.assistant-draft textarea[aria-label="工作目标"]', 'Generated review outline · 重点放成本');
+    await ui.until(() => !ui.d.querySelector<HTMLButtonElement>('.assistant-draft-actions button.primary')?.disabled, 'start enabled');
     await ui.click(ui.d.querySelector('.assistant-draft-actions button.primary')!);
     await ui.until(() => Boolean(ui.d.querySelector('.assistant-task-result[data-state="running"]')), 'task progress line');
+    assert.equal(ui.d.querySelector('.chat-task-result'), null, 'the task has no result before the mid-course supplement');
+
+    // The owner supplements the running task with an ordinary chat message
+    // from the same landing page; the result may only complete afterwards.
+    await ui.field('textarea[aria-label="向 Mote 提问"]', 'Generated mid-course supplement: 重点放成本');
+    await ui.submit(ui.d.querySelector<HTMLFormElement>('form.ask-form')!);
+    await ui.until(() => ui.d.body.textContent!.includes('Generated supplement acknowledged'), 'mid-course supplement acknowledgement');
+    assert.equal(supplemented, true, 'the supplement was sent through the chat composer while the task was running');
+    assert.ok([...ui.d.querySelectorAll('.asked-question')].some(node => node.textContent?.includes('重点放成本')), 'the supplement is its own visible chat message');
+    assert.ok(ui.d.querySelector('.assistant-task-result[data-state="running"]'), 'the task stays in progress while the supplement is accepted');
+    assert.equal(ui.d.querySelector('.chat-task-result'), null, 'the supplement acknowledgement is not the task result');
+
     taskCompleted = true;
     await ui.until(() => Boolean(ui.d.querySelector('.chat-task-result')), 'task result card', 20000);
     assert.match(ui.d.querySelector('.chat-task-result')!.textContent!, /Generated outline with cost focus/);
@@ -283,21 +303,60 @@ test('QA1-06 J6 record one note, find it in the library, then ask for it in chat
     await ui.until(() => ui.d.body.textContent!.includes('Generated answer: ' + dining), 'chat answer finds the note');
 });
 
-test('QA1-07 J7 add Notion: the connection catalog gains its card while the sidebar stays the same', {timeout: 120000}, async t => {
-    const {node, api} = await experienceApp(t, {
+test('QA1-07 J7 add Notion: install it from Skills, then the connection catalog gains one card while the sidebar stays the same', {timeout: 120000}, async t => {
+    const {api} = await experienceApp(t, {
         query: input => isDisposition(input) ? answer(JSON.stringify({kind: 'independent'})) : answer('Generated answer'),
     });
-    seedNotionPlugin(node);
     const ui = await mountExperience(t, api, pageHash('skills'));
-    await ui.until(() => Boolean(ui.d.querySelector('[data-skill-id="package:mote.official.notion"]')), 'installed Notion skill');
-    const before = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
+    await ui.until(() => Boolean(ui.d.querySelector('.skills-page')), 'skills landing page');
+    assert.equal(ui.d.querySelector('[data-skill-id="package:mote.official.notion"]'), null, 'Notion is not installed before the journey starts');
+    const sidebarBefore = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
 
+    // Read the connection catalog before installing so the installed-card
+    // increase is measured. Official connector entries are always listed; an
+    // uninstalled entry is not yet a usable connection card.
     await ui.click(ui.d.querySelector('[data-nav-item="connections"]')!);
     await ui.until(() => Boolean(ui.d.querySelector('.connections-overview')), 'Connections landing page');
     await ui.click(ui.d.querySelector('.connections-heading a')!);
-    await ui.until(() => Boolean(ui.d.querySelector('.discovery-source-catalog')), 'connection catalog');
-    const notion = [...ui.d.querySelectorAll('.discovery-source-card')].find(card => card.textContent?.includes('Notion'));
-    assert.ok(notion, 'the connection catalog lists Notion');
-    const after = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
-    assert.deepEqual(after, before, 'installing Notion adds no sidebar destination');
+    await ui.until(() => Boolean(ui.d.querySelector('.discovery-source-catalog')), 'connection catalog before install');
+    const catalogSlots = () => [...ui.d.querySelectorAll('.discovery-source-card h3')].map(heading => heading.textContent ?? '');
+    const notionCard = () => [...ui.d.querySelectorAll('.discovery-source-card')]
+        .find(card => card.querySelector('h3')?.textContent?.includes('Notion'));
+    const notionState = () => notionCard()?.querySelector('.catalog-state')?.textContent ?? '';
+    // Official connector slots are pre-listed; only an installed slot is a
+    // usable connection card. The installed card count is what install grows.
+    const connectionCards = () => [...ui.d.querySelectorAll('.discovery-source-card')]
+        .filter(card => card.querySelector('.catalog-state')?.textContent !== '尚未安装')
+        .map(card => card.querySelector('h3')?.textContent ?? '');
+    const slotsBefore = catalogSlots();
+    const cardsBefore = connectionCards();
+    assert.ok(notionCard(), 'the official catalog lists Notion before install');
+    assert.equal(notionState(), '尚未安装');
+    assert.equal(cardsBefore.includes('Notion'), false, 'Notion is not a usable connection card before install');
+
+    // Back to the landing Skills page, then use its Add surface to install Notion.
+    await ui.click(ui.d.querySelector('[data-nav-item="skills"]')!);
+    await ui.until(() => Boolean(ui.d.querySelector('.skills-page')), 'skills landing page again');
+    await ui.click(ui.button('添加', ui.d.querySelector('.skills-page')!));
+    await ui.until(() => Boolean(ui.d.querySelector('.plugin-official-catalog')), 'official plugin catalog');
+    const notionEntry = [...ui.d.querySelectorAll('.plugin-official-catalog article')]
+        .find(entry => entry.querySelector('h3')?.textContent?.includes('Notion'));
+    assert.ok(notionEntry, 'the official catalog lists Notion');
+    await ui.click(ui.button('预览并安装', notionEntry));
+    await ui.until(() => Boolean(ui.d.querySelector('[role=dialog] button.primary:not([disabled])')), 'Notion install preview');
+    await ui.click(ui.button('安装此版本', ui.d.querySelector('[role=dialog]')!));
+    await ui.until(() => [...ui.d.querySelectorAll('.provider-card')].some(card => card.textContent?.includes('Notion') && card.textContent?.includes('已安装')), 'installed Notion package in the plugin center', 20000);
+
+    const sidebarAfter = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
+    assert.deepEqual(sidebarAfter, sidebarBefore, 'installing Notion adds no sidebar destination');
+
+    await ui.click(ui.d.querySelector('[data-nav-item="connections"]')!);
+    await ui.until(() => Boolean(ui.d.querySelector('.connections-overview')), 'Connections landing page after install');
+    await ui.click(ui.d.querySelector('.connections-heading a')!);
+    await ui.until(() => Boolean(ui.d.querySelector('.discovery-source-catalog')), 'connection catalog after install');
+    await ui.until(() => notionState() === '已安装，待配置', 'installed Notion connection card');
+    const cardsAfter = connectionCards();
+    assert.equal(cardsAfter.length, cardsBefore.length + 1, 'the connection catalog gains exactly one card');
+    assert.deepEqual(cardsAfter.filter(title => !cardsBefore.includes(title)), ['Notion']);
+    assert.deepEqual(catalogSlots(), slotsBefore, 'installing Notion adds no unrelated catalog slot');
 });

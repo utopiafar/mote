@@ -173,35 +173,6 @@ export function seedCommitment(node: ExperienceNode, input: {
     return commitmentId;
 }
 
-const notionPackageId = 'mote.official.notion';
-export const notionContributionId = 'official-notion';
-export function seedNotionPlugin(node: ExperienceNode) {
-    const source = {repository: 'generated/notion-connector', tag: 'generated-fixture', commit: 'a'.repeat(40), digest: 'b'.repeat(64)};
-    const packageView = {
-        id: notionPackageId, name: 'Notion', version: '1.0.0', source, runtime: 'service',
-        state: 'installed', desired: true, observed: 'ready', issues: [], instanceIds: [], allowedActions: [],
-    };
-    const instanceView = {
-        id: 'generated-notion-instance', packageId: notionPackageId, name: 'Notion', revision: 1, scope: 'default',
-        configurationSchema: [], configuration: {}, secretStatus: {}, desired: true, observed: 'ready', issues: [],
-        capabilities: [{id: 'source.connector', state: 'verified'}], allowedActions: [],
-    };
-    const put = node.store.db.prepare('INSERT OR REPLACE INTO plugin_build_instances VALUES(?,?)');
-    put.run(notionPackageId, JSON.stringify({
-        id: notionPackageId, packageId: notionPackageId, kind: 'package', desired: null, observed: 'stopped', blockers: [],
-        package: {view: packageView, manifest: {
-            schemaVersion: 1, id: notionPackageId, name: 'Notion', version: '1.0.0', runtime: 'service',
-            sourceCatalog: [{id: notionContributionId, title: 'Notion', body: 'Generated Notion connector', note: '', icon: 'file', kinds: ['mote.official.notion'], target: {pageId: 'sources', href: '#/connections?setup=official-notion'}}],
-            actionCapabilities: [], configuration: [], dependencies: [], access: [], contributions: [], capabilities: ['source.connector'],
-        }},
-    }));
-    put.run('generated-notion-instance', JSON.stringify({
-        id: 'generated-notion-instance', packageId: notionPackageId, kind: 'instance',
-        desired: {packageId: notionPackageId, version: '1.0.0', configurationRevision: 1}, observed: 'active', blockers: [],
-        instance: {view: instanceView},
-    }));
-}
-
 export type GeneratedGoogle = ReturnType<typeof generatedGoogle>;
 export function generatedGoogle() {
     const calendar = {id: 'generated-calendar', summary: 'Generated calendar', timeZone: 'UTC', primary: true, accessRole: 'owner'};
