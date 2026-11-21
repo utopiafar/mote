@@ -24,8 +24,8 @@ export const pages: PageEntry[] = [
     section: 'library',
     order: 0,
     featureId: 'mote.library',
-    render: ({api,devices,activity,onOpen,range,rangeSelectionKey,archiveTab,setArchiveTab,timelineRevision,refresh}: PageProps) =>
-      <Archive onChanged={refresh} tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} rangeSelectionKey={rangeSelectionKey} activity={activity} revision={timelineRevision} onOpen={onOpen}/>,
+    render: ({api,devices,activity,onOpen,onPage,range,rangeSelectionKey,archiveTab,setArchiveTab,timelineRevision,refresh}: PageProps) =>
+      <Archive onChanged={refresh} tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} rangeSelectionKey={rangeSelectionKey} activity={activity} revision={timelineRevision} onOpen={onOpen} onPage={onPage}/>,
   },
 ];
 
