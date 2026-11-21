@@ -21,8 +21,9 @@ import { Loading } from '../../Loading';
 import {FileRetentionSettings} from './FileRetentionSettings';
 import {SourceOnboarding} from './SourceOnboarding';
 import {SourceCoverageDetails,coverageLabel} from './SourceCoverage';
-const readSource=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('sourceId');
-const readSetup=(hash:string)=>{const value=new URLSearchParams(hash.slice(hash.indexOf('?')+1)).get('setup');return value&&['reference',...sourcePlugins.flatMap(plugin=>plugin.setup?[plugin.setup.id]:[])].includes(value)?value:null;};
+import {servicesPath} from './connection-services';
+export const readSource=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('sourceId');
+export const readSetup=(hash:string)=>{const value=new URLSearchParams(hash.split('?')[1]).get('setup');return value&&['reference',...sourcePlugins.flatMap(plugin=>plugin.setup?[plugin.setup.id]:[])].includes(value)?value:null;};
 const layerNames: Record<string, string> = { reference: moteText("引用 / Shadow"), snapshot: moteText("内容快照"), original: moteText("原始文本"), derived: moteText("派生记录") };
 const kindNames: Record<string, string> = { 'coding-agent': moteText("编码 Agent 对话"), 'local-files': moteText("客户端文件"), 'local-calendar': moteText("本地日历"), 'local-meeting-recording': moteText("本机会议录音"), 'google-calendar': 'Google Calendar', gmail: 'Gmail', 'lark-docs': moteText('飞书文档'), 'lark-calendar': moteText('飞书日历'), mcp: moteText("MCP 来源"), upload: moteText("文件导入"), custom: moteText("自定义来源"), 'mote.official.notion':'Notion', 'mote.official.slack':'Slack', 'mote.official.feishu-session':moteText('飞书会话') };
 const sourceStyleHref=new URL('../../source-final.css',import.meta.url).href;
@@ -81,7 +82,7 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
     const sources = (sourceList.data?.items ?? []).filter(source => !stopped.has(source.kind)), items = mergeArchivePage(currentPages,page.data?.items??[],withdrawn), nextCursor = page.data?.nextCursor, history = versions.data?.items ?? null, catalog = connectorStatus.data ?? null, loading = sourceList.loading || page.loading;
     const initialLoading = page.loading && page.data === undefined;
     const readError = sourceList.error || page.error || versions.error || connectorStatus.error, technicalError=mutationError||(readError?errorMessage(readError):''),error=mutationError?moteText('操作未完成，请重试'):readError?(readError instanceof ApiError?(readError.code&&commonFailureMessage(readError.code,readError.status)||httpStatusMessage(readError.status)):moteText('状态读取失败。')):'';
-    async function refresh(source = selected) { if(activeApi.current!==api||visit.current!==renderVisit)return;setError(''); setHistoryKey(null); setPages(undefined); resources(api).invalidate(key => /^\/api\/(sources|source-items|library\/browse|connectors\/status|plugins)([/?]|$)/.test(key)); }
+    async function refresh(source = selected) { if(activeApi.current!==api||visit.current!==renderVisit)return;setError(''); setHistoryKey(null); setPages(undefined); resources(api).invalidate(key => key === servicesPath || /^\/api\/(sources|source-items|library\/browse|connectors\/status|plugins)([/?]|$)/.test(key)); }
     function loadHistory(item: SourceItemRecord) { if(visit.current!==renderVisit||selected&&item.sourceId!==selected)return;setHistoryKey('/api/sources/' + encodeURIComponent(item.sourceId) + '/history?externalId=' + encodeURIComponent(item.externalId)); }
     function more() { if (!nextCursor || loading)
         return; setPages({api,scope:listScope,previous:items,cursor:nextCursor}); }
