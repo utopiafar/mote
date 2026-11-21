@@ -315,7 +315,7 @@ class HomeJourneyInstrumentedTest {
 
         instrumentation.runOnMainSync {
             val widget = QuickEntryWidget.views(context).apply(context, FrameLayout(context))
-            assertEquals("问一问", widget.findViewById<TextView>(R.id.widget_ask).text.toString())
+            assertEquals("聊天", widget.findViewById<TextView>(R.id.widget_ask).text.toString())
             assertEquals(listOf("记录", "拍照", "录音"), listOf(R.id.widget_record, R.id.widget_photo, R.id.widget_audio).map { widget.findViewById<View>(it).contentDescription.toString() })
         }
         MoteShortcuts.publish(context)
