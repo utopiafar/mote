@@ -68,10 +68,10 @@ class BackupActivity : MoteActivity() {
         SecondaryUi.action(recordActions, MoteI18n.text("导出本机记录"), primary = true) { create(12, "application/zip", "mote-records.zip") }.tag = "backup-export-records"
         SecondaryUi.action(recordActions, MoteI18n.text("从备份恢复")) { chooseRestore() }.tag = "backup-restore-records"
         val range = SecondaryUi.disclosure(records, MoteI18n.text("备份包含什么"), "backup-scope")
-        SecondaryUi.text(range, MoteI18n.text("备份本机仍保留的截图、应用活动、通知、媒体和记录。ZIP 为明文，不含中央归档、来源文件原件、未提交草稿或模型文件。"), muted = true)
+        SecondaryUi.text(range, MoteI18n.text("ZIP 为明文，不含中央归档"), muted = true)
         SecondaryUi.text(range, MoteI18n.text("已清理的本机副本不在其中。"), muted = true)
         SecondaryUi.text(range, MoteI18n.text("备份文件为明文，仅保存在自己信任的位置。"), muted = true)
-        SecondaryUi.text(range, MoteI18n.text("ZIP 备份包含本机采集记录、上传状态和关联图片，恢复后保留上传状态。来源文件、附件和会议录音需另行备份。"), muted = true)
+        SecondaryUi.text(range, MoteI18n.text("ZIP 备份本机记录与图片"), muted = true)
         SecondaryUi.action(range, MoteI18n.text("导出本机元数据 JSON")) { create(14, "application/json", "mote-local-metadata.json") }
         SecondaryUi.row(records, MoteI18n.text("本机存储位置")) { startActivity(Intent(this, StorageActivity::class.java)) }
         val central = SecondaryUi.disclosure(records, MoteI18n.text("中央资料导出"), "backup-central")
@@ -81,9 +81,9 @@ class BackupActivity : MoteActivity() {
         SecondaryUi.action(central, MoteI18n.text("导出中央资料与附件")) { create(16, "application/gzip", "mote-central-data.tar.gz") }
         val config = SecondaryUi.column(body, card = true)
         SecondaryUi.text(config, MoteI18n.text("迁移采集与同步设置"), heading = true)
-        SecondaryUi.text(config, MoteI18n.text("迁移采集、应用规则、同步和诊断设置。系统权限和来源文件授权需在新设备重新授予。"), muted = true)
+        SecondaryUi.text(config, MoteI18n.text("迁移设置，系统权限需重授"), muted = true)
         val options = SecondaryUi.disclosure(config, MoteI18n.text("导出选项"), "backup-export-options", includeToken)
-        secrets = CheckBox(this).apply { text = MoteI18n.text("导出时包含节点令牌（文件为明文，请妥善保管）"); isChecked = includeToken; setOnCheckedChangeListener { _, checked -> includeToken = checked } }.also(options::addView)
+        secrets = CheckBox(this).apply { text = MoteI18n.text("导出时包含节点令牌（文件为明文，妥善保管）"); isChecked = includeToken; setOnCheckedChangeListener { _, checked -> includeToken = checked } }.also(options::addView)
         val configActions = SecondaryUi.actions(config)
         SecondaryUi.action(configActions, MoteI18n.text("导出配置 JSON"), primary = true) { includeToken = secrets.isChecked; create(10, "application/json", "mote-settings.json") }
         SecondaryUi.action(configActions, MoteI18n.text("导入配置 JSON")) { open(11, "application/json") }
@@ -120,7 +120,7 @@ class BackupActivity : MoteActivity() {
     private fun chooseRestore() {
         if (!canChooseFile()) return
         operation.show(MoteI18n.text("从备份恢复"), "", MoteI18n.text("选择本机记录 ZIP"),
-            MoteI18n.text("导入前先校验备份。已有记录保留，已有的同一条记录不重复添加。"),
+            MoteI18n.text("导入前先校验备份"),
             actions = listOf(Triple(MoteI18n.text("选择备份文件"), true) { open(13, "application/zip") }))
     }
     private fun returnFromOperation() {
@@ -204,8 +204,8 @@ class BackupActivity : MoteActivity() {
     }
     private fun exportResult(snapshot: BackupSnapshot, outcome: BackupOutcome.Exported) {
         val message = when {
-            outcome.includeToken -> MoteI18n.text("配置文件包含节点令牌，请妥善保管。")
-            outcome.code == 10 -> MoteI18n.text("配置文件不含节点令牌。系统权限需在目标设备上重新授予。")
+            outcome.includeToken -> MoteI18n.text("配置文件包含节点令牌，妥善保管")
+            outcome.code == 10 -> MoteI18n.text("备份不含令牌，权限需重授")
             outcome.code == 14 -> MoteI18n.text("元数据文件可用于查看记录信息，不是带附件的备份。")
             else -> MoteI18n.text("导出没有清空本机内容。")
         }
@@ -215,7 +215,7 @@ class BackupActivity : MoteActivity() {
     }
     private fun exportFailure(snapshot: BackupSnapshot) {
         status.text = MoteI18n.text("导出未完成")
-        operation.show(snapshot.title, MoteI18n.text("导出未完成"), MoteI18n.text("备份未能生成"), MoteI18n.text("请删除刚才不完整的文件，再重新导出。本机记录保留。"), file = owner.documentFacts(),
+        operation.show(snapshot.title, MoteI18n.text("导出未完成"), MoteI18n.text("备份未能生成"), MoteI18n.text("删除刚才不完整的文件，再重新导出。本机记录保留"), file = owner.documentFacts(),
             actions = listOf(Triple(MoteI18n.text("重新导出"), true) { retryExport(snapshot.request) }, Triple(MoteI18n.text("返回"), false) { returnFromOperation() }))
     }
     private fun retryExport(code: Int) {
@@ -246,7 +246,7 @@ class BackupActivity : MoteActivity() {
         val success = failure == null
         status.text = if (success) MoteI18n.text("记录已导入 · 手动同步") else MoteI18n.text("导入未完成：{0}。已导入记录保留，可重试同一备份。", failure)
         operation.show(MoteI18n.text("从备份恢复"), MoteI18n.text(if (success) "已导入本机" else "导入尚未完成"),
-            MoteI18n.text(if (success) "记录已回来" else "请检查本机内容后重试"), status.text.toString(),
+            MoteI18n.text(if (success) "记录已回来" else "检查本机内容后重试"), status.text.toString(),
             content = { card -> (name ?: preview?.displayName)?.let { SecondaryUi.text(card, it) } },
             actions = (if (!success && preview != null) listOf(Triple(MoteI18n.text("重试同一备份"), true) { previewRestore(preview) }) else emptyList()) + listOf(
                 Triple(MoteI18n.text("查看本机内容"), success) { startActivity(Intent(this, CaptureRecordsActivity::class.java)) },

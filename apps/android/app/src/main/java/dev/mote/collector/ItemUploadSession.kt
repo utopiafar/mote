@@ -52,7 +52,7 @@ internal class ItemUploadSession(private val context: Context, private val confi
         lease.commit { synchronized(SourceRuntime.lock) {
             requireCurrent(identity)
             val receipt = store.received(ItemUploadReceipt(identity,batchId,canonicalId,System.currentTimeMillis()))
-            check(finish(receipt)) { MoteI18n.text("目标或原件已变化，已保留上传确认，请稍后重试。") }
+            check(finish(receipt)) { MoteI18n.text("目标或原件已变化，已保留上传确认，稍后重试") }
             settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true, acknowledgedOrigin = identity.origin, ackGeneration = identity.connectionGeneration)
         } }
     }

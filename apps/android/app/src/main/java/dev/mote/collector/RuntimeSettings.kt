@@ -95,7 +95,7 @@ object RuntimeSettings {
                 SyncSchedule.invalidate()
                 val deadline = SystemClock.elapsedRealtime() + 120_000
                 while (ConnectionGuard.processing.get() > 0) {
-                    check(SystemClock.elapsedRealtime() < deadline) { MoteI18n.text("当前处理暂未结束，原设置已保留，请稍后重试") }
+                    check(SystemClock.elapsedRealtime() < deadline) { MoteI18n.text("当前处理暂未结束，原设置已保留，稍后重试") }
                     Thread.sleep(25)
                 }
                 reportProgress(MoteI18n.text("正在保存设置"))
@@ -135,13 +135,13 @@ object RuntimeSettings {
                         CaptureResume.STOPPED -> Unit
                     }
                     executor.execute {
-                        if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) MoteI18n.text("设置已保存") else if (needsConsent) MoteI18n.text("设置已生效，请授权新的投屏会话") else MoteI18n.text("设置已保存"))
+                        if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) MoteI18n.text("设置已保存") else if (needsConsent) MoteI18n.text("设置已生效，授权新的投屏会话") else MoteI18n.text("设置已保存"))
                         else settings.status(if (resume && !needsConsent) "capturing" else "paused", MoteI18n.text("设置未完成，继续使用当前已保存配置"))
                     }
                     Applied(needsConsent)
                 }.onFailure { error -> executor.execute {
                     settings.enabled = false
-                    settings.status("error", MoteI18n.text("采集恢复失败：{0}", error.message ?: MoteI18n.text("请检查权限和所选存储位置")))
+                    settings.status("error", MoteI18n.text("采集恢复失败：{0}", error.message ?: MoteI18n.text("检查权限和所选存储位置")))
                 } }
                 ConnectionGuard.endReconfiguration()
                 CaptureAccessibilityService.instance?.refreshSchedule()
@@ -155,7 +155,7 @@ object RuntimeSettings {
                             UploadWorker.schedule(app, config)
                             dev.mote.collector.plugins.SourceProviderPlugin.owner(app).schedule()
                         }
-                    }.onFailure { settings.uploadStatus(MoteI18n.text("设置已保存，同步调度暂不可用：{0}", it.message ?: MoteI18n.text("请稍后重试"))) }
+                    }.onFailure { settings.uploadStatus(MoteI18n.text("设置已保存，同步调度暂不可用：{0}", it.message ?: MoteI18n.text("稍后重试"))) }
                 }
             }
         }

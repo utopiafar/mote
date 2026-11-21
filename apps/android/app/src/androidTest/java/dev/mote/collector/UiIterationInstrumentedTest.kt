@@ -222,7 +222,7 @@ class UiIterationInstrumentedTest {
                         shown.single { it.text.toString() == MoteI18n.text("连接设置") }.currentTextColor)
                     assertTrue("Receipt and processing has its own explicit role", labels.contains(MoteI18n.text("接收与整理状态")))
                     assertTrue("The exact receipt versus processing distinction remains visible", labels.contains(MoteI18n.text("本机保存、中央接收与整理完成分别显示；接收确认不代表已经可以搜索。")))
-                    assertTrue("Processing remains explicitly unknown in this generated offline fixture", labels.any { it.contains(MoteI18n.text("中央处理状态待查询，请在中央任务中心查看")) })
+                    assertTrue("Processing remains explicitly unknown in this generated offline fixture", labels.any { it.contains(MoteI18n.text("中央处理状态待查询，在中央任务中心查看")) })
                     assertTrue("Upload speed metadata is still available", labels.any { it.startsWith(MoteI18n.text("上传速率") + " · ") })
                     views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("查看同步详情") }.performClick()
                     activity.showMoteAddActions()
@@ -669,7 +669,7 @@ class UiIterationInstrumentedTest {
                     instrumentation.runOnMainSync {
                         val rows = views(reader.window.decorView)
                         assertFalse(rows.any { it.isShown && it.tag == "capture:$savedId" })
-                        assertFalse(rows.filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。") })
+                        assertFalse(rows.filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("当天没有此类记录") })
                         GeneratedWindowRendering.save(reader, directory, "note-empty-list")
                         File(directory, "note-empty-list.txt").writeText(rows.filterIsInstance<TextView>().filter { it.isShown }.joinToString("\n") { it.text.toString() })
                         val next = rows.filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("后一天") }
@@ -720,7 +720,7 @@ class UiIterationInstrumentedTest {
                 val deadline = SystemClock.elapsedRealtime() + 10000
                 var ready = false
                 while (!ready && SystemClock.elapsedRealtime() < deadline) {
-                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。") } }
+                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("资料库暂不可用") } }
                     if (!ready) Thread.sleep(25)
                 }
                 assertTrue("Offline archive must explain browsing instead of questioning", ready)

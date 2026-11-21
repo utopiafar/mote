@@ -56,7 +56,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
         var failed = false; var blocked = false; var more = false; var readyMore = false
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
         fun failure(): Result {
-            settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", if (manualOnly) MoteI18n.text("请再次点击立即同步") else MoteI18n.text("稍后自动重试")))
+            settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", if (manualOnly) MoteI18n.text("再次点击立即同步") else MoteI18n.text("稍后自动重试")))
             return if (manualOnly) Result.failure() else Result.retry()
         }
         return try {
@@ -182,7 +182,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 finally { dispatch.record(slice.bytes, slice.requests) }
             }
             if (blocked) {
-                settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", MoteI18n.text("请再次点击立即同步")))
+                settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", MoteI18n.text("再次点击立即同步")))
                 Result.failure()
             } else if (failed) failure()
             else if (more) { SourceWork.enqueueUpload(applicationContext, settings.read(), inputData.getBoolean("manual", false), continuation = true, delaySeconds = if (readyMore) 0 else 60); Result.success() }

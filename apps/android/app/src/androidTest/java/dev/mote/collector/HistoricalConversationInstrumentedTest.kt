@@ -27,7 +27,7 @@ class HistoricalConversationInstrumentedTest {
     private lateinit var fixture: JSONObject
     private val stale get() = MoteI18n.text("这是历史版本，当前资料已更新。")
     private val deleted get() = MoteI18n.text("引用原文已删除，历史问答仍保留。")
-    private val erased get() = MoteI18n.text("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")
+    private val erased get() = MoteI18n.text("证据已删除，历史回答已清除")
     @Before fun prepare() {
         val args = InstrumentationRegistry.getArguments()
         require(args.getString("historyFixture") == "true")
@@ -198,7 +198,7 @@ class HistoricalConversationInstrumentedTest {
         reset(); open(false).use { scenario ->
             login(scenario); conversation(scenario,false); assertCurrent(scenario)
             CentralSession.get(context).signIn(fixture.getString("address"),fixture.getString("restrictedToken"))
-            waitFor(scenario,"Changed access scope must withdraw cached answers") { !labels(it).contains(fixture.getString("answer")) && labels(it).any { text -> text.contains(MoteI18n.text("当前连接没有执行此操作的权限，请检查连接权限。")) } }
+            waitFor(scenario,"Changed access scope must withdraw cached answers") { !labels(it).contains(fixture.getString("answer")) && labels(it).any { text -> text.contains(MoteI18n.text("当前连接没有执行此操作的权限，检查连接权限")) } }
             scenario.onActivity { assertFalse(labels(it).contains(fixture.getString("olderAnswer"))) }; capture(scenario,"history-restricted")
         }
     }

@@ -11,7 +11,7 @@ internal object LocalContentPresentation {
         val active = row.optString("syncPhase").takeIf { it in setOf("PREPARING", "UPLOADING") }?.let { FileSyncTransfer(entry.key, FileSyncPhase.valueOf(it)) }
         val failure = row.optJSONObject("syncFailure")
         val status = when (entry.phase(now, active)) {
-            FileSyncPhase.RECEIVED -> if (currentReceipt(row) != null) MoteI18n.text("中央已收到 · 整理状态请打开内容查看") else MoteI18n.text("已确认发送 · 中央详情待核对")
+            FileSyncPhase.RECEIVED -> if (currentReceipt(row) != null) MoteI18n.text("中央已收到 · 整理状态打开内容查看") else MoteI18n.text("已确认发送 · 中央详情待核对")
             FileSyncPhase.BASELINE -> MoteI18n.text("首次仅清点 · 不在发送范围内")
             FileSyncPhase.STABILITY -> MoteI18n.text("等待文件稳定 · 至少还需 {0} 秒", ((entry.stableAt - now + 999) / 1000).coerceAtLeast(1))
             FileSyncPhase.QUEUED -> if (row.has("pending")) MoteI18n.text("本机已保存 · 排队等待上传或续传") else MoteI18n.text("已清点 · 排队等待保存与上传")
@@ -30,9 +30,9 @@ internal object LocalContentPresentation {
         val transferring = progress.count(FileSyncPhase.UPLOADING) + progress.count(FileSyncPhase.PREPARING) > 0
         val issue = if (transferring) "" else when (state.optString("status")) {
             "permission", "provider", "consent", "offline", "ack", "http" -> sourceStatus(source, state)
-            "paused" -> MoteI18n.text("中央已暂停；请在中央恢复后重试")
-            "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；请打开设置处理，文件保留待发。")
-            "context-http" -> MoteI18n.text("资料说明尚未获中央确认；请检查连接或升级中央，文件保留待发。")
+            "paused" -> MoteI18n.text("中央已暂停，恢复后重试")
+            "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；打开设置处理，文件保留待发")
+            "context-http" -> MoteI18n.text("说明未获中央确认")
             else -> ""
         }
         val waiting = when {

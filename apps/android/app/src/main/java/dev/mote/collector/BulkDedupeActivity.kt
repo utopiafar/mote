@@ -89,8 +89,8 @@ class BulkDedupeActivity : MoteActivity() {
             adapter = ArrayAdapter(this@BulkDedupeActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("精确"), MoteI18n.text("保守"), MoteI18n.text("均衡"), MoteI18n.text("激进")))
             isEnabled = false
         }; details.addView(modes, LinearLayout.LayoutParams(-1, -2)); controls += modes
-        SecondaryUi.text(details, MoteI18n.text("扫描开始时本机保存的全部采集图片，按时间从早到晚扫描，与上一张保留图比较；相似则标记为重复，否则更新保留图。应用或尺寸变化时重新开始比较，不限制时间间隔。只处理本机副本；已上传中央的记录仍然保留。待决定区独立保存在本机，不参与同步和自动清理，仍占用磁盘空间。"), muted = true)
-        SecondaryUi.text(details, MoteI18n.text("扫描和处理均在后台执行，可以离开本页。取消后已完成的处理保留，剩余记录留在原处。"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("扫描本机图片并按保留图比较"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("后台处理，可离开本页"), muted = true)
         MoteUi.styleTree(body)
         render()
         executor.execute {
@@ -141,7 +141,7 @@ class BulkDedupeActivity : MoteActivity() {
                     val available = queue.dedupeIds().toHashSet()
                     loaded = if (report.optBoolean("complete")) (0 until pairs.length()).map { pairs.getJSONObject(it) }
                         .filter { id(it) in available } else emptyList()
-                    title = if (report.optBoolean("complete")) MoteI18n.text("扫描结果 · {0} · {1}\n扫描 {2} 张 · 失败 {3} 张 · 候选 {4} 张\n时间 {5}", report.optString("mode"), if (report.optString("comparison") == "last_retained") MoteI18n.text("与上一张保留图比较") else MoteI18n.text("旧规则结果，请重新扫描"), report.optInt("scanned"), report.optInt("errors"), loaded.size, report.optString("at")) else MoteI18n.text("尚无完整扫描结果；取消或中断后请重新扫描。")
+                    title = if (report.optBoolean("complete")) MoteI18n.text("扫描结果 · {0} · {1}\n扫描 {2} 张 · 失败 {3} 张 · 候选 {4} 张\n时间 {5}", report.optString("mode"), if (report.optString("comparison") == "last_retained") MoteI18n.text("与上一张保留图比较") else MoteI18n.text("旧规则结果，重新扫描"), report.optInt("scanned"), report.optInt("errors"), loaded.size, report.optString("at")) else MoteI18n.text("尚无完整扫描结果；取消或中断后重新扫描")
                     rowsKey = "report:${report.optString("at")}:${report.optString("mode")}:${report.optBoolean("complete")}"
                 }
                 rowsKey += loaded.joinToString(separator = "|") { id(it) + ":" + it.getJSONObject("candidate").optString("blob") }
@@ -150,7 +150,7 @@ class BulkDedupeActivity : MoteActivity() {
             stamp = key
             val data = info?.progress ?: Data.EMPTY
             val message = if (active) MoteI18n.text("{0} · {1}/{2} · 命中/成功 {3} · 跳过/失败 {4}", data.getString("stage") ?: MoteI18n.text("等待后台执行"), data.getInt("done", 0), data.getInt("total", 0), data.getInt("found", 0), data.getInt("errors", 0)) else when (info?.state) {
-                WorkInfo.State.CANCELLED -> MoteI18n.text("任务已取消，已完成的处理保留；可重新扫描或查看待决定区。")
+                WorkInfo.State.CANCELLED -> MoteI18n.text("任务已取消，已完成保留")
                 else -> info?.outputData?.getString("message") ?: MoteI18n.text("就绪")
             }
             runOnUiThread {
@@ -260,7 +260,7 @@ class BulkDedupeActivity : MoteActivity() {
     }
     private fun confirm(action: String) {
         val items = rows.filter { id(it) in selected }
-        if (items.isEmpty()) { Toast.makeText(this, MoteI18n.text("请先选择图片"), Toast.LENGTH_SHORT).show(); return }
+        if (items.isEmpty()) { Toast.makeText(this, MoteI18n.text("先选择图片"), Toast.LENGTH_SHORT).show(); return }
         val verb = when (action) { "move" -> MoteI18n.text("移入待决定区"); "restore" -> MoteI18n.text("恢复到本机采集队列"); else -> MoteI18n.text("永久删除本机记录及图片") }
         MoteDialogBuilder(this).setTitle(MoteI18n.text("确认{0}？", verb)).setMessage(MoteI18n.text("所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。", items.size, if (action in listOf("delete", "purge")) MoteI18n.text("无法撤销。") else ""))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确认")) { _, _ ->

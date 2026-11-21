@@ -104,7 +104,7 @@ class AskImagesInstrumentedTest {
             question(s,"Generated later text while uploading");model(s,"generated-model-later");screenshot(s,"uploading-with-later-private-draft")
             click(s,"Remove uploading selection",working=true){it.tag?.toString()?.startsWith("ask-image-remove:")==true}
             control("release-attachment-commit");ready(s,"Removed upload cannot append on late receipt"){a -> !a.isWorking}
-            assertEquals(0,NativeAskImages.count(saved()));assertEquals("Generated later text while uploading",saved().getString("question"));assertEquals("generated-model-later",saved().getString("modelOverride"));s.onActivity { a -> assertFalse(shown(a).filterIsInstance<TextView>().any { it.text.toString()=="请先重试或移除尚未上传完成的图片。" }) };screenshot(s,"late-receipt-removed-selection")
+            assertEquals(0,NativeAskImages.count(saved()));assertEquals("Generated later text while uploading",saved().getString("question"));assertEquals("generated-model-later",saved().getString("modelOverride"));s.onActivity { a -> assertFalse(shown(a).filterIsInstance<TextView>().any { it.text.toString()=="先重试或移除尚未上传完成的图片" }) };screenshot(s,"late-receipt-removed-selection")
         }
     }
     @Test fun fourActualImagesStayInTheSameUnknownRequestAndCannotBeEdited(){

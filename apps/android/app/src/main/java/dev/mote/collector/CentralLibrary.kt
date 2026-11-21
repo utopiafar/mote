@@ -99,7 +99,6 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     }
     private fun codingStatus() {
         ui.text(MoteI18n.text("上传与处理"), NativeFontRole.TITLE_MOBILE)
-        ui.text(MoteI18n.text("接收成功表示原件已保留；正文发布、索引和记忆整理分别显示状态。"))
         paged("/api/coding/uploads?limit=20", ui.card()) { row, card ->
             val source = row.getJSONObject("source")
             ui.text(source.getString("name"), NativeFontRole.ROW, card)
@@ -233,7 +232,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val projected=NativeDerivedEvidencePresentation.load(row,currentVisit,api::get)
             if(projected!=null) {
                 val current=api.get("/api/capture-browser/"+enc(id))
-                check(current.getString("id")==id && current.optString("deviceId")==row.optString("deviceId") && current.optString("source")==row.optString("source") && current.optString("libraryVersion")==row.optString("libraryVersion") && current.optString("ocrText")==row.optString("ocrText")) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                check(current.getString("id")==id && current.optString("deviceId")==row.optString("deviceId") && current.optString("source")==row.optString("source") && current.optString("libraryVersion")==row.optString("libraryVersion") && current.optString("ocrText")==row.optString("ocrText")) { MoteI18n.text("分页内容已变化或游标无效，返回第一页重新读取") }
             }
             if(conversationId!=null)check(CentralConversationReference.available(api,conversationId,id)) { MoteI18n.text("引用原文已删除，历史问答仍保留。") }
             val memory=topicMemoryId?.let { api.get("/api/memories/" + enc(it)) }
@@ -319,7 +318,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, options.map { if (it.isEmpty()) { if (source) MoteI18n.text("不声明") else MoteI18n.text("跟随来源") } else relationLabel(it) })
             setSelection(options.indexOf(value).coerceAtLeast(0))
         }; card.addView(selector)
-        ui.text(MoteI18n.text("声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。"), parent = card)
+        ui.text(MoteI18n.text("声明帮助模型区分内容归属"), parent = card)
         return selector to options
     }
     private fun material(id: String, revision: String?, offset: Int = 0) {
@@ -438,8 +437,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             else if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
             if (fileView == null) ui.text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, processing)
             when (cancellation?.optString("wait")) {
-                "running" -> ui.text(MoteI18n.text("外部结果尚未确认，停止请求不代表远端工作已结束。"), parent = processing)
-                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), parent = processing)
+                "running" -> ui.text(MoteI18n.text("结果尚未确认"), parent = processing)
+                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续"), parent = processing)
             }
             if (job != null) ui.disclosure(MoteI18n.text("处理详情")) { target -> ui.text(job.toString(2), parent = target) }
             if (fileView != null && fileView.hasOriginal && fileView.canOpenOriginal) {
@@ -462,8 +461,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 val fileEvidence = chunk.optJSONObject("fileEvidence")
                 if (fileEvidence != null) ui.button(MoteI18n.text("纠正此段"), parent = card) {
                     val original = if (fileEvidence.optString("speaker").isNotBlank()) chunk.optString("ocrText").removePrefix("[" + fileEvidence.getString("speaker") + "] ") else chunk.optString("ocrText")
-                    val text = ui.field(MoteI18n.text("校正此段文字"), original, multiline = true, parent = card)
-                    ui.button(MoteI18n.text("保存校正"), true, parent = card) {
+                    val text = ui.field(MoteI18n.text("纠正此段文字"), original, multiline = true, parent = card)
+                    ui.button(MoteI18n.text("保存纠正"), true, parent = card) {
                         val value = text.text.toString()
                         ui.work(MoteI18n.text("正在保存…"), {
                             api.post("/api/files/" + enc(id) + "/corrections", JSONObject().put("artifactId", fileEvidence.getString("artifactId"))
@@ -481,7 +480,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     val retry = {
                         ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset) }
                     }
-                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), retry) else retry()
+                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续"), retry) else retry()
                 }
             }
             ui.button(MoteI18n.text("删除文件")) { screens.confirm(MoteI18n.text("删除中央文件"), MoteI18n.text("删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。")) {
@@ -525,7 +524,6 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         onboardingVisible = true
         body.removeAllViews()
         ui.text(MoteI18n.text("初次认识"), NativeFontRole.TITLE_MOBILE)
-        ui.text(MoteI18n.text("只处理你勾选的已同步资料；不会重新上传本机文件，也不会自动扩大来源范围。"), NativeFontRole.SUPPORT)
         ui.text(MoteI18n.text("初次认识会使用你已连接的模型处理所选资料。"), NativeFontRole.META)
         val progress = onboardingProgress
         if (progress != null) {
@@ -603,7 +601,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         val retry = session?.takeIf { it.canRetryStart && it.refs.toSet() == selected.toSet() }
         val scope = retry?.let { runCatching { AssistantOnboardingPresentation.scopeOf(it) }.getOrNull() }
             ?: runCatching {
-                val chosen = selected.map { ref -> onboardingMaterials[ref] ?: error(MoteI18n.text("资料已变化，请重新选择当前版本。")) }
+                val chosen = selected.map { ref -> onboardingMaterials[ref] ?: error(MoteI18n.text("资料已变化，重新选择当前版本")) }
                 AssistantOnboardingPresentation.scope(chosen)
             }.getOrElse { ui.notice(it.message ?: MoteI18n.text("操作失败")); return }
         val requestId = retry?.requestId ?: AssistantOnboardingPresentation.newRequestId()
@@ -644,10 +642,10 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }.onFailure { error ->
                 if (error is CentralFailure && error.status in setOf(404, 410)) {
                     onboardingSession = session.copy(id = null, revision = null, state = null); onboardingProgress = null; persistOnboarding()
-                    ui.notice(MoteI18n.text("这次认识已结束，请重新选择资料。"))
+                    ui.notice(MoteI18n.text("这次认识已结束，重新选择资料"))
                 } else if (error is CentralFailure && error.status == 409) {
                     onboardingProgress = null
-                    ui.notice(MoteI18n.text("资料已变化，请重新选择当前版本。"))
+                    ui.notice(MoteI18n.text("资料已变化，重新选择当前版本"))
                 } else ui.notice(error.message ?: MoteI18n.text("操作失败"))
                 renderOnboarding()
             }
@@ -684,7 +682,6 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         ui.button(MoteI18n.text("本机来源")) { ui.startActivity(android.content.Intent(ui, SourcesActivity::class.java)) }
         ui.button(MoteI18n.text("连接更多来源")) { CentralAdmin(screens).connectors() }
         ui.button(MoteI18n.text("初次认识已同步资料")) { onboarding() }.tag = "assistant-onboarding"
-        ui.text(MoteI18n.text("只处理你勾选的已同步资料；不会重新上传本机文件，也不会自动扩大来源范围。"), NativeFontRole.META)
         paged("/api/sources", ui.card()) { row, card ->
             ui.text(row.optString("name"), NativeFontRole.SECTION, card); ui.text(row.optString("kind") + " · " + row.optString("deviceId"), parent = card)
             ui.button(MoteI18n.text("编辑来源"), parent = card) {
@@ -861,7 +858,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                         val visit=ui.readVisit()
                         ui.work(MoteI18n.text("正在删除…"), { runCatching {
                             exact?.verify(api,evidenceIds.optString(0))
-                            if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                            if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                             MemoryDetailPanel.delete(api, id)
                         } }) { result ->
                             val receipt=result.getOrElse { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error);return@work }
@@ -898,7 +895,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     val visit=ui.readVisit()
                     ui.work(MoteI18n.text("正在保存…"), { runCatching {
                         exact?.verify(api,evidenceIds.optString(0))
-                        if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                        if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                         MemoryDetailPanel.correct(api, id, corrected)
                     } }) { result ->
                         result.onSuccess {
@@ -980,7 +977,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private fun renderPage(path: String, target: LinearLayout, cursor: String?, result: JSONObject, render: (JSONObject, LinearLayout) -> Unit) {
             target.removeAllViews()
             val items = result.optJSONArray("items") ?: result.optJSONArray("entries") ?: result.optJSONArray("jobs") ?: JSONArray()
-            if (items.length() == 0) ui.text(MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。"), parent = target)
+            if (items.length() == 0) ui.text(MoteI18n.text("当前范围暂无条目"), parent = target)
             for (i in 0 until items.length()) render(items.getJSONObject(i), ui.card(target))
             if (cursor != null) ui.button(MoteI18n.text("返回第一页"), parent = target) { paged(path, target, render = render) }
             CentralScreens.next(result)?.let { next -> ui.button(MoteI18n.text("下一页"), parent = target) { paged(path, target, next, render) } }

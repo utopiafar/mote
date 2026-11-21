@@ -143,7 +143,7 @@ internal class NativeLibraryOwner internal constructor(
 
     internal val active get() = !closed && scope?.revoked != true
 
-    internal fun requireActive() { check(active) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") } }
+    internal fun requireActive() { check(active) { MoteI18n.text("登录会话已变更，重新打开中央页面") } }
     internal fun onClose(withdraw: () -> Unit): () -> Unit {
         readers.add(withdraw)
         if (!active) { readers.remove(withdraw); withdraw() }
@@ -169,7 +169,7 @@ internal class NativeLibraryOwner internal constructor(
         requireActive(); current()
         val queue = requireNotNull(context).queue()
         val original = requireNotNull(queue.archiveRecord(id)).first
-        if (version != null) check(CaptureUploadVersion.of(original) == version) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+        if (version != null) check(CaptureUploadVersion.of(original) == version) { MoteI18n.text("此版本已变化，返回资料列表重新选择") }
         val release = original.optJSONObject(ReleasedCapture.FIELD)
         if (release == null || release.getBoolean("pending")) return (requireNotNull(queue.capture(id)) to if (release == null) queue.image(id) else null)
         return readOriginal(original.getJSONObject("_archiveAcknowledgment").getString("origin"), current) { client, authorized ->
@@ -200,7 +200,7 @@ internal class NativeLibraryOwner internal constructor(
         val client = requireNotNull(selection.client) { MoteI18n.text("先登录中央，各页面会共用这次登录") }
         fun authorized() {
             requireActive(); current(); val selected = CentralAccess.resolve(app)
-            check(Settings(app).connectionGeneration() == connection && selected.server == selection.server && selected.generation == selection.generation && selected.client != null) { MoteI18n.text("访问凭据已失效，请重新连接。") }
+            check(Settings(app).connectionGeneration() == connection && selected.server == selection.server && selected.generation == selection.generation && selected.client != null) { MoteI18n.text("访问凭据已失效，重新连接") }
         }
         return TransferRequestGuard.within(::authorized) { read(client, ::authorized).also { authorized() } }
     }
@@ -559,7 +559,7 @@ internal class LibraryReader(
 
     fun export(context: Context, request: Request, generation: Long?, origin: String?, destination: Uri) {
         val selected = access()
-        check(selected.generation == generation && selected.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+        check(selected.generation == generation && selected.server == origin) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
         val client = selected.client ?: error(MoteI18n.text("先登录中央，各页面会共用这次登录"))
         val output = context.contentResolver.openOutputStream(destination) ?: error("Destination unavailable")
         output.use { client.download("/api/files/" + enc(request.capture) + "/content", it) }
@@ -616,7 +616,7 @@ internal class LibraryReader(
 
     private fun nextOffset(range: JSONObject?) = if (range == null || range.isNull("nextOffset")) null else range.getInt("nextOffset")
 
-    private fun invalidPinnedVersion() = MoteI18n.text("此版本已变化，请返回资料列表重新选择。")
+    private fun invalidPinnedVersion() = MoteI18n.text("此版本已变化，返回资料列表重新选择")
 
     private fun enc(value: String) = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 

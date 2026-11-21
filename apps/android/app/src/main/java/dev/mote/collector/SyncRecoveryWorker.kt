@@ -15,7 +15,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
         val state = applicationContext.getSharedPreferences("sync-recovery", Context.MODE_PRIVATE)
         fun report(message: String) { state.edit().putString("message", message).putString("at", Instant.now().toString()).commit() }
         try {
-            if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) { report(MoteI18n.text("连接或同步策略已变化，本次操作已停止；请重新发起")); return Result.failure() }
+            if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) { report(MoteI18n.text("连接或同步策略已变化，本次操作已停止；重新发起")); return Result.failure() }
             config.validateConnection()
             SyncSchedule.waitingReason(applicationContext, config)?.let { report(it); return Result.retry() }
             if (inputData.getBoolean("replay", false)) {
@@ -27,7 +27,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                 }
                 if (isStopped) return Result.success()
                 UploadWorker.schedule(applicationContext, config, true)
-                report(MoteI18n.text("已安排补传 {0} 条本机采集记录及 {1} 个保留来源版本；实际上传进度见下方同步状态。冲突和中央已删除记录保持隔离。", records, versions))
+                report(MoteI18n.text("已安排补传 {0} 条记录", records, versions))
                 return Result.success()
             }
             // Durable checkpoint belongs to this WorkRequest; network retries resume its last checked batch.
@@ -39,14 +39,14 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                 SyncSchedule.waitingReason(applicationContext, config)?.let { report(it); return Result.retry() }
                 val ids = applicationContext.queue().syncIds(cursor)
                 if (ids.isEmpty()) {
-                    report(MoteI18n.text("检查完成：中央可见 {0} 条，不可见 {1} 条。检查范围为手机仍保留的采集记录；不可见可能是缺失、删除或无权限，不会自动恢复。来源快照由全量补传时核验。", present, unavailable))
+                    report(MoteI18n.text("检查完成：可见 {0}，不可见 {1}", present, unavailable))
                     return Result.success()
                 }
                 SyncSchedule.requireConditions(applicationContext, config)
                 val (code, response) = CollectorHttp(applicationContext, lease::requireCurrent).post("${config.server}/api/capture-browser/reconcile",
                     JSONObject().put("deviceId", settings.deviceId).put("ids", JSONArray(ids)), config.connectionToken())
                 lease.requireCurrent()
-                if (code == 401 || code == 403) { report(MoteI18n.text("检查失败：连接授权失效，请重新连接同一节点后重试")); return Result.failure() }
+                if (code == 401 || code == 403) { report(MoteI18n.text("检查失败：连接授权失效，重新连接同一节点后重试")); return Result.failure() }
                 if (code == 404) { report(MoteI18n.text("中央尚不支持两端检查。升级中央代码后重试；未修改本机状态")); return Result.failure() }
                 check(code == 200) { MoteI18n.text("检查响应未确认") }
                 val items = response?.getJSONArray("items") ?: error(MoteI18n.text("检查响应缺失"))
@@ -65,7 +65,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
             report(error.waitingReason)
             return Result.retry()
         } catch (_: Exception) {
-            report(MoteI18n.text("操作未完成，已完成的步骤保留；请检查网络或存储。本次手动操作可再次点击继续，未删除任何副本。"))
+            report(MoteI18n.text("操作未完成，已完成的保留"))
             return Result.failure()
         }
     }

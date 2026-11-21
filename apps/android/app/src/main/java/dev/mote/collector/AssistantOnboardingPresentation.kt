@@ -69,12 +69,12 @@ internal object AssistantOnboardingPresentation {
         request(requestId, refs(materials), scope(materials))
 
     fun request(requestId: String, refs: Collection<String>, scope: JSONObject): JSONObject {
-        require(isUuid(requestId)) { MoteI18n.text("输入格式无效，请检查必填项和取值范围。") }
+        require(isUuid(requestId)) { MoteI18n.text("输入格式无效，检查必填项和取值范围") }
         val values = refs.distinct()
         require(values.isNotEmpty()) { MoteI18n.text("尚未选择资料") }
         require(values.size <= 100) { MoteI18n.text("最多选择 {0} 份资料", 100) }
-        require(values.all(refPattern::matches)) { MoteI18n.text("资料已变化，请重新选择当前版本。") }
-        require(scope.optString("kind") in setOf("all", "selection")) { MoteI18n.text("请求的操作或资源已失效，请重新读取后再确认。") }
+        require(values.all(refPattern::matches)) { MoteI18n.text("资料已变化，重新选择当前版本") }
+        require(scope.optString("kind") in setOf("all", "selection")) { MoteI18n.text("请求的操作或资源已失效，重新读取后再确认") }
         return JSONObject().put("requestId", requestId).put("scope", scope).put("materialRefs", JSONArray(values))
     }
 
@@ -94,7 +94,7 @@ internal object AssistantOnboardingPresentation {
         }
         scope
     }.getOrElse {
-        throw IllegalArgumentException(MoteI18n.text("请求的操作或资源已失效，请重新读取后再确认。"))
+        throw IllegalArgumentException(MoteI18n.text("请求的操作或资源已失效，重新读取后再确认"))
     }
 
     fun progress(value: JSONObject): Progress {
@@ -189,5 +189,5 @@ internal object AssistantOnboardingPresentation {
     fun isUuid(value: String) = uuidPattern.matches(value)
     fun newRequestId(): String = UUID.randomUUID().toString()
 
-    private fun invalid() = MoteI18n.text("中央响应格式无效，请刷新后重试。")
+    private fun invalid() = MoteI18n.text("中央响应格式无效，刷新后重试")
 }

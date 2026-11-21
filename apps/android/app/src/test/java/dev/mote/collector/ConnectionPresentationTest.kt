@@ -41,7 +41,7 @@ class ConnectionPresentationTest {
         assertEquals(ConnectionPresentation.Surface.REVIEW_DETAIL, ConnectionPresentation.surface("storage"))
         assertFalse(ConnectionPresentation.isInvalidInvitation("network"))
         assertEquals(
-            MoteI18n.text("仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。"),
+            MoteI18n.text("待同步资料未完成，不能切换"),
             ConnectionPresentation.message("pending"),
         )
         assertEquals(ConnectionActivity.message("pending"), ConnectionPresentation.message("pending"))

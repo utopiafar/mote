@@ -16,7 +16,7 @@ class QueueStorage(private val context: Context) {
     }
     private fun requireUiReady() {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-            check(!recovering) { MoteI18n.text("正在恢复本机存储，请稍候") }
+            check(!recovering) { MoteI18n.text("正在恢复本机存储，稍候") }
             check(recoveryFailure == null) { recoveryFailure ?: MoteI18n.text("本机存储恢复失败") }
         }
     }
@@ -30,7 +30,7 @@ class QueueStorage(private val context: Context) {
         }
     }
     private fun store() = QueueLocationStore(context.noBackupFilesDir, File(context.noBackupFilesDir, "queue"), context.localContentCipher(), validate = { location ->
-        val choice = choices().singleOrNull { it.id == location.baseId } ?: error(MoteI18n.text("所选存储介质不可用，请重新连接；不会切换为空目录"))
+        val choice = choices().singleOrNull { it.id == location.baseId } ?: error(MoteI18n.text("所选存储介质不可用，重新连接；不会切换为空目录"))
         val path = File(location.path)
         check(path.parentFile?.canonicalFile == choice.base.canonicalFile &&
             (path.name == "queue" && choice.id == "internal" || path.name == "mote-queue-${location.id}")) { MoteI18n.text("存储路径不在本应用授权空间内") }

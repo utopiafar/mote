@@ -289,7 +289,7 @@ class HomeNavigationInstrumentedTest {
             try {
                 ActivityScenario.launch<CentralActivity>(android.content.Intent(context,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId","3f4cf6ee-b09b-4fcf-a718-c0944f4b46cc").putExtra("evidenceOrigin","https://generated-other.invalid")).use { scenario ->
                     val end=SystemClock.elapsedRealtime()+15_000; var ready=false
-                    while (!ready && SystemClock.elapsedRealtime()<end) { scenario.onActivity { a -> ready=views(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "访问凭据已失效，请重新连接。" } }; if(!ready) Thread.sleep(40) }
+                    while (!ready && SystemClock.elapsedRealtime()<end) { scenario.onActivity { a -> ready=views(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "访问凭据已失效，重新连接" } }; if(!ready) Thread.sleep(40) }
                     assertTrue("The stale origin is explained on the real composer",ready)
                     scenario.onActivity { a ->
                         val labels=views(a.window.decorView).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }

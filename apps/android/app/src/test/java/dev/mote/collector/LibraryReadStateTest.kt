@@ -31,7 +31,7 @@ class LibraryReadStateTest {
         state.localEmpty()
         state.centralFailed(state.epoch, LibraryReadState.Stream.CAPTURES, LibraryReadState.signedOut())
         state.centralFailed(state.epoch, LibraryReadState.Stream.SOURCES,
-            LibraryReadState.centralFailure(IllegalStateException("登录会话已变更，请重新打开中央页面。"), signedOut = true))
+            LibraryReadState.centralFailure(IllegalStateException("登录会话已变更，重新打开中央页面"), signedOut = true))
         assertEquals("先登录中央，各页面会共用这次登录", state.status())
         assertEquals(1, state.status().lines().size)
         state.begin(); state.localEmpty()
@@ -111,8 +111,8 @@ class LibraryReadStateTest {
     @Test fun `a local read failure cannot claim emptiness`() {
         val state = LibraryReadState().apply { begin() }
         state.localSettled(state.epoch, LibraryReadState.Stream.CAPTURES)
-        state.localFailed(state.epoch, LibraryReadState.Stream.SOURCES, "资料暂不可读取，请稍后重试。")
-        assertEquals("资料暂不可读取，请稍后重试。", state.status())
+        state.localFailed(state.epoch, LibraryReadState.Stream.SOURCES, "资料暂不可读取，稍后重试")
+        assertEquals("资料暂不可读取，稍后重试", state.status())
         assertNull(state.emptyText("", false, localMore = false, more = false))
     }
 

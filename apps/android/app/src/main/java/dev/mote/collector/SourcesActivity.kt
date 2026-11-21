@@ -113,9 +113,9 @@ class SourcesActivity : MoteActivity() {
                     val fileProgress = snapshot.progress
                     val transferring = fileProgress != null && fileProgress.count(FileSyncPhase.UPLOADING) + fileProgress.count(FileSyncPhase.PREPARING) > 0
                     val status = if (transferring) MoteI18n.text("正在同步来源记录") else when (state.optString("status")) {
-                        "permission" -> MoteI18n.text("权限丢失，请重新授权"); "paused" -> MoteI18n.text("中央已暂停；请在中央恢复后重试"); "provider" -> MoteI18n.text("提供者不可用或缓存已满；保留旧快照，稍后重试")
-                        "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；请打开设置处理，文件保留待发。"); "context-http" -> MoteI18n.text("资料说明尚未获中央确认；请检查连接或升级中央，文件保留待发。");
-                        "consent" -> MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。"); "offline" -> MoteI18n.text("等待网络/节点恢复"); "http", "ack" -> MoteI18n.text("节点未确认，原版本保留待发"); "synced" -> if (source.kind == "local-files" && source.retention != "archive") MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看") else MoteI18n.text("已同步"); "partial" -> MoteI18n.text("扫描不完整"); "scanned" -> MoteI18n.text("已扫描，等待发送"); else -> MoteI18n.text("等待首次扫描")
+                        "permission" -> MoteI18n.text("权限丢失，重新授权"); "paused" -> MoteI18n.text("中央已暂停，恢复后重试"); "provider" -> MoteI18n.text("提供者不可用或缓存已满；保留旧快照，稍后重试")
+                        "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；打开设置处理，文件保留待发"); "context-http" -> MoteI18n.text("说明未获中央确认");
+                        "consent" -> MoteI18n.text("编辑来源并确认完整上传"); "offline" -> MoteI18n.text("等待网络/节点恢复"); "http", "ack" -> MoteI18n.text("节点未确认，原版本保留待发"); "synced" -> if (source.kind == "local-files" && source.retention != "archive") MoteI18n.text("文件已接收；中央处理与可搜索状态在资料库查看") else MoteI18n.text("已同步"); "partial" -> MoteI18n.text("扫描不完整"); "scanned" -> MoteI18n.text("已扫描，等待发送"); else -> MoteI18n.text("等待首次扫描")
                     }
                     val syncState = when { !source.enabled -> "paused"; !Settings(this).read().hasSyncConnection() -> "unconfigured"; state.optString("status") in setOf("permission", "consent", "context-conflict") -> "blocked"; state.optString("status") == "paused" -> "paused"; transferring -> "uploading"; state.optString("status") in setOf("offline", "http", "ack", "provider", "context-http") -> "error"; pending > 0 || source.contextDirty -> "waiting"; else -> "idle" }
                     val facts = NativeStatus.project(org.json.JSONObject().put("pending", pending).put("lastAcknowledgedAt", state.opt("lastAcknowledgedAt") ?: org.json.JSONObject.NULL).put("syncState", syncState)
@@ -144,14 +144,14 @@ class SourcesActivity : MoteActivity() {
                     if (signature == renderedSignature) return@runOnUiThread
                     renderedSignature = signature
                     list.removeAllViews()
-                    if (value == null) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。"))
+                    if (value == null) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；保留应用数据，检查存储状态"))
                     else showOverview(value)
                 } else {
                     val signature = rows!!.getOrNull()?.joinToString { row -> row.source.json().toString() + row.summary + row.presentationStatus + row.local.joinToString() + row.localTotal + row.contextConflict }
                     if (signature != null && signature == renderedSignature) return@runOnUiThread
                     renderedSignature = signature
                     list.removeAllViews()
-                    if (rows.isFailure) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。"))
+                    if (rows.isFailure) SecondaryUi.text(list, MoteI18n.text("来源配置不可读；保留应用数据，检查存储状态"))
                     else {
                         if (rows.getOrThrow().isEmpty()) SecondaryUi.text(list, MoteI18n.text(if (detailSourceId == null) "尚未连接来源。权限只在点击连接时申请。" else "所选文件不可用"), muted = true)
                         for (row in rows.getOrThrow()) {
@@ -316,9 +316,9 @@ class SourcesActivity : MoteActivity() {
                 val config = Settings(applicationContext).read(); config.validateConnection()
                 if (localSources().sources().any { it.enabled }) SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
                 else UploadWorker.schedule(applicationContext, config, true)
-            } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
+            } ?: error(MoteI18n.text("正在应用设置，稍后重试"))
         }) { result ->
-            result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+            result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，重试") }
             render()
         }
     }
@@ -328,7 +328,7 @@ class SourcesActivity : MoteActivity() {
         task.start(MoteI18n.text("正在保存发送状态…"), statusProgress(read = false), {
             SendPauseControl.set(applicationContext, paused)
         }) { result ->
-            result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+            result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，重试") }
             renderedSignature = null
             render()
         }
@@ -339,7 +339,7 @@ class SourcesActivity : MoteActivity() {
         if (task.busy || applyingSwitch) { renderedSignature = null; render(); return }
         val settings = Settings(this)
         val config = runCatching { settings.read() }.getOrElse {
-            operationStatus = it.message ?: MoteI18n.text("操作失败，请重试")
+            operationStatus = it.message ?: MoteI18n.text("操作失败，重试")
             return
         }
         val command = CaptureSwitches.screenCommand(on, settings.enabled, config.screenCollectionEnabled,
@@ -347,7 +347,7 @@ class SourcesActivity : MoteActivity() {
         when (command) {
             CaptureSwitches.ScreenCommand.PAUSE_SCREEN -> CapturePlugin.controls().pauseScreen(this) { result ->
                 if (isDestroyed) return@pauseScreen
-                result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+                result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，重试") }
                 renderedSignature = null
                 render()
             }
@@ -370,7 +370,7 @@ class SourcesActivity : MoteActivity() {
             applyingSwitch = false
             if (!isDestroyed) {
                 result.onSuccess { operationStatus = "" }
-                    .onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+                    .onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，重试") }
                 renderedSignature = null
                 render()
             }
@@ -425,10 +425,10 @@ class SourcesActivity : MoteActivity() {
                 task.start(MoteI18n.text("正在保存发送设置…"), statusProgress(read = false), {
                     SendPauseControl.setSendMethod(applicationContext, mode, intervalMinutes, batchSize, wifiOnly)
                 }) { result ->
-                    result.onSuccess { dialog.dismiss() }.onFailure { toast(it.message ?: MoteI18n.text("操作失败，请重试")) }
+                    result.onSuccess { dialog.dismiss() }.onFailure { toast(it.message ?: MoteI18n.text("操作失败，重试")) }
                     render()
                 }
-            } catch (error: Exception) { toast(if (error is IllegalArgumentException) error.message ?: MoteI18n.text("操作失败，请重试") else MoteI18n.text("操作失败，请重试")) }
+            } catch (error: Exception) { toast(if (error is IllegalArgumentException) error.message ?: MoteI18n.text("操作失败，重试") else MoteI18n.text("操作失败，重试")) }
         } }
         dialog.show()
     }
@@ -550,7 +550,7 @@ class SourcesActivity : MoteActivity() {
         }) { result ->
             result.onSuccess { remote ->
                 fun apply(useRemote: Boolean) = work(MoteI18n.text("正在保存来源设置…")) {
-                    check(Settings(this).read() == config && owner.source(source.id) == source) { MoteI18n.text("来源已在后台更新，请重新打开设置；当前草稿仍在页面中。") }
+                    check(Settings(this).read() == config && owner.source(source.id) == source) { MoteI18n.text("来源已在后台更新，重新打开设置；当前草稿仍在页面中") }
                     owner.save(owner.applyContextChoice(source, remote, useRemote))
                 }
                 MoteDialogBuilder(this).setTitle(MoteI18n.text("解决资料说明冲突"))
@@ -558,7 +558,7 @@ class SourcesActivity : MoteActivity() {
                     .setPositiveButton(MoteI18n.text("以本机说明更新")) { _, _ -> apply(false) }
                     .setNeutralButton(MoteI18n.text("使用中央说明")) { _, _ -> apply(true) }
                     .setNegativeButton(MoteI18n.text("取消"), null).show()
-            }.onFailure { operationStatus = MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
+            }.onFailure { operationStatus = MoteI18n.text("无法读取中央资料说明；本机草稿保留，重试") }
         }
     }
     private fun confirmRemove(source: LocalSource) {
@@ -572,7 +572,7 @@ class SourcesActivity : MoteActivity() {
     }
     private fun work(label: String, action: () -> Unit) {
         task.start(label, statusProgress(read = false), { action() }) { result ->
-            operationStatus = if (result.isSuccess) MoteI18n.text("操作已完成；同步进度会自动刷新") else result.exceptionOrNull()?.message ?: MoteI18n.text("操作失败，请重试")
+            operationStatus = if (result.isSuccess) MoteI18n.text("操作已完成；同步进度会自动刷新") else result.exceptionOrNull()?.message ?: MoteI18n.text("操作失败，重试")
             render()
         }
     }
@@ -582,14 +582,14 @@ class SourcesActivity : MoteActivity() {
         }) { result ->
             result.onSuccess { (calendars, sources) ->
                 operationStatus = MoteI18n.text("已读取 {0} 个日历", calendars.size)
-                if (calendars.isEmpty()) { toast(MoteI18n.text("系统日历提供者暂无日历；只有保存在本机提供者中的日历可连接")); return@onSuccess }
+                if (calendars.isEmpty()) { toast(MoteI18n.text("系统日历暂无可用日历")); return@onSuccess }
                 MoteDialogBuilder(this).setTitle(MoteI18n.text("选择一个本机日历")).setItems(calendars.map { it.name }.toTypedArray()) { _, index ->
                     val item = calendars[index]
-                    if (!item.visible) { toast(MoteI18n.text("该日历在系统中已隐藏，请先启用显示后再连接")); return@setItems }
+                    if (!item.visible) { toast(MoteI18n.text("该日历在系统中已隐藏，先启用显示后再连接")); return@setItems }
                     val existing = sources.find { it.kind == "local-calendar" && it.calendarId == item.id }
                     edit(existing ?: LocalSource(name = item.name.take(200).ifBlank { MoteI18n.text("本机日历") }, kind = "local-calendar", calendarId = item.id), newSource = existing == null)
                 }.setNegativeButton(MoteI18n.text("取消"), null).show()
-            }.onFailure { operationStatus = MoteI18n.text("无法读取日历列表，请检查权限与日历应用") }
+            }.onFailure { operationStatus = MoteI18n.text("无法读取日历列表，检查权限与日历应用") }
         }
     }
     @Deprecated("Platform permission callback")
@@ -624,7 +624,7 @@ class SourcesActivity : MoteActivity() {
         val retention = Spinner(this).apply { adapter = ArrayAdapter(this@SourcesActivity, android.R.layout.simple_spinner_dropdown_item, modes.map { when(it) { "archive" -> MoteI18n.text("原件归档 · 中央保留文件"); "reference" -> MoteI18n.text("仅引用 · 不读取正文"); else -> if (source.kind == "local-files") MoteI18n.text("中央提取正文，不保留原件") else MoteI18n.text("内容快照") } }); setSelection(modes.indexOf(source.retention).coerceAtLeast(0)) }; form.addView(retention); draftControls["retention"] = retention
         form.addView(TextView(this).apply { text = MoteI18n.text("首次同步范围") })
         val allowRead = CheckBox(this).apply { text = MoteI18n.text("中央保留完整提取正文，供离线读取片段"); isChecked = source.allowRead }; draftControls["allowRead"] = allowRead; if (source.kind == "local-files") form.addView(allowRead)
-        if (source.kind == "local-files") form.addView(TextView(this).apply { text = MoteI18n.text("文件快照和原件归档都会上传完整文件，由中央解析或转写。快照处理后删除中央临时原件，保留提取正文；原件归档长期保留文件。仅文件目录不读取正文。") })
+        if (source.kind == "local-files") form.addView(TextView(this).apply { text = MoteI18n.text("快照与原件归档都上传完整文件") })
         fun refreshReadOption() { allowRead.visibility = if (source.kind == "local-files" && modes[retention.selectedItemPosition] == "snapshot") android.view.View.VISIBLE else android.view.View.GONE }
         retention.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) = refreshReadOption()
@@ -632,7 +632,7 @@ class SourcesActivity : MoteActivity() {
         }
         refreshReadOption()
         val initial = Spinner(this).apply { adapter = ArrayAdapter(this@SourcesActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("已有内容分批导入（默认）"), MoteI18n.text("首次清点后仅同步新条目"))); setSelection(if (source.initialSync == "new_only") 1 else 0) }; draftControls["initial"] = initial; if (source.tree || source.kind == "local-calendar") form.addView(initial)
-        form.addView(TextView(this).apply { text = MoteI18n.text("本地删除不影响中央原件；上传后仅清理 Mote 暂存，保留手机原文件。仅同步新增以首次完整清单为基线，重启不会重置。") })
+        form.addView(TextView(this).apply { text = MoteI18n.text("本机删除不影响中央原件") })
         val advanced = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
         form.addView(Button(this).apply { text = MoteI18n.text("高级选项"); setOnClickListener { advanced.visibility = if (advanced.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE } })
         form.addView(advanced)
@@ -643,7 +643,7 @@ class SourcesActivity : MoteActivity() {
         val maxFileMiB = if (source.kind == "local-files") EditText(this).apply { setText(source.maxFileMiB.toString()); inputType = InputType.TYPE_CLASS_NUMBER }.also { advanced.addView(TextView(this).apply { text = MoteI18n.text("单文件上限（MiB，0 为不限）") }); advanced.addView(it); draftControls["maxFileMiB"] = it } else null
         val extensions = if (source.kind == "local-files") field(MoteI18n.text("允许扩展名，逗号分隔"), source.extensions) else null
         val excludes = if (source.kind == "local-files") field(MoteI18n.text("排除相对路径：每行一项，* 表示任意字符；区分大小写"), source.excluded) else null
-        form.addView(TextView(this).apply { text = MoteI18n.text("更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。") })
+        form.addView(TextView(this).apply { text = MoteI18n.text("更改设置会重建本机待发缓存") })
         restoringDraft?.takeIf { it.source.id == source.id }?.let { draft ->
             draftControls.forEach { (key, view) -> draft.values[key]?.let { value -> when (view) { is CheckBox -> view.isChecked = value.toBoolean(); is Spinner -> view.setSelection(value.toInt()); is EditText -> view.setText(value) } } }
             restoringDraft = null
@@ -674,9 +674,9 @@ class SourcesActivity : MoteActivity() {
                     listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL).forEach { dialog.getButton(it).isEnabled = true }
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).text = MoteI18n.text("保存来源设置")
                     result.onSuccess { dialog.dismiss(); operationStatus = MoteI18n.text("来源已保存，正在等待后台扫描"); render() }
-                        .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
+                        .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，重试；已保存内容不会丢失")) }
                 }
-            } catch (error: Exception) { toast(if (error is IllegalArgumentException) error.message ?: MoteI18n.text("请检查来源设置") else MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
+            } catch (error: Exception) { toast(if (error is IllegalArgumentException) error.message ?: MoteI18n.text("检查来源设置") else MoteI18n.text("保存或调度失败，重试；已保存内容不会丢失")) }
         } }
         dialog.show()
     }

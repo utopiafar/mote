@@ -61,7 +61,7 @@ class ConnectionActivity : MoteActivity() {
                 }) { result ->
                     if (applying) return@start
                     result.onSuccess { (config, id) -> currentConfig = config; deviceId = id; refreshCurrentNode() }
-                        .onFailure { currentNode.text = MoteI18n.text("读取当前连接失败，请重新打开此页重试") }
+                        .onFailure { currentNode.text = MoteI18n.text("读取当前连接失败，重新打开此页重试") }
                 }
             }
             handler.postDelayed(this, 500)
@@ -79,7 +79,7 @@ class ConnectionActivity : MoteActivity() {
             administration.initialConnection(applicationContext)
         }) { result ->
             result.onSuccess { initial -> currentConfig = initial.config; deviceId = initial.deviceId; buildUi(initial) }
-                .onFailure { label.text = MoteI18n.text("无法读取已保存连接，请检查本机存储后重试") }
+                .onFailure { label.text = MoteI18n.text("无法读取已保存连接，检查本机存储后重试") }
         }
     }
     private fun buildUi(initial: AdministrationConnection.Initial) {
@@ -87,7 +87,6 @@ class ConnectionActivity : MoteActivity() {
         val root = moteDetailPage(title = MoteI18n.text("连接你的 Mote"),onBack = { onBackPressed() })
         fun text(value: String, size: Float = MoteTheme.fontBody.toFloat()) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); setPadding(0, moteDp(MoteTheme.spaceInline), 0, moteDp(MoteTheme.spaceInline)) }.also(root::addView)
         fun button(label: String, primary: Boolean = false, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { if (!working && !task.busy) runCatching(action).onFailure { showFailure(it) } } }, primary).also(root::addView)
-        text(MoteI18n.text("先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，请勿分享。"))
         currentNode = text(""); refreshCurrentNode()
         button(MoteI18n.text("复制本设备 ID")) { getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Mote device ID", deviceId)); Toast.makeText(this, MoteI18n.text("已复制设备 ID，不含凭据"), Toast.LENGTH_SHORT).show() }
         text(MoteI18n.text("设备名称"))
@@ -221,8 +220,8 @@ class ConnectionActivity : MoteActivity() {
         }
         pendingRow.addView(pendingCountView)
         reviewForm.addView(pendingRow)
-        reviewText(MoteI18n.text("这台设备将可以访问你的全部资料和设置。\n新保存的记录将按当前发送设置同步到这里。"),NativeFontRole.SUPPORT)
-        val consent = reviewText(MoteI18n.text("将使用已有设备 ID 和当前采集设置，不会清空设置、队列或模型。首次连接会把尚未绑定的本机资料绑定到此节点；已绑定其他节点的待同步资料不能改投。"),NativeFontRole.SUPPORT)
+        reviewText(MoteI18n.text("此设备可访问全部资料与设置"),NativeFontRole.SUPPORT)
+        val consent = reviewText(MoteI18n.text("使用现有设备 ID 连接此节点"),NativeFontRole.SUPPORT)
         consent.textSize = 11f
         val reviewActions = SecondaryUi.actions(reviewForm)
         reviewActions.addView(confirmAction,android.view.ViewGroup.MarginLayoutParams(-2,-2))
@@ -296,7 +295,7 @@ class ConnectionActivity : MoteActivity() {
         }
     }
     private fun refreshCurrentNode() {
-        currentNode.text = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。", currentConfig.server.ifBlank { MoteI18n.text("尚未配置") }, deviceId)
+        currentNode.text = MoteI18n.text("当前节点：{0}\n设备 ID：{1}", currentConfig.server.ifBlank { MoteI18n.text("尚未配置") }, deviceId)
     }
     override fun onResume() { super.onResume(); refreshRequested = true; handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
@@ -368,7 +367,7 @@ class ConnectionActivity : MoteActivity() {
                 if (SourceRules.hash(currentConfig.toString()) != expected.stamp) { showFailure(SettingsChangedFailure()); return@onSuccess }
                 input.setText(raw); parsed = invite
                 preview.visibility = View.VISIBLE; confirmAction.visibility = View.VISIBLE
-                preview.text = MoteI18n.text("将连接：{0}\n有效至：{1}\n请确认后连接。", invite.serverUrl, invite.expiresAt)
+                preview.text = MoteI18n.text("将连接：{0}\n有效至：{1}\n确认后连接", invite.serverUrl, invite.expiresAt)
                 status.text = MoteI18n.text("连接文件已解析，尚未联网。")
                 showReview()
             }.onFailure(::showFailure)

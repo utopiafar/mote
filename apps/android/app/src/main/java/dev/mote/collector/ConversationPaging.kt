@@ -9,8 +9,8 @@ import org.json.JSONObject
 internal object ConversationPaging {
     fun merge(current: JSONObject, older: JSONObject): JSONObject {
         val id = current.getString("id")
-        require(older.getString("id") == id) { MoteI18n.text("对话状态已变化，请重新读取后继续。") }
-        require(current.opt("revision") == older.opt("revision")) { MoteI18n.text("对话状态已变化，请重新读取后继续。") }
+        require(older.getString("id") == id) { MoteI18n.text("对话状态已变化，重新读取后继续") }
+        require(current.opt("revision") == older.opt("revision")) { MoteI18n.text("对话状态已变化，重新读取后继续") }
         val currentTurns = current.optJSONArray("turns") ?: JSONArray()
         val known = mutableSetOf<String>()
         for (index in 0 until currentTurns.length()) known.add(currentTurns.getJSONObject(index).getString("id"))

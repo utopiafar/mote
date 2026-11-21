@@ -307,8 +307,8 @@ internal class LibraryCaptureView(
                     pages++; render()
                     if (pages < restorePages && (localMore || remoteMore)) load() else restoreAnchor()
                 }.onFailure {
-                    readState.localFailed(readEpoch, LibraryReadState.Stream.CAPTURES, MoteI18n.text("资料暂不可读取，请稍后重试。"))
-                    status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = true; render()
+                    readState.localFailed(readEpoch, LibraryReadState.Stream.CAPTURES, MoteI18n.text("资料暂不可读取，稍后重试"))
+                    status.text = MoteI18n.text("资料暂不可读取，稍后重试"); more.isEnabled = true; render()
                 }
             } else { projection.clear(); files = emptyList(); render(); refreshPending = true }
             if (refreshPending) { refreshPending = false; incrementalPending = false; refresh() }
@@ -378,8 +378,8 @@ internal class LibraryCaptureView(
                     }
                     render(); restoreAnchor()
                 }.onFailure {
-                    readState.localFailed(readEpoch, LibraryReadState.Stream.CAPTURES, MoteI18n.text("资料暂不可读取，请稍后重试。"))
-                    status.text = MoteI18n.text("资料暂不可读取，请稍后重试。"); more.isEnabled = localMore || remoteMore; render()
+                    readState.localFailed(readEpoch, LibraryReadState.Stream.CAPTURES, MoteI18n.text("资料暂不可读取，稍后重试"))
+                    status.text = MoteI18n.text("资料暂不可读取，稍后重试"); more.isEnabled = localMore || remoteMore; render()
                 }
             } else { projection.clear(); files = emptyList(); render(); refreshPending = true }
             if (refreshPending) { refreshPending = false; incrementalPending = false; refresh() }

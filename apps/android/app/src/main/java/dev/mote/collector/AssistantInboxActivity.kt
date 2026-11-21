@@ -61,7 +61,7 @@ class AssistantInboxActivity : MoteActivity() {
             SecondaryUi.text(body, when {
                 !availability.active -> availability.reason.orEmpty()
                 selected.client == null -> MoteI18n.text("先登录中央，各页面会共用这次登录")
-                selected.server != origin -> MoteI18n.text("登录会话已变更，请重新打开中央页面。")
+                selected.server != origin -> MoteI18n.text("登录会话已变更，重新打开中央页面")
                 else -> MoteI18n.text("请求的资源不存在或已删除。")
             }); return
         }
@@ -73,7 +73,7 @@ class AssistantInboxActivity : MoteActivity() {
             body.removeAllViews()
             val current = CentralAccess.resolve(this)
             if (current.server != origin || current.generation != selected.generation || current.client == null || !SystemEntriesPlugin.availability(this).active) {
-                SecondaryUi.text(body, MoteI18n.text("登录会话已变更，请重新打开中央页面。")); return@start
+                SecondaryUi.text(body, MoteI18n.text("登录会话已变更，重新打开中央页面")); return@start
             }
             button("刷新") { load() }
             result.onSuccess { value ->
@@ -93,7 +93,7 @@ class AssistantInboxActivity : MoteActivity() {
                         if (cursor != null) button("返回") { showInbox() }
                     }
                 }
-            }.onFailure { error -> SecondaryUi.text(body, if (error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。")) }
+            }.onFailure { error -> SecondaryUi.text(body, if (error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，检查网络")) }
             MoteUi.styleTree(body)
         }
     }

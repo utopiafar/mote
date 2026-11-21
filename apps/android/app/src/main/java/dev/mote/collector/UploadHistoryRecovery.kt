@@ -9,7 +9,7 @@ internal object UploadHistoryRecovery {
         private set
     fun title() = MoteI18n.text("上传历史") + " · " + MoteI18n.text("本机存储恢复失败")
     fun message() = title() + "。 " +
-        MoteI18n.text("同步失败，本地记录已保留") + "。 " + MoteI18n.text("请稍后重试")
+        MoteI18n.text("同步失败，本地记录已保留") + "。 " + MoteI18n.text("稍后重试")
     fun report(context: Context) {
         unavailable = true
         Settings(context).syncStatus("error", message())

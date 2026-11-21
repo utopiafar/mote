@@ -272,7 +272,7 @@ internal class AssistantWorkbench(private val screens: CentralScreens) {
             val raw = result.getOrNull()
             if (raw == null) {
                 section.removeAllViews()
-                ui.text(result.exceptionOrNull()?.message ?: MoteI18n.text("中央响应格式无效，请刷新后重试。"), parent = section)
+                ui.text(result.exceptionOrNull()?.message ?: MoteI18n.text("中央响应格式无效，刷新后重试"), parent = section)
                 ui.button(MoteI18n.text("刷新"), parent = section) { readActions(section, view, matterId) }
                 return@work
             }
@@ -280,7 +280,7 @@ internal class AssistantWorkbench(private val screens: CentralScreens) {
                 renderActions(section, view, matterId, AssistantActionResultsReader.readPage(raw))
             } catch (error: Exception) {
                 section.removeAllViews()
-                ui.text(MoteI18n.text("中央响应格式无效，请刷新后重试。"), parent = section)
+                ui.text(MoteI18n.text("中央响应格式无效，刷新后重试"), parent = section)
                 ui.button(MoteI18n.text("刷新"), parent = section) { readActions(section, view, matterId) }
             }
         }
@@ -302,8 +302,8 @@ internal class AssistantWorkbench(private val screens: CentralScreens) {
                 val linked = item.linked
                 if (linked != null) {
                     ui.text(MoteI18n.text(AssistantActionResultsReader.statusLabel(linked.status)), NativeFontRole.SUPPORT, card)
-                    if (linked.status == "uncertain") ui.text(MoteI18n.text("保存结果待核实，请刷新检查结果，避免重复发送。"), parent = card)
-                    if (linked.status == "stale") ui.text(MoteI18n.text("这份建议暂不能确认，请查看当前原文。"), parent = card)
+                    if (linked.status == "uncertain") ui.text(MoteI18n.text("保存结果待核实，刷新检查结果，避免重复发送"), parent = card)
+                    if (linked.status == "stale") ui.text(MoteI18n.text("这份建议暂不能确认，查看当前原文"), parent = card)
                     linked.error?.let { ui.text(it, parent = card) }
                     ui.button(MoteI18n.text("查看行动建议"), parent = card) {
                         val intent = Intent(ui.hostActivity(), CalendarActionsActivity::class.java)

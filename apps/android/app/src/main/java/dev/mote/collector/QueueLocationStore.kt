@@ -32,13 +32,13 @@ class QueueLocationStore(private val control: File, private val initialDirectory
     private fun identified(location: QueueLocation): File {
         validate(location)
         val directory = File(location.path)
-        check(directory.isDirectory && !java.nio.file.Files.isSymbolicLink(directory.toPath())) { MoteI18n.text("所选存储位置不可用，请重新连接该存储介质") }
+        check(directory.isDirectory && !java.nio.file.Files.isSymbolicLink(directory.toPath())) { MoteI18n.text("所选存储位置不可用，重新连接该存储介质") }
         check(File(directory, IDENTITY).readText(Charsets.UTF_8) == location.id) { MoteI18n.text("存储目录不匹配，已保留原选择和数据") }
         return directory
     }
     private fun load(): QueueLocation {
         if (pointer.exists()) return QueueLocation.parse(read(pointer)).also(::identified)
-        check(!journal.exists()) { MoteI18n.text("存储恢复记录存在，但位置指针缺失，请保留应用数据") }
+        check(!journal.exists()) { MoteI18n.text("存储恢复记录存在，但位置指针缺失，保留应用数据") }
         check(initialDirectory.isDirectory || initialDirectory.mkdirs()) { MoteI18n.text("无法创建本机存储目录") }
         check(!java.nio.file.Files.isSymbolicLink(initialDirectory.toPath())) { MoteI18n.text("存储目录不可为符号链接") }
         LocalDataFormat.requireCurrent(initialDirectory)
@@ -50,7 +50,7 @@ class QueueLocationStore(private val control: File, private val initialDirectory
     }
     fun selected(): QueueLocation = if (pointer.exists()) QueueLocation.parse(read(pointer)) else current()
     fun current(): QueueLocation { recover(); return load() }
-    fun assertCurrent(expected: QueueLocation) { check(load() == expected) { MoteI18n.text("存储位置已更新，请重试此操作") } }
+    fun assertCurrent(expected: QueueLocation) { check(load() == expected) { MoteI18n.text("存储位置已更新，重试此操作") } }
     fun migrate(baseId: String, base: File, progress: (String) -> Unit = {}): QueueLocation {
         progress(MoteI18n.text("正在检查原存储完整性")); recover(); val source = load()
         if (source.baseId == baseId) return source
@@ -114,7 +114,7 @@ class QueueLocationStore(private val control: File, private val initialDirectory
                 runCatching { removeOwned(source); check(journal.delete()); syncDirectory(control) }
             }
             source -> { identified(source); runCatching { removeOwned(target); check(journal.delete()) } }
-            else -> error(MoteI18n.text("存储迁移状态不一致，请保留应用数据"))
+            else -> error(MoteI18n.text("存储迁移状态不一致，保留应用数据"))
         }
     }
     private fun removeOwned(location: QueueLocation) {

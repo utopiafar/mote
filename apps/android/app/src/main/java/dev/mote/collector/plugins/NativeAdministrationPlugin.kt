@@ -471,7 +471,7 @@ internal class ConnectionServicesSection(
 
     private fun confirmRemove(service: ConnectionService) {
         MoteDialogBuilder(activity).setTitle(MoteI18n.text("移除连接"))
-            .setMessage(MoteI18n.text("停止此连接的后续访问，已归档资料保留。再次接入需要生成新配置。"))
+            .setMessage(MoteI18n.text("停止此连接，归档保留"))
             .setNegativeButton(MoteI18n.text("取消"), null)
             .setPositiveButton(MoteI18n.text("移除")) { _, _ ->
                 Thread {

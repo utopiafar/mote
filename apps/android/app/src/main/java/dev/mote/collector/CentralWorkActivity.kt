@@ -79,7 +79,6 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
             val page = result.getOrThrow()
             clear("list:$state:$cursor")
             text(MoteI18n.text("活动"), NativeFontRole.TITLE_MOBILE)
-            text(MoteI18n.text("这里是 Mote 的后台工作：理解资料、导入、整理记忆与生成洞察。手机和电脑的应用使用情况在「资料库 → 应用活动」。"))
             val filters = LinearLayout(ui)
             listOf("active" to "进行中", "attention" to "需要处理", "completed" to "最近完成").forEach { (key, label) ->
                 val action = button(MoteI18n.text(label), parent = filters) {
@@ -200,7 +199,6 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
         related(work)
     }
     private fun branches(work: JSONObject) {
-        text(MoteI18n.text("每个分支按自己的输入范围推进；完成状态由实际执行记录确认。"))
         val branches = work.optJSONArray("branches") ?: JSONArray()
         if (work.optJSONObject("branchCounts")?.optInt("total") == 0) text(MoteI18n.text("这项工作直接推进，目前没有独立分支。"))
         for (index in 0 until branches.length()) branches.getJSONObject(index).let { branch ->
@@ -304,7 +302,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
                 renderQuestions(workId, section, items)
             } catch (error: Exception) {
                 section.removeAllViews()
-                text(MoteI18n.text("中央响应格式无效，请刷新后重试。"), parent = section)
+                text(MoteI18n.text("中央响应格式无效，刷新后重试"), parent = section)
             }
         }
     }
@@ -366,7 +364,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
         val body = try {
             OwnerQuestionModel.reply(requestId, question, action, answer, choiceId)
         } catch (error: IllegalArgumentException) {
-            ui.notice(MoteI18n.text("这个问题已更新，请查看最新内容后再回答。"))
+            ui.notice(MoteI18n.text("这个问题已更新，查看最新内容后再回答"))
             return
         }
         val api = screens.client
@@ -378,7 +376,7 @@ internal class CentralWorkActivity(private val screens: CentralScreens) {
         }) { raw ->
             if (raw == null) {
                 questionAttempts.remove(question.id)
-                ui.notice(MoteI18n.text("这个问题已更新，请查看最新内容后再回答。"))
+                ui.notice(MoteI18n.text("这个问题已更新，查看最新内容后再回答"))
                 detail(workId)
                 return@work
             }
