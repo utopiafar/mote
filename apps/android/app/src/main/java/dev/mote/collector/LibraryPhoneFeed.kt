@@ -8,9 +8,9 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.UUID
 
-/** One validated archive row the home renders and opens. Central fields are
+/** A validated original for the dated phone list. Central fields are
  * untrusted: a malformed row fails the read instead of reaching the UI. */
-internal object HomeFeed {
+internal object LibraryPhoneFeed {
     /** A single recent original: identity, local day and the row payload the
      * shared reader re-reads before display. */
     class Original(
@@ -29,7 +29,7 @@ internal object HomeFeed {
 
     class Day(val label: String, val items: List<Original>)
 
-    /** The home reads one bounded page of existing originals; it never generates content. */
+    /** The original archive projection reads one bounded page of existing originals; it never generates content. */
     fun page(read: (String) -> JSONObject): List<Original> {
         val rows = read("/api/capture-browser?limit=30").getJSONArray("items")
         return (0 until rows.length()).map { original(rows.getJSONObject(it)) }
