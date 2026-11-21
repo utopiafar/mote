@@ -271,7 +271,7 @@ class PluginStageInstrumentedTest {
 
     private fun awaitAskPage(): Activity = onTop("the Ask page is ready") { activity ->
         shown(activity).filterIsInstance<TextView>()
-            .any { it.tag == "central-title" && it.text.toString() == MoteI18n.text("问一问") }
+            .any { it.tag == "central-title" && it.text.toString() == MoteI18n.text("聊天") }
     }
 
     private fun awaitAskComposer(): Activity = onTop("the main conversation and its composer are ready") { activity ->
