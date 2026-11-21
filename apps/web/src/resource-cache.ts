@@ -1,5 +1,19 @@
+import type {NavRevisionKey,NavState} from '@mote/shared';
 import {ApiError,type Api} from './api';
 export type ResourceSnapshot<T>={data?:T;error?:unknown;loading:boolean};
+
+/** Which cached reads belong to each owner-visible navigation revision. A
+ * revision change retires only that collection; unrelated pages keep their
+ * in-memory data until a later revision actually names them. */
+const navResourceMatchers:Record<NavRevisionKey,(key:string)=>boolean>={
+ library:key=>/^\/api\/(library(\/|\?|$)|capture-browser(\/|\?|$)|captures(\/|\?|$)|materials(\/|\?|$)|files(\/|\?|$)|activity(\/|\?|$)|work-activity(\/|\?|$)|source-items(\/|\?|$)|sources\/|imports(\/|\?|$)|agent-view\/(materials|material-read|source-items)(\/|\?|$))/.test(key),
+ cards:key=>/^\/api\/(assistant-cards|assistant-notifications)(\/|\?|$)/.test(key),
+ commitments:key=>/^\/api\/(assistant\/(commitments|goals)|todos)(\/|\?|$)/.test(key),
+ matters:key=>/^\/api\/(assistant\/(matters|routines|workbench|tasks)|actions)(\/|\?|$)/.test(key),
+ memory:key=>/^\/api\/(memories|memory-jobs|memory-spaces|memory-recipes|memory-integrations|context-trees)(\/|\?|$)/.test(key),
+ sources:key=>/^\/api\/(sources|connections|connectors|source-connectors|discovery)(\/|\?|$)/.test(key),
+ plugins:key=>/^\/api\/(plugins|plugin-instances|plugin-center)(\/|\?|$)/.test(key),
+};
 /** Read resources belong to one authenticated Api instance. Aborted generations
  * cannot publish, even when the underlying transport ignores cancellation. */
 export class Resource<T>{
@@ -33,6 +47,21 @@ export class ResourceCache {
 }
 const caches=new WeakMap<Api,ResourceCache>();
 export function resources(api:Api){let cache=caches.get(api);if(!cache){cache=new ResourceCache(api);caches.set(api,cache);}return cache;}
+
+/** Compare the two navigation snapshots and pick the collections whose opaque
+ * revision strings changed. The first snapshot only establishes the baseline. */
+export function changedNavigationRevisions(previous:NavState|undefined,next:NavState):NavRevisionKey[]{
+ return (Object.keys(navResourceMatchers) as NavRevisionKey[]).filter(key=>!previous||previous.revisions[key]!==next.revisions[key]);
+}
+/** One visible NV2 read both updates badges and retires exactly the cached
+ * reads owned by changed collections. A failed read retires nothing. */
+export function invalidateNavigationResources(api:Api,previous:NavState|undefined,next:NavState):NavRevisionKey[]{
+ const changed=changedNavigationRevisions(previous,next);
+ if(changed.length)resources(api).invalidate(key=>changed.some(name=>navResourceMatchers[name](key)));
+ return changed;
+}
+/** Imports and captures only replace material-facing reads. */
+export function invalidateLibraryResources(api:Api){resources(api).invalidate(navResourceMatchers.library);}
 
 /** Event-driven reads share the same generation as mounted views. Each caller
  * releases its subscription on cancellation, without cancelling other readers. */

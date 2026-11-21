@@ -95,10 +95,12 @@ test('NV3-03 one visible poll updates badges and revisions, and zero removes the
     badges:{ideas:3,connections:true},
   };
   const reads:string[]=[];
-  const api={request:async(path:string,init:RequestInit)=>{
+  const api={raw:async(path:string,init:RequestInit={})=>{
     reads.push(path);
     assert.equal(init.method,undefined);
-    return server;
+    const body=JSON.stringify(server),etag='"'+server.revisions.cards+':'+server.revisions.library+'"';
+    if((init.headers as Record<string,string>|undefined)?.['If-None-Match']===etag)return new Response(null,{status:304,headers:{ETag:etag}});
+    return new Response(body,{status:200,headers:{ETag:etag}});
   }} as Api;
   function PageRevision(){
     return React.createElement('output',{'data-revision':useContext(NavStateContext)?.revisions.cards});
