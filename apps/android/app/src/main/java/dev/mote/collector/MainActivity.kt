@@ -90,7 +90,7 @@ class MainActivity : MoteActivity() {
     private var localBadgeObserver: (() -> Unit)? = null
     private var renderedTabs: String? = null
     private var currentTabs: List<MoteNavItem> = emptyList()
-    private lateinit var homeRecordingBar: HomeRecordingBar
+    private lateinit var statusStrip: StatusStrip
     private lateinit var todaySummary: TextView
     private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
     private lateinit var manageSendSwitch: MoteComponents.MoteSwitch
@@ -198,7 +198,7 @@ class MainActivity : MoteActivity() {
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connectionTitle: String, val connection: String,
         val media: String, val config: CollectorConfig?, val syncQueue: String, val syncPolicy: String, val syncFacts: String, val captureAttention: Boolean,
-        val notice: HomeNotice?)
+        val hasDraft: Boolean)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); loadSourceRows(); refreshBadges(); handler.postDelayed(this, 2000) }
     }
@@ -268,9 +268,9 @@ class MainActivity : MoteActivity() {
             text = MoteI18n.text("保存设置"); setOnClickListener { saveConfig() }
         }, true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(12) })
         root.footer(saveBar)
-        homeRecordingBar = HomeRecordingBar(this) { openRecordEditor() }
-        root.footer(homeRecordingBar)
-        homeRecordingBar.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+        statusStrip = StatusStrip(this) { openRecordEditor() }
+        root.footer(statusStrip)
+        statusStrip.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(10)
         }
         navigationCatalog = MoteNavCatalog.fromAssets(assets)
@@ -1738,32 +1738,6 @@ class MainActivity : MoteActivity() {
         }
     }
 
-    /** The row opens the place that explains the state; its one action repairs it. */
-    private fun openHomeNotice(notice: HomeNotice) {
-        when (val operation = notice.operation) {
-            HomeNotice.Operation.Connect -> openConnection()
-            is HomeNotice.Operation.Capture -> when (operation.operation) {
-                CaptureStatusOperation.RECONNECT -> openConnection()
-                CaptureStatusOperation.RESUME_SEND, CaptureStatusOperation.OPEN_SYNC -> startActivity(Intent(this, SyncQueueActivity::class.java))
-                else -> startActivity(Intent(this, CaptureStatusActivity::class.java))
-            }
-        }
-    }
-
-    private fun runHomeNotice(notice: HomeNotice) {
-        when (val operation = notice.operation) {
-            HomeNotice.Operation.Connect -> openConnection()
-            is HomeNotice.Operation.Capture -> when (operation.operation) {
-                CaptureStatusOperation.RESUME_CAPTURE -> runCaptureAction(CaptureOverview.Action.RESUME)
-                CaptureStatusOperation.RESUME_SEND, CaptureStatusOperation.OPEN_SYNC -> startActivity(Intent(this, SyncQueueActivity::class.java))
-                CaptureStatusOperation.RECONNECT -> openConnection()
-                CaptureStatusOperation.RESTART_CAPTURE -> runCaptureAction(CaptureOverview.Action.RESTART)
-                CaptureStatusOperation.OPEN_PERMISSIONS -> showPage(Page.PERMISSIONS)
-                CaptureStatusOperation.OPEN_STORAGE -> showPage(Page.STORAGE)
-            }
-        }
-    }
-
     private fun openConnection() {
         startActivity(Intent(this, ConnectionActivity::class.java).putExtra("firstUse", firstUse))
     }
@@ -1841,6 +1815,7 @@ class MainActivity : MoteActivity() {
                 result.onSuccess { snapshot ->
                     snapshot.config?.let { if (!applyingSettings && it != loadedConfig) reloadSettings(it) }
                     if (!applyingSettings && settingsSummaries.readResult(summaryToken, snapshot.config?.settingsSummary())) renderSettingsSummaries()
+                    if (::statusStrip.isInitialized) statusStrip.setDraft(snapshot.hasDraft)
                     homeSyncDetailStatus.text = snapshot.syncFacts
                     homeSyncRate.text = MoteI18n.text("上传速率") + " · " + UploadMeter.label()
                     refreshManageMenu()
@@ -1926,43 +1901,8 @@ class MainActivity : MoteActivity() {
             else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
         }
         val captureState = state + if (c?.screenCollectionEnabled == true && settings.enabled) "\n" + MoteI18n.text("屏幕采集：{0}", settings.screenStatus()) else ""
-        val notice = c?.let { config ->
-            val interrupted = (settings.enabled && (config.screenCollectionEnabled || config.observesSystem()) && !live && !missingSource) ||
-                (!settings.enabled && settings.state() in setOf("permission_required", "error"))
-            val screenPausedAt = settings.screenPausedAt()?.takeIf { !config.screenCollectionEnabled }
-            // The shared row treats `captureLive` as a running capture service: a screen-only pause keeps it true.
-            val captureServiceLive = CaptureAccessibilityService.connected || ProjectionService.running || MediaCollectionService.connected || screenPausedAt != null
-            runCatching {
-                HomeNotice.from(CaptureStatusFacts(
-                    connection = when {
-                        config.hasSyncConnection() -> CaptureConnection.CONNECTED
-                        config.server.isNotBlank() && config.token.isNotBlank() -> CaptureConnection.RECONNECT
-                        else -> CaptureConnection.UNCONFIGURED
-                    },
-                    captureEnabled = settings.enabled || interrupted,
-                    captureLive = captureServiceLive,
-                    screenPausedAt = screenPausedAt?.let { Instant.ofEpochMilli(it).toString() },
-                    permission = if (missingSource) CapturePermission.MISSING else null,
-                    interrupted = interrupted,
-                    syncState = when {
-                        !config.hasSyncConnection() -> CaptureSyncState.UNCONFIGURED
-                        config.syncPaused -> CaptureSyncState.PAUSED
-                        local.error != null || (local.active?.blocked ?: 0) > 0 -> CaptureSyncState.BLOCKED
-                        settings.syncState() == "error" -> CaptureSyncState.ERROR
-                        settings.syncState() == "uploading" -> CaptureSyncState.UPLOADING
-                        settings.syncState() == "waiting" -> CaptureSyncState.WAITING
-                        settings.syncState() == "paused" -> CaptureSyncState.PAUSED
-                        else -> CaptureSyncState.IDLE
-                    },
-                    pending = local.pending,
-                )).let { notice ->
-                    if (notice?.titleKey == "屏幕采集已暂停" && screenPausedAt != null)
-                        notice.copy(detail = CaptureOverview.since(screenPausedAt, Instant.now(), ZoneId.systemDefault()))
-                    else notice
-                }
-            }.getOrNull()
-        }
-        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, false), notice)
+        val hasDraft = runCatching { recordDraftStore().draft() }.getOrNull()?.let { StatusStripPolicy.hasDraft(it) } ?: false
+        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, false), hasDraft)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
@@ -2184,7 +2124,7 @@ class MainActivity : MoteActivity() {
         if (page in dailyTabPages) lastTabPage = page
         MoteNavigation.tabId(page.name)?.let { selectedTabId = it }
         if (::tabBar.isInitialized) tabBar.select(selectedTabId)
-        if (::homeRecordingBar.isInitialized) homeRecordingBar.setHome(false)
+        if (::statusStrip.isInitialized) statusStrip.setTab(if (page in dailyTabPages) MoteNavigation.tabId(page.name) else null)
         val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
         val centralOwned = page == Page.ASK || page == Page.ACTIVITY || (page in centralTabPages && page !in placeholderTabs)
         homeHeader.visibility = if (centralOwned) View.GONE else View.VISIBLE
