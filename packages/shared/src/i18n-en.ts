@@ -106,7 +106,6 @@ export const english: Readonly<Record<string, string>> = {
   "前往插件中心": "Open Plugin center",
   "自动记忆的开关、当前方案和处理节奏在同一设置中管理。": "Manage automatic memory, the current plan and processing cadence in one place.",
   "没有连上中央": "Not connected to Central",
-  "继续问": "Ask again",
   "第 {0} 行": "Row {0}",
   "网页": "Web",
   "截图与照片": "Screenshots and photos",
@@ -4325,7 +4324,6 @@ export const english: Readonly<Record<string, string>> = {
   "未豁免": "Not exempted",
   "上传速率": "Upload speed",
   "发送": "Send",
-  "停止回答": "Stop answer",
   "保守去重": "Conservative deduplication",
   "均衡去重": "Balanced deduplication",
   "激进去重": "Aggressive deduplication",
@@ -5366,7 +5364,6 @@ export const english: Readonly<Record<string, string>> = {
   "先选择应用范围，再按需授权": "Choose apps, then grant permissions as needed",
   "离线也能留下想法与片段": "Save ideas and snippets offline",
   "正在保存发送状态…": "Saving sending status…",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Central questions are unavailable. Connect to ask about processed content. Files and quick notes can still be saved locally.",
   "恢复这个来源": "Resume this source",
   "读取范围：{0}": "Read scope: {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Central archive disconnected: save the task locally, then confirm sending scope when connecting.",
@@ -7694,5 +7691,8 @@ export const english: Readonly<Record<string, string>> = {
   "相关资料": "Related materials",
   "事项状态暂不可用": "Matter state unavailable",
   "事项已变化，需重新读取": "Matter changed; reload",
-  "目标数据无法读取": "Goal data unavailable"
+  "目标数据无法读取": "Goal data unavailable",
+  "已记下": "Saved",
+  "语音输入": "Voice input",
+  "语音输入不可用": "Voice input unavailable"
 };

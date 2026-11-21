@@ -26,6 +26,12 @@ internal object NativeAskPlugin {
 
     fun requirement() = NativeRequirement(CAPABILITY, API_VERSION)
 
+    internal fun localChat(context: Context): NativeAskLocalChat {
+        val app = context.applicationContext
+        LocalDataFormat.requireCurrent(app)
+        return NativeAskLocalChat(CentralStateFile(File(app.noBackupFilesDir, "central-native/local-chat"), "chat", app.secretBox()))
+    }
+
     /** The one application-scoped Ask owner. Its draft journal is keyed by the
      * Central origin directory, so a connection change never mixes drafts. */
     internal fun owner(context: Context): NativeAskOwner {
