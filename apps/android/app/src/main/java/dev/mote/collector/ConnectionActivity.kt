@@ -220,8 +220,8 @@ class ConnectionActivity : MoteActivity() {
         }
         pendingRow.addView(pendingCountView)
         reviewForm.addView(pendingRow)
-        reviewText(MoteI18n.text("此设备可访问全部资料与设置"),NativeFontRole.SUPPORT)
-        val consent = reviewText(MoteI18n.text("使用现有设备 ID 连接此节点"),NativeFontRole.SUPPORT)
+        reviewText(MoteI18n.text("这台设备将可以访问你的全部资料和设置。\n新保存的记录将按当前发送设置同步到这里。"),NativeFontRole.SUPPORT)
+        val consent = reviewText(MoteI18n.text("将使用已有设备 ID 和当前采集设置，不会清空设置、队列或模型。首次连接会把尚未绑定的本机资料绑定到此节点；已绑定其他节点的待同步资料不能改投。"),NativeFontRole.SUPPORT)
         consent.textSize = 11f
         val reviewActions = SecondaryUi.actions(reviewForm)
         reviewActions.addView(confirmAction,android.view.ViewGroup.MarginLayoutParams(-2,-2))
