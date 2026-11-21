@@ -76,6 +76,10 @@ function FeedContent({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
   const loading=read.loading&&read.data===undefined;
   const categories=read.error===undefined?read.data?.categories??[]:[];
 
+  useEffect(()=>{
+    if(category&&read.data&&!read.data.categories.some(entry=>entry.name===category))setCategory(undefined);
+  },[category,read.data]);
+
   const open=async(item:FeedItem)=>{
     setCommandError('');
     if(item.kind==='discovery'){
