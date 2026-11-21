@@ -1,4 +1,4 @@
-import {goalsViewSchema,pageHash,type AboutRef,type GoalGroup,type GoalItem,type GoalsView,type Matter} from '@mote/shared';
+import {goalsViewSchema,pageHash,type AboutRef,type GoalGroup,type GoalItem,type GoalsView,type Matter,type MatterTemplate} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {Ban,Check,FileText,MessageCircle,Plus,X} from 'lucide-react';
 import React,{useContext,useEffect,useMemo,useRef,useState} from 'react';
@@ -21,7 +21,8 @@ type Section='theirs'|'mine'|'unconfirmed';
 
 const emptyDraft=():Draft=>({title:'',due:''});
 const itemCount=(group:GoalGroup)=>group.theirs.length+group.mine.length+group.unconfirmed.length;
-const matterHref=(id:string)=>'#/assistant/workbench?'+new URLSearchParams({matter:id});
+const templateLabels:Record<MatterTemplate,string>={project:'项目',travel:'旅行',reading:'阅读'};
+const matterHref=(id:string,template:MatterTemplate)=>'#/assistant/workbench?'+new URLSearchParams({matter:id,...(template==='project'?{}:{template})});
 const libraryHref=(id:string)=>pageHash('library',{matter:id});
 const groupTitle=(group:GoalGroup)=>group.key.kind==='matter'?group.key.title:group.key.kind==='person'?group.key.name:moteText('其他');
 const groupId=(group:GoalGroup)=>group.key.kind==='matter'?'matter:'+group.key.id:group.key.kind==='person'?'person:'+group.key.name:'none';
@@ -134,8 +135,9 @@ export function GoalsPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
   };
   const head=(group:GoalGroup)=>{
     const matter=group.key.kind==='matter'?matters.get(group.key.id):undefined;
+    const template=matter?.template??(group.key.kind==='matter'?group.key.template:undefined)??'project';
     return <header className="goals-group-head">
-      {group.key.kind==='matter'?<a className="goals-group-title" href={matterHref(group.key.id)}>{groupTitle(group)}</a>:<h2 className="goals-group-title">{groupTitle(group)}</h2>}
+      {group.key.kind==='matter'?<a className="goals-group-title" href={matterHref(group.key.id,template)}>{groupTitle(group)}</a>:<h2 className="goals-group-title">{groupTitle(group)}</h2>}
       <span className="goals-count">{moteText('{0} 件',itemCount(group))}</span>
       {matter&&<div className="goals-group-actions">
         <a className="goals-icon-link" aria-label={moteText('去聊')} title={moteText('去聊')} href={chatHref({kind:'matter',id:matter.id})}><MessageCircle size={17} aria-hidden="true"/></a>
@@ -144,6 +146,12 @@ export function GoalsPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
           <summary>{moteText('更多')}</summary>
           <div className="goals-menu-list">
             <button type="button" className="text-button" disabled={busy} onClick={()=>{setCommandError('');setEdit({matterId:matter.id,revision:matter.revision,goal:matter.goal});}}>{moteText('编辑')}</button>
+            <label className="goals-template">{moteText('模板')}
+              <select aria-label={moteText('模板')} value={matter.template} disabled={busy}
+                onChange={event=>void run('/api/assistant/matter-commands',{type:'edit',matterId:matter.id,expectedRevision:matter.revision,template:event.target.value as MatterTemplate})}>
+                {(['project','travel','reading'] as const).map(value=><option key={value} value={value}>{moteText(templateLabels[value])}</option>)}
+              </select>
+            </label>
             <button type="button" className="text-button" disabled={busy} onClick={()=>void run('/api/assistant/matter-commands',{type:'pause',matterId:matter.id,expectedRevision:matter.revision})}>{moteText('暂停')}</button>
             <button type="button" className="text-button" disabled={busy} onClick={()=>void run('/api/assistant/matter-commands',{type:'archive',matterId:matter.id,expectedRevision:matter.revision})}>{moteText('归档')}</button>
           </div>
@@ -227,6 +235,8 @@ a.goals-group-title:hover { text-decoration:underline; text-underline-offset:4px
 .goals-menu summary::-webkit-details-marker { display:none; }
 .goals-menu[open] summary { color:var(--mote-ink); }
 .goals-menu-list { position:absolute; right:0; z-index:5; display:grid; gap:2px; min-width:128px; padding:6px; border:1px solid var(--mote-border); border-radius:var(--mote-radius-control); background:var(--mote-surface); box-shadow:var(--mote-shadow); }
+.goals-template { display:grid; gap:4px; color:var(--mote-muted); font-size:var(--mote-font-meta); }
+.goals-template select { font:inherit; color:var(--mote-ink); }
 .goals-section { margin-top:16px; padding-top:8px; border-top:1px solid var(--mote-hair); }
 .goals-section:first-of-type { margin-top:14px; }
 .goals-section h3 { margin:0 0 4px; color:var(--mote-muted); font-size:var(--mote-font-meta); font-weight:600; }

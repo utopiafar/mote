@@ -7694,5 +7694,6 @@ export const french: Readonly<Record<string, string>> = {
   "相关资料": "Documents liés",
   "事项状态暂不可用": "État des sujets indisponible",
   "事项已变化，需重新读取": "Le sujet a changé ; rechargez",
-  "目标数据无法读取": "Données d'objectif indisponibles"
+  "目标数据无法读取": "Données d'objectif indisponibles",
+  "模板": "Modèle"
 };

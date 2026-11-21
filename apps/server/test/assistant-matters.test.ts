@@ -86,6 +86,49 @@ test('matter create, edit, pause, resume and archive round trip with archived hi
   assert.deepEqual(matters.history(created.id).map(item=>item.command),['create','edit','pause','resume','archive']);
 });
 
+test('GO3-01 a model-supplied travel template is kept while an omitted template defaults to project',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-matters-template-')),store=new Store(directory),matters=new AssistantMatters(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const a=await capture(store,'Generated template title','Generated template body'),authority=authorityFor(store,new Set([a]));
+  const travel=matters.command({type:'create',requestId:randomUUID(),goal:'Generated travel matter',template:'travel',
+    scope:{kind:'all'},evidenceIds:[a]},authority);
+  assert.equal(travel.template,'travel');
+  const plain=matters.command({type:'create',requestId:randomUUID(),goal:'Generated default matter',scope:{kind:'all'},evidenceIds:[a]},authority);
+  assert.equal(plain.template,'project','an omitted model template is stored as project');
+  assert.equal(matters.get(plain.id).template,'project');
+});
+
+test('GO3-02 a model template outside the list is stored as project instead of failing',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-matters-template-fallback-')),store=new Store(directory),matters=new AssistantMatters(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const a=await capture(store,'Generated fallback title','Generated fallback body'),authority=authorityFor(store,new Set([a]));
+  const outside=matters.command({type:'create',requestId:randomUUID(),goal:'Generated outside matter',template:'person',
+    scope:{kind:'all'},evidenceIds:[a]},authority);
+  assert.equal(outside.template,'project','person is a Memory identity, not a matter template');
+  const arbitrary=matters.command({type:'create',requestId:randomUUID(),goal:'Generated arbitrary matter',template:'someday',
+    scope:{kind:'all'},evidenceIds:[a]},authority);
+  assert.equal(arbitrary.template,'project');
+  const reloaded=new AssistantMatters(store);
+  assert.equal(reloaded.get(arbitrary.id).template,'project','the fallback value is what is stored');
+});
+
+test('GO3-03 editing a matter template advances the revision and stays in history',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-matters-template-edit-')),store=new Store(directory),matters=new AssistantMatters(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const a=await capture(store,'Generated reading title','Generated reading body'),authority=authorityFor(store,new Set([a]));
+  const created=matters.command({type:'create',requestId:randomUUID(),goal:'Generated reading matter',scope:{kind:'all'},evidenceIds:[a]},authority);
+  const edited=matters.command({type:'edit',matterId:created.id,expectedRevision:created.revision,template:'reading'},authority);
+  assert.equal(edited.revision,created.revision+1);
+  assert.equal(edited.template,'reading');
+  assert.equal(edited.goal,created.goal,'the template edit leaves the owner goal unchanged');
+  const history=matters.history(created.id);
+  assert.deepEqual(history.map(item=>item.revision),[1,2]);
+  assert.deepEqual(history.map(item=>item.template),['project','reading']);
+  assert.throws(()=>matters.command({type:'edit',matterId:edited.id,expectedRevision:edited.revision,template:'reading'},authority),
+    error=>error instanceof StoreError&&error.statusCode===400,'repeating the same template is not a change');
+  assert.equal(matters.get(edited.id).revision,2,'a refused no-op template edit writes nothing');
+});
+
 test('two clients see a revision conflict instead of overwriting the other end',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-matters-conflict-')),store=new Store(directory),matters=new AssistantMatters(store);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});

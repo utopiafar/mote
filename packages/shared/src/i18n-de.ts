@@ -7694,5 +7694,6 @@ export const german: Readonly<Record<string, string>> = {
   "相关资料": "Zugehörige Materialien",
   "事项状态暂不可用": "Status der Anliegen nicht verfügbar",
   "事项已变化，需重新读取": "Anliegen geändert; neu laden",
-  "目标数据无法读取": "Zieldaten nicht verfügbar"
+  "目标数据无法读取": "Zieldaten nicht verfügbar",
+  "模板": "Vorlage"
 };

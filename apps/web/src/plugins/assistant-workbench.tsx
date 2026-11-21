@@ -26,12 +26,23 @@ export function decodeWorkspaceView(raw:unknown):WorkspaceView{
 export const workspacePath=(request:WorkspaceRequest)=>'/api/assistant/workbench?'+new URLSearchParams({request:JSON.stringify(workspaceRequestSchema.parse(request))});
 export const workspaceTranslate=(key:string)=>moteText(workspaceLabels[key]??key);
 
-const matterIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** The goals page opens the project template with one saved matter. The route
- * carries only that identity; the server still resolves its own view. */
+const targetIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export type WorkbenchTarget={template:WorkspaceRequest['template'];target:string};
+/** The goals page names a saved matter and its stored template; Memory names a
+ * person. The route carries only those identities; the server still resolves
+ * its own view. A matter never selects the person template. */
+export function workbenchTarget(hash:string):WorkbenchTarget|undefined{
+  const params=new URLSearchParams(hash.split('?')[1]??''),person=params.get('person');
+  if(person&&targetIdPattern.test(person))return {template:'person',target:person};
+  const matter=params.get('matter');
+  if(!matter||!targetIdPattern.test(matter))return;
+  const template=params.get('template');
+  return {template:template==='travel'||template==='reading'?template:'project',target:matter};
+}
+/** The matter-only projection retained for existing routes and tests. */
 export function workbenchMatterTarget(hash:string):string|undefined{
-  const value=new URLSearchParams(hash.split('?')[1]??'').get('matter');
-  return value&&matterIdPattern.test(value)?value:undefined;
+  const value=workbenchTarget(hash);
+  return value&&value.template!=='person'?value.target:undefined;
 }
 
 const stateLabels:Readonly<Record<string,string>>={active:'进行中',paused:'已暂停',archived:'已归档',published:'有效',
@@ -73,11 +84,11 @@ export function WorkspaceSurface({value,api,onResult}:{value:unknown;api:Pick<Ap
 /** The Web wrapper supplies only navigation and the existing generic
  * container. All four layouts and their data come from Central. */
 export function AssistantWorkbenchPage({api,range}:Pick<PageProps,'api'|'range'>){
-  const [template,setTemplate]=useState<WorkspaceRequest['template']>('project');
-  const [target,setTarget]=useState<string|undefined>(()=>workbenchMatterTarget(window.location.hash));
+  const [template,setTemplate]=useState<WorkspaceRequest['template']>(()=>workbenchTarget(window.location.hash)?.template??'project');
+  const [target,setTarget]=useState<string|undefined>(()=>workbenchTarget(window.location.hash)?.target);
   const [commandFailed,setCommandFailed]=useState(false);
   useEffect(()=>{
-    const sync=()=>{const next=workbenchMatterTarget(window.location.hash);if(!next)return;setTemplate('project');setTarget(next);setCommandFailed(false);};
+    const sync=()=>{const next=workbenchTarget(window.location.hash);if(!next)return;setTemplate(next.template);setTarget(next.target);setCommandFailed(false);};
     window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);
   },[]);
   const scope:QueryScope={kind:'all',...range};

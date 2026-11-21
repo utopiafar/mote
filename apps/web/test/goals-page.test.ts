@@ -11,7 +11,7 @@ import {CHAT_ABOUT_PARAM,pageHash,parseAboutRef,type GoalGroup,type GoalItem,typ
 import {configureLocale} from '@mote/shared/i18n';
 import {ApiError,type Api} from '../src/api';
 import {GoalsPage} from '../src/plugins/assistant/GoalsPage';
-import {AssistantWorkbenchPage,workbenchMatterTarget} from '../src/plugins/assistant-workbench';
+import {AssistantWorkbenchPage,workbenchMatterTarget,workbenchTarget} from '../src/plugins/assistant-workbench';
 import {chatDom,injectedApi} from './fixtures/chat-dom';
 
 const all:QueryScope={kind:'all'};
@@ -29,7 +29,7 @@ const ids={
 type Row={item:GoalItem;matterId?:string;person?:string};
 type Call={path:string;method:string;body?:Record<string,unknown>};
 type State={matters:Matter[];rows:Row[];sequence:number};
-const matter=(id:string,goal:string,evidenceIds:string[]=[]):Matter=>({id,goal,scope:all,state:'active',revision:1,taskIds:[],evidenceIds,correction:null,createdAt:at,updatedAt:at,archivedAt:null});
+const matter=(id:string,goal:string,evidenceIds:string[]=[],template:Matter['template']='project'):Matter=>({id,goal,template,scope:all,state:'active',revision:1,taskIds:[],evidenceIds,correction:null,createdAt:at,updatedAt:at,archivedAt:null});
 const base=():State=>({
   matters:[matter(ids.release,'Generated release',[ids.evidence,ids.alice,ids.bob]),matter(ids.review,'Generated review',[ids.evidence]),matter(ids.home,'Generated home')],
   sequence:0,
@@ -105,8 +105,11 @@ function fixture(t:import('node:test').TestContext,initial=base()){
       const owner=state.matters.find(item=>item.id===body!.matterId);
       if(!owner)throw new ApiError('Generated missing matter',404);
       if(owner.revision!==body!.expectedRevision)throw new ApiError('Generated changed matter',409);
-      if(body!.type==='edit'){owner.goal=String(body!.goal);owner.revision++;}
-      else{state.matters=state.matters.filter(item=>item!==owner);}
+      if(body!.type==='edit'){
+        if(body!.goal!==undefined)owner.goal=String(body!.goal);
+        if(body!.template!==undefined)owner.template=body!.template as Matter['template'];
+        owner.revision++;
+      }else{state.matters=state.matters.filter(item=>item!==owner);}
       state.sequence++;
       return owner;
     }
@@ -132,7 +135,26 @@ async function clickAria(d:Document,label:string){
 async function input(d:Document,selector:string,value:string){
   await act(async()=>{const area=d.querySelector<HTMLTextAreaElement|HTMLInputElement>(selector);assert.ok(area,selector);area.focus();Object.getOwnPropertyDescriptor(Object.getPrototypeOf(area),'value')!.set!.call(area,value);area.dispatchEvent(new d.defaultView!.Event('input',{bubbles:true}));area.dispatchEvent(new d.defaultView!.KeyboardEvent('keyup',{bubbles:true,key:'a'}));});
 }
+async function selectIn(parent:ParentNode,label:string,value:string){
+  await act(async()=>{
+    const control=parent.querySelector<HTMLSelectElement>('select[aria-label="'+label+'"]');assert.ok(control,label);
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(control),'value')!.set!.call(control,value);
+    control.dispatchEvent(new control.ownerDocument.defaultView!.Event('change',{bubbles:true}));
+  });
+}
 const group=(d:Document,id:string)=>d.querySelector<HTMLElement>('.goals-group[data-group="'+id+'"]');
+async function mountWorkbench(t:import('node:test').TestContext,hash:string){
+  configureLocale(()=> 'zh-CN');
+  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'+hash,pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>();
+  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+  Object.assign(dom.window.HTMLElement.prototype,{attachEvent:()=>{},detachEvent:()=>{},scrollIntoView:()=>{}});dom.window.scrollTo=()=>{};
+  const calls:string[]=[],root=createRoot(dom.window.document.getElementById('root')!);
+  const api={request:async(path:string)=>{calls.push(path);return {};}} as Api;
+  t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of prior)if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);dom.window.close();});
+  await act(async()=>root.render(React.createElement(AssistantWorkbenchPage,{api,range:{}})));
+  const path=calls.find(value=>value.startsWith('/api/assistant/workbench?'));
+  return {calls,request:path?JSON.parse(new URLSearchParams(path.split('?')[1]).get('request')!):undefined};
+}
 
 test('GO2-01 switching to people renders one card per person',async t=>{
   const ui=await fixture(t);await ui.render();
@@ -266,6 +288,28 @@ test('GO2-07 an old matter revision reports a conflict and never overwrites the 
   await ui.settle(()=>ui.d.body.textContent!.includes('Generated other-client goal'));
 });
 
+test('GO3-03 the more menu changes a matter to the reading template and its revision advances',async t=>{
+  const ui=await fixture(t);await ui.render();
+  await selectIn(group(ui.d,'matter:'+ids.release)!,'模板','reading');
+  await ui.settle(()=>Boolean(group(ui.d,'matter:'+ids.release)?.querySelector('a.goals-group-title')?.getAttribute('href')?.includes('template=reading')));
+  const call=ui.calls.find(item=>item.body?.type==='edit'&&item.body?.template==='reading')!;
+  assert.deepEqual(call.body,{type:'edit',matterId:ids.release,expectedRevision:1,template:'reading'});
+  const saved=ui.state.matters.find(item=>item.id===ids.release)!;
+  assert.equal(saved.revision,2,'the template change consumes one revision');
+  assert.equal(saved.template,'reading');
+  const href=group(ui.d,'matter:'+ids.release)!.querySelector<HTMLAnchorElement>('a.goals-group-title')!.getAttribute('href')!;
+  assert.deepEqual(workbenchTarget(href),{template:'reading',target:ids.release},'reopening the matter uses the reading template');
+});
+
+test('GO3-04 the goals page links a travel matter with its template',async t=>{
+  const state=base();
+  state.matters.find(item=>item.id===ids.review)!.template='travel';
+  const ui=await fixture(t,state);await ui.render();
+  const href=group(ui.d,'matter:'+ids.review)!.querySelector<HTMLAnchorElement>('a.goals-group-title')!.getAttribute('href')!;
+  assert.equal(href,'#/assistant/workbench?matter='+ids.review+'&template=travel');
+  assert.deepEqual(workbenchTarget(href),{template:'travel',target:ids.review});
+});
+
 test('GO2 links carry the item or matter to chat, library and the workbench project page',async t=>{
   const state=base();
   const eventId=randomUUID();
@@ -309,4 +353,21 @@ test('the workbench reads the project matter from the goals route',async t=>{
   const request=calls.find(path=>path.startsWith('/api/assistant/workbench?'))!;assert.ok(request);
   const value=JSON.parse(new URLSearchParams(request.split('?')[1]).get('request')!) as {template:string;matterId:string};
   assert.equal(value.template,'project');assert.equal(value.matterId,ids.release);
+});
+
+test('GO3-04 the workbench reads the travel matter template from the goals route',async t=>{
+  const workbench=await mountWorkbench(t,'#/assistant/workbench?matter='+ids.review+'&template=travel');
+  assert.equal(workbench.request.template,'travel');
+  assert.equal(workbench.request.matterId,ids.review);
+  assert.equal(workbench.request.personMemoryId,undefined);
+});
+
+test('GO3-05 a person opened from Memory keeps the person template',async t=>{
+  const hash='#/assistant/workbench?person='+ids.alice;
+  assert.deepEqual(workbenchTarget(hash),{template:'person',target:ids.alice});
+  assert.equal(workbenchMatterTarget(hash),undefined,'a Memory person is not a matter target');
+  const workbench=await mountWorkbench(t,hash);
+  assert.equal(workbench.request.template,'person');
+  assert.equal(workbench.request.personMemoryId,ids.alice);
+  assert.equal(workbench.request.matterId,undefined);
 });

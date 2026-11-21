@@ -7694,5 +7694,6 @@ export const english: Readonly<Record<string, string>> = {
   "相关资料": "Related materials",
   "事项状态暂不可用": "Matter state unavailable",
   "事项已变化，需重新读取": "Matter changed; reload",
-  "目标数据无法读取": "Goal data unavailable"
+  "目标数据无法读取": "Goal data unavailable",
+  "模板": "Template"
 };
