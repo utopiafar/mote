@@ -23,10 +23,11 @@ const paired = (id: string, deviceId: string, extra: { scope?: string; platform?
     scope: 'owner', revokedAt: undefined as string | undefined, ...extra,
 });
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, bridge?: { deviceId: string; openLocalWindow: () => void }) {
     const dom = new JSDOM('<div id="root"></div>', {
         url: origin + '/#/library?deviceId=generated-filter', pretendToBeVisual: true,
     });
+    if (bridge) Object.defineProperty(dom.window, 'moteDesktop', { configurable: true, value: bridge });
     const previous = new Map<string, PropertyDescriptor | undefined>();
     for (const [key, value] of Object.entries({
         window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true,
@@ -315,4 +316,56 @@ test('device removal confirms exact credentials, refreshes partial failure and l
     assert.equal(document.querySelector('[data-device-id="phone"]'), null);
     assert.ok(chip(document, 'device', 'other'));
     assert.deepEqual(state.devices.map(device => device.deviceId), ['phone', 'other']);
+});
+
+test('MC2-05 shows “这台 Mac” and the capture-and-sync row only inside the Mac window', async t => {
+    const calls: number[] = [];
+    const { root, document, window } = await fixture(t, { deviceId: 'mac', openLocalWindow: () => calls.push(1) });
+    const { api, state, loadedBrowse } = generatedCentral();
+    state.devices = [device('mac', 'macos'), device('phone', 'android')];
+
+    function LibraryFixture() {
+        const [filter, setFilter] = useState<SourceBarFilter>();
+        const query = new URLSearchParams({ limit: '24' });
+        if (filter?.deviceId) query.set('deviceId', filter.deviceId);
+        const { data } = useResource<{ items: { title: string }[] }>(api, '/api/library/browse?' + query);
+        return React.createElement(React.Fragment, null,
+            React.createElement(SourceBar, { api, serverUrl: origin, filter, onFilterChange: setFilter }),
+            React.createElement('ul', null, data?.items.map(item => React.createElement('li', { key: item.title }, item.title))),
+        );
+    }
+
+    await act(async () => root.render(React.createElement(LibraryFixture)));
+    const bar = grab(document, '.library-source-bar');
+    assert.deepEqual([...bar.children].slice(1).flatMap(element => {
+        const id = (element as HTMLElement).dataset.deviceId ?? (element as HTMLElement).dataset.sourceId;
+        return id ? [id] : [];
+    }), ['mac', 'phone']);
+    assert.equal(chip(bar, 'device', 'mac').textContent?.trim(), '这台 Mac');
+    assert.equal(document.querySelector('[data-local-capture-sync]'), null, 'the row appears only after selecting this Mac');
+
+    await click(chip(bar, 'device', 'mac'));
+    assert.match(loadedBrowse.at(-1) ?? '', /deviceId=mac/);
+    const row = grab<HTMLButtonElement>(document, '[data-local-capture-sync]');
+    assert.equal(row.textContent?.trim(), '采集与同步');
+    await click(row);
+    assert.deepEqual(calls, [1]);
+
+    await click(grab<HTMLButtonElement>(bar, 'button'));
+    assert.equal(document.querySelector('[data-local-capture-sync]'), null);
+    assert.ok(window.document.querySelector('[data-local-device]'), 'the bridge chip stays available after clearing the filter');
+});
+
+test('MC2-05 keeps this Mac out of the source bar in a browser window', async t => {
+    const { root, document } = await fixture(t);
+    const { api, state } = generatedCentral();
+    state.devices = [device('mac', 'macos'), device('phone', 'android')];
+    await act(async () => root.render(React.createElement(SourceBar, {
+        api, serverUrl: origin, onFilterChange: () => {},
+    })));
+    const bar = grab(document, '.library-source-bar');
+    assert.equal(bar.querySelector('[data-local-device]'), null);
+    assert.equal(bar.textContent?.includes('这台 Mac'), false);
+    assert.equal(document.querySelector('[data-local-capture-sync]'), null);
+    assert.ok(chip(bar, 'device', 'mac'), 'the reported Mac device stays a normal Central device chip');
 });

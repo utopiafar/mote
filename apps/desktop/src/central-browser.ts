@@ -1,3 +1,4 @@
+import type { Session } from 'electron';
 import { validateServerUrl } from './config';
 import { deepLinkHash, formatEvidenceRef, pageHash, parseEvidenceRef, type PageRouteKey } from '@mote/shared';
 
@@ -12,6 +13,113 @@ export const centralPageRoutes: Readonly<Record<string, PageRouteKey>> = {
 export function validateCentralWorkId(value:unknown):string{
   if(typeof value!=='string'||!value.trim()||value.length>512||/[\u0000-\u001f\u007f]/.test(value))throw Error('Invalid work reference');
   return value;
+}
+
+/** The Central page keeps a session separate from the trusted local window, so
+ * remote-origin permissions, cache and cookies never share the local policy. */
+export const centralWindowSessionPartition = 'persist:mote-central';
+
+/** The main window renders the paired Central page as untrusted content. It
+ * never receives Node or the local preload, and its window keeps only these
+ * minimum capabilities. */
+export const centralWindowWebPreferences = {
+  contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+  partition: centralWindowSessionPartition,
+} as const;
+
+/** A configured address is only a Central origin once the owner has paired and
+ * is signed in; a new or signed-out profile goes to the offline page instead. */
+export function pairedCentralOrigin(serverUrl: string | undefined, credential: string | undefined): string | undefined {
+  if (!serverUrl || !credential) return undefined;
+  try { return validateServerUrl(serverUrl); } catch { return undefined; }
+}
+
+/** The Central session denies every permission except sanitized clipboard
+ * writes from the paired Central origin. Clipboard reads, media, geolocation,
+ * notifications, fullscreen, devices and display capture stay closed. */
+export function centralPermissionAllowed(permission: string, requestingOrigin: string | undefined, allowedOrigin: string | undefined): boolean {
+  return permission === 'clipboard-sanitized-write' && allowedOrigin !== undefined && requestingOrigin === allowedOrigin;
+}
+
+type CentralSession = Pick<Session,
+  'setPermissionCheckHandler' | 'setPermissionRequestHandler' | 'setDevicePermissionHandler' | 'setDisplayMediaRequestHandler'>;
+
+/** Install the complete permission boundary on the one session used by the
+ * untrusted Central window. The request handler is not optional: Electron's
+ * check handler alone does not cover the request path. */
+export function installCentralSessionGuards(session: CentralSession, allowedOrigin: () => string | undefined): void {
+  session.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
+    centralPermissionAllowed(permission, requestingOrigin, allowedOrigin()));
+  session.setPermissionRequestHandler((_contents, permission, callback, details) => {
+    let requestingOrigin: string | undefined;
+    try { requestingOrigin = details?.requestingUrl ? new URL(details.requestingUrl).origin : undefined; } catch { requestingOrigin = undefined; }
+    callback(centralPermissionAllowed(permission, requestingOrigin, allowedOrigin()));
+  });
+  session.setDevicePermissionHandler(() => false);
+  session.setDisplayMediaRequestHandler((_request, callback) => callback({}));
+}
+
+/** Keep in sync with central-window-preload.ts; the sandboxed preload cannot
+ * import this module without pulling Node-only configuration code with it. */
+export const centralWindowOpenLocalChannel = 'mote:central:open-local-window';
+
+/** Same-origin navigation stays in the window. Other HTTP(S) destinations go
+ * to the system browser. File, data, javascript and credential-bearing URLs
+ * are denied without being handed to any external handler. */
+export type CentralNavigationDecision = 'allow' | 'external' | 'deny';
+export function centralNavigationDecision(target: string, allowedOrigin: string | undefined): CentralNavigationDecision {
+  let url: URL;
+  try { url = new URL(target); } catch { return 'deny'; }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return 'deny';
+  if (allowedOrigin !== undefined && url.origin === allowedOrigin) return 'allow';
+  return 'external';
+}
+
+/** The initial main-window address. A login ticket is short-lived address data
+ * inside the hash query; the bearer token never enters the URL. */
+export function centralWindowUrl(serverUrl: string, loginTicket?: string, route: PageRouteKey = 'chat'): string {
+  const origin = validateServerUrl(serverUrl);
+  if (loginTicket !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(loginTicket)) throw Error('Invalid login ticket');
+  return origin + '/' + pageHash(route, loginTicket ? { loginTicket } : undefined);
+}
+
+/** Tracks whether the main window is on the local offline page and owns the
+ * single in-flight fallback load. Already being offline is not a reason to
+ * skip the fallback: a tray retry may fail after the first offline page. */
+export class CentralWindowFallback {
+  private offlineState = false;
+  private pending: Promise<void> | undefined;
+
+  get offline(): boolean { return this.offlineState; }
+
+  markOnline(): void { this.offlineState = false; }
+
+  restore(loadOffline: () => Promise<unknown>): Promise<void> {
+    this.offlineState = true;
+    if (this.pending) return this.pending;
+    const pending = Promise.resolve()
+      .then(loadOffline)
+      .then(() => undefined, () => undefined)
+      .finally(() => { if (this.pending === pending) this.pending = undefined; });
+    this.pending = pending;
+    return pending;
+  }
+}
+
+/** Only the main Central window main frame, on the paired origin or the local
+ * offline page, may ask the host to open the local window. */
+export function trustedCentralWindowSender(
+  facts: {senderId:number; mainSenderId:number; frameIsMain:boolean; frameUrl?:string},
+  allowedOrigin: string | undefined,
+  offlineUrl: string,
+): boolean {
+  if (facts.senderId !== facts.mainSenderId || !facts.frameIsMain || facts.frameUrl === undefined) return false;
+  try {
+    const frame = new URL(facts.frameUrl);
+    if (frame.href === new URL(offlineUrl).href) return true;
+    if (frame.username || frame.password) return false;
+    return ['http:', 'https:'].includes(frame.protocol) && allowedOrigin !== undefined && frame.origin === allowedOrigin;
+  } catch { return false; }
 }
 
 /** Only short-lived login exchanges may enter a URL; bearer credentials never do. */

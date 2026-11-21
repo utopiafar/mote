@@ -1,12 +1,19 @@
 import { type SourceConnection } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
-import { Ellipsis, Link2, Monitor, Plus, Smartphone } from 'lucide-react';
+import { ChevronRight, Ellipsis, Link2, Monitor, Plus, Smartphone } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { type Api, type Device } from '../../api';
 import { LoadingText } from '../../Loading';
 import { useForegroundResources } from '../../useForegroundResources';
 import { useResource } from '../../useResource';
 import { DevicePairingSheet, DeviceSheet, RecordingSourcesSheet } from './DeviceSheet';
+
+declare global {
+    interface Window {
+        /** The Mac main window's minimal bridge. A browser has no such object. */
+        moteDesktop?: { readonly deviceId: string; openLocalWindow(): void };
+    }
+}
 
 /** The selection uses the exact query fields of /api/library/browse. */
 export type SourceBarFilter = { deviceId: string; sourceId?: never } | { sourceId: string; deviceId?: never };
@@ -152,6 +159,18 @@ export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice,
     const selectedDevice = sheet?.type === 'settings' ? devices.find(device => device.id === sheet.deviceId) : undefined;
     const failures = [reports, inventory, sources].filter(resource => resource.error !== undefined);
     const loading = [reports, inventory, sources].some(resource => resource.loading && !resource.data);
+    // Only the Mac main window exposes the local bridge. A browser never sees
+    // the "this Mac" chip or the capture-and-sync row.
+    const localBridge = typeof window === 'undefined' ? undefined : window.moteDesktop;
+    const localId = localDevice?.deviceId ?? localBridge?.deviceId;
+    const localContent = localDevice?.content ?? (localBridge?.deviceId ? (
+        <span data-device-id={localBridge.deviceId} data-local-device={localBridge.deviceId} style={{ display: 'inline-flex', maxWidth: '100%' }}>
+            <FilterChip name={moteText('这台 Mac')} icon={<Monitor size={16} aria-hidden="true" style={{ flexShrink: 0 }}/>}
+                selected={filter?.deviceId === localBridge.deviceId}
+                status={deviceStatus(devices.find(device => device.id === localBridge.deviceId)?.report, disconnected.has(localBridge.deviceId))}
+                onClick={() => onFilterChange({ deviceId: localBridge.deviceId })}/>
+        </span>
+    ) : undefined);
 
     return <>
         <div className="library-source-bar" role="group" aria-label={moteText('来源')} style={{
@@ -159,8 +178,8 @@ export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice,
         }}>
             <button ref={all} type="button" className={!filter ? 'button primary' : 'button'}
                 style={chipShape} aria-pressed={!filter} onClick={() => onFilterChange(undefined)}>{moteText('全部')}</button>
-            {localDevice?.content}
-            {devices.filter(device => device.id !== localDevice?.deviceId).map(device => {
+            {localContent}
+            {devices.filter(device => device.id !== localId).map(device => {
                 const Icon = device.platform === 'android' || device.platform === 'ios' ? Smartphone : Monitor;
                 return <span key={device.id} data-device-id={device.id} style={{ display: 'inline-flex', maxWidth: '100%' }}>
                     <FilterChip name={device.name} icon={<Icon size={16} aria-hidden="true" style={{ flexShrink: 0 }}/>}
@@ -192,6 +211,17 @@ export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice,
             </button>
             {loading && <span role="status"><LoadingText/></span>}
         </div>
+        {localBridge && localId && filter?.deviceId === localId && <button type="button" data-local-capture-sync
+            onClick={() => localBridge.openLocalWindow()} style={{
+                display: 'flex', alignItems: 'center', gap: 'var(--mote-space-inline)', width: '100%',
+                margin: '0 0 var(--mote-space-inline)', padding: '11px 14px', border: '1px solid var(--mote-hair)',
+                borderRadius: 'var(--mote-radius-control)', background: 'var(--mote-surface)', color: 'inherit',
+                font: 'inherit', textAlign: 'start', cursor: 'pointer',
+            }}>
+            <Monitor size={16} aria-hidden="true"/>
+            <span style={{ flex: 1 }}>{moteText('采集与同步')}</span>
+            <ChevronRight size={16} aria-hidden="true"/>
+        </button>}
         {failures.length > 0 && <div className="notice error" role="alert">
             {moteText('状态读取失败。')}
             <button className="text-button" type="button" onClick={() => failures.forEach(resource => resource.refresh())}>

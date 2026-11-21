@@ -4419,7 +4419,6 @@ export const french: Readonly<Record<string, string>> = {
   "离开并丢弃修改？": "Quitter et abandonner les modifications ?",
   "丢弃修改": "Abandonner les modifications",
   "本机状态详情": "Détails de l'état local",
-  "打开中央工作台": "Ouvrir l'espace de travail central",
   "依赖步骤未完成，请先检查上游任务": "Dépendance incomplète ; inspectez la tâche en amont",
   "处理器版本不可用": "Version du processeur indisponible",
   "运行中断，等待恢复": "Exécution interrompue, en attente de reprise",
