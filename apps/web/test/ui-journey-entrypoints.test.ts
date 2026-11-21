@@ -56,12 +56,11 @@ test('NV3-05 native entrypoints and assistant links resolve to mounted Web pages
   }
 });
 
-function apiWith(read: (path: string, init?: RequestInit) => unknown): Api {
+function apiWith(read: (path: string, init?: RequestInit) => unknown, mainId = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'): Api {
   return {request: async (path: string, init?: RequestInit) => {
     if (path.startsWith('/api/operations/changes')) return {ids: [], cursor: 0, hasMore: false, reset: false};
     if (path === '/api/model-settings') return modelView();
-    if (path === '/api/conversations/main') return {id:'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'};
-    if (path === '/api/conversations' && init?.method === 'POST') return {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'};
+    if (path === '/api/conversations/main') return {id: mainId};
     if (path.startsWith('/api/conversations/')&&path!=='/api/conversations/messages'&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&typeof (value as {then?:unknown}).then!=='function'&&!Array.isArray((value as {turns?:unknown}).turns))return{id:decodeURIComponent(path.slice('/api/conversations/'.length)),title:'',createdAt:when,updatedAt:when,turnCount:0,scope:{},status:'completed',revision:1,nextCursor:null,turns:[]};return value;}
     if (path === '/api/developer') return {credentials: [], endpoints: [], deliveries: []};
     if (path === '/api/plugins') return {sourceContributions: []};
@@ -203,7 +202,6 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
   const admission = new Promise(resolve => { accept = resolve; });
   const api = apiWith((path, init) => {
     if (path === '/api/configuration') return askSettings;
-    if (path === '/api/conversations?limit=30') return {items: [summary]};
     if (path === '/api/conversations/' + conversationId) return detail;
     if (path === '/api/conversations/' + conversationId + '/references/' + captureId) return {id:captureId,available:true};
     if (path === '/api/conversations/messages' && init?.method === 'POST') {
@@ -212,7 +210,7 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
       return submissions.length===1?admission:{id:crypto.randomUUID(),...input,revision:1,status:'accepted',seq:1,createdAt:when};
     }
     return {items: []};
-  });
+  }, conversationId);
   await act(async () => root.render(React.createElement(Conversations, {api, configured: true, devices: [], renderAnswer: answer => answer.answer, onOpen: ref => opened.push(ref)})));
   const scopeBar = () => d.querySelector(kind === 'anchor' ? '[aria-label="参考记录"]' : kind === 'material'?'[aria-label="参考资料"]':'[aria-label="查询范围"]')!;
   const clearLabel = kind !== 'strict' ? '清除参考记录' : '清除范围';
@@ -232,6 +230,7 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
   assert.equal(button(d, clearLabel).disabled, false);
   await act(async () => button(d, clearLabel).click());
   assert.equal(scopeBar(),null);
+  await act(async()=>d.querySelector<HTMLElement>('.chat-add summary')!.click());
   assert.equal(d.querySelector<HTMLSelectElement>('.conversation-source-scope select')?.value,'all');
   assert.match(d.querySelector('.conversation-messages')!.textContent!, /Generated original answer/, 'clearing the next turn does not rewrite historical answers');
   await act(async () => {
@@ -248,11 +247,12 @@ for (const kind of ['anchor', 'strict', 'material'] as const) test(`a restored $
 
 test('an in-flight chat upload and drafts remain owned by their authenticated API across a node switch',async t=>{
  const {root,d,tick}=await fixture(t,pageHash('chat',{questionDraft:'Generated owner A draft'}));let finish!:(value:unknown)=>void,signal:AbortSignal|undefined,sourceId='';const pending=new Promise(resolve=>finish=resolve),oldReads:string[]=[];
- const oldApi=apiWith((path,init)=>{oldReads.push(path);if(path==='/api/sources'&&init?.method==='POST'){sourceId=JSON.parse(String(init.body)).id;signal=init.signal as AbortSignal;return pending;}return {items:[]};});
- const currentApi=apiWith(()=>({items:[]}));
+ const id='generated-main',mainRead=(path:string)=>path==='/api/conversations/main'?{id}:path==='/api/conversations/'+id?{id,scope:{},turns:[]}:{items:[]};
+ const oldApi=apiWith((path,init)=>{oldReads.push(path);if(path==='/api/sources'&&init?.method==='POST'){sourceId=JSON.parse(String(init.body)).id;signal=init.signal as AbortSignal;return pending;}return mainRead(path);});
+ const currentApi=apiWith(mainRead);
  const view=(api:Api)=>React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:(answer:Answer)=>answer.answer});
  await act(async()=>root.render(view(oldApi)));assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner A draft');
- const picker=d.querySelector<HTMLInputElement>('.conversation-content input[type=file]')!;Object.defineProperty(picker,'files',{configurable:true,value:[new File(['generated'],'generated.png',{type:'image/png'})]});await act(async()=>picker.dispatchEvent(new window.Event('change',{bubbles:true})));assert.ok(signal);
+ const picker=d.querySelector<HTMLInputElement>('.chat-compose-form input[type=file]')!;Object.defineProperty(picker,'files',{configurable:true,value:[new File(['generated'],'generated.png',{type:'image/png'})]});await act(async()=>picker.dispatchEvent(new window.Event('change',{bubbles:true})));assert.ok(signal);
  await act(async()=>{location.hash=pageHash('chat',{questionDraft:'Generated owner B draft'});root.render(view(currentApi));});assert.equal(signal!.aborted,true);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner B draft');
  await act(async()=>finish({id:sourceId}));await tick();assert.equal(d.querySelectorAll('.chat-attachment').length,0);assert.equal(oldReads.some(path=>path.startsWith('/api/file-sync/')),false,'an aborted old owner upload cannot continue admission');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner B draft');
  await act(async()=>root.render(view(oldApi)));assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Generated owner A draft');

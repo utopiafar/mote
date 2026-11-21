@@ -72,15 +72,27 @@ function downloadFile(name: string, content: Blob) {
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
+type ConnectionProps = {
     api: Api;
     serverUrl: string;
     devices: Device[];
+};
+
+export function DevicePairing({ embedded, ...props }: ConnectionProps & { embedded?: boolean }) {
+    return <Connections {...props} mode="device" embedded={embedded}/>;
+}
+
+function pairingDeviceId(embedded: boolean) {
+    return embedded ? '' : new URLSearchParams(window.location.hash.split('?')[1]).get('deviceId') ?? '';
+}
+
+export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedded = false }: ConnectionProps & {
     mode?: 'device' | 'chatbot';
+    embedded?: boolean;
 }) {
     const [endpoint, setEndpoint] = useState(serverUrl);
     const [label, setLabel] = useState(moteText(mode === 'device' ? '我的新设备' : '我的 AI 助手'));
-    const [deviceId, setDeviceId] = useState(()=>new URLSearchParams(window.location.hash.split('?')[1]).get('deviceId')??'');
+    const [deviceId, setDeviceId] = useState(() => mode === 'device' ? pairingDeviceId(embedded) : '');
     const [pairPlatform,setPairPlatform]=useState<'macos'|'android'>('macos'),[pairEditing,setPairEditing]=useState(false);
     const [deviceScope, setDeviceScope] = useState<'owner' | 'collector'>('owner');
     const inventoryResource = useResource<Inventory>(api, '/api/connections'), configuration = useResource<ServerConfiguration>(api, '/api/configuration');
@@ -112,7 +124,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
     useEffect(() => {
         mounted.current = true;
         setEndpoint(serverUrl);
-        setPairEditing(false);setPairPlatform('macos');setDeviceScope('owner');setDeviceId(mode==='device'?new URLSearchParams(window.location.hash.split('?')[1]).get('deviceId')??'':'');
+        setPairEditing(false);setPairPlatform('macos');setDeviceScope('owner');setDeviceId(mode==='device'?pairingDeviceId(embedded):'');
         setLabel(moteText(mode === 'device' ? '我的新设备' : '我的 AI 助手'));
         setRevoking('');
         setShowAll(false);
@@ -127,7 +139,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
         setBusy('');
         acting.current = false;
         return () => { mounted.current = false; active.current?.abort(); };
-    }, [api, serverUrl, mode]);
+    }, [api, serverUrl, mode, embedded]);
     useEffect(()=>{
         if(mode!=='chatbot')return;
         let alive=true;const controller=new AbortController();
@@ -344,8 +356,8 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
       {!accessPage&&<DeveloperAccess api={api}/>}
       {revokingCredential&&<div className="source-dialog-overlay" onKeyDown={event=>{if(event.key==='Escape'&&!busy)setRevoking('');}}><div ref={revokeDialog} role="dialog" aria-modal="true" aria-labelledby="access-revoke-title" className="source-dialog"><header><h2 id="access-revoke-title">{moteText('撤销 {0}',revokingCredential.label)}</h2><button className="icon-button" aria-label={moteText('关闭')} disabled={!!busy} onClick={()=>setRevoking('')}><X size={18}/></button></header><p>{revokingCredential.scope==='mcp-calendar'?moteText('撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。'):moteText('停止此连接的后续访问，已归档资料保留。再次接入需要生成新配置。')}</p><footer><button className="button" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText('取消')}</button><button className="button" disabled={!!busy} onClick={()=>revoke(revokingCredential.id)}>{moteText('确认撤销')}</button></footer></div></div>}
     </section>;
-    return <section className="connections device-pair-workspace" aria-labelledby="connections-title">
-    <a className="back-link" href="#/connections">← {moteText('来源')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div>
+    return <section className="connections device-pair-workspace" aria-labelledby={embedded ? undefined : 'connections-title'}>
+    {!embedded && <><a className="back-link" href="#/connections">← {moteText('来源')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div></>}
     <div className="device-pair-center"><div><strong>{moteText('中央')}</strong><small>{invite&&!pairEditing?invite.invitation.serverUrl:endpoint}</small></div><span>{(invite&&!pairEditing?invite.scope:deviceScope)==='collector'?moteText('独立采集器 · 仅同步本设备'):moteText('完整客户端权限')}</span></div>
     {Boolean(error||inventoryResource.error||configuration.error)&&<div className="notice error" role="alert">{error||errorMessage(inventoryResource.error||configuration.error)}</div>}{message&&<div className="notice" role="status">{message}</div>}
     {(!invite||pairEditing)&&<form className="device-pair-form" onSubmit={event=>{event.preventDefault();createInvitation();}}>
@@ -365,8 +377,8 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot' }: {
       </div>
     </div>}
     {mcp && <div className="connection-mcp" aria-label={moteText("MCP 连接配置")}><h3>{moteText("保存此 MCP 配置")}</h3><p>{moteText("专用凭据仅在此次生成时显示。离开页面后仍有效；丢失时可以撤销并重新生成。")}</p><textarea readOnly aria-label="MCP JSON" value={JSON.stringify(mcp.config, null, 2)} spellCheck={false}/><div className="connection-actions"><button className="button" onClick={() => void copy(JSON.stringify(mcp.config, null, 2))}><Copy size={15}/>{moteText("复制 MCP JSON")}</button><button className="button" onClick={() => downloadFile('mote-mcp.json', new Blob([JSON.stringify(mcp.config, null, 2)], { type: 'application/json' }))}><Download size={15}/>{moteText("下载 MCP JSON")}</button><button className="button subtle" onClick={() => setMcp(undefined)}>{moteText("已保存，隐藏凭据")}</button></div></div>}
-    <details className="device-authorizations"><summary>{moteText("管理连接授权")}</summary><div className="section-heading connection-list-heading"><div><h3>{moteText("已授权的连接")}</h3><p>{moteText("撤销立即阻止后续请求，已归档资料保持不变。")}</p></div><button className="button subtle" disabled={!!busy} onClick={() => void action('refresh', refresh)}><RefreshCw size={15}/>{moteText("刷新连接")}</button></div>
+    {!embedded && <><details className="device-authorizations"><summary>{moteText("管理连接授权")}</summary><div className="section-heading connection-list-heading"><div><h3>{moteText("已授权的连接")}</h3><p>{moteText("撤销立即阻止后续请求，已归档资料保持不变。")}</p></div><button className="button subtle" disabled={!!busy} onClick={() => void action('refresh', refresh)}><RefreshCw size={15}/>{moteText("刷新连接")}</button></div>
     {!inventory ? inventoryResource.loading ? <Loading label={moteText('正在读取连接…')}/> : null : !visibleCredentials.length ? <p className="fine-print">{moteText(mode === 'device' ? '还没有设备连接。生成邀请即可添加。' : '还没有 AI 连接。生成 MCP 配置即可添加。')}</p> : <ul className="connection-list">{visibleCredentials.map(item => <li key={item.id}><div><strong>{item.label}</strong><span className={`badge ${item.revokedAt ? 'muted' : 'green'}`}>{item.revokedAt ? moteText("已撤销") : moteText(scopes[item.scope])}</span><p>{item.deviceName || moteText("外部 Chatbot")}{item.platform ? ` · ${item.platform}` : ''}{' '}{moteText("· 创建于")}{' '}{dateTime(item.createdAt)}</p><code>{item.tokenHint} {item.deviceId ? `· ${item.deviceId}` : ''}</code>{item.revokedAt && <small>{moteText("撤销于")}{' '}{ago(item.revokedAt)}</small>}</div>{!item.revokedAt && (revoking === item.id ? <div className="connection-revoke"><span>{moteText("停止此连接的后续访问与同步？")}</span><button className="button danger" disabled={!!busy} onClick={() => revoke(item.id)}>{moteText("确认撤销")}</button><button className="button subtle" disabled={!!busy} onClick={() => setRevoking('')}>{moteText("取消")}</button></div> : <button className="button subtle" disabled={!!busy} onClick={() => setRevoking(item.id)}><Unplug size={15}/>{moteText("撤销")}</button>)}</li>)}</ul>}
-  </details><section className="device-native-guide"><h2>{moteText('尚未安装客户端')}</h2><a className="text-button" href="https://github.com/utopiafar/mote/releases" target="_blank" rel="noreferrer">{moteText('下载 Mac / Android 客户端 →')}</a><details><summary>{moteText('连接前准备')}</summary><p>{moteText('此页面只生成连接授权。先安装 Mac / Android 客户端，再填写客户端可访问的节点地址；二维码不会创建公网地址或隧道。')}</p></details></section>
+  </details><section className="device-native-guide"><h2>{moteText('尚未安装客户端')}</h2><a className="text-button" href="https://github.com/utopiafar/mote/releases" target="_blank" rel="noreferrer">{moteText('下载 Mac / Android 客户端 →')}</a><details><summary>{moteText('连接前准备')}</summary><p>{moteText('此页面只生成连接授权。先安装 Mac / Android 客户端，再填写客户端可访问的节点地址；二维码不会创建公网地址或隧道。')}</p></details></section></>}
   </section>;
 }

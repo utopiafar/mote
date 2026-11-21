@@ -14,13 +14,13 @@ final class ConversationUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["新对话"].exists)
     }
 
-    // A05: back returns to the conversation list.
-    func testBackReturnsToConversationList() {
+    func testMainConversationOpensDirectlyAndBackDismissesTheFlow() {
         let app = launch(state: "flow")
         openConversation(in: app)
+        XCTAssertFalse(app.staticTexts["对话历史"].exists)
+        XCTAssertFalse(app.buttons["新对话"].exists)
         app.buttons["conversation-back"].tap()
-        XCTAssertTrue(app.staticTexts["对话"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["conversation-\(ConversationId)"].exists)
+        XCTAssertTrue(app.staticTexts["dismiss"].waitForExistence(timeout: 10))
     }
 
     // A06: numbered citation chips and cards with source and location.
@@ -129,13 +129,9 @@ final class ConversationUITests: XCTestCase {
         XCTAssertFalse(app.textFields["mote-editor-text"].exists)
     }
 
-    private let ConversationId = "11111111-2222-3333-4444-555555555555"
     private let EvidenceA = "aaaaaaaa-1111-2222-3333-444444444444"
 
     private func openConversation(in app: XCUIApplication) {
-        let row = app.buttons["conversation-\(ConversationId)"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '按实际用量分摊'")).firstMatch
             .waitForExistence(timeout: 10))
     }

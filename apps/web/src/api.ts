@@ -212,6 +212,9 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
       },
     });
     } catch(error) { log('api.request_failed','warn',{route,method,errorName:safeErrorName(error),elapsedMs:performance.now()-started});throw error; }
+    // A conditional read that is still current has no body. Callers that sent
+    // If-None-Match own the reuse decision; an ordinary request never gets here.
+    if (response.status === 304) return response;
     if (!response.ok) {
       const error=await readApiError(response),code=error.code;
       log('api.request_rejected','warn',{route,method,status:response.status,code,requestId:error.requestId,elapsedMs:performance.now()-started});

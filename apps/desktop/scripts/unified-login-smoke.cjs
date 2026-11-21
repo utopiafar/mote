@@ -25,7 +25,6 @@ async function run(value){
  assert.equal((await status()).running,false);
  assert.equal(await js(`document.querySelector('#node-login-panel').hidden`),true);
  assert.equal(await js(`document.querySelector('#node-token-field').hidden`),true);
- assert.ok(Array.isArray((await js(`window.mote.ask('history')`)).items));
  const id=randomUUID();await js(`window.mote.ask('start',{id:${JSON.stringify(id)},question:'Generated unified Mac login question'})`);
  await until(async()=>(await js(`window.mote.ask('run',{id:${JSON.stringify(id)}})`)).status==='completed','native query without token entry');
  const page=await js(`window.mote.browseCaptures({location:'central',day:${JSON.stringify(new Date().toISOString().slice(0,10))}})`);assert.ok(Array.isArray(page.items));
@@ -35,7 +34,6 @@ async function run(value){
  const handed=await exchange.json();assert.notEqual(handed.token,owner);const exported=await request('/api/export',handed.token);assert.equal(exported.status,200);await exported.arrayBuffer();
  await js(`window.mote.ask('logout')`);assert.equal((await status()).config.tokenConfigured,false);
  assert.equal((await request('/api/configuration',handed.token)).status,401);
- assert.equal(await js(`window.mote.ask('history').then(()=>false,()=>true)`),true);
  await js(`window.mote.ask('login',{token:${JSON.stringify(owner)},durationMs:86400000})`);assert.equal((await status()).config.tokenConfigured,true);
  assert.equal(await js(`document.querySelector('#node-login-panel').hidden`),true);assert.equal(await js(`document.querySelector('#node-token-field').hidden`),true);
  const store=new ConfigStore(root,{available:()=>safeStorage.isEncryptionAvailable(),encrypt:v=>safeStorage.encryptString(v),decrypt:v=>safeStorage.decryptString(v)}),saved=await store.load();

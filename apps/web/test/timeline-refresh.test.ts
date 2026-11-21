@@ -21,6 +21,12 @@ async function fixture(){
  const priorFetch=globalThis.fetch;
  globalThis.fetch=async(input,init)=>{
   const path=String(input);paths.push(path);let value:unknown={items:[],nextCursor:null};
+  if(path==='/api/nav-state'){
+   const body=JSON.stringify({revisions:{library:'generated-library-'+phase,cards:'generated-cards',commitments:'generated-commitments',matters:'generated-matters',memory:'generated-memory',sources:'generated-sources',plugins:'generated-plugins'},badges:{ideas:0,connections:false}});
+   const etag='"generated-library-'+phase+'"';
+   if((init?.headers as Record<string,string>|undefined)?.['If-None-Match']===etag)return new Response(null,{status:304,headers:{ETag:etag}});
+   return new Response(body,{status:200,headers:{'content-type':'application/json',ETag:etag}});
+  }
   if(path==='/api/configuration')value={};
   else if(path==='/api/status')value={agent:{configured:false},storage:{captures:1}};
   else if(path==='/api/features')value={schemaVersion:1,revision:1,features:[],capabilities};

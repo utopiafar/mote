@@ -5,19 +5,21 @@ import type {ConfigurationPlatformOptions} from '../../apps/server/src/config.js
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import type {MemoryWorkMember} from '../../apps/server/src/memory-work-contract.js';
-import {fixtureMemoryPlan} from '../../apps/server/test/fixtures/memory-planning.js';
+import {fixtureMemoryCapacity,fixtureMemoryPlan} from '../../apps/server/test/fixtures/memory-planning.js';
+import {authorizeFixtureModels,fixtureTopicResult} from '../../apps/server/test/fixtures/model-authorization.js';
 
 const original='说话人1：我觉得工作压力很大。说话人1：可以讲讲发生什么了吗？参与者：我是林岚。';
 const config:ConfigurationPlatformOptions={path:(process.env.MOTE_FIXTURE_DIR!)+'/mote.yaml',privateCredential:{token:process.env.MOTE_FIXTURE_TOKEN!,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:process.env.MOTE_FIXTURE_DIR!,dataKey:process.env.MOTE_FIXTURE_TOKEN!,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated',allowUnauthenticatedLocal:false,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
 const result=(answer:unknown):QueryResult=>({runId:'generated-browser-model',answer:JSON.stringify(answer),citations:[],trace:[]});
 const generate=async(input:QueryInput):Promise<QueryResult>=>{
+ const topic=fixtureTopicResult(input);if(topic)return topic;
  if(input.taskContext?.ownerClarificationReply)return result({disposition:'followup',prompt:'请指出这份资料中哪一句话属于你。'});
  const plan=await fixtureMemoryPlan(input);if(plan)return plan;
  const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;assert.ok(members);
- return result({memories:[],capacity:{saturated:false},coverage:members.map(member=>({key:member.key,state:member.attributionContext?.ownerStatements?.length?'no_candidates':'needs_owner_input',candidateIndexes:[],...(member.attributionContext?.ownerStatements?.length?{reason:'The generated review preserves uncertainty.'}:{question:{prompt:'讲述工作压力的是你吗？',reason:'说话标签包含提问和讲述，全文没有可靠的身份对应。',evidence:[{id:member.id,quote:'我觉得工作压力很大。'}],choices:[{id:'narrator',label:'我是讲述者',answer:'这份资料里，讲述工作压力的是我。'},{id:'responder',label:'我是回应的人',answer:'这份资料里，我是回应和提问的人。'},{id:'neither',label:'我没参与',answer:'我没有参与这段对话。'}]}})}))});
+ return result({memories:[],...fixtureMemoryCapacity(input),coverage:members.map(member=>({key:member.key,state:member.attributionContext?.ownerStatements?.length?'no_candidates':'needs_owner_input',candidateIndexes:[],...(member.attributionContext?.ownerStatements?.length?{reason:'The generated review preserves uncertainty.'}:{question:{prompt:'讲述工作压力的是你吗？',reason:'说话标签包含提问和讲述，全文没有可靠的身份对应。',evidence:[{id:member.id,quote:'我觉得工作压力很大。'}],choices:[{id:'narrator',label:'我是讲述者',answer:'这份资料里，讲述工作压力的是我。'},{id:'responder',label:'我是回应的人',answer:'这份资料里，我是回应和提问的人。'},{id:'neither',label:'我没参与',answer:'我没有参与这段对话。'}]}})}))});
 };
 const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:generate},createModelAgent:async()=>({configured:true,close:async()=>{},query:generate})};
-const node=await buildApp(config,dependencies);await node.app.ready();
+const node=await buildApp(config,dependencies);await node.app.ready();await authorizeFixtureModels(node);
 const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
 const api=(method:'GET'|'POST'|'PUT',url:string,payload?:Record<string,unknown>)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
 assert.equal((await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated browser conversations',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'})).statusCode,200);
@@ -28,7 +30,7 @@ for(const index of [0,1]){
  await node.materialOrganizer.tick();await node.sourcePipelines.tick();
  const material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId===externalId)!;assert.ok(material);
  const started=await api('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref),recipes:[{id:'mote.personal-memory',version:'5'}]});assert.equal(started.statusCode,202,started.body);
- const job=await node.memoryPipeline.run(started.json().id);assert.equal(job.status,'waiting_for_input');
+ const job=await node.memoryPipeline.run(started.json().id);assert.equal(job.status,'waiting_for_input',job.errorCode);
  const page=await api('GET','/api/owner-questions?operationId='+encodeURIComponent('memory:'+job.id));assert.equal(page.statusCode,200,page.body);
  const question=page.json().items[0];assert.ok(question);questions.push({id:question.id,materialId:question.materialId,materialRef:question.materialRef,operationId:question.operationId,workId:question.workId});
 }

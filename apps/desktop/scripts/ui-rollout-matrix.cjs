@@ -23,7 +23,7 @@ module.exports = async function({window,js,navigate,outputDirectory,profile,ipcM
   const frames=()=>js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
   async function ready(page) {
     await until(()=>js('!document.querySelector("#settings-fields").disabled&&Array.from(document.querySelectorAll("[data-page]")).filter(e=>!e.hidden).every(e=>e.dataset.page==='+JSON.stringify(page)+')'),page+' initialized');
-    const gates={overview:'#home-recent .content-row',records:'#content-feed .content-row',notes:'#note-text:not(:disabled)',ask:'#ask-disconnected:not([hidden])',settings:'[data-page=settings] .settings-menu',connection:'#connection-onboarding',permissions:'#permission-screen.permission-badge',statistics:'#storage-statistics h2',compression:'#compression-before[src]',about:'#update-version',activity:'#collection-statistics',sources:'#source-list',uploads:'#upload-received',sync:'#sync-policy-help',capture:'#capture-advanced',privacy:'#default-collection',developer:'[data-page=developer] .advanced-settings>summary',screen:'#collection-workbench:not([hidden]),#setup-prompt:not([hidden])'};
+    const gates={overview:'#home-recent .content-row',records:'#content-feed .content-row',notes:'#note-text:not(:disabled)',settings:'[data-page=settings] .settings-menu',connection:'#connection-onboarding',permissions:'#permission-screen.permission-badge',statistics:'#storage-statistics h2',compression:'#compression-before[src]',about:'#update-version',activity:'#collection-statistics',sources:'#source-list',uploads:'#upload-received',sync:'#sync-policy-help',capture:'#capture-advanced',privacy:'#default-collection',developer:'[data-page=developer] .advanced-settings>summary',screen:'#collection-workbench:not([hidden]),#setup-prompt:not([hidden])'};
     await until(()=>js('(()=>{const e=document.querySelector('+JSON.stringify(gates[page])+');return !!e&&e.getClientRects().length>0;})()'),page+' consumer');
     if(['overview','records'].includes(page))await until(()=>js('document.querySelector("#content-status").getAttribute("aria-busy")==="false"'),page+' content loaded');
     if(page==='compression')await until(()=>js('!document.querySelector("#compression-apply").disabled'),'compression generated');
@@ -69,14 +69,12 @@ module.exports = async function({window,js,navigate,outputDirectory,profile,ipcM
   }
   async function supplementAt(item) {
     const byName=name=>observations.find(x=>x.name===name),name=item.name;
-    if(/^(overview|records|notes|ask|settings|connection|sync|capture|privacy|permissions|activity|statistics|developer|about|sources|uploads|screen|compression)-(zh|en)-(normal|compact|large)-end$/.test(name))await fillCoverage(name,item.page,[byName(name.replace(/-end$/,'-top')),item]);
+    if(/^(overview|records|notes|settings|connection|sync|capture|privacy|permissions|activity|statistics|developer|about|sources|uploads|screen|compression)-(zh|en)-(normal|compact|large)-end$/.test(name))await fillCoverage(name,item.page,[byName(name.replace(/-end$/,'-top')),item]);
     if(/^.+-(zh|en)-zoom200$/.test(name)&&!name.startsWith('keyboard-save'))await fillCoverage(name,item.page,[item]);
     if(/^import-end-/.test(name))await fillCoverage(name,item.page,[byName(name.replace('import-end-','import-')),item],'#source-confirmation');
     if(/^add-chooser-end-/.test(name))await fillCoverage(name,item.page,[byName(name.replace('add-chooser-end-','add-chooser-')),item],null,'add-dialog');
     if(/^reader-status-/.test(name))await fillCoverage(name,item.page,[byName(name.replace('reader-status-','reader-')),item],null,'content-detail-dialog',true);
     if(/^dirty-footer-end-/.test(name))await fillCoverage(name,item.page,[byName(name.replace('dirty-footer-end-','dirty-footer-')),item]);
-    if(/^ask-evidence-(zh|en)-/.test(name))await fillCoverage(name,item.page,[byName(name.replace('ask-evidence-','ask-evidence-start-')),item],'.ask-evidence',null,false,'.ask-excerpt');
-    if(/^ask-reference-focus-/.test(name))await fillCoverage(name,item.page,[byName(name.replace('ask-reference-focus-','ask-connected-')),byName(name.replace('ask-reference-focus-','ask-answer-')),byName(name.replace('ask-reference-focus-','ask-answer-end-')),item],null,null,false,'.ask-answer');
   }
   async function capture(name,page,consumer,forceWrite=false) {
     const readiness=consumer?{page,marker:consumer,ready:true,locale:await js('document.documentElement.lang'),state:'generated connected answer'}:await ready(page);await frames();
@@ -157,12 +155,6 @@ module.exports = async function({window,js,navigate,outputDirectory,profile,ipcM
         await js('document.querySelector("#setup-primary").click();true;');await ready('privacy');
         await js('document.querySelector("#workspace-back").click();true;');await ready('screen');
         assert.equal(await js('!document.querySelector("#collection-workbench").hidden'),true,'Chooser returns to original screen task');
-        await navigate('ask');await ready('ask');
-        assert.equal(await js('document.querySelector("#ask-disconnected [data-nav=connection]").classList.contains("secondary")'),true,'Offline Ask settings navigation is secondary');
-        await js('window.scrollTo(0,0);true;');await capture('ask-role-'+condition+'-top','ask');
-        await js('window.scrollTo(0,document.documentElement.scrollHeight);true;');await capture('ask-role-'+condition+'-end','ask');
-        await js('document.querySelector("#ask-disconnected [data-nav=connection]").click();true;');await ready('connection');
-        await js('document.querySelector("#workspace-back").click();true;');await ready('ask');
         await navigate('sources');await ready('sources');
         await js('document.querySelector("#source-agent-discover").closest("details").open=true;document.querySelector("#source-agent-discover").click();true;');
         await until(()=>js('!document.querySelector("#source-agent-choice").hidden&&!document.querySelector("#source-agent-add").disabled'),'generated agent choices');
@@ -207,7 +199,7 @@ module.exports = async function({window,js,navigate,outputDirectory,profile,ipcM
   await navigate('overview');await ready('overview');
   const key=await js('Array.from(document.querySelectorAll("#home-recent .content-row")).find(e=>e.textContent.includes("Generated rollout original")).dataset.contentKey');
   await until(()=>js('window.mote.status().then(s=>!(s.operations??[]).some(j=>j.state==="running"))'),'note finished');
-  const pages=['overview','records','notes','ask','settings','connection','sync','capture','privacy','permissions','activity','statistics','developer','about','sources','uploads','screen','compression'];
+  const pages=['overview','records','notes','settings','connection','sync','capture','privacy','permissions','activity','statistics','developer','about','sources','uploads','screen','compression'];
   // Explicit generated platform selections; these actions must never enumerate
   // personal app/session/calendar data while auditing controls.
   const sourcePickerHandlers=new Map(['mote:coding-agents','mote:calendar-authorize'].map(channel=>[channel,ipcMain._invokeHandlers.get(channel)]));
@@ -226,12 +218,6 @@ module.exports = async function({window,js,navigate,outputDirectory,profile,ipcM
         await js('Array.from(document.querySelectorAll("[data-page]:not([hidden]) details")).forEach(e=>{if(!["home-sync-details","capture-library-tools"].includes(e.id))e.open=true;});window.scrollTo(0,0);true;');
         if(page==='developer')await js('document.querySelector("[data-page=developer] .advanced-settings").open=true;true;');
         if(page==='settings')assert.equal(await js('document.querySelector("#note-action").hidden&&document.querySelector("#settings-save-bar").hidden'),true,'Settings only configuration');
-        if(page==='ask') {
-          await js('document.querySelector("#ask-disconnected [data-nav=connection]").click();true;');await ready('connection');
-          assert.equal(await js('document.querySelector("#workspace-location").textContent.startsWith(document.querySelector("[data-page=ask] h1").textContent.trim())'),true,'Ask origin breadcrumb');
-          await js('document.querySelector("#workspace-back").click();true;');await ready('ask');
-          journeys.push({name:'actual Ask configuration and original task return',language,variant,verified:true});
-        }
         await capture([page,language==='en'?'en':'zh',variant,'top'].join('-'),page);
         await js('window.scrollTo(0,document.documentElement.scrollHeight);true;');await frames();
         const last=await js('(()=>{const els=Array.from(document.querySelectorAll("[data-page]:not([hidden]) button,[data-page]:not([hidden]) input,[data-page]:not([hidden]) select,[data-page]:not([hidden]) textarea")).filter(e=>e.getClientRects().length&&!e.closest("[hidden]")&&!e.closest("details:not([open])"));const e=els.at(-1);if(!e)return null;const b=e.getBoundingClientRect(),f=document.querySelector("#settings-save-bar");return {id:e.id,bottom:b.bottom,footerTop:f.hidden||getComputedStyle(f).position!=="fixed"?innerHeight:f.getBoundingClientRect().top};})()');
@@ -350,52 +336,6 @@ module.exports = async function({window,js,navigate,outputDirectory,profile,ipcM
   await navigate('developer');await js('document.querySelector("[data-page=developer] .advanced-settings").open=true;true;');
   ipcMain.removeHandler('mote:diagnostics-sample');ipcMain.handle('mote:diagnostics-sample',()=>{throw Error('Generated diagnostic sample failure');});
   await js('document.querySelector("#diagnostics-sample").click();true;');await until(()=>js('!document.querySelector("#feedback").hidden'),'generated diagnostic error');await capture('diagnostics-error','developer');
-  // Exercise the connected answer through the real history action and IPC.
-  // Auth/answer data are generated adapters, and evidence opens are recorded.
-  const baseStatus=await js('window.mote.status()');
-  const authenticateStatus=status=>({...status,config:{...status.config,serverUrl:'http://127.0.0.1:47999',tokenConfigured:true}});
-  const citationId='11111111-2222-4333-8444-555555555555',conversationId='22222222-3333-4444-8555-666666666666';
-  const excerpt='Generated original  双空格 🐾\n'.repeat(24)+'Original final line stays readable.';
-  const conversation={id:conversationId,title:'Generated connected answer',turns:[{question:'Generated long answer with evidence',status:'completed',result:{answer:'**Generated answer** ['+citationId+']\n\n'+Array.from({length:6},(_,i)=>'- Complete generated finding '+(i+1)+' ['+citationId+']').join('\n'),citations:[{id:citationId,appName:'Generated source',capturedAt:'2026-10-14',excerpt}]}}]};
-  const previousAsk=ipcMain._invokeHandlers.get('mote:ask'),previousStatus=ipcMain._invokeHandlers.get('mote:get-status'),previousCentral=ipcMain._invokeHandlers.get('mote:central'),previousSend=window.webContents.send;
-  const openedEvidence=[];
-  ipcMain.removeHandler('mote:get-status');ipcMain.handle('mote:get-status',async event=>authenticateStatus(await previousStatus(event)));
-  ipcMain.removeHandler('mote:ask');ipcMain.handle('mote:ask',(_event,command)=>command==='history'?{items:[{id:conversationId,title:conversation.title}]}:command==='conversation'?conversation:{items:[]});
-  ipcMain.removeHandler('mote:central');ipcMain.handle('mote:central',(_event,page,id)=>{openedEvidence.push({page,id});});
-  window.webContents.send=function(channel,...args){return previousSend.call(this,channel,...(channel==='mote:status'?[authenticateStatus(args[0])]:args));};
-  try {
-    window.webContents.send('mote:status',authenticateStatus(baseStatus));
-    for(const language of ['zh-CN','en']) {
-      window.webContents.setZoomFactor(1);await changeLanguage(language);
-      await navigate('ask');await until(()=>js('document.querySelector("#ask-history button")&&!document.querySelector("#ask-history button").disabled'),'connected generated history');
-      await js('document.querySelector("#ask-history button").click();true;');await until(()=>js('document.querySelectorAll(".ask-inline-citation").length===7&&!document.querySelector("#ask-refresh").disabled'),'connected full answer');
-      for(const [variant,zoom] of [['normal',1],['compact',1],['large',1.3]]) {
-        window.setSize(variant==='normal'?1140:820,variant==='normal'?840:620);window.webContents.setZoomFactor(zoom);await frames();
-        await js('window.scrollTo(0,0);true;');await capture(['ask-connected',language==='en'?'en':'zh',variant].join('-'),'ask','.ask-answer');
-        await js('document.querySelector(".ask-answer").scrollIntoView({block:"start",behavior:"instant"});true;');await capture(['ask-answer',language==='en'?'en':'zh',variant].join('-'),'ask','.ask-answer');
-        await js('document.querySelector(".ask-evidence").scrollIntoView({block:"end",behavior:"instant"});true;');await capture(['ask-answer-end',language==='en'?'en':'zh',variant].join('-'),'ask','.ask-answer');
-        const references=await js('Array.from(document.querySelectorAll(".ask-inline-citation")).map(e=>({text:e.textContent,height:e.getBoundingClientRect().height,minHeight:getComputedStyle(e).minHeight,client:e.clientWidth,scroll:e.scrollWidth,complete:e.scrollWidth<=e.clientWidth+1}))');
-        if(!references.every(e=>e.height>=23.5&&e.height<=32&&e.minHeight==="24px"&&e.complete))writeFileSync(join(outputDirectory,'inline-reference-diagnostic.json'),JSON.stringify({language,variant,references},null,2));
-        assert(references.every(e=>e.height>=23.5&&e.height<=32&&e.minHeight==="24px"&&e.complete),'Compact complete inline references');
-        assert.equal(await js('getComputedStyle(document.querySelector(".ask-evidence button")).minHeight'),'48px','Full original action retains control role');
-        await js('document.querySelector(".ask-evidence summary").click();true;');assert.equal(await js('document.querySelector(".ask-excerpt").textContent'),excerpt,'Full generated evidence excerpt');
-        await js('document.querySelector(".ask-excerpt").scrollIntoView({block:"start",behavior:"instant"});true;');await capture(['ask-evidence-start',language==='en'?'en':'zh',variant].join('-'),'ask','.ask-excerpt');
-        await js('document.querySelector(".ask-excerpt").scrollIntoView({block:"end"});true;');await capture(['ask-evidence',language==='en'?'en':'zh',variant].join('-'),'ask','.ask-excerpt');
-        await js('document.querySelector(".ask-evidence summary").click();document.querySelector(".ask-inline-citation").scrollIntoView({block:"center"});document.querySelector(".ask-inline-citation").focus();true;');
-        window.webContents.debugger.attach('1.3');
-        try{await window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});window.webContents.focus();window.webContents.sendInputEvent({type:'keyDown',keyCode:'Enter'});window.webContents.sendInputEvent({type:'char',keyCode:'\r'});window.webContents.sendInputEvent({type:'keyUp',keyCode:'Enter'});await until(()=>openedEvidence.at(-1)?.id===citationId,'real citation IPC');await capture(['ask-reference-focus',language==='en'?'en':'zh',variant].join('-'),'ask','.ask-inline-citation');}
-        finally{await window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});window.webContents.debugger.detach();}
-        assert.equal(await js('document.activeElement.classList.contains("ask-inline-citation")'),true,'Citation keyboard focus remains on source action');
-        openedEvidence.length=0;await js('document.querySelector(".ask-evidence button").click();true;');await until(()=>openedEvidence.at(-1)?.id===citationId,'full original IPC');
-        assert.deepEqual(openedEvidence.at(-1),{page:'ask',id:citationId});openedEvidence.length=0;
-        journeys.push({name:'connected long answer, complete excerpt, citation keyboard focus and original evidence IPC',language,variant,verified:true,generatedResponse:true,browserOpenStubbed:true});
-      }
-    }
-  } finally {
-    window.webContents.send=previousSend;
-    for(const [channel,handler] of [['mote:get-status',previousStatus],['mote:ask',previousAsk],['mote:central',previousCentral]]){ipcMain.removeHandler(channel);ipcMain.handle(channel,handler);}
-    window.webContents.send('mote:status',await js('window.mote.status()'));
-  }
   journeys.push({name:'renderer reload, failed note input, connection error and synthetic running status',verified:true,collectionStarted:false});
   assert.equal((await js('window.mote.status()')).running,false,'No real collection');
   assert.equal((await js('window.mote.sources()')).length,0,'No source import committed');

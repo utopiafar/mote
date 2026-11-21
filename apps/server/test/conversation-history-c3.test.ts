@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
+import {Conversations} from '../src/conversations.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
@@ -185,13 +186,13 @@ test('queued history reads retain their original lineage and reject changed hist
   node.store.invalidateConversationAnswers([evidence],true);
   assert.equal(node.conversations.get(id).turns.find(turn=>turn.id===first.messageId)!.evidenceDeleted,true);
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM delegation_payloads WHERE work_id=?').get('query:'+first.messageId)!.n,0,'erasure clears the saved workspace as well as the answer');
-  node.conversations.delete(id);id=node.conversations.main().id;
+  new Conversations(node.store).delete(id);id=node.conversations.main().id;
   target=append('GENERATED_LATE_NEEDLE');for(let i=0;i<21;i++)append('Generated later filler '+i);mode='delete';
   const late=await run();if(failure)throw failure;
   assert.equal(detected,true,'the history pin is rechecked after the old turn is removed');
   assert.equal(late.message.status,'failed');
   assert.doesNotMatch(JSON.stringify(node.conversations.get(id)),/GENERATED_LATE_RESULT/);
-  node.conversations.delete(id);id=node.conversations.main().id;withdrawn=randomUUID();
+  new Conversations(node.store).delete(id);id=node.conversations.main().id;withdrawn=randomUUID();
   await node.store.ingest({id:withdrawn,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated withdrawn evidence'});
   target=append('GENERATED_WITHDRAW_NEEDLE',[withdrawn]);for(let i=0;i<21;i++)append('Generated final filler '+i);mode='withdraw';detected=false;
   const revoked=await run();if(failure)throw failure;

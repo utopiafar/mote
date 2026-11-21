@@ -12,6 +12,10 @@ public enum CentralError: Error, Equatable {
     case http(status: Int, code: String?)
 }
 
+public struct ConversationIdentity: Codable, Equatable, Sendable {
+    public let id: String
+}
+
 public struct CentralClient: Sendable {
     public static let protocolVersion = "1"
 
@@ -140,21 +144,14 @@ public struct CentralClient: Sendable {
         return receipt
     }
 
-    public func conversations(cursor: String? = nil, limit: Int = 30) async throws -> CentralPage<ConversationSummary> {
-        var query = [URLQueryItem(name: "limit", value: String(limit))]
-        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
-        return try await request("GET", "/api/conversations", query: query)
+    public func mainConversation() async throws -> ConversationIdentity {
+        try await request("GET", "/api/conversations/main")
     }
 
     public func conversation(id: UUID, cursor: String? = nil, limit: Int = 20) async throws -> Conversation {
         var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await request("GET", "/api/conversations/\(id.uuidString.lowercased())", query: query)
-    }
-
-    @discardableResult
-    public func deleteConversation(id: UUID) async throws -> DeletionReceipt {
-        try await request("DELETE", "/api/conversations/\(id.uuidString.lowercased())")
     }
 
     public func memories(query: String? = nil, tier: String? = nil, kind: String? = nil,

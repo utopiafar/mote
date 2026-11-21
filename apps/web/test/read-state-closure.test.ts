@@ -17,143 +17,97 @@ configureLocale(()=> 'zh-CN');
 function deferred(){let resolve!:(value:any)=>void,reject!:(error:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),before=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){before.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.HTMLElement.prototype.scrollIntoView=()=>{};const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,d:dom.window.document};}
 const askSettings={revision:1,domains:[{id:'conversations',effective:{multipleConversations:true,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}},saved:{},fields:[],status:'applied'}]};
-function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/developer')return {credentials:[],endpoints:[],deliveries:[]};if(path==='/api/model-settings')return modelView();if(path==='/api/conversations/main')return {id:'A'};if(path.startsWith('/api/conversations/')&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&typeof (value as {then?:unknown}).then!=='function'&&!Array.isArray((value as {turns?:unknown}).turns))return {...summary(decodeURIComponent(path.slice('/api/conversations/'.length))),title:'',turnCount:0,turns:[],revision:1,nextCursor:null};return value;}if(path==='/api/agent-runtime-settings')return runtimeReceipt(modelView());return read(path,init);},setAgentTimeout:()=>{}} as Api;}
+function apiWith(read:(path:string,init?:RequestInit)=>unknown,mainId='A'):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/developer')return {credentials:[],endpoints:[],deliveries:[]};if(path==='/api/model-settings')return modelView();if(path==='/api/conversations/main')return {id:mainId};if(path.startsWith('/api/conversations/')&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&typeof (value as {then?:unknown}).then!=='function'&&!Array.isArray((value as {turns?:unknown}).turns))return {...summary(decodeURIComponent(path.slice('/api/conversations/'.length))),title:'',turnCount:0,turns:[],revision:1,nextCursor:null};return value;}if(path==='/api/agent-runtime-settings')return runtimeReceipt(modelView());return read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const when='2026-01-01T00:00:00Z',summary=(id:string)=>({id,title:'Conversation '+id,createdAt:when,updatedAt:when,turnCount:1,scope:{},status:'completed'}),detail=(id:string)=>({...summary(id),turns:[{id:'turn-'+id,question:'Question '+id,status:'completed',createdAt:when,result:{answer:'Answer '+id,citations:[],trace:[],runId:id}}],nextCursor:'older'});
 const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent===text)!;
-test('background conversation reads keep loaded answers usable without replaying initial loading',async t=>{
- const {root,d}=await fixture(t),initial=deferred(),historyRefresh=deferred(),detailRefresh=deferred(),next=deferred();let refreshing=false;
- const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return refreshing?historyRefresh.promise:initial.promise;
-  if(path==='/api/query-runs')return {items:[]};
-  if(path==='/api/conversations/A')return refreshing?detailRefresh.promise:detail('A');
-  if(path==='/api/conversations/B')return next.promise;
-  return {items:[]};
- });
+test('background conversation reads keep loaded answers and the draft mounted',async t=>{
+ const {root,d}=await fixture(t),initial=deferred(),detailRefresh=deferred();let refreshing=false;
+ const api=apiWith(path=>path==='/api/conversations/A'?refreshing?detailRefresh.promise:initial.promise:{items:[]});
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- assert.match(d.body.textContent!,/正在读取历史/);
- await act(async()=>initial.resolve({items:['A','B'].map(summary)}));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
- const input=d.querySelector<HTMLTextAreaElement>('[aria-label="向 Mote 提问"]')!;
+ assert.ok(d.querySelector('.chat-page[aria-busy=true] .loading'));
+ await act(async()=>initial.resolve(detail('A')));
+ const input=d.querySelector<HTMLTextAreaElement>('.ask-form textarea')!;
  refreshing=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
  assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer A/);
- assert.doesNotMatch(d.body.textContent!,/正在读取历史|正在打开对话/);
- assert.equal(input.disabled,false);
- await act(async()=>{historyRefresh.resolve({items:['A','B'].map(summary)});detailRefresh.resolve(detail('A'));});
- assert.equal(d.querySelector('[aria-label="向 Mote 提问"]'),input);
- await act(async()=>d.querySelectorAll<HTMLButtonElement>('.conversation-item')[1].click());
- assert.match(d.body.textContent!,/正在打开对话/);assert.equal(input.disabled,true);
- await act(async()=>next.resolve(detail('B')));assert.equal(input.disabled,false);assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer B/);
-});
-test('restoring a running run refreshes history once when it completes without cancelling its replacement read',async t=>{
- const {root,d}=await fixture(t),restore=deferred(),refresh=deferred(),reads:AbortSignal[]=[];
- const running={id:'generated-running',status:'running',conversationId:'A',events:[]},completed={...running,status:'completed'};
- const api=apiWith((path,init)=>{
-  if(path==='/api/conversations?limit=30'){reads.push(init!.signal as AbortSignal);return reads.length===1?{items:[summary('A')]}:refresh.promise;}
-  if(path==='/api/query-runs')return restore.promise;
-  if(path==='/api/query-runs/generated-running')return completed;
-  if(path==='/api/conversations/A')return detail('A');
-  return {items:[]};
- });
- await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>restore.resolve({items:[running]}));
- assert.equal(reads.length,2,'one initial read and one terminal-run revalidation');assert.equal(reads[1].aborted,false);
- assert.doesNotMatch(d.body.textContent!,/正在读取历史/);
- await act(async()=>refresh.resolve({items:[summary('A')]}));assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer A/);
-});
-test('an empty conversation history keeps its explanation visible through background refresh',async t=>{
- const {root,d}=await fixture(t),refresh=deferred();let refreshing=false;
- const api=apiWith(path=>path==='/api/conversations?limit=30'&&refreshing?refresh.promise:{items:[]});
- await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- const message=d.querySelector('.conversation-history .fine-print')!;assert.match(message.textContent!,/回答会自动保存在中央/);
- refreshing=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
- assert.equal(d.querySelector('.conversation-history .fine-print'),message);assert.doesNotMatch(d.querySelector('.conversation-history')!.textContent!,/正在读取/);
- await act(async()=>refresh.resolve({items:[]}));assert.equal(d.querySelector('.conversation-history .fine-print'),message);
-});
-test('conversation restore, detail and older-page replies cannot replace later owner selection',async t=>{
- const {root,d}=await fixture(t),restore=deferred(),a=deferred(),old=deferred();
- const api=apiWith(path=>path==='/api/conversations?limit=30'?{items:['A','B'].map(summary)}:path==='/api/query-runs'?restore.promise:path.includes('?cursor=')?old.promise:path.endsWith('/A')?a.promise:detail('B'));
- await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- const rows=d.querySelectorAll<HTMLButtonElement>('.conversation-item');await act(async()=>rows[0].click());await act(async()=>rows[1].click());
- await act(async()=>a.resolve(detail('A')));await act(async()=>restore.resolve({items:[{id:'old-run',status:'completed',conversationId:'A'}]}));
- assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer B/);assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Answer A/);
- await act(async()=>button(d,'加载更早的对话').click());await act(async()=>rows[0].click());await act(async()=>old.resolve({...detail('B'),turns:[{...detail('B').turns[0],id:'older-B',question:'STALE OLDER'}]}));
- assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/STALE OLDER|Answer B/);
+ assert.equal(d.querySelector('.chat-page .loading'),null);assert.equal(input.disabled,false);
+ await act(async()=>detailRefresh.resolve(detail('A')));
+ assert.equal(d.querySelector('.ask-form textarea'),input);
 });
 test('an evidence deletion revision withdraws already expanded older answers and citations before reloading pages',async t=>{
  const {root,d}=await fixture(t);let revision=1,olderReads=0,latestReads=0;
  const base={...summary('generated'),turnCount:21},old=()=>({...base,revision,nextCursor:null,turns:[{id:'old',question:'Generated earlier question',status:'completed',createdAt:when,evidenceDeleted:revision===2,result:{answer:revision===1?'GENERATED PRIVATE EARLIER ANSWER':'Cleared',citations:revision===1?[{id:'generated-original',excerpt:'GENERATED PRIVATE CITATION'}]:[],trace:[],runId:'generated-old'}}]});
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[base]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor=')){olderReads++;return old();}
   if(path==='/api/conversations/generated'){latestReads++;return {...base,revision,nextCursor:'1',turns:[{...detail('generated').turns[0],result:{answer:'Generated newest answer',citations:[],trace:[],runId:'new'}}]};}return {items:[]};
- });
+ },'generated');
  const renderAnswer=(a:any)=>a.answer+' '+a.citations.map((c:any)=>c.excerpt).join(' ');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());await act(async()=>button(d,'加载更早的对话').click());
+ await act(async()=>button(d,'加载更早的消息').click());
  assert.match(d.querySelector('.conversation-messages')!.textContent!,/GENERATED PRIVATE EARLIER ANSWER.*GENERATED PRIVATE CITATION/);
  revision=2;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
  assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/GENERATED PRIVATE/);assert.equal(latestReads,2);assert.equal(olderReads,1);
- await act(async()=>button(d,'加载更早的对话').click());assert.equal(olderReads,2);
- assert.match(d.querySelector('.conversation-messages')!.textContent!,/相关证据已删除，这条历史回答已清除/);assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/GENERATED PRIVATE/);
+ await act(async()=>button(d,'加载更早的消息').click());assert.equal(olderReads,2);
+ assert.match(d.querySelector('.conversation-messages')!.textContent!,/已失效/);assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/GENERATED PRIVATE/);
 });
 test('a late older page from before deletion cannot restore an answer after the latest revision changes',async t=>{
  const {root,d}=await fixture(t),late=deferred();let revision=1,signal:AbortSignal|undefined;
  const api=apiWith((path,init)=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor=')){signal=init?.signal??undefined;return late.promise;}return {...detail('generated'),revision};
- });
+ },'generated');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());await act(async()=>button(d,'加载更早的对话').click());
+ await act(async()=>button(d,'加载更早的消息').click());
  revision=2;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/generated'));assert.equal(signal?.aborted,true);
  await act(async()=>late.resolve({...detail('generated'),revision:1,nextCursor:null,turns:[{...detail('generated').turns[0],id:'stale',result:{answer:'GENERATED LATE DELETED ANSWER',citations:[],trace:[],runId:'stale'}}]}));
- assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/GENERATED LATE DELETED ANSWER/);assert.equal(button(d,'加载更早的对话').disabled,false);
+ assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/GENERATED LATE DELETED ANSWER/);assert.equal(button(d,'加载更早的消息').disabled,false);
 });
 test('an older page reporting a newer revision refreshes the head instead of mixing generations',async t=>{
  const {root,d}=await fixture(t);let revision=1,latestReads=0;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor=')){revision=2;return {...detail('generated'),revision,turns:[{...detail('generated').turns[0],id:'old',result:{answer:'Generated changed page',citations:[],trace:[],runId:'old'}}]};}
   if(path==='/api/conversations/generated'){latestReads++;return {...detail('generated'),revision};}return {items:[]};
- });
+ },'generated');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());await act(async()=>button(d,'加载更早的对话').click());
+ await act(async()=>button(d,'加载更早的消息').click());
  assert.equal(latestReads,2);assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Generated changed page/);
 });
 test('a newer older-page revision withdraws the cached head until the current head is validated',async t=>{
  const {root,d}=await fixture(t),head=deferred();let reads=0;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor='))return {...detail('generated'),revision:2,turns:[{...detail('generated').turns[0],id:'old',result:{answer:'Generated changed page',citations:[],trace:[],runId:'old'}}]};
   if(path==='/api/conversations/generated')return ++reads===1?{...detail('generated'),revision:1}:head.promise;return {items:[]};
- });
+ },'generated');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.match(d.body.textContent!,/Answer generated/);
- await act(async()=>button(d,'加载更早的对话').click());assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Answer generated|Generated changed page/);
+ assert.match(d.body.textContent!,/Answer generated/);
+ await act(async()=>button(d,'加载更早的消息').click());assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Answer generated|Generated changed page/);
  await act(async()=>head.resolve({...detail('generated'),revision:2,turns:[{...detail('generated').turns[0],result:{answer:'Generated validated head',citations:[],trace:[],runId:'new'}}]}));
  assert.match(d.body.textContent!,/Generated validated head/);assert.doesNotMatch(d.body.textContent!,/Answer generated|Generated changed page/);
 });
 for(const status of [401,403,404,410])test('revoked conversation '+status+' discards expanded pages even if access returns at the same revision',async t=>{
  const {root,d}=await fixture(t);let revoked=false;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(revoked)throw new ApiError('Generated conversation unavailable',status);
   return path.includes('?cursor=')?{...detail('generated'),revision:1,nextCursor:null,turns:[{...detail('generated').turns[0],id:'old',result:{answer:'GENERATED REVOKED PAGE',citations:[],trace:[],runId:'old'}}]}:{...detail('generated'),revision:1};
- });
+ },'generated');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());await act(async()=>button(d,'加载更早的对话').click());assert.match(d.body.textContent!,/GENERATED REVOKED PAGE/);
+ await act(async()=>button(d,'加载更早的消息').click());assert.match(d.body.textContent!,/GENERATED REVOKED PAGE/);
  revoked=true;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/generated'));assert.doesNotMatch(d.body.textContent!,/GENERATED REVOKED PAGE|Answer generated/);
  revoked=false;await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/generated'));assert.match(d.body.textContent!,/Answer generated/);assert.doesNotMatch(d.body.textContent!,/GENERATED REVOKED PAGE/);
 });
 test('revocation reported by an older page immediately withdraws the cached head while its authorization is rechecked',async t=>{
  const {root,d}=await fixture(t),head=deferred();let reads=0;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor='))throw new ApiError('Generated older page permission revoked',403);
   if(path==='/api/conversations/generated')return ++reads===1?{...detail('generated'),revision:1}:head.promise;return {items:[]};
- });
+ },'generated');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.match(d.body.textContent!,/Answer generated/);
- await act(async()=>button(d,'加载更早的对话').click());assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Answer generated/);assert.equal(reads,2);
+ assert.match(d.body.textContent!,/Answer generated/);
+ await act(async()=>button(d,'加载更早的消息').click());assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Answer generated/);assert.equal(reads,2);
  await act(async()=>head.reject(new ApiError('Generated head permission revoked',403)));assert.doesNotMatch(d.body.textContent!,/Answer generated/);
 });
 test('Ask sends a question without the dashboard time or device filter',async t=>{
@@ -161,7 +115,15 @@ test('Ask sends a question without the dashboard time or device filter',async t=
  const completed={id:'generated-run',status:'completed',createdAt:when,updatedAt:when,events:[]};
  const api=apiWith((path,init)=>{if(path==='/api/conversations/messages'&&init?.method==='POST'){submitted=JSON.parse(String(init.body));return{id:completed.id,...submitted,revision:1,status:'accepted',seq:0,createdAt:when};}return {items:[]};});
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
- await act(async()=>button(d,'我最近都做了些什么？').click());
+ await act(async()=>{
+  const input=d.querySelector<HTMLTextAreaElement>('.ask-form textarea')!,w=d.defaultView!;
+  Object.assign(w.HTMLElement.prototype,{attachEvent:()=>{},detachEvent:()=>{}});
+  input.focus();
+  Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'我最近都做了些什么？');
+  input.dispatchEvent(new w.Event('input',{bubbles:true}));
+  input.dispatchEvent(new w.KeyboardEvent('keyup',{bubbles:true,key:'a'}));
+ });
+ await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new d.defaultView!.Event('submit',{bubbles:true,cancelable:true})));
  assert.equal(submitted.question,'我最近都做了些什么？');
  assert.equal(submitted.scope.after,undefined);assert.equal(submitted.scope.before,undefined);assert.equal(submitted.scope.deviceId,undefined);
 });
@@ -283,24 +245,24 @@ test('image progress keeps ready OCR visible after vision failure and reports a 
  await act(async()=>button(d,'补齐未完成步骤').click());assert.deepEqual(writes,[{mode:'complete',confirmUnknown:false}]);
 });
 
-test('ordinary revisions and deletion retain historical answers, deny unavailable reference navigation, and privacy erasure clears both',async t=>{
+test('unavailable references deny navigation and an invalidated answer withdraws its text',async t=>{
  const {root,d}=await fixture(t);let revision=1;const opened:string[]=[],referenceReads:string[]=[];
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated-history')]};if(path==='/api/query-runs')return {items:[]};
-  if(path==='/api/conversations/generated-history/references/generated-original'){referenceReads.push(path);return {id:'generated-original',available:revision<3};}
-  if(path==='/api/conversations/generated-history')return {...summary('generated-history'),revision,nextCursor:null,turns:[{id:'generated-turn',question:'Generated original question',status:'completed',createdAt:when,evidenceStale:revision>=2,evidenceUnavailable:revision>=3,evidenceDeleted:revision===4,result:{answer:revision===4?'Cleared':'GENERATED HISTORICAL PROPOSAL',citations:revision===4?[]:[{id:'generated-original',excerpt:'GENERATED OLD QUOTE'}],trace:[],runId:'generated-history'}}]};return {items:[]};
- });
+  if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/conversations/generated-history/references/generated-original'){referenceReads.push(path);return {id:'generated-original',available:revision<2};}
+  if(path==='/api/conversations/generated-history')return {...summary('generated-history'),revision,nextCursor:null,turns:[{id:'generated-turn',question:'Generated original question',status:'completed',createdAt:when,evidenceStale:revision>=3,evidenceUnavailable:revision>=2,evidenceDeleted:revision===4,result:{answer:revision===4?'Cleared':'GENERATED HISTORICAL PROPOSAL',citations:revision===4?[]:[{id:'generated-original',excerpt:'GENERATED OLD QUOTE'}],trace:[],runId:'generated-history'}}]};return {items:[]};
+ },'generated-history');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],onOpen:ref=>opened.push(ref),renderAnswer:(answer:any,open)=>React.createElement('div',{},answer.answer,...answer.citations.map((citation:any)=>React.createElement('button',{key:citation.id,onClick:()=>open('capture:'+citation.id)},citation.excerpt)))})));
- await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());
  await act(async()=>button(d,'GENERATED OLD QUOTE').click());assert.deepEqual(opened,['capture:generated-original']);
  revision=2;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
- assert.match(d.body.textContent!,/这是历史版本，当前资料已更新/);assert.match(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL.*GENERATED OLD QUOTE/);
+ assert.match(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL.*GENERATED OLD QUOTE/);
+ await act(async()=>button(d,'GENERATED OLD QUOTE').click());assert.deepEqual(opened,['capture:generated-original']);
+ assert.equal(referenceReads.length,2);assert.equal(d.querySelector('[role="dialog"]')?.getAttribute('aria-label'),'引用不可用');
+ await act(async()=>button(d,'返回原对话').click());assert.equal(d.querySelector('[role="dialog"]'),null);
  revision=3;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
- assert.match(d.body.textContent!,/引用原文已删除，历史问答仍保留/);assert.doesNotMatch(d.body.textContent!,/这是历史版本，当前资料已更新/);
- await act(async()=>button(d,'GENERATED OLD QUOTE').click());assert.deepEqual(opened,['capture:generated-original']);assert.equal(referenceReads.length,2);assert.match(d.querySelector('[role="dialog"]')!.textContent!,/引用不可用.*引用原文已删除/);
- await act(async()=>button(d,'返回原对话').click());assert.equal(d.querySelector('[role="dialog"]'),null);assert.match(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL.*GENERATED OLD QUOTE/);assert.equal(d.querySelector<HTMLTextAreaElement>('.ask-form textarea')!.disabled,false);
+ assert.ok(d.querySelector('[data-message-kind="stale"]'));assert.doesNotMatch(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL|GENERATED OLD QUOTE/);
  revision=4;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/conversations')));
- assert.match(d.body.textContent!,/相关证据已删除/);assert.doesNotMatch(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL|GENERATED OLD QUOTE/);
+ assert.ok(d.querySelector('[data-message-kind="stale"]'));assert.doesNotMatch(d.body.textContent!,/GENERATED HISTORICAL PROPOSAL|GENERATED OLD QUOTE/);
 });
 
 test('connection permission selection cannot relabel an already issued invitation',async t=>{

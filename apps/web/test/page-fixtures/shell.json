@@ -81,23 +81,6 @@
         "id": "10000000-0000-4000-8000-000000000001"
       }
     },
-    "GET /api/conversations": {
-      "status": 200,
-      "body": {
-        "items": [
-          {
-            "id": "10000000-0000-4000-8000-000000000001",
-            "title": "整理样例评审清单",
-            "createdAt": "2026-11-20T09:00:00+08:00",
-            "updatedAt": "2026-11-20T09:00:00+08:00",
-            "turnCount": 1,
-            "scope": {},
-            "status": "completed"
-          }
-        ],
-        "nextCursor": null
-      }
-    },
     "GET /api/conversations/10000000-0000-4000-8000-000000000001": {
       "status": 200,
       "body": {

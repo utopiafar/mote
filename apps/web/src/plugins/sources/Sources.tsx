@@ -5,7 +5,7 @@ import { useOperationUpdates } from '../../useOperationUpdates';
 import { moteText, cjkLocale } from '@mote/shared/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, FolderInput, Layers3, Plus, X,ChevronRight,FileText,Monitor,Mail,CalendarDays,Link2,Code2,Mic } from 'lucide-react';
-import type { SourceConnection, SourceItemRecord,LibrarySourceFacet } from '@mote/shared';
+import type { PluginCenterView,SourceConnection, SourceItemRecord,LibrarySourceFacet } from '@mote/shared';
 import { ApiError,type Api, errorMessage, dateTime } from '../../api';
 import {archivePageWithdrawn,currentArchivePages,mergeArchivePage,reconcileArchivePages,type ArchivePage,type ArchivePages} from '../../archive-pages';
 import { sourceMetadataSchema } from '@mote/shared';
@@ -16,6 +16,7 @@ import { useHashChoice } from '../../useHashChoice';
 import {useSourceConnectorStyle} from '../../source-connectors-ui';
 import { recordingSourceStatus, recordingSyncText } from '../../recording-status';
 import {sourcePluginBound,sourcePluginFor,sourcePluginStatus,sourcePlugins,sourcePluginForSetup} from './registry';
+import {stoppedSourceKinds} from '../plugin-center/source-availability';
 import { Loading } from '../../Loading';
 import {FileRetentionSettings} from './FileRetentionSettings';
 import {SourceOnboarding} from './SourceOnboarding';
@@ -27,7 +28,7 @@ const kindNames: Record<string, string> = { 'coding-agent': moteText("编码 Age
 const sourceStyleHref=new URL('../../source-final.css',import.meta.url).href;
 function useSourceStyle(){useEffect(()=>{if(document.head.querySelector('link[data-mote-source-final]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=sourceStyleHref;link.dataset.moteSourceFinal='true';document.head.append(link);},[]);}
 const sourceIcon=(kind:string)=>sourcePlugins.find(plugin=>plugin.packageId&&plugin.kinds.includes(kind))?.catalog?.icon??({'local-files':FileText,'coding-agent':Code2,'local-calendar':CalendarDays,'local-meeting-recording':Mic,'google-calendar':CalendarDays,gmail:Mail,'lark-calendar':CalendarDays,'lark-docs':FileText,mcp:Link2,upload:FolderInput}[kind]??(kind.endsWith('.recordings')?Mic:Monitor));
-const sourceConnectionLink=(source:SourceConnection,recording:ReturnType<typeof recordingSourceStatus>)=>sourcePluginFor(source,null)?.packageId?'#/connections?setup='+sourcePluginFor(source,null)!.setup!.id:recording?'#/connections/recordings?provider='+encodeURIComponent(recording.provider):source.kind.startsWith('lark-')?'#/connections/lark':(['google-calendar','gmail','mcp'].includes(source.kind)?'#/connections?setup='+({'google-calendar':'google',gmail:'gmail',mcp:'mcp'}[source.kind]):source.kind==='coding-agent'?'#/library?view=coding-status':null);
+const sourceConnectionLink=(source:SourceConnection,recording:ReturnType<typeof recordingSourceStatus>)=>sourcePluginFor(source,null)?.packageId?'#/connections?setup='+sourcePluginFor(source,null)!.setup!.id:recording?'#/library?recordings='+encodeURIComponent(recording.provider):source.kind.startsWith('lark-')?'#/connections/lark':(['google-calendar','gmail','mcp'].includes(source.kind)?'#/connections?setup='+({'google-calendar':'google',gmail:'gmail',mcp:'mcp'}[source.kind]):source.kind==='coding-agent'?'#/library?view=coding-status':null);
 function sourceStatus(source:SourceConnection,catalog:Record<string,unknown>|null){const recording=recordingSourceStatus(source,catalog);return recording?recordingSyncText(recording.status,source):!source.enabled&&!['error','permission_required'].includes(source.status?.state??'')?moteText('已暂停'):({idle:!source.enabled?moteText('已暂停'):source.capabilities?.lifecycle==='one-shot'?moteText('一次导入来源'):source.capabilities?.lifecycle==='external-push'?moteText('等待外部写入'):moteText('等待下次同步'),syncing:moteText('同步中'),error:moteText('需要处理'),permission_required:moteText('需要重新授权')} as Record<string,string>)[source.status?.state??'']??moteText('等待同步');}
 export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse, onAdd }: {
     api: Api;
@@ -63,6 +64,7 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
     const sourceList = useResource<{
         items: SourceConnection[];
     }>(api, '/api/sources');
+    const pluginView = useResource<PluginCenterView>(api, mode === 'connections' ? '/api/plugins' : null);
     const page = useResource<ArchivePage<SourceItemRecord>>(api, (mode === 'library'||!!selected) ? '/api/source-items?' + new URLSearchParams({ limit: '30', ...(selected ? { sourceId: selected } : {}), ...(cursor ? { cursor } : {}) }) : null);
     const versions = useResource<{
         items: SourceItemRecord[];
@@ -75,10 +77,11 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
     const withdrawn = archivePageWithdrawn(page.error);
     useEffect(() => { setPages(value => reconcileArchivePages(value,api,listScope,withdrawn)); }, [api, listScope, withdrawn]);
     useEffect(() => { setBusy(false);setError('');setSourceKind('');setAttentionOnly(false);setSourceSearch('');setDetailChoice(undefined); }, [api]);
-    const sources = sourceList.data?.items ?? [], items = mergeArchivePage(currentPages,page.data?.items??[],withdrawn), nextCursor = page.data?.nextCursor, history = versions.data?.items ?? null, catalog = connectorStatus.data ?? null, loading = sourceList.loading || page.loading;
+    const stopped = mode === 'connections' ? stoppedSourceKinds(pluginView.data) : new Set<string>();
+    const sources = (sourceList.data?.items ?? []).filter(source => !stopped.has(source.kind)), items = mergeArchivePage(currentPages,page.data?.items??[],withdrawn), nextCursor = page.data?.nextCursor, history = versions.data?.items ?? null, catalog = connectorStatus.data ?? null, loading = sourceList.loading || page.loading;
     const initialLoading = page.loading && page.data === undefined;
     const readError = sourceList.error || page.error || versions.error || connectorStatus.error, technicalError=mutationError||(readError?errorMessage(readError):''),error=mutationError?moteText('操作未完成，请重试'):readError?(readError instanceof ApiError?(readError.code&&commonFailureMessage(readError.code,readError.status)||httpStatusMessage(readError.status)):moteText('状态读取失败。')):'';
-    async function refresh(source = selected) { if(activeApi.current!==api||visit.current!==renderVisit)return;setError(''); setHistoryKey(null); setPages(undefined); resources(api).invalidate(key => /^\/api\/(sources|source-items|library\/browse|connectors\/status)([/?]|$)/.test(key)); }
+    async function refresh(source = selected) { if(activeApi.current!==api||visit.current!==renderVisit)return;setError(''); setHistoryKey(null); setPages(undefined); resources(api).invalidate(key => /^\/api\/(sources|source-items|library\/browse|connectors\/status|plugins)([/?]|$)/.test(key)); }
     function loadHistory(item: SourceItemRecord) { if(visit.current!==renderVisit||selected&&item.sourceId!==selected)return;setHistoryKey('/api/sources/' + encodeURIComponent(item.sourceId) + '/history?externalId=' + encodeURIComponent(item.externalId)); }
     function more() { if (!nextCursor || loading)
         return; setPages({api,scope:listScope,previous:items,cursor:nextCursor}); }

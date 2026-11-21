@@ -134,17 +134,33 @@ export function installFileProcessorContributions(registry:ProcessorRegistry,con
   const installed=dispose.reverse();
   return ()=>{for(const remove of installed){try{remove();}catch{}}};
 }
+/** Canonical builtin labels; the registry translates them into the request locale. */
+const builtinCopy=Object.freeze({
+  localMultiSpeaker:moteText('本地多人录音'),
+  transcriptionEndpoint:moteText('转写接口'),
+  expectedSpeakers:moteText('预期说话人数'),
+  speakerMin:moteText('说话人数下限'),
+  speakerMax:moteText('说话人数上限'),
+  conservativeDedupe:moteText('保守消重'),
+  semanticTurns:moteText('使用所选语言模型合并自然发言轮次'),
+  leaveBlank:moteText('留空由模型自动识别'),
+  knownRangeOnly:moteText('仅在已知范围时填写；与准确人数互斥'),
+  localDiarization:moteText('本地说话人分离'),
+  utf8Extraction:moteText('UTF-8 文字提取'),
+  documentExtraction:moteText('文档文字提取'),
+  imageExtraction:moteText('图片文字提取接口'),
+});
 function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
-  const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?FUNASR_PINS.extract.version:'3',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
+  const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?FUNASR_PINS.extract.version:'3',name:localOnly?builtinCopy.localMultiSpeaker:builtinCopy.transcriptionEndpoint,stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
     ...(localOnly?{dialogue:true,managedModel:'dialogue' as const,recipe:FUNASR_PINS.recipe,output:{id:funasrTranscriptOutput.id,version:funasrTranscriptOutput.version}}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
-    parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'speakerMin',label:'说话人数下限',type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:'仅在已知范围时填写；与准确人数互斥'},{key:'speakerMax',label:'说话人数上限',type:'number',nullable:true,default:null,min:1,max:16,integer:true},{key:'deduplicate',label:'保守消重',type:'boolean',default:true},{key:'semanticTurns',label:"使用所选语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
+    parameters:localOnly?[{key:'speakerCount',label:builtinCopy.expectedSpeakers,type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:builtinCopy.leaveBlank},{key:'speakerMin',label:builtinCopy.speakerMin,type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:builtinCopy.knownRangeOnly},{key:'speakerMax',label:builtinCopy.speakerMax,type:'number',nullable:true,default:null,min:1,max:16,integer:true},{key:'deduplicate',label:builtinCopy.conservativeDedupe,type:'boolean',default:true},{key:'semanticTurns',label:builtinCopy.semanticTurns,type:'boolean',default:false}]:[],
     process:input=>localOnly?runFunasr(input,'recognize'):provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal,request:input.request,authorizeModel:input.authorizeModel})});
   const processors=[
     audio('audio.http'),
     audio('audio.local-dialogue',true),
-    builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,reuseByContent:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}),
-    builtin({id:'document.generic',version:'2',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,reuseByContent:true,serviceKind:'image',optionalService:true,dependencies:{settings:['imageEndpoint','apiKey']},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal,{endpoint:input.settings.imageEndpoint,apiKey:input.settings.apiKey})}),
-    builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
+    builtin({id:'text.utf8',version:'3',name:builtinCopy.utf8Extraction,stage:'extract',mediaTypes:['text/'],localOnly:true,reuseByContent:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}),
+    builtin({id:'document.generic',version:'2',name:builtinCopy.documentExtraction,stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,reuseByContent:true,serviceKind:'image',optionalService:true,dependencies:{settings:['imageEndpoint','apiKey']},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal,{endpoint:input.settings.imageEndpoint,apiKey:input.settings.apiKey})}),
+    builtin({id:'image.http',version:'2',name:builtinCopy.imageExtraction,stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
       if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
       const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
       input.signal.throwIfAborted();input.authorizeModel?.();
@@ -152,7 +168,7 @@ function builtinFileProcessors(provider:TranscriptionProvider):FileProcessor[]{
       const transcript=transcriptSchema.parse(value);if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
     }}),
   ];
-  processors.push(builtin({...FUNASR_PINS.diarize,name:'本地说话人分离',stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',awaitResponseOnCancel:true,
+  processors.push(builtin({...FUNASR_PINS.diarize,name:builtinCopy.localDiarization,stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',awaitResponseOnCancel:true,
     dependencies:{settings:['endpoint','apiKey','speakerCount','speakerMin','speakerMax'],parameters:['speakerCount','speakerMin','speakerMax']},process:input=>runFunasr(input,'diarize')}));
   return processors;
 }

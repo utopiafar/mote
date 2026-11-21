@@ -41,9 +41,6 @@ struct MoteApp: App {
                 } else if arguments.contains("-MoteHomePreview") {
                     HomePreview()
                         .preferredColorScheme(previewScheme)
-                } else if arguments.contains("-MoteHistoryPreview") {
-                    ConversationHistoryPreview()
-                        .preferredColorScheme(previewScheme)
                 } else if arguments.contains("-MoteConversationPreview") {
                     ConversationPreview()
                         .preferredColorScheme(previewScheme)

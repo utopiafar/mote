@@ -11,6 +11,7 @@ import {strToU8, zipSync} from 'fflate';
 import {serializeConfigDocument} from '@mote/shared/config-file';
 import type {RuntimeModuleReference} from '@mote/shared/agent-runtimes';
 import {buildApp} from '../src/app.js';
+import {Conversations} from '../src/conversations.js';
 import {configurationFromFile} from '../src/config.js';
 import type {PluginManifest, PluginReleaseTransport} from '../src/plugin-release.js';
 import {sha256} from '../src/evidence-store.js';
@@ -289,8 +290,8 @@ test('two installed APP instances, profiles and conversations keep separate SDK 
   assert.equal((await f.node.app.inject({method:'PUT',url:'/api/configuration/dsh',headers:f.headers,payload:{revision:f.node.configService.revision,value:{profiles:[f.profile,profile]}}})).statusCode,200);
   assert.equal((await f.node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers:f.headers,payload:{revision:f.node.configService.revision,value:{multipleConversations:true}}})).statusCode,200);await f.restart();
   assert.equal((await f.interact('GENERATED-INSTANCE-A-CONVERSATION-A')).status,'completed');assert.equal((await f.interact('GENERATED-INSTANCE-B-CONVERSATION-A',{modelProfileId})).status,'completed');
-  const conversation=await f.node.app.inject({method:'POST',url:'/api/conversations',headers:f.headers,payload:{}});assert.equal(conversation.statusCode,201,conversation.body);
-  assert.equal((await f.interact('GENERATED-INSTANCE-A-CONVERSATION-B',{conversationId:conversation.json().id})).status,'completed');assert.doesNotMatch(JSON.stringify(f.requests[2]),/GENERATED-INSTANCE-[AB]-CONVERSATION-A/);
+  const conversation=new Conversations(f.node.store).create();
+  assert.equal((await f.interact('GENERATED-INSTANCE-A-CONVERSATION-B',{conversationId:conversation.id})).status,'completed');assert.doesNotMatch(JSON.stringify(f.requests[2]),/GENERATED-INSTANCE-[AB]-CONVERSATION-A/);
   assert.equal((await f.interact('GENERATED-INSTANCE-A-CONVERSATION-A-RESUME')).status,'completed');assert.equal(f.controlRows().length,3);
   const reports=f.node.sources.listSources().filter(source=>source.id.startsWith('dsh-app:')).map(source=>outputText(f,source.id).trim()).sort();assert.deepEqual(reports,['GENERATED-APPLICATION-REPORT-1','GENERATED-APPLICATION-REPORT-1','GENERATED-APPLICATION-REPORT-2']);
   const events=(await readFile(f.trace,'utf8')).trim().split('\n').map(line=>JSON.parse(line));assert.equal(events.filter(event=>event.event==='factory-create').length,3);assert.equal(events.filter(event=>event.event==='factory-resume').length,1);

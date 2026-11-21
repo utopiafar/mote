@@ -69,14 +69,7 @@ struct ConversationPreview: View {
         ConversationFlowView(
             onDismiss: { lastAction = "dismiss" },
             onAddImage: { lastAction = "image" },
-            makeHistoryModel: {
-                ConversationHistoryModel { _ in
-                    HistoryPage(conversations: [
-                        HistoryConversation(id: ConversationPreview.conversationId,
-                                            title: "暖气费是怎么约定的？", updatedAt: now),
-                    ], nextCursor: nil)
-                } remove: { _ in }
-            },
+            makeMainConversation: { ConversationPreview.conversationId },
             makeModel: { id, scope, open in
                 fixtureModel(state: "answered", conversationId: id,
                              onOpenOriginal: { target in

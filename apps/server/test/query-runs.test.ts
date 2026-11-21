@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp,type QueryAgent} from '../src/app.js';
+import {Conversations} from '../src/conversations.js';
 import {ProviderFailure} from '@mote/shared';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {hostRun,hostTerminal,hostUsage} from './fixtures/host-run.js';
@@ -43,7 +44,7 @@ test('background admission survives client departure, deduplicates and persists 
   assert.equal((await app.inject({url,headers:{authorization:`Bearer ${credential.token}`}})).statusCode,200);
   assert.equal((await app.inject({url:url.replace('groupBy=module','groupBy=invalid'),headers})).statusCode,400);
   assert.equal((await app.inject({url:url+'&status=invalid',headers})).statusCode,400);
-  await app.inject({method:'DELETE',url:`/api/conversations/${finished.conversationId}`,headers});
+  assert.equal((await app.inject({method:'DELETE',url:`/api/conversations/${finished.conversationId}`,headers})).statusCode,404);
   assert.ok(!(await app.inject({url:`/api/query-runs/${id}`,headers})).body.includes('Generated answer'));
   assert.equal((store.db.prepare('SELECT COUNT(*) AS n FROM model_usage').get() as any).n,1);
 });
@@ -121,14 +122,14 @@ test('explicit cancellation reaches the executing agent and cannot archive a lat
   const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{
     observed=input.signal;started();await new Promise<void>(r=>{release=r;});return {answer:'Late generated answer',citations:[],trace:[],runId:randomUUID()};
   }};
-  const {app}=await buildApp(config(dir),{agent});t.after(async()=>{release?.();await app.close();rmSync(dir,{recursive:true,force:true});});
+  const {app,store}=await buildApp(config(dir),{agent});t.after(async()=>{release?.();await app.close();rmSync(dir,{recursive:true,force:true});});
   const id=randomUUID();await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'fixture'}}});
   await startedPromise;assert.ok(observed);
   assert.equal((await app.inject({method:'POST',url:`/api/query-runs/${id}/cancel`})).statusCode,401);
   const cancelled=await app.inject({method:'POST',url:`/api/query-runs/${id}/cancel`,headers});assert.equal(cancelled.json().status,'cancelled');assert.equal(observed.aborted,true);
   release();await new Promise(r=>setTimeout(r,30));
   assert.equal((await app.inject({url:`/api/query-runs/${id}`,headers})).json().status,'cancelled');
-  assert.equal((await app.inject({url:'/api/conversations',headers})).json().items.length,0);
+  assert.equal(new Conversations(store).list().items.length,0);
 });
 
 test('export bundles require owner access, include originals and never include model credentials',async t=>{

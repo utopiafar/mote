@@ -104,7 +104,7 @@ class HomeForbiddenJourneyInstrumentedTest {
         var value: Pair<UiTask, HomeReadGate>? = null
         instrumentation.runOnMainSync {
             val section = shown(home).single { it.tag == "home-feed" }
-            fun field(name: String) = HomeFeedView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(section)
+            fun field(name: String) = section.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(section)
             value = (field("task") as UiTask) to (field("gate") as HomeReadGate)
         }
         return requireNotNull(value)
@@ -619,7 +619,6 @@ class HomeForbiddenJourneyInstrumentedTest {
         val origin = "http://127.0.0.1:${listener.localPort}"
         @Volatile var forbidden = false
         @Volatile var probeForbidden = false
-        @Volatile var conversationsEmpty = false
         @Volatile var malformedCaptures = false
         @Volatile var holdFeedRead = false
         @Volatile var holdProbe = false
@@ -671,9 +670,9 @@ class HomeForbiddenJourneyInstrumentedTest {
                 when {
                     forbidden || (probeForbidden && probe) -> { status = 403; payload = JSONObject().put("error", JSONObject().put("code", "forbidden")) }
                     path.startsWith("/api/capture-browser?") -> { status = 200; payload = JSONObject().put("items", if (feedEmpty) JSONArray() else feedItems) }
-                    path.startsWith("/api/conversations?") -> {
-                        status = 200; payload = JSONObject().put("items", if (conversationsEmpty) JSONArray() else JSONArray().put(JSONObject()
-                            .put("id", conversation).put("title", "生成的跨设备对话").put("updatedAt", "2026-10-30T10:00:00Z").put("turnCount", 2)))
+                    path == "/api/conversations/main" -> { status = 200; payload = JSONObject().put("id", conversation) }
+                    path.substringBefore('?') == "/api/conversations/$conversation" -> {
+                        status = 200; payload = JSONObject().put("id", conversation).put("turns", JSONArray())
                     }
                     path.startsWith("/api/actions?") -> {
                         status = 200; payload = JSONObject().put("nextCursor", JSONObject.NULL).put("targets", JSONArray()).put("items", JSONArray().put(JSONObject()

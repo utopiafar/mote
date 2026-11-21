@@ -1,4 +1,3 @@
-import {pageHash} from '@mote/shared';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React,{act} from 'react';
@@ -10,12 +9,12 @@ import {ApiError,dateTime,type Api,type Capture} from '../src/api.js';
 
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const generated:Capture={deletion:{available:true,kind:'capture'},id,source:'note',platform:'import',capturedAt:'2026-10-13T00:00:00Z',appName:'Generated note app',windowTitle:'Generated first line',deviceId:'generated-device',deviceName:'Generated device',ocrText:'Generated first line\n  Literal screen / media / file words <script>untrusted()</script>\n',durationMs:0,blobHash:null,indexingStatus:'pending',privacy:{redacted:false,mode:'standard'}};
-async function fixture(t:any,capture:Capture,readMedia?:(path:string,signal?:AbortSignal)=>Promise<unknown>,conversations?:(path:string)=>unknown){
+async function fixture(t:any,capture:Capture,readMedia?:(path:string,signal?:AbortSignal)=>Promise<unknown>){
  const dom=new JSDOM('<!doctype html><main><button id="origin">Open generated original</button></main><div id="root"></div>',{url:'http://localhost/#/library?source=note',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();
  for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  dom.window.localStorage.setItem('mote.language','zh-CN');dom.window.HTMLElement.prototype.getClientRects=()=>[{}] as unknown as DOMRectList;
  const root=createRoot(dom.window.document.querySelector('#root')!),writes:string[]=[],opened:string[]=[],imageReads:string[]=[],origin=dom.window.document.querySelector<HTMLButtonElement>('#origin')!;
- const api={request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/capture-browser/'+capture.id)return capture;if(path.startsWith('/api/conversations?'))return conversations?.(path)??{items:[],nextCursor:null};if(path.startsWith('/api/materials/')&&readMedia)return readMedia(path,init?.signal??undefined);if(init?.method==='DELETE'){writes.push(path);return {deleted:1};}throw Error('Unexpected generated path '+path);},
+ const api={request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/capture-browser/'+capture.id)return capture;if(path.startsWith('/api/materials/')&&readMedia)return readMedia(path,init?.signal??undefined);if(init?.method==='DELETE'){writes.push(path);return {deleted:1};}throw Error('Unexpected generated path '+path);},
   raw:async(path:string)=>{imageReads.push(path);return new Response(new Blob([new Uint8Array([137,80,78,71,13,10,26,10])],{type:'image/png'}));},setAgentTimeout:()=>{}} as unknown as Api;
  origin.focus();await act(async()=>root.render(React.createElement(EvidenceDialog,{api,id:'capture:'+capture.id,onOpen:ref=>opened.push(ref),onClose:()=>root.render(null),onDeleted:()=>{}})));
  t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,descriptor]of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}});
@@ -96,29 +95,20 @@ test('an owner-confirmed speaker name remains visible above the exact speech bod
  assert.equal(d.querySelector('.evidence-speaker')!.textContent,'已确认说话人：Generated confirmed speaker');assert.equal(d.querySelector('.evidence-text>pre')!.textContent,'Exact speaker words');
 });
 
-test('the aside shows only declared descriptions and every conversation that cites this record or its Material',async t=>{
- const other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',materialRef='material:mat_'+'c'.repeat(64)+'@'+'d'.repeat(64),reads:string[]=[];
+test('the aside shows only declared descriptions and no conversation list',async t=>{
+ const other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',materialRef='material:mat_'+'c'.repeat(64)+'@'+'d'.repeat(64);
  const capture:Capture={...generated,memoryMaterialRef:materialRef,attributionContext:{
   recordContextDeclarations:[{captureId:id,version:1,fingerprint:'e'.repeat(64)}],
   recordContextStatements:[{captureId:id,version:1,description:'Generated owner description\nsecond line'},{captureId:other,version:1,description:'Undeclared generated description'}]}};
- const pages:Record<string,unknown>={
-  '/api/conversations?limit=100':{items:[{id:'generated-anchor',title:'Generated anchored talk',scope:{anchorEvidenceIds:[id]}},{id:'generated-other',title:'Generated unrelated talk',scope:{evidenceIds:[other]}}],nextCursor:'generated-next'},
-  '/api/conversations?limit=100&cursor=generated-next':{items:[{id:'generated-cited',title:'Generated cited talk',scope:{evidenceIds:[id]}},{id:'generated-material',title:'Generated material talk',scope:{anchorMaterialRef:materialRef}},{id:'generated-unscoped',title:'Generated unscoped talk',scope:{}}],nextCursor:null}};
- const {document:d}=await fixture(t,capture,undefined,path=>{reads.push(path);return pages[path];});await settle();
+ const {document:d}=await fixture(t,capture);await settle();
  assert.deepEqual(Array.from(factRow(d,'资料说明')!.querySelectorAll('dd p')).map(item=>item.textContent),['Generated owner description\nsecond line']);
- assert.deepEqual(Array.from(factRow(d,'引用它的对话')!.querySelectorAll('a')).map(item=>[item.textContent,item.getAttribute('href')]),[
-  ['Generated anchored talk',pageHash('chat',{conversation:'generated-anchor'})],['Generated cited talk',pageHash('chat',{conversation:'generated-cited'})],['Generated material talk',pageHash('chat',{conversation:'generated-material'})]]);
- assert.deepEqual(reads,Object.keys(pages),'every page is read once, in cursor order');
+ assert.equal(factRow(d,'引用它的对话'),undefined);
+ assert.equal(d.querySelector('.evidence-conversations'),null);
 });
 
-test('a record nobody cites says 0 and shows no description row',async t=>{
+test('a record nobody cites shows no description or conversation row',async t=>{
  const {document:d}=await fixture(t,generated);await settle();
- assert.equal(factRow(d,'资料说明'),undefined);assert.equal(factRow(d,'引用它的对话')!.querySelector('dd')!.textContent,'0');
-});
-
-test('a failed conversation read says — without hiding the original',async t=>{
- const {document:d}=await fixture(t,generated,undefined,()=>{throw new ApiError('Generated conversation failure',500);});await settle();
- assert.equal(factRow(d,'引用它的对话')!.querySelector('dd')!.textContent,'—');assert.equal(d.querySelector('.evidence-text pre')!.textContent,generated.ocrText);
+ assert.equal(factRow(d,'资料说明'),undefined);assert.equal(factRow(d,'引用它的对话'),undefined);
 });
 
 test('a screenshot leads whole, and 查看原图 opens the same authorized image for close reading',async t=>{

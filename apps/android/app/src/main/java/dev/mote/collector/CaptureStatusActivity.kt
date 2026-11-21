@@ -303,12 +303,9 @@ class CaptureStatusActivity : MoteActivity() {
         }
         moreMenu?.dismiss()
         moreMenu = popup
-        val items = listOf(
-            MoteI18n.text("采集与同步") to { startActivity(Intent(this, SourcesActivity::class.java)) },
-            MoteI18n.text("采集范围") to { forwardPage("PRIVACY") },
-            MoteI18n.text("采集与存储详情") to { startActivity(Intent(this, ActivityStatsActivity::class.java)) },
-            MoteI18n.text("来源") to { handOff("page", "SOURCES") }
-        )
+        val items = CapturePanelMenu.more.map { entry ->
+            MoteI18n.text(entry.titleKey) to { openPanel(entry.page) }
+        }
         items.forEachIndexed { index, (label, action) ->
             card.addView(TextView(this).apply {
                 text = label; tag = "capture-status-more-item-$index"
@@ -331,6 +328,15 @@ class CaptureStatusActivity : MoteActivity() {
     /** Resume, restart and repair run where the preview, permissions and system consent already live. */
     private fun forward(action: CaptureOverview.Action) = handOff("captureAction", action.name)
     private fun forwardPage(page: String) = handOff("page", page)
+    /** The panel's own "采集与同步" entry opens the same page as the library row. */
+    private fun openPanel(page: CapturePanelPage) {
+        val next = page.intent(this)
+        if (page == CapturePanelPage.CAPTURE_SYNC || page == CapturePanelPage.STATS) startActivity(next)
+        else {
+            startActivity(next.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            finish()
+        }
+    }
     /** The app takes over the task. Opened from the tile or notification, the panel never stays behind the home. */
     private fun handOff(key: String, value: String) {
         startActivity(Intent(this, MainActivity::class.java).putExtra(key, value).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
@@ -375,4 +381,24 @@ internal object CapturePanel {
             all = MoteI18n.text(if (f.enabled) "暂停全部采集" else "恢复采集")
         )
     }
+}
+
+/** The panel's written destinations. AN6: "采集与同步" is the same page the library row opens. */
+internal enum class CapturePanelPage { CAPTURE_SYNC, CAPTURE_RANGE, STATS, SOURCES }
+internal data class CapturePanelEntry(val titleKey: String, val page: CapturePanelPage)
+
+internal object CapturePanelMenu {
+    val more = listOf(
+        CapturePanelEntry("采集与同步", CapturePanelPage.CAPTURE_SYNC),
+        CapturePanelEntry("采集范围", CapturePanelPage.CAPTURE_RANGE),
+        CapturePanelEntry("采集与存储详情", CapturePanelPage.STATS),
+        CapturePanelEntry("来源", CapturePanelPage.SOURCES),
+    )
+}
+
+internal fun CapturePanelPage.intent(context: android.content.Context): Intent = when (this) {
+    CapturePanelPage.CAPTURE_SYNC -> Intent(context, SourcesActivity::class.java)
+    CapturePanelPage.CAPTURE_RANGE -> Intent(context, MainActivity::class.java).putExtra("page", "PRIVACY")
+    CapturePanelPage.STATS -> Intent(context, ActivityStatsActivity::class.java)
+    CapturePanelPage.SOURCES -> Intent(context, MainActivity::class.java).putExtra("page", "SOURCES")
 }

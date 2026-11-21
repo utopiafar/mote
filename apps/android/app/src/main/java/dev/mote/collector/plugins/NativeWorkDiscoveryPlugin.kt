@@ -4,9 +4,6 @@ import android.content.Context
 import dev.mote.collector.CentralInsights
 import dev.mote.collector.CentralScreens
 import dev.mote.collector.CentralWorkActivity
-import dev.mote.collector.HomeCalendarNeedsView
-import dev.mote.collector.HomeDiscoveryView
-import dev.mote.collector.MoteActivity
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.WorkPolling
 import java.util.concurrent.ConcurrentHashMap
@@ -123,16 +120,6 @@ internal class NativeWorkDiscoveryOwner internal constructor(
     internal fun insights(screens: CentralScreens): CentralInsights {
         check(active) { "Native work-discovery plugin is stopped" }
         return CentralInsights(screens)
-    }
-
-    internal fun homeDiscovery(activity: MoteActivity, present: (Boolean) -> Unit = {}, open: (String?) -> Unit): HomeDiscoveryView {
-        check(active) { "Native work-discovery plugin is stopped" }
-        return HomeDiscoveryView(activity, present, open, available = { active })
-    }
-
-    internal fun homeCalendarNeeds(activity: MoteActivity, open: () -> Unit): HomeCalendarNeedsView {
-        check(active) { "Native work-discovery plugin is stopped" }
-        return HomeCalendarNeedsView(activity, open, available = { active })
     }
 
     /** A page poll loop owned by the plugin: hiding the page cancels the pending

@@ -48,13 +48,13 @@ import { webFeatures,installedWebPlugins } from './features/registry';
 import { PresentationSurface } from './presentation';
 import { GlobalRetrieval } from './plugins/search';
 import { WorkspaceMenu,WorkspaceSidebar } from './WorkspaceSidebar';
-import { NavStateContext,useNavState } from './use-nav-state';
+import { NavStateContext,useNavStateRead } from './use-nav-state';
 import { pageLabels,readPage,routes,workspaceNavigation,type Page } from './navigation';
 import { redirectDeviceRoute } from './device-route';
 import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspace-route';
 import { webViewPage } from './deep-link';
 import { isSettingsContext,WorkspaceNavigation } from './WorkspaceNavigation';
-import { readResource,resources } from './resource-cache';
+import { readResource,resources,invalidateLibraryResources } from './resource-cache';
 import { intakePlugin } from './plugins/intake';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { ErrorNotice,EvidenceDialog,LoginDialog } from './shell-components';
@@ -175,7 +175,7 @@ function App() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
+  const [shellRevision, setShellRevision] = useState(0);
   const [evidenceId, updateEvidenceId] = useState<string | null>(()=>readEvidenceRoute(location.hash));
   const setEvidenceId = useCallback((id:string|null) => {
     updateEvidenceId(changeEvidenceRoute(window,id));
@@ -251,7 +251,9 @@ function App() {
     [connection, unauthorized],
   );
   apiRef.current=api;
-  const navState=useNavState(verified?api:null);
+  const navState=useNavStateRead(api);
+  useEffect(()=>{if(navState.value)setVerified(true);},[navState.value]);
+  const verificationError=!verified&&navState.error?(navState.error instanceof ApiError&&navState.error.status===403?moteText("此令牌没有管理权限，请退出后使用管理令牌登录。"):errorMessage(navState.error)):"";
   useEffect(()=>api&&verified?installedWebPlugins.connect(api,connection?.viewScope):undefined,[api,verified,connection?.viewScope]);
   useEffect(()=>{
     const update=()=>{const resolved=readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);setPage(resolved.page);};
@@ -264,20 +266,11 @@ function App() {
       const anchor=event.target.closest<HTMLAnchorElement>('a[href]');if(!anchor||anchor.target&&anchor.target!=='_self'||anchor.hasAttribute('download'))return;
       const target=new URL(anchor.href,location.href);if(target.origin!==location.origin||target.pathname!==location.pathname||readPage(target.hash)!=='imports'||readPage(currentHash.current)==='imports')return;
       const route=readWorkspaceRoute(currentHash.current,readPage,collectionIds(),webViewPage);
-      preparedImport.current={api,origin:rememberImportOrigin(api,currentHash.current,window.scrollY,anchor,route.page==='archive'&&['materials','records','memories'].includes(route.collection)&&!hasUnsavedChanges())};
+      preparedImport.current={api,origin:rememberImportOrigin(api,currentHash.current,window.scrollY,anchor,route.page==='archive'&&['materials','records'].includes(route.collection)&&!hasUnsavedChanges())};
     };
     document.addEventListener('click',capture,true);return()=>document.removeEventListener('click',capture,true);
   },[api]);
   useEffect(()=>{if(api)associateChatScope(api,connection?.viewScope);},[api,connection?.viewScope]);
-  useEffect(() => {
-    if (!api || verified) return;
-    const controller = new AbortController();
-    setError("");
-    void readResource(api,"/api/configuration",AbortSignal.any([controller.signal,AbortSignal.timeout(15000)]))
-      .then(() => { if (!controller.signal.aborted) setVerified(true); })
-      .catch(e => { if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 403 ? moteText("此令牌没有管理权限，请退出后使用管理令牌登录。") : errorMessage(e)); });
-    return () => controller.abort();
-  }, [api, verified, revision]);
   const range: Range = useMemo(() => {
     if (period === "all") return {};
     const now = new Date();
@@ -285,11 +278,15 @@ function App() {
     if (period === "today") after.setHours(0, 0, 0, 0);
     else after.setDate(after.getDate() - (period === "week" ? 7 : 30));
     return { after: after.toISOString(), before: now.toISOString() };
-  }, [period, revision]);
+  }, [period, shellRevision]);
   const refresh = useCallback(() => {
     if(api)resources(api).invalidate(()=>true);
-    setRevision((value) => value + 1);
+    navState.refresh();
+    setShellRevision((value) => value + 1);
     setTimelineRevision((value) => value + 1);
+  }, [api, navState.refresh]);
+  const materialsChanged = useCallback(() => {
+    if(api)invalidateLibraryResources(api);
   }, [api]);
   useEffect(() => {
     if (!api) return;
@@ -297,10 +294,10 @@ function App() {
     let completed=queue.getSnapshot().completedVersion;
     const unsubscribe=queue.subscribe(()=>{
       const next=queue.getSnapshot().completedVersion;
-      if(next!==completed){completed=next;refresh();}
+      if(next!==completed){completed=next;materialsChanged();}
     });
     return ()=>{unsubscribe();plugin.dispose();};
-  }, [api,refresh]);
+  }, [api,materialsChanged]);
   useEffect(() => {
     if (!api || !verified) return;
     let active = true;
@@ -317,7 +314,6 @@ function App() {
         const disconnected = new Set(value.disconnectedDeviceIds ?? []);
         setDevices(value.items.map(device => ({...device,disconnected:disconnected.has(device.deviceId)})));
       }),
-      ...(page === "activity" ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
     ]).then(results => {
       if (!active) return;
       const failure = results.find(result => result.status === "rejected");
@@ -325,12 +321,18 @@ function App() {
       setLoading(false);
     });
     return () => { active = false; controller.abort(); };
-  }, [api, verified, range, revision, page]);
+  }, [api, verified, shellRevision]);
   useEffect(() => {
-    if (!api) return;
-    const timer = setInterval(() => { if (document.visibilityState === "visible") setRevision((value) => value + 1); }, 30_000);
-    return () => clearInterval(timer);
-  }, [api, refresh]);
+    if (!api || !verified || page !== "activity") return;
+    let active = true;
+    const controller = new AbortController();
+    setLoading(true);
+    void readResource<Activity>(api,`/api/activity${queryString(range)}`,controller.signal)
+      .then(value => {if (active) setActivity(value);})
+      .catch(error => {if (active) setError(moteText("部分资料加载失败，其他页面仍可使用。") + errorMessage(error));})
+      .finally(() => {if (active) setLoading(false);});
+    return () => { active = false; controller.abort(); };
+  }, [api, verified, page, range, shellRevision]);
   useEffect(() => {
     if (showConnect||readEvidenceRoute(location.hash)) return;
     if(pendingImportReturn.current?.api===apiRef.current&&pendingImportReturn.current?.origin.hash===location.hash)return;
@@ -344,7 +346,7 @@ function App() {
       if(done||pendingImportReturn.current!==pending||location.hash!==pending.origin.hash)return;
       const opener=importOriginOpener(pending.origin),heading=document.querySelector<HTMLElement>('.content h1'),content=document.querySelector('.content');if(!heading)return;
       const view=readPage(pending.origin.hash)==='archive'?new URLSearchParams(pending.origin.hash.split('?')[1]??'').get('view')??'materials':undefined;
-      const expected=view==='materials'?'.library-materials':view==='records'?'.library-time-final':view==='memories'?'.memories-page':readPage(pending.origin.hash)==='sourceCatalog'?'.discovery-source-catalog':undefined;
+      const expected=view==='materials'?'.library-materials':view==='records'?'.library-time-final':readPage(pending.origin.hash)==='sourceCatalog'?'.discovery-source-catalog':undefined;
       const region=expected?content?.querySelector<HTMLElement>(expected):undefined;if(expected&&region?.dataset.importReturnReady!=='true')return;
       if(view==='records'&&region?.querySelector('.library-time-group[open][data-import-return-ready="false"]'))return;
       const settled=Boolean(region?.dataset.importReturnReady==='true'||content?.querySelector('[role="alert"]'));
@@ -358,7 +360,7 @@ function App() {
   function onPage(next: Page) {
     const target=canonicalDestination(next,archiveTabRef.current,collectionIds());
     if(!webFeatures.page(target.page)&&target.page!=='extensions'){setNotice(moteText('当前服务未提供此入口'));return;}
-    const retainImportOrigin=page==='archive'&&['materials','records','memories'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
+    const retainImportOrigin=page==='archive'&&['materials','records'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
     if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return;
     const origin=target.page==='imports'&&page!=='imports'&&api?rememberImportOrigin(api,currentHash.current,window.scrollY,document.activeElement,retainImportOrigin):undefined;
     history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?pageRoutes.skills:target.page),target.page==='archive'?target.collection:undefined));
@@ -411,7 +413,7 @@ function App() {
   const openQuickNote=useCallback(()=>{if(!webFeatures.page('notes')){setNotice(moteText('当前服务未提供此入口'));return;}if(api&&verified)setQuickNoteApi(api);else setShowConnect(true);},[api,verified]);
   return (
     <>
-    <NavStateContext.Provider value={navState}>
+    <NavStateContext.Provider value={navState.value}>
     <QuickNoteContext.Provider value={openQuickNote}>
     <PresentationSurface
       navigation={()=> <WorkspaceSidebar groups={navigation} page={page} onPage={onPage}/> }
@@ -428,7 +430,7 @@ function App() {
         </header>}
       footer={null}
     >
-        <React.Suspense key={page} fallback={<div data-page-loading={page}><Loading/></div>}><div data-page={page} data-session={!connection?'signed-out':verified?'ready':error?'verification-failed':'verifying'} aria-busy={Boolean(connection&&loading)} className={`content ${settingsContext?'settings-surface':''}`}>
+        <React.Suspense key={page} fallback={<div data-page-loading={page}><Loading/></div>}><div data-page={page} data-session={!connection?'signed-out':verified?'ready':error||verificationError?'verification-failed':'verifying'} aria-busy={Boolean(connection&&loading)} className={`content ${settingsContext?'settings-surface':''}`}>
           <div className="workspace-tools">
           {connection&&verified&&<WorkspaceNavigation page={page} onPage={onPage}/> }
           <div className="workspace-range">
@@ -502,16 +504,16 @@ function App() {
             </>
           ) : (
             <>
-              {error && <ErrorNotice text={error} retry={refresh} />}
+              {(error||verificationError) && <ErrorNotice text={error||verificationError} retry={verificationError&&!error?navState.refresh:refresh} />}
               {!verified && <button className="button subtle" onClick={disconnect}>{moteText("退出登录")}</button>}
               {!verified
-                ? !error && (
+                ? !error && !verificationError && (
                     <LoadingMark label={moteText("正在验证登录权限…")} />
                   )
                 : api && (
                     <>
                       {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <LoadingLine label={moteText("正在读取节点状态…")}/>}
-                      <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights:emptyInsights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision:timelineRevision+(page==='archive'&&archiveTab==='records'?revision:0),refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
+                      <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights:emptyInsights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision:timelineRevision,refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
                     </>
                   )}
             </>

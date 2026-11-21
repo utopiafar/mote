@@ -178,15 +178,14 @@ class RecordAskJourneyInstrumentedTest {
         val origin = local.getJSONObject("metadata").getJSONObject("noteOrigin")
         assertEquals(origin.getString("text"), saved.getJSONObject("metadata").getJSONObject("noteOrigin").getString("text"))
         val conversationId = origin.getString("conversationId")
+        assertEquals(conversationId, api.get("/api/conversations/main").getString("id"))
         val conversation = api.get("/api/conversations/$conversationId?limit=50")
         val turn = items(conversation, "turns").last { it.optJSONObject("result") != null }
         val result = turn.getJSONObject("result"); val raw = result.getString("answer")
         val display = turn.getString("question") + "\n\n" + NativeAnswerPresentation.format(raw,items(result,"citations").map { it.getString("id") }).text
         assertEquals("Conversation export remains the exact stored question and raw answer", turn.getString("question") + "\n\n" + raw, origin.getString("text"))
-        val summary = items(api.get("/api/conversations?limit=30")).single { it.getString("id") == conversationId }
         ActivityScenario.launch(MainActivity::class.java).use {
             click("Ask destination") { it.tag == "primary:ASK" }
-            clickText(summary.getString("title") + "\n" + summary.getString("updatedAt"))
             until("Existing formatted answer renders without another model request") { main { visibleViews().filterIsInstance<TextView>().any { it.text.toString().contains("Generated third-party original") } } }
             main {
                 val labels = visibleViews().filterIsInstance<TextView>().map { it.text.toString() }

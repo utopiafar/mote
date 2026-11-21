@@ -12,43 +12,16 @@ app.setPath('userData', profile);
 process.env.MOTE_PROFILE = 'default'; delete process.env.MOTE_URL; delete process.env.MOTE_TOKEN; delete process.env.MOTE_ENV_FILE;
 writeFileSync(join(profile, 'config.json'), JSON.stringify({version:4, config:{...defaultConfig(), serverUrl:'',  metadataEnabled:false}}));
 writeFileSync(join(profile,'storage-format.json'),JSON.stringify({version:4}),{mode:0o600});
-let windows = 0, starts = 0, currentRun;
-const id = 'f50650f0-fb31-4215-90cd-c96dc62d5e92';
-const conversation = {id, title:'生成的对话 <img src=x>', turns:[{question:'生成的问题', status:'completed', result:{answer:'生成的回答 <script>throw Error()</script>', citations:[{id:'fixture-evidence', appName:'Fixture', capturedAt:'2026-09-18T00:00:00Z', excerpt:'生成的引用 <b>文本</b>'}]}}]};
 const timer = setTimeout(() => { console.error('Client improvements fixture timed out'); app.exit(1); }, 25000);
 app.on('browser-window-created', (_event, window) => {
-  windows++;
   window.webContents.setBackgroundThrottling(false);
   window.webContents.once('did-finish-load', () => void (async () => {
     const js = code => window.webContents.executeJavaScript(code);
       await js("window.confirm=()=>true;true;");
     const until = async code => { for(let i=0;i<150;i++){if(await js(code))return;await new Promise(r=>setTimeout(r,50));} throw Error('Fixture condition failed: '+code); };
     await until("Boolean(document.querySelector('#status-dot')) && document.querySelector('#settings-fields').disabled === false");
-    ipcMain.removeHandler('mote:ask');
-    ipcMain.handle('mote:ask', (_event, command, input) => {
-      if(command==='history')return {items:[{id,title:conversation.title}]};
-      if(command==='runs')return {items:currentRun?[currentRun]:[]};
-      if(command==='conversation')return conversation;
-      if(command==='start'){starts++;assert.equal(input.question,'合成问答');currentRun={id:input.id,status:'running',events:[]};return currentRun;}
-      if(command==='cancel'){currentRun={...currentRun,status:'cancelled'};return currentRun;}
-      if(command==='run')return currentRun;
-      return {};
-    });
     ipcMain.removeHandler('mote:permission-status');
     ipcMain.handle('mote:permission-status', () => ({screen:'granted', accessibility:'denied', calendar:'unknown', bundleId:'dev.mote.collector.dev', appPath:'/Generated/Mote Collector Dev.app'}));
-    await js("document.querySelector('#ask-central').click()");
-    await until("document.querySelector('#ask-history button') !== null");
-    assert.equal(windows,1,'Ask stays in the local client window');
-    assert.equal(await js("document.querySelectorAll('webview,iframe').length"),0);
-    await js("document.querySelector('#ask-history button').click()");
-    await until("document.querySelector('#ask-messages').textContent.includes('生成的回答')");
-    assert.equal(await js("document.querySelectorAll('#ask-messages script,#ask-messages b,#ask-history img').length"),0,'Model output is untrusted plain text');
-    await js("document.querySelector('#ask-question').value='合成问答';document.querySelector('#ask-form').requestSubmit()");
-    await until("document.querySelector('#ask-stop').hidden === false");
-    assert.equal(starts,1);
-    assert(await js("document.querySelector('#ask-send').disabled"));
-    await js("document.querySelector('#ask-stop').click()");
-    await until("document.querySelector('#ask-progress').textContent.includes('已停止')");
     await js("document.querySelector('[data-nav=permissions]').click()");
     await until("document.querySelector('#permission-screen').classList.contains('granted')");
     assert(await js("document.querySelector('#permission-accessibility').classList.contains('denied')"));
@@ -58,7 +31,7 @@ app.on('browser-window-created', (_event, window) => {
     await js("document.querySelector('[data-nav=sync]').click();document.querySelector('#packed-upload').checked=true;document.querySelector('#packed-upload').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#settings').requestSubmit()");
     await until("!document.querySelector('#settings-fields').disabled && document.querySelector('#settings-pending').hidden");
     assert.equal((await js('window.mote.status()')).config.packedUpload,true);
-    console.log('Generated fixture passed: client Ask, escaped evidence, stop, permission badges and packed-upload persistence.');
+    console.log('Generated fixture passed: permission badges and packed-upload persistence.');
     clearTimeout(timer); await rm(profile,{recursive:true,force:true}); app.exit(0);
   })().catch(error=>{console.error(error);app.exit(1);}));
 });

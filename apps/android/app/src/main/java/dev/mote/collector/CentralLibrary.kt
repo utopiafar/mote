@@ -276,7 +276,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 readable,
             ) {
                 val actions = buildList {
-                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail(api) { NativeOriginalDetail.capture(row, it) } })
+                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.capture(row) } })
                     if (descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(ui.hostActivity(), descriptions) })
                     if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(ui, readable) })
                 }
@@ -336,7 +336,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val descriptions = NativeRecordDescription.read(item, true)
             readerHead(MoteI18n.text("版本 {0}", item.opt("sequence")), item.getString("title"), readable) {
                 val actions = buildList {
-                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail(api) { NativeOriginalDetail.material(item, it) } })
+                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.material(item) } })
                     if (descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(ui.hostActivity(), descriptions) })
                     if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(ui, readable) })
                 }
@@ -965,9 +965,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         }
     }
     private fun readerAsk(key: String, action: () -> Unit) = ui.readerDock(NativeOriginalDetail.askBar(ui, key) { action() })
-    /** 详情 counts the conversations that cite this original; a failed count shows —, never 0. */
-    private fun showDetail(api: CentralClient, detail: (List<JSONObject>?) -> OriginalDetailPresentation) {
-        ui.work(MoteI18n.text("正在读取详情…"), { runCatching { NativeOriginalDetail.conversations(api) }.getOrNull() }) { conversations -> screens.showOriginalDetail(detail(conversations)) }
+    private fun showDetail(detail: () -> OriginalDetailPresentation) {
+        screens.showOriginalDetail(detail())
     }
     /** The time the phone reader shows for the same record. */
     private fun readerTime(value: String): String =

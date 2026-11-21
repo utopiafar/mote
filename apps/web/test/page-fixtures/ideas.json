@@ -1,0 +1,161 @@
+{
+  "route": "#/ideas",
+  "waitFor": ".content[data-session='ready'][aria-busy='false'] .ideas-page[aria-busy='false'] .idea-row",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": { "configured": false, "model": null, "provider": "" },
+        "storage": {
+          "captures": 8,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{ "status": "text_ready", "count": 8 }]
+        },
+        "index": { "mode": "text", "model": null },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 5,
+          "connections": false
+        }
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": []
+      }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": [
+          { "id": "http:GET:/api/assistant/ideas", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:POST:/api/assistant/ideas/ignore-all", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/assistant-cards", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/assistant-cards/:id", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:POST:/api/assistant-cards/:id/feedback", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:POST:/api/assistant/tasks", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" }
+        ]
+      }
+    },
+    "GET /api/assistant/ideas": {
+      "status": 200,
+      "body": {
+        "revision": "fixture-ideas-1",
+        "watermark": 12,
+        "questionWatermark": 1795136400000,
+        "mine": [
+          {
+            "id": "10000000-0000-4000-8000-000000000001",
+            "source": "card",
+            "kind": "suggestion",
+            "title": "我可以今晚读完《同步协议草案 v3》",
+            "detail": "陈默在发布小组分享，和周四的评审直接相关。读完列出改动和风险。",
+            "revision": 3,
+            "seq": 4,
+            "actions": ["start", "later", "ignore"]
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000002",
+            "source": "card",
+            "kind": "suggestion",
+            "title": "我可以在评审前准备好讲稿",
+            "detail": "周四 10:30 发布评审，上次会议还有两件事没定。",
+            "revision": 2,
+            "seq": 6,
+            "actions": ["start", "later", "ignore"]
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000003",
+            "source": "card",
+            "kind": "suggestion",
+            "title": "我可以对比周雨这周的几版设计稿",
+            "detail": "你说过每版都要看改了什么。第二稿今晚到。",
+            "revision": 1,
+            "seq": 8,
+            "actions": ["start", "later", "ignore"]
+          }
+        ],
+        "yours": [
+          {
+            "id": "10000000-0000-4000-8000-000000000004",
+            "source": "card",
+            "kind": "question",
+            "title": "上线公告由你写，还是林舟写？",
+            "detail": "林舟说「公告我来吧」，排期表上写的是你。",
+            "revision": 2,
+            "seq": 10,
+            "actions": ["answer", "later", "ignore"]
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000005",
+            "source": "owner-question",
+            "kind": "needs-info",
+            "title": "周六回家吃饭，要把上午的读书会挪走吗？",
+            "detail": "日历上周六 11:00 有读书会。",
+            "revision": 4,
+            "seq": 0,
+            "actions": ["answer"]
+          }
+        ],
+        "started": [
+          {
+            "taskId": "10000000-0000-4000-8000-000000000006",
+            "title": "整理本周发布进展",
+            "state": "running",
+            "progress": "读取资料 4/9",
+            "updatedAt": "2026-11-20T08:40:00+08:00"
+          },
+          {
+            "taskId": "10000000-0000-4000-8000-000000000007",
+            "title": "汇总定价讨论的结论",
+            "state": "running",
+            "progress": "读取资料 2/5",
+            "updatedAt": "2026-11-20T08:20:00+08:00"
+          }
+        ]
+      }
+    }
+  }
+}

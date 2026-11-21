@@ -1,0 +1,122 @@
+{
+  "route": "#/preferences",
+  "waitFor": ".content[data-page='about'][data-session='ready'][aria-busy='false'] .settings-destinations .processing-entry-row",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "version": 1,
+        "revision": 4,
+        "configFile": "/generated/mote.yaml",
+        "lastError": null,
+        "domains": [
+          {
+            "id": "notifications",
+            "saved": {
+              "enabled": true,
+              "timeZone": "Asia/Shanghai",
+              "quietHours": { "start": "22:00", "end": "08:00" },
+              "minIntervalMinutes": 60
+            },
+            "effective": {
+              "enabled": true,
+              "timeZone": "Asia/Shanghai",
+              "quietHours": { "start": "22:00", "end": "08:00" },
+              "minIntervalMinutes": 60
+            },
+            "fields": [],
+            "status": "applied"
+          }
+        ],
+        "profile": "fixture",
+        "runtime": "native",
+        "hostConfigFile": null,
+        "ownerCredential": { "configured": true, "source": "programmatic" },
+        "baseDir": "/generated",
+        "readOnly": false,
+        "restartRequired": false,
+        "description": "",
+        "storage": {
+          "dataDir": "/generated/data",
+          "sqlitePath": "/generated/data/mote.sqlite",
+          "assetDir": "/generated/assets",
+          "logDir": "/generated/logs",
+          "kind": "local-directory",
+          "source": null,
+          "mountPath": null,
+          "description": ""
+        }
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": { "configured": true, "model": "generated-model", "provider": "generated" },
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 41200000000,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{ "status": "text_ready", "count": 3 }]
+        },
+        "index": { "mode": "text", "model": null },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-21T09:00:00+08:00"
+      }
+    },
+    "GET /api/model-authorization": {
+      "status": 200,
+      "body": {
+        "authorization": { "revision": 2, "state": "on", "excludedSourceIds": [] }
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": []
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 6,
+          "connections": false
+        }
+      }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": []
+      }
+    }
+  }
+}

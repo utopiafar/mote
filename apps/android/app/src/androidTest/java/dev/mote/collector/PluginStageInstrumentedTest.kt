@@ -269,17 +269,14 @@ class PluginStageInstrumentedTest {
         ).read()
     }
 
-    private fun awaitAskPage(): Activity = onTop("the conversation list is ready") { activity ->
-        tags(activity).contains("central-title") && texts(activity).contains(MoteI18n.text("对话"))
+    private fun awaitAskPage(): Activity = onTop("the Ask page is ready") { activity ->
+        shown(activity).filterIsInstance<TextView>()
+            .any { it.tag == "central-title" && it.text.toString() == MoteI18n.text("问一问") }
     }
 
-    private fun awaitAskComposer(): Activity {
-        val list = awaitAskPage()
-        main { shown(list).firstOrNull { it.isClickable && it.contentDescription?.toString()?.startsWith("生成的插件阶段对话") == true }?.performClick() }
-        return onTop("the Ask page and its composer are ready") { activity ->
-            tags(activity).contains("central-title") &&
-                shown(activity).filterIsInstance<EditText>().any { it.contentDescription == MoteI18n.text("你的问题") && it.isEnabled }
-        }
+    private fun awaitAskComposer(): Activity = onTop("the main conversation and its composer are ready") { activity ->
+        texts(activity).contains("生成的插件阶段回答") &&
+            shown(activity).filterIsInstance<EditText>().any { it.contentDescription == MoteI18n.text("你的问题") && it.isEnabled }
     }
 
     private fun noFakeCaptureSuccess(activity: Activity) {
@@ -556,20 +553,14 @@ class PluginStageInstrumentedTest {
 
         private fun response(method: String, path: String): JSONObject = when {
             method == "POST" && path == "/api/query-runs" -> JSONObject().put("id", "generated-plugin-stage-run")
-            path.startsWith("/api/conversations?limit=") -> JSONObject().put("items", JSONArray().put(
-                JSONObject()
-                    .put("id", STAGE_CONVERSATION)
-                    .put("title", "生成的插件阶段对话")
-                    .put("updatedAt", "2026-11-04T06:00:00Z")
-                    .put("turnCount", 1),
-            ))
+            path == "/api/conversations/main" -> JSONObject().put("id", STAGE_CONVERSATION)
             path.startsWith("/api/conversations/" + STAGE_CONVERSATION) -> JSONObject().put("id", STAGE_CONVERSATION).put("turns", JSONArray().put(
                 JSONObject()
                     .put("id", STAGE_CONVERSATION)
                     .put("question", "生成的插件阶段对话")
+                    .put("status", "completed")
                     .put("result", JSONObject().put("answer", "生成的插件阶段回答").put("citations", JSONArray())),
             ))
-            path.startsWith("/api/conversations?") -> JSONObject().put("items", JSONArray()).put("nextCursor", JSONObject.NULL)
             path == "/api/actions" || path.startsWith("/api/actions?") -> JSONObject().put("items", JSONArray()).put("targets", JSONArray()).put("nextCursor", JSONObject.NULL)
             path == "/api/insights" || path.startsWith("/api/insights?") -> JSONObject().put("items", JSONArray())
             path == "/api/status" -> JSONObject().put("storage", JSONObject().put("captures", 1))
