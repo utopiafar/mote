@@ -14,6 +14,7 @@ final class SystemControlMappingTests: XCTestCase {
 
         XCTAssertEqual(MoteSystemControl.allCases.count, expected.count)
         XCTAssertEqual(Set(MoteSystemControl.allCases.map(\.kind)).count, expected.count)
+        XCTAssertEqual(MoteSystemControl.ask.entry.title, "聊天")
         for (control, entry, action) in expected {
             XCTAssertEqual(control.entry, entry)
             XCTAssertEqual(control.entry.action, action)

@@ -38,7 +38,7 @@ struct MoteWidget: Widget {
             MoteWidgetEntryView()
         }
         .configurationDisplayName("Mote")
-        .description("记录、拍照、录音和问一问")
+        .description("记录、拍照、录音和聊天")
         .supportedFamilies([.systemSmall, .systemMedium])
         .contentMarginsDisabled()
     }
