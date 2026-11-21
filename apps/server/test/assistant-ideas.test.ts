@@ -66,7 +66,7 @@ async function fixture(t:TestContext){
   assert.equal(response.statusCode,200,response.body);
   return {count:response.json<NavState>().badges.ideas,etag:response.headers.etag};
  };
- const ignoreAll=(upToSeq:number,upToQuestionAt?:number)=>app.inject({method:'POST',url:ignoreAllUrl,headers,payload:{upToSeq,...upToQuestionAt!==undefined?{upToQuestionAt}:{}}});
+ const ignoreAll=(upToSeq:number,upToQuestionAt?:number,viewRevision?:string)=>app.inject({method:'POST',url:ignoreAllUrl,headers,payload:{upToSeq,...upToQuestionAt!==undefined?{upToQuestionAt}:{},...viewRevision!==undefined?{viewRevision}:{}}});
  const taskInput=async(item:IdeaItem)=>{
   const response=await app.inject({url:'/api/assistant-cards/'+item.id+'?'+scoped(all),headers});
   assert.equal(response.statusCode,200,response.body);
@@ -148,7 +148,7 @@ test('ID2-04 bulk ignore dismisses the clarifications the surface has seen',asyn
  assert.equal(before.yours.length,1);
  assert.ok(before.questionWatermark>0);
  assert.equal((await f.nav()).count,2);
- const response=await f.ignoreAll(before.watermark,before.questionWatermark);
+ const response=await f.ignoreAll(before.watermark,before.questionWatermark,before.revision);
  assert.equal(response.statusCode,200,response.body);
  const result=ideasIgnoreAllResultSchema.parse(response.json()),after=await f.read();
  assert.deepEqual(result,{ignored:2,revision:after.revision});
@@ -174,7 +174,7 @@ test('ID2-04 a clarification created after the read stays even in the same milli
  const unseen=f.question();
  assert.equal(unseen.updatedAt,seen.updatedAt);
  t.mock.timers.setTime(at+1000);
- const response=await f.ignoreAll(before.watermark,before.questionWatermark);
+ const response=await f.ignoreAll(before.watermark,before.questionWatermark,before.revision);
  assert.equal(response.statusCode,200,response.body);
  assert.equal(response.json().ignored,2,'the card and the clarification the surface read are dismissed');
  const after=await f.read();
@@ -201,7 +201,7 @@ test('ID2-04 two views at the same watermark cannot widen each other\'s bulk ign
  assert.equal(second.questionWatermark,first.questionWatermark);
  assert.notEqual(second.revision,first.revision);
  t.mock.timers.setTime(at+1000);
- const response=await f.ignoreAll(first.watermark,first.questionWatermark);
+ const response=await f.ignoreAll(first.watermark,first.questionWatermark,first.revision);
  assert.equal(response.statusCode,200,response.body);
  assert.equal(response.json().ignored,2,'only the card and the clarification the first view displayed are dismissed');
  const after=await f.read(),nav=await f.nav();
@@ -214,6 +214,68 @@ test('ID2-04 two views at the same watermark cannot widen each other\'s bulk ign
  const hidden=await f.app.inject({url:'/api/owner-questions/'+unseen.id,headers});
  assert.equal(hidden.statusCode,200,hidden.body);
  assert.equal(hidden.json().ignoredAt,undefined);
+});
+
+test('ID2-04 the latest view can dismiss the complete list it displayed',async t=>{
+ const f=await fixture(t),at=Date.parse('2026-11-21T06:00:00Z');
+ t.mock.timers.enable({apis:['Date'],now:at});
+ const card=f.publish('suggestion'),seen=f.question();
+ const first=await f.read();
+ assert.deepEqual(first.mine.map(item=>item.id),[card.id]);
+ assert.deepEqual(first.yours.map(item=>item.id),[seen.id]);
+ const unseen=f.question();
+ assert.equal(unseen.updatedAt,seen.updatedAt);
+ const second=await f.read();
+ assert.deepEqual(new Set(second.yours.map(item=>item.id)),new Set([seen.id,unseen.id]));
+ assert.equal(second.watermark,first.watermark);
+ assert.equal(second.questionWatermark,first.questionWatermark);
+ assert.notEqual(second.revision,first.revision);
+ t.mock.timers.setTime(at+1000);
+ const response=await f.ignoreAll(second.watermark,second.questionWatermark,second.revision);
+ assert.equal(response.statusCode,200,response.body);
+ assert.equal(response.json().ignored,3,'the card and both clarifications this view displayed are dismissed');
+ const after=await f.read(),nav=await f.nav();
+ assert.deepEqual(after.mine,[]);
+ assert.deepEqual(after.yours,[]);
+ assert.equal(nav.count,0);
+ for(const id of [seen.id,unseen.id]){
+  const detail=await f.app.inject({url:'/api/owner-questions/'+id,headers});
+  assert.equal(detail.statusCode,200,detail.body);
+  assert.ok(detail.json().ignoredAt);
+ }
+});
+
+test('ID2-04 a clarification retained by an older view can be dismissed after reloading',async t=>{
+ const f=await fixture(t),at=Date.parse('2026-11-21T06:00:00Z');
+ t.mock.timers.enable({apis:['Date'],now:at});
+ const card=f.publish('suggestion'),seen=f.question();
+ const first=await f.read();
+ const unseen=f.question();
+ assert.equal(unseen.updatedAt,seen.updatedAt);
+ const second=await f.read();
+ assert.deepEqual(new Set(second.yours.map(item=>item.id)),new Set([seen.id,unseen.id]));
+ t.mock.timers.setTime(at+1000);
+ const narrowed=await f.ignoreAll(first.watermark,first.questionWatermark,first.revision);
+ assert.equal(narrowed.statusCode,200,narrowed.body);
+ assert.equal(narrowed.json().ignored,2,'the older view dismisses only the card and clarification it displayed');
+ const retained=await f.read();
+ assert.deepEqual(retained.mine,[]);
+ assert.deepEqual(retained.yours.map(item=>item.id),[unseen.id]);
+ assert.equal((await f.nav()).count,1);
+ t.mock.timers.setTime(at+60_000);
+ const reloaded=await f.read();
+ assert.deepEqual(reloaded.yours.map(item=>item.id),[unseen.id]);
+ assert.equal(reloaded.questionWatermark,Date.parse(unseen.updatedAt));
+ const response=await f.ignoreAll(reloaded.watermark,reloaded.questionWatermark,reloaded.revision);
+ assert.equal(response.statusCode,200,response.body);
+ assert.equal(response.json().ignored,1,'the reloaded view dismisses the clarification it displayed');
+ const after=await f.read();
+ assert.deepEqual(after.mine,[]);
+ assert.deepEqual(after.yours,[]);
+ assert.equal((await f.nav()).count,0);
+ const detail=await f.app.inject({url:'/api/owner-questions/'+unseen.id,headers});
+ assert.equal(detail.statusCode,200,detail.body);
+ assert.equal(detail.json().ignoredAt,new Date(at+60_000).toISOString());
 });
 
 test('ID1-04 a snoozed card stays out of both views until tomorrow at 09:00',async t=>{

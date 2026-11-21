@@ -193,10 +193,12 @@ export const ideasQuerySchema=z.object({scope:scopeParam}).strict();
 export type IdeasQuery=z.infer<typeof ideasQuerySchema>;
 
 /** Ignore only what the surface has already seen. Newer cards and
- * clarifications stay. */
+ * clarifications stay. `viewRevision` is the `revision` of the view that issued
+ * the command; it keeps same-millisecond views from widening each other. */
 export const ideasIgnoreAllInputSchema=z.object({
   upToSeq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   upToQuestionAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  viewRevision:pageRevision.optional(),
 }).strict();
 export type IdeasIgnoreAllInput=z.infer<typeof ideasIgnoreAllInputSchema>;
 

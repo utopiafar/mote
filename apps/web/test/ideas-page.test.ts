@@ -73,6 +73,7 @@ function fakeApi(state:{view:IdeasView;card?:{taskScope:unknown}},requests:Reque
         const body=JSON.parse(init!.body!);
         assert.equal(body.upToSeq,state.view.watermark);
         assert.equal(body.upToQuestionAt,state.view.questionWatermark);
+        assert.equal(body.viewRevision,state.view.revision,'the command names the exact view that issued it');
         state.view={...state.view,mine:[],yours:[],questionWatermark:0};
         return {ignored:2,revision:'generated-ideas-2'};
       }
@@ -153,7 +154,7 @@ test('ID2-04 ignoring everything uses the visible watermarks, clears cards and c
   await settle(w);
   const ignoreAll=requests.find(request=>request.path==='/api/assistant/ideas/ignore-all')!;
   assert.ok(ignoreAll,'the bulk command is sent');
-  assert.deepEqual(JSON.parse(ignoreAll.body!),{upToSeq:9,upToQuestionAt:questionWatermark});
+  assert.deepEqual(JSON.parse(ignoreAll.body!),{upToSeq:9,upToQuestionAt:questionWatermark,viewRevision:state.view.revision});
   assert.equal(d.querySelectorAll('.idea-row').length,0);
   assert.equal(d.querySelector('.ideas-empty')!.textContent,'没有新点子');
   assert.deepEqual(refreshed,['nav'],'the shared nav-state read refreshes so the ideas badge can drop');

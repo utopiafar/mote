@@ -70,7 +70,7 @@ export function IdeasPage({api,refresh}:{api:Api;refresh:()=>void}){
     });
   });
   const ignoreAll=()=>view&&run('all',()=>api.request('/api/assistant/ideas/ignore-all',{
-    method:'POST',body:JSON.stringify({upToSeq:view.watermark,upToQuestionAt:questionWatermark}),
+    method:'POST',body:JSON.stringify({upToSeq:view.watermark,upToQuestionAt:questionWatermark,viewRevision:view.revision}),
   }));
 
   const needle=search.trim().toLocaleLowerCase();

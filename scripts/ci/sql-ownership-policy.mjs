@@ -150,6 +150,8 @@ export const consumerScopes={
   'OwnerQuestions.performReply':'owner-question-services',
   'OwnerQuestions.markSurfaced':'owner-question-services',
   'OwnerQuestions.ignoreAll':'owner-question-services',
+  'OwnerQuestions.ignoreView':'owner-question-services',
+  'OwnerQuestions.ignoreSeen':'owner-question-services',
  },
  'owner-calendar-instructions.ts':{
   'OwnerCalendarInstructions.targets':'actions',

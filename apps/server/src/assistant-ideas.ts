@@ -47,7 +47,7 @@ const taskStatus={
 export class AssistantIdeas{
  private readonly records:TaskRecords;
  constructor(private readonly store:EvidenceStore,private readonly cards:Pick<AssistantCards,'ideaCandidates'|'feedback'>,
-  private readonly questions:Pick<OwnerQuestions,'page'|'ignoreAll'|'markSurfaced'>,private readonly tasks:Pick<AssistantTasks,'get'>,
+  private readonly questions:Pick<OwnerQuestions,'page'|'ignoreAll'|'ignoreView'|'markSurfaced'>,private readonly tasks:Pick<AssistantTasks,'get'>,
   private readonly reader:EvidenceReader){
   this.records=new TaskRecords(store);
  }
@@ -114,7 +114,7 @@ export class AssistantIdeas{
   }
  }
 
- private read(scope:QueryScope,now:number,includeStarted=false,recordSurface=false){
+ private read(scope:QueryScope,now:number,includeStarted=false){
   const mine:IdeaItem[]=[],yours:IdeaItem[]=[],started:StartedIdea[]=[];
   const canIgnoreAll=unfiltered(scope),questionSeen={watermark:0,items:[] as Array<{id:string;revision:number}>};
   let watermark=0;
@@ -132,13 +132,14 @@ export class AssistantIdeas{
    if(canIgnoreAll)watermark=Math.max(watermark,item.seq);
   }
   for(const question of this.questionIdeas(scope,questionSeen))yours.push(question);
-  if(recordSurface&&canIgnoreAll&&questionSeen.items.length)this.questions.markSurfaced(questionSeen.watermark,questionSeen.items);
-  return {watermark,questionWatermark:canIgnoreAll?questionSeen.watermark:0,mine,yours,started};
+  return {watermark,questionWatermark:canIgnoreAll?questionSeen.watermark:0,mine,yours,started,questionSeen};
  }
 
  private viewAt(scope:QueryScope,now:number,recordSurface=false):IdeasView{
-  const items=this.read(scope,now,true,recordSurface);
-  return ideasViewSchema.parse({...items,revision:sha256(JSON.stringify(items))});
+  const {questionSeen,...items}=this.read(scope,now,true);
+  const view=ideasViewSchema.parse({...items,revision:sha256(JSON.stringify(items))});
+  if(recordSurface&&unfiltered(scope)&&questionSeen.items.length)this.questions.markSurfaced(view.questionWatermark,view.revision,questionSeen.items);
+  return view;
  }
 
  view(scope:QueryScope):IdeasView{
@@ -152,7 +153,7 @@ export class AssistantIdeas{
   });
  }
 
- ignoreAll({upToSeq,upToQuestionAt}:IdeasIgnoreAllInput):IdeasIgnoreAllResult{
+ ignoreAll({upToSeq,upToQuestionAt,viewRevision}:IdeasIgnoreAllInput):IdeasIgnoreAllResult{
   return this.snapshot(()=>{
    const now=Date.now();
    let ignored=0;
@@ -161,7 +162,7 @@ export class AssistantIdeas{
     this.cards.feedback(card.id,{action:'ignore',expectedRevision:card.revision},all);
     ignored++;
    }
-   if(upToQuestionAt!==undefined)ignored+=this.questions.ignoreAll(upToQuestionAt);
+   if(upToQuestionAt!==undefined)ignored+=viewRevision?this.questions.ignoreView(viewRevision):this.questions.ignoreAll(upToQuestionAt);
    return {ignored,revision:this.viewAt(all,now).revision};
   });
  }

@@ -2033,6 +2033,11 @@
     },
     {
       "type": "table",
+      "name": "owner_question_surface_views",
+      "fingerprint": "a753db92c18d32b1ddab6876f17f54cad333f61ac0a0318d12cc201c3d84e007"
+    },
+    {
+      "type": "table",
       "name": "owner_question_surfaces",
       "fingerprint": "59f28394139af2128a571ac739fc2205725c8fd557c2b0042bc4d34b0598a843"
     },
