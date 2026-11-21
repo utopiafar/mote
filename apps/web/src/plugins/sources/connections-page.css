@@ -1,0 +1,267 @@
+.content:has(> .connections-overview) > .workspace-tools {
+  display: none;
+}
+
+.connections-overview {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+  color: var(--mote-ink);
+}
+
+.connections-overview h1,
+.connections-overview h2,
+.connections-overview p {
+  margin: 0;
+}
+
+.connections-heading {
+  margin-bottom: 22px;
+}
+
+.connections-heading h1 {
+  font-size: var(--mote-font-title);
+}
+
+.connection-line,
+.connection-scan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-service-list {
+  display: grid;
+  gap: 10px;
+}
+
+.connection-card {
+  min-width: 0;
+  padding: 15px 18px;
+  border: 1px solid var(--mote-hair);
+  border-radius: var(--mote-radius-container);
+  background: var(--mote-surface);
+}
+
+.connection-card h2,
+.connection-ai h2 {
+  font-size: var(--mote-font-section);
+  font-weight: 600;
+}
+
+.connection-service-name,
+.connection-service-state,
+.connection-facts,
+.connection-facts ul,
+.connection-actions-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 6px 8px;
+}
+
+.connection-service-name code,
+.connection-tool code {
+  font: var(--mote-font-meta) var(--mote-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.connection-service-name code {
+  color: var(--mote-muted);
+}
+
+.connection-service-state {
+  flex: none;
+  gap: 8px 12px;
+}
+
+.connection-status,
+.connection-job,
+.connection-tool {
+  padding: 3px 8px;
+  border-radius: var(--mote-radius-pill);
+  font-size: var(--mote-font-support);
+  line-height: 1.45;
+}
+
+.connection-status,
+.connection-job {
+  background: var(--mote-surface-sunken);
+}
+
+.connection-status[data-state='connected'] {
+  background: var(--mote-success-tint);
+  color: var(--mote-success);
+}
+
+.connection-status[data-state='reauth'],
+.connection-status[data-state='error'] {
+  background: var(--mote-warning-tint);
+  color: var(--mote-warning);
+}
+
+.connection-switch {
+  display: inline-grid;
+  align-items: center;
+  width: 34px;
+  height: 22px;
+  border: 0;
+  padding: 2px;
+  border-radius: var(--mote-radius-pill);
+  background: var(--mote-muted);
+}
+
+.connection-switch::before {
+  content: '';
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--mote-surface);
+}
+
+.connection-switch[aria-checked='true'] {
+  justify-items: end;
+  background: var(--mote-accent);
+}
+
+.connection-facts {
+  margin-top: 9px;
+}
+
+.connection-facts ul,
+.connection-ai-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.connection-tool {
+  max-width: 100%;
+  border: 1px solid var(--mote-hair);
+}
+
+.connection-actions-inline {
+  gap: 6px 14px;
+}
+
+.connection-service-actions {
+  margin-top: 10px;
+}
+
+.connections-overview .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  color: var(--mote-accent);
+}
+
+.connection-card > p {
+  margin-top: 6px;
+  font-size: var(--mote-font-support);
+}
+
+.connection-ai {
+  margin-top: 22px;
+}
+
+.connection-ai h2 a,
+.connection-ai-list li a {
+  color: inherit;
+}
+
+.connection-ai-list {
+  margin-top: 10px;
+  border-top: 1px solid var(--mote-hair);
+}
+
+.connection-ai-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--mote-hair);
+}
+
+.connection-ai-list li > svg,
+.connection-ai-list small,
+.connection-scan p,
+.connection-empty {
+  color: var(--mote-muted);
+}
+
+.connection-ai-list a {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.connection-ai-list small {
+  display: block;
+  margin-top: 3px;
+}
+
+.connection-scan {
+  margin-top: 16px;
+}
+
+.connection-scan p {
+  margin-top: 5px;
+  font-size: var(--mote-font-support);
+}
+
+.connection-scan > .button {
+  flex: none;
+}
+
+.connection-scan-dialog form > label,
+.connection-scan-dialog fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 12px 20px;
+  border: 0;
+  padding: 0;
+}
+
+.connection-scan-dialog fieldset {
+  max-height: 38vh;
+  overflow: auto;
+}
+
+.connection-scan-dialog fieldset label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.connection-scan-dialog form > p {
+  padding: 0 20px 12px;
+}
+
+.connections-overview .connection-feedback {
+  margin: 0 0 10px;
+  color: var(--mote-warning);
+}
+
+@media (max-width: 600px) {
+  .connections-heading h1 {
+    font-size: var(--mote-font-title-mobile);
+  }
+
+  .connection-card {
+    padding: 12px;
+  }
+
+  .connection-card .connection-line,
+  .connection-scan {
+    align-items: flex-start;
+  }
+
+  .connection-actions-inline .text-button {
+    min-height: 32px;
+  }
+}

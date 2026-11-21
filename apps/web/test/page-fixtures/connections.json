@@ -1,0 +1,318 @@
+{
+  "route": "#/connections?onboarding=00000000-0000-4000-8000-000000000101",
+  "waitFor": ".connections-overview:has([data-access-id] button:not(:disabled)):has([data-onboarding-summary] p):has([data-service-id][data-state=reauth])",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": {
+          "configured": true,
+          "model": "fixture-model",
+          "provider": "fixture"
+        },
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [
+            {
+              "status": "text_ready",
+              "count": 3
+            }
+          ]
+        },
+        "index": {
+          "mode": "text",
+          "model": null
+        },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/plugins": {
+      "status": 200,
+      "body": {
+        "revision": 1,
+        "installation": {
+          "supported": true,
+          "runtime": "worker",
+          "restartRequired": false
+        },
+        "packages": [],
+        "instances": [],
+        "catalog": [],
+        "sourceContributions": []
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": []
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 6,
+          "connections": true
+        }
+      }
+    },
+    "GET /api/connections/services": {
+      "status": 200,
+      "body": {
+        "revision": "fixture-services-1",
+        "services": [
+          {
+            "id": "official-feishu-session",
+            "name": "飞书会话",
+            "kind": "service",
+            "state": "connected",
+            "jobs": [
+              {
+                "kind": "mote.official.feishu-session",
+                "every": "5m",
+                "lastAt": "2026-11-21T07:46:00Z",
+                "lastCount": 19
+              }
+            ],
+            "tools": [
+              "message.send"
+            ],
+            "actions": [
+              "sync",
+              "dry-run",
+              "pause",
+              "remove"
+            ]
+          },
+          {
+            "id": "google-calendar",
+            "name": "Google Calendar",
+            "kind": "service",
+            "state": "connected",
+            "jobs": [
+              {
+                "kind": "google-calendar",
+                "every": "15m",
+                "lastAt": "2026-11-21T07:47:00Z",
+                "lastCount": 38
+              }
+            ],
+            "tools": [
+              "calendar.manage"
+            ],
+            "actions": [
+              "sync",
+              "dry-run",
+              "pause",
+              "remove"
+            ]
+          },
+          {
+            "id": "official-notion",
+            "name": "Notion 归档",
+            "kind": "service",
+            "state": "connected",
+            "jobs": [
+              {
+                "kind": "mote.official.notion",
+                "every": "30m",
+                "lastAt": "2026-11-21T07:44:00Z",
+                "lastCount": 3
+              }
+            ],
+            "tools": [],
+            "actions": [
+              "sync",
+              "dry-run",
+              "pause",
+              "remove"
+            ]
+          },
+          {
+            "id": "official-slack",
+            "name": "Slack 归档",
+            "kind": "service",
+            "state": "reauth",
+            "jobs": [
+              {
+                "kind": "mote.official.slack",
+                "every": "5m",
+                "lastAt": "2026-11-19T07:50:00Z"
+              }
+            ],
+            "tools": [],
+            "actions": [
+              "reauth",
+              "remove"
+            ]
+          },
+          {
+            "id": "local-files",
+            "name": "生成设备文件",
+            "kind": "service",
+            "state": "connected",
+            "jobs": [
+              {
+                "kind": "local-files",
+                "every": "5m",
+                "lastAt": "2026-11-21T07:43:00Z",
+                "lastCount": 2
+              }
+            ],
+            "tools": [],
+            "actions": [
+              "sync",
+              "dry-run",
+              "pause",
+              "remove"
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000201",
+            "name": "Claude Code",
+            "kind": "ai-access",
+            "state": "connected",
+            "jobs": [],
+            "tools": [],
+            "actions": [
+              "remove"
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000202",
+            "name": "Codex",
+            "kind": "ai-access",
+            "state": "connected",
+            "jobs": [],
+            "tools": [],
+            "actions": [
+              "remove"
+            ]
+          }
+        ]
+      }
+    },
+    "GET /api/sources": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "fixture-feishu",
+            "name": "样例飞书会话",
+            "kind": "mote.official.feishu-session",
+            "platform": "import",
+            "deviceId": "fixture-feishu",
+            "retention": "snapshot",
+            "enabled": true
+          },
+          {
+            "id": "fixture-calendar",
+            "name": "样例日历",
+            "kind": "google-calendar",
+            "platform": "import",
+            "deviceId": "fixture-calendar",
+            "retention": "snapshot",
+            "enabled": true
+          },
+          {
+            "id": "fixture-notion",
+            "name": "样例页面",
+            "kind": "mote.official.notion",
+            "platform": "import",
+            "deviceId": "fixture-notion",
+            "retention": "snapshot",
+            "enabled": true
+          },
+          {
+            "id": "fixture-slack",
+            "name": "样例频道",
+            "kind": "mote.official.slack",
+            "platform": "import",
+            "deviceId": "fixture-slack",
+            "retention": "snapshot",
+            "enabled": true
+          },
+          {
+            "id": "fixture-mac-files",
+            "name": "生成设备文件",
+            "kind": "local-files",
+            "platform": "macos",
+            "deviceId": "fixture-mac-files",
+            "retention": "snapshot",
+            "enabled": true
+          }
+        ]
+      }
+    },
+    "GET /api/connections": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "00000000-0000-4000-8000-000000000201",
+            "label": "Claude Code",
+            "scope": "mcp-read",
+            "expiresAt": "2026-12-21T07:00:00Z"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000202",
+            "label": "Codex",
+            "scope": "mcp-calendar"
+          }
+        ],
+        "mcp": {
+          "enabled": true,
+          "writeEnabled": false,
+          "writeSourceIds": []
+        }
+      }
+    },
+    "GET /api/assistant/onboarding/00000000-0000-4000-8000-000000000101": {
+      "status": 200,
+      "body": {
+        "state": "completed",
+        "counts": {
+          "sources": 4,
+          "materials": 214,
+          "memories": 9,
+          "ideas": 5,
+          "feed": 6
+        }
+      }
+    }
+  }
+}
