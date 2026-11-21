@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readMemoryWorkCoverage,memoryWorkInstruction,type MemoryWorkMember,type MemoryOwnerQuestion} from '../src/memory-work-contract.js';
 import {reviewMemory} from '../src/memory-review.js';
-import type {QueryResult} from '@mote/shared';
+import {onboardingViewSchema,type QueryResult} from '@mote/shared';
 
 const original='Speaker A: I felt pressured at work. Speaker A: Could you describe what happened? Participant: My name is Rowan.';
 const member:MemoryWorkMember={key:'a'.repeat(64),id:'generated-evidence',offset:0,length:original.length,fingerprint:'b'.repeat(64),state:'pending',memoryIds:[]};
@@ -74,12 +74,14 @@ async function httpFixture(t:TestContext,sourceKind:'custom'|'upload'='custom'){
   calls.push(input);
   if(input.taskContext?.materials){
    if(heldAnalysis&&!heldAnalysis.entered){const held=heldAnalysis;held.entered=true;await held.promise;}
-   const context=input.taskContext as {originals:{id:string;offset:number;quote:string}[];pendingOwnerQuestions?:{id:string;revision:number;prompt:string}[];cards:{id:string}[];memories:{statement:string}[]};
+   const context=input.taskContext as {originals:{id:string;offset:number;quote:string}[];pendingOwnerQuestions?:{id:string;revision:number;prompt:string}[];cards:{id:string}[];
+    materials:{attributionContext?:{ownerStatements?:{answer:string}[]}}[];memories:{statement:string}[]};
    const needle='Generated plan: deliver the release checklist.',original=context.originals.find(span=>span.quote.includes(needle));assert.ok(original,'follow-up reads the actual independent original');
-   const confirmed=context.memories.some(memory=>memory.statement.includes('The owner felt pressured at work'));
+   assert.ok(!context.memories.some(memory=>memory.statement.includes('The owner felt pressured at work')),'onboarding proposals are not published by clarification');
+   const confirmed=context.materials.some(material=>material.attributionContext?.ownerStatements?.some(statement=>statement.answer===question.choices[0].answer));
    if(!confirmed)assert.ok(context.pendingOwnerQuestions?.length,'the unanswered identity is explicit model context');
    const existing=context.cards[0];
-   return {runId:randomUUID(),answer:JSON.stringify({reason:confirmed?'Generated owner answer is now independently reviewed.':'Generated independent help is available while identity stays unknown.',cards:[{action:existing?'update':'new',cardId:existing?.id??null,relatedCardIds:existing?[existing.id]:[],title:'Generated release checklist',body:confirmed?'The owner confirmed the reported pressure; the release checklist remains actionable.':'The release checklist can be prepared. Participant identity remains unknown.',reason:'The generated original names the release checklist.',evidence:[{id:original.id,offset:original.offset+original.quote.indexOf(needle),quote:needle}],matterId:null}],commitments:[]}),citations:[],trace:[],evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};
+   return {runId:randomUUID(),answer:JSON.stringify({reason:confirmed?'Generated owner answer is now independently reviewed.':'Generated independent help is available while identity stays unknown.',cards:[{action:existing?'update':'new',destination:'idea',cardId:existing?.id??null,relatedCardIds:existing?[existing.id]:[],title:'Generated release checklist',body:confirmed?'The owner confirmed the reported pressure; the release checklist remains actionable.':'The release checklist can be prepared. Participant identity remains unknown.',reason:'The generated original names the release checklist.',evidence:[{id:original.id,offset:original.offset+original.quote.indexOf(needle),quote:needle}],matterId:null}],commitments:[]}),citations:[],trace:[],evidenceDependencies:{version:1,complete:true,ids:[...(input.contextEvidenceDependencies?.ids??[])]}};
   }
   if(input.taskContext?.ownerClarificationReply)return {runId:'generated-answer-interpretation',answer:JSON.stringify({disposition:control.replyDisposition,...(control.replyDisposition==='followup'?{prompt:'Which utterance in this generated conversation belongs to you?'}:{})}),citations:[],trace:[]};if(input.traceContext?.phase==='feedback-planning'){const request=(input.taskContext!.memoryWork as {feedback:MemoryFeedbackRequest}).feedback,background=request.authorized.find(target=>node.memories.readEvidence([target.id])[0].ocrText.includes('Wholly generated independent record'))!;assert.ok(background);await input.hostControlChannel!.execute('delegation_submit',{units:[{id:'generated-context-only',capabilityId:'memory.feedback-group',title:'Inspect the generated missing background',goal:'Resolve only the actual evidence gap',input:{memberKeys:request.targets.map(target=>target.key),contextKeys:[background.key],instruction:'Use the specifically authorized background for this generated dependent range.'}}]});return {runId:'generated-context-plan',answer:'Generated scoped context plan submitted.',citations:[],trace:[]};}const plan=await fixtureMemoryPlan(input);if(plan)return plan;
   const members=(input.taskContext?.memoryWork as {members:MemoryWorkMember[]}|undefined)?.members;assert.ok(members,'production Memory must apply reviewed coverage to ordinary recipe jobs');
@@ -108,9 +110,9 @@ async function httpFixture(t:TestContext,sourceKind:'custom'|'upload'='custom'){
  const disable=async()=>{const settings=node.lifecycle.settings();for(const id of ['working','consolidation','insights'] as const)settings[id].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});};await disable();
  const api=(method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE',url:string,payload?:unknown)=>node.app.inject({method,url,payload,headers:{authorization:'Bearer '+config.privateCredential!.token,'x-mote-ingress-version':'2'}});
  t.after(async()=>{heldAnalysis?.release();heldQuestionRead?.release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const add=async(externalId:string,text=original)=>{
+ const add=async(externalId:string,text=original,observedAt='2026-09-01T00:00:00Z')=>{
   if(!node.sources.listSources().some(source=>source.id==='generated-dialogues')){const response=await api('POST','/api/sources',{id:'generated-dialogues',name:'Generated conversations',kind:sourceKind,deviceId:'generated',platform:'import',retention:'archive'});assert.equal(response.statusCode,200,response.body);}
-  const response=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'message',layer:'original',text,document:{contentRole:'transcript',recordedAt:'2026-09-01T00:00:00Z',timeBasis:'recorded'}});assert.equal(response.statusCode,200,response.body);await node.materialOrganizer.tick();await node.sourcePipelines.tick();const id=response.json().id as string,material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId===externalId)!;assert.ok(material);anchors.set(id,node.materials.evidenceIds(material.ref));return id;
+  const response=await api('PUT','/api/sources/generated-dialogues/items',{externalId,revision:'1',observedAt,kind:'message',layer:'original',text,document:{contentRole:'transcript',recordedAt:observedAt,timeBasis:'recorded'}});assert.equal(response.statusCode,200,response.body);await node.materialOrganizer.tick();await node.sourcePipelines.tick();const id=response.json().id as string,material=node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId===externalId)!;assert.ok(material);anchors.set(id,node.materials.evidenceIds(material.ref));return id;
  };
  const start=async(ids:string[],recipe:{id:string;version:string}|null={id:'mote.personal-memory',version:'5'})=>{const response=await api('POST','/api/memory-jobs',{evidenceIds:ids.flatMap(id=>anchors.get(id)??[id]),...(recipe?{recipes:[recipe]}:{})});assert.equal(response.statusCode,202,response.body);return node.memoryPipeline.run(response.json().id);};
  return {get node(){return node;},api,add,start,calls,control,holdQuestionRead(onDraining?:()=>void){const entry=Promise.withResolvers<void>(),gate=Promise.withResolvers<void>();return heldQuestionRead={entered:entry.promise,enter:()=>entry.resolve(),promise:gate.promise,release:()=>gate.resolve(),onDraining};},holdAnalysis(){const gate=Promise.withResolvers<void>();heldAnalysis={entered:false,promise:gate.promise,release:()=>gate.resolve()};return heldAnalysis;},async questions(workId?:string){const response=await api('GET','/api/owner-questions'+(workId?'?operationId='+encodeURIComponent('memory:'+workId):''));assert.equal(response.statusCode,200,response.body);return response.json().items as any[];},async restart(){await node.app.close();node=await open();await disable();}};
@@ -286,15 +288,16 @@ test('a resolved free-text declaration preserves the exact owner reply including
 
 
 for(const replyAction of ['answer','unknown'] as const)test(`onboarding publishes independent help while identity stays open, then completes after owner ${replyAction}`,async t=>{
- const f=await httpFixture(t),id=await f.add('onboarding-partial',original+' Generated plan: deliver the release checklist.');
- const material=()=>f.node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId==='onboarding-partial')!;
- const scope={kind:'selection',sourceIds:['generated-dialogues']};
- const started=await f.api('POST','/api/assistant/onboarding',{requestId:randomUUID(),scope,materialRefs:[material().ref]});assert.equal(started.statusCode,202,started.body);
+ const f=await httpFixture(t),id=await f.add('onboarding-partial',original+' Generated plan: deliver the release checklist.',new Date(Date.now()-86400000).toISOString());
+ const scope={kind:'selection' as const,sourceIds:['generated-dialogues']};
+ const started=await f.api('POST','/api/assistant/onboarding',{sources:scope.sourceIds,window:{days:30}});assert.equal(started.statusCode,202,started.body);
  const runId=started.json().id;
- const read=async()=>{const response=await f.api('GET','/api/assistant/onboarding/'+runId+'?'+new URLSearchParams({scope:JSON.stringify(scope)}));assert.equal(response.statusCode,200,response.body);return response.json();};
- const until=async(check:(value:any)=>boolean)=>{const end=Date.now()+10000;let value;while(Date.now()<end){await f.node.featureServices.assistantOnboarding.tick();void f.node.executor.tick().catch(()=>{});value=await read();if(check(value))return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated onboarding did not progress: '+JSON.stringify(value));};
+ const read=()=>f.node.featureServices.assistantOnboarding.get(runId,scope);
+ const until=async(check:(value:ReturnType<typeof read>)=>boolean)=>{const end=Date.now()+10000;let value;while(Date.now()<end){await f.node.featureServices.assistantOnboarding.tick();void f.node.executor.tick().catch(()=>{});value=read();if(check(value))return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated onboarding did not progress: '+JSON.stringify(value));};
  const partial=await until(value=>Boolean(value.items[0]?.result));
- assert.equal(partial.state,'pending');assert.equal(partial.completed,0);assert.equal(partial.coverage.semantic.partial,1);assert.equal(partial.coverage.semantic.completed,0);
+ assert.equal(partial.state,'running');assert.equal(partial.completed,0);assert.equal(partial.coverage.semantic.partial,1);assert.equal(partial.coverage.semantic.completed,0);
+ const progress=await f.api('GET','/api/assistant/onboarding/'+runId);assert.equal(progress.statusCode,200,progress.body);
+ assert.deepEqual(onboardingViewSchema.parse(progress.json()),{state:'running',counts:{sources:1,materials:1,memories:0,ideas:1,feed:0}});
  const item=partial.items[0];assert.equal(item.reason,'memory_owner_input_required');assert.equal(item.memory.status,'waiting_for_input');assert.equal(item.memory.completedBatches,item.memory.totalBatches);
  assert.equal(item.result.cardIds.length,1);assert.ok(item.ownerQuestions.length);
  const [pending]=await f.questions(item.memory.id);assert.equal(pending.state,'open');assert.equal(item.ownerQuestions[0].id,pending.id);
@@ -304,7 +307,7 @@ for(const replyAction of ['answer','unknown'] as const)test(`onboarding publishe
  await f.restart();const restored=await read();assert.equal(restored.items[0].result.cardIds[0],card.id);assert.equal((await f.questions(item.memory.id))[0].state,'open');
  const reply=await f.api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:replyAction,...(replyAction==='answer'?{choiceId:'describing'}:{})});assert.equal(reply.statusCode,200,reply.body);
  const answered=reply.json();assert.equal(answered.state,replyAction==='answer'?'answered':'closed');
- if(replyAction==='answer'){const continuation=await f.node.memoryPipeline.run(answered.continuationId.replace(/^memory:/,''));assert.equal(continuation.status,'completed');}else await f.node.memoryPipeline.run(item.memory.id);
+ if(replyAction==='answer'){const continuation=await f.node.memoryPipeline.run(answered.continuationId.replace(/^memory:/,''));assert.equal(continuation.status,'completed');assert.equal(f.node.memories.get(continuation.memoryIds[0]).status,'proposed');}else await f.node.memoryPipeline.run(item.memory.id);
  const complete=await until(value=>value.state==='completed');assert.equal(complete.completed,1);assert.equal(complete.coverage.semantic.completed,1);assert.equal(complete.items[0].ownerQuestions.length,0);
  assert.equal(f.node.memoryPipeline.get(item.memory.id).cancellationCause,undefined,'onboarding must preserve the answered question and its continuation');
  const final=f.node.featureServices.assistantCards.get(complete.items[0].result.cardIds[0],scope);assert.equal(final.id,card.id);assert.match(final.body,replyAction==='answer'?/owner confirmed/:/Participant identity remains unknown/);
@@ -317,11 +320,11 @@ for(const replyAction of ['answer','unknown'] as const)test(`onboarding publishe
 
 
 test('an owner answer during partial onboarding rejects the held earlier interpretation and continues with the answered current original',async t=>{
- const f=await httpFixture(t),id=await f.add('onboarding-held',original+' Generated plan: deliver the release checklist.');
- const material=f.node.materials.list({sourceId:'generated-dialogues'}).items.find(value=>value.origin.externalId==='onboarding-held')!;
- const scope={kind:'selection',sourceIds:['generated-dialogues']},held=f.holdAnalysis();
- const started=await f.api('POST','/api/assistant/onboarding',{requestId:randomUUID(),scope,materialRefs:[material.ref]});assert.equal(started.statusCode,202,started.body);const runId=started.json().id;
- const read=async()=>{const response=await f.api('GET','/api/assistant/onboarding/'+runId+'?'+new URLSearchParams({scope:JSON.stringify(scope)}));assert.equal(response.statusCode,200,response.body);return response.json();};
+ const f=await httpFixture(t);
+ await f.add('onboarding-held',original+' Generated plan: deliver the release checklist.',new Date(Date.now()-86400000).toISOString());
+ const scope={kind:'selection' as const,sourceIds:['generated-dialogues']},held=f.holdAnalysis();
+ const started=await f.api('POST','/api/assistant/onboarding',{sources:scope.sourceIds,window:{days:30}});assert.equal(started.statusCode,202,started.body);const runId=started.json().id;
+ const read=()=>f.node.featureServices.assistantOnboarding.get(runId,scope);
  const until=async(check:()=>Promise<boolean>)=>{const end=Date.now()+10000;while(Date.now()<end){await f.node.featureServices.assistantOnboarding.tick();void f.node.executor.tick().catch(()=>{});if(await check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Generated held onboarding did not reach its controlled state');};
  await until(async()=>held.entered);const progress=await read(),memoryId=progress.items[0].memory.id,[pending]=await f.questions(memoryId);assert.equal(pending.state,'open');
  const reply=await f.api('POST','/api/owner-questions/'+pending.id+'/reply',{requestId:randomUUID(),expectedRevision:pending.revision,action:'answer',choiceId:'describing'});assert.equal(reply.statusCode,200,reply.body);

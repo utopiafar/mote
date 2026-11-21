@@ -3,7 +3,7 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
 import {assistantBatchContext,assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
-import {codingNextStepSchema,parseArtifactRef,parseEvidenceId,queryScopeSchema,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {codingNextStepSchema,parseArtifactRef,parseEvidenceId,queryScopeSchema,sourceIdSchema,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
 import {AssistantMatters} from './assistant-matters.js';
@@ -37,6 +37,7 @@ const text=z.string().trim().min(1).max(8000);
 const proof=z.object({id:uuid,quote:z.string().min(1).max(2000),offset:z.number().int().nonnegative().safe()}).strict();
 const cardProposal=z.object({action:z.enum(['new','update','resolve','confirm']),cardId:uuid.nullable(),relatedCardIds:z.array(uuid).max(100),
  title:z.string().trim().min(1).max(500),body:text,reason:text,reminderReason:z.string().trim().min(1).max(2000).optional(),evidence:z.array(proof).min(1).max(20),matterId:uuid.nullable(),
+ destination:z.enum(['idea','feed']).optional(),
  // The list annotations are optional display fields. Their destination names
  // collide with this proposal's own action, so the model returns them nested.
  feed:z.object({category:z.string().max(32000).optional(),subject:z.string().max(32000).optional(),
@@ -49,9 +50,11 @@ const outputSchema=z.object({reason:text,cards:z.array(cardProposal).max(20),com
 const inputSchema=z.object({operationId:z.string().min(1).max(512),requestId:z.string().min(1).max(512),scope:queryScopeSchema,
  materialRefs:z.array(z.string().min(1).max(300)).min(1).max(5),
  ownerQuestions:z.array(z.object({id:uuid,revision:z.number().int().positive()}).strict()).max(100).optional(),
- mode:z.discriminatedUnion('kind',[z.object({kind:z.literal('change')}).strict(),z.object({kind:z.literal('briefing'),after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true})}).strict()]),
+ mode:z.discriminatedUnion('kind',[z.object({kind:z.literal('change')}).strict(),z.object({kind:z.literal('onboarding'),sourceIds:z.array(sourceIdSchema).min(1).max(50)}).strict(),
+  z.object({kind:z.literal('briefing'),after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true})}).strict()]),
 }).strict().refine(value=>value.mode.kind!=='briefing'||Date.parse(value.mode.after)<Date.parse(value.mode.before));
 type Input=z.infer<typeof inputSchema>;
+type FollowupResult={reason:string;cardIds:string[];commitmentIds:string[];activityIds?:string[]};
 type Card=ReturnType<AssistantCards['review']>['items'][number];
 type CardPin=Pick<Card,'id'|'revision'|'state'|'kind'>&{feedback:Pick<Card['feedback'][number],'action'>[]};
 type Commitment=ReturnType<AssistantCommitments['get']>;
@@ -84,6 +87,7 @@ function empty(scope:QueryScope){return scope.kind==='selection'&&scope.sourceId
 
 const CODING_FOLLOWUP=`For Coding transcripts, preserve native user and agent attribution for the exact cited message. A user's explicit request is a user statement; an Agent's report is an Agent report and never verifies completion. A matched parent conversation may offer several original user passages. Cite the one that establishes the actual requested work. Same repository, titles, timing and an Agent's assignment do not establish a shared owner goal.
 Leave progress, accepted scope corrections, historical PR and deployment reports, and missing later status in their conversation history. A new Coding card is only for a concrete useful next step now: a deliverable you can prepare or a decision the owner can take. Include optional codingNextStep with kind "prepare" or "decision", whyNow grounded in the specific current change or unresolved owner decision you cite, goal describing the deliverable or choice, and request as an exact {id,offset,quote} of the user's request. Use the offered parent request for a delegated conversation, and the conversation's own user request for standalone work. A missing parent request or current trigger means no card. Use confirm for a decision and new or update for preparation. Source arrival time is not work time. Do not open a new commitment or question merely to reconcile historical Agent reports. Return empty cards when appropriate.`;
+const ONBOARDING_FOLLOWUP=`For this owner-started historical review, add destination:"idea" for a useful next step or an open question, or destination:"feed" for an evidence-supported update. Keep an existing card's destination when updating it. Use an empty commitments array and omit reminderReason. Avoid repeating an already covered update or idea.`;
 
 /** One bounded interpreter for understanding, Memory, cards and commitments.
  * Owner commands and A4 supply the existing batch admission. No schedule or
@@ -94,6 +98,8 @@ export class AssistantFollowup {
  private readonly files:FileObservationReader;
  private polling?:Promise<void>;
  private closed=false;
+ private onboardingAuthority?: (operationId:string,sourceIds:readonly string[])=>void;
+ setOnboardingAuthority(assertCurrent:(operationId:string,sourceIds:readonly string[])=>void){this.onboardingAuthority=assertCurrent;}
  constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly reader:EvidenceReader,
   private readonly cards:AssistantCards,private readonly commitments:AssistantCommitments,private readonly matters:AssistantMatters,
   private readonly batch:BatchProcessing,private readonly assertCurrent:AssertTaskCurrent,private readonly now=()=>new Date().toISOString(),private readonly control?:BackgroundModelAuthorization,
@@ -222,7 +228,8 @@ export class AssistantFollowup {
   // Keep the owner's bounded question separate from the existing batch task
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
-  const question=views.some(view=>view.material.kind==='mote.coding-session')?PROMPT+'\n\n'+CODING_FOLLOWUP:PROMPT;
+  const question=[PROMPT,...(views.some(view=>view.material.kind==='mote.coding-session')?[CODING_FOLLOWUP]:[]),
+   ...(input.mode.kind==='onboarding'?[ONBOARDING_FOLLOWUP]:[])].join('\n\n');
   const limit=selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES;
   const capacity=this.requestCapacity?.();
   const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(capacity));
@@ -357,6 +364,10 @@ export class AssistantFollowup {
  }
  private assertDependencies(snapshot:Snapshot,ids:readonly string[]){
   if(this.closed)throw new StoreError('Assistant consumer is closed',409);
+  if(snapshot.input.mode.kind==='onboarding'){
+   if(!this.onboardingAuthority)throw new StoreError('Onboarding authorization is unavailable',409);
+   this.onboardingAuthority(snapshot.input.operationId,snapshot.input.mode.sourceIds);
+  }
   for(const pin of snapshot.questionPins??snapshot.input.ownerQuestions??[])this.currentQuestion(pin);
   const suppression=new Set(snapshot.suppressionIds),contextIds=ids.filter(id=>!suppression.has(id));
   if(!this.reader.contextDependenciesAllowed(ids.filter(id=>suppression.has(id)),undefined,true))throw new StoreError('Assistant evidence is no longer permitted',409);
@@ -591,17 +602,20 @@ export class AssistantFollowup {
   assertActive();
   const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup')throw new StoreError('Assistant analysis not found',404);
   const snapshot=this.snapshot(task),check=(ids:readonly string[])=>this.assertDependencies(snapshot,ids);
-  if(task.state==='succeeded')return this.tasks.result<{reason:string;cardIds:string[];commitmentIds:string[]}>(task.id,task.revision,check)!;
+  if(task.state==='succeeded')return this.tasks.result<FollowupResult>(task.id,task.revision,check)!;
   const result=this.batch.result(snapshot.batchId);
   if(!result)throw new StoreError('Assistant analysis is not complete',409);
   try{
   let output:z.infer<typeof outputSchema>;try{output=outputSchema.parse(JSON.parse(result.answer));}catch{throw new StoreError('Assistant analysis output is invalid',409);}
+  const onboarding=snapshot.input.mode.kind==='onboarding';
+  if(onboarding&&output.commitments.length||output.cards.some(item=>(item.destination!==undefined)!==onboarding))
+   throw new StoreError('Assistant analysis destination is invalid',409);
   // Re-read the external Memory provider before the synchronous transaction.
   const memory=await readCurrentMemoryPage(this.reader,snapshot.input.scope,{level:'detail',limit:10,asOf:this.now()});
   if(JSON.stringify(memory.items.map(item=>[item.id,item.version,item.fingerprint]))!==JSON.stringify(snapshot.memoryRevisions.map(item=>[item.id,item.version,item.fingerprint])))throw new StoreError('Memory changed; analyze again',409);
   return this.transaction(()=>{
    assertActive();
-   this.assertSnapshot(snapshot);const cardIds:string[]=[],commitmentIds:string[]=[],scope=snapshot.input.scope;
+   this.assertSnapshot(snapshot);const cardIds:string[]=[],activityIds:string[]=[],commitmentIds:string[]=[],scope=snapshot.input.scope;
    // Suppression constrains what may be published; its omitted history is not
    // evidence for an independent issue or a historical obligation on its card.
    const dependencies=snapshot.dependencies.filter(id=>!snapshot.suppressionIds.includes(id));
@@ -617,14 +631,18 @@ export class AssistantFollowup {
       (item.action==='update'||item.action==='resolve')&&(!existing||!item.relatedCardIds.includes(existing.id))||
       item.action==='confirm'&&(item.cardId?!existing||!item.relatedCardIds.includes(item.cardId):related.length>0))throw new StoreError('Assistant card identity is inconsistent',409);
     if(item.matterId&&!snapshot.matterRevisions.some(matter=>matter.id===item.matterId))throw new StoreError('Assistant referenced an unavailable matter',409);
-    const id=existing?.id??stableId(task.id,'card',index),kind=existing?.kind??(item.action==='confirm'?'question':snapshot.input.mode.kind==='briefing'?'briefing':'suggestion');
+    const id=existing?.id??stableId(task.id,'card',index);
+    const kind=existing?.kind??(item.destination==='feed'?'activity':item.action==='confirm'?'question':snapshot.input.mode.kind==='briefing'?'briefing':'suggestion');
+    if(onboarding&&(item.destination==='feed'?kind!=='activity':kind!=='suggestion'&&kind!=='question'))
+     throw new StoreError('Assistant card destination changed',409);
     const publication:AssistantCardPublication={id,kind,matterId:item.matterId,version:`followup:${task.id}:${index}`,state:item.action==='resolve'?'resolved':'open',title:item.title,
-     body:item.body+'\n\n'+item.reason,...(item.reminderReason?{reminderReason:item.reminderReason}:{}),
+     body:item.body+'\n\n'+item.reason,...(!onboarding&&item.reminderReason?{reminderReason:item.reminderReason}:{}),
      ...(item.feed?.category!==undefined?{category:item.feed.category}:{}),...(item.feed?.subject!==undefined?{subject:item.feed.subject}:{}),
      ...(item.feed?.action!==undefined?{action:item.feed.action}:{}),...(item.feed?.gist!==undefined?{gist:item.feed.gist}:{}),
      evidence:coding.evidence??item.evidence,
      ...(coding.step?{codingNextStep:coding.step}:{}),evidenceDependencies:publicDependencies,...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})};
     this.cards.publish(publication,existing?.revision,scope,check,internalDependencies,snapshot.historicalIds);cardIds.push(id);
+    if(onboarding&&kind==='activity')activityIds.push(id);
    }
    for(const [index,item] of output.commitments.entries()){
     this.proof(item.evidence,snapshot);const existing=item.commitmentId?snapshot.commitments.find(value=>value.id===item.commitmentId):undefined;
@@ -636,7 +654,8 @@ export class AssistantFollowup {
     const proposal=commitmentProposalSchema.parse({...item,commitmentId,eventId,evidenceDependencies:publicDependencies,...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})});
     this.commitments.publish(proposal,existing?.revision,scope,check,internalDependencies,snapshot.historicalIds);commitmentIds.push(commitmentId);
    }
-   const saved={reason:output.reason,cardIds,commitmentIds};this.tasks.saveResult(task.id,task.revision,saved,deps(snapshot.dependencies),check);return saved;
+   const saved:FollowupResult={reason:output.reason,cardIds,commitmentIds,...(onboarding?{activityIds}:{})};
+   this.tasks.saveResult(task.id,task.revision,saved,deps(snapshot.dependencies),check);return saved;
   });
   }catch(error){this.reportFailure(task.id,error,result.runId);throw error;}
  }
@@ -678,14 +697,17 @@ export class AssistantFollowup {
   const task=this.tasks.get(taskId);if(task.kind!=='assistant.followup'||task.state!=='succeeded')return;
   const snapshot=this.snapshot(task);
   if(!scopeContains(queryScopeSchema.parse(scope),snapshot.input.scope))return;
-  return this.tasks.result<{reason:string;cardIds:string[];commitmentIds:string[]}>(task.id,task.revision,ids=>this.assertDependencies(snapshot,ids));
+  return this.tasks.result<FollowupResult>(task.id,task.revision,ids=>this.assertDependencies(snapshot,ids));
  }
- cancel(taskId:string){
+ cancel(taskId:string,options?:{supersede:true}){
   const saved=this.tasks.get(taskId);if(saved.kind!=='assistant.followup')throw new StoreError('Assistant analysis not found',404);
   if(['succeeded','cancelled','stale'].includes(saved.state))return saved;
   // Cancellation uses ownership metadata, never an obsolete answer snapshot.
   const batch=this.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch'").get(saved.operationId);
-  if(batch)this.batch.cancel(String(batch.id));
+  if(batch){
+   if(options?.supersede)this.batch.supersede(String(batch.id));
+   else this.batch.cancel(String(batch.id));
+  }
   const task=this.tasks.get(taskId);return ['succeeded','cancelled','stale'].includes(task.state)?task:this.tasks.setState(task.id,task.revision,'cancelled');
  }
 }

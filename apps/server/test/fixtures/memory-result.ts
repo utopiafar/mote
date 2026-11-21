@@ -36,6 +36,6 @@ export function fixtureMemoryPipeline(options:MemoryPipelineOptions){
   return validate?{...input,validateOutput:async(result:QueryResult)=>validate(fixtureMemoryResult(options.memories,result,input.evidenceRanges,input))}:input;
  };
  const pipeline=new MemoryPipeline({...options,phases:{...options.phases,query:async input=>decorate(input,await options.phases.query(input)),...(options.phases.review?{review:async(input:any,draft:QueryResult,strategy:any,origin,recipe)=>decorate(input,await options.phases.review!(reviewedInput(input),draft,strategy,origin,recipe))}:{})}});
- if(options.phases.review){const create=pipeline.create.bind(pipeline);pipeline.create=input=>create(input.recipes||input.manualPlans||input.automaticGrant||input.automaticGrants?input:{...input,recipes:[{id:'mote.personal-memory',version:'5'}]});}
+ if(options.phases.review){const create=pipeline.create.bind(pipeline);pipeline.create=(input,options)=>create(input.recipes||input.manualPlans||input.automaticGrant||input.automaticGrants?input:{...input,recipes:[{id:'mote.personal-memory',version:'5'}]},options);}
   return pipeline;
 }

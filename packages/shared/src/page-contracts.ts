@@ -334,6 +334,7 @@ export const onboardingCountsSchema=z.object({
   memories:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   ideas:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   feed:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  skippedSources:z.number().int().positive().max(50).optional(),
 }).strict();
 export type OnboardingCounts=z.infer<typeof onboardingCountsSchema>;
 

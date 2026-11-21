@@ -51,7 +51,7 @@ function formalMaterialUri(record:MemoryRecord):string|undefined {
   return record.appId==='mote.material'&&uri?.startsWith('material:')?uri:undefined;
 }
 export type PreparedMemoryExtraction={at:string;resultHash:string;items:Memory[];changed:Memory[];expected:Record<string,string|null>;deletionSnapshot:string};
-export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:PreparedMemoryExtraction;at?:string;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
+export type MemoryExtractOptions={workContract?:MemoryWorkContract;prepared?:PreparedMemoryExtraction;at?:string;integration?:Memory['integration'];strategy?:Memory['strategy'];requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;proposalOnly?:boolean;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 export class MemoryStore {
   readonly deletions:MemoryDeletions;
   // Retain compiled handles only. Each guard still reads the current transaction.
@@ -328,7 +328,7 @@ export class MemoryStore {
       if(options.validateOnly){return {items:[] as Memory[],runId:result.runId};}
       const receipt=options.reviewReceipt?memoryReviewReceiptSchema.parse(options.reviewReceipt):undefined;
       if(receipt?.decision==='not_required'&&(options.strategy?.review!==null||JSON.stringify(receipt.strategy)!==JSON.stringify(options.strategy.recipe)||receipt.draftRunId!==result.runId||options.reviewRunId!==undefined))throw new StoreError('Memory direct-publication receipt does not match its selected recipe and extraction',409);
-      const publish=Boolean(receipt?.resultHash&&(receipt.reviewRunId||receipt.decision==='not_required'));
+      const publish=!options.proposalOnly&&Boolean(receipt?.resultHash&&(receipt.reviewRunId||receipt.decision==='not_required'));
       if(!options.validateOnly&&receipt?.resultHash&&receipt.resultHash!==sha256(result.answer))throw new StoreError('Memory review result changed before commit',409);
       if(!options.validateOnly&&this.deletions.snapshot()!==(receipt?.deletionSnapshot??this.deletions.snapshot()) )throw new StoreError('Memory deletion policy changed before commit',409);
       if(!options.validateOnly&&this.store.db.prepare('SELECT 1 FROM memory_deletions LIMIT 1').get()&&!receipt?.deletionSnapshot)throw new StoreError('Memory requires current deletion review before commit',409);
