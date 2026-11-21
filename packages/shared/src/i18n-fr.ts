@@ -4919,7 +4919,6 @@ export const french: Readonly<Record<string, string>> = {
   "中央管理令牌": "Jeton du propriétaire central",
   "本次应用会话": "Cette session de l'application",
   "暂无记录": "Aucun enregistrement",
-  "暂无记录。": "Aucun enregistrement pour l’instant.",
   "高级 JSON": "JSON avancé",
   "模型配置": "Configuration du modèle",
   "并发与执行设置": "Paramètres de concurrence et d'exécution",
@@ -7667,5 +7666,17 @@ export const french: Readonly<Record<string, string>> = {
   "还没有连接": "Aucune connexion",
   "尚未连接中央": "Central non connecté",
   "重新授权": "Réautoriser",
-  "无法打开中央页面": "Impossible d’ouvrir la page centrale"
+  "无法打开中央页面": "Impossible d’ouvrir la page centrale",
+  "照做": "Faire",
+  "已交给 Mote": "Mote suit",
+  "交给 Mote 盯着": "Demander à Mote de suivre",
+  "不需要": "Pas utile",
+  "等别人": "En attente",
+  "我要做": "À faire",
+  "否定推断": "Rejeter l'hypothèse",
+  "按事项": "Par sujet",
+  "按人": "Par personne",
+  "目标已变化": "Objectif modifié",
+  "推断 ×": "Déduit ×",
+  "新建目标": "Nouvel objectif"
 };
