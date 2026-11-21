@@ -102,13 +102,21 @@ export class OwnerQuestions {
  }
  /** Remember which questions an unfiltered Ideas view actually contained, so a
   * later bulk dismissal cannot include a question created after that read even
-  * when both share the same millisecond. */
+  * when both share the same millisecond. Independent reads can share one
+  * millisecond watermark; keep only what every read displayed, so a later read
+  * cannot widen the set a dismissal issued from an earlier read may hide. */
  markSurfaced(watermark:number,items:ReadonlyArray<{id:string;revision:number}>):void{
   if(watermark<=0||!items.length)return;
   this.transaction(()=>{
+   const prior=this.store.db.prepare('SELECT questions FROM owner_question_surfaces WHERE watermark=?').get(watermark) as {questions:string}|undefined;
+   const seen=new Map(prior?JSON.parse(prior.questions) as Array<[string,number]>:[]);
+   const questions=prior?items.flatMap(item=>{
+    const revision=seen.get(item.id);
+    return revision===undefined?[]:[[item.id,Math.min(revision,item.revision)] as [string,number]];
+   }):items.map(item=>[item.id,item.revision] as [string,number]);
    this.store.db.prepare(`INSERT INTO owner_question_surfaces(watermark,questions) VALUES(?,?)
     ON CONFLICT(watermark) DO UPDATE SET questions=excluded.questions`)
-    .run(watermark,JSON.stringify(items.map(item=>[item.id,item.revision])));
+    .run(watermark,JSON.stringify(questions));
    this.store.db.prepare(`DELETE FROM owner_question_surfaces WHERE watermark NOT IN
     (SELECT watermark FROM owner_question_surfaces ORDER BY watermark DESC LIMIT 64)`).run();
   });

@@ -186,6 +186,36 @@ test('ID2-04 a clarification created after the read stays even in the same milli
  assert.equal(detail.json().ignoredAt,undefined);
 });
 
+test('ID2-04 two views at the same watermark cannot widen each other\'s bulk ignore',async t=>{
+ const f=await fixture(t),at=Date.parse('2026-11-21T06:00:00Z');
+ t.mock.timers.enable({apis:['Date'],now:at});
+ const card=f.publish('suggestion'),seen=f.question();
+ const first=await f.read();
+ assert.deepEqual(first.mine.map(item=>item.id),[card.id]);
+ assert.deepEqual(first.yours.map(item=>item.id),[seen.id]);
+ const unseen=f.question();
+ assert.equal(unseen.updatedAt,seen.updatedAt);
+ const second=await f.read();
+ assert.deepEqual(new Set(second.yours.map(item=>item.id)),new Set([seen.id,unseen.id]));
+ assert.equal(second.watermark,first.watermark);
+ assert.equal(second.questionWatermark,first.questionWatermark);
+ assert.notEqual(second.revision,first.revision);
+ t.mock.timers.setTime(at+1000);
+ const response=await f.ignoreAll(first.watermark,first.questionWatermark);
+ assert.equal(response.statusCode,200,response.body);
+ assert.equal(response.json().ignored,2,'only the card and the clarification the first view displayed are dismissed');
+ const after=await f.read(),nav=await f.nav();
+ assert.deepEqual(after.mine,[]);
+ assert.deepEqual(after.yours.map(item=>item.id),[unseen.id],'the clarification only the later view displayed stays');
+ assert.equal(nav.count,1);
+ const shown=await f.app.inject({url:'/api/owner-questions/'+seen.id,headers});
+ assert.equal(shown.statusCode,200,shown.body);
+ assert.ok(shown.json().ignoredAt);
+ const hidden=await f.app.inject({url:'/api/owner-questions/'+unseen.id,headers});
+ assert.equal(hidden.statusCode,200,hidden.body);
+ assert.equal(hidden.json().ignoredAt,undefined);
+});
+
 test('ID1-04 a snoozed card stays out of both views until tomorrow at 09:00',async t=>{
  const f=await fixture(t);
  let now=Date.parse('2026-11-21T08:00:00+08:00');
