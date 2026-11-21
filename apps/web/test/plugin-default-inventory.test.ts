@@ -14,9 +14,9 @@ import {
 const expectedPages = [
   'agentView', 'notes', 'help', 'localPreferences', 'about',
   'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed',
-  'search', 'ask', 'devices', 'vault', 'statistics', 'sourceCatalog', 'recordings', 'sources',
+  'search', 'ask', 'vault', 'statistics', 'sourceCatalog', 'sources',
   'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',
-  'settings', 'coding', 'archive', 'connections', 'deviceConnections', 'developer',
+  'settings', 'archive', 'connections', 'deviceConnections', 'developer',
 ];
 const expectedCollections = ['materials', 'records', 'segments', 'sources', 'files', 'activity', 'media', 'memories', 'coding-status'];
 const expectedHomes = ['agent-view'];

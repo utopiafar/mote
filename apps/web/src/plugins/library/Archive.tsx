@@ -8,6 +8,9 @@ import { CollectionContent } from '../../features/runtime';
 import { webFeatures } from '../../features/registry';
 import { LibraryBrowseLayout } from './LibraryBrowse';
 import {LibraryTimeline} from './LibraryTimeline';
+import { ImportPanel } from '../intake/ImportPanel';
+import { modelSetupHref } from '../models-processing/ModelStartGuide';
+import { RecordingSourcesSheet } from './DeviceSheet';
 const CaptureSessions = React.lazy(() => import('./CaptureSessions').then(module => ({ default: module.CaptureSessions })));
 import { sourceLabels } from '../../Metadata';
 import { CaptureCard, Empty, ErrorNotice, Spinner } from '../../shell-components';
@@ -20,7 +23,7 @@ export function ActivitySummary({ activity }: {
     activity: Activity;
 }) { return <section className="panel activity-panel special-activity"><div className="section-heading"><h2>{moteText("应用活动概况")}</h2></div><div className="special-measure"><strong>{Number.isFinite(activity.totalDurationMs)&&activity.totalDurationMs>=0?duration(activity.totalDurationMs):moteText('待确认')}</strong><span>{moteText('前台应用采样时长')}</span></div>{activity.apps.length ? <><div className="app-list">{activity.apps.map(app=>{const valid=Number.isFinite(app.durationMs)&&app.durationMs>=0,share=valid&&Number.isFinite(activity.totalDurationMs)&&activity.totalDurationMs>0?Math.max(0,Math.min(100,Math.round(app.durationMs/activity.totalDurationMs*100))):undefined;return <div className="special-activity-row" key={app.appId||app.appName}><strong>{app.appName}</strong><span>{valid?duration(app.durationMs):moteText('待确认')}</span><div className="special-duration-track" aria-label={share===undefined?moteText('待确认'):share+'%'}><i style={{width:share===undefined?'0%':share+'%'}}/></div></div>;})}</div><p className="measurement-note">{moteText("多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。")}</p></> : <Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>; }
 
-export function Archive({ api, devices, range, rangeSelectionKey, activity, revision, onOpen, tab, setTab, onChanged }: {
+export function Archive({ api, devices, range, rangeSelectionKey, activity, revision, onOpen, onPage, tab, setTab, onChanged }: {
     onChanged?: () => void;
     api: Api;
     devices: Device[];
@@ -29,12 +32,17 @@ export function Archive({ api, devices, range, rangeSelectionKey, activity, revi
     activity: Activity;
     revision: number;
     onOpen: (id: string) => void;
+    onPage: (page: string) => void;
     tab: ArchiveTab;
     setTab: (tab: ArchiveTab) => void;
 }) {
     useSyncExternalStore(webFeatures.registry.subscribe, webFeatures.registry.getRevision, webFeatures.registry.getRevision);
     const entries = webFeatures.collections(), entry = entries.find(item => item.id === tab);
     const availability = useDiscoveryState(api);
+    const [importPanel,setImportPanel]=useState<{opener:HTMLElement}|null>(null);
+    const [recordingPanel,setRecordingPanel]=useState<string|undefined>(()=>new URLSearchParams(window.location.hash.split('?')[1]??'').get('recordings')??undefined);
+    useEffect(()=>{const sync=()=>setRecordingPanel(new URLSearchParams(window.location.hash.split('?')[1]??'').get('recordings')??undefined);window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);},[]);
+    const closeRecordingPanel=()=>{setRecordingPanel(undefined);const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);query.delete('recordings');window.history.replaceState(window.history.state,'',route+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));};
     const [browseOwner,setBrowseOwner]=useState(api);
     useEffect(()=>{if(browseOwner===api)return;const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);for(const key of ['origin','sourceId','deviceId','kind','type','after','before','cursor','selected'])query.delete(key);window.history.replaceState(null,'',route+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));setBrowseOwner(api);},[api,browseOwner]);
     const [selection, setSelection] = useState<{
@@ -60,25 +68,26 @@ export function Archive({ api, devices, range, rangeSelectionKey, activity, revi
     const visit=(id:string)=>{clearSelection();setTab(id);};
     const collectionLink=(id:string,label:string)=> <DiscoveryLink key={id} className={'library-view-link'+(tab===id?' active':'')} target={{pageId:'archive',href:'#/library?view='+id,collectionId:id}} onNavigate={()=>visit(id)}><span data-collection-id={id} aria-current={tab===id?'page':undefined}>{label}</span></DiscoveryLink>;
     const viewNavigation=<nav className="library-view-tabs" aria-label={moteText('资料视图')}>{collectionLink('materials',moteText('资料'))}{collectionLink('records',moteText('时间回看'))}</nav>;
-    const contextual=['segments','activity','media','coding-status'];
+    const contextual=['segments','activity','media','coding-status','records'];
     const otherCollections=entries.filter(item=>!['materials','records','memories',...contextual].includes(item.id));
     const otherPages=sections.library.filter(id=>id!=='archive'&&id!=='imports');
     const browseNavigation=<nav className="library-context-links" aria-label={moteText('更多上下文视图')}>
-      {contextual.filter(id=>entries.some(item=>item.id===id)).map(id=>collectionLink(id,id==='segments'?moteText('片段与应用相册'):id==='coding-status'?moteText('Coding 同步状态'):entries.find(item=>item.id===id)!.label))}
+      {contextual.filter(id=>entries.some(item=>item.id===id)).map(id=>collectionLink(id,id==='segments'?moteText('片段与应用相册'):id==='coding-status'?moteText('Coding 同步状态'):id==='records'?moteText('时间回看'):entries.find(item=>item.id===id)!.label))}
       {(otherCollections.length>0||otherPages.length>0)&&<details className="library-secondary-views"><summary>{moteText('更多')}</summary><div className="library-type-filters">{otherCollections.map(item=>collectionLink(item.id,item.label))}{otherPages.map(id=><DiscoveryLink key={id} target={{pageId:id,href:'#/'+(webFeatures.page(id)?.route??id)}}>{pageLabels[id]}</DiscoveryLink>)}</div></details>}
     </nav>;
     const supports=(path:string)=>availability.inventoryError===undefined&&featureRequirementsAvailable(['http:GET:'+path],availability.inventory);
-    const props = { api, devices, range, rangeSelectionKey, activity, revision, onOpen: entry?.layout === 'standalone' ? onOpen : select, onChanged, selectedReference: selected, onBrowseChanged: clearSelection,viewNavigation,browseNavigation,materialPreview:{read:supports('/api/materials/:id/read'),image:supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail')} };
+    const props = { api, devices, range, rangeSelectionKey, activity, revision, onOpen: entry?.layout === 'standalone' ? onOpen : select, onChanged, selectedReference: selected, onBrowseChanged: clearSelection,viewNavigation:tab==='materials'?undefined:viewNavigation,browseNavigation,materialPreview:{read:supports('/api/materials/:id/read'),image:supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail')},sourceBar:true,onImport:(opener:HTMLElement)=>setImportPanel({opener}) };
     if(browseOwner!==api)return <Loading/>;
     const content = <LibraryCollectionBoundary key={entry?.id}>{entry ? <CollectionContent entry={entry} props={props}/> : <p role="status">{moteText('此资料库分类当前不可用。请从资料库分类中选择可用入口。')}</p>}</LibraryCollectionBoundary>;
     return <DiscoveryProvider state={availability}><div className={'archive-page library-archive' + (selected ? ' has-selection' : '')}>
-   <div ref={listHeading} tabIndex={-1} className="page-heading library-heading" hidden={Boolean(selected)}><h1>{moteText('资料库')}</h1><DiscoveryLink className="button" target={{pageId:'imports',href:'#/library/import'}}>{moteText('导入资料')}</DiscoveryLink></div>
-   <nav className="segmented-nav library-primary-tabs" aria-label={moteText('资料库')} hidden={Boolean(selected)}>
-     <button className={tab!=='memories'?'active':''} aria-current={tab!=='memories'?'page':undefined} onClick={()=>{clearSelection();setTab('materials');}}>{moteText('我的资料')}</button>
-     <button className={tab==='memories'?'active':''} aria-current={tab==='memories'?'page':undefined} onClick={()=>{clearSelection();setTab('memories');}}>{moteText('我的记忆')}</button>
-   </nav>
+   <div ref={listHeading} tabIndex={-1} className="page-heading library-heading" hidden={Boolean(selected)}><h1>{moteText('资料库')}</h1><button type="button" className="button" onClick={event=>setImportPanel({opener:event.currentTarget})}>{moteText('导入')}</button></div>
    {tab!=='materials'&&tab!=='memories'&&tab!=='records'&&<div hidden={Boolean(selected)} className="library-view-navigation">{viewNavigation}{browseNavigation}</div>}
    <div className="library-workspace central-library-workspace"><div className="library-content">{entry?.layout === 'standalone' ? content : <LibraryBrowseLayout reference={selected} api={api} onClose={clearSelection} onOpen={onOpen} supporting={entry?.layout !== 'browser'}>{content}</LibraryBrowseLayout>}</div></div>
+   {importPanel&&<ImportPanel api={api} refreshVersion={revision} opener={importPanel.opener} onClose={()=>setImportPanel(null)} onOpen={(ref)=>{setImportPanel(null);onOpen(ref);}} onChanged={onChanged??(()=>{})}
+     onMemories={()=>{setImportPanel(null);onPage('assistantMemory');}}
+     onSettings={()=>{setImportPanel(null);window.location.hash=modelSetupHref('providers',window.location.hash);}}/>}
+   {recordingPanel!==undefined&&<RecordingSourcesSheet api={api} initialProvider={recordingPanel&&recordingPanel!=='1'?recordingPanel:undefined}
+     opener={null} fallbackFocus={listHeading.current} onClose={closeRecordingPanel} onOpen={onOpen}/>}
  </div></DiscoveryProvider>;
 }
 class LibraryCollectionBoundary extends React.Component<{

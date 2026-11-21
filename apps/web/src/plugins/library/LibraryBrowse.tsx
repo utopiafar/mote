@@ -8,10 +8,10 @@ import { ImageProgress } from '../../ImageProgress';
 import { materialKind, materialKindOptions, sourceDisplay } from '../../material-presentation';
 import { captureOcrState, decodeSourceText, parseEvidenceRef, systemEventText } from '@mote/shared';
 import { getLocale, moteText } from '@mote/shared/i18n';
-import { ArrowLeft, ChevronDown, ChevronRight, FileText, RefreshCw, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowLeft, ChevronDown, ChevronRight, FileText, RefreshCw, Search, X } from 'lucide-react';
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { type Api, type Capture, ApiError, dateTime, duration, errorMessage } from '../../api';
-import { evidencePresentation, ocrPresentation } from '../../capture-presentation';
+import { evidencePresentation, ocrPresentation, localDateInput } from '../../capture-presentation';
 import { EvidenceState } from '../../EvidenceState';
 import { FileDetail } from '../intake';
 import { type Material } from '../../Materials';
@@ -26,6 +26,8 @@ import {captureImportSnapshot,importSnapshot} from '../../import-navigation';
 import {readPage} from '../../navigation';
 import { useMaterialPreview, useNearViewport } from '../../material-preview';
 import { Loading } from '../../Loading';
+import { NavStateContext } from '../../use-nav-state';
+import { SourceBar, type SourceBarFilter } from './SourceBar';
 function libraryTypeLabel(value:string){
     const labels:Record<LibraryMaterialType,string>={note:moteText('记录'),document:moteText('文档'),image:moteText('图片'),coding:moteText('Coding 会话'),transcript:moteText('转写'),email:moteText('邮件'),calendar:moteText('日程'),reference:moteText('引用')};
     return labels[value as LibraryMaterialType]??value;
@@ -35,6 +37,13 @@ function validLibraryDay(value:string){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
     const date=new Date(value+'T00:00:00');
     return Number.isFinite(date.getTime())&&date.getFullYear()===Number(value.slice(0,4))&&date.getMonth()+1===Number(value.slice(5,7))&&date.getDate()===Number(value.slice(8,10));
+}
+function libraryDayLabel(day:string){
+    if(!day)return moteText('资料');
+    const today=localDateInput(new Date()),yesterday=new Date();yesterday.setDate(yesterday.getDate()-1);
+    if(day===today)return moteText('今天');
+    if(day===localDateInput(yesterday))return moteText('昨天');
+    return new Date(day+'T12:00:00').toLocaleDateString(getLocale(),{year:'numeric',month:'long',day:'numeric'});
 }
 /** Keep the list mounted so returning from the full-width reader preserves its place. */
 export function LibraryBrowseLayout({ children, reference, api, onClose, onOpen, supporting = false }: {
@@ -56,7 +65,7 @@ function LibraryReference({api,reference,onOpen,onClose}:{api:Api;reference:stri
     return <EvidenceDialog key={reference} embedded id={reference} api={api} onOpen={onOpen} onClose={onClose} onDeleted={()=>{}}/>;
 }
 /** Formal material rows pin the exact revision before the full ReferenceDetail reads it. */
-export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseChanged, devices = [], viewNavigation, browseNavigation, materialPreview }: {
+export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseChanged, devices = [], viewNavigation, browseNavigation, materialPreview, sourceBar = false, onImport, onAddDevice }: {
     api: Api;
     revision: number;
     selected?: string;
@@ -66,19 +75,25 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
     viewNavigation?: ReactNode;
     browseNavigation?: ReactNode;
     materialPreview?: {read:boolean;image:boolean};
+    /** The real library page mounts the shared source bar; focused readers can omit it. */
+    sourceBar?: boolean;
+    onImport?: (opener: HTMLElement) => void;
+    onAddDevice?: () => void;
 }) {
-    const readFilters = () => {const query=new URLSearchParams(window.location.hash.split('?')[1]??'');return {owner:api,origin:query.get('origin')??'',sourceId:query.get('sourceId')??'',deviceId:query.get('deviceId')??'',kind:query.get('kind')??'',type:query.get('type')??'',after:query.get('after')??'',before:query.get('before')??'',cursor:query.get('cursor')??undefined};};
+    const navLibraryRevision=useContext(NavStateContext)?.revisions.library;
+    const readRevision=navLibraryRevision===undefined?revision:`${revision}:${navLibraryRevision}`;
+    const readFilters = () => {const query=new URLSearchParams(window.location.hash.split('?')[1]??'');return {owner:api,origin:query.get('origin')??'',sourceId:query.get('sourceId')??'',deviceId:query.get('deviceId')??'',kind:query.get('kind')??'',type:query.get('type')??'',query:query.get('query')??'',after:query.get('after')??'',before:query.get('before')??'',cursor:query.get('cursor')??undefined};};
     const [filters, setFilters] = useState(readFilters);
     const [filterOpen,setFilterOpen]=useState(()=>importSnapshot<boolean>(api,'materials.filterOpen')??false);
     const filterOpenRef=useRef(filterOpen);filterOpenRef.current=filterOpen;
     useEffect(()=>captureImportSnapshot(api,'materials.filterOpen',()=>filterOpenRef.current),[api]);
     const filterOwner=useRef(api);
-    const current = filters.owner === api ? filters : { owner: api, origin:'', sourceId: '', deviceId: '', kind: '', type: '', after: '', before: '', cursor: undefined };
+    const current = filters.owner === api ? filters : { owner: api, origin:'', sourceId: '', deviceId: '', kind: '', type: '', query:'', after: '', before: '', cursor: undefined };
     const invalidDate=!validLibraryDay(current.after)||!validLibraryDay(current.before);
-    const update = (patch: Partial<typeof current>) => { onBrowseChanged?.();const next={...current,cursor:undefined,...patch};setFilters(next);const [route,queryText]=window.location.hash.split('?'),query=new URLSearchParams(queryText);for(const key of ['origin','sourceId','deviceId','kind','type','after','before','cursor'] as const){if(next[key])query.set(key,next[key]!);else query.delete(key);}window.history.replaceState(window.history.state,'',route+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));};
-    useEffect(() => { if(filterOwner.current!==api){filterOwner.current=api;setFilterOpen(false);const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);for(const key of ['origin','sourceId','deviceId','kind','type','after','before','cursor','selected'])query.delete(key);window.history.replaceState(null,'',route+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));setFilters(readFilters());}const sync = () => {if(readPage(window.location.hash)==='archive')setFilters(readFilters());}; window.addEventListener('hashchange', sync); return () => window.removeEventListener('hashchange', sync); }, [api]);
+    const update = (patch: Partial<typeof current>) => { onBrowseChanged?.();const next={...current,cursor:undefined,...patch};setFilters(next);const [route,queryText]=window.location.hash.split('?'),query=new URLSearchParams(queryText);for(const key of ['origin','sourceId','deviceId','kind','type','query','after','before','cursor'] as const){if(next[key])query.set(key,next[key]!);else query.delete(key);}window.history.replaceState(window.history.state,'',route+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));};
+    useEffect(() => { if(filterOwner.current!==api){filterOwner.current=api;setFilterOpen(false);const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);for(const key of ['origin','sourceId','deviceId','kind','type','query','after','before','cursor','selected'])query.delete(key);window.history.replaceState(null,'',route+(query.size?'?'+query:''));window.dispatchEvent(new window.Event('mote:workspace-state'));setFilters(readFilters());}const sync = () => {if(readPage(window.location.hash)==='archive')setFilters(readFilters());}; window.addEventListener('hashchange', sync); return () => window.removeEventListener('hashchange', sync); }, [api]);
     const query = new URLSearchParams({ limit: '24' });
-    for (const key of ['origin','sourceId', 'deviceId', 'kind', 'type', 'cursor'] as const)
+    for (const key of ['origin','sourceId', 'deviceId', 'kind', 'type', 'query', 'cursor'] as const)
         if (current[key])
             query.set(key, current[key]!);
     if (current.after&&!invalidDate)
@@ -89,18 +104,41 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
         query.set('before', end.toISOString());
     }
     const path=invalidDate?null:'/api/library/browse?' + query;
-    const page = useResource<OwnerBrowsePage>(api,path,undefined,revision),returnReadReady=useImportReturnRead(api,path);
+    const page = useResource<OwnerBrowsePage>(api,path,undefined,readRevision),returnReadReady=useImportReturnRead(api,path);
     const activeFilters=([['origin',current.origin?moteText('记录'):''],['sourceId',current.sourceId?sourceDisplay(current.sourceId,page.data?.sources.find(source=>source.id===current.sourceId)?.label):''],['deviceId',devices.find(device=>device.deviceId===current.deviceId)?.deviceName??current.deviceId],['type',current.type?libraryTypeLabel(current.type):''],['kind',current.kind?materialKind(current.kind,page.data?.types.find(type=>type.kind===current.kind)?.label):''],['after',current.after?moteText('从')+' '+current.after:''],['before',current.before?moteText('至')+' '+current.before:'']] as const).filter(([,label])=>label);
     const kinds=[...new Map([...materialKindOptions(),...(page.data?.items.filter(item=>item.entryType==='material').map(item=>item.material).filter(item=>!materialKindOptions().some(type=>type.kind===item.kind)).map(item=>({kind:item.kind,label:materialKind(item.kind)}))??[]),...(page.data?.types??[])].map(type=>[type.kind,type])).values()];
     const groups=new Map<string,OwnerBrowseEntry[]>();
-    for(const item of page.data?.items??[]){const at=item.contentAt;const day=at&&Number.isFinite(Date.parse(at))?new Date(at).toLocaleDateString(getLocale(),{year:'numeric',month:'long',day:'numeric'}):moteText('资料');groups.set(day,[...(groups.get(day)??[]),item]);}
+    for(const item of page.data?.items??[]){const at=item.contentAt;const day=at&&Number.isFinite(Date.parse(at))?localDateInput(new Date(at)):'';groups.set(day,[...(groups.get(day)??[]),item]);}
+    const [searchDraft,setSearchDraft]=useState(current.query);
+    const [pairingRequest,setPairingRequest]=useState(0);
+    useEffect(()=>setSearchDraft(current.query),[current.query]);
+    const sourceFilter:SourceBarFilter|undefined=current.sourceId?{sourceId:current.sourceId}:current.deviceId?{deviceId:current.deviceId}:undefined;
+    const changeSource=(next:SourceBarFilter|undefined)=>update({
+        origin:'',kind:'',
+        ...(next?.sourceId?{sourceId:next.sourceId,deviceId:''}:next?.deviceId?{deviceId:next.deviceId,sourceId:''}:{sourceId:'',deviceId:''}),
+    });
     return <>{!returnReadReady&&<Loading/>}<section className="library-materials" aria-busy={!returnReadReady||undefined} data-import-return-ready={Boolean(returnReadReady&&(invalidDate||page.error!==undefined||!page.loading&&page.data!==undefined))} aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
+    {sourceBar&&<SourceBar api={api} serverUrl={window.location.origin} filter={sourceFilter} onFilterChange={changeSource}
+        pairingRequest={pairingRequest} onOpen={onSelect} revision={revision}/>}
+    <form className="library-search" role="search" onSubmit={event=>{event.preventDefault();update({query:searchDraft.trim()});}}
+        style={{display:'flex',alignItems:'center',gap:'var(--mote-space-inline)',margin:'0 0 var(--mote-space-inline)',padding:'0 var(--mote-space-inline)',border:'1px solid var(--mote-hair)',borderRadius:'var(--mote-radius-control)',background:'var(--mote-surface)'}}>
+      <Search size={16} aria-hidden="true" style={{color:'var(--mote-muted)',flexShrink:0}}/>
+      <input type="search" aria-label={moteText('搜索资料')} placeholder={moteText('搜索资料')} value={searchDraft}
+        onChange={event=>setSearchDraft(event.target.value)}
+        style={{minWidth:0,flex:1,border:0,background:'none',padding:'9px 0',font:'inherit',color:'inherit'}}/>
+    </form>
+    <div className="library-type-row" role="group" aria-label={moteText('类型')} style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'var(--mote-space-inline)',margin:'0 0 var(--mote-space-inline)'}}>
+      <button type="button" className={!current.type?'button primary':'button'} aria-pressed={!current.type} style={{borderRadius:'var(--mote-radius-indicator)'}}
+        onClick={()=>update({type:'',kind:''})}>{moteText('全部')}</button>
+      {libraryMaterialTypes.map(type=><button key={type} type="button" className={current.type===type?'button primary':'button'} aria-pressed={current.type===type}
+        style={{borderRadius:'var(--mote-radius-indicator)'}} onClick={()=>update({type,kind:''})}>{libraryTypeLabel(type)}</button>)}
+    </div>
     <div className="library-list-heading">{viewNavigation??<h2>{moteText('资料')}</h2>}<div className="library-filter-actions"><button className="text-button" aria-expanded={filterOpen||invalidDate} aria-controls="library-catalog-filters" onClick={()=>setFilterOpen(!filterOpen)}>{moteText('筛选')}{activeFilters.length>0&&' · '+activeFilters.length}<ChevronDown size={12}/></button><button className="icon-button" disabled={page.loading} onClick={page.refresh} aria-label={moteText('刷新')}><RefreshCw size={13}/></button></div></div>
     <div className="library-catalog-filters" id="library-catalog-filters" hidden={!filterOpen&&!invalidDate}>
       <label>{moteText('来源')}<select value={current.origin?'@notes':current.sourceId} onChange={event => update(event.target.value==='@notes'?{origin:'notes',sourceId:'',kind:''}:{origin:'',sourceId:event.target.value})}><option value="">{moteText('全部来源')}</option>{page.data?.noteOrigin&&<option value="@notes">{page.data.noteOrigin.label}</option>}{current.sourceId && !page.data?.sources.some(source => source.id === current.sourceId) && <option value={current.sourceId}>{sourceDisplay(current.sourceId)}</option>}{page.data?.sources.map(source => <option key={source.id} value={source.id}>{sourceDisplay(source.id, source.label)}</option>)}</select></label>
       <label>{moteText('设备')}<select value={current.deviceId} onChange={event => update({ deviceId: event.target.value })}><option value="">{moteText('全部设备')}</option>{devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.deviceName}</option>)}</select></label>
       <label>{moteText('类型')}<select value={current.type} onChange={event=>update({type:event.target.value})}><option value="">{moteText('全部类型')}</option>{current.type&&!libraryMaterialTypes.includes(current.type as LibraryMaterialType)&&<option value={current.type}>{libraryTypeLabel(current.type)}</option>}{libraryMaterialTypes.map(type=><option key={type} value={type}>{libraryTypeLabel(type)}</option>)}</select></label>
-      <button className="text-button" onClick={() => update({ origin:'',sourceId: '', deviceId: '',kind:'',type:'', after: '', before: '' })}>{moteText('清除筛选')}</button>
+      <button className="text-button" onClick={() => update({ origin:'',sourceId: '', deviceId: '',kind:'',type:'',query:'', after: '', before: '' })}>{moteText('清除筛选')}</button>
       <details className="library-date-filters" open={invalidDate||undefined}><summary>{moteText('更多筛选')}</summary><div><label>{moteText('资料类型')}<select value={current.kind} onChange={event=>update({origin:'',kind:event.target.value})}><option value="">{moteText('全部类型')}</option>{current.kind&&!kinds.some(type=>type.kind===current.kind)&&<option value={current.kind}>{materialKind(current.kind)}</option>}{kinds.map(type=><option key={type.kind} value={type.kind}>{materialKind(type.kind,type.label)}</option>)}</select></label><label>{moteText('从')}<input type="date" aria-invalid={!validLibraryDay(current.after)||undefined} value={current.after} onChange={event => update({ after: event.target.value })}/></label><label>{moteText('至')}<input type="date" aria-invalid={!validLibraryDay(current.before)||undefined} min={validLibraryDay(current.after)?current.after:undefined} value={current.before} onChange={event => update({ before: event.target.value })}/></label></div></details>
     </div>
     {activeFilters.length>0&&<div className="library-filter-chips">{activeFilters.map(([key,label])=><button key={key} aria-label={moteText('清除{0}筛选',label)} onClick={()=>update({[key]:''})}>{label}<X size={11}/></button>)}</div>}
@@ -108,7 +146,12 @@ export function LibraryMaterials({ api, revision, selected, onSelect, onBrowseCh
     {browseNavigation}
     {page.error !== undefined && <ErrorNotice text={page.error instanceof ApiError && page.error.status === 409 && page.error.code === 'invalid_cursor' ? moteText('资料目录已变化，请返回第一页继续浏览。') : errorMessage(page.error)} retry={() => current.cursor ? update({ cursor: undefined }) : page.refresh()}/>}
     {page.loading && !page.data && <Loading/>}
-    {returnReadReady && page.error === undefined && page.data && <>{[...groups].map(([day,items])=><section className="library-material-day" key={day}><div className="library-day-heading"><h2>{day}</h2><span>{moteText('本页 {0} 份资料',items.length)}</span></div><div className="library-record-list">{items.map(entry=>entry.entryType==='capture'?<OriginalNoteRow key={entry.ref} entry={entry} onOpen={onSelect}/>:<LibraryMaterialRow key={entry.ref} api={api} item={entry.material} type={page.data!.types.find(type=>type.kind===entry.material.kind&&type.schemaVersion===entry.material.schemaVersion)} source={page.data!.sources.find(source=>source.id===entry.material.origin.sourceId)?.label} device={devices.find(device=>device.deviceId===entry.material.origin.deviceId)?.deviceName} selected={selected===entry.ref} onSelect={onSelect} preview={materialPreview}/>)}</div></section>)}{!page.data.items.length && <Empty icon={FileText} title={moteText('当前范围内暂无资料。')}><p>{moteText('保存记录或导入资料后，可以在这里查看。')}</p></Empty>}<div className="library-pagination">{current.cursor && <button className="button subtle" disabled={page.loading} onClick={() => update({ cursor: undefined })}>{moteText('返回第一页')}</button>}{page.data.nextCursor && <button className="button subtle" disabled={page.loading} onClick={() => update({ cursor: page.data!.nextCursor! })}>{moteText('下一页')}</button>}</div></>}
+    {returnReadReady && page.error === undefined && page.data && <>{[...groups].map(([day,items])=><section className="library-material-day" key={day}><div className="library-day-heading"><h2>{libraryDayLabel(day)}</h2></div><div className="library-record-list">{items.map(entry=>entry.entryType==='capture'?<OriginalNoteRow key={entry.ref} entry={entry} onOpen={onSelect}/>:<LibraryMaterialRow key={entry.ref} api={api} item={entry.material} type={page.data!.types.find(type=>type.kind===entry.material.kind&&type.schemaVersion===entry.material.schemaVersion)} source={page.data!.sources.find(source=>source.id===entry.material.origin.sourceId)?.label} device={devices.find(device=>device.deviceId===entry.material.origin.deviceId)?.deviceName} selected={selected===entry.ref} onSelect={onSelect} preview={materialPreview}/>)}</div></section>)}{!page.data.items.length && <Empty icon={FileText} title={moteText('还没有资料')}>
+      {(sourceBar||onAddDevice||onImport)&&<div className="button-row">
+        {(sourceBar||onAddDevice)&&<button type="button" className="button" onClick={()=>{setPairingRequest(value=>value+1);onAddDevice?.();}}>{moteText('添加设备')}</button>}
+        {onImport&&<button type="button" className="button" onClick={event=>onImport(event.currentTarget)}>{moteText('导入')}</button>}
+      </div>}
+    </Empty>}<div className="library-pagination">{current.cursor && <button className="button subtle" disabled={page.loading} onClick={() => update({ cursor: undefined })}>{moteText('返回第一页')}</button>}{page.data.nextCursor && <button className="button subtle" disabled={page.loading} onClick={() => update({ cursor: page.data!.nextCursor! })}>{moteText('下一页')}</button>}</div></>}
   </section></>;
 }
 

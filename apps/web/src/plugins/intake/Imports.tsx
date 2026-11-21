@@ -27,7 +27,7 @@ const label=(job:ImportJob)=>job.status==='completed'&&job.media?.length?moteTex
 const mediaStates:Record<string,string>={waiting:moteText('等待内容提取'),running:moteText('正在提取内容'),succeeded:moteText('内容提取完成'),failed:moteText('内容提取失败'),blocked:moteText('等待配置或处理条件'),cancelled:moteText('已取消')};
 const memoryStates:Record<string,string>={waiting:moteText('等待记忆整理'),waiting_for_model:moteText('等待配置或处理条件'),paused:moteText('已暂停'),cancelled:moteText('已取消'),running:moteText('记忆整理中'),completed:moteText('记忆整理完成'),failed:moteText('记忆整理失败'),disabled:moteText('未启用自动记忆')};
 
-export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersion=0,initialJobId}:{refreshVersion?:number;api:Api;onOpen:(id:string)=>void;onMemories:()=>void;onSettings:()=>void;onChanged:()=>void;initialJobId?:string}){
+export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersion=0,initialJobId,panel=false}:{refreshVersion?:number;api:Api;onOpen:(id:string)=>void;onMemories:()=>void;onSettings:()=>void;onChanged:()=>void;initialJobId?:string;panel?:boolean}){
   const navigation=useContext(ImportNavigationContext);
   const queue=importQueue(api);
   const queueState=useSyncExternalStore(queue.subscribe,queue.getSnapshot,queue.getSnapshot);
@@ -43,7 +43,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   const [listFilter,setListFilter]=useState('all');
   const listPosition=useRef<{scroll:number;opener:HTMLElement|null}|undefined>(undefined);
   const rememberList=()=>{if(!creating&&!selected)listPosition.current={scroll:window.scrollY,opener:document.activeElement as HTMLElement|null};};
-  useLayoutEffect(()=>{if(creating||selected){if(window.scrollY)window.scrollTo({top:0});return;}const position=listPosition.current;if(position){listPosition.current=undefined;position.opener?.isConnected&&position.opener.focus({preventScroll:true});if(window.scrollY!==position.scroll)window.scrollTo({top:position.scroll});}},[creating,selected]);
+  useLayoutEffect(()=>{if(panel)return;if(creating||selected){if(window.scrollY)window.scrollTo({top:0});return;}const position=listPosition.current;if(position){listPosition.current=undefined;position.opener?.isConnected&&position.opener.focus({preventScroll:true});if(window.scrollY!==position.scroll)window.scrollTo({top:position.scroll});}},[creating,selected,panel]);
   const [files,setFiles]=useState<File[]>([]),[name,setName]=useState(''),[instruction,setInstruction]=useState('');
   const [sourcePackId,setSourcePackId]=useState(''),[imageProfileId,setImageProfileId]=useState('');
   const imagePlans=useResource<{policy:{profiles:import('@mote/shared').ProcessingProfile[]};processors:{id:string;stage:string;mediaTypes:string[]}[]}>(api,'/api/file-processing');

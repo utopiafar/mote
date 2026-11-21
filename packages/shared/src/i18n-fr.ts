@@ -6539,8 +6539,6 @@ export const french: Readonly<Record<string, string>> = {
   "{0} 项待发送": "{0} éléments en attente",
   "返回导入列表": "Back to imports",
   "导入详情": "Import details",
-  "当前范围内暂无资料。": "No materials in this range.",
-  "保存记录或导入资料后，可以在这里查看。": "Save a note or import materials to view them here.",
   "搜索记忆": "Search memories",
   "历史与管理": "History and management",
   "本页 {0} 条": "{0} rows on this page",
@@ -7648,5 +7646,9 @@ export const french: Readonly<Record<string, string>> = {
   "搜索动态": "Rechercher dans les actualités",
   "3 天": "3 jours",
   "按组织": "Par organisation",
-  "没有新动态": "Aucune nouvelle actualité"
+  "没有新动态": "Aucune nouvelle actualité",
+  "还没有资料": "Aucun élément pour l'instant",
+  "录音来源": "Sources d'enregistrement",
+  "返回录音来源": "Retour aux sources d'enregistrement",
+  "{0} 的设置": "Paramètres de {0}"
 };

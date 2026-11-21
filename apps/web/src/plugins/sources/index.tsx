@@ -8,7 +8,6 @@ import { SourceCatalog } from './SourceCatalog';
 import { Sources } from './Sources';
 
 const LarkSettings = React.lazy(() => import('./LarkSettings').then(module => ({ default: module.LarkSettings })));
-const RecordingsSettings = React.lazy(() => import('../../RecordingsSettings').then(module => ({ default: module.RecordingsSettings })));
 
 export { Connections, DevicePairing } from './Connections';
 export { Gmail } from './Gmail';
@@ -45,15 +44,6 @@ export const pages: PageEntry[] = [
     order: 0.5,
     featureId: 'mote.sources',
     render: ({ api, onPage }: PageProps) => <SourceCatalog api={api} onPage={onPage}/>,
-  },
-  {
-    id: 'recordings',
-    route: 'connections/recordings',
-    label: moteText('录音归档'),
-    section: 'connections',
-    order: 4,
-    featureId: 'mote.sources',
-    render: ({ api, onPage, onOpen }: PageProps) => <RecordingsSettings onOpen={onOpen} api={api} onSources={() => onPage('sources')} onAdd={() => onPage('sourceCatalog')}/>,
   },
   {
     id: 'sources',

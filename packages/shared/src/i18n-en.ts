@@ -6539,8 +6539,6 @@ export const english: Readonly<Record<string, string>> = {
   "{0} 项待发送": "{0} items pending sending",
   "返回导入列表": "Back to imports",
   "导入详情": "Import details",
-  "当前范围内暂无资料。": "No materials in this range.",
-  "保存记录或导入资料后，可以在这里查看。": "Save a note or import materials to view them here.",
   "搜索记忆": "Search memories",
   "历史与管理": "History and management",
   "本页 {0} 条": "{0} rows on this page",
@@ -7648,5 +7646,9 @@ export const english: Readonly<Record<string, string>> = {
   "搜索动态": "Search updates",
   "3 天": "3 days",
   "按组织": "By organization",
-  "没有新动态": "No new updates"
+  "没有新动态": "No new updates",
+  "还没有资料": "No materials yet",
+  "录音来源": "Recording sources",
+  "返回录音来源": "Back to recording sources",
+  "{0} 的设置": "{0} settings"
 };
