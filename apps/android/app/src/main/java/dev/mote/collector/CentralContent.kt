@@ -7,11 +7,14 @@ import android.content.ContextWrapper
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognizerIntent
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
 import dev.mote.collector.plugins.AssistantPlugin
+import dev.mote.collector.plugins.CapturePlugin
+import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
@@ -142,6 +145,10 @@ internal class CentralContent(
     private lateinit var title: TextView
     private lateinit var collectionBar: LinearLayout
     private lateinit var composer: LinearLayout
+    private var localChatOrigin: String? = null
+    private var speechOrigin = state?.getString("chatSpeechOrigin")
+    private var speechGeneration = state?.getLong("chatSpeechGeneration", -1L) ?: -1L
+    private var speechText: String? = null
     private var insightMoreAction: (() -> Unit)? = null
     private lateinit var settingsAction: TextView
     private lateinit var moreAction: TextView
@@ -216,7 +223,7 @@ internal class CentralContent(
                         result.onSuccess { selected ->
                             if (selected.generation >= accessGeneration && (selected.generation != accessGeneration || selected.server != server || (selected.client == null) != (client == null))) applyAccess(selected)
                         }.onFailure {
-                            client = null; screens?.close(); screens?.clearPrivateState(); login()
+                            client = null; screens?.close(); screens?.clearPrivateState(); showUnauthenticatedPage()
                             notice(it.message ?: MoteI18n.text("操作失败"))
                         }
                     }
@@ -324,8 +331,9 @@ internal class CentralContent(
         val sessionChanged = accessGeneration != selected.generation
         accessGeneration = selected.generation
         if (endpoint.isBlank()) {
+            if (page == "ask" && server.isBlank() && client == null && localChatOrigin == endpoint) return
             server = ""; client = null; revision++; pending.clear();pendingWorkReaderReturn=null;screens?.close(); screens?.clearPrivateState(); body.removeAllViews();body.visibility=View.VISIBLE; collectionBar.visibility = View.GONE
-            disconnected()
+            showUnauthenticatedPage()
             return
         }
         val changed = server != endpoint
@@ -350,7 +358,12 @@ internal class CentralContent(
             pendingInsightId?.let { screens?.selectInsight(it) }; pendingInsightId = null
         }
         val requestedWork = page == "activity" && activity.intent.hasExtra("workId")
-        if (client == null) { screens?.clearPrivateState(); login() }
+        if (client == null) {
+            if (page != "ask" || localChatOrigin != endpoint || body.findViewWithTag<View>("chat-connect") == null) {
+                screens?.clearPrivateState()
+                showUnauthenticatedPage()
+            }
+        }
         else if (changed || authenticated || sessionChanged || requestedWork || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll()
         linkNotice?.let { message -> linkNotice = null; notice(message) }
     }
@@ -365,6 +378,7 @@ internal class CentralContent(
         state.putString("browserLoginId", browserLoginId); state.putString("browserVerifier", browserVerifier); state.putLong("browserGeneration", browserGeneration)
         state.putString("centralPage", page); state.putString("pickerOrigin", pickerOrigin); state.putBoolean("pickerChat", pickerChat)
         state.putStringArrayList("pageHistory", ArrayList(pageHistory))
+        state.putString("chatSpeechOrigin", speechOrigin); state.putLong("chatSpeechGeneration", speechGeneration)
         state.putLong("pickerGeneration", pickerGeneration); state.putString("downloadPath", downloadPath)
         state.putString("pickerInstruction", pickerInstruction)
         state.putString("downloadOrigin", downloadOrigin); state.putLong("downloadGeneration", downloadGeneration)
@@ -411,6 +425,7 @@ internal class CentralContent(
     internal fun hostActivity(): MoteActivity = activity
     internal fun assistantRouteScreen(): CentralScreens = checkNotNull(screens)
     internal fun askComposer(): LinearLayout {
+        localChatOrigin = null
         composer.removeAllViews(); composer.visibility = View.VISIBLE
         return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)
     }
@@ -431,11 +446,11 @@ internal class CentralContent(
     internal fun readerDock(dock: View) {
         composer.removeAllViews(); composer.addView(dock, LinearLayout.LayoutParams(-1, -2)); composer.visibility = View.VISIBLE
     }
-    internal fun restoreAskHeader() { updateCollectionBar(); title.text = MoteI18n.text("问一问") }
-    /** A conversation fills the page from the bare back bar; the empty Ask keeps its heading. */
-    internal fun askConversationVisible(visible: Boolean) {
-        title.visibility = if (visible) View.GONE else View.VISIBLE
-        headerDivider.visibility = if (visible || embeddedActions) View.GONE else View.VISIBLE
+    internal fun restoreAskHeader() {
+        updateCollectionBar()
+        title.text = MoteI18n.text("聊天")
+        title.visibility = View.VISIBLE
+        headerDivider.visibility = View.GONE
     }
     internal fun detailTitle(value: String) {
         title.visibility = View.VISIBLE
@@ -481,10 +496,12 @@ internal class CentralContent(
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
+        localChatOrigin = null
+        if (next != "ask") speechText = null
         updateCollectionBar(); updateBackButton()
         title.visibility = View.VISIBLE
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
-        if (client == null) { if (server.isBlank()) disconnected() else login(); return }
+        if (client == null) { showUnauthenticatedPage(); return }
         if (next == "activity") activity.intent.getStringExtra("workId")?.let { id ->
             val expected = activity.intent.getStringExtra("workOrigin")
             activity.intent.removeExtra("workId"); activity.intent.removeExtra("workOrigin")
@@ -504,13 +521,30 @@ internal class CentralContent(
         else if (openLocalPage != null && page == "sources") localPage("SOURCES")
         else navigate(page)
     }
+    private fun showUnauthenticatedPage() {
+        when {
+            page == "ask" -> {
+                if (localChatOrigin == server && body.findViewWithTag<View>("chat-connect") != null) return
+                revision++; pending.clear(); handler.removeCallbacks(refreshRun)
+                body.removeAllViews(); body.visibility = View.VISIBLE
+                collectionBar.visibility = View.GONE
+                restoreAskHeader()
+                text(MoteI18n.text("连接你的 Mote"), NativeFontRole.TITLE_MOBILE).tag = "chat-connect-title"
+                connectionButton("连接").tag = "chat-connect"
+                CentralScreens.showLocalChat(this, server)
+                localChatOrigin = server
+            }
+            server.isBlank() -> disconnected()
+            else -> login()
+        }
+    }
+
     private fun disconnected() {
         insightMoreAction = null
         composer.removeAllViews(); composer.visibility = View.GONE; updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
             page == AssistantPlugin.GOALS_ROUTE -> "连接你的 Mote"
-            page == "ask" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
             MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
             else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
         }))
@@ -573,7 +607,7 @@ internal class CentralContent(
             }
         }, LinearLayout.LayoutParams(-1, moteDp(48)))
     }
-    private fun connectionButton() = button(MoteI18n.text("连接设置")) {
+    private fun connectionButton(label: String = "连接设置") = button(MoteI18n.text(label)) {
         if (openLocalPage != null) localPage("CONNECTION")
         else startActivity(Intent(this, MainActivity::class.java).putExtra("page", "CONNECTION").putExtra("returnToCentral", true))
     }
@@ -836,6 +870,41 @@ internal class CentralContent(
             .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         @Suppress("DEPRECATION") activity.startActivityForResult(picker, 71)
     }
+
+    @Suppress("DEPRECATION")
+    internal fun openChatEntry(entry: CapturePlugin.ChatEntry, attachImage: Boolean) {
+        if (page != "ask") return
+        if (entry == CapturePlugin.ChatEntry.IMAGE && attachImage && client != null) {
+            pickAttachment(chat = true)
+            return
+        }
+        val editor = entry.editor(activity)
+        if (editor != null) activity.startActivityForResult(editor, CapturePlugin.CHAT_CAPTURE_RESULT)
+        else activity.startActivityForResult(CapturePlugin.chatDocument(entry), CapturePlugin.CHAT_DOCUMENT_RESULT)
+    }
+
+    @Suppress("DEPRECATION")
+    internal fun startChatSpeech() {
+        val input = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, MoteI18n.locale().toLanguageTag())
+        speechOrigin = server; speechGeneration = accessGeneration; speechText = null
+        try { activity.startActivityForResult(input, CHAT_SPEECH_RESULT) }
+        catch (_: android.content.ActivityNotFoundException) { notice(MoteI18n.text("语音输入不可用")) }
+    }
+
+    internal fun applyChatSpeech(field: EditText) {
+        val text = speechText ?: return
+        speechText = null
+        if (speechOrigin != server || speechGeneration != accessGeneration || !field.isEnabled) return
+        val start = field.selectionStart.takeIf { it >= 0 } ?: field.length()
+        val end = field.selectionEnd.takeIf { it >= 0 } ?: start
+        field.text.replace(minOf(start, end), maxOf(start, end), text)
+    }
+
+    internal fun saveChatText(origin: String, text: String, done: () -> Unit) =
+        work("", { NativeAskPlugin.localChat(this).save(origin, text) }, allowSessionChange = true) { done() }
     internal fun saveCentral(path: String, name: String, mime: String) {
         downloadPath = path; downloadOrigin = server; downloadGeneration = accessGeneration
         @Suppress("DEPRECATION") activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
@@ -850,6 +919,30 @@ internal class CentralContent(
     fun activityResult(request: Int, result: Int, data: Intent?) {
         if (result != Activity.RESULT_OK || data == null) return
         if (!accessReady) { pendingResult = Triple(request, result, data); if (!resumed) resume(); return }
+        if (request == CHAT_SPEECH_RESULT) {
+            if (page == "ask" && speechOrigin == server && speechGeneration == accessGeneration) {
+                speechText = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.takeIf(String::isNotBlank)
+                composer.findViewWithTag<EditText>("ask-input")?.let(::applyChatSpeech)
+            }
+            return
+        }
+        if (request == CapturePlugin.CHAT_DOCUMENT_RESULT) {
+            val uri = data.data?.takeIf { it.scheme == "content" } ?: return
+            @Suppress("DEPRECATION")
+            activity.startActivityForResult(CapturePlugin.sharedChatDocument(this, uri), CapturePlugin.CHAT_CAPTURE_RESULT)
+            return
+        }
+        if (request == CapturePlugin.CHAT_CAPTURE_RESULT) {
+            val id = data.getStringExtra("recordId")?.let(MoteLink::uuidId) ?: return
+            work("", {
+                val record = recordDraftStore().record(id) ?: return@work false
+                NativeAskPlugin.localChat(this).rememberCapture(id, record.getString("server"), System.currentTimeMillis())
+                true
+            }, allowSessionChange = true) { saved ->
+                if (saved && page == "ask" && client != null) screens?.refreshChatCaptures()
+            }
+            return
+        }
         if (request == 72) {
             val uri = data.data ?: return; val path = downloadPath ?: return
             val origin = downloadOrigin; val generation = downloadGeneration; downloadPath = null
@@ -866,5 +959,11 @@ internal class CentralContent(
         if (origin != server || client == null || pickerGeneration != accessGeneration) { notice(MoteI18n.text("登录会话已变更，请重新打开中央页面。")); return }
         if (request == 73) uris.firstOrNull()?.let { screens?.importInstruction = pickerInstruction; screens?.importFile(it) }
         else screens?.addAttachments(uris, chat)
+    }
+
+    companion object {
+        private const val CHAT_SPEECH_RESULT = 76
+
+        internal fun handlesActivityResult(request: Int): Boolean = request in 71..CHAT_SPEECH_RESULT
     }
 }

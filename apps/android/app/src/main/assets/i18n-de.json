@@ -105,7 +105,6 @@
   "前往插件中心": "Plugin-Zentrum öffnen",
   "自动记忆的开关、当前方案和处理节奏在同一设置中管理。": "Automatischen Speicher, aktuellen Plan und Verarbeitungsrhythmus an einer Stelle verwalten.",
   "没有连上中央": "Keine Verbindung zu Central",
-  "继续问": "Weiterfragen",
   "第 {0} 行": "Zeile {0}",
   "网页": "Web",
   "截图与照片": "Screenshots und Fotos",
@@ -4324,7 +4323,6 @@
   "未豁免": "Nicht ausgenommen",
   "上传速率": "Upload-Geschwindigkeit",
   "发送": "Senden",
-  "停止回答": "Antwort stoppen",
   "保守去重": "Konservative Deduplizierung",
   "均衡去重": "Ausgewogene Deduplizierung",
   "激进去重": "Aggressive Deduplizierung",
@@ -5365,7 +5363,6 @@
   "先选择应用范围，再按需授权": "Zuerst Apps wählen, dann Berechtigungen bei Bedarf erteilen",
   "离线也能留下想法与片段": "Ideen und Ausschnitte auch offline speichern",
   "正在保存发送状态…": "Sendestatus wird gespeichert …",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Zentrale Fragen sind derzeit nicht verfügbar. Stellen Sie eine Verbindung her, um Fragen zu verarbeiteten Inhalten zu stellen. Dateien und Kurznotizen können weiterhin lokal gespeichert werden.",
   "恢复这个来源": "Diese Quelle fortsetzen",
   "读取范围：{0}": "Lesebereich: {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Zentrales Archiv nicht verbunden: Speichern Sie die Aufgabe lokal und bestätigen Sie den Sendebereich beim Verbinden.",
@@ -7694,5 +7691,8 @@
   "事项状态暂不可用": "Status der Anliegen nicht verfügbar",
   "事项已变化，需重新读取": "Anliegen geändert; neu laden",
   "目标数据无法读取": "Zieldaten nicht verfügbar",
+  "已记下": "Gespeichert",
+  "语音输入": "Spracheingabe",
+  "语音输入不可用": "Spracheingabe nicht verfügbar",
   "模板": "Vorlage"
 }
