@@ -24,7 +24,7 @@ class AssistantPluginTest {
         val owner = AssistantPlugin.open(host, scope)
         assertTrue(owner.active)
         for (page in AssistantPlugin.PAGE_ROUTES) assertNotNull(host.route("dev.mote.assistant", page))
-        assertEquals(setOf("assistant.feed", "assistant.matters", "assistant.workbench", "assistant.goals"), scope.routes.keys)
+        assertEquals(setOf("assistant.feed", "assistant.ideas", "assistant.matters", "assistant.workbench", "assistant.goals"), scope.routes.keys)
         assertEquals(setOf("assistant.workbench"), scope.services.keys)
         host.stopScope(AssistantPlugin.INSTANCE_ID)
         for (page in AssistantPlugin.PAGE_ROUTES) assertNull(host.route("dev.mote.assistant", page))
