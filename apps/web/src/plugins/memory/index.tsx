@@ -9,6 +9,7 @@
  */
 export {Memories,MemoryDetailPage,memoryStatus} from './Memories';
 export type {Memory} from './Memories';
+export {MemoryPage} from './MemoryPage';
 export {MemoryTopics} from './MemoryTopics';
 export type {ContextTree} from './MemoryTopics';
 export {MemoryHistory,readMemoryHistory,savedMemoryValidAt} from './MemoryHistory';
