@@ -36,6 +36,74 @@ internal class NativeAskDraftStorage(private val store: CentralStateFile) {
     }
 }
 
+/** Submitted text can wait here before there is an authorized main conversation.
+ * Once bound, it keeps the same origin and request ID through admission retries. */
+internal class NativeAskLocalChat(
+    private val store: CentralStateFile,
+    private val newId: () -> String = { UUID.randomUUID().toString() },
+) {
+    data class Message(val id: String, val text: String, val rejected: Boolean)
+
+    fun save(origin: String, text: String) = CentralDraftWrites.barrier {
+        val question = text.trim()
+        require(question.isNotEmpty() && question.length <= 8000)
+        val state = store.read()
+        val messages = state.optJSONArray("messages") ?: JSONArray()
+        messages.put(JSONObject().put("id", newId()).put("origin", origin).put("question", question))
+        store.write(state.put("messages", messages))
+    }
+
+    fun first(origin: String, conversationId: String): Message? = CentralDraftWrites.barrier {
+        require(origin.isNotBlank() && conversationId.isNotBlank())
+        val state = store.read()
+        val messages = rows(state, "messages")
+        var changed = false
+        for (message in messages) {
+            if (message.optString("origin").isBlank()) {
+                message.put("origin", origin)
+                changed = true
+            }
+        }
+        val first = messages.firstOrNull { it.optString("origin") == origin }
+        if (first != null && !first.has("conversationId")) {
+            first.put("conversationId", conversationId)
+            changed = true
+        }
+        if (changed) store.write(state)
+        first?.takeIf { it.optString("conversationId") == conversationId }?.let {
+            Message(it.getString("id"), it.getString("question"), it.optBoolean("rejected"))
+        }
+    }
+
+    fun settle(origin: String, requestId: String, rejected: Boolean = false) = CentralDraftWrites.barrier {
+        val state = store.read()
+        val messages = rows(state, "messages")
+        val message = messages.firstOrNull { it.optString("origin") == origin && it.optString("id") == requestId }
+            ?: return@barrier
+        if (rejected) message.put("rejected", true)
+        else state.put("messages", JSONArray(messages - message))
+        store.write(state)
+    }
+
+    fun rememberCapture(id: String, origin: String, at: Long) = CentralDraftWrites.barrier {
+        require(UUID.fromString(id).toString() == id)
+        val state = store.read()
+        val captures = state.optJSONArray("captures") ?: JSONArray()
+        if (rows(state, "captures").none { it.optString("id") == id }) {
+            captures.put(JSONObject().put("id", id).put("origin", origin).put("at", at))
+            store.write(state.put("captures", captures))
+        }
+    }
+
+    fun captures(origin: String): List<Pair<String, Long>> = CentralDraftWrites.barrier {
+        rows(store.read(), "captures").filter { it.optString("origin").let { saved -> saved.isBlank() || saved == origin } }
+            .takeLast(20).map { it.getString("id") to it.getLong("at") }
+    }
+
+    private fun rows(state: JSONObject, key: String): List<JSONObject> =
+        state.optJSONArray(key)?.let { array -> (0 until array.length()).map(array::getJSONObject) }.orEmpty()
+}
+
 /** Durable Ask owner for one Central origin. The controller owns the exact
  * queue admission, accepted message identity, evidence scope, private image
  * references, conversation presentation and the encrypted draft journal. For
@@ -81,6 +149,8 @@ internal class NativeAskController(
     fun status(): String = state.optString("runStatus")
     fun missingRun(): Boolean = NativeAskRunState.missing(state)
     fun hasDraft(): Boolean = state.optString("question").isNotBlank() || NativeAskImages.count(state) > 0
+    fun hasScopedInput(): Boolean = NativeAskImages.count(state) > 0 || material() != null ||
+        (state.optJSONArray("evidenceIds")?.length() ?: 0) > 0 || (state.optJSONArray("anchorEvidenceIds")?.length() ?: 0) > 0
     fun editQuestion(text: String) { state.put("question", text) }
 
     /** Initial main resolution may attach a conversation without discarding the
@@ -189,12 +259,8 @@ internal class NativeAskController(
         val question = text.trim()
         if (question.isBlank()) return null
         state.put("question", question)
-        val scope = JSONObject().put("kind", "all").put("timeZone", timeZone)
-        val body = JSONObject()
-            .put("conversationId", conversationId)
-            .put("clientRequestId", newId())
-            .put("question", question)
-            .put("scope", scope)
+        val body = messageBody(conversationId, newId(), question, timeZone)
+        val scope = body.getJSONObject("scope")
         val material = material()
         val anchored = state.optJSONArray("anchorEvidenceIds")
         val selected = state.optJSONArray("evidenceIds")
@@ -210,10 +276,31 @@ internal class NativeAskController(
         return body.also { state.put("pending", it) }
     }
 
+    fun admitLocal(main: String, message: NativeAskLocalChat.Message, timeZone: String): Boolean {
+        if (busy() || state.optString("conversationId") != main) return false
+        // This was sent from an unscoped composer before the main thread was available.
+        state.put("pending", messageBody(main, message.id, message.text, timeZone))
+        state.put("localRequestId", message.id)
+        return true
+    }
+
+    private fun messageBody(conversationId: String, requestId: String, question: String, timeZone: String): JSONObject =
+        JSONObject().put("conversationId", conversationId).put("clientRequestId", requestId).put("question", question)
+            .put("scope", JSONObject().put("kind", "all").put("timeZone", timeZone))
+
+    fun cancelMessage(conversationId: String, messageId: String, post: (String) -> JSONObject): JSONObject {
+        require(UUID.fromString(conversationId).toString() == conversationId && UUID.fromString(messageId).toString() == messageId)
+        val receipt = post("/api/conversations/$conversationId/messages/$messageId/cancel")
+        val returned = CentralConversationMessage.read(receipt)
+        check(returned.conversationId == conversationId && returned.id == messageId)
+        return receipt
+    }
+
     /** A definitive admission rejection keeps the draft editable; only an
      * ambiguous transport failure keeps the exact retry identity. */
     fun rejectedAdmission() {
         state.remove("pending")
+        state.remove("localRequestId")
         persist()
     }
 
@@ -229,13 +316,18 @@ internal class NativeAskController(
         if (value.status == "failed") receipt.optJSONObject("error")?.let {
             state.put("failureDetails", JSONObject().put("requestId", value.id).put("error", it))
         }
-        val clearDraft = value.status == "completed" && NativeAskRunState.completesCurrentDraft(state, value.id)
-        state.remove("pending"); state.remove("scopeDirty")
+        val localSubmission = value.clientRequestId == state.optString("localRequestId")
+        state.remove("pending")
+        if (!localSubmission) state.remove("scopeDirty")
         state.put("messageId", value.id).put("runStatus", value.status)
+        val clearDraft = !localSubmission && value.status == "completed" && NativeAskRunState.completesCurrentDraft(state, value.id)
         value.runId?.let { state.put("runId", it) }
         state.put("conversationId", value.conversationId)
         if (clearDraft) state.put("question", "").put("attachments", JSONArray())
-        if (value.status in NativeAskRunState.terminal) state.remove("activeRequest")
+        if (value.status in NativeAskRunState.terminal) {
+            state.remove("activeRequest")
+            state.remove("localRequestId")
+        }
         persist()
         return RunUpdate(value.id, value.status, value.conversationId, clearDraft)
     }

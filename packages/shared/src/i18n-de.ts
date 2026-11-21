@@ -5366,7 +5366,6 @@ export const german: Readonly<Record<string, string>> = {
   "先选择应用范围，再按需授权": "Zuerst Apps wählen, dann Berechtigungen bei Bedarf erteilen",
   "离线也能留下想法与片段": "Ideen und Ausschnitte auch offline speichern",
   "正在保存发送状态…": "Sendestatus wird gespeichert …",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Zentrale Fragen sind derzeit nicht verfügbar. Stellen Sie eine Verbindung her, um Fragen zu verarbeiteten Inhalten zu stellen. Dateien und Kurznotizen können weiterhin lokal gespeichert werden.",
   "恢复这个来源": "Diese Quelle fortsetzen",
   "读取范围：{0}": "Lesebereich: {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Zentrales Archiv nicht verbunden: Speichern Sie die Aufgabe lokal und bestätigen Sie den Sendebereich beim Verbinden.",
@@ -7684,5 +7683,8 @@ export const german: Readonly<Record<string, string>> = {
   "录音来源": "Aufnahmequellen",
   "返回录音来源": "Zurück zu den Aufnahmequellen",
   "{0} 的设置": "Einstellungen für {0}",
-  "部分读取失败": "Teilweise geladen"
+  "部分读取失败": "Teilweise geladen",
+  "已记下": "Gespeichert",
+  "语音输入": "Spracheingabe",
+  "语音输入不可用": "Spracheingabe nicht verfügbar"
 };

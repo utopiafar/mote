@@ -5365,7 +5365,6 @@
   "先选择应用范围，再按需授权": "Choose apps, then grant permissions as needed",
   "离线也能留下想法与片段": "Save ideas and snippets offline",
   "正在保存发送状态…": "Saving sending status…",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Central questions are unavailable. Connect to ask about processed content. Files and quick notes can still be saved locally.",
   "恢复这个来源": "Resume this source",
   "读取范围：{0}": "Read scope: {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Central archive disconnected: save the task locally, then confirm sending scope when connecting.",
@@ -7683,5 +7682,8 @@
   "录音来源": "Recording sources",
   "返回录音来源": "Back to recording sources",
   "{0} 的设置": "{0} settings",
-  "部分读取失败": "Some items could not be loaded"
+  "部分读取失败": "Some items could not be loaded",
+  "已记下": "Saved",
+  "语音输入": "Voice input",
+  "语音输入不可用": "Voice input unavailable"
 }

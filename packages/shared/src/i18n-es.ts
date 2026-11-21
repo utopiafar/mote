@@ -5366,7 +5366,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "先选择应用范围，再按需授权": "Elige primero el ámbito de apps y luego concede los permisos necesarios",
   "离线也能留下想法与片段": "Guardar ideas y fragmentos sin conexión",
   "正在保存发送状态…": "Guardando estado de envío…",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Las preguntas a Central no están disponibles temporalmente. Tras conectar podrás preguntar sobre el contenido ya procesado; archivos y notas rápidas siguen pudiendo guardarse localmente.",
   "恢复这个来源": "Reanudar esta fuente",
   "读取范围：{0}": "Ámbito de lectura: {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Archivo central desconectado: guarda primero la tarea localmente y confirma el ámbito de envío al conectar.",
@@ -7684,5 +7683,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "录音来源": "Fuentes de grabación",
   "返回录音来源": "Volver a las fuentes de grabación",
   "{0} 的设置": "Ajustes de {0}",
-  "部分读取失败": "Carga parcial"
+  "部分读取失败": "Carga parcial",
+  "已记下": "Guardado",
+  "语音输入": "Entrada de voz",
+  "语音输入不可用": "Entrada de voz no disponible"
 };

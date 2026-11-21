@@ -1719,7 +1719,7 @@ class MainActivity : MoteActivity() {
     @Deprecated("Platform consent result API retained for the minimal native Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode in setOf(71, 72, 73)) {
+        if (CentralContent.handlesActivityResult(requestCode)) {
             if (initializing) pendingCentralResult = Triple(requestCode, resultCode, data)
             else { ensurePage(Page.ASK); centralContent?.activityResult(requestCode, resultCode, data) }
             return

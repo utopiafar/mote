@@ -5365,7 +5365,6 @@
   "先选择应用范围，再按需授权": "Choisissez les apps, puis accordez les autorisations selon les besoins",
   "离线也能留下想法与片段": "Enregistrez des idées et des extraits hors ligne",
   "正在保存发送状态…": "Enregistrement de l'état d'envoi…",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Les questions centrales sont indisponibles. Connectez-vous pour interroger le contenu traité. Les fichiers et les notes rapides peuvent toujours être enregistrés localement.",
   "恢复这个来源": "Reprendre cette source",
   "读取范围：{0}": "Portée de lecture : {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Archive centrale déconnectée : enregistrez la tâche localement, puis confirmez la portée d'envoi à la connexion.",
@@ -7683,5 +7682,8 @@
   "录音来源": "Sources d'enregistrement",
   "返回录音来源": "Retour aux sources d'enregistrement",
   "{0} 的设置": "Paramètres de {0}",
-  "部分读取失败": "Chargement partiel"
+  "部分读取失败": "Chargement partiel",
+  "已记下": "Enregistré",
+  "语音输入": "Saisie vocale",
+  "语音输入不可用": "Saisie vocale indisponible"
 }
