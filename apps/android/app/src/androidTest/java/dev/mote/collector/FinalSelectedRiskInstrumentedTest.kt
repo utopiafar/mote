@@ -91,21 +91,37 @@ class FinalSelectedRiskInstrumentedTest {
             until("Back returns the same invitation"){main{shown().filterIsInstance<EditText>().singleOrNull()?.text.toString()==valid}};picture("connection-failure-back-retains-invitation");click("核对连接");until("Review name retained after Back"){main{shown().filterIsInstance<EditText>().singleOrNull()?.text.toString()==name}};assertEquals(1,http.redeems.get())
         }}
     }
-    @Test fun conversationDeleteCancelAndHttpFailureKeepLaterDraftAndAttachment()=fixture{
+    @Test fun mainConversationHasNoWholeThreadDeleteAndKeepsItsDraft()=fixture{
         HttpFixture().use{http->
-            val settings=Settings(context);ConnectionGuard.change(context,http.origin,bindLocal=true){settings.saveConnection(http.origin,http.token,"Generated isolated deletion failure",true);settings.save(settings.read().copy(syncMode="manual",syncPaused=true),confirmCentralEndpoint=true)}
-            val dir=File(context.noBackupFilesDir,"central-native/"+SourceRules.hash(http.origin));val store=CentralStateFile(dir,"ask",context.secretBox());val attachment=JSONObject().put("id",UUID.randomUUID().toString()).put("name","generated-retained-image.png").put("mimeType","image/png");val draft="Generated later draft retained across delete failure"
+            val settings=Settings(context)
+            connectGenerated(settings,http,"Generated isolated main conversation")
+            val dir=File(context.noBackupFilesDir,"central-native/"+SourceRules.hash(http.origin))
+            val store=CentralStateFile(dir,"ask",context.secretBox())
+            val attachment=JSONObject().put("id",UUID.randomUUID().toString()).put("name","generated-retained-image.png").put("mimeType","image/png")
+            val draft="Generated later draft"
             store.write(JSONObject().put("conversationId",http.conversation).put("question",draft).put("attachments",JSONArray().put(attachment)))
-            try{ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","ask").putExtra("conversationId",http.conversation)).use{scenario->
-                until("Own controlled conversation selected"){var yes=false;scenario.onActivity{yes=!it.isWorking&&it.selectedAskConversationId==http.conversation};yes};assertTrue(has("generated-retained-image.png"))
-                fun checkDraft(){CentralDraftWrites.barrier{val s=store.read();assertEquals(http.conversation,s.getString("conversationId"));assertEquals(draft,s.getString("question"));assertEquals(JSONArray().put(attachment).toString(),s.getJSONArray("attachments").toString())}}
-                click("对话更多");chooseNativeListItem("删除这段对话");until("Destructive confirmation"){has("删除整段对话？")};picture("conversation-delete-confirm");click("取消");checkDraft();assertEquals(0,http.deletes.get());picture("conversation-delete-cancel-retains-draft")
-                click("对话更多");chooseNativeListItem("删除这段对话");click("删除对话");until("Controlled real HTTP503 delete completed"){var idle=false;scenario.onActivity{idle=!it.isWorking};http.deletes.get()==1&&idle&&has("未能确认删除完成。请刷新查看当前状态。")};checkDraft();assertFalse(has("generated_delete_unavailable"));picture("conversation-delete-http503-keeps-context");click("对话更多");chooseNativeListItem("查看详情");until("Full delete diagnostic remains explicitly readable"){has("generated_delete_unavailable")&&has("503")};picture("conversation-delete-http503-explicit-details");click("关闭")
-                scenario.recreate();until("Failure recreation retains same conversation and attachment"){var yes=false;scenario.onActivity{yes=!it.isWorking&&it.selectedAskConversationId==http.conversation};yes&&has("generated-retained-image.png")};checkDraft();click("对话更多");chooseNativeListItem("查看详情");until("Same conversation diagnostics survive recreation"){has("generated_delete_unavailable")};click("关闭");assertEquals(0,http.queryPosts.get());assertEquals(1,http.deletes.get())
-                click("对话更多");chooseNativeListItem("删除这段对话");until("Old owner confirmation exists"){has("删除整段对话？")}
-                main{val stale=shown().filterIsInstance<TextView>().single{it.text.toString()=="删除对话"};Settings(context).signIn(http.origin,"generated-new-owner-revocation-token",86400000);stale.performClick()}
-                instrumentation.waitForIdleSync();assertEquals("Old owner confirmation cannot issue a second DELETE",1,http.deletes.get());assertEquals(0,http.queryPosts.get())
-            }}finally{CentralDraftWrites.barrier{};dir.deleteRecursively()}
+            try {
+                ActivityScenario.launch<CentralActivity>(Intent(context,CentralActivity::class.java).putExtra("page","ask")).use{scenario->
+                    fun checkThread(){
+                        until("The main conversation, draft and attachment are shown"){
+                            var selected=false
+                            scenario.onActivity{selected=!it.isWorking&&it.selectedAskConversationId==http.conversation}
+                            selected&&has("generated-retained-image.png")&&has(draft)
+                        }
+                        assertFalse(has("删除这段对话"))
+                        CentralDraftWrites.barrier{
+                            val saved=store.read()
+                            assertEquals(http.conversation,saved.getString("conversationId"))
+                            assertEquals(draft,saved.getString("question"))
+                            assertEquals(JSONArray().put(attachment).toString(),saved.getJSONArray("attachments").toString())
+                        }
+                    }
+                    checkThread()
+                    scenario.recreate()
+                    checkThread()
+                    assertEquals(0,http.queryPosts.get())
+                }
+            } finally { CentralDraftWrites.barrier{};dir.deleteRecursively() }
         }
     }
     @Test fun disablingComparisonDiagnosticsThroughSaveErasesOnlyGeneratedSamples()=fixture{
@@ -529,7 +545,7 @@ class FinalSelectedRiskInstrumentedTest {
         }finally{sources.remove(local.id);draft.edit(old.getString("text"),old.getJSONArray("attachments"),old.getJSONObject("origin"),old.optString("description"),old.optJSONObject("originPresentation"))}
     }}
     private class HttpFixture:AutoCloseable{
-        val token="generated-only-local-risk-owner-token";val conversation=UUID.randomUUID().toString();val fileId=UUID.randomUUID().toString();val noteId=UUID.randomUUID().toString();val runId=UUID.randomUUID().toString();val redeems=AtomicInteger();val deletes=AtomicInteger();val queryPosts=AtomicInteger();val capturePosts=AtomicInteger();val helpReads=AtomicInteger();val olderReads=AtomicInteger();val fileReads=AtomicInteger();val referenceReads=AtomicInteger();val runReads=AtomicInteger();val referenceEntered=java.util.concurrent.CountDownLatch(1);val referenceRelease=java.util.concurrent.CountDownLatch(1);@Volatile var failReads=false;@Volatile var pagedHistory=false;@Volatile var pagedFileReference=false;@Volatile var nativeReference=false;@Volatile var runningFixture=false;@Volatile var runCompleted=false;@Volatile var twoCitations=false;@Volatile var erasedFirstTurn=false;@Volatile var fileAvailable=true;@Volatile var holdReference=false;private val server=ServerSocket(0,10,InetAddress.getByName("127.0.0.1"));val origin="http://127.0.0.1:${server.localPort}";private val threads=Executors.newCachedThreadPool()
+        val token="generated-only-local-risk-owner-token";val conversation=UUID.randomUUID().toString();val fileId=UUID.randomUUID().toString();val noteId=UUID.randomUUID().toString();val runId=UUID.randomUUID().toString();val redeems=AtomicInteger();val queryPosts=AtomicInteger();val capturePosts=AtomicInteger();val helpReads=AtomicInteger();val olderReads=AtomicInteger();val fileReads=AtomicInteger();val referenceReads=AtomicInteger();val runReads=AtomicInteger();val referenceEntered=java.util.concurrent.CountDownLatch(1);val referenceRelease=java.util.concurrent.CountDownLatch(1);@Volatile var failReads=false;@Volatile var pagedHistory=false;@Volatile var pagedFileReference=false;@Volatile var nativeReference=false;@Volatile var runningFixture=false;@Volatile var runCompleted=false;@Volatile var twoCitations=false;@Volatile var erasedFirstTurn=false;@Volatile var fileAvailable=true;@Volatile var holdReference=false;private val server=ServerSocket(0,10,InetAddress.getByName("127.0.0.1"));val origin="http://127.0.0.1:${server.localPort}";private val threads=Executors.newCachedThreadPool()
         init{threads.submit{while(!server.isClosed)runCatching{server.accept()}.getOrNull()?.let{socket->threads.submit{socket.use{
             val input=it.getInputStream().bufferedReader();val first=input.readLine().orEmpty();val path=first.split(' ').getOrElse(1){""};val headers=mutableListOf<String>();while(true){val h=input.readLine();if(h.isNullOrEmpty())break;headers.add(h)};val size=headers.firstOrNull{h->h.startsWith("Content-Length:",true)}?.substringAfter(':')?.trim()?.toInt()?:0;val body=CharArray(size);var n=0;while(n<size){val x=input.read(body,n,size-n);if(x<0)break;n+=x}
             if(path=="/generated-install-help"){helpReads.incrementAndGet();val bytes="<!doctype html><title>Generated Mote help</title><h1>Generated Mote installation help boundary</h1><p>Generated local documentation only. No sign in or installation.</p>".toByteArray();it.getOutputStream().apply{write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray());write(bytes);flush()};return@use}
@@ -549,10 +565,9 @@ class FinalSelectedRiskInstrumentedTest {
                         JSONObject().put("id",UUID.nameUUIDFromBytes((conversation+":"+n).toByteArray()).toString()).put("status","completed").put("question","Generated history question $n").put("evidenceStale",true).also { if(erased)it.put("evidenceDeleted",true) }.put("result",JSONObject().put("answer","Generated history answer $n" + if(pagedFileReference)" " + "generated detail ".repeat(18) + if(cites)" [$fileId]"else "" else "").put("citations",if(cites)JSONArray().put(JSONObject().put("id",fileId).put("title","Generated file"))else JSONArray()))
                     })).put("nextCursor",if(older)JSONObject.NULL else "generated-earlier-page")
                 }
-                first.startsWith("DELETE ")&&path=="/api/conversations/$conversation"->{deletes.incrementAndGet();status="503 Service Unavailable";JSONObject().put("error","generated_delete_unavailable")}
                 first.startsWith("POST ")&&path.startsWith("/api/query-runs")->{queryPosts.incrementAndGet();status="503 Service Unavailable";JSONObject().put("error","query_not_allowed")}
                 path.startsWith("/api/conversations/$conversation")->JSONObject().put("id",conversation).put("scope",JSONObject()).put("turns",JSONArray().put(JSONObject().put("id",UUID.randomUUID().toString()).put("status","completed").put("question","Generated isolated history").put("result",JSONObject().put("answer","Generated controlled existing answer").put("citations",JSONArray()))))
-                path.startsWith("/api/conversations?")->JSONObject().put("items",JSONArray().put(JSONObject().put("id",conversation).put("title","Generated isolated history").put("turnCount",1).put("updatedAt","2026-10-30T00:00:00Z")))
+                path=="/api/conversations/main"->JSONObject().put("id",conversation)
                 path.startsWith("/api/model-settings")->JSONObject().put("profiles",JSONArray())
                 else->JSONObject().put("items",JSONArray())
             };val bytes=response.toString().toByteArray();it.getOutputStream().apply{write("HTTP/1.1 $status\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray());write(bytes);flush()}

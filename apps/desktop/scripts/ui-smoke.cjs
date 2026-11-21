@@ -190,21 +190,11 @@ app.on('browser-window-created', (_event, window) => {
       await navigate('overview');
       assert(await js(`Array.from(document.querySelectorAll('[data-page]')).filter(el => !el.hidden).every(el => el.dataset.page === 'overview')`));
       assert(await js(`document.querySelector('#server-url').getClientRects().length === 0 && document.querySelector('#diagnostics-enabled').getClientRects().length === 0`), 'Overview has no settings fields');
-      await navigate('ask');
-      assert(await js(`!document.querySelector('#ask-disconnected').hidden && document.querySelector('#ask-workspace').hidden && document.querySelector('#node-login-panel').hidden`), 'Offline Ask explains the connection requirement before requesting a central API');
-      assert.equal(await js(`document.querySelector('#ask-error').textContent`), '', 'An absent node must not become a raw IPC failure');
-      await js(`document.querySelector('#ask-question').value='generated offline question draft';`);
-      window.webContents.send('mote:status', status);
-      await js(`new Promise(resolve => requestAnimationFrame(resolve))`);
-      assert(await js(`document.querySelector('#node-login-panel').hidden && !document.querySelector('#ask-disconnected').hidden`), 'A subsequent status event preserves the disconnected Ask surface');
-      assert.equal(await js(`document.querySelector('#ask-question').value`), 'generated offline question draft', 'Status updates preserve the question draft');
       const authenticatedStatus = { ...status, config: { ...status.config, serverUrl: 'http://127.0.0.1:47999', tokenConfigured: true } };
-      const previousAskHandler = ipcMain._invokeHandlers.get('mote:ask');
       const previousStatusHandler = ipcMain._invokeHandlers.get('mote:get-status');
       const previousCentralHandler = ipcMain._invokeHandlers.get('mote:central');
       const centralPages = [];
       const originalStatusSend = window.webContents.send;
-      ipcMain.removeHandler('mote:ask'); ipcMain.handle('mote:ask', (_event, command) => command === 'history' || command === 'runs' ? { items: [] } : undefined);
       // Keep both IPC reads and status events in the same synthetic auth state.
       // A late real offline status must not race this isolated authenticated UI scenario.
       ipcMain.removeHandler('mote:get-status'); ipcMain.handle('mote:get-status', () => authenticatedStatus);
@@ -213,15 +203,12 @@ app.on('browser-window-created', (_event, window) => {
       try {
         await js(`window.mote.status().then(()=>new Promise(resolve=>requestAnimationFrame(resolve)))`);
         window.webContents.send('mote:status', authenticatedStatus);
-        await js(`new Promise(resolve => requestAnimationFrame(resolve)); document.querySelector('#ask-refresh').click(); new Promise(resolve => setTimeout(resolve, 100))`);
-        assert(await js(`document.querySelector('#node-login-panel').hidden && document.querySelector('#ask-disconnected').hidden`), 'Refreshing an authenticated Ask does not redisplay the token form');
         await navigate('overview');
         await navigate('sources');await js(`document.querySelector('#source-add').click();document.querySelector('#source-cloud-choice').click();new Promise(resolve=>setTimeout(resolve,100))`);
         assert.deepEqual(centralPages,['sources'],'Connected cloud-source Add reaches the real Central source workspace through real preload IPC');
         trayMenu.items.find(item => item.label === '打开中央工作台').click();
         await js(`new Promise(resolve => setTimeout(resolve, 100))`);
         assert.deepEqual(centralPages,['sources','overview'],'Tray Central reuses the existing renderer and preload owner-access path');
-        assert.equal(await js(`document.querySelector('#ask-question').value`), 'generated offline question draft', 'Opening Central preserves the local question draft');
         let rejectCentral, pendingCentralCalls = 0;
         ipcMain.removeHandler('mote:central');
         ipcMain.handle('mote:central', () => { pendingCentralCalls++;return new Promise((_resolve,reject)=>{rejectCentral=reject;}); });
@@ -233,7 +220,6 @@ app.on('browser-window-created', (_event, window) => {
         rejectCentral(new Error('generated central access denied'));
         await js(`new Promise(resolve => setTimeout(resolve, 100))`);
         assert(await js(`!document.querySelector('#feedback').hidden && document.querySelector('#feedback').textContent.includes('generated central access denied')`),'A denied Central request displays the existing error instead of opening another route');
-        assert.equal(await js(`document.querySelector('#ask-question').value`),'generated offline question draft','A failed Central request preserves the local question draft');
         ipcMain.removeHandler('mote:central');ipcMain.handle('mote:central',(_event,page)=>{centralPages.push(page);});
         centralShortcut.click();
         await js(`new Promise(resolve => setTimeout(resolve, 100))`);
@@ -242,12 +228,8 @@ app.on('browser-window-created', (_event, window) => {
         window.webContents.send = originalStatusSend;
         ipcMain.removeHandler('mote:get-status'); ipcMain.handle('mote:get-status', previousStatusHandler);
         ipcMain.removeHandler('mote:central'); ipcMain.handle('mote:central', previousCentralHandler);
-        ipcMain.removeHandler('mote:ask'); ipcMain.handle('mote:ask', previousAskHandler); window.webContents.send('mote:status', status);
+        window.webContents.send('mote:status', status);
       }
-      await js(`new Promise(resolve => requestAnimationFrame(resolve)); document.querySelector('#ask-question').value='';`);
-      await navigate('ask');
-      await js(`document.querySelector('#ask-disconnected [data-nav="connection"]').click(); new Promise(resolve => setTimeout(resolve, 100))`);
-      assert(await js(`!document.querySelector('[data-page="connection"]').hidden`), 'Offline Ask leads to the existing connection setup');
       await navigate('overview');
       const settingsMenu = Menu.getApplicationMenu().items[0].submenu.items.find(item => item.accelerator === 'CmdOrCtrl+,');
       assert(settingsMenu, 'Standard settings menu exists'); settingsMenu.click();
@@ -344,7 +326,7 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`!document.querySelector('#note-action').hidden`), 'Global quick note preserves a connection configuration draft');
       await js(`document.querySelector('#device-name').value = '未保存的设备名称'; document.querySelector('#device-name').dispatchEvent(new Event('input', {bubbles: true}));`);
       assert(await js(`!document.querySelector('#settings-pending').hidden`));
-      await js(`window.confirm = () => false; document.querySelector('aside [data-nav="ask"]').click();`);
+      await js(`window.confirm = () => false; document.querySelector('aside [data-nav="overview"]').click();`);
       assert(await js(`!document.querySelector('[data-page="connection"]').hidden && !document.querySelector('#settings-pending').hidden && document.querySelector('#device-name').value === '未保存的设备名称'`), 'Cancelling navigation preserves the settings draft and current route');
       await js(`window.confirm = () => true; document.querySelector('#workspace-back').click()`);
       assert(await js(`!document.querySelector('[data-page="settings"]').hidden`));
@@ -521,13 +503,13 @@ app.on('browser-window-created', (_event, window) => {
       finally { dialog.showOpenDialog = beforeMixPicker; }
       const changeFixtureLanguage = async preference => {
         await navigate('preferences');
-        await js(`window.confirm=()=>true;document.querySelector('#ask-question').value='Generated same-window language draft';document.querySelector('#language').value=${JSON.stringify(preference)};document.querySelector('#language').dispatchEvent(new Event('change'));document.querySelector('#preferences-apply').click();true;`);
+        await js(`window.confirm=()=>true;document.querySelector('#language').value=${JSON.stringify(preference)};document.querySelector('#language').dispatchEvent(new Event('change'));document.querySelector('#preferences-apply').click();true;`);
         for (let i=0;i<200;i++) {
           try { if (await js(`document.documentElement.lang===${JSON.stringify(preference)} && !!document.querySelector('#content-refresh') && document.querySelector('#workspace-location').textContent.trim()`)) break; }
           catch { /* Reload temporarily destroys the frame; wait for the new renderer. */ }
           await new Promise(resolve=>setTimeout(resolve,25));
         }
-        assert.equal(await js('document.documentElement.lang'),preference);assert.equal(await js('document.querySelector("#ask-question").value'),'Generated same-window language draft','Language reload keeps this window’s unsent question');
+        assert.equal(await js('document.documentElement.lang'),preference);
         // Locale reload restores the default Content entry; its content loads normally.
         await new Promise(resolve=>setTimeout(resolve,100));
       };

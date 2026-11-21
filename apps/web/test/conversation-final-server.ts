@@ -7,11 +7,31 @@ import {setTimeout as delay} from 'node:timers/promises';
 const directory=process.argv[2];if(!directory)throw Error('Private generated fixture directory required');
 const token=randomBytes(32).toString('hex'),at='2026-10-29T01:00:00.000Z',text='Generated review decision: open the exact original, preserve the question draft, and return to the same conversation.';let originalId='',calls=0;
 const runtime=await buildApp({path:(join(directory,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:join(directory,'private-owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'central'),maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{backgroundWorker:false,agent:{configured:true,query:async input=>{writeFileSync(join(directory,'controlled-agent-count'),String(++calls),{mode:0o600});while(existsSync(join(directory,'hold-query'))){input.signal?.throwIfAborted();await delay(20);}return{runId:randomUUID(),answer:'## Generated review decision\n\nOpen the exact original, preserve the draft, and return to this conversation. ['+originalId+']',citations:[{id:originalId,capturedAt:at,appName:'Generated review source',excerpt:text}],trace:[],evidenceDependencies:{version:1,complete:true,ids:[originalId]}};},close:async()=>{}}});
-runtime.app.addHook('onRequest',async(req,reply)=>{if(req.method==='GET'&&/^\/api\/conversations\/[^/?]+(?:\?.*)?$/.test(req.url)){while(existsSync(join(directory,'hold-origin-read')))await delay(20);if(existsSync(join(directory,'origin-unreadable')))return reply.code(403).send({error:'forbidden'});}if(req.method==='GET'&&req.url.startsWith('/api/capture-browser/')&&existsSync(join(directory,'parent-unreadable')))return reply.code(403).send({error:'forbidden'});if(req.method==='DELETE'&&req.url.startsWith('/api/conversations/')&&existsSync(join(directory,'delete-fault')))return reply.code(403).send({error:'forbidden'});if(req.method==='GET'&&req.url.includes('/references/')&&existsSync(join(directory,'reference-unavailable')))return reply.send({id:decodeURIComponent(req.url.split('/').at(-1)!),available:false});if(req.method==='GET'&&req.url.startsWith('/api/conversations')&&existsSync(join(directory,'advance-source'))){rmSync(join(directory,'advance-source'));await runtime.sources.upsert('generated-review-source',{externalId:'review-original',revision:'2',observedAt:'2026-10-29T02:00:00.000Z',text:'Generated changed original, preserved separately from the historical answer.',title:'Generated changed review original',kind:'message',layer:'original'});}});
-runtime.app.addHook('preHandler',async(req,reply)=>{if(req.method==='POST'&&req.url==='/api/notes'){writeFileSync(join(directory,'save-trace'),JSON.stringify(req.body)+'\n',{flag:'a',mode:0o600});if(existsSync(join(directory,'save-fault')))return reply.code(503).send({error:'service_unavailable'});}if(req.method==='POST'&&req.url==='/api/query-runs')writeFileSync(join(directory,'admission-trace'),JSON.stringify(req.body)+'\n',{flag:'a',mode:0o600});});
-runtime.app.addHook('onSend',async(req,reply,payload)=>{if(req.method==='POST'&&req.url==='/api/query-runs'&&reply.statusCode<300&&existsSync(join(directory,'lose-admission'))){rmSync(join(directory,'lose-admission'));reply.code(503);return JSON.stringify({error:'service_unavailable'});}return payload;});
+const detailRead=(method:string,url:string)=>method==='GET'&&/^\/api\/conversations\/[0-9a-f-]{36}(?:\?.*)?$/i.test(url);
+runtime.app.addHook('onRequest',async(req,reply)=>{
+ if(detailRead(req.method,req.url)){
+  while(existsSync(join(directory,'hold-origin-read')))await delay(20);
+  if(existsSync(join(directory,'origin-unreadable')))return reply.code(403).send({error:'forbidden'});
+  if(existsSync(join(directory,'advance-source'))){
+   rmSync(join(directory,'advance-source'));
+   await runtime.sources.upsert('generated-review-source',{externalId:'review-original',revision:'2',observedAt:'2026-10-29T02:00:00.000Z',text:'Generated changed original, preserved separately from the historical answer.',title:'Generated changed review original',kind:'message',layer:'original'});
+  }
+ }
+ if(req.method==='GET'&&req.url.startsWith('/api/capture-browser/')&&existsSync(join(directory,'parent-unreadable')))return reply.code(403).send({error:'forbidden'});
+ if(req.method==='GET'&&req.url.includes('/references/')&&existsSync(join(directory,'reference-unavailable')))return reply.send({id:decodeURIComponent(req.url.split('/').at(-1)!),available:false});
+});
+runtime.app.addHook('preHandler',async(req,reply)=>{if(req.method==='POST'&&req.url==='/api/notes'){writeFileSync(join(directory,'save-trace'),JSON.stringify(req.body)+'\n',{flag:'a',mode:0o600});if(existsSync(join(directory,'save-fault')))return reply.code(503).send({error:'service_unavailable'});}if(req.method==='POST'&&['/api/query-runs','/api/conversations/messages'].includes(req.url))writeFileSync(join(directory,'admission-trace'),JSON.stringify(req.body)+'\n',{flag:'a',mode:0o600});});
+runtime.app.addHook('onSend',async(req,reply,payload)=>{if(req.method==='POST'&&req.url==='/api/conversations/messages'&&reply.statusCode<300&&existsSync(join(directory,'lose-admission'))){rmSync(join(directory,'lose-admission'));reply.code(503);return JSON.stringify({error:'service_unavailable'});}return payload;});
 runtime.sources.register({id:'generated-review-source',name:'Generated review source',kind:'custom',deviceId:'generated-web',platform:'import'});originalId=(await runtime.sources.upsert('generated-review-source',{externalId:'review-original',revision:'1',observedAt:at,text,title:'Generated review original',kind:'message',layer:'original'})).id;
 runtime.app.post('/__fixture/organize',async(req)=>{if(req.headers.authorization!=='Bearer '+token)throw Error('Owner required');await runtime.materialOrganizer.tick(100);return {generatedOnly:true};});
+runtime.app.post('/__fixture/seed-main',async(req)=>{
+ if(req.headers.authorization!=='Bearer '+token)throw Error('Owner required');
+ const {id}=runtime.conversations.main();
+ for(let index=1;index<=21;index++){
+  runtime.conversations.append(runtime.conversations.get(id),{question:'Generated long conversation turn '+index},{runId:randomUUID(),answer:'Generated answer '+index+' ['+originalId+']',citations:[{id:originalId,capturedAt:at,appName:'Generated review source',excerpt:text}],trace:[],evidenceDependencies:{version:1,complete:true,ids:[originalId]}});
+ }
+ return {id};
+});
 runtime.app.post('/__fixture/long-origin',async(req)=>{
  if(req.headers.authorization!=='Bearer '+token)throw Error('Owner required');
  const question='Generated long question?',prefix='## Generated long answer\n\n'+('x'.repeat(3910))+'\n\n```\n**Literal code** ['+originalId+']\n```\n\nVerified citation ['+originalId+']\n\n',padding=11999-question.length-2-prefix.length;
@@ -22,16 +42,14 @@ runtime.app.post('/__fixture/long-origin',async(req)=>{
 });
 
 const url=await runtime.app.listen({host:'127.0.0.1',port:0});
-const request=async(path:string,body?:unknown)=>{const response=await fetch(url+path,{method:body?'POST':'GET',headers:{authorization:'Bearer '+token,...body?{'content-type':'application/json'}:{}},body:body?JSON.stringify(body):undefined});const value=await response.json();if(!response.ok)throw Error(JSON.stringify(value));return value;};
-let longConversationId='';for(let index=0;index<(process.env.MOTE_CONVERSATION_RECOVERY==='1'?0:21);index++){const run=await request('/api/query-runs',{id:randomUUID(),input:{question:'Generated long conversation turn '+(index+1),...(longConversationId?{conversationId:longConversationId}:{}),timeZone:'UTC'}});let current=run;const end=Date.now()+10000;while(current.status==='running'){if(Date.now()>end)throw Error('Generated query did not settle');await delay(15);current=await request('/api/query-runs/'+run.id);}if(current.status!=='completed'||!current.conversationId)throw Error('Generated query failed '+JSON.stringify(current));longConversationId=current.conversationId;}
 let servingUrl=url;let proxy:ReturnType<typeof createServer>|undefined;
 if(process.env.MOTE_CONVERSATION_RECOVERY==='1'){
  proxy=createServer((req,res)=>{
   const forwarded=proxyRequest(url+(req.url??'/'),{method:req.method,headers:req.headers},upstream=>{
    const chunks:Buffer[]=[];upstream.on('data',chunk=>chunks.push(Buffer.from(chunk)));upstream.on('end',()=>{
     const send=async()=>{
-     if(req.method==='POST'&&req.url==='/api/query-runs'&&(upstream.statusCode??500)<300){const path=join(directory,'drop-query-acks'),left=existsSync(path)?Number(readFileSync(path,'utf8')):0;if(left>0){writeFileSync(path,String(left-1));res.writeHead(upstream.statusCode??202,upstream.headers);res.flushHeaders();res.write(Buffer.from('{'));await delay(30);res.destroy();return;}}
-     if(req.method==='GET'&&/^\/api\/query-runs\/[^/]+$/.test(req.url??'')&&existsSync(join(directory,'hide-run-receipt'))){res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({error:'not_found'}));return;}
+     if(req.method==='POST'&&req.url==='/api/conversations/messages'&&(upstream.statusCode??500)<300){const path=join(directory,'drop-query-acks'),left=existsSync(path)?Number(readFileSync(path,'utf8')):0;if(left>0){writeFileSync(path,String(left-1));res.writeHead(upstream.statusCode??202,upstream.headers);res.flushHeaders();res.write(Buffer.from('{'));await delay(30);res.destroy();return;}}
+     if(req.method==='GET'&&/^\/api\/conversations\/[0-9a-f-]{36}\/messages\/[0-9a-f-]{36}$/i.test(req.url??'')&&existsSync(join(directory,'hide-message-receipt'))){writeFileSync(join(directory,'message-receipt-hidden'),'true');res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({error:'not_found'}));return;}
      if(req.method==='POST'&&req.url?.endsWith('/cancel')){writeFileSync(join(directory,'cancel-accepted'),'true');while(existsSync(join(directory,'hold-cancel-ack'))&&!res.destroyed)await delay(20);}
      if(res.destroyed)return;res.writeHead(upstream.statusCode??502,upstream.headers);res.end(Buffer.concat(chunks));
     };void send().catch(()=>res.destroy());
@@ -39,4 +57,4 @@ if(process.env.MOTE_CONVERSATION_RECOVERY==='1'){
   });forwarded.on('error',()=>res.destroy());req.on('error',()=>forwarded.destroy());req.pipe(forwarded);
  });await new Promise<void>(resolve=>proxy!.listen(0,'127.0.0.1',resolve));servingUrl='http://127.0.0.1:'+(proxy.address() as import('node:net').AddressInfo).port;
 }
-console.log(JSON.stringify({generatedOnly:true,url:servingUrl,centralUrl:url,token,noteId:originalId,longConversationId,liveModelCalls:0,controlledAgent:true}));process.once('SIGTERM',()=>{proxy?.closeAllConnections();void Promise.all([runtime.app.close(),proxy?new Promise<void>(resolve=>proxy!.close(()=>resolve())):Promise.resolve()]).then(()=>process.exit(0));});
+console.log(JSON.stringify({generatedOnly:true,url:servingUrl,centralUrl:url,token,noteId:originalId,liveModelCalls:0,controlledAgent:true}));process.once('SIGTERM',()=>{proxy?.closeAllConnections();void Promise.all([runtime.app.close(),proxy?new Promise<void>(resolve=>proxy!.close(()=>resolve())):Promise.resolve()]).then(()=>process.exit(0));});

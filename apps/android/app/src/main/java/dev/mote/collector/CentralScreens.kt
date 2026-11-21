@@ -48,17 +48,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var preset: Spinner? = null
     private var model: EditText? = null
     private var modelSettings = JSONObject()
-    private var conversationPreferences = CentralConversationSettings.defaults()
     private var mainConversationId: String? = null
-    private var conversationItems: List<HistoryConversation> = emptyList()
-    private var conversationListReadable = false
-    private var conversationListFailed = false
-    private var conversationListView: ConversationListView? = null
-    private var conversationStatus: LinearLayout? = null
-    private var newConversationAction: android.view.View? = null
-    private var conversationListMore: android.view.View? = null
-    private var conversationListCursor: String? = null
-    private var submitOnAskEntry = false
     private var lastConversation: JSONObject? = null
     private var lastConversationCursor: String? = null
     private var messages: LinearLayout? = null
@@ -106,10 +96,8 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
 
     fun show(page: String) {
         currentPage = page; detailBack = null; question = null; messages = null; noteText = null; noteMood = null
-        if (page != "ask") submitOnAskEntry = false
         when (page) {
             "ask" -> loadAsk()
-            "conversations" -> showConversations()
             "notes" -> loadNotes()
             "overview" -> overview()
             "activity" -> activity.show()
@@ -161,10 +149,8 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         askImagesView?.removeAllViews();askImagesView=null;addAskImage=null
         askOffline = false; offlineNotice = null; stopAction = null
         scopeBox=null;scopeChip=null;scopeIcon=null;scopeLabel=null;scopeClear=null
-        ask.reset(); conversationItems = emptyList(); conversationListReadable = false; conversationListFailed = false
-        conversationListView = null; conversationStatus = null; newConversationAction = null; conversationListMore = null
-        conversationListCursor = null; submitOnAskEntry = false
-        modelSettings = JSONObject(); conversationPreferences = CentralConversationSettings.defaults(); mainConversationId = null
+        ask.reset()
+        modelSettings = JSONObject(); mainConversationId = null
         lastConversation = null; question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); activity.clearPrivateState(); library.clearTopics(); insights.clear(); body.removeAllViews()
     }
     fun refresh() { if (currentPage == "insights") insights.returnFromEvidence(); ui.navigate(currentPage) }
@@ -246,22 +232,18 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
 
     internal val selectedAskConversationId get()=askState.optString("conversationId").takeIf { it.isNotBlank() && lastConversation?.optString("id")==it }
-    private data class AskLoad(val state: JSONObject, val settings: JSONObject?, val main: String?, val failure: Throwable?)
+    private data class AskLoad(val state: JSONObject, val main: String?, val failure: Throwable?)
     private fun loadAsk() {
         val api = client
         val requestedConversation = ui.requestedAskConversation()
         ui.work(MoteI18n.text("正在读取对话…"), {
             val state = ask.readDraft()
-            val settingsResult = runCatching { api.get("/api/configuration") }
             val mainResult = runCatching { api.get("/api/conversations/main").optString("id") }
-            listOf(settingsResult, mainResult).forEach { result ->
-                result.exceptionOrNull()?.let { if (it is CentralFailure && it.status in setOf(401, 403)) throw it }
-            }
-            AskLoad(state, settingsResult.getOrNull(), mainResult.getOrNull(), settingsResult.exceptionOrNull() ?: mainResult.exceptionOrNull())
+            mainResult.exceptionOrNull()?.let { if (it is CentralFailure && it.status in setOf(401, 403)) throw it }
+            AskLoad(state, mainResult.getOrNull(), mainResult.exceptionOrNull())
         }) { load ->
             ask.restore(load.state)
             mainConversationId = load.main?.takeIf { runCatching { UUID.fromString(it) }.isSuccess }
-            load.settings?.let { runCatching { CentralConversationSettings.read(it) }.getOrNull()?.let { value -> conversationPreferences = value } }
             var scopeRefused = false
             ui.takeAskEvidence()?.let { evidence -> scopeRefused = !ask.beginEvidence(evidence.id, evidence.label) }
             // An ordinary Ask opens the server's current main conversation. An
@@ -287,7 +269,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if (askBusy()) ui.notice(error.message ?: MoteI18n.text("对话暂不可读取，请稍后重试。"))
                 else ui.requestFailure(error)
             }
-            if (submitOnAskEntry) { submitOnAskEntry = false; submitAsk() }
         }
     }
     private fun buildAsk() {
@@ -297,7 +278,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         runStatus = ui.text("", parent = messages!!).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
         val conversation = askState.optString("conversationId").isNotBlank()
         ui.askConversationVisible(conversation)
-        ui.askBackToHistory = if (conversation) { { if (currentPage == "ask" && messages != null) { ui.openConversationList(); true } else false } } else null
         if (!conversation) ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, messages!!)
         val compose = ui.askComposer()
         offlineNotice = offlineRow().also(compose::addView)
@@ -502,149 +482,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
 
     private fun askBusy() = ask.busy()
-    private fun showConversations() {
-        ui.detailTitle("")
-        body.removeAllViews()
-        body.setPadding(ui.moteDp(16), 0, ui.moteDp(16), ui.moteDp(24))
-        body.addView(TextView(ui).apply {
-            tag = "central-title"
-            text = MoteI18n.text("对话"); MoteUi.type(this, NativeFontRole.TITLE_MOBILE, medium = true)
-            MoteUi.textColor(this, NativeColorRole.INK); setPadding(ui.moteDp(4), ui.moteDp(2), ui.moteDp(4), 0)
-        })
-        conversationStatus = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
-            .also { body.addView(it, LinearLayout.LayoutParams(-1, -2)) }
-        newConversationAction = ui.button(MoteI18n.text("新对话"), parent = body) { newConversation() }
-            .apply { visibility = android.view.View.GONE }
-        conversationListView = ConversationListView(ui, onOpen = ::openConversation, onActions = ::conversationRowActions)
-            .also { body.addView(it, LinearLayout.LayoutParams(-1, -2)) }
-        conversationListMore = ui.button(MoteI18n.text("加载更早的对话"), parent = body) {
-            loadConversations(conversationListCursor)
-        }.apply { visibility = android.view.View.GONE }
-        val dock = ui.conversationComposer()
-        dock.addView(ConversationComposerView(ui,
-            onAddImage = { if (askBusy()) ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")) else ui.pickAttachment(chat = true) },
-            onSend = ::sendConversationQuestion), LinearLayout.LayoutParams(-1, -2))
-        renderConversationStatus()
-        loadConversations()
-    }
-    private data class ConversationPage(
-        val items: List<HistoryConversation>,
-        val nextCursor: String?,
-        val settings: JSONObject?,
-        val main: String?,
-    )
-    private fun loadConversations(cursor: String? = null) {
-        if (currentPage != "conversations") return
-        if (cursor != null && cursor != conversationListCursor) return
-        val api = client
-        conversationListFailed = false
-        renderConversationStatus()
-        ui.work(MoteI18n.text("正在读取对话…"), {
-            runCatching {
-                val page = api.get("/api/conversations?limit=30" + (cursor?.let { "&cursor=" + encode(it) } ?: ""))
-                val settings = runCatching { api.get("/api/configuration") }.getOrNull()
-                val main = runCatching { api.get("/api/conversations/main").optString("id") }.getOrNull()
-                ConversationPage(ConversationHistory.items(page.getJSONArray("items")), next(page), settings, main)
-            }
-        }) { result ->
-            result.onSuccess { page ->
-                conversationItems = if (cursor == null) page.items
-                    else (conversationItems + page.items).distinctBy { it.id }
-                conversationListCursor = page.nextCursor
-                conversationListReadable = true; conversationListFailed = false
-                mainConversationId = page.main?.takeIf { runCatching { UUID.fromString(it) }.isSuccess }
-                page.settings?.let { runCatching { CentralConversationSettings.read(it) }.getOrNull()?.let { value -> conversationPreferences = value } }
-                newConversationAction?.visibility = if (conversationPreferences.multipleConversations) android.view.View.VISIBLE else android.view.View.GONE
-                conversationListMore?.visibility = if (page.nextCursor != null) android.view.View.VISIBLE else android.view.View.GONE
-                renderConversationStatus(); renderConversationList()
-            }.onFailure { error ->
-                conversationListFailed = true
-                renderConversationStatus(); renderConversationList()
-                ui.requestFailure(error)
-            }
-        }
-    }
-    fun refreshConversationList() { if (currentPage == "conversations") loadConversations() }
-    private fun renderConversationStatus() {
-        val box = conversationStatus ?: return
-        box.removeAllViews()
-        when {
-            conversationListFailed -> {
-                ui.text(MoteI18n.text("对话暂不可读取，请稍后重试。"), NativeFontRole.SUPPORT, box)
-                box.addView(MoteUi.action(Button(ui).apply {
-                    text = MoteI18n.text("重试"); setOnClickListener { if (!ui.isWorking) loadConversations() }
-                }, MoteUi.ButtonRole.TEXT), LinearLayout.LayoutParams(-2, -2))
-            }
-            !conversationListReadable && conversationItems.isEmpty() -> box.addView(MoteComponents.skeleton(ui, MoteI18n.text("正在读取对话…")))
-        }
-        box.visibility = if (box.childCount == 0) android.view.View.GONE else android.view.View.VISIBLE
-    }
-    private fun renderConversationList() { conversationListView?.render(conversationItems) }
-    private fun openConversation(id: String) { selectConversation(id, then = { ui.navigate("ask") }) }
-    private fun conversationRowActions(id: String) {
-        if (currentPage != "conversations" || askBusy()) return
-        val api = client
-        val selected = CentralAccess.resolve(ui); val expected = selected.server to selected.generation
-        fun current() = ui.client === api && currentPage == "conversations" &&
-            CentralAccess.resolve(ui).let { (it.server to it.generation) == expected }
-        val details = ConversationHistory.deleteFailure(askState, id)
-        val actions = ConversationHistory.deleteActions(askState, id)
-        MoteDialogBuilder(ui).setTitle(MoteI18n.text("对话"))
-            .setItems(actions.map { MoteI18n.text(it) }.toTypedArray()) { _, index ->
-                if (!current()) return@setItems
-                if (index == 1) { details?.let { showAskFailureDetails(it) }; return@setItems }
-                MoteDialogBuilder(ui).setTitle(MoteI18n.text("删除整段对话？")).setMessage(MoteI18n.text("会删除这段对话的所有问答。已单独保存的记录保留。"))
-                    .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("删除对话")) { _, _ ->
-                    if (!current()) return@setPositiveButton
-                    ui.work(MoteI18n.text("正在删除…"), { runCatching { api.delete("/api/conversations/" + encode(id)) } }) { outcome ->
-                        outcome.onSuccess {
-                            ConversationHistory.clearDeleteFailure(askState, id)
-                            if (askState.optString("conversationId") == id) { ask.newConversation(); lastConversation = null }
-                            conversationItems = conversationItems.filterNot { it.id == id }
-                            persistAsk(); renderConversationList()
-                        }.onFailure { error ->
-                            ConversationHistory.recordDeleteFailure(askState, id, error); persistAsk()
-                            // Keep authentication withdrawal and conflict handling at the original shared boundary.
-                            ui.requestFailure(error)
-                            if (error !is CentralFailure || error.status !in setOf(401, 403, 409, 410)) ui.notice(MoteI18n.text("未能确认删除完成。请刷新查看当前状态。"))
-                        }
-                    }
-                }.show()
-            }.show()
-    }
-    private fun sendConversationQuestion(text: String) {
-        val value = text.trim()
-        if (value.isEmpty() || currentPage != "conversations") return
-        if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
-        if (ask.hasDraft()) {
-            val selected = CentralAccess.resolve(ui); val expected = selected.server to selected.generation
-            fun current() = currentPage == "conversations" && CentralAccess.resolve(ui).let { (it.server to it.generation) == expected }
-            MoteDialogBuilder(ui).setTitle(MoteI18n.text("还有未发送的内容"))
-                .setMessage(MoteI18n.text("切换对话会舍弃当前输入和图片。你也可以留在这里继续编辑。"))
-                .setNegativeButton(MoteI18n.text("继续编辑"), null)
-                .setPositiveButton(MoteI18n.text("舍弃并切换")) { _, _ -> if (current()) sendConversationQuestionNow(value) }
-                .show()
-            return
-        }
-        sendConversationQuestionNow(value)
-    }
-    private fun sendConversationQuestionNow(value: String) {
-        ui.clearAskConversationIntent()
-        val api = client
-        fun start(id: String) {
-            ask.startConversation(value, id)
-            persistAsk()
-            submitOnAskEntry = true
-            ui.navigate("ask")
-        }
-        if (conversationPreferences.multipleConversations) {
-            ui.work(MoteI18n.text("正在新建对话…"), { api.post("/api/conversations", JSONObject()) }) { created -> start(created.getString("id")) }
-        } else {
-            val main = mainConversationId
-            if (main != null) start(main)
-            else ui.work(MoteI18n.text("正在读取对话…"), { api.get("/api/conversations/main").optString("id") }) { id -> start(id) }
-        }
-    }
     private fun selectConversation(id: String, discardConfirmed: Boolean = false, fromIntent:Boolean=false, then: (() -> Unit)? = null) {
         if(fromIntent && ui.requestedAskConversation()!=id)return
         if (runCatching { UUID.fromString(id) }.isFailure) { ui.notice(MoteI18n.text("请求的资源不存在或已删除。")); return }
@@ -881,16 +718,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         ask.restoreScope(conversation); ask.scopeLabel(materialLabel); persistAsk(); updateScope()
         target.removeAllViews(); askFailureAction = null
         runStatus = ui.text("", parent = target).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
-        if (conversationPreferences.multipleConversations && currentPage == "ask" && detailBack == null) {
-            val row = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.END }
-            ui.button(MoteI18n.text("新对话"), parent = row) { newConversation() }
-                .apply { layoutParams = LinearLayout.LayoutParams(-2, -2) }
-            mainConversationId?.takeIf { it != id }?.let { main ->
-                ui.button(MoteI18n.text("主对话"), parent = row) { switchToMain(main) }
-                    .apply { layoutParams = LinearLayout.LayoutParams(-2, -2) }
-            }
-            target.addView(row, LinearLayout.LayoutParams(-1, -2))
-        }
         val turns = conversation.getJSONArray("turns")
         adoptPendingReceipt(turns, id)
         if (turns.length() == 0) ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, target)
@@ -1014,34 +841,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         askState.put("question", text)
         persistAsk()
         submitAsk()
-    }
-    private fun newConversation() {
-        if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
-        if (ask.hasDraft()) {
-            confirmDiscard { createConversationNow() }
-            return
-        }
-        createConversationNow()
-    }
-    private fun createConversationNow() {
-        val api = client
-        ui.work(MoteI18n.text("正在新建对话…"), { api.post("/api/conversations", JSONObject()) }) { value ->
-            val id = value.getString("id")
-            ask.newConversation(); ask.attachConversation(id); persistAsk()
-            ui.navigate("ask")
-        }
-    }
-    private fun switchToMain(id: String) {
-        if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
-        if (askState.optString("conversationId") == id) return
-        selectConversation(id, then = { loadConversation(id) })
-    }
-    private fun confirmDiscard(action: () -> Unit) {
-        MoteDialogBuilder(ui).setTitle(MoteI18n.text("还有未发送的内容"))
-            .setMessage(MoteI18n.text("切换对话会舍弃当前输入和图片。你也可以留在这里继续编辑。"))
-            .setNegativeButton(MoteI18n.text("继续编辑"), null)
-            .setPositiveButton(MoteI18n.text("舍弃并切换")) { _, _ -> action() }
-            .show()
     }
     private fun questionBubble(parent: LinearLayout, question: String) {
         val row = LinearLayout(ui).apply { gravity = android.view.Gravity.END }
@@ -1411,7 +1210,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
         fun next(value: JSONObject): String? = if (value.isNull("nextCursor") || !value.has("nextCursor")) null else value.opt("nextCursor").toString()
         val pages = listOf(
-            "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "conversations" to "对话", "activity" to "活动", "notes" to "记录",
+            "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "activity" to "活动", "notes" to "记录",
             "materials" to "正式资料", "coding" to "Coding 会话同步状态", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
             AssistantPlugin.WORKBENCH_ROUTE to "工作台", AssistantPlugin.GOALS_ROUTE to "目标",

@@ -351,7 +351,7 @@ internal class CentralContent(
         }
         val requestedWork = page == "activity" && activity.intent.hasExtra("workId")
         if (client == null) { screens?.clearPrivateState(); login() }
-        else if (changed || authenticated || sessionChanged || requestedWork || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll() else if (page == "conversations") screens?.refreshConversationList()
+        else if (changed || authenticated || sessionChanged || requestedWork || body.childCount == 0 || (page == "ask" && activity.intent.hasExtra("conversationId"))) navigate(page) else if (page == "ask") scheduleAskPoll() else if (page == "activity") scheduleActivityPoll()
         linkNotice?.let { message -> linkNotice = null; notice(message) }
     }
     private fun deliverPendingResult() {
@@ -378,7 +378,6 @@ internal class CentralContent(
         state.putString("insightId", pendingInsightId); state.putString("insightOrigin", server)
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
-    var askBackToHistory: (() -> Boolean)? = null
     /** A host tab may return directly to its local tab at the root. */
     var rootBack: (() -> Boolean)? = null
     fun back(): Boolean {
@@ -387,7 +386,6 @@ internal class CentralContent(
             if (assistantHeaderAction == null) updateBackButton()
             return true
         }
-        if (page == "ask" && askBackToHistory?.invoke() == true) { updateBackButton(); return true }
         if (page == "insights" && pageHistory.isEmpty()) return false
         if (pageHistory.isEmpty() && rootBack?.invoke() == true) { updateBackButton(); return true }
         val previous = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else MoteNavigation.centralParent(page)
@@ -400,33 +398,21 @@ internal class CentralContent(
         backButton.visibility = View.VISIBLE
         addAction.visibility = View.GONE
         val ask = page == "ask"
-        val conversations = page == "conversations"
-        (backButton.layoutParams as LinearLayout.LayoutParams).width = moteDp(if (conversations || ask) 48 else 44)
-        headerBar.minimumHeight = moteDp(if (conversations || ask) 48 else if (page == "memories") 56 else 66)
-        headerBar.setPadding(moteDp(if (conversations || ask) 6 else 12), 0, moteDp(if (conversations || ask) 6 else 12), 0)
-        headerDivider.visibility = if (conversations || page == "memories" || embeddedActions) View.GONE else View.VISIBLE
-        title.tag = if (conversations) null else "central-title"
+        (backButton.layoutParams as LinearLayout.LayoutParams).width = moteDp(if (ask) 48 else 44)
+        headerBar.minimumHeight = moteDp(if (ask) 48 else if (page == "memories") 56 else 66)
+        headerBar.setPadding(moteDp(if (ask) 6 else 12), 0, moteDp(if (ask) 6 else 12), 0)
+        headerDivider.visibility = if (page == "memories" || embeddedActions) View.GONE else View.VISIBLE
+        title.tag = "central-title"
         moreAction.tag = if (page == "insights") "insight-more" else null
-        settingsAction.visibility = if (ask || page == "insights" || page == "memories" || conversations) View.GONE else View.VISIBLE
-        moreAction.visibility = if (ask || page == "memories" || conversations) View.GONE else View.VISIBLE
+        settingsAction.visibility = if (ask || page == "insights" || page == "memories") View.GONE else View.VISIBLE
+        moreAction.visibility = if (ask || page == "memories") View.GONE else View.VISIBLE
         memoryFilterAction.visibility = View.GONE
     }
-    /** The conversation list is a peer of the thread: reaching it clears in-page
-     * history so its back action returns to the home surface, not the thread. */
-    internal fun openConversationList() { pageHistory.clear(); navigate("conversations", remember = false) }
     internal fun hostActivity(): MoteActivity = activity
     internal fun assistantRouteScreen(): CentralScreens = checkNotNull(screens)
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
         return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)
-    }
-    /** The AND-History dock: page background, no divider, the pill composer inside. */
-    internal fun conversationComposer(): LinearLayout {
-        composer.removeAllViews(); composer.visibility = View.VISIBLE
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(moteDp(16), moteDp(8), moteDp(16), moteDp(12))
-        }.also(composer::addView)
     }
     internal fun hideAskComposer() { composer.visibility = View.GONE }
     /** A reader's picture loads beside the page's own work, so a slow image never holds the next page back.
@@ -495,7 +481,6 @@ internal class CentralContent(
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
         page = next; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.close(); body.removeAllViews();body.visibility=View.VISIBLE; composer.removeAllViews(); composer.visibility = View.GONE
-        askBackToHistory = null
         updateCollectionBar(); updateBackButton()
         title.visibility = View.VISIBLE
         title.text = CentralScreens.pages.firstOrNull { it.first == if (next == "extensions") "plugins" else next }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
@@ -525,7 +510,7 @@ internal class CentralContent(
         title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
             page == AssistantPlugin.GOALS_ROUTE -> "连接你的 Mote"
-            page == "ask" || page == "conversations" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
+            page == "ask" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
             MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
             else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
         }))

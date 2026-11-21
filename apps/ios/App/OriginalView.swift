@@ -334,14 +334,6 @@ struct OriginalView: View {
                             .font(MoteFont.body)
                             .foregroundStyle(MoteDesignTokens.muted.color)
                     }
-                    MoteRow(title: "引用它的对话", topDivider: true) {
-                        HStack(spacing: 8) {
-                            Text(presentation.referenceCount.map(String.init) ?? "—")
-                                .font(MoteFont.body)
-                                .foregroundStyle(MoteDesignTokens.muted.color)
-                            MoteChevron()
-                        }
-                    }
                 }
                 .padding(.horizontal, MoteMetrics.pageMargin)
                 .padding(.top, 12)

@@ -46,9 +46,8 @@ final class OriginalModel {
         }
         do {
             let record = try await client.original(id: id)
-            let conversations = try? await allConversations(client: client)
             guard generation == loadGeneration else { return }
-            let presentation = try OriginalPresentation(record: record, conversations: conversations,
+            let presentation = try OriginalPresentation(record: record, conversations: nil,
                                                         highlightedPhrase: highlightedPhrase)
             self.presentation = presentation
             hero = presentation.hasImage ? .loading : nil
@@ -99,14 +98,4 @@ final class OriginalModel {
         return try? CentralClient(serverUrl: connection.serverUrl, token: connection.token, session: session)
     }
 
-    private func allConversations(client: CentralClient) async throws -> [ConversationSummary] {
-        var cursor: String?
-        var result: [ConversationSummary] = []
-        repeat {
-            let page = try await client.conversations(cursor: cursor, limit: 100)
-            result.append(contentsOf: page.items)
-            cursor = page.nextCursor
-        } while cursor != nil
-        return result
-    }
 }

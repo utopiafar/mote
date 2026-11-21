@@ -18,9 +18,7 @@ import android.widget.TextView
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
-import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URLEncoder
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -34,16 +32,13 @@ internal data class OriginalDetailPresentation(
     val title: String,
     val timeline: List<OriginalReceiptStep>,
     val source: String,
-    val referenceCount: Int?,
 )
 
-/** Owner-facing details for a pinned original: receipt timeline, source and the
- * conversations that use the same exact evidence or material reference. */
+/** Owner-facing details for a pinned original: receipt timeline and source. */
 internal object NativeOriginalDetail {
-    private val materialRef = Regex("^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$")
     private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-    fun capture(record: JSONObject, conversations: List<JSONObject>? = null): OriginalDetailPresentation {
+    fun capture(record: JSONObject): OriginalDetailPresentation {
         val captured = string(record, "capturedAt")
         val received = string(record, "receivedAt")
         val status = record.optString("indexingStatus")
@@ -63,11 +58,10 @@ internal object NativeOriginalDetail {
                 step,
             ),
             source = source(record),
-            referenceCount = conversations?.let { count(it, record.optString("id"), record.optString("memoryMaterialRef").takeIf(materialRef::matches)) },
         )
     }
 
-    fun material(item: JSONObject, conversations: List<JSONObject>? = null): OriginalDetailPresentation {
+    fun material(item: JSONObject): OriginalDetailPresentation {
         val origin = item.optJSONObject("origin") ?: JSONObject()
         val created = string(item, "createdAt")
         val first = string(origin, "firstAt") ?: created
@@ -78,7 +72,6 @@ internal object NativeOriginalDetail {
             coverage == "pending" -> OriginalReceiptStep("正在整理", null, false)
             else -> OriginalReceiptStep("整理未完成", null, false)
         }
-        val ref = item.optString("ref").takeIf(materialRef::matches) ?: item.optString("memoryMaterialRef").takeIf(materialRef::matches)
         return OriginalDetailPresentation(
             title = item.optString("title").ifBlank { MoteI18n.text("记录") },
             timeline = listOf(
@@ -87,7 +80,6 @@ internal object NativeOriginalDetail {
                 step,
             ),
             source = materialSource(item),
-            referenceCount = conversations?.let { count(it, null, ref) },
         )
     }
 
@@ -134,32 +126,6 @@ internal object NativeOriginalDetail {
     private fun string(value: JSONObject, key: String): String? =
         value.optString(key).takeIf { it.isNotBlank() && it != "null" }
 
-    fun count(conversations: List<JSONObject>, evidenceId: String?, materialReference: String?): Int =
-        conversations.count { conversation ->
-            val scope = conversation.optJSONObject("scope") ?: return@count false
-            when {
-                evidenceId != null && (scope.optJSONArray("evidenceIds")?.contains(evidenceId) == true ||
-                    scope.optJSONArray("anchorEvidenceIds")?.contains(evidenceId) == true) -> true
-                materialReference != null && scope.optString("anchorMaterialRef") == materialReference -> true
-                else -> false
-            }
-        }
-
-    private fun JSONArray.contains(value: String): Boolean = (0 until length()).any { optString(it) == value }
-
-    fun conversations(client: CentralClient): List<JSONObject> {
-        val result = mutableListOf<JSONObject>()
-        var cursor: String? = null
-        do {
-            val query = "/api/conversations?limit=100" + (cursor?.let { "&cursor=" + URLEncoder.encode(it, "UTF-8") } ?: "")
-            val page = client.get(query)
-            val items = page.optJSONArray("items") ?: JSONArray()
-            for (index in 0 until items.length()) items.optJSONObject(index)?.let(result::add)
-            cursor = page.optString("nextCursor").takeIf { !page.isNull("nextCursor") && it.isNotBlank() }
-        } while (cursor != null && result.size < 1_000)
-        return result
-    }
-
     fun time(value: String?): String? = value?.let {
         runCatching { clock.format(Instant.parse(it).atZone(ZoneId.systemDefault())) }.getOrNull()
     }
@@ -174,9 +140,6 @@ internal object NativeOriginalDetail {
             }, groupParams(activity, 6))
             addView(MoteComponents.group(activity).apply {
                 addView(detailRow(activity, MoteI18n.text("来源"), detail.source, null), LinearLayout.LayoutParams(-1, -2))
-                addView(MoteComponents.divider(activity))
-                addView(detailRow(activity, MoteI18n.text("引用它的对话"), detail.referenceCount?.toString() ?: "—", MoteGlyph.CHEV),
-                    LinearLayout.LayoutParams(-1, -2))
             }, groupParams(activity, 12))
             addView(View(activity), LinearLayout.LayoutParams(-1, activity.moteDp(40)))
         }

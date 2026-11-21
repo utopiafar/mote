@@ -239,30 +239,30 @@ class NativeCentralInstrumentedTest {
             val askMonitor = instrumentation.addMonitor("dev.mote.collector.AskActivity", null, true)
             val centralMonitor = instrumentation.addMonitor(CentralActivity::class.java.name, null, true)
             try {
-                scenario.onActivity { activity -> visible(activity).single { it.tag == "home-ask-action" }.performClick() }
+                scenario.onActivity { activity -> visible(activity).single { it.tag == "local-tab:chat" }.performClick() }
                 await("Native login") { visible(it).any { view -> view.contentDescription == "中央管理令牌" } }
                 scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "中央管理令牌" }.setText(owner) }
                 click("登录并继续")
-                await("Conversation list ready") { visible(it).any { view -> view.contentDescription == "问一问" && view.isEnabled } }
-                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "问一问" }.setText("Generated primary navigation question") }
+                await("Main conversation composer ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
+                scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated primary navigation question") }
                 scenario.onActivity { activity -> visible(activity).first { it.isClickable && it.contentDescription?.toString() == "发送" }.performClick() }
-                await("New conversation ready") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
-                scenario.onActivity { activity -> activity.openGeneratedMenu(); activity.openGeneratedHome(); visible(activity).single { it.tag == "home-ask-action" }.performClick() }
-                await("The conversation list returns the accepted conversation") { visible(it).any { view -> view.contentDescription?.toString()?.startsWith("Generated primary navigation question. ") == true } }
-                scenario.onActivity { activity -> visible(activity).single { view -> view.contentDescription?.toString()?.startsWith("Generated primary navigation question. ") == true }.performClick() }
+                await("Main conversation has the accepted answer") { visible(it).filterIsInstance<TextView>().any { view -> view.text.contains("Generated native answer") } }
+                fun leaveAndReturn() {
+                    scenario.onActivity { activity -> assertTrue(visible(activity).single { it.tag == "local-tab:library" }.performClick()) }
+                    await("Library tab opened") { visible(it).any { view -> view.tag == "library-primary-views" } }
+                    scenario.onActivity { activity -> assertTrue(visible(activity).single { it.tag == "local-tab:chat" }.performClick()) }
+                }
+                leaveAndReturn()
                 await("Accepted answer survives primary navigation") { visible(it).filterIsInstance<TextView>().any { view -> view.text.contains("Generated native answer") } }
                 scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated unsent draft") }
-                scenario.onActivity { activity -> activity.openGeneratedHome(); visible(activity).single { it.tag == "home-ask-action" }.performClick() }
+                leaveAndReturn()
                 Thread.sleep(2000) // Allow the return-to-tab poll timer to run before checking the next draft.
-                scenario.onActivity { activity -> visible(activity).single { view -> view.contentDescription?.toString()?.startsWith("Generated primary navigation question. ") == true }.performClick() }
-                await("The reopened conversation shows the unsent draft") { visible(it).any { view -> view.contentDescription == "你的问题" && view.isEnabled } }
-                scenario.onActivity { activity -> assertEquals("Generated unsent draft", visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.text.toString()) }
+                await("Main chat shows the unsent draft") { visible(it).filterIsInstance<EditText>().any { view -> view.contentDescription == "你的问题" && view.isEnabled && view.text.toString() == "Generated unsent draft" } }
                 scenario.recreate(); scenario.awaitMainUi()
                 await("Ask draft survives host recreation") { visible(it).filterIsInstance<EditText>().any { view -> view.contentDescription == "你的问题" && view.isEnabled && view.text.toString() == "Generated unsent draft" } }
                 scenario.onActivity { activity ->
                     assertTrue(visible(activity).filterIsInstance<TextView>().any { it.text.contains("Generated native answer") })
-                    assertEquals(0, visible(activity).filterIsInstance<MotePrimaryNavigation>().size)
-                    assertTrue(visible(activity).any { it.contentDescription == "返回上级" })
+                    assertTrue(visible(activity).any { it.tag == "local-tab:chat" })
                     assertFalse(Settings(activity).enabled)
                     val question = visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }
                     assertTrue(question.requestFocus())

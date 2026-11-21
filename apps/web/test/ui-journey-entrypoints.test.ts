@@ -61,7 +61,6 @@ function apiWith(read: (path: string, init?: RequestInit) => unknown, mainId = '
     if (path.startsWith('/api/operations/changes')) return {ids: [], cursor: 0, hasMore: false, reset: false};
     if (path === '/api/model-settings') return modelView();
     if (path === '/api/conversations/main') return {id: mainId};
-    if (path === '/api/conversations' && init?.method === 'POST') return {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'};
     if (path.startsWith('/api/conversations/')&&path!=='/api/conversations/messages'&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&typeof (value as {then?:unknown}).then!=='function'&&!Array.isArray((value as {turns?:unknown}).turns))return{id:decodeURIComponent(path.slice('/api/conversations/'.length)),title:'',createdAt:when,updatedAt:when,turnCount:0,scope:{},status:'completed',revision:1,nextCursor:null,turns:[]};return value;}
     if (path === '/api/developer') return {credentials: [], endpoints: [], deliveries: []};
     if (path === '/api/plugins') return {sourceContributions: []};
