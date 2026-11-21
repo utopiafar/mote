@@ -18,6 +18,8 @@ import dev.mote.collector.LocalSourceStore
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.Settings
+import dev.mote.collector.AssistantJson
+import dev.mote.collector.CentralScreens
 import dev.mote.collector.SourceAccess
 import dev.mote.collector.SourceContextSnapshot
 import dev.mote.collector.SourceProviders
@@ -31,6 +33,36 @@ import org.json.JSONObject
 import java.io.File
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
+
+internal sealed interface LibrarySourceFilter {
+    data object All : LibrarySourceFilter
+    data object Phone : LibrarySourceFilter
+    data class Device(val id: String) : LibrarySourceFilter
+    data class Service(val id: String) : LibrarySourceFilter
+
+    fun queryParameter(): String? = when (this) {
+        is Device -> "deviceId=${CentralScreens.encode(id)}"
+        is Service -> "sourceId=${CentralScreens.encode(id)}"
+        All, Phone -> null
+    }
+}
+
+internal enum class LibrarySourceStatus {
+    PAUSED, OFFLINE, ERROR;
+
+    fun label() = when (this) {
+        PAUSED -> MoteI18n.text("已暂停")
+        OFFLINE -> MoteI18n.text("已离线")
+        ERROR -> MoteI18n.text("需要处理")
+    }
+}
+
+internal data class LibrarySourceChoice(
+    val filter: LibrarySourceFilter,
+    val name: String,
+    val status: LibrarySourceStatus?,
+    val platform: String? = null,
+)
 
 /** Build-native source provider. The plugin owns source configuration,
  * adapters, scheduling, file traversal, the encrypted archive queue and the
@@ -50,6 +82,60 @@ internal object SourceProviderPlugin {
     }
 
     fun requirement() = NativeRequirement(CAPABILITY, API_VERSION)
+
+    private val libraryDeviceOrder = listOf("macos", "android", "ios", "windows", "linux")
+
+    fun libraryPhone(enabled: Boolean, captureState: String, syncState: String): LibrarySourceChoice = LibrarySourceChoice(
+        LibrarySourceFilter.Phone, MoteI18n.text("这台手机"),
+        deviceStatus(if (enabled) captureState else "paused", syncState, false), "android",
+    )
+
+    private fun deviceStatus(state: String?, sync: String?, disconnected: Boolean) = when {
+        disconnected || state == "offline" -> LibrarySourceStatus.OFFLINE
+        state == "paused" -> LibrarySourceStatus.PAUSED
+        state == "error" || sync == "error" -> LibrarySourceStatus.ERROR
+        else -> null
+    }
+
+    /** Same inventory, contact-loss threshold and exceptional status precedence as the Central source bar. */
+    fun libraryDevices(reports: JSONObject?, connections: JSONObject?, localDevice: String): List<LibrarySourceChoice> {
+        val disconnected = reports?.optJSONArray("disconnectedDeviceIds")?.let { ids ->
+            (0 until ids.length()).map(ids::getString).toSet()
+        }.orEmpty()
+        fun deviceId(row: JSONObject) = row.optString("deviceId").takeIf { it.isNotBlank() && it != localDevice }
+        val devices = reports?.let { AssistantJson.rows(it, "items") { row -> row } }.orEmpty()
+            .filter { deviceId(it) != null && it.optString("platform") in libraryDeviceOrder }
+            .associateBy { requireNotNull(deviceId(it)) }
+        val byDevice = connections?.let { AssistantJson.rows(it, "items") { row -> row } }.orEmpty()
+            .filter { deviceId(it) != null && it.optString("platform") in libraryDeviceOrder && it.optString("scope") in setOf("owner", "collector") }
+            .groupBy { requireNotNull(deviceId(it)) }
+        return (devices.keys + byDevice.keys).mapNotNull { id ->
+            val report = devices[id]
+            val known = byDevice[id]
+            val active = known?.lastOrNull { it.isNull("revokedAt") }
+            if (known != null && active == null) return@mapNotNull null
+            val platform = report?.optString("platform") ?: active?.optString("platform") ?: return@mapNotNull null
+            val name = report?.optString("deviceName").orEmpty().ifBlank {
+                active?.optString("deviceName").orEmpty().ifBlank { active?.optString("label").orEmpty() }
+            }
+            if (name.isBlank()) return@mapNotNull null
+            LibrarySourceChoice(LibrarySourceFilter.Device(id), name,
+                deviceStatus(report?.optString("status"), report?.optJSONObject("sync")?.optString("state"), id in disconnected), platform)
+        }.sortedBy { libraryDeviceOrder.indexOf(it.platform) }
+    }
+
+    fun libraryServices(inventory: JSONObject): List<LibrarySourceChoice> = AssistantJson.rows(inventory, "items") { row -> row }.mapNotNull { row ->
+        val service = row.optString("platform") == "import" && row.optString("kind") != "upload" ||
+            row.optJSONObject("capabilities")?.optString("discovery") == "provider-list"
+        val id = row.optString("id"); val name = row.optString("name")
+        if (!service || id.isBlank() || name.isBlank()) return@mapNotNull null
+        val status = when {
+            row.optJSONObject("status")?.optString("state") == "error" -> LibrarySourceStatus.ERROR
+            !row.optBoolean("enabled", true) -> LibrarySourceStatus.PAUSED
+            else -> null
+        }
+        LibrarySourceChoice(LibrarySourceFilter.Service(id), name, status)
+    }
 
     /** Start the one application-scoped source owner. Repeating startup returns
      * the same owner; a stopped scope is replaced with a fresh admission. */

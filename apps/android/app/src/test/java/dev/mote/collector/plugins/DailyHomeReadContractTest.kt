@@ -4,7 +4,7 @@ import dev.mote.collector.ByteCipher
 import dev.mote.collector.CentralClient
 import dev.mote.collector.DurableQueue
 import dev.mote.collector.HomeArchiveProbe
-import dev.mote.collector.HomeFeed
+import dev.mote.collector.LibraryPhoneFeed
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -53,7 +53,7 @@ class DailyHomeReadContractTest {
 
     @Test fun realCapturePageReachesTheHomeReadWithoutStartingAQuery() {
         val api = client()
-        val rows = HomeFeed.page(api::get)
+        val rows = LibraryPhoneFeed.page(api::get)
         val original = rows.firstOrNull { it.id == evidence }
         assertNotNull("the generated original is visible", original)
         assertEquals("generated-home-device", original!!.deviceId)
@@ -69,13 +69,13 @@ class DailyHomeReadContractTest {
             .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
         queue.enqueue(event, null)
         val localPage = queue.recentPage()
-        val local = HomeFeed.localPage { localPage }
+        val local = LibraryPhoneFeed.localPage { localPage }
         assertTrue(local.single().saved)
         queue.acknowledge(evidence, retentionDays = 7)
 
-        val central = HomeFeed.page(client()::get)
+        val central = LibraryPhoneFeed.page(client()::get)
         val bindings = localPage.getJSONObject("bindings")
-        val merged = HomeFeed.merge(local, mapOf(evidence to bindings.getString(evidence)), central, origin)
+        val merged = LibraryPhoneFeed.merge(local, mapOf(evidence to bindings.getString(evidence)), central, origin)
         val joined = merged.filter { it.id == evidence }
         assertEquals("the ACKed local id and real Central id are one row", 1, joined.size)
         assertTrue(joined.single().remote)

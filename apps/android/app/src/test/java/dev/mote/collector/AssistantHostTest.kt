@@ -94,6 +94,7 @@ class AssistantHostTest {
     private var matter = f.matter()
     private var rule = f.routine()
     private val taskIds = mapOf(f.work to f.taskId, f.life to "30000000-0000-4000-8000-000000000002")
+    private val workbenchRequest = AtomicReference<JSONObject?>()
     @Volatile private var withdrawn = false
 
     @Before fun generatedCentral() {
@@ -140,6 +141,17 @@ class AssistantHostTest {
                     path == "/api/assistant/matters" -> f.page(matter.getJSONObject("matter"))
                     path == "/api/assistant/matters/${f.matterId}" -> matter
                     path == "/api/assistant/commitments" -> f.page(f.commitment())
+                    path == "/api/assistant/goals" -> goals()
+                    path == "/api/assistant/workbench" -> {
+                        val request = JSONObject(requireNotNull(query["request"]))
+                        workbenchRequest.set(request)
+                        JSONObject("""{
+                            "descriptor":{"id":"assistant.workbench.travel","kind":"declarative-view","apiVersion":"1",
+                                "platforms":["android"],"presentation":{"labelKey":"travel","i18nNamespace":"mote"},"commands":[]},
+                            "spec":{"components":[]},"data":{},"commands":[]
+                        }""").put("request", request)
+                    }
+                    path == "/api/assistant/matters/${f.matterId}/actions" -> JSONObject().put("items", JSONArray())
                     path == "/api/assistant/routines" -> f.page(rule)
                     path == "/api/assistant/matter-commands" -> {
                         matter = f.matter(if (body!!.getString("type") == "pause") "paused" else "active", body.getLong("expectedRevision") + 1)
@@ -201,6 +213,13 @@ class AssistantHostTest {
         while (!view.isClickable) view = view.parent as View
         view.performClick()
     }
+    private fun goals(): JSONObject {
+        val key = JSONObject().put("kind", "matter").put("id", f.matterId).put("title", "Generated trip").put("template", "travel")
+        val row = JSONObject().put("id", f.life).put("kind", "commitment").put("title", "Generated trip confirmation")
+            .put("direction", "mine").put("inferred", false).put("revision", 1).put("actions", JSONArray())
+        val group = JSONObject().put("key", key).put("theirs", JSONArray()).put("mine", JSONArray().put(row)).put("unconfirmed", JSONArray())
+        return JSONObject().put("revision", "generated-goals").put("groups", JSONArray().put(group))
+    }
     private fun question(workId: String) = JSONObject().put("id", if (workId == "assistant.task:${f.taskId}") "60000000-0000-4000-8000-000000000001" else "60000000-0000-4000-8000-000000000002")
         .put("provider", JSONObject().put("id", "mote.assistant-task-question").put("version", "1"))
         .put("operationId", workId).put("workId", workId)
@@ -224,6 +243,30 @@ class AssistantHostTest {
         await("The backlink opens the same work and existing reply composer") { contains(workActivity, prompt) }
         assertTrue(requests.any { it.first == "/api/work-activity/$workId" })
         assertTrue(contains(workActivity, "回答并继续"))
+    }
+
+    @Test fun goalsTabOpensItsMatterWorkbenchWithoutReplacingTheLegacyAssistantBinding() {
+        val activity = open(AssistantPlugin.FEED_ROUTE)
+        await("Existing assistant route mounted") { all(activity).any { it is AssistantFeedView } }
+        val existing = requireNotNull(AssistantPlugin.screen(activity))
+        val tab = CentralContent(activity, null, initialPage = AssistantPlugin.GOALS_ROUTE, openLocalPage = {})
+        try {
+            activity.setContentView(tab.root)
+            tab.resume()
+            await("Goals mounted in the second content host") { contains(activity, "Generated trip confirmation") }
+            assertSame(existing, AssistantPlugin.screen(activity))
+
+            clickText(activity, "Generated trip")
+            await("The matter template mounted in the same tab") {
+                tab.root.findViewWithTag<View>("workbench-templates") != null
+            }
+            val request = requireNotNull(workbenchRequest.get())
+            assertEquals("travel", request.getString("template"))
+            assertEquals(f.matterId, request.getString("matterId"))
+            assertSame(existing, AssistantPlugin.screen(activity))
+        } finally {
+            tab.close()
+        }
     }
 
     @Test fun productionRoutesMountBothPagesAndWorkLifeCommandsReachTheExistingTransport() {
