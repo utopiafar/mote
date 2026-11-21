@@ -29,19 +29,19 @@ node.app.addHook('onRequest',async(request,reply)=>{
   if(request.headers.authorization!=='Bearer '+token)return reply.code(403).send({});
   if(request.url==='/fixture/seen')return reply.send(seen);
   if(request.url==='/fixture/fail'){failure=Number((request.headers['x-fixture-status']??403));return reply.send({ok:true});}
-  if(request.method==='POST'&&request.url==='/fixture/main'){
-   const kind=(request.body as {kind?:string}|undefined)?.kind;
-   if(!kind||!Object.hasOwn(ids,kind))return reply.code(400).send({error:'unknown_generated_conversation'});
-   const id=ids[kind];
-   node.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(id);
-   return reply.send({id});
-  }
  }
  if(failure&&request.method==='GET'&&readPaths.has(new URL(request.url,'http://fixture').pathname)){
   const code=failure;
   failure=0;
   return reply.code(code).send({error:'Generated unavailable scope'});
  }
+});
+node.app.post('/fixture/main',async(request,reply)=>{
+ const kind=(request.body as {kind?:string}|undefined)?.kind;
+ if(!kind||!Object.hasOwn(ids,kind))return reply.code(400).send({error:'unknown_generated_conversation'});
+ const id=ids[kind];
+ node.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(id);
+ return {id};
 });
 const evidenceIds:string[]=[];
 for(let i=0;i<2;i++){
