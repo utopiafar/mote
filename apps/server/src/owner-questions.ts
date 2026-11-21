@@ -100,20 +100,36 @@ export class OwnerQuestions {
   const page=found.slice(0,selected.limit),last=page.at(-1);
   return {items:page.map(item=>item.question),nextCursor:found.length>selected.limit&&last?Buffer.from(JSON.stringify(last.cursor)).toString('base64url'):null};
  }
- /** Hide pending questions from the Ideas surface without answering them, so
-  * their work still waits for an answer in its own context. */
+ /** Remember which questions an unfiltered Ideas view actually contained, so a
+  * later bulk dismissal cannot include a question created after that read even
+  * when both share the same millisecond. */
+ markSurfaced(watermark:number,items:ReadonlyArray<{id:string;revision:number}>):void{
+  if(watermark<=0||!items.length)return;
+  this.transaction(()=>{
+   this.store.db.prepare(`INSERT INTO owner_question_surfaces(watermark,questions) VALUES(?,?)
+    ON CONFLICT(watermark) DO UPDATE SET questions=excluded.questions`)
+    .run(watermark,JSON.stringify(items.map(item=>[item.id,item.revision])));
+   this.store.db.prepare(`DELETE FROM owner_question_surfaces WHERE watermark NOT IN
+    (SELECT watermark FROM owner_question_surfaces ORDER BY watermark DESC LIMIT 64)`).run();
+  });
+ }
+ /** Hide the pending questions a surface actually read without answering them,
+  * so their work still waits for an answer in its own context. A newer update
+  * or a question created after that read stays. */
  ignoreAll(upTo:number):number{
   return this.transaction(()=>{
-   const at=this.now();
+   const surface=this.store.db.prepare('SELECT questions FROM owner_question_surfaces WHERE watermark=?').get(upTo) as {questions:string}|undefined;
+   if(!surface)return 0;
+   const seen=new Map(JSON.parse(surface.questions) as Array<[string,number]>),at=this.now();
    let ignored=0,cursor:string|undefined;
    do{
     const page=this.page({state:['open','deferred'],limit:100,cursor});
     for(const question of page.items){
      if(question.ignoredAt)continue;
-     const updated=Date.parse(question.updatedAt);
-     if(!Number.isFinite(updated)||updated>upTo)continue;
+     const revision=seen.get(question.id);
+     if(revision===undefined||question.revision>revision)continue;
      const value=this.decode(this.row(question.id));
-     if(value.record.question.ignoredAt)continue;
+     if(value.record.question.ignoredAt||value.record.question.revision>revision)continue;
      value.record.question.ignoredAt=at;
      value.record.question.revision++;
      value.record.question.updatedAt=at;

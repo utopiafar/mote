@@ -148,6 +148,8 @@ export const consumerScopes={
   'OwnerQuestions.save':'owner-question-services',
   'OwnerQuestions.decode':'owner-question-services',
   'OwnerQuestions.performReply':'owner-question-services',
+  'OwnerQuestions.markSurfaced':'owner-question-services',
+  'OwnerQuestions.ignoreAll':'owner-question-services',
  },
  'owner-calendar-instructions.ts':{
   'OwnerCalendarInstructions.targets':'actions',

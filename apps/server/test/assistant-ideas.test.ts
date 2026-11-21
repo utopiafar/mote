@@ -163,6 +163,29 @@ test('ID2-04 bulk ignore dismisses the clarifications the surface has seen',asyn
  assert.deepEqual(f.cards.get(card.id,all).feedback.map(value=>value.action),['ignore']);
 });
 
+test('ID2-04 a clarification created after the read stays even in the same millisecond',async t=>{
+ const f=await fixture(t),at=Date.parse('2026-11-21T06:00:00Z');
+ t.mock.timers.enable({apis:['Date'],now:at});
+ const card=f.publish('suggestion'),seen=f.question();
+ const before=await f.read();
+ assert.deepEqual(before.mine.map(item=>item.id),[card.id]);
+ assert.deepEqual(before.yours.map(item=>item.id),[seen.id]);
+ assert.equal(before.questionWatermark,at);
+ const unseen=f.question();
+ assert.equal(unseen.updatedAt,seen.updatedAt);
+ t.mock.timers.setTime(at+1000);
+ const response=await f.ignoreAll(before.watermark,before.questionWatermark);
+ assert.equal(response.statusCode,200,response.body);
+ assert.equal(response.json().ignored,2,'the card and the clarification the surface read are dismissed');
+ const after=await f.read();
+ assert.deepEqual(after.mine,[]);
+ assert.deepEqual(after.yours.map(item=>item.id),[unseen.id],'the clarification created after the read is outside its surface');
+ assert.equal((await f.nav()).count,1);
+ const detail=await f.app.inject({url:'/api/owner-questions/'+unseen.id,headers});
+ assert.equal(detail.statusCode,200,detail.body);
+ assert.equal(detail.json().ignoredAt,undefined);
+});
+
 test('ID1-04 a snoozed card stays out of both views until tomorrow at 09:00',async t=>{
  const f=await fixture(t);
  let now=Date.parse('2026-11-21T08:00:00+08:00');

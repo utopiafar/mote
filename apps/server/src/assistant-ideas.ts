@@ -47,7 +47,7 @@ const taskStatus={
 export class AssistantIdeas{
  private readonly records:TaskRecords;
  constructor(private readonly store:EvidenceStore,private readonly cards:Pick<AssistantCards,'ideaCandidates'|'feedback'>,
-  private readonly questions:Pick<OwnerQuestions,'page'|'ignoreAll'>,private readonly tasks:Pick<AssistantTasks,'get'>,
+  private readonly questions:Pick<OwnerQuestions,'page'|'ignoreAll'|'markSurfaced'>,private readonly tasks:Pick<AssistantTasks,'get'>,
   private readonly reader:EvidenceReader){
   this.records=new TaskRecords(store);
  }
@@ -65,7 +65,7 @@ export class AssistantIdeas{
   }
  }
 
- private *questionIdeas(scope:QueryScope,seen:{watermark:number}):Generator<IdeaItem>{
+ private *questionIdeas(scope:QueryScope,seen:{watermark:number;items:Array<{id:string;revision:number}>}):Generator<IdeaItem>{
   if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return;
   const dependencyIds=this.store.db.prepare('SELECT evidence_id FROM owner_question_dependencies WHERE question_id=?');
   const scoped=!unfiltered(scope);
@@ -82,10 +82,12 @@ export class AssistantIdeas{
      const records=this.reader.memories.readEvidenceIfCurrent(ids);
      if(!records||records.length!==ids.length||records.some(record=>record.privacy.excluded||!withinEvidenceScope(record,scope)))continue;
     }
+    const detail=displayText(question.prompt,200),title=displayText(question.title,80)||displayText(detail,80);
+    if(!title)continue;
     const updated=Date.parse(question.updatedAt);
     if(Number.isFinite(updated))seen.watermark=Math.max(seen.watermark,updated);
-    const detail=displayText(question.prompt,200),title=displayText(question.title,80)||displayText(detail,80);
-    if(title)yield {id:question.id,source:'owner-question',kind:'needs-info',title,detail:detail||undefined,
+    seen.items.push({id:question.id,revision:question.revision});
+    yield {id:question.id,source:'owner-question',kind:'needs-info',title,detail:detail||undefined,
      revision:question.revision,seq:0,actions:['answer']};
    }
    cursor=page.nextCursor??undefined;
@@ -112,9 +114,9 @@ export class AssistantIdeas{
   }
  }
 
- private read(scope:QueryScope,now:number,includeStarted=false){
+ private read(scope:QueryScope,now:number,includeStarted=false,recordSurface=false){
   const mine:IdeaItem[]=[],yours:IdeaItem[]=[],started:StartedIdea[]=[];
-  const canIgnoreAll=unfiltered(scope),questionSeen={watermark:0};
+  const canIgnoreAll=unfiltered(scope),questionSeen={watermark:0,items:[] as Array<{id:string;revision:number}>};
   let watermark=0;
   for(const card of this.cards.ideaCandidates(scope,now,{includeStarted})){
    if(card.taskId){
@@ -130,16 +132,17 @@ export class AssistantIdeas{
    if(canIgnoreAll)watermark=Math.max(watermark,item.seq);
   }
   for(const question of this.questionIdeas(scope,questionSeen))yours.push(question);
+  if(recordSurface&&canIgnoreAll&&questionSeen.items.length)this.questions.markSurfaced(questionSeen.watermark,questionSeen.items);
   return {watermark,questionWatermark:canIgnoreAll?questionSeen.watermark:0,mine,yours,started};
  }
 
- private viewAt(scope:QueryScope,now:number):IdeasView{
-  const items=this.read(scope,now,true);
+ private viewAt(scope:QueryScope,now:number,recordSurface=false):IdeasView{
+  const items=this.read(scope,now,true,recordSurface);
   return ideasViewSchema.parse({...items,revision:sha256(JSON.stringify(items))});
  }
 
  view(scope:QueryScope):IdeasView{
-  return this.snapshot(()=>this.viewAt(scope,Date.now()));
+  return this.snapshot(()=>this.viewAt(scope,Date.now(),true));
  }
 
  count():number{

@@ -28,7 +28,7 @@ const ideaItem={
 };
 const startedIdea={taskId:randomUUID(),title:'Generated task',state:'running',progress:'读取资料 2/5',updatedAt:at};
 const ideasView={
-  revision:'ideas-rev-1',watermark:12,mine:[ideaItem],
+  revision:'ideas-rev-1',watermark:12,questionWatermark:Date.parse(at),mine:[ideaItem],
   yours:[{...ideaItem,id:randomUUID(),source:'owner-question',kind:'question',actions:['answer','ignore']}],
   started:[startedIdea],
 };
