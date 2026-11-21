@@ -29,7 +29,7 @@ object PrivacyRules {
 
     fun validateEndpoint(value: String, debugHttp: Boolean, isDebug: Boolean): String {
         val uri = URI(value.trim())
-        require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null) { MoteI18n.text("请输入不含账号、参数或片段的节点 URL") }
+        require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null) { MoteI18n.text("输入不含账号、参数或片段的节点 URL") }
         require(uri.path.isNullOrEmpty() || uri.path == "/") { MoteI18n.text("节点 URL 不应含路径") }
         require(uri.port == -1 || uri.port in 1..65535) { MoteI18n.text("端口必须为 1..65535") }
         val privateHost = uri.host.lowercase().let { host ->
@@ -38,7 +38,7 @@ object PrivacyRules {
             host == "localhost" || host == "::1" || host == "[::1]" || (ipv4 &&
                 (octets[0] in setOf(127, 10) || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && octets[1]!! in 16..31)))
         }
-        require(uri.scheme == "https" || (uri.scheme == "http" && privateHost && debugHttp && isDebug)) { MoteI18n.text("请使用 HTTPS；仅 debug APK 可显式允许私有 IP 的 HTTP") }
+        require(uri.scheme == "https" || (uri.scheme == "http" && privateHost && debugHttp && isDebug)) { MoteI18n.text("本地与远程需 HTTPS") }
         return value.trim().trimEnd('/')
     }
 

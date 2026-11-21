@@ -16,7 +16,7 @@ internal object MemoryDetailPanel {
     val correctionAction = "纠正"
     val correctionCancel = "取消"
     val deleteTitle = "删除这条记忆？"
-    val deleteMessage = "原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。"
+    val deleteMessage = "原始资料保留，可重新判断"
     val deleteConfirm = "确认删除"
     val deleteCancel = "取消"
     private val editFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
@@ -28,7 +28,7 @@ internal object MemoryDetailPanel {
     fun deletionNotice(receipt: JSONObject): String = when {
         receipt.optString("externalErase") == "pending" -> MoteI18n.text("记忆已禁止使用；外部清除仍待确认。")
         receipt.optString("externalErase") == "acknowledged" && !receipt.optBoolean("physicalEraseVerified") ->
-            MoteI18n.text("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。")
+            MoteI18n.text("记录已移除，物理擦除未核验")
         else -> MoteI18n.text("记忆已禁止使用。")
     }
     fun correctionRequest(title: String, statement: String, uncertainty: String, validFrom: String, validUntil: String, version: Int): JSONObject {

@@ -56,7 +56,7 @@ class UploadOriginalSessionInstrumentedTest {
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 fun texts(view:android.view.View):List<String> = (if(view is android.widget.TextView)listOf(view.text.toString()) else emptyList()) + if(view is android.view.ViewGroup)(0 until view.childCount).flatMap { texts(view.getChildAt(it)) } else emptyList()
                 var labels=emptyList<String>();val end=android.os.SystemClock.elapsedRealtime()+10000
-                val unavailable=MoteI18n.text("历史版本暂不可读取：原件可能已更新、不可用或当前离线。请重试。")
+                val unavailable=MoteI18n.text("历史版本暂不可读")
                 do { scenario.onActivity { labels=texts(it.window.decorView) };if(labels.none { it.contains(text)||it.contains(unavailable) })Thread.sleep(50) } while(labels.none { it.contains(text)||it.contains(unavailable) } && android.os.SystemClock.elapsedRealtime()<end)
                 assertFalse("Completed text from session A must be discarded before rendering in session B",labels.any { it.contains(text) })
                 assertTrue("The changed history binding must be re-read or explicitly unavailable",labels.any { it.contains(unavailable) })

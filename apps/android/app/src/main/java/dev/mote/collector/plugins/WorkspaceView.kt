@@ -270,9 +270,9 @@ object WorkspaceLabels {
         "reason" to "原因",
         "pause" to "暂停", "resume" to "恢复", "archive" to "归档事项", "refresh" to "刷新", "submit" to "保存",
         "empty" to "当前范围内没有可用资料。", "unavailable" to "资料已撤回或超出当前范围。",
-        "pending" to "待处理", "error" to "部分资料读取失败，请刷新后重试。",
-        "failed" to "部分资料读取失败，请刷新后重试。", "limited" to "每个列表最多显示当前范围内的 20 项。",
-        "changed" to "操作已失效，请刷新后重试。",
+        "pending" to "待处理", "error" to "部分资料读取失败，刷新后重试",
+        "failed" to "部分资料读取失败，刷新后重试", "limited" to "每个列表最多显示当前范围内的 20 项。",
+        "changed" to "操作已失效，刷新后重试",
         "matter.edit" to "保存", "matter.pause" to "暂停", "matter.resume" to "恢复", "matter.archive" to "归档事项",
         "memory.correct" to "保存",
     )

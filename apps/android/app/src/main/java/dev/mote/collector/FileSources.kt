@@ -56,7 +56,7 @@ internal class FileTransportFailure(val httpStatus: Int, message: String) : Ille
 object FileUpload {
     internal fun requireAccepted(status: Int) {
         if (status in setOf(409, 410, 426)) throw FileIngressRejection(status)
-        if (status !in 200..299) throw FileTransportFailure(status, if (status == 404) MoteI18n.text("中央未支持文件同步，请先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", status))
+        if (status !in 200..299) throw FileTransportFailure(status, if (status == 404) MoteI18n.text("中央未支持文件同步，先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", status))
     }
     internal fun requireCurrentHead(head: JSONObject) {
         if (head.optBoolean("forgotten")) throw FileIngressRejection(410)
@@ -102,7 +102,7 @@ object FileUpload {
                       history: ItemUploadSession = dev.mote.collector.plugins.DurableTransportPlugin.get(context).uploadSession(config, lane = "source")): Boolean = try { syncSlice(context, source, config, slice, stillSelected, history) } catch (_: SliceYield) { false }
     private class SliceYield : RuntimeException()
     private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean, history: ItemUploadSession): Boolean {
-        require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。") }
+        require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("编辑来源并确认完整上传") }
         val queue = context.fileArchives()
         val connectionLease = ConnectionLease(context, config)
         val sourceLease = queue.sourceLease(source)

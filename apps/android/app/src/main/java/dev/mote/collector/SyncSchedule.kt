@@ -26,13 +26,13 @@ object SyncSchedule {
         // Repeating it here can resurrect an older notice after a later request succeeds.
         if (error is SettingsChangedFailure) return
         SupportEvents.record(context, EventStage.UPLOAD, EventCode.SCHEDULER)
-        Settings(context).syncStatus("error", MoteI18n.text("同步调度暂不可用，记录保留在本机，请稍后重试"))
+        Settings(context).syncStatus("error", MoteI18n.text("同步调度暂不可用，记录保留在本机，稍后重试"))
     }
     internal fun reportChanged(context: Context) {
         Settings(context).syncRequestRejected(true)
     }
     internal fun reportBusy(context: Context) {
-        Settings(context).syncStatus("waiting", MoteI18n.text("正在应用设置，请完成后重试本次扫描或立即同步"))
+        Settings(context).syncStatus("waiting", MoteI18n.text("正在应用设置，完成后重试本次扫描或立即同步"))
     }
     internal fun inventory(context: Context) = TransportInventory(
         context.queue().pendingSync(), context.localSources().pendingSync(), context.fileArchives().pendingSync(),

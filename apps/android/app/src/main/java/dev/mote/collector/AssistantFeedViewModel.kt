@@ -61,7 +61,7 @@ internal class AssistantFeedViewModel(
                 // A task accepted under a different exact scope, or withdrawn
                 // independently, must not hide other readable cards.
                 if (failure.status !in setOf(404, 409, 410)) throw failure
-                unavailable[card.id] = MoteI18n.text("读取任务状态失败，请刷新重试。")
+                unavailable[card.id] = MoteI18n.text("读取任务状态失败，刷新重试")
             }
         }
         tasks = visible; taskErrors = unavailable
@@ -79,7 +79,7 @@ internal class AssistantFeedViewModel(
             }
             val (id, requestScope) = submitStart(cardId, expectedRevision, goal) {
                 val current = cards.single { it.id == cardId }
-                check(current.revision == expectedRevision && current.startable && canStart(cardId)) { MoteI18n.text("操作状态已变化，请重新读取后再确认。") }
+                check(current.revision == expectedRevision && current.startable && canStart(cardId)) { MoteI18n.text("操作状态已变化，重新读取后再确认") }
                 scope(cardId)
             }
             accepted = id
@@ -123,7 +123,7 @@ internal class AssistantFeedViewModel(
                 .also { saved.put("pending", it) }
         }
         val card = pending.getJSONObject("card")
-        check(card.getString("cardId") == cardId) { MoteI18n.text("结果尚未确认，请检查或重试原请求。") }
+        check(card.getString("cardId") == cardId) { MoteI18n.text("结果尚未确认，检查或重试原请求") }
         persist()
         val request = pending.getJSONObject("request")
         // Copies prevent a host adapter mutating the persisted request.
@@ -148,7 +148,7 @@ internal class AssistantFeedViewModel(
             saved.remove("pending")
         } else if (current == null || current.stale || current.state != "open" || current.revision != reference.getLong("expectedRevision")) {
             saved.remove("pending")
-            error = MoteI18n.text("操作状态已变化，请重新读取后再确认。")
+            error = MoteI18n.text("操作状态已变化，重新读取后再确认")
         }
     }
 

@@ -127,7 +127,7 @@ class FileContentActivity : MoteActivity() {
         val local = detail.localPreview
         val original = if (local != null) local.first.drop(offset).take(4000) else detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
         if (original.isNotBlank()) text(original, 16f)
-        else text(MoteI18n.text(if (row.optJSONObject("pending")?.optJSONObject("manifest")?.has("sha256") == true) "本机保留文件信息与待发原始字节；正文由中央整理后显示。" else "此版本没有保存正文。"), MoteTheme.fontSupport.toFloat())
+        else text(MoteI18n.text(if (row.optJSONObject("pending")?.optJSONObject("manifest")?.has("sha256") == true) "正文由中央整理后显示" else "此版本没有保存正文。"), MoteTheme.fontSupport.toFloat())
         if (detail.source.description.isNotBlank()) {
             text(MoteI18n.text("资料说明"), MoteTheme.fontSupport.toFloat())
             text(detail.source.description, MoteTheme.fontBody.toFloat())
@@ -163,7 +163,7 @@ class FileContentActivity : MoteActivity() {
         val destination = data?.data ?: return; val selected = exportVersion ?: return; exportVersion = null
         task.start(MoteI18n.text("正在导出原件…"), {}, {
             contentResolver.openOutputStream(destination)?.use { output -> owner.exportPending(selected.first, selected.second, selected.third, output) } ?: error("Destination unavailable")
-        }) { result -> Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，请重新打开内容后重试"), Toast.LENGTH_LONG).show(); load() }
+        }) { result -> Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，重新打开内容后重试"), Toast.LENGTH_LONG).show(); load() }
     }
     private fun text(value: String, size: Float = MoteTheme.fontBody.toFloat()) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setTextIsSelectable(true); setPadding(0, moteDp(8), 0, moteDp(8)) }.also(content::addView)
     private fun button(value: String, action: () -> Unit) = content.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } }))

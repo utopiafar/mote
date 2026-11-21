@@ -64,7 +64,7 @@ class AskRecoveryInstrumentedTest {
             question(scenario,"Generated newer question with an uncertain admission");control("drop-ask-ack");control("hide-ask");click(scenario,"发送")
             ready(scenario,"Unconfirmed admission remains explicit"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="重试同一请求" }}
             val admitted=saved().getJSONObject("pending").toString();val request=JSONObject(admitted);assertNotEquals(old,request.getString("id"));assertEquals(fixture.getString("noteId"),request.getJSONObject("input").getJSONArray("anchorEvidenceIds").getString(0))
-            ready(scenario,"Readable unknown notice without raw transport diagnostics"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="结果尚未确认，请检查或重试原请求。" }}
+            ready(scenario,"Readable unknown notice without raw transport diagnostics"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="结果尚未确认，检查或重试原请求" }}
             scenario.onActivity { a -> assertFalse(shown(a).filterIsInstance<TextView>().any { it.text.contains("generated_ask_ack_lost") || it.text.contains("502") });assertFalse(shown(a).filterIsInstance<EditText>().single { it.contentDescription=="你的问题" }.isEnabled) }
             screenshot(scenario,"unknown-default-light")
             main { MoteAppearance.select(context,AppearancePreference.DARK) };screenshot(scenario,"unknown-default-dark")
@@ -140,7 +140,7 @@ class AskRecoveryInstrumentedTest {
         api.post("/api/query-runs",JSONObject().put("id",id).put("input",JSONObject().put("question","Generated question submitted from another device")))
         open().use { scenario ->
             until("Existing native consumer adopts the real running task"){saved().optString("runId")==id && saved().optString("runStatus")=="running"};assertFalse(saved().has("activeRequest"));control("hide-ask");click(scenario,"检查结果")
-            ready(scenario,"Missing adopted receipt stays unresolved"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="请刷新检查结果，避免重复发送。" }}
+            ready(scenario,"Missing adopted receipt stays unresolved"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="刷新检查结果，避免重复发送" }}
             assertEquals(id,saved().getString("runId"));assertEquals("running",saved().getString("runStatus"));assertFalse(saved().has("pending"));assertEquals(draft,saved().getString("question"))
             control("show-ask");control("release-query");until("Real other-device task completes"){api.get("/api/query-runs/$id").getString("status")=="completed"};click(scenario,"检查结果")
             ready(scenario,"Completion preserves the unrelated local draft"){a -> !a.isWorking && shown(a).filterIsInstance<EditText>().any { it.contentDescription=="你的问题" && it.isEnabled && it.text.toString()==draft }}

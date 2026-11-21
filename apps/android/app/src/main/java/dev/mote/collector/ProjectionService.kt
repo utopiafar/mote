@@ -49,7 +49,7 @@ class ProjectionService : Service() {
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
             if (!closed && instanceGeneration == instances.get()) RuntimeSettings.cancelProjectionConsentRequest()
-            projectionEnded(MoteI18n.text("投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权"))
+            projectionEnded(MoteI18n.text("投屏已结束，打开应用重授权"))
             stopSelf()
         }
         override fun onCapturedContentResize(width: Int, height: Int) {
@@ -67,7 +67,7 @@ class ProjectionService : Service() {
             val c = config ?: return
             if (!settings.enabled) { stopSelf(); return }
             if (!CapturePipeline.unlocked(this@ProjectionService)) {
-                projectionEnded(MoteI18n.text("已锁屏，投屏采集结束；解锁后请重新授权"))
+                projectionEnded(MoteI18n.text("已锁屏，投屏采集结束；解锁后重新授权"))
                 stopSelf(); return
             }
             if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
@@ -169,12 +169,12 @@ class ProjectionService : Service() {
                             running = true; instance = this
                             state.execute { if (!closed && ticket == generation) opened.status("capturing", MoteI18n.text("投屏采集已启动；每次会话都需系统授权")) }
                             handler.post(tick)
-                        }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，请重新点击开始并授予屏幕共享权限")); stopSelf() }
-                    }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，请重新点击开始并授予屏幕共享权限")); stopSelf() }
+                        }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，重新点击开始并授予屏幕共享权限")); stopSelf() }
+                    }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，重新点击开始并授予屏幕共享权限")); stopSelf() }
                 }
             }
         } catch (_: Exception) {
-            projectionEnded(MoteI18n.text("无法启动投屏，请重新点击开始并授予屏幕共享权限"))
+            projectionEnded(MoteI18n.text("无法启动投屏，重新点击开始并授予屏幕共享权限"))
             stopSelf()
         }
         return START_NOT_STICKY
@@ -291,7 +291,7 @@ class ProjectionService : Service() {
                     if (ConnectionGuard.changing() || !settings.enabled || !ready.owner.active || CapturePlugin.controllers() !== ready.owner) {
                         ready.owner.closePipeline(ready.pipeline); stopSelf()
                     } else { closePipeline(); captureOwner = ready.owner; pipeline = ready.pipeline }
-                }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，请重新点击开始并授予屏幕共享权限")); stopSelf() }
+                }.onFailure { projectionEnded(MoteI18n.text("无法启动投屏，重新点击开始并授予屏幕共享权限")); stopSelf() }
             }
         }
     }

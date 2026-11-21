@@ -51,7 +51,7 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
         task.start(MoteI18n.text("正在读取…"), MoteComponents.progress(status), { UploadHistoryModel.read(activity.applicationContext) }) { result ->
             result.onSuccess { batches = it; render() }.onFailure {
                 dates.removeAllViews(); previous.isEnabled = false; next.isEnabled = false
-                status.text = MoteI18n.text("上传历史暂不可读取，请刷新重试。")
+                status.text = MoteI18n.text("上传历史暂不可读取，刷新重试")
             }
         }
     }
@@ -59,7 +59,7 @@ internal class UploadHistoryPanel(private val activity: Activity, private val bo
         val filtered = UploadHistoryModel.filter(batches, resultFilter)
         page = page.coerceIn(0, ((filtered.size - 1).coerceAtLeast(0) / 10))
         previous.isEnabled = page > 0; next.isEnabled = (page + 1) * 10 < filtered.size
-        status.text = MoteI18n.text("仅显示本机保留的最近上传结果；中央接收不代表已完成处理。")
+        status.text = MoteI18n.text("本机最近上传结果")
         dates.removeAllViews()
         if (filtered.isEmpty()) dates.addView(TextView(activity).apply { text = MoteI18n.text("暂无上传历史") })
         filtered.drop(page * 10).take(10).groupBy { it.date(ZoneId.systemDefault()) }.forEach { (date, rows) ->

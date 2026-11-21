@@ -66,7 +66,7 @@ class ConnectionPickerStateInstrumentedTest {
                     assertEquals(pending, field(activity, "pendingPicker"))
                     noSecretsInBundle(activity, "P".repeat(43), uri.toString(), before.token.takeIf { it.isNotBlank() } ?: "generated-absent-token")
                 }
-                scenario.recreate(); scenario.awaitUiText(MoteI18n.text("将连接：{0}\n有效至：{1}\n请确认后连接。", node, "").substringBefore('\n'))
+                scenario.recreate(); scenario.awaitUiText(MoteI18n.text("将连接：{0}\n有效至：{1}\n确认后连接", node, "").substringBefore('\n'))
                 scenario.onActivity { activity -> assertNull(field(activity, "pendingPicker")); assertNull(field(activity, "selection")) }
             }
             assertEquals(before, Settings(context).read())
@@ -90,7 +90,7 @@ class ConnectionPickerStateInstrumentedTest {
                     assertEquals(true, field(activity, "working")); assertNotNull(field(activity, "pendingPicker")); assertNotNull(field(activity, "selection"))
                     noSecretsInBundle(activity, "P".repeat(43))
                 }
-                scenario.recreate(); scenario.awaitUiText(MoteI18n.text("将连接：{0}\n有效至：{1}\n请确认后连接。", node, "").substringBefore('\n'))
+                scenario.recreate(); scenario.awaitUiText(MoteI18n.text("将连接：{0}\n有效至：{1}\n确认后连接", node, "").substringBefore('\n'))
                 scenario.onActivity { activity -> assertNull(field(activity, "pendingPicker")); assertNull(field(activity, "selection")) }
             }
             assertEquals(before, Settings(context).read())

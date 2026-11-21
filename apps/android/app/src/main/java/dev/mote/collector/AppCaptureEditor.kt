@@ -104,7 +104,7 @@ internal class AppCaptureEditor(
             }
         }) { result ->
             result.onSuccess { apps = it; ready = true; refresh() }
-                .onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("应用列表读取失败，请重试"); button(listSurface, MoteI18n.text("重试")) { loadApps() } }
+                .onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("应用列表读取失败，重试"); button(listSurface, MoteI18n.text("重试")) { loadApps() } }
         }
     }
 
@@ -126,7 +126,7 @@ internal class AppCaptureEditor(
         unavailable.visibility = GONE
         search.isEnabled = true
         scopeButtons.values.forEach { it.isEnabled = true }
-        val current = snapshot() ?: run { status.text = MoteI18n.text("手工规则格式有误，请展开高级规则修正。"); return }
+        val current = snapshot() ?: run { status.text = MoteI18n.text("手工规则格式有误，展开高级规则修正"); return }
         runCatching {
             refreshList(current)
             val selected = state.selected
@@ -134,7 +134,7 @@ internal class AppCaptureEditor(
             listSurface.visibility = if (selected == null) VISIBLE else GONE
             detailSurface.visibility = if (selected == null) GONE else VISIBLE
             if (selected != null) catalog(current).firstOrNull { it.id == selected }?.let { renderDetail(current, it) }
-        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("请先修正页面规则 JSON"); listSurface.visibility = VISIBLE; detailSurface.visibility = GONE; detailChanged(false) }
+        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("先修正页面规则 JSON"); listSurface.visibility = VISIBLE; detailSurface.visibility = GONE; detailChanged(false) }
     }
 
     private fun renderUnavailable(gate: SystemEntriesPlugin.Availability) {
@@ -188,7 +188,7 @@ internal class AppCaptureEditor(
                     }
                 }
             }
-        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("请先修正页面规则 JSON") }
+        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("先修正页面规则 JSON") }
     }
 
     private fun renderDetail(current: AppCapturePresentation.Snapshot, app: AppCapturePresentation.App) {
@@ -235,8 +235,8 @@ internal class AppCaptureEditor(
         button(advanced, MoteI18n.text("配置当前版本的文章或商品字段")) { editRule(app.id, app.version) }
         button(advanced, MoteI18n.text("载入当前版本内置字段规则")) { loadRules(app.id, app.version) }
         button(advanced, MoteI18n.text("导入当前版本的字段规则")) { importRules(app.id, app.version) }
-        advanced.addView(label(MoteI18n.text("规则配置与应用内容授权分开。修改只形成草稿，返回后保存生效；保存不会开始采集。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
-        advanced.addView(label(MoteI18n.text("字段配置匹配不代表已经通过真机验证。截图按独立选择执行；隐私拒绝时不采集。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
+        advanced.addView(label(MoteI18n.text("规则草稿与内容授权分开"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
+        advanced.addView(label(MoteI18n.text("配置未在真机验证"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
         refreshRuleSummary(current, app)
     }
 

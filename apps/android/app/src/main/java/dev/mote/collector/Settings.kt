@@ -46,7 +46,7 @@ data class CollectorConfig(
         syncPolicy().validate()
         OcrPolicy.validate(ocrMode, ocrAppModes)
         require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { MoteI18n.text("图片去重档位无效") }
-        require(deviceName.isNotBlank() && deviceName.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") }
+        require(deviceName.isNotBlank() && deviceName.length <= 128) { MoteI18n.text("填写 1..128 字符的设备名称") }
         require(intervalSeconds in 5..300) { MoteI18n.text("采集间隔为 5..300 秒") }
         require(jsonlWindowMinutes in 1..1440) { MoteI18n.text("JSONL 合并窗口为 1..1440 分钟") }
         Mask.parse(masks)
@@ -57,8 +57,8 @@ data class CollectorConfig(
     }
 }
 
-class SettingsWriteFailure : IllegalStateException(MoteI18n.text("无法持久保存设置，请检查存储空间"))
-class SettingsChangedFailure : IllegalStateException(MoteI18n.text("已保存设置发生变化，页面已更新；请检查后重新保存"))
+class SettingsWriteFailure : IllegalStateException(MoteI18n.text("无法持久保存设置，检查存储空间"))
+class SettingsChangedFailure : IllegalStateException(MoteI18n.text("已保存设置发生变化，页面已更新；检查后重新保存"))
 
 class Settings(private val context: Context) {
     init { LocalDataFormat.requireCurrent(context) }
@@ -166,7 +166,7 @@ class Settings(private val context: Context) {
             return edit.commit()
         }
         if (!write(committedValues)) {
-            if (!write(previous)) { enabled = false; status("error", MoteI18n.text("设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试")) }
+            if (!write(previous)) { enabled = false; status("error", MoteI18n.text("设置未持久保存，采集已停止")) }
             throw SettingsWriteFailure()
         }
         /* Configuration is committed as one snapshot; status counters are never rolled back. */
@@ -207,7 +207,7 @@ class Settings(private val context: Context) {
             if (previous.isNotBlank() && previous != (if (next.hasSyncConnection()) next.server.trim().trimEnd('/') else "")) context.queue().pinRetainedOrigin(previous)
             return if (next.hasSyncConnection()) next.server.trimEnd('/') else ""
         }
-        require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
+        require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点") }
         return previous.ifBlank { if (next.hasSyncConnection()) next.server.trimEnd('/') else "" }
     }
     fun lastSyncDispatch(): Long = prefs.getLong("lastSyncDispatch", 0)

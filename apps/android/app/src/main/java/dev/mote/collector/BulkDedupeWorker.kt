@@ -143,6 +143,6 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
         } }
         if (isStopped) return Result.failure()
         if (ConnectionGuard.reconfiguring()) return Result.retry()
-        return Result.success(workDataOf("message" to MoteI18n.text("处理完成：成功 {0}，失效或失败 {1}；失败记录保留，可重新扫描或重试", done, skipped)))
+        return Result.success(workDataOf("message" to MoteI18n.text("处理完成：成功 {0}，失败 {1}", done, skipped)))
     }
 }

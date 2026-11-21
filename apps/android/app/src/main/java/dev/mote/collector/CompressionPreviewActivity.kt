@@ -45,7 +45,7 @@ class CompressionPreviewActivity : MoteActivity() {
         }) { result ->
             result.onSuccess { buildUi(it, state) }.onFailure { failure ->
                 body.removeView(placeholder)
-                body.addView(TextView(this).apply { text = if (failure.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) failure.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") })
+                body.addView(TextView(this).apply { text = if (failure.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) failure.message else MoteI18n.text("设置无法读取，原数据保留。退出后检查存储或重试") })
             }
         }
     }
@@ -91,8 +91,8 @@ class CompressionPreviewActivity : MoteActivity() {
             setResult(RESULT_OK, Intent().putExtra("quality", quality).putExtra("maxSide", maxSide)); finish()
         }.apply { isEnabled = false }
         val details = SecondaryUi.disclosure(body, MoteI18n.text("预览与应用说明"), "compression-details")
-        SecondaryUi.text(details, MoteI18n.text("用生成的图文样张比较小字、渐变和细线。只在内存处理，不读取或上传屏幕。"), muted = true)
-        SecondaryUi.text(details, MoteI18n.text("放大后可双指缩放、拖动检查小字；双击复位。文件大小与缩放比例依据本次编码实测。"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("样张用于比较小字与细线"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("双指缩放，双击复位"), muted = true)
         SecondaryUi.text(details, MoteI18n.text("返回采集设置后点击保存，才会应用到后续采集。"), muted = true)
         qualityInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -127,7 +127,7 @@ class CompressionPreviewActivity : MoteActivity() {
     private fun render() {
         val requested = qualityInput.text.toString().toIntOrNull()
         if (requested == null || requested !in 40..95) {
-            qualityInput.error = MoteI18n.text("质量请输入 40–95。")
+            qualityInput.error = MoteI18n.text("质量范围 40–95")
             apply.isEnabled = false; return
         }
         quality = requested; qualityInput.error = null
@@ -157,7 +157,7 @@ class CompressionPreviewActivity : MoteActivity() {
                 runOnUiThread { if (!isDestroyed && stamp == revision) {
                     originalView.setImageDrawable(null);compressedView.setImageDrawable(null);images.forEach { if(!it.isRecycled)it.recycle() };images=emptyList()
                     originalCaption.text=MoteI18n.text("原图 · PNG");compressedCaption.text=MoteI18n.text("JPEG 输出")
-                    stats.text = MoteI18n.text("预览未完成，请调整参数重试。")
+                    stats.text = MoteI18n.text("预览未完成，调整参数重试")
                 } }
             }
         }

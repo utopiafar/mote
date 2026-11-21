@@ -5,7 +5,7 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.Base64
 
-internal class CaptureSessionChangedException : IllegalStateException(MoteI18n.text("Session 已变化或被清理，请刷新分组列表"))
+internal class CaptureSessionChangedException : IllegalStateException(MoteI18n.text("Session 已变化或被清理，刷新分组列表"))
 
 /** Observed app continuity only; no inferred tasks, topics or unobserved duration. */
 internal object CaptureSessions {

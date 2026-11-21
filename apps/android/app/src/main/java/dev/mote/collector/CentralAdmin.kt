@@ -18,7 +18,7 @@ internal object CentralMemoryJobPresentation {
     private val controls = listOf("pause" to "暂停", "resume" to "继续", "cancel" to "取消", "retry" to "重试")
     fun invalidated(job: JSONObject) = job.optString("outcome") == "input_invalidated"
     fun status(job: JSONObject) = if (invalidated(job)) MoteI18n.text("资料已更新，本次结果失效") else job.optString("state", job.optString("status"))
-    fun notice(job: JSONObject): String? = if (invalidated(job)) MoteI18n.text("历史结果保留；请查看当前资料版本。失效输入不能直接重试。") else null
+    fun notice(job: JSONObject): String? = if (invalidated(job)) MoteI18n.text("历史结果保留；查看当前资料") else null
     fun controls(job: JSONObject) = if (invalidated(job)) emptyList() else controls
 }
 
@@ -222,12 +222,12 @@ internal class CentralAdmin(
                 val windowText = window.text.toString().trim()
                 val windowValue = if (windowText.isBlank()) null else windowText.toLongOrNull()
                 if (historyValue == null || lowValue == null || windowText.isNotBlank() && windowValue == null) {
-                    ui.notice(MoteI18n.text("配置内容无效，请检查必填项和取值范围。")); return@button
+                    ui.notice(MoteI18n.text("配置内容无效，检查必填项和取值范围")); return@button
                 }
                 try {
                     CentralConversationSettings.validate(historyValue, lowValue, sources[source.selectedItemPosition], windowValue)
                 } catch (error: IllegalArgumentException) {
-                    ui.notice(error.message ?: MoteI18n.text("配置内容无效，请检查必填项和取值范围。")); return@button
+                    ui.notice(error.message ?: MoteI18n.text("配置内容无效，检查必填项和取值范围")); return@button
                 }
                 val payload = CentralConversationSettings.payload(preferences, preferences.multipleConversations, historyValue, lowValue,
                     sources[source.selectedItemPosition], windowValue)
@@ -239,7 +239,7 @@ internal class CentralAdmin(
         val api = client
         ui.work(MoteI18n.text("正在读取…"), {
             RuntimeStatusReceipt.parse(api.get("/api/agent-runtime-settings"))
-                ?: throw IllegalStateException(MoteI18n.text("中央响应格式无效，请刷新后重试。"))
+                ?: throw IllegalStateException(MoteI18n.text("中央响应格式无效，刷新后重试"))
         }) { receipt ->
             val value = receipt.saved
             body.removeAllViews(); screens.setBack { screens.refresh() }
@@ -346,7 +346,6 @@ internal class CentralAdmin(
         ui.work(MoteI18n.text("正在读取…"), {
             api.get(path + (scope?.let { "?scope=" + enc(it) } ?: "")) to api.get(if (integration) "/api/memory-integration-recipes" else "/api/memory-recipes")
         }) { (selection, catalog) ->
-            body.removeAllViews(); screens.setBack { memorySettings() }; if (!integration) ui.text(MoteI18n.text("这些提取门槛与最大等待时间只控制历史资料的窗口处理。已授权且内容就绪的新资料直接进入自动记忆队列，按可用名额持续处理。"))
             val current = if (integration) listOfNotNull(selection.optJSONObject("binding")?.optJSONObject("recipe"))
                 else selection.getJSONArray("items").let { items -> (0 until items.length()).map { items.getJSONObject(it).getJSONObject("binding").getJSONObject("recipe") } }
             val choices = catalog.getJSONArray("items"); val selected = mutableListOf<JSONObject>()
@@ -625,7 +624,7 @@ internal class CentralAdmin(
                 }
                 val name = ui.field(MoteI18n.text("来源名称"), "MCP")
                 ui.button(MoteI18n.text("导入所选资源"), true) {
-                    require(selected.isNotEmpty()) { MoteI18n.text("请选择资源") }
+                    require(selected.isNotEmpty()) { MoteI18n.text("选择资源") }
                     importMcp(payload, name.text.toString(), JSONObject().put("resourceUris", JSONArray(selected)))
                 }
                 val tools = value.optJSONArray("tools") ?: JSONArray()
@@ -635,7 +634,7 @@ internal class CentralAdmin(
                     val args = ui.field(MoteI18n.text("工具参数 JSON"), "{}", multiline = true, parent = card)
                     val approved = CheckBox(ui).apply { text = MoteI18n.text("我确认此工具只读") }; card.addView(approved)
                     ui.button(MoteI18n.text("导入工具结果"), true, parent = card) {
-                        require(approved.isChecked) { MoteI18n.text("请确认工具只读后再执行") }
+                        require(approved.isChecked) { MoteI18n.text("确认工具只读后再执行") }
                         importMcp(payload, name.text.toString(), JSONObject().put("tool", JSONObject().put("name", tool.getString("name"))
                             .put("arguments", JSONObject(args.text.toString())).put("confirmedReadOnly", true)))
                     }
@@ -649,8 +648,6 @@ internal class CentralAdmin(
             body.removeAllViews()
             ui.button(MoteI18n.text("刷新")) { lark() }
             ui.text(MoteI18n.text("飞书文档与日历"), DesignTokens.fontTitleMobile.toFloat())
-            ui.text(MoteI18n.text("照常在飞书写日记、会议纪要和方案。中央归档文档与活动线索，供回顾、问答和 Memory 使用。"))
-            ui.text(MoteI18n.text("打开、编辑等线索单独保存；打开不代表读完、认同或当时看到的版本。"))
             val account = ui.card()
             ui.text(if (value.optBoolean("connected")) MoteI18n.text("已连接") else MoteI18n.text("尚未授权"), DesignTokens.fontSection.toFloat(), account)
             if (value.optString("accountName").isNotBlank()) ui.text(value.optString("accountName"), parent = account)
@@ -676,9 +673,8 @@ internal class CentralAdmin(
             val selected = CentralLarkSelection.discovery(selection)
             val range = ui.card()
             ui.text(MoteI18n.text("选择同步范围"), DesignTokens.fontSection.toFloat(), range)
-            ui.text(MoteI18n.text("首次回溯 {0} 天；之后随你的新活动归档。指定文档、文件夹和知识库分支持续跟踪。", selected.optInt("firstSyncDays", 30)), parent = range)
+            ui.text(MoteI18n.text("首次回溯 {0} 天", selected.optInt("firstSyncDays", 30)), parent = range)
             ui.button(MoteI18n.text("选择文档与活动范围"), parent = range) { larkSelection() }
-            ui.text(MoteI18n.text("需要日历时，先单独授权日历读取，再加载并选择日历。授权本身不会开始收集日程。"), parent = range)
             ui.button(MoteI18n.text("授权日历读取"), parent = range) { action("/api/connectors/lark/login", JSONObject().put("calendar", true)) { lark() } }
             ui.button(MoteI18n.text("选择日历"), parent = range) { calendarSelection(true) }
             ui.button(MoteI18n.text("飞书文档默认组合"), parent = range) { recipeSettings(false, "lark-docs") }
@@ -698,7 +694,6 @@ internal class CentralAdmin(
             ui.button(MoteI18n.text("预览文档范围")) { action("/api/connectors/lark/preview") { lark() } }
             sync?.optJSONArray("preview")?.let { preview ->
                 val card = ui.card(); ui.text(MoteI18n.text("实际发现的文档"), DesignTokens.fontSection.toFloat(), card)
-                ui.text(MoteI18n.text("下列为可用文档标题与引用，尚未因预览读取正文。归档时保存当前版本及可获得的活动线索。"), parent = card)
                 ui.text(MoteI18n.text("发现 {0} 篇文档，以下显示 {1} 篇。", sync.optInt("previewTotal", preview.length()), preview.length()), parent = card)
                 for (i in 0 until preview.length()) { val document = preview.getJSONObject(i); ui.text(document.optString("title", document.optString("reference")), parent = card) }
                 if (preview.length() == 0) ui.text(MoteI18n.text("本次范围内没有发现文档。"), parent = card)
@@ -723,9 +718,8 @@ internal class CentralAdmin(
                     }
                 }
             }
-            ui.text(MoteI18n.text("同步归档完成后，Memory 会按现有设置继续处理；并非每篇文档都会生成精选记忆。"))
             ui.button(MoteI18n.text("查看来源与归档")) { ui.navigate("sources") }
-            ui.button(MoteI18n.text("断开连接")) { screens.confirm(MoteI18n.text("断开连接"), MoteI18n.text("断开会停止读取并暂停这些来源，保留已归档资料。飞书端授权及 CLI 凭据仍保留，可在飞书中单独撤销。")) {
+            ui.button(MoteI18n.text("断开连接")) { screens.confirm(MoteI18n.text("断开连接"), MoteI18n.text("断开后停止读取，归档保留")) {
                 ui.work(MoteI18n.text("正在处理…"), { api.delete("/api/connectors/lark") }) { lark() }
             } }
         }
@@ -737,7 +731,6 @@ internal class CentralAdmin(
             ui.text(MoteI18n.text("资料说明（选填）"), DesignTokens.fontTitleMobile.toFloat())
             val description = ui.field(MoteI18n.text("可说明格式、时间、作者，以及哪些内容属于你。"), current.optString("description"), multiline = true)
             ui.text(MoteI18n.text("用于理解这个来源的背景、作者和内容归属。"))
-            ui.text(MoteI18n.text("修改说明适用于已有和未来资料；不会自动重新转写或重算历史记忆。"))
             ui.button(MoteI18n.text("保存说明"), true) {
                 val payload = JSONObject().put("expectedVersion", current.getInt("version")).put("description", description.text.toString())
                 ui.work(MoteI18n.text("正在保存…"), { api.patch(path, payload) }) { lark() }
@@ -753,16 +746,13 @@ internal class CentralAdmin(
             ui.text(MoteI18n.text("自动发现我的文档活动"), DesignTokens.fontSection.toFloat(), card)
             fun choice(label: String, checked: Boolean) = CheckBox(ui).apply { text = MoteI18n.text(label); isChecked = checked }.also { card.addView(it) }
             val created = choice("我创建的", discovery.optBoolean("created")); val edited = choice("我编辑过的", discovery.optBoolean("edited")); val opened = choice("我打开过的", discovery.optBoolean("opened"))
-            ui.text(MoteI18n.text("活动来自飞书可提供的最近记录，可能只有时间范围；不保证逐次操作日志或阅读时长。"), parent = card)
             val days = ui.field(MoteI18n.text("首次回溯天数"), discovery.optInt("firstSyncDays", 30).toString(), parent = card).apply { inputType = InputType.TYPE_CLASS_NUMBER }
-            ui.text(MoteI18n.text("明确选定的范围会持续检查当前版本，包括其他协作者的后续修改。每行填写一个链接或 token。"), parent = card)
             val documents = ui.field(MoteI18n.text("指定文档（每行一个）"), CentralLarkSelection.text(current, "documents"), multiline = true, parent = card)
             val folders = ui.field(MoteI18n.text("文件夹（每行一个）"), CentralLarkSelection.text(current, "folders"), multiline = true, parent = card)
             val wikiRoots = ui.field(MoteI18n.text("知识库分支（每行一个）"), CentralLarkSelection.text(current, "wikiRoots"), multiline = true, parent = card)
             val exclusions = ui.field(MoteI18n.text("不再读取的文档（每行一个）"), CentralLarkSelection.text(current, "excludedDocuments"), multiline = true, parent = card)
             ui.text(MoteI18n.text("排除优先于自动发现和指定范围；已有归档保留。"), parent = card)
             val autoSync = choice("在后台定期同步选中内容", current.optBoolean("autoSync"))
-            ui.text(MoteI18n.text("保存范围或重新授权不会恢复已暂停的来源。停止同步和移除范围会保留已有归档。"), parent = card)
             ui.button(MoteI18n.text("保存同步范围"), true) {
                 val selections = Triple(created.isChecked, edited.isChecked, opened.isChecked)
                 val firstSyncDays = days.text.toString(); val documentText = documents.text.toString(); val folderText = folders.text.toString()
@@ -817,7 +807,7 @@ internal class CentralAdmin(
                 val step = items.getJSONObject(i)
                 ui.disclosure(step.optString("title") + " · " + stateLabel(step.optString("state")), target) { child ->
                     values(step, child)
-                    if (step.optString("state") == "failed") ui.text(MoteI18n.text("自动重试已停止，请核对原因后手动重试"), parent = child)
+                    if (step.optString("state") == "failed") ui.text(MoteI18n.text("自动重试已停止，核对原因后手动重试"), parent = child)
                 }
             }
             pageButtons(cursors, page, items.length(), target) { recordingSteps(path, it) }
@@ -888,7 +878,7 @@ internal class CentralAdmin(
                 else -> listOf("cancel" to "取消")
             }
             commands.forEach { (command, label) -> ui.button(MoteI18n.text(label)) {
-                if (command == "confirm") screens.confirm(MoteI18n.text("确认导入"), MoteI18n.text("请核对预览后再确认。")) { action("/api/imports/" + enc(id) + "/confirm") { importDetail(id) } }
+                if (command == "confirm") screens.confirm(MoteI18n.text("确认导入"), MoteI18n.text("核对预览后再确认")) { action("/api/imports/" + enc(id) + "/confirm") { importDetail(id) } }
                 else action("/api/imports/" + enc(id) + "/" + command) { importDetail(id) }
             } }
             ui.button(MoteI18n.text("刷新")) { importDetail(id) }

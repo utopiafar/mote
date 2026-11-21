@@ -84,7 +84,7 @@ class FileTaskActivity : MoteActivity() {
                 preset = when (source.extensions) { ALL_EXTENSIONS -> "all"; AUDIO_EXTENSIONS -> "audio"; else -> "custom" }
                 if (draft != null) { restoredValues = draft.optJSONObject("values"); preset = draft.optString("preset", preset); retentionEdited = draft.optBoolean("retentionEdited") }
                 showForm(); refreshCentralContext()
-            }.onFailure { status.text = MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。") }
+            }.onFailure { status.text = MoteI18n.text("来源配置不可读；保留应用数据，检查存储状态") }
         }
     }
     private fun values() = JSONObject().put("description", description.text.toString()).put("name", name.text.toString())
@@ -96,7 +96,7 @@ class FileTaskActivity : MoteActivity() {
         // The private persisted draft contains no URI permission; reopening requires explicit selection.
         worker.execute { runCatching {
             owner.saveDraft(draftKey, values(), preset, retentionEdited)
-        }.onFailure { runOnUiThread { if (!isDestroyed && !isFinishing) status.text = MoteI18n.text("无法保存本机草稿，请检查存储后重试。") } } }
+        }.onFailure { runOnUiThread { if (!isDestroyed && !isFinishing) status.text = MoteI18n.text("无法保存本机草稿，检查存储后重试") } } }
     }
     override fun onSaveInstanceState(state: Bundle) {
         if (::description.isInitialized) {
@@ -142,7 +142,7 @@ class FileTaskActivity : MoteActivity() {
         }
         hint(if (source.tree) "适用于这个文件夹的已有与后续资料。" else "仅适用于这份文件。")
         metadataStatus = TextView(this).apply { MoteUi.type(this, NativeFontRole.SUPPORT); body.addView(this) }
-        if (savedSource != null) hint("修改说明适用于已有和未来资料；不会自动重新转写或重算历史记忆。")
+        if (savedSource != null) hint("修改适用于已有与未来资料")
         if (source.tree) {
             label("同步哪些文件")
             val choices = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; body.addView(choices)
@@ -184,7 +184,6 @@ class FileTaskActivity : MoteActivity() {
         allowRead = CheckBox(this).apply { text = MoteI18n.text("中央保留完整提取正文，供离线读取片段"); isChecked = source.allowRead; advanced.addView(this) }
         enabled = CheckBox(this).apply { text = MoteI18n.text("允许读取并按所选策略发送这个来源"); isChecked = source.enabled; if (savedSource != null) advanced.addView(this) }
         continuous = CheckBox(this).apply { text = MoteI18n.text("以后修改，也自动同步"); isChecked = source.syncContinuously; tag = "file-task:continuous"; if (savedSource != null && !source.tree) advanced.addView(this) }
-        hint("更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。", advanced)
         confirm = Button(this).apply { text = MoteI18n.text(if (savedSource != null) "保存修改" else if (source.tree) "添加同步文件夹" else "导入这份文件"); tag = "file-task:confirm"; setTag(R.id.mote_primary, true); setOnClickListener { save() }; body.addView(this) }
         if (hasContextConflict) body.addView(Button(this).apply { text = MoteI18n.text("解决资料说明冲突"); tag = "file-task:context-conflict"; setOnClickListener { resolveConflict() } })
         if (savedSource != null) body.addView(Button(this).apply { text = MoteI18n.text("移除连接"); setOnClickListener { remove() } })
@@ -221,16 +220,16 @@ class FileTaskActivity : MoteActivity() {
     }
     private fun updatePreset() {
         presetButtons.forEach { (key, button) -> button.isSelected = key == preset; button.background = MoteUi.clickable(this, if (key == preset) MoteUi.tint else MoteTheme.surface, MoteUi.actionRadius, strokeColor = if (key == preset) MoteUi.accent else MoteUi.controlBorder) }
-        presetHelp.text = MoteI18n.text(when (preset) { "audio" -> "音频预设默认保留中央原件，保存方式可修改。"; "custom" -> "只收集你指定扩展名的文件；请在高级设置中填写。"; else -> "文本、音频、图片和文档。" })
+        presetHelp.text = MoteI18n.text(when (preset) { "audio" -> "音频预设默认保留中央原件，保存方式可修改。"; "custom" -> "只收集你指定扩展名的文件；在高级设置中填写"; else -> "文本、音频、图片和文档。" })
         if (preset == "custom") advanced.visibility = View.VISIBLE
     }
     private fun updateRetention() {
-        retentionHelp.text = MoteI18n.text(when (retention.selectedItemPosition) { 1 -> "完整文件会发送到中央解析或转写，并保留中央原件；手机原文件保留。"; 2 -> "不读取或上传正文，也不会转写。"; else -> "完整文件会发送到中央解析或转写；处理后不保留中央原件，手机原文件保留。" })
+        retentionHelp.text = MoteI18n.text(when (retention.selectedItemPosition) { 1 -> "完整文件会保留中央原件"; 2 -> "不读取或上传正文，也不会转写。"; else -> "完整文件处理后不保留中央原件" })
         allowRead.visibility = if (retention.selectedItemPosition == 0) View.VISIBLE else View.GONE
     }
     private fun updateMetadataStatus() {
         metadataStatus.visibility = if (hasContextConflict || source.contextDirty || source.contextVersion > 0) View.VISIBLE else View.GONE
-        metadataStatus.text = MoteI18n.text(if (hasContextConflict) "资料说明与中央版本冲突；请打开设置处理，文件保留待发。" else if (source.contextDirty) "资料说明保存在本机，等待中央确认。" else if (source.contextVersion > 0) "资料说明已获中央确认，版本 {0}。" else "资料说明会作为这个来源的背景保存。", source.contextVersion)
+        metadataStatus.text = MoteI18n.text(if (hasContextConflict) "资料说明与中央版本冲突；打开设置处理，文件保留待发" else if (source.contextDirty) "资料说明保存在本机，等待中央确认。" else if (source.contextVersion > 0) "资料说明已获中央确认，版本 {0}。" else "资料说明会作为这个来源的背景保存。", source.contextVersion)
     }
     private fun pick() {
         if (task.busy) return
@@ -265,8 +264,8 @@ class FileTaskActivity : MoteActivity() {
                     source = source.copy(uri = selectedSource.uri, name = if (savedSource == null) selectedSource.displayName else source.name); selected = true
                 }
                 if (previousUri != selectedSource.uri && previousUri != UNSELECTED) worker.execute { previousUri?.let { owner.releaseUnused(it) } }
-                status.text = MoteI18n.text("文件已读取，请确认来源设置"); updateSelection(); persistDraft()
-            }.onFailure { status.text = MoteI18n.text("无法读取文件或持久授权，请重新选择") }
+                status.text = MoteI18n.text("文件已读取，确认来源设置"); updateSelection(); persistDraft()
+            }.onFailure { status.text = MoteI18n.text("无法读取文件或持久授权，重新选择") }
         }
     }
     private fun releaseUnused(uri: String) = owner.releaseUnused(uri)
@@ -286,9 +285,9 @@ class FileTaskActivity : MoteActivity() {
             }) { result ->
                 confirm.isEnabled = true; pickButton.isEnabled = true
                 result.onSuccess { source = it; savedSource = it; status.text = MoteI18n.text("来源已保存，正在等待后台扫描"); updateMetadataStatus(); finish() }
-                    .onFailure { status.text = it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失") }
+                    .onFailure { status.text = it.message ?: MoteI18n.text("保存或调度失败，重试；已保存内容不会丢失") }
             }
-        } catch (e: Exception) { status.text = e.message ?: MoteI18n.text("请检查来源设置") }
+        } catch (e: Exception) { status.text = e.message ?: MoteI18n.text("检查来源设置") }
     }
     private fun refreshCentralContext() {
         val current = savedSource ?: return
@@ -324,12 +323,12 @@ class FileTaskActivity : MoteActivity() {
                     .setMessage(MoteI18n.text("中央说明（版本 {0}）：\n{1}\n\n本机说明：\n{2}", remote.version, remote.description, description.text.toString()))
                     .setPositiveButton(MoteI18n.text("以本机说明更新")) { _, _ ->
                         source = owner.applyContextChoice(source, remote, useRemote = false)
-                        status.text = MoteI18n.text("请保存设置以确认本机说明。")
+                        status.text = MoteI18n.text("保存设置以确认本机说明")
                     }.setNeutralButton(MoteI18n.text("使用中央说明")) { _, _ ->
                         source = owner.applyContextChoice(source, remote, useRemote = true)
-                        description.setText(remote.description); status.text = MoteI18n.text("请保存设置以确认中央说明。")
+                        description.setText(remote.description); status.text = MoteI18n.text("保存设置以确认中央说明")
                     }.setNegativeButton(MoteI18n.text("取消"), null).show()
-            }.onFailure { status.text = MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
+            }.onFailure { status.text = MoteI18n.text("无法读取中央资料说明；本机草稿保留，重试") }
         }
     }
     private fun remove() {
@@ -338,7 +337,7 @@ class FileTaskActivity : MoteActivity() {
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("移除连接")) { _, _ ->
                 task.start(MoteI18n.text("正在移除来源连接…"), MoteComponents.progress(status, read = false), {
                     owner.remove(source.id)
-                }) { result -> result.onSuccess { finish() }.onFailure { status.text = MoteI18n.text("操作失败，请重试") } }
+                }) { result -> result.onSuccess { finish() }.onFailure { status.text = MoteI18n.text("操作失败，重试") } }
             }.show()
     }
 }

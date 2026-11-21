@@ -10,7 +10,7 @@ internal object MoteLinkNavigation {
     enum class Refusal(val messageKey: String) {
         INVALID("Mote 连接链接格式无效"),
         FOREIGN_SCOPE("Mote 连接链接格式无效"),
-        ACCESS_DENIED("访问凭据已失效，请重新连接。"),
+        ACCESS_DENIED("访问凭据已失效，重新连接"),
         MISSING("请求的资源不存在或已删除。"),
     }
 

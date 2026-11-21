@@ -107,7 +107,7 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
                     changed(); fetchRemote()
                     if (pages < restore && localMore) load()
                 }.onFailure {
-                    readState.localFailed(readEpoch, LibraryReadState.Stream.SOURCES, MoteI18n.text("资料暂不可读取，请稍后重试。"))
+                    readState.localFailed(readEpoch, LibraryReadState.Stream.SOURCES, MoteI18n.text("资料暂不可读取，稍后重试"))
                     localMore = false; changed(); fetchRemote()
                 }
             } else if (generation == stamp) { refresh(filter, day) }

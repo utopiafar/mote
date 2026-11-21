@@ -29,8 +29,8 @@ class StorageActivity : MoteActivity() {
         inventory = SecondaryUi.text(body, MoteI18n.text("正在读取本机同步状态…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         content = SecondaryUi.column(body)
         val details = SecondaryUi.disclosure(body, MoteI18n.text("迁移时会发生什么"), "storage-migration-details")
-        text(details, MoteI18n.text("选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。草稿、设置及来源缓存保留在内部空间。"))
-        text(details, MoteI18n.text("记录和索引为 JSON，图片保留原始格式。这些是本应用专用目录，不是共享相册；卸载应用会删除本机文件。移除存储卡后不会自动改到空目录。"))
+        text(details, MoteI18n.text("迁移会暂停处理并验证记录"))
+        text(details, MoteI18n.text("本应用专用目录，非共享相册"))
         MoteUi.styleTree(body)
     }
     override fun onResume() { super.onResume(); localStateJob = observeLocalState { if (it.active == null && it.imagesReading) MoteComponents.reading(inventory, it.imageLabel()) else inventory.text = it.active?.let { count -> MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", count.records, count.pending) } ?: it.imageLabel() }; handler.post(poll); refresh() }
@@ -56,7 +56,7 @@ class StorageActivity : MoteActivity() {
                     val path = SecondaryUi.disclosure(currentCard, MoteI18n.text("查看实际目录"), "storage-current-path")
                     text(path, location.path)
                 }
-                status.current.exceptionOrNull()?.let { text(content, MoteI18n.text("位置不可用：{0}\n已保留原位置，请重新连接原介质后重试。", it.message)) }
+                status.current.exceptionOrNull()?.let { text(content, MoteI18n.text("位置不可用：{0}\n已保留原位置，重新连接原介质后重试", it.message)) }
                 status.choices.onSuccess { entries ->
                     for (choice in entries) {
                         val chosen = selected?.baseId == choice.id
@@ -74,19 +74,19 @@ class StorageActivity : MoteActivity() {
     private fun confirm(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移本机保存位置"))
-            .setMessage(MoteI18n.text("迁移到{0}：\n{1}\n\n已有图片和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。", choice.title, choice.base.absolutePath))
+            .setMessage(MoteI18n.text("迁移到{0}，验证后切换", choice.title, choice.base.absolutePath))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("迁移并应用")) { _, _ -> migrate(choice) }.show()
     }
     private fun migrate(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         working = true; content.removeAllViews()
-        migrationLabel = SecondaryUi.text(content, MoteI18n.text("正在迁移并验证记录，请保持存储介质连接…")).apply { MoteComponents.working(this, text.toString()); tag="storage-migration-progress"; accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        migrationLabel = SecondaryUi.text(content, MoteI18n.text("正在迁移并验证记录，保持存储介质连接…")).apply { MoteComponents.working(this, text.toString()); tag="storage-migration-progress"; accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         owner.migrate(this, choice) { result ->
             migrationLabel = null; working = false; if (isDestroyed) return@migrate
             result.onSuccess {
                 android.widget.Toast.makeText(this, MoteI18n.text("保存位置已生效"), android.widget.Toast.LENGTH_LONG).show()
                 if (it.projectionConsentRequired) startActivity(Intent(this, MainActivity::class.java))
-            }.onFailure { MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移未完成")).setMessage(it.message ?: MoteI18n.text("请检查存储位置后重试，保留应用数据。")) .setPositiveButton(MoteI18n.text("关闭"), null).show() }
+            }.onFailure { MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移未完成")).setMessage(it.message ?: MoteI18n.text("检查存储位置后重试，保留应用数据")) .setPositiveButton(MoteI18n.text("关闭"), null).show() }
             refresh()
         }
     }

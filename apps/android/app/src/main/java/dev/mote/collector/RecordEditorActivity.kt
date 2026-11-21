@@ -552,7 +552,7 @@ open class RecordEditorActivity : MoteActivity() {
             RecordingService.command(this, RecordingService.ACTION_STOP)
             return
         }
-        if (notes.pendingMedia().length() > 0) { status.text = MoteI18n.text("请先处理未保存的附件"); return }
+        if (notes.pendingMedia().length() > 0) { status.text = MoteI18n.text("先处理未保存的附件"); return }
         val text = field.text.toString(); val files = JSONArray(attachments.toString()); val source = JSONObject(origin.toString()); val noteDescription = description.text.toString(); val presentation = originPresentation?.let { JSONObject(it.toString()) }; enabled(false)
         task.start("", {}, {
             notes.submit(text, files, source, noteDescription, presentation, intent.getBooleanExtra("firstUse", false))

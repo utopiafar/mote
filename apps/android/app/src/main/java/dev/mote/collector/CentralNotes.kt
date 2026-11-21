@@ -17,7 +17,7 @@ internal class CentralNoteStore(private val directory: File, private val cipher:
     }
     @Synchronized fun enqueue(deviceId: String, deviceName: String): JSONObject {
         val state = read(); val draft = state.getJSONObject("draft")
-        require(draft.getString("text").isNotBlank()) { MoteI18n.text("请先填写记录") }
+        require(draft.getString("text").isNotBlank()) { MoteI18n.text("先填写记录") }
         val note = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", deviceId).put("deviceName", deviceName)
             .put("platform", "android").put("capturedAt", java.time.Instant.now().toString()).put("text", draft.getString("text"))
         if (draft.optString("mood").isNotBlank()) note.put("mood", draft.getString("mood"))
@@ -28,7 +28,7 @@ internal class CentralNoteStore(private val directory: File, private val cipher:
     }
     @Synchronized fun acknowledge(id: String, response: JSONObject) {
         val receipt = dev.mote.collector.plugins.NoteSaveReceipt.parse(response)
-        require(receipt.id == id) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
+        require(receipt.id == id) { MoteI18n.text("中央响应格式无效，刷新后重试") }
         val state = read(); val pending = state.getJSONArray("pending")
         state.put("pending", JSONArray((0 until pending.length()).map { pending.getJSONObject(it) }.filter { it.getString("id") != id })); write(state)
     }

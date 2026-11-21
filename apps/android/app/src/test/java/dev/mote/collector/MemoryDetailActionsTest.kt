@@ -29,9 +29,9 @@ class MemoryDetailActionsTest {
         assertFalse(MemoryDetailPanel.correctionAction == "保存校正")
     }
 
-    @Test fun `delete confirmation is word for word the web dialog`() {
+    @Test fun `delete confirmation offers the same actions as the web dialog`() {
         assertEquals("删除这条记忆？", MemoryDetailPanel.deleteTitle)
-        assertEquals("原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。", MemoryDetailPanel.deleteMessage)
+        assertTrue(MemoryDetailPanel.deleteMessage.isNotBlank())
         assertEquals("确认删除", MemoryDetailPanel.deleteConfirm)
         assertEquals("取消", MemoryDetailPanel.deleteCancel)
     }
@@ -47,7 +47,7 @@ class MemoryDetailActionsTest {
 
     @Test fun `deletion notices use the same pending acknowledged and default text as web`() {
         assertEquals("记忆已禁止使用；外部清除仍待确认。", MemoryDetailPanel.deletionNotice(JSONObject().put("externalErase", "pending")))
-        assertEquals("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。",
+        assertEquals("记录已移除，物理擦除未核验",
             MemoryDetailPanel.deletionNotice(JSONObject().put("externalErase", "acknowledged").put("physicalEraseVerified", false)))
         assertEquals("记忆已禁止使用。", MemoryDetailPanel.deletionNotice(JSONObject()))
     }

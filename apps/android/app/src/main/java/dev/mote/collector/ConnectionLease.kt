@@ -11,7 +11,7 @@ internal class ConnectionLease(private val context: Context, private val config:
         it.hasSyncConnection() && !it.syncPaused && SourceRules.target(it.server, it.token) == target
     }
     fun requireCurrent() {
-        check(current()) { MoteI18n.text("目标或原件已变化，已保留上传确认，请稍后重试。") }
+        check(current()) { MoteI18n.text("目标或原件已变化，已保留上传确认，稍后重试") }
         SyncSchedule.requireConditions(context, settings.read())
     }
     fun commit(action: () -> Unit) = synchronized(Settings::class.java) { requireCurrent(); action() }

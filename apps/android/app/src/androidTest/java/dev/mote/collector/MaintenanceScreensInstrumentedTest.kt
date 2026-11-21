@@ -112,7 +112,7 @@ class MaintenanceScreensInstrumentedTest {
             until("initial real codec output"){main { visible().filterIsInstance<Button>().any { it.text.toString()=="将参数带回采集设置" && it.isEnabled } }}
             var encoder:((Bitmap,Bitmap.CompressFormat,Int)->ByteArray)?=null
             scenario.onActivity { a -> encoder=a.previewEncoder;a.previewEncoder={_,_,_->throw java.io.IOException("Generated codec failure")};views(a.window.decorView).filterIsInstance<EditText>().single().setText("83") }
-            click("更新预览");until("real failure branch has no stale output"){has("预览未完成，请调整参数重试。")}
+            click("更新预览");until("real failure branch has no stale output"){has("预览未完成，调整参数重试")}
             main { assertTrue(visible().filterIsInstance<ImageView>().all { it.drawable==null });assertFalse(visible().filterIsInstance<Button>().single { it.text.toString()=="将参数带回采集设置" }.isEnabled) }
             capture("compression-no-image-failure");assertEquals(config,Settings(context).read())
             scenario.onActivity { a -> a.previewEncoder=requireNotNull(encoder) };click("更新预览")

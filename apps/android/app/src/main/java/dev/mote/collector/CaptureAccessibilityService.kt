@@ -87,7 +87,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         }
     }
     override fun onInterrupt() {
-        if (!destroyed) stateWorker.execute { runCatching { Settings(this).status("permission_required", MoteI18n.text("无障碍服务中断，请检查系统设置")) } }
+        if (!destroyed) stateWorker.execute { runCatching { Settings(this).status("permission_required", MoteI18n.text("无障碍服务中断，检查系统设置")) } }
     }
     fun windowSnapshot(): WindowSnapshot {
         return try {
@@ -191,7 +191,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             stopCapture()
             stateWorker.execute { if (!destroyed && settings.read().sameCaptureConfiguration(config)) {
                 settings.enabled = false
-                settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
+                settings.status("permission_required", MoteI18n.text("通知权限关闭，采集已停止"))
             } }
             return
         }
@@ -284,7 +284,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                 inFlight = false
                 Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
                 runCatching { SupportEvents.runtime(this@CaptureAccessibilityService).screenshotFailure(errorCode) }
-                pipeline?.pause(MoteI18n.text("系统未提供截图（代码 {0}），可能是安全窗口或权限变化；未保存内容", errorCode))
+                pipeline?.pause(MoteI18n.text("系统未提供截图（{0}）", errorCode))
             }
         })
     }
