@@ -63,8 +63,6 @@ export class Conversations {
     }catch(error){if(store.db.isTransaction){store.db.exec('ROLLBACK TO conversation_history_receipts; RELEASE conversation_history_receipts');}throw error;}
   }
 
-  /** Owner-only storage read used by the lineaged history surfaces and tests; the
-   * removed multi-conversation list route no longer exposes it. */
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {
     let where='';const values:(string|number)[]=[];
     if(cursor) {
@@ -425,8 +423,6 @@ export class Conversations {
     });
   }
 
-  /** Retained owner-local erasure used by lifecycle tests; no HTTP route deletes
-   * a whole conversation any more. */
   delete(id:string) {
     const db=this.store.db;db.exec('SAVEPOINT delete_conversation');
     try{

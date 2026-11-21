@@ -13,9 +13,7 @@ const seen:{question:string;evidenceIds?:string[]|null;anchorEvidenceIds?:string
 const answer=()=>({answer:'Generated scope response',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
 const node=await buildApp(config,{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{seen.push({question:input.question,evidenceIds:input.evidenceIds,anchorEvidenceIds:input.anchorEvidenceIds});return answer();},close:async()=>{}}});
 const headers={authorization:`Bearer ${token}`};
-// This generated scenario exercises the multi-conversation composer action.
-const configuration=(await node.app.inject({url:'/api/configuration',headers})).json();
-assert.equal((await node.app.inject({method:'PUT',url:'/api/configuration/conversations',headers,payload:{revision:configuration.revision,value:{multipleConversations:true}}})).statusCode,200);
+const readPaths=new Set<string>();
 let failure=0;
 node.app.addHook('onRequest',async(request,reply)=>{
  if(request.url.startsWith('/fixture/')){
@@ -23,7 +21,11 @@ node.app.addHook('onRequest',async(request,reply)=>{
   if(request.url==='/fixture/seen')return reply.send(seen);
   if(request.url==='/fixture/fail'){failure=Number((request.headers['x-fixture-status']??403));return reply.send({ok:true});}
  }
- if(failure&&request.url.startsWith('/api/conversations')){const code=failure;failure=0;return reply.code(code).send({error:'Generated unavailable scope'});}
+ if(failure&&request.method==='GET'&&readPaths.has(new URL(request.url,'http://fixture').pathname)){
+  const code=failure;
+  failure=0;
+  return reply.code(code).send({error:'Generated unavailable scope'});
+ }
 });
 const evidenceIds:string[]=[];
 for(let i=0;i<2;i++){
@@ -37,6 +39,7 @@ for(const kind of ['anchor','strict','plain']){
  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated '+kind,...scope}});assert.equal(response.statusCode,200,response.body);
  ids[kind]=response.json().conversationId;
  assert.ok(ids[kind],response.body);
+ readPaths.add(['','api','conversations',ids[kind]].join('/'));
  if(kind==='anchor')for(let i=1;i<21;i++)node.conversations.append(node.conversations.get(ids[kind]),{question:'Generated anchor older '+i,...scope},answer());
 }
 await node.app.listen({host:'127.0.0.1',port:0});

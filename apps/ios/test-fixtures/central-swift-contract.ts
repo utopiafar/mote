@@ -11,6 +11,8 @@ import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 const root=fileURLToPath(new URL('../../../',import.meta.url));
 const historyOnly=process.argv.length===3&&process.argv[2]==='--history-only';
 assert.ok(process.argv.length===2||historyOnly,'Expected no arguments or --history-only');
+const suiteName=historyOnly?'ConversationReadContractTests':'MoteCentralTests';
+const caseName=historyOnly?'testReadsTheSavedConversationAndKeepsIndependentlySavedOriginal':'testRealCentralResponsesDecodeThroughProductionClient';
 const directory=await mkdtemp(join(tmpdir(),'mote-swift-contract-'));
 const token=randomBytes(32).toString('hex');
 const deviceId='generated-iphone';
@@ -42,7 +44,7 @@ try{
   assert.equal(response.statusCode,200,'Generated iOS invitation failed');
   const invitation=JSON.stringify(response.json().invitation);
   if(interrupted)throw Error('Swift contract interrupted before swift test started');
-  child=spawn('swift',['test','--package-path','apps/ios/MoteKit','--filter',historyOnly?'ConversationDeletionContractTests':'MoteCentralTests'],{cwd:root,stdio:['inherit','pipe','pipe'],detached:process.platform!=='win32',
+  child=spawn('swift',['test','--package-path','apps/ios/MoteKit','--filter',suiteName],{cwd:root,stdio:['inherit','pipe','pipe'],detached:process.platform!=='win32',
     env:{...process.env,MOTE_SWIFT_CONTRACT_INVITATION:invitation,MOTE_SWIFT_CONTRACT_DEVICE_ID:deviceId,
       MOTE_SWIFT_CONTRACT_CONVERSATION:history.conversationId,MOTE_SWIFT_CONTRACT_MEMORY:memory.id,
       MOTE_SWIFT_HISTORY_URL:origin,MOTE_SWIFT_HISTORY_TOKEN:token,MOTE_SWIFT_HISTORY_ORIGINAL:evidenceId}});
@@ -69,7 +71,6 @@ try{
       else done();
     });
   });
-  const caseName=historyOnly?'testDeleteRemovesHistoryAndKeepsIndependentlySavedOriginal':'testRealCentralResponsesDecodeThroughProductionClient';
   assert.match(output,new RegExp(caseName+'.*passed'),'The real Central contract case must execute');
   assert.doesNotMatch(output,new RegExp(caseName+'.*skipped'),'The real Central contract case cannot be skipped');
   console.log('Real Fastify → Swift Central contract passed (generated SQLite/HTTP; no device or model).');

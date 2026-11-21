@@ -28,7 +28,7 @@ app.on('browser-window-created',(_event,window)=>{
  const until=async(condition,label)=>{const deadline=Date.now()+20000;while(!await condition()){assert.ok(Date.now()<deadline,label);await delay(30);}};
  const headers={authorization:'Bearer '+fixture.token,'content-type':'application/json'};
  const api=async(path,body)=>{const r=await fetch(fixture.url+path,{headers,...(body?{method:'POST',body:JSON.stringify(body)}:{})});assert.ok(r.ok,await r.clone().text());return r.json();};
- const read=kind=>api('/api/conversations/'+fixture.ids[kind]);
+ const read=kind=>api(['','api','conversations',fixture.ids[kind]].join('/'));
  const select=async kind=>{
   await js(`document.querySelector('#ask-refresh').click()`);
   await until(()=>js(`!document.querySelector('#ask-new').disabled`),'Mac history ready');

@@ -44,7 +44,8 @@ app.on('browser-window-created',(_event,window)=>{
   assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated unsent draft');
   await js(`document.querySelector('#ask-question').value='Generated explicit continuation';document.querySelector('#ask-form').requestSubmit()`);
   await until(()=>js(`document.querySelector('#ask-progress').textContent.includes('回答已完成')&&!document.querySelector('#ask-send').disabled`),'actual continuation');
-  const shared=await fetch(fixture.url+'/api/conversations/'+fixture.conversationId,{headers}).then(response=>response.json());
+  const conversationPath=['','api','conversations',fixture.conversationId].join('/');
+  const shared=await fetch(fixture.url+conversationPath,{headers}).then(response=>response.json());
   assert.equal(shared.turnCount,46);assert.equal(shared.turns.at(-1).question,'Generated explicit continuation');
   assert.equal(shared.turns.at(-1).result.answer,'Generated continued response');
   await js(`document.querySelector('#ask-question').value='Generated retained after refresh';document.querySelector('#ask-refresh').click()`);
