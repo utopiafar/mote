@@ -7569,7 +7569,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "选择后自动填写": "Se rellena automáticamente al seleccionar",
   "本机设置": "Ajustes locales",
   "压缩前图片": "Imagen antes de comprimir",
-  "请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。": "Empieza a conocerme basándote solo en este material. Explica los hechos que presenta con claridad, lo que sigue siendo incierto y las preguntas que necesitas que responda.",
   "MCP · 创建日程": "MCP · Creación de eventos",
   "创建日程": "Crear eventos",
   "授权目标日历": "Calendario autorizado",
