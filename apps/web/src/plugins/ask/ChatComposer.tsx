@@ -26,7 +26,7 @@ export function createChatDraft(initial: string, onChange: (value: string) => vo
 const StableModelSelector = memo(ModelSelector);
 
 export function ChatComposer({api, draft, files, busy, blocked, preparing, model, override, onModel, onOverride,
-  onEdit, onSend, options, reference}: {
+  onEdit, onSend, options, reference, scopeTag}: {
   api: Api;
   draft: ReturnType<typeof createChatDraft>;
   files: AttachmentDraft;
@@ -41,6 +41,7 @@ export function ChatComposer({api, draft, files, busy, blocked, preparing, model
   onSend: () => void;
   options: ReactNode;
   reference: ReactNode;
+  scopeTag?: ReactNode;
 }) {
   const question = useSyncExternalStore(draft.subscribe, draft.read, draft.read);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -108,6 +109,7 @@ export function ChatComposer({api, draft, files, busy, blocked, preparing, model
         </details>
         <input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden
           onChange={event => {if (!busy && !preparing) files.add(event.target.files); event.target.value = '';}}/>
+        {scopeTag}
         <textarea aria-label={moteText('向 Mote 提问')} placeholder={moteText('发消息')} rows={1} maxLength={8000}
           value={question} disabled={busy} onChange={event => onEdit(event.target.value)} onKeyDown={event => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
