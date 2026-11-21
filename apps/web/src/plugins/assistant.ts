@@ -6,6 +6,7 @@ import {AssistantWorkbenchPage} from './assistant-workbench';
 import {AssistantMatters} from './assistant/AssistantMatters';
 import {FeedPage} from './assistant/FeedPage';
 import {IdeasPage} from './assistant/IdeasPage';
+import {GoalsPage} from './assistant/GoalsPage';
 
 const MemoryPage=lazy(()=>import('./memory/MemoryPage').then(module=>({default:module.MemoryPage})));
 const memory=assistantEntrypoints.find(entry=>entry.pageId==='assistantMemory')!;
@@ -22,6 +23,10 @@ export const assistant:BuiltinWebPlugin={id:'mote.assistant',pages:[{
   id:memory.pageId,route:memory.href.slice(2),navItem:'memory',featureId:'mote.assistant',requires:[...memory.requires??[]],
   get label(){return moteText('记忆');},
   render:({api,onOpen})=>createElement(MemoryPage,{api,onOpen}),
+},{
+  id:'assistantGoals',route:'goals',navItem:'goals',label:moteText('目标'),featureId:'mote.assistant',
+  requires:['http:GET:/api/assistant/goals'],
+  render:({api,onOpen})=>createElement(GoalsPage,{api,onOpen}),
 },{
   id:'assistantWorkbench',route:'assistant/workbench',label:moteText('工作台'),featureId:'mote.assistant',
   requires:[{id:'http:GET:/api/assistant/workbench',version:'1',host:'server'}],

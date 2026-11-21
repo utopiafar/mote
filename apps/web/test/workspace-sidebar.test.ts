@@ -25,16 +25,16 @@ test('NV3-01 Chat is selected and the two groups follow the shared manifest and 
     const d=dom.window.document;
     const expected=navigationFor({
       enabledPackages:new Set(webFeatures.registry.inventory().features.map(feature=>feature.id)),
-      registered:new Set<NavItemId>(['chat','feed','ideas','library','memory','skills','connections','settings']),
+      registered:new Set<NavItemId>(['chat','feed','ideas','goals','library','memory','skills','connections','settings']),
     });
     assert.deepEqual(ids(d,'daily'),expected.daily.map(item=>'id' in item?item.id:item.pageId));
     assert.deepEqual(ids(d,'manage'),expected.manage.map(item=>item.id));
-    assert.deepEqual(ids(d,'daily'),['chat','feed','ideas','library']);
+    assert.deepEqual(ids(d,'daily'),['chat','feed','ideas','goals','library']);
     assert.deepEqual(ids(d,'manage'),['memory','skills','connections','settings']);
     assert.equal(d.querySelector('[data-nav-item="chat"]')?.getAttribute('aria-current'),'page');
     assert.ok(d.querySelector('#primary-navigation .brand svg'));
     assert.equal(d.querySelector('#primary-navigation .brand')?.textContent,'');
-    assert.equal(d.querySelector('.node-state, .workspace-node-menu, [data-nav-item="goals"]'),null);
+    assert.equal(d.querySelector('.node-state, .workspace-node-menu'),null);
     for(const button of d.querySelectorAll('[data-nav-item]'))assert.ok(button.querySelector('svg'));
     assert.equal(readPage(pageHash('chat')),'ask');
   }finally{dom.window.close();}
