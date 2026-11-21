@@ -7684,5 +7684,15 @@ export const english: Readonly<Record<string, string>> = {
   "录音来源": "Recording sources",
   "返回录音来源": "Back to recording sources",
   "{0} 的设置": "{0} settings",
-  "部分读取失败": "Some items could not be loaded"
+  "部分读取失败": "Some items could not be loaded",
+  "人": "Person",
+  "我": "Me",
+  "别人": "Someone else",
+  "去聊": "Chat",
+  "添加目标": "Add goal",
+  "{0} 件": "{0} items",
+  "相关资料": "Related materials",
+  "事项状态暂不可用": "Matter state unavailable",
+  "事项已变化，需重新读取": "Matter changed; reload",
+  "目标数据无法读取": "Goal data unavailable"
 };

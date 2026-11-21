@@ -65,6 +65,7 @@ const aboutRefs=[
   {kind:'card',id:'generated-card'},
   {kind:'question',id:'generated-question'},
   {kind:'commitment',id:'generated-commitment'},
+  {kind:'todo',id:randomUUID()},
   {kind:'matter',id:'generated-matter'},
   {kind:'memory',id:'generated-memory'},
   {kind:'evidence',id:'generated-evidence'},
@@ -120,7 +121,7 @@ test('CT1-04 chat about references format and parse only known kinds',()=>{
   assert.equal(CHAT_ABOUT_PARAM,'about');
   for(const ref of aboutRefs)assert.deepEqual(parseAboutRef(formatAboutRef(ref)),ref);
   assert.equal(formatAboutRef({kind:'material',ref:materialRef}),`material:${materialRef}`);
-  for(const invalid of ['', 'card', 'card:', ':abc', 'card:bad id', 'material:generated', `material:${'a'.repeat(64)}`,'unknown:abc'])
+  for(const invalid of ['', 'card', 'card:', ':abc', 'card:bad id', 'todo:bad id', 'material:generated', `material:${'a'.repeat(64)}`,'unknown:abc'])
     assert.equal(parseAboutRef(invalid),null);
 });
 

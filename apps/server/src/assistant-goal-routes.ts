@@ -15,13 +15,18 @@ const revision=z.number().int().positive().safe();
 
 /** Owner-only goal surface. Reads and commands only touch the existing
  * commitment, Todo, calendar Action and routine services. */
-export function registerAssistantGoalRoutes(app:FastifyInstance,deps:{goals:Pick<AssistantGoals,'view'|'follow'|'create'|'correct'>;owner:(request:FastifyRequest)=>void}){
+export function registerAssistantGoalRoutes(app:FastifyInstance,deps:{goals:Pick<AssistantGoals,'view'|'follow'|'create'|'correct'|'todoReference'>;owner:(request:FastifyRequest)=>void}){
  const {goals,owner}=deps;
  app.get('/api/assistant/goals',async(request,reply)=>{
   owner(request);
   const query=z.object({group:z.enum(['matter','person']),scope:scopeParam,tz:timeZone.optional()}).strict().parse(request.query);
   reply.header('Cache-Control','no-store');
   return goals.view({group:query.group,scope:query.scope,...(query.tz?{timeZone:query.tz}:{})});
+ });
+ app.get('/api/assistant/goals/todos/:id',async(request,reply)=>{
+  owner(request);
+  reply.header('Cache-Control','no-store');
+  return goals.todoReference(id(request));
  });
  app.post('/api/assistant/goals',{bodyLimit:16384},async(request,reply)=>{
   owner(request);return reply.code(201).send(goals.create(goalCreateInputSchema.parse(request.body)));

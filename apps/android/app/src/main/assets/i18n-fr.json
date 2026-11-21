@@ -7683,5 +7683,15 @@
   "录音来源": "Sources d'enregistrement",
   "返回录音来源": "Retour aux sources d'enregistrement",
   "{0} 的设置": "Paramètres de {0}",
-  "部分读取失败": "Chargement partiel"
+  "部分读取失败": "Chargement partiel",
+  "人": "Personne",
+  "我": "Moi",
+  "别人": "Quelqu'un d'autre",
+  "去聊": "Discuter",
+  "添加目标": "Ajouter un objectif",
+  "{0} 件": "{0} éléments",
+  "相关资料": "Documents liés",
+  "事项状态暂不可用": "État des sujets indisponible",
+  "事项已变化，需重新读取": "Le sujet a changé ; rechargez",
+  "目标数据无法读取": "Données d'objectif indisponibles"
 }

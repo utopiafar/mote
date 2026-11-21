@@ -255,6 +255,12 @@ export class AssistantGoals {
   return {id:todo.id,kind:'todo' as const,revision:todo.version};
  }
 
+ todoReference(id:string){
+  const todo=this.todos.get(id);
+  if(todo.status!=='open'||!this.evidenceVisible(todo.evidenceIds,{kind:'all'}))throw new StoreError('Task not found',404);
+  return {id:todo.id,title:todo.title,evidenceIds:todo.evidenceIds};
+ }
+
  private correctCommitment(input:{id:string;action:'complete'|'dismiss'|'reject';expectedRevision:number;scope?:QueryScope}):GoalActionResult{
   const scope=input.scope??({kind:'all'} as const),commitment=this.commitments.get(input.id,scope);
   if(commitment.revision!==input.expectedRevision)throw new StoreError('Goal changed; reload before continuing',409);
