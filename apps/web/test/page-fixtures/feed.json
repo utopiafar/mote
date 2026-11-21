@@ -1,0 +1,234 @@
+{
+  "route": "#/feed",
+  "waitFor": ".content[data-session='ready'][aria-busy='false'] .feed-page[aria-busy='false'] .feed-row",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": { "configured": false, "model": null, "provider": "" },
+        "storage": {
+          "captures": 6,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{ "status": "text_ready", "count": 6 }]
+        },
+        "index": { "mode": "text", "model": null },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 6,
+          "connections": false
+        }
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": []
+      }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": [
+          { "id": "http:GET:/api/assistant-cards", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:POST:/api/assistant-cards/:id/feedback", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" }
+        ]
+      }
+    },
+    "GET /api/assistant-cards": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "kind": "activity",
+            "matterId": null,
+            "version": "generated-feed-1",
+            "state": "open",
+            "revision": 1,
+            "title": "发布小组 · 林舟 周知 冻结时间改到 周五 18:00",
+            "body": "发布小组把本周冻结时间改到周五 18:00。",
+            "evidence": [{ "id": "30000000-0000-4000-8000-000000000001", "quote": "冻结时间改到周五 18:00。" }],
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000001"] },
+            "feedback": [],
+            "readAt": null,
+            "acceptedTaskId": null,
+            "taskScope": null,
+            "taskEvidence": [],
+            "evidenceOrigins": [],
+            "createdAt": "2026-11-20T08:57:00+08:00",
+            "updatedAt": "2026-11-20T08:57:00+08:00",
+            "category": "工作",
+            "subject": "发布小组 · 林舟",
+            "action": "周知",
+            "gist": "冻结时间改到 周五 18:00"
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "kind": "activity",
+            "matterId": null,
+            "version": "generated-feed-2",
+            "state": "open",
+            "revision": 1,
+            "title": "陈默 回复你 同步超时问题 已在 #412 修复",
+            "body": "陈默回复同步超时问题已经在 #412 修复。",
+            "evidence": [{ "id": "30000000-0000-4000-8000-000000000002", "quote": "同步超时问题已在 #412 修复。" }],
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000002"] },
+            "feedback": [],
+            "readAt": null,
+            "acceptedTaskId": null,
+            "taskScope": null,
+            "taskEvidence": [],
+            "evidenceOrigins": [],
+            "createdAt": "2026-11-20T08:48:00+08:00",
+            "updatedAt": "2026-11-20T08:48:00+08:00",
+            "category": "工作",
+            "subject": "陈默",
+            "action": "回复你",
+            "gist": "同步超时问题 已在 #412 修复"
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000003",
+            "kind": "activity",
+            "matterId": null,
+            "version": "generated-feed-3",
+            "state": "open",
+            "revision": 1,
+            "title": "家庭群 · 妈妈 说 周六 中午回家吃饭",
+            "body": "家庭群里妈妈提到周六中午回家吃饭。",
+            "evidence": [{ "id": "30000000-0000-4000-8000-000000000003", "quote": "周六中午回家吃饭。" }],
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000003"] },
+            "feedback": [],
+            "readAt": "2026-11-20T08:30:00+08:00",
+            "acceptedTaskId": null,
+            "taskScope": null,
+            "taskEvidence": [],
+            "evidenceOrigins": [],
+            "createdAt": "2026-11-20T07:30:00+08:00",
+            "updatedAt": "2026-11-20T07:30:00+08:00",
+            "category": "生活",
+            "subject": "家庭群 · 妈妈",
+            "action": "说",
+            "gist": "周六 中午回家吃饭"
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000004",
+            "kind": "briefing",
+            "matterId": null,
+            "version": "generated-feed-4",
+            "state": "open",
+            "revision": 1,
+            "title": "Northwind 发布 本地优先同步引擎开源",
+            "body": "Northwind 发布了本地优先同步引擎的开源消息。",
+            "evidence": [{ "id": "30000000-0000-4000-8000-000000000004", "quote": "本地优先同步引擎开源。" }],
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000004"] },
+            "feedback": [],
+            "readAt": null,
+            "acceptedTaskId": null,
+            "taskScope": null,
+            "taskEvidence": [],
+            "evidenceOrigins": [],
+            "createdAt": "2026-11-20T04:00:00+08:00",
+            "updatedAt": "2026-11-20T04:00:00+08:00",
+            "category": "资讯",
+            "subject": "Northwind",
+            "action": "发布",
+            "gist": "本地优先同步引擎开源"
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000005",
+            "kind": "artifact",
+            "matterId": null,
+            "version": "generated-feed-5",
+            "state": "open",
+            "revision": 1,
+            "title": "本周回顾 发布占了一半的时间，设计改版其次",
+            "body": "本周回顾：发布工作占了一半的时间，设计改版其次。",
+            "evidence": [],
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": [] },
+            "feedback": [],
+            "readAt": null,
+            "acceptedTaskId": null,
+            "taskScope": null,
+            "taskEvidence": [],
+            "evidenceOrigins": [],
+            "createdAt": "2026-11-19T18:00:00+08:00",
+            "updatedAt": "2026-11-19T18:00:00+08:00",
+            "category": "回顾",
+            "subject": "本周回顾",
+            "action": "发布",
+            "gist": "发布占了 一半的时间，设计改版其次"
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000006",
+            "kind": "discovery",
+            "matterId": null,
+            "version": "20000000-0000-4000-8000-000000000006",
+            "state": "open",
+            "revision": 0,
+            "title": "本周回顾：发布占了一半的时间",
+            "body": "本周回顾：发布占了一半的时间，设计改版其次。",
+            "evidence": [],
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": [] },
+            "feedback": [],
+            "readAt": null,
+            "acceptedTaskId": null,
+            "taskScope": null,
+            "taskEvidence": [],
+            "evidenceOrigins": [],
+            "createdAt": "2026-11-19T17:00:00+08:00",
+            "updatedAt": "2026-11-19T17:00:00+08:00"
+          }
+        ],
+        "nextCursor": null,
+        "categories": [
+          { "name": "工作", "count": 2 },
+          { "name": "生活", "count": 1 },
+          { "name": "资讯", "count": 1 },
+          { "name": "回顾", "count": 1 }
+        ],
+        "revision": "fixture-feed-1"
+      }
+    }
+  }
+}
