@@ -1,12 +1,12 @@
 import { type SourceConnection } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import { Ellipsis, Link2, Monitor, Plus, Smartphone } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { type Api, type Device } from '../../api';
 import { LoadingText } from '../../Loading';
 import { useForegroundResources } from '../../useForegroundResources';
 import { useResource } from '../../useResource';
-import { DevicePairingSheet, DeviceSheet } from './DeviceSheet';
+import { DevicePairingSheet, DeviceSheet, RecordingSourcesSheet } from './DeviceSheet';
 
 /** The selection uses the exact query fields of /api/library/browse. */
 export type SourceBarFilter = { deviceId: string; sourceId?: never } | { sourceId: string; deviceId?: never };
@@ -19,6 +19,9 @@ type SourceBarProps = {
     revision?: number;
     /** The native host can supply a chip for this Mac using its own device identity. */
     localDevice?: { deviceId: string; content: ReactNode };
+    /** Increment to open the existing pairing sheet from another empty-state action. */
+    pairingRequest?: number;
+    onOpen?: (ref: string) => void;
 };
 
 type DeviceConnection = {
@@ -41,7 +44,8 @@ type DeviceSource = {
 
 type AbnormalStatus = 'paused' | 'offline' | 'error';
 type OpenSheet = { api: Api; opener: HTMLButtonElement } &
-    ({ type: 'pair' } | { type: 'settings'; deviceId: string });
+    ({ type: 'pair' } | { type: 'settings'; deviceId: string } |
+     { type: 'recording'; provider: string; name: string });
 
 const devicesPath = '/api/devices';
 const connectionsPath = '/api/connections';
@@ -115,18 +119,24 @@ function FilterChip({ selected, status, onClick, icon, name }: {
     </button>;
 }
 
-export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice, revision }: SourceBarProps) {
+export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice, pairingRequest, onOpen, revision }: SourceBarProps) {
     const [open, setOpen] = useState<OpenSheet>();
     const sheet = open?.api === api ? open : undefined;
     const pairing = sheet?.type === 'pair';
     const all = useRef<HTMLButtonElement>(null);
     const focusAll = useRef(false);
+    const previousPairingRequest = useRef(pairingRequest);
     useLayoutEffect(() => {
         if (!sheet && focusAll.current) {
             focusAll.current = false;
             all.current?.focus({ preventScroll: true });
         }
     }, [sheet]);
+    useEffect(() => {
+        if (pairingRequest === undefined || previousPairingRequest.current === pairingRequest) return;
+        previousPairingRequest.current = pairingRequest;
+        if (all.current) setOpen({ api, type: 'pair', opener: all.current });
+    }, [api, pairingRequest]);
     const reports = useResource<{ items: Device[]; disconnectedDeviceIds: string[] }>(api, devicesPath, 30_000, revision);
     const inventory = useResource<{ items: DeviceConnection[] }>(api, connectionsPath, pairing ? 3_000 : 30_000, revision);
     const sources = useResource<{ items: SourceConnection[] }>(api, sourcesPath, 30_000, revision);
@@ -135,7 +145,9 @@ export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice,
     const devices = deviceSources(reports.data?.items ?? [], inventory.data?.items ?? []);
     const disconnected = new Set(reports.data?.disconnectedDeviceIds);
     const services = sources.data?.items.filter(source =>
-        (source.platform === 'import' && source.kind !== 'upload') || source.capabilities?.discovery === 'provider-list',
+        (source.platform === 'import' && source.kind !== 'upload') ||
+        source.capabilities?.discovery === 'provider-list' ||
+        source.kind === 'coding-agent',
     ) ?? [];
     const selectedDevice = sheet?.type === 'settings' ? devices.find(device => device.id === sheet.deviceId) : undefined;
     const failures = [reports, inventory, sources].filter(resource => resource.error !== undefined);
@@ -161,11 +173,19 @@ export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice,
                     </button>
                 </span>;
             })}
-            {services.map(source => <span key={source.id} data-source-id={source.id} style={{ display: 'inline-flex', maxWidth: '100%' }}>
-                <FilterChip name={source.name} icon={<Link2 size={16} aria-hidden="true" style={{ flexShrink: 0 }}/>}
-                    selected={filter?.sourceId === source.id} status={serviceStatus(source)}
-                    onClick={() => onFilterChange({ sourceId: source.id })}/>
-            </span>)}
+            {services.map(source => {
+                const provider = source.kind.endsWith('.recordings') ? source.kind.slice(0, -'.recordings'.length) : undefined;
+                return <span key={source.id} data-source-id={source.id} style={{ display: 'inline-flex', maxWidth: '100%' }}>
+                    <FilterChip name={source.name} icon={<Link2 size={16} aria-hidden="true" style={{ flexShrink: 0 }}/>}
+                        selected={filter?.sourceId === source.id} status={serviceStatus(source)}
+                        onClick={() => onFilterChange({ sourceId: source.id })}/>
+                    {provider && <button type="button" className="icon-button" aria-haspopup="dialog" title={moteText('更多选项')}
+                        aria-label={moteText('{0} 的设置', source.name)}
+                        onClick={event => setOpen({ api, type: 'recording', provider, name: source.name, opener: event.currentTarget })}>
+                        <Ellipsis size={16} aria-hidden="true"/>
+                    </button>}
+                </span>;
+            })}
             <button type="button" className="text-button" aria-haspopup="dialog"
                 onClick={event => setOpen({ api, type: 'pair', opener: event.currentTarget })}>
                 <Plus size={16} aria-hidden="true"/>{moteText('添加设备')}
@@ -184,11 +204,14 @@ export function SourceBar({ api, serverUrl, filter, onFilterChange, localDevice,
                 inventory.refresh();
             }}/>}
         {sheet?.type === 'settings' && selectedDevice && <DeviceSheet api={api} name={selectedDevice.name} report={selectedDevice.report}
-            opener={sheet.opener} fallbackFocus={all.current} onClose={() => setOpen(undefined)}
+            opener={sheet.opener} fallbackFocus={all.current} onClose={() => setOpen(undefined)} onOpen={onOpen}
             connectionIds={selectedDevice.connectionIds} onRevoked={() => {
                 if (filter?.deviceId === selectedDevice.id) onFilterChange(undefined);
                 focusAll.current = true;
                 setOpen(undefined);
             }}/>}
+        {sheet?.type === 'recording' && <RecordingSourcesSheet api={api} initialProvider={sheet.provider}
+            opener={sheet.opener} fallbackFocus={all.current} onClose={() => setOpen(undefined)}
+            onOpen={onOpen ?? (() => {})}/>}
     </>;
 }
