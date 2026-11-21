@@ -3,9 +3,9 @@ import {buildHost,type HostDependencies} from './host.js';
 
 export type {QueryAgent} from './host.js';
 
-/** The server entrypoint only starts the host. Domain construction, route
- * contributions and shutdown order live behind `host.ts` and the selected
- * plugin/factory modules, never in this file. */
-export function buildApp(configuration:ConfigurationPlatformOptions,dependencies?:HostDependencies){
-  return buildHost(configuration,dependencies);
+/** Start the host and connect onboarding to its existing batch and card services. */
+export async function buildApp(configuration:ConfigurationPlatformOptions,dependencies?:HostDependencies){
+  const host=await buildHost(configuration,dependencies);
+  host.featureServices.assistantOnboarding.bindOutputs(host.batchProcessing,host.featureServices.assistantCards);
+  return host;
 }
