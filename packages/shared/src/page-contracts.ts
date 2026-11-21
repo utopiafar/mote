@@ -181,6 +181,8 @@ export const ideasViewSchema=z.object({
   revision:pageRevision,
   /** A scoped view cannot supply a watermark for the unscoped ignore command. */
   watermark:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  /** Latest clarification update included here; zero when none are visible. */
+  questionWatermark:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   mine:z.array(ideaItemSchema),
   yours:z.array(ideaItemSchema),
   started:z.array(startedIdeaSchema),
@@ -190,9 +192,13 @@ export type IdeasView=z.infer<typeof ideasViewSchema>;
 export const ideasQuerySchema=z.object({scope:scopeParam}).strict();
 export type IdeasQuery=z.infer<typeof ideasQuerySchema>;
 
-/** Ignore only what the surface has already seen. Newer cards stay. */
+/** Ignore only what the surface has already seen. Newer cards and
+ * clarifications stay. `viewRevision` is the `revision` of the view that issued
+ * the command; it keeps same-millisecond views from widening each other. */
 export const ideasIgnoreAllInputSchema=z.object({
   upToSeq:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  upToQuestionAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  viewRevision:pageRevision.optional(),
 }).strict();
 export type IdeasIgnoreAllInput=z.infer<typeof ideasIgnoreAllInputSchema>;
 
@@ -337,6 +343,7 @@ export const onboardingCountsSchema=z.object({
   memories:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   ideas:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   feed:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  skippedSources:z.number().int().positive().max(50).optional(),
 }).strict();
 export type OnboardingCounts=z.infer<typeof onboardingCountsSchema>;
 
@@ -358,6 +365,7 @@ export const aboutRefSchema=z.discriminatedUnion('kind',[
   z.object({kind:z.literal('card'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('question'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('commitment'),id:aboutIdSchema}).strict(),
+  z.object({kind:z.literal('todo'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('matter'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('memory'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('evidence'),id:aboutIdSchema}).strict(),
@@ -387,6 +395,7 @@ export function parseAboutRef(text:string):AboutRef|null{
     case 'card':return {kind:'card',id:id.data};
     case 'question':return {kind:'question',id:id.data};
     case 'commitment':return {kind:'commitment',id:id.data};
+    case 'todo':return {kind:'todo',id:id.data};
     case 'matter':return {kind:'matter',id:id.data};
     case 'memory':return {kind:'memory',id:id.data};
     case 'evidence':return {kind:'evidence',id:id.data};

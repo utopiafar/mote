@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp,type QueryAgent} from '../src/app.js';
+import {Conversations} from '../src/conversations.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {sha256} from '../src/evidence-store.js';
@@ -52,7 +53,7 @@ test('selected deletion and cancellation fence late answers without publishing t
   const f=await fixture(sub,async input=>{entered();await gate;return {...answer(input),answer:'Generated late selected answer'};});sub.after(()=>release());const selected=await add(f.node),id=randomUUID();
   assert.equal((await f.node.app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated blocked scoped query',evidenceIds:[selected.id]}}})).statusCode,202);await started;
   if(mode==='delete')assert.equal((await f.node.app.inject({method:'DELETE',url:'/api/notes/'+selected.id,headers})).statusCode,200);else assert.equal((await f.node.app.inject({method:'POST',url:'/api/query-runs/'+id+'/cancel',headers,payload:{}})).statusCode,200);
-  release();const run=await completed(f.node,id);assert.notEqual(run.status,'completed',JSON.stringify(run));const history=(await f.node.app.inject({url:'/api/conversations',headers})).json();for(const summary of history.items){const conversation=(await f.node.app.inject({url:'/api/conversations/'+summary.id,headers})).json();assert.ok(!JSON.stringify(conversation).includes('Generated late selected answer'));}
+  release();const run=await completed(f.node,id);assert.notEqual(run.status,'completed',JSON.stringify(run));const history=new Conversations(f.node.store).list();for(const summary of history.items){const conversation=(await f.node.app.inject({url:'/api/conversations/'+summary.id,headers})).json();assert.ok(!JSON.stringify(conversation).includes('Generated late selected answer'));}
  });
 });
 
@@ -136,7 +137,7 @@ test('deleting an anchor or cancelling its run fences a controlled late answer a
   const pinned=f.node.store.db.prepare('SELECT 1 FROM delegation_dependencies WHERE work_id=? AND evidence_id=?').get('query:'+id,anchor.id);assert.ok(pinned,'anchor revocation is registered before the waiting model returns');
   if(mode==='delete')assert.equal((await f.node.app.inject({method:'DELETE',url:'/api/notes/'+anchor.id,headers})).statusCode,200);else assert.equal((await f.node.app.inject({method:'POST',url:'/api/query-runs/'+id+'/cancel',headers,payload:{}})).statusCode,200);
   release();await modelReturned;await new Promise<void>(resolve=>setImmediate(resolve));const run=await completed(f.node,id);assert.notEqual(run.status,'completed',JSON.stringify(run));assert.equal(run.turnId,undefined,'a retired background run cannot publish a late conversation turn');
-  const history=(await f.node.app.inject({url:'/api/conversations',headers})).json();for(const summary of history.items){const conversation=(await f.node.app.inject({url:'/api/conversations/'+summary.id,headers})).json();assert.ok(!JSON.stringify(conversation).includes('Generated late anchor answer'));}
+  const history=new Conversations(f.node.store).list();for(const summary of history.items){const conversation=(await f.node.app.inject({url:'/api/conversations/'+summary.id,headers})).json();assert.ok(!JSON.stringify(conversation).includes('Generated late anchor answer'));}
   assert.notEqual(f.node.delegation.get('query:'+id).status,'succeeded');
  });
 });

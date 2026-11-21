@@ -32,7 +32,7 @@ const server=createServer((req,res)=>{
     else res.end(JSON.stringify({items:[row],totalCount:1,nextCursor:null}));return;
   }
   if(url.pathname==='/api/capture-browser/'+remoteId){res.end(JSON.stringify(row));return;}
-  if(url.pathname==='/api/conversations'||url.pathname==='/api/query-runs'){res.end('{"items":[]}');return;}
+  if(url.pathname==='/api/query-runs'){res.end('{"items":[]}');return;}
   if(url.pathname==='/api/connections/self'){res.end(JSON.stringify({credential:{id:'fixture',scope:'owner'},node:{version:'fixture',profile:'fixture',protocol:{min:1,max:1}},capabilities:{ingest:true,ownSources:true,archiveRead:true}}));return;}
   res.statusCode=404;res.end('{}');
 });

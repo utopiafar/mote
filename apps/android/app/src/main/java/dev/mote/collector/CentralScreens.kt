@@ -3,16 +3,22 @@ package dev.mote.collector
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
 import android.text.style.ReplacementSpan
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.AssistantPlugin
+import dev.mote.collector.plugins.CapturePlugin
 import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
+import dev.mote.collector.plugins.NativeAskLocalChat
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
@@ -29,6 +35,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private val cipher = ui.secretBox()
     private val askOwner = NativeAskPlugin.owner(ui)
     private val ask = askOwner.controller(directory)
+    private val localChat by lazy { NativeAskPlugin.localChat(ui) }
     private val noteStore = CentralNoteStore(directory, cipher)
     private val importStore = CentralImports(File(directory, "import-pending"), cipher)
     private val attachmentStore = CentralStateFile(directory, "attachment-times", cipher)
@@ -48,36 +55,28 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private var preset: Spinner? = null
     private var model: EditText? = null
     private var modelSettings = JSONObject()
-    private var conversationPreferences = CentralConversationSettings.defaults()
     private var mainConversationId: String? = null
-    private var conversationItems: List<HistoryConversation> = emptyList()
-    private var conversationListReadable = false
-    private var conversationListFailed = false
-    private var conversationListView: ConversationListView? = null
-    private var conversationStatus: LinearLayout? = null
-    private var newConversationAction: android.view.View? = null
-    private var conversationListMore: android.view.View? = null
-    private var conversationListCursor: String? = null
-    private var submitOnAskEntry = false
     private var lastConversation: JSONObject? = null
     private var lastConversationCursor: String? = null
+    private var chatDetails = emptyMap<String, ChatDetails>()
     private var messages: LinearLayout? = null
     private var scopeBox: LinearLayout? = null
     private var scopeChip: LinearLayout? = null
     private var scopeIcon: ImageView? = null
     private var scopeLabel: TextView? = null
     private var scopeClear: ImageButton? = null
-    private var runStatus: TextView? = null
     private var askFailureAction: TextView? = null
     private var askFailureDialog: android.app.AlertDialog? = null
     private var askOffline = false
     private var offlineNotice: LinearLayout? = null
     private var send: android.view.View? = null
-    private var stopAction: android.view.View? = null
+    private var voice: View? = null
     private var checkRun: Button? = null
     private var retryRun: Button? = null
     private var askImagesView: LinearLayout? = null
-    private var addAskImage: android.view.View? = null
+    private var chatAdd: View? = null
+    private var localMessage: NativeAskLocalChat.Message? = null
+    private var captureReceipts = emptyList<ChatCaptureReceipt>()
     private var noteText: EditText? = null
     private var noteMood: EditText? = null
     private var noteDraft = JSONObject().put("text", "").put("mood", "").put("attachments", JSONArray())
@@ -106,10 +105,8 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
 
     fun show(page: String) {
         currentPage = page; detailBack = null; question = null; messages = null; noteText = null; noteMood = null
-        if (page != "ask") submitOnAskEntry = false
         when (page) {
             "ask" -> loadAsk()
-            "conversations" -> showConversations()
             "notes" -> loadNotes()
             "overview" -> overview()
             "activity" -> activity.show()
@@ -158,14 +155,12 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         WorkMemoryDrafts.clear()
         askFailureDialog?.dismiss(); askFailureDialog = null; askFailureAction = null
         ask.clearImageReferences()
-        askImagesView?.removeAllViews();askImagesView=null;addAskImage=null
-        askOffline = false; offlineNotice = null; stopAction = null
+        askImagesView?.removeAllViews();askImagesView=null;chatAdd=null;voice=null
+        askOffline = false; offlineNotice = null; localMessage = null; captureReceipts = emptyList()
         scopeBox=null;scopeChip=null;scopeIcon=null;scopeLabel=null;scopeClear=null
-        ask.reset(); conversationItems = emptyList(); conversationListReadable = false; conversationListFailed = false
-        conversationListView = null; conversationStatus = null; newConversationAction = null; conversationListMore = null
-        conversationListCursor = null; submitOnAskEntry = false
-        modelSettings = JSONObject(); conversationPreferences = CentralConversationSettings.defaults(); mainConversationId = null
-        lastConversation = null; question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); activity.clearPrivateState(); library.clearTopics(); insights.clear(); body.removeAllViews()
+        ask.reset()
+        modelSettings = JSONObject(); mainConversationId = null
+        lastConversation = null; chatDetails = emptyMap(); question = null; messages = null; noteText = null; noteMood = null; admin.clearPrivateState(); activity.clearPrivateState(); library.clearTopics(); insights.clear(); body.removeAllViews()
     }
     fun refresh() { if (currentPage == "insights") insights.returnFromEvidence(); ui.navigate(currentPage) }
     fun showOriginalDetail(detail: OriginalDetailPresentation) {
@@ -246,22 +241,21 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
 
     internal val selectedAskConversationId get()=askState.optString("conversationId").takeIf { it.isNotBlank() && lastConversation?.optString("id")==it }
-    private data class AskLoad(val state: JSONObject, val settings: JSONObject?, val main: String?, val failure: Throwable?)
+    private data class AskLoad(val state: JSONObject, val main: String?, val failure: Throwable?, val captures: List<ChatCaptureReceipt>)
     private fun loadAsk() {
         val api = client
+        val origin = ui.server
         val requestedConversation = ui.requestedAskConversation()
         ui.work(MoteI18n.text("正在读取对话…"), {
             val state = ask.readDraft()
-            val settingsResult = runCatching { api.get("/api/configuration") }
             val mainResult = runCatching { api.get("/api/conversations/main").optString("id") }
-            listOf(settingsResult, mainResult).forEach { result ->
-                result.exceptionOrNull()?.let { if (it is CentralFailure && it.status in setOf(401, 403)) throw it }
-            }
-            AskLoad(state, settingsResult.getOrNull(), mainResult.getOrNull(), settingsResult.exceptionOrNull() ?: mainResult.exceptionOrNull())
+            mainResult.exceptionOrNull()?.let { if (it is CentralFailure && it.status in setOf(401, 403)) throw it }
+            AskLoad(state, mainResult.getOrNull(), mainResult.exceptionOrNull(), readCaptureReceipts(origin))
         }) { load ->
             ask.restore(load.state)
+            captureReceipts = load.captures
+            localMessage = null
             mainConversationId = load.main?.takeIf { runCatching { UUID.fromString(it) }.isSuccess }
-            load.settings?.let { runCatching { CentralConversationSettings.read(it) }.getOrNull()?.let { value -> conversationPreferences = value } }
             var scopeRefused = false
             ui.takeAskEvidence()?.let { evidence -> scopeRefused = !ask.beginEvidence(evidence.id, evidence.label) }
             // An ordinary Ask opens the server's current main conversation. An
@@ -278,26 +272,23 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 val cached = lastConversation?.takeIf { it.optString("id") == conversationId }
                 if (load.failure != null && cached != null) renderConversation(cached)
                 else loadConversation(conversationId)
-            }
+            } else renderCaptureReceipts(messages!!)
             ui.requestedAskConversation()?.let { selectConversation(it,fromIntent=true) }
-            if (askState.has("messageId") || askState.has("pending")) ui.scheduleAskPoll()
+            ui.scheduleAskPoll()
             load.failure?.let { error ->
                 // A page-level settings/main read must never be recorded as a
                 // failure of the owner's already accepted message.
                 if (askBusy()) ui.notice(error.message ?: MoteI18n.text("对话暂不可读取，请稍后重试。"))
                 else ui.requestFailure(error)
             }
-            if (submitOnAskEntry) { submitOnAskEntry = false; submitAsk() }
         }
     }
     private fun buildAsk() {
         body.removeAllViews()
         body.setPadding(ui.moteDp(20), ui.moteDp(10), ui.moteDp(20), ui.moteDp(24))
         messages = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
-        runStatus = ui.text("", parent = messages!!).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
         val conversation = askState.optString("conversationId").isNotBlank()
-        ui.askConversationVisible(conversation)
-        ui.askBackToHistory = if (conversation) { { if (currentPage == "ask" && messages != null) { ui.openConversationList(); true } else false } } else null
+        ui.restoreAskHeader()
         if (!conversation) ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, messages!!)
         val compose = ui.askComposer()
         offlineNotice = offlineRow().also(compose::addView)
@@ -357,48 +348,17 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         scopeBox!!.addView(chipFrame, LinearLayout.LayoutParams(-2, ui.moteDp(48)))
         updateScope()
 
-        val pill = LinearLayout(ui).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
-            minimumHeight = ui.moteDp(50)
-            setPadding(ui.moteDp(2), 0, ui.moteDp(4), 0)
-            NativePresentationStyles.bind(this, "ask-composer-pill") {
-                it.background = MoteUi.shape(ui, NativeColorRole.SURFACE, NativeRadiusRole.PILL, true, NativeColorRole.CONTROL_BORDER)
+        val input = buildChatInput(ui, compose, askState.optString("question"), { submitAsk() }, {
+            showChatEntries(ui, imageEnabled = askOffline || ask.imageCount() < 4) { entry ->
+                ui.openChatEntry(entry, attachImage = !askOffline)
             }
+        }) {
+            ask.editQuestion(it); persistAsk(); controlsAsk()
         }
-        compose.addView(pill, LinearLayout.LayoutParams(-1, ui.moteDp(50)))
-        addAskImage = MoteComponents.iconButton(ui, MoteGlyph.PHOTO, "添加图片", MoteIconButtonStyle.MUTED) {
-            if (!askBusy() && ask.imageCount()<4) ui.pickAttachment(chat = true)
-        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48))) }
-        question = EditText(ui).apply {
-            hint = MoteI18n.text(if (askState.optString("conversationId").isNotBlank()) "继续问" else "问一问")
-            contentDescription = MoteI18n.text("你的问题"); isSaveEnabled = false
-            inputType = android.text.InputType.TYPE_CLASS_TEXT
-            MoteUi.textInput(this, android.text.InputType.TYPE_CLASS_TEXT, multiline = false)
-            filters = arrayOf(InputFilter.LengthFilter(8000)); setText(askState.optString("question"))
-            MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK); setTextColor(MoteTheme.ink); setHintTextColor(MoteTheme.muted)
-            background = null; setPadding(ui.moteDp(6), 0, ui.moteDp(6), 0); includeFontPadding = false
-            maxLines = 1; minLines = 1; setSingleLine(true); imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NONE
-        }.also { pill.addView(it, LinearLayout.LayoutParams(0, ui.moteDp(48), 1f)) }
-        send = MoteComponents.iconButton(ui, MoteGlyph.UP, "发送", MoteIconButtonStyle.SOLID) { submitAsk() }.apply {
-            tag = "ask-send"
-            NativePresentationStyles.bind(this, "ask-send") { (it as ImageButton).apply {
-                minimumWidth = ui.moteDp(48); minimumHeight = ui.moteDp(48)
-                background = android.graphics.drawable.InsetDrawable(
-                    MoteUi.clickable(ui, NativeColorRole.PRIMARY_BACKGROUND, NativeRadiusRole.PILL, false), ui.moteDp(4),
-                )
-            } }
-        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48))) }
-        stopAction = MoteComponents.iconButton(ui, MoteGlyph.STOP, "停止回答", MoteIconButtonStyle.FILLED) { stopAsk() }.apply {
-            tag = "ask-stop"
-            // 48dp touch target around the 40dp visible disc.
-            NativePresentationStyles.bind(this, "ask-stop-inset") { value ->
-                value.background = android.graphics.drawable.InsetDrawable(
-                    MoteUi.clickable(ui, NativeColorRole.FILL, NativeRadiusRole.PILL, false),
-                    ui.moteDp(4), ui.moteDp(4), ui.moteDp(4), ui.moteDp(4),
-                )
-            }
-        }.also { pill.addView(it, LinearLayout.LayoutParams(ui.moteDp(48), ui.moteDp(48)).apply { marginStart = ui.moteDp(4) }) }
-        watch(question!!) { askState.put("question", question!!.text.toString()); persistAsk(); controlsAsk() }
+        question = input.field
+        chatAdd = input.add
+        send = input.send
+        voice = input.voice
 
         if (!conversation) {
             val meta = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }.also(compose::addView)
@@ -435,19 +395,23 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             preset = null; model = null
         }
         renderAskImages()
-        retryRun = ui.button(MoteI18n.text("重试同一请求"), parent = compose) { submitAsk() }
+        retryRun = ui.button(MoteI18n.text("重试同一请求"), parent = compose) {
+            if (ask.hasPending()) submitAsk() else submitLocalMessage(allowRejected = true)
+        }
         checkRun = ui.button(MoteI18n.text("检查结果"), parent = compose) { pollAsk() }
         updateAskFailureAction()
         controlsAsk()
+        ui.applyChatSpeech(input.field)
     }
 
-    private fun stopAsk() {
-        val conversationId = askState.optString("conversationId"); val id = ask.messageId()
-        if (conversationId.isBlank() || id.isBlank()) return
+    private fun stopAsk(conversationId: String, id: String) {
         val api = client
         ui.work(MoteI18n.text("正在停止回答…"), {
-            api.post("/api/conversations/" + encode(conversationId) + "/messages/" + encode(id) + "/cancel")
-        }) { message -> receiveRun(message) }
+            ask.cancelMessage(conversationId, id) { path -> api.post(path) }
+        }) { message ->
+            if (ask.messageId() == id && !ask.hasPending()) receiveRun(message)
+            else loadConversation(conversationId, lastConversationCursor)
+        }
     }
 
     /** The composer banner for an unreachable Central owner; the conversation
@@ -487,6 +451,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         askOffline = true
         offlineNotice?.visibility = android.view.View.VISIBLE
         controlsAsk()
+        renderPendingAdmission()
     }
 
     internal fun clearOffline() {
@@ -502,149 +467,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     }
 
     private fun askBusy() = ask.busy()
-    private fun showConversations() {
-        ui.detailTitle("")
-        body.removeAllViews()
-        body.setPadding(ui.moteDp(16), 0, ui.moteDp(16), ui.moteDp(24))
-        body.addView(TextView(ui).apply {
-            tag = "central-title"
-            text = MoteI18n.text("对话"); MoteUi.type(this, NativeFontRole.TITLE_MOBILE, medium = true)
-            MoteUi.textColor(this, NativeColorRole.INK); setPadding(ui.moteDp(4), ui.moteDp(2), ui.moteDp(4), 0)
-        })
-        conversationStatus = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
-            .also { body.addView(it, LinearLayout.LayoutParams(-1, -2)) }
-        newConversationAction = ui.button(MoteI18n.text("新对话"), parent = body) { newConversation() }
-            .apply { visibility = android.view.View.GONE }
-        conversationListView = ConversationListView(ui, onOpen = ::openConversation, onActions = ::conversationRowActions)
-            .also { body.addView(it, LinearLayout.LayoutParams(-1, -2)) }
-        conversationListMore = ui.button(MoteI18n.text("加载更早的对话"), parent = body) {
-            loadConversations(conversationListCursor)
-        }.apply { visibility = android.view.View.GONE }
-        val dock = ui.conversationComposer()
-        dock.addView(ConversationComposerView(ui,
-            onAddImage = { if (askBusy()) ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")) else ui.pickAttachment(chat = true) },
-            onSend = ::sendConversationQuestion), LinearLayout.LayoutParams(-1, -2))
-        renderConversationStatus()
-        loadConversations()
-    }
-    private data class ConversationPage(
-        val items: List<HistoryConversation>,
-        val nextCursor: String?,
-        val settings: JSONObject?,
-        val main: String?,
-    )
-    private fun loadConversations(cursor: String? = null) {
-        if (currentPage != "conversations") return
-        if (cursor != null && cursor != conversationListCursor) return
-        val api = client
-        conversationListFailed = false
-        renderConversationStatus()
-        ui.work(MoteI18n.text("正在读取对话…"), {
-            runCatching {
-                val page = api.get("/api/conversations?limit=30" + (cursor?.let { "&cursor=" + encode(it) } ?: ""))
-                val settings = runCatching { api.get("/api/configuration") }.getOrNull()
-                val main = runCatching { api.get("/api/conversations/main").optString("id") }.getOrNull()
-                ConversationPage(ConversationHistory.items(page.getJSONArray("items")), next(page), settings, main)
-            }
-        }) { result ->
-            result.onSuccess { page ->
-                conversationItems = if (cursor == null) page.items
-                    else (conversationItems + page.items).distinctBy { it.id }
-                conversationListCursor = page.nextCursor
-                conversationListReadable = true; conversationListFailed = false
-                mainConversationId = page.main?.takeIf { runCatching { UUID.fromString(it) }.isSuccess }
-                page.settings?.let { runCatching { CentralConversationSettings.read(it) }.getOrNull()?.let { value -> conversationPreferences = value } }
-                newConversationAction?.visibility = if (conversationPreferences.multipleConversations) android.view.View.VISIBLE else android.view.View.GONE
-                conversationListMore?.visibility = if (page.nextCursor != null) android.view.View.VISIBLE else android.view.View.GONE
-                renderConversationStatus(); renderConversationList()
-            }.onFailure { error ->
-                conversationListFailed = true
-                renderConversationStatus(); renderConversationList()
-                ui.requestFailure(error)
-            }
-        }
-    }
-    fun refreshConversationList() { if (currentPage == "conversations") loadConversations() }
-    private fun renderConversationStatus() {
-        val box = conversationStatus ?: return
-        box.removeAllViews()
-        when {
-            conversationListFailed -> {
-                ui.text(MoteI18n.text("对话暂不可读取，请稍后重试。"), NativeFontRole.SUPPORT, box)
-                box.addView(MoteUi.action(Button(ui).apply {
-                    text = MoteI18n.text("重试"); setOnClickListener { if (!ui.isWorking) loadConversations() }
-                }, MoteUi.ButtonRole.TEXT), LinearLayout.LayoutParams(-2, -2))
-            }
-            !conversationListReadable && conversationItems.isEmpty() -> box.addView(MoteComponents.skeleton(ui, MoteI18n.text("正在读取对话…")))
-        }
-        box.visibility = if (box.childCount == 0) android.view.View.GONE else android.view.View.VISIBLE
-    }
-    private fun renderConversationList() { conversationListView?.render(conversationItems) }
-    private fun openConversation(id: String) { selectConversation(id, then = { ui.navigate("ask") }) }
-    private fun conversationRowActions(id: String) {
-        if (currentPage != "conversations" || askBusy()) return
-        val api = client
-        val selected = CentralAccess.resolve(ui); val expected = selected.server to selected.generation
-        fun current() = ui.client === api && currentPage == "conversations" &&
-            CentralAccess.resolve(ui).let { (it.server to it.generation) == expected }
-        val details = ConversationHistory.deleteFailure(askState, id)
-        val actions = ConversationHistory.deleteActions(askState, id)
-        MoteDialogBuilder(ui).setTitle(MoteI18n.text("对话"))
-            .setItems(actions.map { MoteI18n.text(it) }.toTypedArray()) { _, index ->
-                if (!current()) return@setItems
-                if (index == 1) { details?.let { showAskFailureDetails(it) }; return@setItems }
-                MoteDialogBuilder(ui).setTitle(MoteI18n.text("删除整段对话？")).setMessage(MoteI18n.text("会删除这段对话的所有问答。已单独保存的记录保留。"))
-                    .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("删除对话")) { _, _ ->
-                    if (!current()) return@setPositiveButton
-                    ui.work(MoteI18n.text("正在删除…"), { runCatching { api.delete("/api/conversations/" + encode(id)) } }) { outcome ->
-                        outcome.onSuccess {
-                            ConversationHistory.clearDeleteFailure(askState, id)
-                            if (askState.optString("conversationId") == id) { ask.newConversation(); lastConversation = null }
-                            conversationItems = conversationItems.filterNot { it.id == id }
-                            persistAsk(); renderConversationList()
-                        }.onFailure { error ->
-                            ConversationHistory.recordDeleteFailure(askState, id, error); persistAsk()
-                            // Keep authentication withdrawal and conflict handling at the original shared boundary.
-                            ui.requestFailure(error)
-                            if (error !is CentralFailure || error.status !in setOf(401, 403, 409, 410)) ui.notice(MoteI18n.text("未能确认删除完成。请刷新查看当前状态。"))
-                        }
-                    }
-                }.show()
-            }.show()
-    }
-    private fun sendConversationQuestion(text: String) {
-        val value = text.trim()
-        if (value.isEmpty() || currentPage != "conversations") return
-        if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
-        if (ask.hasDraft()) {
-            val selected = CentralAccess.resolve(ui); val expected = selected.server to selected.generation
-            fun current() = currentPage == "conversations" && CentralAccess.resolve(ui).let { (it.server to it.generation) == expected }
-            MoteDialogBuilder(ui).setTitle(MoteI18n.text("还有未发送的内容"))
-                .setMessage(MoteI18n.text("切换对话会舍弃当前输入和图片。你也可以留在这里继续编辑。"))
-                .setNegativeButton(MoteI18n.text("继续编辑"), null)
-                .setPositiveButton(MoteI18n.text("舍弃并切换")) { _, _ -> if (current()) sendConversationQuestionNow(value) }
-                .show()
-            return
-        }
-        sendConversationQuestionNow(value)
-    }
-    private fun sendConversationQuestionNow(value: String) {
-        ui.clearAskConversationIntent()
-        val api = client
-        fun start(id: String) {
-            ask.startConversation(value, id)
-            persistAsk()
-            submitOnAskEntry = true
-            ui.navigate("ask")
-        }
-        if (conversationPreferences.multipleConversations) {
-            ui.work(MoteI18n.text("正在新建对话…"), { api.post("/api/conversations", JSONObject()) }) { created -> start(created.getString("id")) }
-        } else {
-            val main = mainConversationId
-            if (main != null) start(main)
-            else ui.work(MoteI18n.text("正在读取对话…"), { api.get("/api/conversations/main").optString("id") }) { id -> start(id) }
-        }
-    }
     private fun selectConversation(id: String, discardConfirmed: Boolean = false, fromIntent:Boolean=false, then: (() -> Unit)? = null) {
         if(fromIntent && ui.requestedAskConversation()!=id)return
         if (runCatching { UUID.fromString(id) }.isFailure) { ui.notice(MoteI18n.text("请求的资源不存在或已删除。")); return }
@@ -704,15 +526,19 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             askOffline,
             (requested == null || askState.optString("conversationId") == requested) && askState.optString("conversationId").isNotBlank(),
         )
-        val locked = state.busy || state.offline
+        val locked = state.busy
+        val hasText = question?.text?.isNotBlank() == true
+        val local = askState.optString("conversationId").isBlank() && requested == null && !ask.hasScopedInput()
+        val canSend = state.canSend || (!locked && hasText && (local ||
+            (state.offline && ask.pendingImages().length() == 0 && requested == null && ask.material() == null)))
         question?.isEnabled = !locked
         preset?.isEnabled = !locked; model?.isEnabled = !locked
-        send?.isEnabled = state.canSend
-        send?.visibility = if (state.canSend) android.view.View.VISIBLE else android.view.View.GONE
-        stopAction?.visibility = if (state.stop) android.view.View.VISIBLE else android.view.View.GONE
-        addAskImage?.isEnabled = !locked && ask.imageCount() < 4
+        send?.isEnabled = canSend
+        send?.visibility = if (canSend) View.VISIBLE else View.GONE
+        voice?.isEnabled = !locked
+        chatAdd?.isEnabled = !locked
         askImagesView?.let { host -> fun update(view:android.view.View) { if(view is Button)view.isEnabled=!locked && (view.tag?.toString()?.startsWith("ask-image-remove:")==true || !ui.isWorking);if(view is android.view.ViewGroup)for(i in 0 until view.childCount)update(view.getChildAt(i)) };update(host) }
-        retryRun?.visibility = if (state.retry) android.view.View.VISIBLE else android.view.View.GONE
+        retryRun?.visibility = if (state.retry || (!locked && localMessage?.rejected == true)) View.VISIBLE else View.GONE
         checkRun?.visibility = if (state.check) android.view.View.VISIBLE else android.view.View.GONE
         offlineNotice?.visibility = if (state.offline) android.view.View.VISIBLE else android.view.View.GONE
         askFailureAction?.visibility=if(askState.optJSONObject("failureDetails")?.optString("requestId")==ask.currentId()) android.view.View.VISIBLE else android.view.View.GONE
@@ -759,6 +585,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val target=ui.requestedAskConversation()
         if(!askState.has("pending") && target!=null && target!=askState.optString("conversationId")) { selectConversation(target,fromIntent=true);return }
         val api = client
+        val origin = ui.server
+        if (!ask.hasPending() && askState.optString("conversationId").isBlank() && !ask.hasScopedInput()) {
+            val draft = question ?: return
+            saveLocalChatText(ui, draft, origin) {
+                ui.scheduleAskPoll(0)
+            }
+            return
+        }
         if(!askState.has("pending") && ask.pendingImages().length()>0) { ui.notice(MoteI18n.text("请先重试或移除尚未上传完成的图片。"));return }
         val reference=ask.material()
         if(!askState.has("pending") && reference!=null && validatedMaterial!=reference) {
@@ -778,16 +612,21 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }
         persistAsk(); controlsAsk()
         val snapshot = JSONObject(askState.toString())
+        val requestId = request.getString("clientRequestId")
+        val local = requestId == snapshot.optString("localRequestId")
+        if (askOffline) renderPendingAdmission()
         ui.work(MoteI18n.text("正在提交问题…"), {
             ask.persistNow(snapshot)
             // Retrying preserves the client request id even when the first response was lost.
             try {
                 val receipt = api.post("/api/conversations/messages", request)
                 ask.validate(receipt, request)
+                if (local) localChat.settle(origin, requestId)
                 AskAdmission(message = receipt)
             } catch(error:Exception) {
                 if(error is CentralFailure && error.status in setOf(401,403))throw error
                 if(error is CentralFailure && error.status in setOf(400,409,413,422)) {
+                    if (local) localChat.settle(origin, requestId, rejected = true)
                     val message = if(error.status==409 && error.code=="context_evidence_restricted" && ask.material(request)!=null)
                         MoteI18n.text("所选资料版本已变更或不可用。请清除参考或重新选择；草稿已保留。")
                     else error.message ?: MoteI18n.text("请求尚未确认，可重试同一请求。")
@@ -796,24 +635,47 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 throw IllegalStateException(MoteI18n.text("请求尚未确认，可重试同一请求。")+"\n"+error.message.orEmpty(),error)
             }
         }) { admission ->
-            if(admission.rejection != null) { ask.rejectedAdmission(); controlsAsk(); ui.notice(admission.rejection) }
-            else receiveRun(admission.message!!, request)
+            if (admission.rejection != null) {
+                if (local) localMessage = localMessage?.copy(rejected = true)
+                ask.rejectedAdmission(); controlsAsk(); renderPendingAdmission(); ui.notice(admission.rejection)
+                if (local) ui.scheduleAskPoll()
+            } else {
+                if (local) localMessage = null
+                receiveRun(admission.message!!, request)
+            }
         }
     }
+
+    private fun submitLocalMessage(allowRejected: Boolean = false) {
+        val main = mainConversationId ?: return
+        val origin = ui.server
+        if (askBusy() || askState.optString("conversationId") != main || ui.requestedAskConversation() != null) return
+        ui.work("", { localChat.first(origin, main) }) { message ->
+            localMessage = message
+            if (message != null && (!message.rejected || allowRejected) && ask.admitLocal(main, message, java.time.ZoneId.systemDefault().id)) {
+                submitAsk()
+            } else controlsAsk()
+        }
+    }
+
     fun pollAsk() {
-        if (currentPage != "ask" || detailBack != null) return
+        if (currentPage != "ask" || detailBack != null || ui.client == null || question == null) return
+        if (ui.isWorking) { ui.scheduleAskPoll(); return }
+        if (ask.hasPending()) { submitAsk(); return }
         val conversationId = askState.optString("conversationId")
-        if (conversationId.isBlank()) return
+        if (conversationId.isBlank()) { recoverMain(); return }
         val id = ask.messageId()
-        if (id.isBlank()) {
+        if (id.isBlank() || ask.status() in NativeAskRunState.terminal) {
             // A conversation opened on another device can already contain accepted
             // turns. Refresh the page while any turn is still pending.
             val turns = lastConversation?.takeIf { it.optString("id") == conversationId }?.optJSONArray("turns")
-            if (turns != null && (0 until turns.length()).any { turns.getJSONObject(it).optString("status") in NativeAskRunState.active }) loadConversation(conversationId)
+            if (turns != null && ((0 until turns.length()).any { turns.getJSONObject(it).optString("status") in NativeAskRunState.active } || hasRunningChatTask())) {
+                loadConversation(conversationId, lastConversationCursor) { submitLocalMessage() }
+            } else if (mainConversationId == null) recoverMain()
+            else submitLocalMessage()
             return
         }
         // Returning to a tab must not replay a completed message and clear the next unsent draft.
-        if (!askState.has("pending") && askState.optString("runStatus") in NativeAskRunState.terminal) return
         val api = client
         ui.work(MoteI18n.text("正在读取回答进度…"), {
             try { api.get("/api/conversations/" + encode(conversationId) + "/messages/" + encode(id)) } catch (error: CentralFailure) {
@@ -824,6 +686,23 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 val retryable=ask.missingRun()
                 persistAsk(); controlsAsk(); ui.notice(MoteI18n.text(if(retryable) "请求尚未确认，可重试同一请求。" else "请刷新检查结果，避免重复发送。"))
             } else receiveRun(message)
+        }
+    }
+    private fun recoverMain() {
+        val api = client
+        ui.work("", { api.get("/api/conversations/main").getString("id") }) { id ->
+            check(UUID.fromString(id).toString() == id)
+            mainConversationId = id
+            clearOffline()
+            if (askState.optString("conversationId").isBlank() && ui.requestedAskConversation() == null) {
+                ask.attachConversation(id)
+                persistAsk()
+                updateScope()
+            }
+            controlsAsk()
+            askState.optString("conversationId").takeIf(String::isNotBlank)?.let {
+                loadConversation(it, lastConversationCursor) { submitLocalMessage() }
+            }
         }
     }
     private fun receiveRun(message: JSONObject, admitted: JSONObject?=null) {
@@ -838,12 +717,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }
         clearOffline()
         val update = ask.receive(message, admitted)
-        runStatus?.visibility = android.view.View.VISIBLE
-        runStatus?.text = CentralConversationMessage.statusLabel(update.status) ?: MoteI18n.text("回答未完成")
         if (update.clearDraft) question?.setText("")
         controlsAsk()
-        if (update.status in NativeAskRunState.active) ui.scheduleAskPoll()
-        else if (currentPage == "ask") update.conversationId?.let { if (askState.optString("conversationId") == it) loadConversation(it) }
+        if (currentPage == "ask") update.conversationId?.let {
+            if (askState.optString("conversationId") == it) loadConversation(it, lastConversationCursor) {
+                if (update.status in NativeAskRunState.active) ui.scheduleAskPoll()
+                else submitLocalMessage()
+            }
+        }
     }
     private fun loadConversation(id: String, cursor: String? = null, afterLoad: (() -> Unit)? = null) {
         val api = client
@@ -865,11 +746,12 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 val materialId = reference.substringAfter("material:").substringBefore('@')
                 runCatching { api.get("/api/materials/" + encode(materialId)).optString("title") }.getOrNull()
             }
-            Triple(conversation, label, conflict)
-        }) { (conversation, label, conflict) ->
+            ChatPage(conversation, label, conflict, readChatDetails(api, conversation))
+        }) { (conversation, label, conflict, details) ->
             clearOffline()
             lastConversation = JSONObject(conversation.toString())
             lastConversationCursor = if (conflict) null else cursor
+            chatDetails = details
             renderConversation(conversation, label)
             if (conflict) ui.notice(MoteI18n.text("对话状态已变化，请重新读取后继续。"))
             afterLoad?.invoke()
@@ -880,31 +762,25 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val id = conversation.getString("id")
         ask.restoreScope(conversation); ask.scopeLabel(materialLabel); persistAsk(); updateScope()
         target.removeAllViews(); askFailureAction = null
-        runStatus = ui.text("", parent = target).apply { visibility = android.view.View.GONE; setPadding(0,0,0,0) }
-        if (conversationPreferences.multipleConversations && currentPage == "ask" && detailBack == null) {
-            val row = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.END }
-            ui.button(MoteI18n.text("新对话"), parent = row) { newConversation() }
-                .apply { layoutParams = LinearLayout.LayoutParams(-2, -2) }
-            mainConversationId?.takeIf { it != id }?.let { main ->
-                ui.button(MoteI18n.text("主对话"), parent = row) { switchToMain(main) }
-                    .apply { layoutParams = LinearLayout.LayoutParams(-2, -2) }
-            }
-            target.addView(row, LinearLayout.LayoutParams(-1, -2))
-        }
         val turns = conversation.getJSONArray("turns")
         adoptPendingReceipt(turns, id)
-        if (turns.length() == 0) ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, target)
+        if (turns.length() == 0 && captureReceipts.isEmpty() && !ask.hasPending()) {
+            ui.text(MoteI18n.text("想从留下的内容里找什么？"), NativeFontRole.TITLE_MOBILE, target).tag = "chat-empty"
+        }
+        val receipts = ArrayDeque(captureReceipts)
         val citationNumbers = linkedMapOf<String, Int>()
         val shownCitationIds = mutableSetOf<String>()
         for (i in 0 until turns.length()) {
             val turn = turns.getJSONObject(i)
-            questionBubble(target, turn.getString("question"))
+            val sentAt = runCatching { java.time.Instant.parse(turn.optString("createdAt")).toEpochMilli() }.getOrDefault(0L)
+            while (receipts.firstOrNull()?.let { it.at <= sentAt } == true) renderCaptureReceipt(target, receipts.removeFirst())
+            val turnId = turn.getString("id")
+            questionBubble(target, turn.getString("question"), turn.optJSONArray("attachments"))
+            val details = chatDetails[turnId]
             val presentation = ask.readTurn(turn)
             presentation.notice?.let { ui.text(it, NativeFontRole.SUPPORT, target) }
             if (presentation.result == null && (presentation.status in NativeAskRunState.active || presentation.status == "cancelled")) {
-                CentralConversationMessage.statusLabel(presentation.status)?.let { label ->
-                    ui.text(label, NativeFontRole.SUPPORT, target).tag = "ask-turn-status:" + turn.getString("id")
-                }
+                progressRow(target, id, turnId, presentation.status, details?.progress)
             }
             presentation.result?.let { answer ->
                 val sourceCitations = answer.optJSONArray("citations") ?: JSONArray()
@@ -917,7 +793,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                     styled.setSpan(CitationChipSpan(ui, span.number), span.start, span.end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
                 var touchScroll: Int? = null
-                val answerView = ui.text("", parent = target).apply {
+                if (details?.calendarExpected == true) {
+                    calendarReceipt(target, id, details.calendar)
+                    if (details.calendar?.optString("status") == "stale") return@let
+                } else ui.text("", parent = target).apply {
                     tag = "ask-answer:" + turn.getString("id"); text = styled; MoteUi.type(this, 16); MoteUi.textColor(this, NativeColorRole.INK)
                     NativePresentationStyles.bind(this, "ask-answer-lines") { view ->
                         (view as TextView).apply {
@@ -949,6 +828,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                         false
                     }
                 }
+                details?.tasksPath?.let { taskPath -> renderChatTasks(target, taskPath, details.tasks) }
                 if (citations.isNotEmpty()) {
                     val newCitations = citations.filter { shownCitationIds.add(it.getString("id")) }
                     if (newCitations.isNotEmpty()) citationCards(target, newCitations, citationNumbers) { citation -> openAskCitation(id,turn.getString("id"),citation.getString("id")) }
@@ -990,15 +870,19 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 ui.button(MoteI18n.text("再次提问"), parent = target) { retryQuestion(turn.getString("question")) }
             }
         }
-        if ((0 until turns.length()).any { turns.getJSONObject(it).optString("status") in NativeAskRunState.active }) ui.scheduleAskPoll()
+        if ((0 until turns.length()).any { turns.getJSONObject(it).optString("status") in NativeAskRunState.active } || hasRunningChatTask()) ui.scheduleAskPoll()
         next(conversation)?.let { older -> ui.button(MoteI18n.text("加载更早的对话"), parent = target) { loadConversation(id, older) } }
+        receipts.forEach { renderCaptureReceipt(target, it) }
+        renderPendingAdmission()
         if(askBusy())updateAskFailureAction()
+        controlsAsk()
     }
     /** A lost admission response becomes a normal accepted message as soon as
      * the conversation page contains the same client request id. */
     private fun adoptPendingReceipt(turns: JSONArray, conversationId: String) {
         val pending = askState.optJSONObject("pending") ?: return
-        if (ask.messageId().isNotBlank()) return
+        // A staged local message settles its local copy against the admission endpoint.
+        if (askState.has("localRequestId")) return
         val client = pending.optString("clientRequestId")
         if (client.isBlank()) return
         val match = (0 until turns.length()).mapNotNull(turns::optJSONObject)
@@ -1015,45 +899,272 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         persistAsk()
         submitAsk()
     }
-    private fun newConversation() {
-        if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
-        if (ask.hasDraft()) {
-            confirmDiscard { createConversationNow() }
-            return
-        }
-        createConversationNow()
-    }
-    private fun createConversationNow() {
-        val api = client
-        ui.work(MoteI18n.text("正在新建对话…"), { api.post("/api/conversations", JSONObject()) }) { value ->
-            val id = value.getString("id")
-            ask.newConversation(); ask.attachConversation(id); persistAsk()
-            ui.navigate("ask")
-        }
-    }
-    private fun switchToMain(id: String) {
-        if (askBusy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
-        if (askState.optString("conversationId") == id) return
-        selectConversation(id, then = { loadConversation(id) })
-    }
-    private fun confirmDiscard(action: () -> Unit) {
-        MoteDialogBuilder(ui).setTitle(MoteI18n.text("还有未发送的内容"))
-            .setMessage(MoteI18n.text("切换对话会舍弃当前输入和图片。你也可以留在这里继续编辑。"))
-            .setNegativeButton(MoteI18n.text("继续编辑"), null)
-            .setPositiveButton(MoteI18n.text("舍弃并切换")) { _, _ -> action() }
-            .show()
-    }
-    private fun questionBubble(parent: LinearLayout, question: String) {
+    private fun questionBubble(parent: LinearLayout, question: String, attachments: JSONArray? = null) {
         val row = LinearLayout(ui).apply { gravity = android.view.Gravity.END }
         val maxWidth = (ui.resources.displayMetrics.widthPixels * 0.78f).toInt()
-        row.addView(TextView(ui).apply {
-            text = question; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
-            this.maxWidth = (maxWidth - ui.moteDp(40)).coerceAtLeast(ui.moteDp(120)); setPadding(ui.moteDp(15), ui.moteDp(10), ui.moteDp(15), ui.moteDp(10))
+        val bubble = LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(ui.moteDp(15), ui.moteDp(10), ui.moteDp(15), ui.moteDp(10))
             NativePresentationStyles.bind(this, "ask-question-bubble") {
-                it.background = MoteUi.shape(ui, NativeColorRole.SURFACE, 20, true, NativeColorRole.HAIR)
+                it.background = MoteUi.shape(ui, NativeColorRole.TINT, 20, false)
             }
-        }, LinearLayout.LayoutParams(-2, -2))
+            addView(TextView(ui).apply {
+                text = question; MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
+                this.maxWidth = (maxWidth - ui.moteDp(40)).coerceAtLeast(ui.moteDp(120))
+            })
+        }
+        attachments?.let { items ->
+            for (index in 0 until items.length()) {
+                val attachment = items.optJSONObject(index) ?: continue
+                val name = attachment.optString("name").ifBlank { MoteI18n.text("图片") }
+                val id = attachment.optString("id")
+                if (MoteLink.runId(id)) bubble.addView(MoteComponents.row(ui, MoteGlyph.PHOTO, name, iconSizeDp = 16) {
+                    if (!ui.isWorking) library.captureEvidence(id)
+                })
+            }
+        }
+        row.addView(bubble, LinearLayout.LayoutParams(-2, -2))
         parent.addView(row, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private data class ChatPage(val conversation: JSONObject, val label: String?, val conflict: Boolean, val details: Map<String, ChatDetails>)
+    private data class ChatDetails(
+        val progress: JSONObject? = null,
+        val calendarExpected: Boolean = false,
+        val calendar: JSONObject? = null,
+        val tasksPath: String? = null,
+        val tasks: List<JSONObject>? = null,
+    )
+
+    private fun readChatDetails(api: CentralClient, conversation: JSONObject): Map<String, ChatDetails> {
+        val id = conversation.getString("id")
+        val turns = conversation.getJSONArray("turns")
+        return (0 until turns.length()).associate { index ->
+            val turn = turns.getJSONObject(index)
+            val turnId = turn.getString("id")
+            val result = ask.readTurn(turn).result?.takeUnless { (turn.optJSONArray("supersededBy")?.length() ?: 0) > 0 }
+            val reference = result?.optJSONObject("currentAction")
+                ?.takeIf { it.optString("kind") in calendarKinds && MoteLink.runId(it.optString("id")) }
+            val calendar = reference?.let {
+                runCatching { api.get("/api/actions/" + encode(it.getString("id"))) }.getOrNull()?.takeIf { action ->
+                    val source = action.optJSONObject("ownerInstruction")
+                    action.optString("id") == it.optString("id") && action.optString("kind") == it.optString("kind") &&
+                        source?.optString("conversationId") == id && source.optString("messageId") == turnId &&
+                        (action.optString("status") == "stale" || action.optJSONObject("event")?.has("title") == true)
+                }
+            }
+            val runId = turn.optString("runId").takeIf { turn.optString("status") in NativeAskRunState.active && MoteLink.runId(it) }
+            val progress = runId?.let {
+                val workId = "query:$it"
+                runCatching { api.get("/api/work-activity/" + encode(workId)) }.getOrNull()
+                    ?.takeIf { work -> work.optString("id") == workId }?.optJSONObject("progress")
+            }
+            val tasksPath = result?.optJSONObject("draft")?.optJSONObject("scope")?.let {
+                "/api/conversations/${encode(id)}/messages/${encode(turnId)}/assistant-tasks?scope=${encode(it.toString())}"
+            }
+            turnId to ChatDetails(progress, reference != null, calendar, tasksPath,
+                tasksPath?.let { runCatching { readChatTasks(api, it) }.getOrNull() })
+        }
+    }
+
+    private fun progressRow(target: LinearLayout, conversationId: String, id: String, status: String, progress: JSONObject?) {
+        val active = status in NativeAskRunState.active
+        val label = CentralConversationMessage.statusLabel(status) ?: return
+        val detail = when {
+            progress?.optString("mode") == "determinate" -> MoteI18n.text("读取资料 {0}/{1}", progress.optInt("completed"), progress.optInt("total"))
+            progress?.optString("stage") == "searching" -> MoteI18n.text("读取资料")
+            else -> null
+        }
+        val cancel = if (active) MoteComponents.button(ui, MoteI18n.text("取消"), MoteUi.ButtonRole.TEXT) {
+            if (!ui.isWorking) stopAsk(conversationId, id)
+        }.apply {
+            tag = if (id == ask.messageId()) "ask-stop" else "chat-cancel:$id"
+            contentDescription = MoteI18n.text("停止这条回答")
+        } else null
+        val row = MoteComponents.row(ui, if (active) null else MoteGlyph.CLOSE, label, detail, trailing = cancel) as LinearLayout
+        if (active) row.addView(ProgressBar(ui, null, android.R.attr.progressBarStyleSmall).apply {
+            isIndeterminate = true
+            NativePresentationStyles.bind(this, "chat-progress") {
+                (it as ProgressBar).indeterminateTintList = android.content.res.ColorStateList.valueOf(MoteTheme.muted)
+            }
+        }, 0, LinearLayout.LayoutParams(ui.moteDp(20), ui.moteDp(20)).apply { marginEnd = ui.moteDp(12) })
+        chatCard(target, row).tag = "ask-turn-status:$id"
+    }
+
+    private fun renderPendingAdmission() {
+        val target = messages ?: return
+        target.findViewWithTag<View>("chat-pending")?.let(target::removeView)
+        val pending = askState.optJSONObject("pending") ?: return
+        target.findViewWithTag<View>("chat-empty")?.let(target::removeView)
+        val group = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; tag = "chat-pending" }
+        questionBubble(group, pending.getString("question"))
+        chatCard(group, MoteComponents.row(ui, MoteGlyph.CLOCK, MoteI18n.text("排队中")))
+        target.addView(group)
+    }
+
+    private fun calendarReceipt(target: LinearLayout, id: String, action: JSONObject?) {
+        if (action == null) {
+            chatCard(target, MoteComponents.row(ui, MoteGlyph.CALENDAR, MoteI18n.text("日程读取失败"), trailing =
+                MoteComponents.button(ui, MoteI18n.text("重试"), MoteUi.ButtonRole.TEXT) {
+                    if (!ui.isWorking) loadConversation(id, lastConversationCursor)
+                })).tag = "chat-calendar-error"
+            return
+        }
+        val status = action.optString("status")
+        if (status == "stale") {
+            ui.text(MoteI18n.text("已失效"), NativeFontRole.SUPPORT, target)
+            return
+        }
+        val event = action.getJSONObject("event")
+        val actionId = action.getString("id")
+        val kind = action.getString("kind")
+        val resolution = action.optString("resolution")
+        val state = if (kind == "calendar.create" && status == "succeeded" && resolution.isBlank()) MoteI18n.text("已创建")
+            else CalendarActionPresentation.stateKey(kind, status, resolution, action.optJSONObject("managed")?.optString("state").orEmpty())
+                ?.let { MoteI18n.text(it) }
+        val start = event.optString("start").takeIf(String::isNotBlank)
+        val detail = listOfNotNull(start?.let { formatChatEventTime(event, it) }, state).joinToString(" · ")
+        chatCard(target, MoteComponents.row(ui, MoteGlyph.CALENDAR, event.getString("title"), detail, trailing =
+            MoteComponents.button(ui, MoteI18n.text("查看"), MoteUi.ButtonRole.TEXT) {
+                if (!ui.isWorking) ui.startActivity(android.content.Intent(ui, CalendarActionsActivity::class.java).putExtra("actionId", actionId))
+            })).tag = "chat-calendar:$actionId"
+    }
+
+    private fun formatChatEventTime(event: JSONObject, start: String): String {
+        val end = event.optString("end")
+        if (event.optBoolean("allDay")) return "$start – $end · " + MoteI18n.text("全天")
+        return runCatching {
+            val zone = java.time.ZoneId.of(event.optString("timeZone", "UTC"))
+            val first = java.time.Instant.parse(start).atZone(zone)
+            val last = java.time.Instant.parse(end).atZone(zone)
+            val dateTime = java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT).withLocale(MoteI18n.locale())
+            val time = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(MoteI18n.locale())
+            first.format(dateTime) + " – " + last.format(if (last.toLocalDate() == first.toLocalDate()) time else dateTime)
+        }.getOrDefault(MoteI18n.text("时间待补充"))
+    }
+
+    private fun readChatTasks(api: CentralClient, path: String): List<JSONObject> =
+        api.get(path).getJSONArray("items").let { rows -> (0 until rows.length()).map(rows::getJSONObject) }
+
+    private fun hasRunningChatTask() = chatDetails.values.any { details ->
+        details.tasks.orEmpty().any { it.optJSONObject("task")?.optString("state") in setOf("waiting", "running") }
+    }
+
+    private fun renderChatTasks(target: LinearLayout, path: String, rows: List<JSONObject>?) {
+        if (rows == null) {
+            ui.text(MoteI18n.text("读取失败"), NativeFontRole.SUPPORT, target)
+            return
+        }
+        for (row in rows) {
+            val task = row.getJSONObject("task")
+            val status = task.getString("state")
+            val title = task.optString("goal").ifBlank { MoteI18n.text("结果") }
+            val result = row.optJSONObject("result")?.takeIf { status == "completed" }
+            val id = task.getString("id")
+            val subtitle = if (status == "stale") MoteI18n.text("已失效") else CentralWorkPresentation.state(status)
+            val action = result?.let {
+                MoteComponents.button(ui, MoteI18n.text("打开"), MoteUi.ButtonRole.TEXT) {
+                    if (!ui.isWorking) openChatResult(path, id, title)
+                }
+            }
+            chatCard(target, MoteComponents.row(ui, if (status in setOf("waiting", "running")) MoteGlyph.CLOCK else MoteGlyph.FILE,
+                title, subtitle, trailing = action)).tag = "chat-task:$id"
+        }
+    }
+
+    private fun openChatResult(path: String, id: String, title: String) {
+        val api = client
+        ui.work(MoteI18n.text("正在读取…"), {
+            readChatTasks(api, path).singleOrNull { row ->
+                row.getJSONObject("task").let { it.optString("id") == id && it.optString("state") == "completed" }
+            }?.optJSONObject("result")
+        }) { result ->
+            if (result == null) { ui.notice(MoteI18n.text("已失效")); return@work }
+            val items = result.optJSONArray("citations") ?: JSONArray()
+            val citations = (0 until items.length()).map(items::getJSONObject)
+            val ids = citations.map { it.getString("id") }
+            val panel = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL; setPadding(ui.moteDp(20), 0, ui.moteDp(20), 0) }
+            ui.text(ask.formatAnswer(result.getString("answer"), ids).text, parent = panel)
+            val dialog = MoteDialogBuilder(ui).setTitle(title).setView(ScrollView(ui).apply { addView(panel) })
+                .setPositiveButton(MoteI18n.text("关闭"), null).create()
+            if (citations.isNotEmpty()) citationCards(panel, citations, emptyMap()) { citation ->
+                dialog.dismiss()
+                library.captureEvidence(citation.getString("id"), excerpt = ConversationCitationPresentation.read(citation).excerpt)
+            }
+            dialog.show()
+        }
+    }
+
+    private data class ChatCaptureReceipt(val id: String, val at: Long, val receipt: CapturePlugin.ChatReceipt, val preview: android.graphics.Bitmap?)
+
+    private fun readCaptureReceipts(origin: String): List<ChatCaptureReceipt> {
+        val store = ui.recordDraftStore()
+        return localChat.captures(origin).mapNotNull { (id, at) ->
+            val record = store.record(id) ?: return@mapNotNull null
+            if (record.getString("server").let { it.isNotBlank() && it != origin }) return@mapNotNull null
+            val receipt = CapturePlugin.chatReceipt(record)
+            val preview = receipt.attachmentId?.let { runCatching { CapturePreview.decode(store.bytes(it), 256) }.getOrNull() }
+            ChatCaptureReceipt(id, at, receipt, preview)
+        }.sortedBy { it.at }
+    }
+
+    fun refreshChatCaptures() {
+        if (currentPage != "ask" || messages == null) return
+        val origin = ui.server
+        ui.work("", { readCaptureReceipts(origin) }) {
+            captureReceipts = it
+            val current = lastConversation?.takeIf { it.optString("id") == askState.optString("conversationId") }
+            if (current != null) renderConversation(current, ask.scopeLabel())
+            else messages?.let(::renderCaptureReceipts)
+            ui.restoreContentScroll(Int.MAX_VALUE)
+        }
+    }
+
+    private fun renderCaptureReceipts(target: LinearLayout) {
+        for (index in target.childCount - 1 downTo 0) {
+            if (target.getChildAt(index).tag?.toString()?.startsWith("chat-capture:") == true) target.removeViewAt(index)
+        }
+        captureReceipts.forEach { renderCaptureReceipt(target, it) }
+    }
+
+    private fun renderCaptureReceipt(target: LinearLayout, capture: ChatCaptureReceipt) {
+        val (id, _, receipt, preview) = capture
+        val label = MoteI18n.text("已记下")
+        val open = {
+            if (!ui.isWorking) ui.startActivity(android.content.Intent(ui, CaptureRecordsActivity::class.java).putExtra("recordId", id))
+        }
+        if (preview != null) {
+            val photo = LinearLayout(ui).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.END; tag = "chat-capture:$id"
+                addView(ImageView(ui).apply {
+                    tag = "chat-photo:$id"; contentDescription = MoteI18n.text("图片")
+                    setImageBitmap(preview); scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = MoteUi.shape(ui, NativeColorRole.SURFACE, NativeRadiusRole.CONTROL, false)
+                    clipToOutline = true; isFocusable = true
+                    setOnClickListener { open() }
+                }, LinearLayout.LayoutParams(ui.moteDp(124), ui.moteDp(92)))
+                val saved = LinearLayout(ui).apply {
+                    gravity = Gravity.CENTER_VERTICAL; setPadding(0, ui.moteDp(4), 0, ui.moteDp(8))
+                    addView(MoteComponents.icon(ui, MoteGlyph.CHECK, NativeColorRole.MUTED, 14),
+                        LinearLayout.LayoutParams(ui.moteDp(14), ui.moteDp(14)).apply { marginEnd = ui.moteDp(4) })
+                    addView(TextView(ui).apply { text = label; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) })
+                }
+                addView(saved)
+            }
+            target.addView(photo, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.moteDp(8) })
+            return
+        }
+        val title = when (receipt.glyph) {
+            MoteGlyph.MIC -> MoteI18n.text("录音")
+            MoteGlyph.PHOTO -> MoteI18n.text("图片")
+            else -> receipt.name.orEmpty().ifBlank { MoteI18n.text("记录") }
+        }
+        chatCard(target, MoteComponents.row(ui, receipt.glyph, title, value = label) { open() }).tag = "chat-capture:$id"
+    }
+
+    private fun chatCard(target: LinearLayout, row: View): LinearLayout = MoteComponents.group(ui).apply {
+        addView(row, LinearLayout.LayoutParams(-1, -2))
+        target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.moteDp(8); bottomMargin = ui.moteDp(8) })
     }
     private fun citationCards(parent: LinearLayout, citations: List<JSONObject>, numbers: Map<String, Int>, open: (JSONObject) -> Unit) {
         val group = MoteComponents.group(ui)
@@ -1408,10 +1519,23 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             .setPositiveButton(positive) { _, _ -> action() }.show()
     }
     companion object {
+        private val calendarKinds = setOf("calendar.create", "calendar.update", "calendar.cancel", "calendar.complete")
+        fun showLocalChat(ui: CentralContent, origin: String) {
+            val input = buildChatInput(ui, ui.askComposer(), "", {
+                val field = ui.root.findViewWithTag<EditText>("ask-input") ?: return@buildChatInput
+                saveLocalChatText(ui, field, origin) {
+                    Toast.makeText(ui, MoteI18n.text("已记下"), Toast.LENGTH_SHORT).show()
+                }
+            }, {
+                showChatEntries(ui) { ui.openChatEntry(it, attachImage = false) }
+            })
+            ui.applyChatSpeech(input.field)
+        }
+
         fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8")
         fun next(value: JSONObject): String? = if (value.isNull("nextCursor") || !value.has("nextCursor")) null else value.opt("nextCursor").toString()
         val pages = listOf(
-            "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "conversations" to "对话", "activity" to "活动", "notes" to "记录",
+            "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "聊天", "activity" to "活动", "notes" to "记录",
             "materials" to "正式资料", "coding" to "Coding 会话同步状态", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
             AssistantPlugin.WORKBENCH_ROUTE to "工作台", AssistantPlugin.GOALS_ROUTE to "目标",
@@ -1421,6 +1545,116 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             "usage" to "用量与费用", "vault" to "存储与索引", "developer" to "诊断与更新", "about" to "设置", "imports" to "导入", "help" to "帮助与反馈"
         )
     }
+}
+
+private data class ChatInput(val field: EditText, val add: View, val send: View, val voice: View)
+
+private fun buildChatInput(
+    ui: CentralContent,
+    parent: LinearLayout,
+    draft: String,
+    submit: () -> Unit,
+    add: () -> Unit,
+    changed: (String) -> Unit = {},
+): ChatInput {
+    val row = LinearLayout(ui).apply {
+        gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+    }
+    val size = ui.moteDp(48)
+    val addButton = MoteComponents.iconButton(ui, MoteGlyph.PLUS, style = MoteIconButtonStyle.FILLED) {
+        if (!ui.isWorking) add()
+    }.apply { tag = "chat-add" }
+    row.addView(addButton, LinearLayout.LayoutParams(size, size).apply { marginEnd = ui.moteDp(8) })
+    val field = EditText(ui).apply {
+        tag = "ask-input"; hint = MoteI18n.text("发消息"); contentDescription = MoteI18n.text("你的问题")
+        isSaveEnabled = false
+        MoteUi.textInput(this, android.text.InputType.TYPE_CLASS_TEXT, multiline = false)
+        filters = arrayOf(InputFilter.LengthFilter(8000)); setText(draft); setSelection(length())
+        MoteUi.type(this, 15); MoteUi.textColor(this, NativeColorRole.INK)
+        setHintTextColor(MoteTheme.muted)
+        setPadding(ui.moteDp(14), 0, ui.moteDp(14), 0); includeFontPadding = false
+        setSingleLine(true)
+        imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+        NativePresentationStyles.bind(this, "chat-input") {
+            it.background = MoteUi.shape(ui, NativeColorRole.SURFACE, NativeRadiusRole.PILL, true, NativeColorRole.CONTROL_BORDER)
+        }
+    }
+    row.addView(field, LinearLayout.LayoutParams(0, size, 1f))
+    val voice = MoteComponents.iconButton(ui, MoteGlyph.MIC, "语音输入", MoteIconButtonStyle.FILLED) {
+        if (!ui.isWorking) ui.startChatSpeech()
+    }.apply { tag = "chat-voice" }
+    row.addView(voice, LinearLayout.LayoutParams(size, size).apply { marginStart = ui.moteDp(8) })
+    val send = MoteComponents.iconButton(ui, MoteGlyph.UP, "发送", MoteIconButtonStyle.SOLID) {
+        if (!ui.isWorking) submit()
+    }.apply {
+        tag = "ask-send"
+        isEnabled = draft.isNotBlank()
+        visibility = if (isEnabled) View.VISIBLE else View.GONE
+    }
+    row.addView(send, LinearLayout.LayoutParams(size, size))
+    field.setOnEditorActionListener { _, action, _ ->
+        if (action != android.view.inputmethod.EditorInfo.IME_ACTION_SEND) false
+        else {
+            if (send.isEnabled && send.visibility == View.VISIBLE) send.performClick()
+            true
+        }
+    }
+    field.addTextChangedListener(object : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            send.isEnabled = !s.isNullOrBlank()
+            send.visibility = if (send.isEnabled) View.VISIBLE else View.GONE
+            changed(s.toString())
+        }
+        override fun afterTextChanged(s: Editable?) = Unit
+    })
+    parent.addView(row, LinearLayout.LayoutParams(-1, -2))
+    return ChatInput(field, addButton, send, voice)
+}
+
+private fun saveLocalChatText(ui: CentralContent, field: EditText, origin: String, saved: () -> Unit) {
+    val text = field.text.toString()
+    if (text.isBlank()) return
+    ui.saveChatText(origin, text) {
+        if (field.text.toString() == text) field.setText("")
+        saved()
+    }
+}
+
+private fun showChatEntries(ui: CentralContent, imageEnabled: Boolean = true, select: (CapturePlugin.ChatEntry) -> Unit) {
+    val dialog = android.app.Dialog(ui.hostActivity())
+    val row = LinearLayout(ui).apply { isBaselineAligned = false }
+    for (entry in CapturePlugin.ChatEntry.entries) {
+        val label = MoteI18n.text(entry.label)
+        val allowed = entry != CapturePlugin.ChatEntry.IMAGE || imageEnabled
+        row.addView(LinearLayout(ui).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            isFocusable = true; contentDescription = label; isEnabled = allowed
+            alpha = if (allowed) 1f else 0.5f
+            tag = "chat-entry:${entry.name.lowercase(java.util.Locale.ROOT)}"
+            val image = MoteComponents.icon(ui, entry.glyph, NativeColorRole.INK, 24).apply {
+                scaleType = ImageView.ScaleType.CENTER
+                NativePresentationStyles.bind(this, "chat-entry-icon") {
+                    it.background = MoteUi.shape(ui, NativeColorRole.FILL, NativeRadiusRole.CONTROL, false)
+                }
+            }
+            addView(image, LinearLayout.LayoutParams(ui.moteDp(52), ui.moteDp(52)))
+            addView(TextView(ui).apply {
+                text = label; gravity = Gravity.CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.INK)
+                setPadding(0, ui.moteDp(8), 0, ui.moteDp(4))
+            }, LinearLayout.LayoutParams(-1, -2))
+            setOnClickListener { dialog.dismiss(); if (allowed) select(entry) }
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+    }
+    dialog.setContentView(MoteComponents.sheet(ui, row).apply { tag = "chat-entries" })
+    dialog.window?.apply {
+        setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        addFlags(WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        setGravity(Gravity.BOTTOM)
+    }
+    dialog.show()
+    dialog.window?.setLayout(-1, -2)
 }
 
 /** Draws the verified citation marker as a compact tint chip while the stored

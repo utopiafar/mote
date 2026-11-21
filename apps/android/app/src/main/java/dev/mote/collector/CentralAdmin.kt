@@ -201,16 +201,10 @@ internal class CentralAdmin(
     private fun conversationSettings() {
         val api = client
         ui.work(MoteI18n.text("正在读取…"), {
-            val configuration = api.get("/api/configuration")
-            val preferences = CentralConversationSettings.read(configuration)
-            val conversations = api.get("/api/conversations?limit=100")
-            val main = api.get("/api/conversations/main").optString("id")
-            Triple(preferences, conversations, main)
-        }) { (preferences, conversations, main) ->
+            CentralConversationSettings.read(api.get("/api/configuration"))
+        }) { preferences ->
             body.removeAllViews(); screens.setBack { screens.refresh() }
             ui.text(MoteI18n.text("对话与上下文"), NativeFontRole.TITLE_MOBILE)
-            val multiple = CheckBox(ui).apply { text = MoteI18n.text("多对话"); isChecked = preferences.multipleConversations }
-            body.addView(multiple)
             val history = ui.field(MoteI18n.text("历史比例"), preferences.context.historyRatio.toString(), parent = body)
             val low = ui.field(MoteI18n.text("低水位"), preferences.context.lowWatermarkRatio.toString(), parent = body)
             ui.text(MoteI18n.text("上下文窗口"), NativeFontRole.SUPPORT, body)
@@ -222,20 +216,6 @@ internal class CentralAdmin(
             body.addView(source)
             val window = ui.field(MoteI18n.text("上下文窗口"), preferences.context.contextWindow?.toString().orEmpty(), parent = body)
             window.inputType = InputType.TYPE_CLASS_NUMBER
-            val items = conversations.optJSONArray("items") ?: JSONArray()
-            val mainTitle = (0 until items.length()).mapNotNull(items::optJSONObject)
-                .firstOrNull { it.optString("id") == main }?.optString("title").orEmpty()
-            ui.text(MoteI18n.text("主对话") + " · " + mainTitle.ifBlank { MoteI18n.text("问一问") }, NativeFontRole.SUPPORT)
-            ui.button(MoteI18n.text("选择主对话")) {
-                val rows = (0 until (conversations.optJSONArray("items")?.length() ?: 0))
-                    .mapNotNull { conversations.optJSONArray("items")?.optJSONObject(it) }
-                if (rows.isEmpty()) return@button ui.notice(MoteI18n.text("暂无记录"))
-                MoteDialogBuilder(ui).setTitle(MoteI18n.text("选择主对话"))
-                    .setItems(rows.map { it.optString("title").ifBlank { MoteI18n.text("问一问") } }.toTypedArray()) { _, index ->
-                        val id = rows[index].getString("id")
-                        ui.work(MoteI18n.text("正在保存…"), { api.put("/api/conversations/main", JSONObject().put("id", id)) }) { conversationSettings() }
-                    }.show()
-            }
             ui.button(MoteI18n.text("保存设置"), true) {
                 val historyValue = history.text.toString().trim().toDoubleOrNull()
                 val lowValue = low.text.toString().trim().toDoubleOrNull()
@@ -249,7 +229,7 @@ internal class CentralAdmin(
                 } catch (error: IllegalArgumentException) {
                     ui.notice(error.message ?: MoteI18n.text("配置内容无效，请检查必填项和取值范围。")); return@button
                 }
-                val payload = CentralConversationSettings.payload(preferences, multiple.isChecked, historyValue, lowValue,
+                val payload = CentralConversationSettings.payload(preferences, preferences.multipleConversations, historyValue, lowValue,
                     sources[source.selectedItemPosition], windowValue)
                 ui.work(MoteI18n.text("正在保存…"), { api.put("/api/configuration/conversations", payload) }) { screens.refresh() }
             }

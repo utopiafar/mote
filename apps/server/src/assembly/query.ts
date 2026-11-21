@@ -34,7 +34,7 @@ export interface ConversationInputDependencies {
 /** Install the conversation owner and lend its gated repository to the remaining
  * query, Memory and evidence-authority consumers through one host lease. */
 export async function prepareConversations(dependencies:ConversationInputDependencies){
-  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes(()=>dependencies.bootstrap.configService.current(conversationsConfigDomain).multipleConversations);
+  const platform=createConversations(dependencies.store,dependencies.modelAuthorizationHost),routes=createConversationRoutes();
   let bindings:ConversationsBindings|undefined;
   const handle=await dependencies.bootstrap.host.install({
     identity:{host:dependencies.bootstrap.snapshot().host,packageId:'mote.conversations',installationId:'build:conversations@1.0.0',instanceId:'query',activationId:randomUUID()},

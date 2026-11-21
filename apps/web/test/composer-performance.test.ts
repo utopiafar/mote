@@ -25,7 +25,6 @@ function apiWith(read:(path:string,init?:RequestInit)=>unknown,owner?:string):Ap
    if(path==='/api/model-settings')return modelView();
    if(path==='/api/conversations/main')return {id:'A'};
    if(path==='/api/configuration')return settingsView;
-   if(path==='/api/conversations'&&init?.method==='POST')return {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'};
    if(path.startsWith('/api/conversations/')&&path!=='/api/conversations/messages'&&!path.includes('?')&&!path.includes('/messages/')&&!path.includes('/references/')){const value=read(path,init);if(value&&typeof value==='object'&&!Array.isArray((value as {turns?:unknown}).turns))return{...summary(decodeURIComponent(path.slice('/api/conversations/'.length))),title:'',turnCount:0,revision:1,nextCursor:null,turns:[]};return value;}
    return read(path,init);
   }} as Api;
@@ -50,7 +49,7 @@ async function fixture(t:any){
 }
 
 for(const count of [1,20,100])test(`typing 10 updates with ${count} loaded answers adds no AnswerView renders, Markdown parses or model-selector snapshots`,async t=>{
- const f=await fixture(t),api=apiWith(path=>path==='/api/conversations?limit=30'?{items:[summary()]}:path==='/api/conversations/A'?{...summary(),turns:Array.from({length:count},(_,i)=>turn('turn-'+i)),revision:1,nextCursor:null}:path.endsWith('/models')?{items:Array.from({length:300},(_,i)=>({id:'generated-model-'+i,name:'Generated model '+i}))}:{items:[]},'A');
+ const f=await fixture(t),api=apiWith(path=>path==='/api/conversations/A'?{...summary(),turns:Array.from({length:count},(_,i)=>turn('turn-'+i)),revision:1,nextCursor:null}:path.endsWith('/models')?{items:Array.from({length:300},(_,i)=>({id:'generated-model-'+i,name:'Generated model '+i}))}:{items:[]},'A');
  const modelSettings=resources(api).get('/api/model-settings'),getSnapshot=modelSettings.getSnapshot;let modelSnapshots=0;
  t.mock.method(modelSettings,'getSnapshot',()=>{modelSnapshots++;return getSnapshot();});
  // Observe the real unified parse method; retain its exact implementation.
@@ -160,7 +159,6 @@ test('failed admission and cancellation preserve the existing draft and retry be
 test('failed historical turn retry submits its original question and preserves a different current draft',async t=>{
  const f=await fixture(t),posts:any[]=[];
  const api=apiWith((path,init)=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary()]};
   if(path==='/api/conversations/A')return {...summary(),turns:[{...turn('failed'),question:'Generated original retry',status:'failed',result:undefined,error:{code:'generated',message:'Generated failure'}}],revision:1,nextCursor:null};
   if(path==='/api/conversations/messages'&&init?.method==='POST'){const input=JSON.parse(String(init.body));posts.push(input);return receipt(input);}
   return {items:[]};
@@ -171,7 +169,7 @@ test('failed historical turn retry submits its original question and preserves a
 
 test('draft survives background and locale refresh and supplemental routing across disjoint API sessions',async t=>{
  const f=await fixture(t);let revision=1;
- const read=(path:string)=>path==='/api/conversations?limit=30'?{items:[summary()]}:path==='/api/conversations/A'?{...summary(),revision,turns:[{...turn('new'),evidenceDeleted:revision>1}],nextCursor:'old'}:path.includes('?cursor=')?{...summary(),revision,turns:[turn('old')],nextCursor:null}:{items:[]};
+ const read=(path:string)=>path==='/api/conversations/A'?{...summary(),revision,turns:[{...turn('new'),evidenceDeleted:revision>1}],nextCursor:'old'}:path.includes('?cursor=')?{...summary(),revision,turns:[turn('old')],nextCursor:null}:{items:[]};
  const api=apiWith(read,'A');await f.render(api);await act(async()=>{});
  await f.click('加载更早的消息');assert.equal(f.d.querySelectorAll('.conversation-turn').length,2);
  await f.type('Generated preserved draft');const input=f.input(),cite=f.d.querySelector<HTMLButtonElement>('.inline-citation')!;cite.focus();await act(async()=>resources(api).invalidate(path=>path==='/api/conversations/A'));

@@ -27,8 +27,13 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   assert.ok(conversationId&&turnId);assert.equal(seen[0].conversation,undefined);
   await running.app.close();
   running=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);return answer('Synthetic continued answer');})});
-  const list=await running.app.inject({url:'/api/conversations',headers});assert.equal(list.headers['cache-control'],'no-store');
-  assert.equal(list.json().items[0].id,conversationId);assert.equal(list.json().items[0].title,'关于我那份合成观测笔记');
+  const list=await running.app.inject({url:'/api/conversations',headers});assert.equal(list.statusCode,404);
+  assert.equal((await running.app.inject({url:'/api/conversations?limit=30',headers})).statusCode,404);
+  assert.equal((await running.app.inject({method:'POST',url:'/api/conversations',headers,payload:{}})).statusCode,404);
+  assert.equal((await running.app.inject({method:'PUT',url:'/api/conversations/main',headers,payload:{id:conversationId}})).statusCode,404);
+  assert.equal((await running.app.inject({method:'DELETE',url:`/api/conversations/${conversationId}`,headers})).statusCode,404);
+  const stored=new Conversations(running.store).list().items;assert.equal(stored[0].id,conversationId);assert.equal(stored[0].title,'关于我那份合成观测笔记');
+  assert.equal((await running.app.inject({url:'/api/conversations/main',headers})).statusCode,200);
   const next=await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'继续解释它'}});
   assert.equal(next.statusCode,200);assert.equal(next.json().conversationId,conversationId);assert.notEqual(next.json().turnId,turnId);
   assert.equal(seen[1].deviceId,undefined);assert.equal(seen[1].after,undefined);assert.equal(seen[1].before,undefined);assert.equal(seen[1].timeZone,scope.timeZone);
@@ -38,6 +43,8 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   const detail=(await running.app.inject({url:`/api/conversations/${conversationId}`,headers})).json();
   assert.equal(detail.turnCount,2);assert.deepEqual(detail.turns.map((turn:any)=>turn.question),['关于我那份合成观测笔记','继续解释它']);
   assert.equal(detail.turns[0].result.answer,'Synthetic first answer');
+  const reference=await running.app.inject({url:`/api/conversations/${conversationId}/references/${randomUUID()}`,headers});
+  assert.equal(reference.statusCode,200);assert.equal(reference.json().available,false);
   const all=await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'使用全部资料继续',after:null,before:null,deviceId:null,timeZone:'UTC'}});
   assert.equal(all.statusCode,200);assert.equal(seen[2].after,undefined);assert.equal(seen[2].deviceId,undefined);assert.equal(seen[2].timeZone,'UTC');
   assert.equal((await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'invalid',conversation:{turns:[]}}})).statusCode,400);
@@ -73,21 +80,21 @@ test('new answers receive bounded visible memory leads and respect explicit arch
   assert.deepEqual(store.evidence([published.original.id]),[],'the retained claim grants no original read');
 });
 
-test('full client login can read, continue and delete saved conversations',async t=>{
+test('full client login can read and continue saved conversations without listing or deleting them',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-auth-'));
   const {app}=await buildApp(config(dir),{agent:agent(async()=>answer())});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   const first=(await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated private dialogue'}})).json();
   const invitation=(await app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://synthetic.invalid',label:'Generated phone'}})).json();
   const redeemed=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'fixture-phone',deviceName:'Fixture phone',platform:'android'}})).json();
-  for(const route of ['/api/conversations',`/api/conversations/${first.conversationId}`]) {
-    assert.equal((await app.inject(route)).statusCode,401);
-    assert.equal((await app.inject({url:route,headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,200);
-  }
+  const route=`/api/conversations/${first.conversationId}`;
+  assert.equal((await app.inject(route)).statusCode,401);
+  assert.equal((await app.inject({url:route,headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,200);
+  assert.equal((await app.inject({url:'/api/conversations',headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,404);
+  assert.equal((await app.inject({method:'POST',url:'/api/conversations',headers:{authorization:`Bearer ${redeemed.token}`},payload:{}})).statusCode,404);
+  assert.equal((await app.inject({method:'DELETE',url:route,headers:{authorization:`Bearer ${redeemed.token}`}})).statusCode,404);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers:{authorization:`Bearer ${redeemed.token}`},payload:{question:'continue',conversationId:first.conversationId}})).statusCode,200);
-  assert.equal((await app.inject({method:'DELETE',url:`/api/conversations/${first.conversationId}`,headers:{authorization:`Bearer ${redeemed.token}`}})).json().deleted,1);
-  assert.equal((await app.inject({url:`/api/conversations/${first.conversationId}`,headers})).statusCode,404);
-  assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'continue',conversationId:first.conversationId}})).statusCode,404);
+  assert.equal((await app.inject({url:route,headers})).json().turns.length,2);
 });
 
 test('failed answers remain visible and concurrent or deleted conversations cannot be overwritten',async t=>{
@@ -95,24 +102,24 @@ test('failed answers remain visible and concurrent or deleted conversations cann
   let complete!:(result:ReturnType<typeof answer>)=>void,started!:()=>void;
   let hold=false,fail=false;
   const began=new Promise<void>(resolve=>{started=resolve;});
-  const {app}=await buildApp(config(dir),{agent:agent(async()=>{
+  const {app,store}=await buildApp(config(dir),{agent:agent(async()=>{
     if(fail)throw new Error('Generated provider failure');
     if(hold){started();return new Promise(resolve=>{complete=resolve;});}
     return answer();
   })});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   fail=true;assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated failing question'}})).statusCode,500);
-  const failedList=(await app.inject({url:'/api/conversations',headers})).json();assert.equal(failedList.items.length,1);assert.equal(failedList.items[0].status,'failed');
+  const failedList=new Conversations(store).list();assert.equal(failedList.items.length,1);assert.equal(failedList.items[0].status,'failed');
   const failed=(await app.inject({url:`/api/conversations/${failedList.items[0].id}`,headers})).json();assert.equal(failed.turns[0].status,'failed');assert.equal(failed.turns[0].question,'Generated failing question');assert.equal(failed.turns[0].error.code,'internal');
   fail=false;const first=(await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated success'}})).json();
   hold=true;
   const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:first.conversationId,question:'Held followup'}}).then(value=>value);
   await began;
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:first.conversationId,question:'Concurrent followup'}})).statusCode,409);
-  await app.inject({method:'DELETE',url:`/api/conversations/${first.conversationId}`,headers});
+  new Conversations(store).delete(first.conversationId);
   complete(answer('Must not resurrect deleted conversation'));
   assert.equal((await pending).statusCode,409);
-  assert.equal((await app.inject({url:'/api/conversations',headers})).json().items.length,1);
+  assert.equal(new Conversations(store).list().items.length,1);
 });
 
 test('ordinary capture deletion preserves submitted history but fences in-flight answers; explicit erasure clears retained generations',async t=>{
@@ -144,8 +151,8 @@ test('closing interrupts and drains an interactive query without committing a du
   await began;const closing=running.app.close(),response=await pending;await closing;
   assert.notEqual(response.statusCode,200);assert.equal(calls,1);
   running=await buildApp(config(dir),{agent:agent(async()=>answer())});
-  const history=await running.app.inject({url:'/api/conversations',headers});
-  assert.equal(history.statusCode,200);assert.deepEqual(history.json().items,[]);assert.equal(calls,1);
+  const history=new Conversations(running.store).list();
+  assert.deepEqual(history.items,[]);assert.equal(calls,1);
 });
 
 test('accepted messages persist before execution and retries stay idempotent across restart',async t=>{

@@ -6,11 +6,13 @@ import dev.mote.collector.AppCaptureEditor
 import dev.mote.collector.AppCapturePresentation
 import dev.mote.collector.AppCollectionMode
 import dev.mote.collector.CaptureStatusOperation
+import dev.mote.collector.CentralClient
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.MoteQuickEntry
 import dev.mote.collector.MoteSystemEntries
 import dev.mote.collector.Notifications
+import org.json.JSONObject
 
 /** Build-native provider for the system-level Mote surfaces: the capture status
  * notification and its actions, launcher shortcuts, the quick-entry widget and
@@ -156,4 +158,63 @@ internal class SystemEntriesOwner internal constructor(
         closed = true
         notifications?.close()
     }
+}
+
+/** Assistant alert settings use the existing owner configuration transaction.
+ * The Android page only speaks the notifications domain; capture notifications
+ * are a separate local surface. */
+internal data class QuietHours(val start: String, val end: String)
+
+internal data class NotificationSettingsValue(
+    val enabled: Boolean,
+    val timeZone: String,
+    val quietHours: QuietHours?,
+    val minIntervalMinutes: Int,
+    val revision: Long,
+    val readOnly: Boolean,
+)
+
+internal object NotificationSettings {
+    const val PATH = "/api/configuration/notifications"
+
+    fun read(client: CentralClient): NotificationSettingsValue = parse(client.get("/api/configuration"))
+
+    fun parse(value: JSONObject): NotificationSettingsValue {
+        val domains = value.optJSONArray("domains")
+        var domain: JSONObject? = null
+        if (domains != null) for (index in 0 until domains.length()) {
+            val entry = domains.optJSONObject(index) ?: continue
+            if (entry.optString("id") == "notifications") { domain = entry; break }
+        }
+        val settings = domain?.optJSONObject("saved") ?: domain?.optJSONObject("effective") ?: JSONObject()
+        val quiet = settings.optJSONObject("quietHours")?.let {
+            if (it.has("start") && it.has("end")) QuietHours(it.optString("start"), it.optString("end")) else null
+        }
+        return NotificationSettingsValue(
+            enabled = if (settings.has("enabled")) settings.optBoolean("enabled") else true,
+            timeZone = settings.optString("timeZone").ifBlank { "UTC" },
+            quietHours = quiet,
+            minIntervalMinutes = settings.optInt("minIntervalMinutes", 60),
+            revision = value.optLong("revision"),
+            readOnly = value.optBoolean("readOnly"),
+        )
+    }
+
+    fun request(value: NotificationSettingsValue, enabled: Boolean, quietHours: QuietHours?): JSONObject =
+        JSONObject().put("revision", value.revision).put("value", JSONObject()
+            .put("enabled", enabled)
+            .put("timeZone", value.timeZone)
+            .put("quietHours", quietHours?.let { JSONObject().put("start", it.start).put("end", it.end) } ?: JSONObject.NULL)
+            .put("minIntervalMinutes", value.minIntervalMinutes))
+
+    fun save(client: CentralClient, value: NotificationSettingsValue, enabled: Boolean, quietHours: QuietHours?): NotificationSettingsValue =
+        parse(client.put(PATH, request(value, enabled, quietHours)))
+
+    private val time = Regex("([01]\\d|2[0-3]):[0-5]\\d")
+
+    fun validTime(quietHours: QuietHours?): Boolean =
+        quietHours == null || time.matches(quietHours.start) && time.matches(quietHours.end)
+
+    fun validate(quietHours: QuietHours?): Boolean =
+        validTime(quietHours) && (quietHours == null || quietHours.start != quietHours.end)
 }

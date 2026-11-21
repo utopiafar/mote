@@ -19,11 +19,6 @@ final class MoteDestinationUITests: XCTestCase {
         app.buttons["关闭"].tap()
         XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 10))
 
-        open(app, "问一问")
-        XCTAssertTrue(app.textFields["问一问"].waitForExistence(timeout: 10), "问一问 did not open the conversation list")
-        app.buttons["返回"].tap()
-        XCTAssertTrue(app.buttons["我的 Mote"].waitForExistence(timeout: 10))
-
         let record = app.buttons["继续草稿"].exists ? app.buttons["继续草稿"] : app.buttons["记录"]
         XCTAssertTrue(record.exists)
         record.tap()

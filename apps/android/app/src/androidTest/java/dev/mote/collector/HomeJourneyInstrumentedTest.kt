@@ -287,12 +287,12 @@ class HomeJourneyInstrumentedTest {
         Fixture().use { fixture ->
             connect(fixture)
             ActivityScenario.launch(MainActivity::class.java).use {
-                val home = onTop("Home is ready") { activity -> shown(activity).any { it.tag == "home-ask-action" } }
-                click(home) { it.tag == "home-ask-action" }
-                val ask = onTop("Ask opens the conversation list") { activity ->
-                    activity is MainActivity && shown(activity).any { it.tag == "central-title" && (it as TextView).text.toString() == MoteI18n.text("对话") }
+                val home = onTop("Primary navigation is ready") { activity -> shown(activity).any { it.tag == "local-tab:chat" } }
+                click(home) { it.tag == "local-tab:chat" }
+                val ask = onTop("Ask opens the main conversation") { activity ->
+                    activity is MainActivity && "生成的评审回答" in texts(activity)
                 }
-                assertTrue("The list keeps the native create-question entry", shown(ask).filterIsInstance<EditText>().any { it.contentDescription == MoteI18n.text("问一问") })
+                assertTrue("The main conversation keeps the native question composer", shown(ask).filterIsInstance<EditText>().any { it.contentDescription == MoteI18n.text("你的问题") })
                 instrumentation.runOnMainSync {
                     assertFalse("Ask must not focus its composer on entry", shown(ask).filterIsInstance<EditText>().any { it.isFocused })
                     assertEquals("Ask must not submit a question by itself", 0, fixture.writes)
@@ -470,7 +470,11 @@ class HomeJourneyInstrumentedTest {
                         return@use
                     }
                     path.startsWith("/api/capture-browser?") -> JSONObject().put("items", feedItems)
-                    path.startsWith("/api/conversations?") -> JSONObject().put("items", JSONArray().put(JSONObject().put("id", conversation).put("title", "周五评审需要准备什么？").put("updatedAt", "2026-10-30T10:00:00Z").put("turnCount", 2)))
+                    path == "/api/conversations/main" -> JSONObject().put("id", conversation)
+                    path.substringBefore('?') == "/api/conversations/$conversation" -> JSONObject().put("id", conversation)
+                        .put("turns", JSONArray().put(JSONObject().put("id", "352a3f07-edee-41d9-ad81-5fdf63f3f622")
+                            .put("question", "周五评审需要准备什么？").put("status", "completed")
+                            .put("result", JSONObject().put("answer", "生成的评审回答").put("citations", JSONArray()))))
                     path == "/api/status" -> JSONObject().put("storage", JSONObject().put("captures", 3))
                     // A newer suggestion that needs nothing comes first, so the home has to follow the cursor to the waiting one.
                     path == "/api/actions?cursor=0" -> JSONObject().put("nextCursor", 7).put("targets", JSONArray()).put("items", JSONArray().put(JSONObject()

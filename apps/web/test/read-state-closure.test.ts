@@ -37,7 +37,7 @@ test('an evidence deletion revision withdraws already expanded older answers and
  const {root,d}=await fixture(t);let revision=1,olderReads=0,latestReads=0;
  const base={...summary('generated'),turnCount:21},old=()=>({...base,revision,nextCursor:null,turns:[{id:'old',question:'Generated earlier question',status:'completed',createdAt:when,evidenceDeleted:revision===2,result:{answer:revision===1?'GENERATED PRIVATE EARLIER ANSWER':'Cleared',citations:revision===1?[{id:'generated-original',excerpt:'GENERATED PRIVATE CITATION'}]:[],trace:[],runId:'generated-old'}}]});
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[base]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor=')){olderReads++;return old();}
   if(path==='/api/conversations/generated'){latestReads++;return {...base,revision,nextCursor:'1',turns:[{...detail('generated').turns[0],result:{answer:'Generated newest answer',citations:[],trace:[],runId:'new'}}]};}return {items:[]};
  },'generated');
@@ -53,7 +53,7 @@ test('an evidence deletion revision withdraws already expanded older answers and
 test('a late older page from before deletion cannot restore an answer after the latest revision changes',async t=>{
  const {root,d}=await fixture(t),late=deferred();let revision=1,signal:AbortSignal|undefined;
  const api=apiWith((path,init)=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor=')){signal=init?.signal??undefined;return late.promise;}return {...detail('generated'),revision};
  },'generated');
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
@@ -65,7 +65,7 @@ test('a late older page from before deletion cannot restore an answer after the 
 test('an older page reporting a newer revision refreshes the head instead of mixing generations',async t=>{
  const {root,d}=await fixture(t);let revision=1,latestReads=0;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor=')){revision=2;return {...detail('generated'),revision,turns:[{...detail('generated').turns[0],id:'old',result:{answer:'Generated changed page',citations:[],trace:[],runId:'old'}}]};}
   if(path==='/api/conversations/generated'){latestReads++;return {...detail('generated'),revision};}return {items:[]};
  },'generated');
@@ -76,7 +76,7 @@ test('an older page reporting a newer revision refreshes the head instead of mix
 test('a newer older-page revision withdraws the cached head until the current head is validated',async t=>{
  const {root,d}=await fixture(t),head=deferred();let reads=0;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor='))return {...detail('generated'),revision:2,turns:[{...detail('generated').turns[0],id:'old',result:{answer:'Generated changed page',citations:[],trace:[],runId:'old'}}]};
   if(path==='/api/conversations/generated')return ++reads===1?{...detail('generated'),revision:1}:head.promise;return {items:[]};
  },'generated');
@@ -89,7 +89,7 @@ test('a newer older-page revision withdraws the cached head until the current he
 for(const status of [401,403,404,410])test('revoked conversation '+status+' discards expanded pages even if access returns at the same revision',async t=>{
  const {root,d}=await fixture(t);let revoked=false;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(revoked)throw new ApiError('Generated conversation unavailable',status);
   return path.includes('?cursor=')?{...detail('generated'),revision:1,nextCursor:null,turns:[{...detail('generated').turns[0],id:'old',result:{answer:'GENERATED REVOKED PAGE',citations:[],trace:[],runId:'old'}}]}:{...detail('generated'),revision:1};
  },'generated');
@@ -101,7 +101,7 @@ for(const status of [401,403,404,410])test('revoked conversation '+status+' disc
 test('revocation reported by an older page immediately withdraws the cached head while its authorization is rechecked',async t=>{
  const {root,d}=await fixture(t),head=deferred();let reads=0;
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path.includes('?cursor='))throw new ApiError('Generated older page permission revoked',403);
   if(path==='/api/conversations/generated')return ++reads===1?{...detail('generated'),revision:1}:head.promise;return {items:[]};
  },'generated');
@@ -248,7 +248,7 @@ test('image progress keeps ready OCR visible after vision failure and reports a 
 test('unavailable references deny navigation and an invalidated answer withdraws its text',async t=>{
  const {root,d}=await fixture(t);let revision=1;const opened:string[]=[],referenceReads:string[]=[];
  const api=apiWith(path=>{
-  if(path==='/api/conversations?limit=30')return {items:[summary('generated-history')]};if(path==='/api/query-runs')return {items:[]};
+  if(path==='/api/query-runs')return {items:[]};
   if(path==='/api/conversations/generated-history/references/generated-original'){referenceReads.push(path);return {id:'generated-original',available:revision<2};}
   if(path==='/api/conversations/generated-history')return {...summary('generated-history'),revision,nextCursor:null,turns:[{id:'generated-turn',question:'Generated original question',status:'completed',createdAt:when,evidenceStale:revision>=3,evidenceUnavailable:revision>=2,evidenceDeleted:revision===4,result:{answer:revision===4?'Cleared':'GENERATED HISTORICAL PROPOSAL',citations:revision===4?[]:[{id:'generated-original',excerpt:'GENERATED OLD QUOTE'}],trace:[],runId:'generated-history'}}]};return {items:[]};
  },'generated-history');

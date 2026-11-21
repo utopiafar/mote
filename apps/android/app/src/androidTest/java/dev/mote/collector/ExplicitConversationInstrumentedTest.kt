@@ -83,12 +83,13 @@ class ExplicitConversationInstrumentedTest {
             until("Continue editing explicitly clears queued target without clearing draft"){var done=false;scenario.onActivity{done=!it.intent.hasExtra("conversationId")};done&&main{shown().filterIsInstance<EditText>().any{it.text.toString()=="Generated later unsent draft"}}};assertEquals(1,fixture.posts.get())
         }
     }
-    @Test fun ownerChangeRejectsOldExplicitIntentAndItsLateHistoryRead()=fixture{fixture->
-        fixture.holdHistory.set(true)
+    @Test fun ownerChangeRejectsOldExplicitIntentAndItsLateConversationRead()=fixture{fixture->
+        fixture.holdConversation.set(true)
         open(fixture).use{scenario->
-            assertTrue(fixture.historyStarted.await(10,TimeUnit.SECONDS));Settings(context).signIn(fixture.origin,fixture.tokenB,86400000)
+            assertTrue(fixture.conversationStarted.await(10,TimeUnit.SECONDS));Settings(context).signIn(fixture.origin,fixture.tokenB,86400000)
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED);fixture.release.countDown();scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-            until("New owner access finishes without old A target"){var ready=false;scenario.onActivity{ready=!it.isWorking&&!it.intent.hasExtra("conversationId")&&it.selectedAskConversationId==null};ready}
+            until("New owner access opens B's main conversation"){var ready=false;scenario.onActivity{ready=!it.isWorking&&!it.intent.hasExtra("conversationId")&&it.selectedAskConversationId==fixture.b};ready}
+            main { assertFalse(shown().filterIsInstance<TextView>().any { it.text.toString() == "Generated intended A history" }) }
             assertEquals("B credential must never read old target A",0,fixture.aReadsByB.get());assertEquals(0,fixture.posts.get());picture(scenario,"owner-change-rejects-old-explicit-intent")
         }
     }
@@ -96,7 +97,7 @@ class ExplicitConversationInstrumentedTest {
         val a=UUID.randomUUID().toString();val b=UUID.randomUUID().toString();val runB=UUID.randomUUID().toString()
         val tokenA="generated-explicit-conversation-owner-A";val tokenB="generated-explicit-conversation-owner-B"
         private val listener=ServerSocket(0,10,InetAddress.getByName("127.0.0.1"));val origin="http://127.0.0.1:${listener.localPort}"
-        val posts=AtomicInteger();val bPolls=AtomicInteger();val aReadsByB=AtomicInteger();val posted=AtomicReference<JSONObject?>();val holdHistory=AtomicBoolean();val historyStarted=CountDownLatch(1);val release=CountDownLatch(1);@Volatile var bMissing=false
+        val posts=AtomicInteger();val bPolls=AtomicInteger();val aReadsByB=AtomicInteger();val posted=AtomicReference<JSONObject?>();val holdConversation=AtomicBoolean();val conversationStarted=CountDownLatch(1);val release=CountDownLatch(1);@Volatile var bMissing=false
         private val workers=Executors.newCachedThreadPool()
         private fun conversation(id:String)=JSONObject().put("id",id).put("scope",JSONObject()).put("turns",JSONArray().put(JSONObject().put("id",UUID.randomUUID().toString()).put("status","completed").put("question",if(id==a)"Generated intended A history"else"Generated unrelated B history").put("result",JSONObject().put("answer",if(id==a&&posted.get()!=null)"Generated A completed response"else"Generated prior answer").put("citations",JSONArray()))))
         init{workers.submit{while(!listener.isClosed)runCatching{listener.accept()}.getOrNull()?.let{socket->workers.submit{socket.use{
@@ -107,8 +108,15 @@ class ExplicitConversationInstrumentedTest {
                 path=="/api/query-runs"&&isPost->{posts.incrementAndGet();val value=JSONObject(String(chars));posted.set(value);JSONObject().put("id",value.getString("id")).put("status","completed").put("conversationId",value.getJSONObject("input").optString("conversationId"))}
                 path=="/api/query-runs"->JSONObject().put("items",JSONArray().apply{if(!isB)put(JSONObject().put("id",runB).put("status","running").put("conversationId",b))})
                 path.startsWith("/api/query-runs/")->{bPolls.incrementAndGet();if(bMissing){status="404 Not Found";JSONObject().put("error","not_found")}else JSONObject().put("id",runB).put("status","running").put("conversationId",b)}
-                path.startsWith("/api/conversations?")->{if(holdHistory.compareAndSet(true,false)){historyStarted.countDown();check(release.await(20,TimeUnit.SECONDS))};JSONObject().put("items",JSONArray().put(JSONObject().put("id",a).put("title","Generated A").put("updatedAt","2026-10-30T00:00:00Z").put("turnCount",1)).put(JSONObject().put("id",b).put("title","Generated B").put("updatedAt","2026-10-30T00:00:00Z").put("turnCount",1)))}
-                path.startsWith("/api/conversations/$a")-> {if(isB)aReadsByB.incrementAndGet();conversation(a)}
+                path == "/api/conversations/main" -> JSONObject().put("id", b)
+                path.substringBefore('?') == "/api/conversations/$a" -> {
+                    if (isB) aReadsByB.incrementAndGet()
+                    else if (holdConversation.compareAndSet(true, false)) {
+                        conversationStarted.countDown()
+                        check(release.await(20, TimeUnit.SECONDS))
+                    }
+                    conversation(a)
+                }
                 path.startsWith("/api/conversations/$b")->conversation(b)
                 path.startsWith("/api/model-settings")->JSONObject().put("profiles",JSONArray())
                 else->JSONObject().put("items",JSONArray())
