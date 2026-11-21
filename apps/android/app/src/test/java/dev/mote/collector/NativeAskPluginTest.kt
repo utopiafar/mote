@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import dev.mote.collector.plugins.NativeAskController
 import dev.mote.collector.plugins.NativeAskDraftStorage
+import dev.mote.collector.plugins.NativeAskLocalChat
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativePluginHost
 import dev.mote.collector.plugins.NativePluginRegistry
@@ -163,6 +164,36 @@ class NativeAskPluginTest {
         controller.replace(JSONObject(controller.state.toString())
             .put("messageId", UUID.randomUUID().toString()).put("runStatus", "running"))
         assertEquals("Generated second conversation draft", controller.state.getString("question"))
+    }
+
+    @Test fun localSubmissionBindsOnceAndCannotReplaceAnIdenticalUnsentDraft() = temporary { directory ->
+        val main = UUID.randomUUID().toString()
+        val origin = "https://generated.invalid"
+        val alternate = "https://alternate.invalid"
+        val text = "Generated local message"
+        val local = NativeAskLocalChat(CentralStateFile(directory, "local-chat", cipher))
+        local.save("", text)
+        local.save("", "Generated following message")
+        val first = requireNotNull(local.first(origin, main))
+        assertNull(local.first(alternate, main))
+        assertNull(local.first(origin, UUID.randomUUID().toString()))
+        local.settle(origin, first.id, rejected = true)
+        assertEquals(first.copy(rejected = true), local.first(origin, main))
+
+        val controller = NativeAskController(storage(directory))
+        controller.restore()
+        controller.attachConversation(main)
+        controller.editQuestion(text)
+        assertTrue(controller.admitLocal(main, first, "UTC"))
+        controller.persistNow()
+        val restored = NativeAskController(storage(directory)).apply { restore() }
+        val request = requireNotNull(restored.admission("Generated alternate text", "UTC"))
+        assertEquals(first.id, request.getString("clientRequestId"))
+        assertEquals(first.text, request.getString("question"))
+        assertFalse(restored.receive(receipt(request, "completed"), request).clearDraft)
+        assertEquals(text, restored.state.getString("question"))
+        local.settle(origin, first.id)
+        assertEquals("Generated following message", local.first(origin, main)?.text)
     }
 
 }

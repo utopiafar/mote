@@ -1,6 +1,10 @@
 package dev.mote.collector.plugins
 
+import android.app.Activity
+import android.content.ClipData
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import dev.mote.collector.CaptureAccessibilityService
@@ -11,16 +15,22 @@ import dev.mote.collector.CollectorConfig
 import dev.mote.collector.LocalStateSnapshot
 import dev.mote.collector.LocalStatusProducer
 import dev.mote.collector.MediaCollectionService
+import dev.mote.collector.MainActivity
 import dev.mote.collector.MoteI18n
+import dev.mote.collector.MoteQuickEntry
 import dev.mote.collector.Notifications
 import dev.mote.collector.ProjectionConsentHandoff
 import dev.mote.collector.RuntimeSettings
 import dev.mote.collector.SendPauseControl
 import dev.mote.collector.Settings
+import dev.mote.collector.ShareRecordActivity
 import dev.mote.collector.SystemEventCollector
+import dev.mote.collector.TabFrame
 import dev.mote.collector.UploadWorker
 import dev.mote.collector.captureResume
 import dev.mote.collector.systemEntries
+import dev.mote.collector.ui.MoteGlyph
+import org.json.JSONObject
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -39,6 +49,47 @@ internal object CapturePlugin {
 
     private val lock = Any()
     @Volatile private var runtime: CaptureControllers? = null
+
+    internal enum class ChatEntry(val label: String, val glyph: MoteGlyph, val quickEntry: MoteQuickEntry? = null) {
+        PHOTO("拍照", MoteGlyph.CAMERA, MoteQuickEntry.PHOTO),
+        IMAGE("图片", MoteGlyph.PHOTO),
+        FILE("文件", MoteGlyph.FILE),
+        AUDIO("录音", MoteGlyph.MIC, MoteQuickEntry.AUDIO);
+
+        fun editor(activity: Activity): Intent? = quickEntry?.let { entry ->
+            entry.destination(activity).setFlags(0)
+                .putExtra("startMedia", TabFrame.startMedia(entry))
+                .putExtra("firstUse", (activity as? MainActivity)?.isFirstUseRecordEntry() ?: false)
+        }
+    }
+
+    internal const val CHAT_CAPTURE_RESULT = 74
+    internal const val CHAT_DOCUMENT_RESULT = 75
+
+    internal fun chatDocument(entry: ChatEntry): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        .addCategory(Intent.CATEGORY_OPENABLE).setType(if (entry == ChatEntry.IMAGE) "image/*" else "*/*")
+
+    internal fun sharedChatDocument(context: Context, uri: Uri): Intent = Intent(context, ShareRecordActivity::class.java)
+        .setAction(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
+        .apply {
+            clipData = ClipData.newRawUri("", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+    internal data class ChatReceipt(val glyph: MoteGlyph, val attachmentId: String?, val name: String?)
+
+    internal fun chatReceipt(record: JSONObject): ChatReceipt {
+        val attachments = record.getJSONArray("attachments")
+        val items = (0 until attachments.length()).map(attachments::getJSONObject)
+        val latest = items.lastOrNull() ?: return ChatReceipt(MoteGlyph.CHECK, null, null)
+        val mime = latest.getString("mime")
+        val name = latest.getString("name")
+        return when {
+            mime.startsWith("audio/") -> ChatReceipt(MoteGlyph.MIC, null, name)
+            mime.startsWith("image/") -> ChatReceipt(MoteGlyph.PHOTO, latest.getString("id"), name)
+            else -> ChatReceipt(MoteGlyph.FILE, null, name)
+        }
+    }
 
     fun register(registry: NativePluginRegistry, buildId: String) {
         registry.register(NativePluginProvider(PROJECTION_CAPABILITY, API_VERSION, buildId = buildId, osGrants = listOf("projection")))

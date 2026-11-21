@@ -106,7 +106,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "前往插件中心": "Abrir el Centro de complementos",
   "自动记忆的开关、当前方案和处理节奏在同一设置中管理。": "Gestiona la memoria automática, el plan actual y la frecuencia de procesamiento en un solo lugar.",
   "没有连上中央": "Sin conexión con Central",
-  "继续问": "Seguir preguntando",
   "第 {0} 行": "Fila {0}",
   "网页": "Web",
   "截图与照片": "Capturas de pantalla y fotos",
@@ -4325,7 +4324,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "未豁免": "No exento",
   "上传速率": "Velocidad de carga",
   "发送": "Enviar",
-  "停止回答": "Detener respuesta",
   "保守去重": "Deduplicación conservadora",
   "均衡去重": "Deduplicación equilibrada",
   "激进去重": "Deduplicación agresiva",
@@ -5366,7 +5364,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "先选择应用范围，再按需授权": "Elige primero el ámbito de apps y luego concede los permisos necesarios",
   "离线也能留下想法与片段": "Guardar ideas y fragmentos sin conexión",
   "正在保存发送状态…": "Guardando estado de envío…",
-  "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。": "Las preguntas a Central no están disponibles temporalmente. Tras conectar podrás preguntar sobre el contenido ya procesado; archivos y notas rápidas siguen pudiendo guardarse localmente.",
   "恢复这个来源": "Reanudar esta fuente",
   "读取范围：{0}": "Ámbito de lectura: {0}",
   "未连接中央：先保存本机任务，连接时确认发送范围。": "Archivo central desconectado: guarda primero la tarea localmente y confirma el ámbito de envío al conectar.",
@@ -7694,5 +7691,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "相关资料": "Materiales relacionados",
   "事项状态暂不可用": "Estado de los asuntos no disponible",
   "事项已变化，需重新读取": "El asunto cambió; recarga",
-  "目标数据无法读取": "Datos de objetivos no disponibles"
+  "目标数据无法读取": "Datos de objetivos no disponibles",
+  "已记下": "Guardado",
+  "语音输入": "Entrada de voz",
+  "语音输入不可用": "Entrada de voz no disponible"
 };
