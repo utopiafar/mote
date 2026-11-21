@@ -421,16 +421,22 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
     if (!head || cancelRequest.current) return;
     const controller = new AbortController();
     cancelRequest.current = controller;
+    const active = () => !controller.signal.aborted && cancelRequest.current === controller && latest.current.head?.id === head.id;
     setCancelling(turn.id);
     setError('');
     try {
       const result = await api.request<ConversationMessage>(chatPath(head.id) + '/messages/' + encodeURIComponent(turn.id) + '/cancel',
         {method: 'POST', signal: controller.signal});
-      if (controller.signal.aborted || latest.current.head?.id !== head.id) return;
-      if (result.id !== turn.id || result.conversationId !== head.id) throw new Error('Conversation receipt identity changed');
+      if (!active()) return;
+      if (result.id !== turn.id || result.conversationId !== head.id || result.status !== 'cancelled')
+        throw new Error('Conversation cancellation was not confirmed');
       detail.refresh();
     } catch {
-      if (!controller.signal.aborted) setError(moteText('停止失败'));
+      if (!active()) return;
+      const receipt = await readConversationMessage(api, head.id, turn.id, controller.signal).catch(() => undefined);
+      if (!active()) return;
+      if (receipt?.id === turn.id && receipt.status === 'cancelled') detail.refresh();
+      else setError(moteText('停止失败'));
     } finally {
       if (cancelRequest.current === controller) {
         cancelRequest.current = undefined;

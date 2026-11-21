@@ -2,14 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {act} from 'react';
 import sharp from 'sharp';
+import {pageHash} from '@mote/shared';
 import type {Answer} from '../src/api';
 import {ApiError} from '../src/api';
 import {resources} from '../src/resource-cache';
 import {currentInstructionFixture, gate} from '../../server/test/fixtures/current-owner-instruction';
+import {currentOwnerCalendarFixture} from '../../server/test/fixtures/current-owner-calendar';
 import {taskSteeringFixture} from '../../server/test/fixtures/assistant-task-steering';
 import {at, chatDom, chatId, chatPath, generatedApi, injectedApi, turnId} from './fixtures/chat-dom';
 
-test('CH1-02 and CH1-11 stop the active answer through its exact durable message receipt', {timeout: 30000}, async t => {
+for (const loseReceipt of [false, true]) test(
+  'CH1-02 and CH1-11 stop the active answer through its exact durable message receipt' + (loseReceipt ? ' after a lost response' : ''),
+  {timeout: 30000}, async t => {
   const entered = gate(), release = gate();
   t.after(release.release);
   const server = await currentInstructionFixture(t, async () => {
@@ -19,9 +23,16 @@ test('CH1-02 and CH1-11 stop the active answer through its exact durable message
   });
   const f = await chatDom(t);
   const writes: string[] = [];
-  const api = injectedApi(server.node.app, server.headers, (path, init) => {
+  const checks: string[] = [];
+  const central = injectedApi(server.node.app, server.headers, (path, init) => {
     if (init.method === 'POST') writes.push(path);
   });
+  const api = {...central, request: async <T>(path: string, init?: RequestInit) => {
+    const result = await central.request<T>(path, init);
+    if (loseReceipt && path.endsWith('/cancel')) throw new TypeError('Generated lost cancellation response');
+    if (writes.at(-1) === path + '/cancel') checks.push(path);
+    return result;
+  }};
   await f.render(api);
   await f.waitFor(() => f.d.querySelector('.chat-page[aria-busy="false"]'), 'open main conversation');
   await f.field('.chat-compose-form textarea', 'Generated long owner instruction');
@@ -35,9 +46,14 @@ test('CH1-02 and CH1-11 stop the active answer through its exact durable message
   await f.click('[data-message-kind="progress"] button');
   await f.waitFor(() => f.d.querySelector('.chat-message[data-state="cancelled"]'), 'cancelled receipt rendered');
   assert.equal(server.node.conversations.message(messageId).status, 'cancelled');
-  assert.deepEqual(writes, ['/api/conversations/messages', chatPath(server.conversationId) + '/messages/' + messageId + '/cancel']);
+  const messagePath = chatPath(server.conversationId) + '/messages/' + messageId;
+  assert.deepEqual(writes, ['/api/conversations/messages', messagePath + '/cancel']);
+  if (loseReceipt) assert.ok(checks.includes(messagePath));
+  assert.equal(f.d.querySelector('.chat-error'), null);
   release.release();
-  assert.equal(f.d.querySelector('[data-message-kind="progress"]'), null);
+  const cancelled = f.element('[data-message-kind="progress"][data-state="cancelled"][role="status"]');
+  assert.equal(cancelled.closest('.chat-message')?.id, 'conversation-turn-' + messageId);
+  assert.equal(cancelled.querySelector('button, .spin'), null);
   assert.doesNotMatch(f.d.body.textContent!, /Generated late answer/);
 });
 
@@ -52,7 +68,8 @@ test('CH1-03 sends a follow-up through the message queue and shows the real Stee
       if (init.method === 'POST') writes.push({path, body: JSON.parse(String(init.body))});
     });
     await f.render(api);
-    await f.waitFor(() => f.d.querySelector('.assistant-task-result'), 'original task projection');
+    await f.waitFor(() => f.d.querySelector('.assistant-task-result [data-message-kind="progress"][data-state="running"]'),
+      'original task progress');
     await f.field('.chat-compose-form textarea', 'GENERATED-FORMAL-TASK-CORRECTION');
     assert.equal(f.element<HTMLButtonElement>('.send-button').disabled, false);
     await f.submit();
@@ -69,6 +86,7 @@ test('CH1-03 sends a follow-up through the message queue and shows the real Stee
     assert.equal(f.d.querySelector('#conversation-turn-' + receipt.id + ' [data-message-kind="progress"]'), null);
     assert.equal(server.rpc().filter(record => record.method === 'turn/steer').length, 1);
     assert.equal(f.d.querySelectorAll('.assistant-task-result').length, 1);
+    assert.equal(f.d.querySelectorAll('[data-message-kind="progress"]').length, 1);
   });
 
 test('CH1-04 the calendar card uses the Action receipt time and calendar, and retries a failed read', async t => {
@@ -104,6 +122,30 @@ test('CH1-04 the calendar card uses the Action receipt time and calendar, and re
   assert.match(card.querySelector('a')!.hash, new RegExp(id));
   assert.equal(actionReads, 2);
   assert.deepEqual(writes, []);
+});
+
+test('CH1-04 a lost connector receipt shows the exact event for verification', {timeout: 30000}, async t => {
+  const server = await currentOwnerCalendarFixture(t);
+  server.dropReceipt();
+  const accepted = await server.post();
+  const message = await server.settled(accepted.message.id);
+  const id = message.result?.currentAction?.id;
+  assert.ok(id);
+  const f = await chatDom(t);
+  await f.waitFor(() => server.node.actions.get(id).status === 'uncertain', 'durable unknown write outcome');
+  const writes: string[] = [];
+  await f.render(injectedApi(server.node.app, server.headers, (path, init) => {
+    if (init.method === 'POST') writes.push(path);
+  }));
+  const selector = '[data-action-id="' + id + '"][data-state="uncertain"]';
+  await f.waitFor(() => f.d.querySelector(selector), 'uncertain calendar receipt');
+  const card = f.element(selector);
+  assert.ok(card.querySelector('[role="alert"]'));
+  assert.equal(card.querySelector('button'), null);
+  assert.equal(card.querySelector('a')?.getAttribute('href'), pageHash('actions', {action: id}));
+  assert.deepEqual(writes, []);
+  assert.equal(server.calls.length, 1);
+  assert.equal(server.effects.size, 1, 'the appointment may already exist after a lost receipt');
 });
 
 test('CH1-06 archive upload precedes message admission and the saved message reads its thumbnail', {timeout: 30000}, async t => {

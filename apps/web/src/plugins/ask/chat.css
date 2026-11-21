@@ -139,6 +139,7 @@
 .chat-answer-menu .text-button { padding: 6px 9px; }
 
 .chat-card,
+.chat-page .chat-progress,
 .chat-task-result > summary {
   box-sizing: border-box;
   display: grid;
@@ -155,6 +156,7 @@
 
 .chat-card > svg,
 .chat-task-result > summary > svg { color: var(--mote-muted); }
+.chat-page .chat-progress { font-size: var(--mote-font-support); line-height: 1.5; }
 .chat-card strong,
 .chat-task-result strong { display: block; font-size: var(--mote-font-row); }
 .chat-card-detail,

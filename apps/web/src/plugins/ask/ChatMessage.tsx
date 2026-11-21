@@ -1,5 +1,5 @@
 import {useCallback, useRef, useState, type ReactNode} from 'react';
-import {CalendarDays, Copy, LoaderCircle, MoreHorizontal} from 'lucide-react';
+import {CalendarDays, Copy, MoreHorizontal} from 'lucide-react';
 import {pageHash, type ActionProposal, type CurrentActionReference, type WorkActivity} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {dateTime, type Answer, type Api} from '../../api';
@@ -9,6 +9,7 @@ import {AssistantDraftActions} from './AssistantDraftActions';
 import type {AssistantTaskResultItem} from './AssistantTaskResults';
 import {ChatAttachmentView} from './chat-attachments';
 import {hiddenAnswer, type ChatTurn} from './ChatHistory';
+import {ChatProgress} from './ChatProgress';
 import {conversationFailure, ConversationTurnDetails} from './ConversationTurnDetails';
 import {SaveConversationRecord} from './SaveConversationRecord';
 import {messageStateLabel, pendingMessageStatus} from './conversation-messages';
@@ -49,13 +50,14 @@ function CalendarReceipt({api, reference, conversationId, turnId}: {
   const destination = target?.calendarId ?? (target && 'instanceId' in target ? target.instanceId : undefined);
   const state = action.kind === 'calendar.create' && action.status === 'succeeded' && !action.resolution
     ? moteText('已创建') : calendarStateLabel(action);
-  const canStop = !action.cancelRequestedAt && ['approved', 'executing', 'uncertain'].includes(action.status);
+  const canStop = !action.cancelRequestedAt && (action.status === 'approved' || action.status === 'executing');
   return <section className="chat-card" data-message-kind="calendar" data-state={action.status} data-action-id={action.id}
     aria-label={moteText('日程')}>
     <CalendarDays size={19} aria-hidden="true"/>
     <div><strong>{action.event.title}</strong>
       <p className="chat-card-detail">{actionEventTime(action.event)}</p>
-      <p className="chat-card-detail">{destination && <>{destination} · </>}<span role="status">{state}</span></p>
+      <p className="chat-card-detail">{destination && <>{destination} · </>}
+        <span role={action.status === 'uncertain' ? 'alert' : 'status'}>{state}</span></p>
       {cancelFailed && <p role="alert">{moteText('停止失败')}</p>}
     </div>
     {canStop ? <button className="text-button" disabled={busy} onClick={() => void cancel()}>{moteText('停止')}</button>
@@ -63,18 +65,15 @@ function CalendarReceipt({api, reference, conversationId, turnId}: {
   </section>;
 }
 
-function ProgressRow({api, turn, cancelling, onCancel}: {api: Api; turn: ChatTurn; cancelling: boolean; onCancel: () => void}) {
-  const work = useResource<WorkActivity>(api, turn.runId ? '/api/work-activity/' + encodeURIComponent('query:' + turn.runId) : null);
-  const progress = !work.error && work.data?.id === 'query:' + turn.runId ? work.data?.progress : undefined;
+function ProgressRow({api, runId, state, cancelling, onCancel}: {
+  api: Api; runId?: string; state: 'accepted' | 'running'; cancelling: boolean; onCancel: () => void;
+}) {
+  const workId = runId ? 'query:' + runId : undefined;
+  const work = useResource<WorkActivity>(api, workId ? '/api/work-activity/' + encodeURIComponent(workId) : null);
+  const progress = !work.error && work.data?.id === workId ? work.data?.progress : undefined;
   const label = progress?.mode === 'determinate' ? moteText('读取资料 {0}/{1}', progress.completed, progress.total)
-    : progress?.mode === 'semantic' && progress.stage === 'searching' ? moteText('读取资料') : messageStateLabel(turn.status);
-  return <div className="chat-card conversation-pending" data-message-kind="progress" data-progress={progress?.mode} role="status">
-    <LoaderCircle className="spin" size={18} aria-hidden="true"/>
-    <span>{label}</span>
-    <button className="text-button" disabled={cancelling} aria-label={moteText('停止这条回答')} onClick={onCancel}>
-      {moteText('停止')}
-    </button>
-  </div>;
+    : progress?.mode === 'semantic' && progress.stage === 'searching' ? moteText('读取资料') : messageStateLabel(state);
+  return <ChatProgress state={state} label={label} mode={progress?.mode} stop={{disabled: cancelling, run: onCancel}}/>;
 }
 
 function TaskAmendment({api, turn, cancelling, onCancel}: {api: Api; turn: ChatTurn; cancelling: boolean; onCancel: () => void}) {
@@ -154,9 +153,10 @@ export function ChatMessage({api, turn, previous, conversationId, pending, turns
   open.current = openReference;
   const openCitation = useCallback((ref: string) => open.current(ref), []);
   const result = hiddenAnswer(turn) ? undefined : turn.result;
-  const inFlight = pendingMessageStatus(turn.status);
+  const {status} = turn;
+  const inFlight = pendingMessageStatus(status);
   const amended = Boolean(turn.steering || turn.taskSteering);
-  const showProgress = inFlight && !amended && turn.status !== 'queued';
+  const showProgress = !amended && (status === 'accepted' || status === 'running');
   const canStopSupplement = turn.steering?.state === 'accepted' && pending.some(item => item.id === turn.steering?.targetMessageId);
   const linkedIds = new Set([...(turn.amendedBy ?? []), ...(turn.supersededBy ?? []),
     ...(turn.steering ? [turn.steering.targetMessageId] : [])]);
@@ -166,7 +166,7 @@ export function ChatMessage({api, turn, previous, conversationId, pending, turns
   const draft = result?.draft && !turn.supersededBy?.length ? result.draft : undefined;
 
   return <article className="conversation-turn chat-message" id={'conversation-turn-' + turn.id} tabIndex={-1}
-    data-source-turn={highlighted ? 'true' : undefined} data-state={turn.status}>
+    data-source-turn={highlighted ? 'true' : undefined} data-state={status}>
     {startsGroup(turn, previous) && <time className="chat-time" dateTime={turn.createdAt}>{dateTime(turn.createdAt)}</time>}
     <div className="asked-question">{turn.question}
       {Boolean(turn.attachments?.length) && <div className="chat-attached-images">
@@ -174,13 +174,15 @@ export function ChatMessage({api, turn, previous, conversationId, pending, turns
       </div>}
     </div>
     {hiddenAnswer(turn) ? <p className="chat-message-status" role="status" data-message-kind="stale">{moteText('已失效')}</p>
-      : showProgress ? <ProgressRow api={api} turn={turn} cancelling={cancelling} onCancel={onCancel}/>
+      : showProgress ? <ProgressRow api={api} runId={turn.runId} state={status} cancelling={cancelling} onCancel={onCancel}/>
       : inFlight ? <div className="chat-message-status" role="status">
-        <span>{messageStateLabel(turn.status)}</span>
+        <span>{messageStateLabel(status)}</span>
         <button className="text-button" aria-label={moteText('停止这条回答')} disabled={cancelling} onClick={onCancel}>{moteText('停止')}</button>
       </div>
-      : turn.status === 'cancelled' ? <p className="chat-message-status" role="status">{moteText('已取消')}</p>
-      : turn.status === 'failed' ? <div className="chat-message-status" role="alert">
+      : status === 'cancelled' ? amended
+        ? <p className="chat-message-status" role="status">{moteText('已取消')}</p>
+        : <ChatProgress state="cancelled" label={moteText('已取消')}/>
+      : status === 'failed' ? <div className="chat-message-status" role="alert">
         <span>{moteText('这次回答没有完成')}</span>
         <button className="text-button" disabled={!canRetry} onClick={onRetry}>{moteText('重试')}</button>
       </div>

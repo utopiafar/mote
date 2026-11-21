@@ -5,10 +5,25 @@ import {moteText} from '@mote/shared/i18n';
 import type {Answer,Api} from '../../api';
 import {FeaturePanels} from '../../features/runtime';
 import {AssistantActionResults} from '../work/AssistantActionResults';
+import {ChatProgress} from './ChatProgress';
 
 export type AssistantTaskResultItem={task:Pick<AssistantTaskRecord,'id'|'state'> & Partial<AssistantTaskRecord>;workId?:string;expectedRevision?:number;result?:Answer;error?:string;actionDrafts?:AssistantActionDraft[]};
 type Item=AssistantTaskResultItem;
 type Page={items:Item[]};
+
+function TaskStatus({task}:{task:Item['task']}){
+ const {state,goal}=task;
+ if(state==='completed')return null;
+ if(state==='running'||state==='waiting'||state==='cancelled'){
+  const status=state==='running'?moteText('正在进行'):state==='waiting'?moteText('排队中'):moteText('已取消');
+  return <ChatProgress state={state} label={goal?goal+' · '+status:status}/>;
+ }
+ return <>
+  {goal&&<p>{goal}</p>}
+  <strong>{moteText('任务状态')}</strong>{' · '}
+  <span role="status">{state==='stale'?moteText('已失效'):moteText('未完成')}</span>
+ </>;
+}
 
 /** Re-read the durable task, including after a lost response or a reload. */
 export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,renderAnswer,onOpen,onFound}:{
@@ -46,11 +61,7 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
  })();};
  return <>
   {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id} data-state={task.state}>
-   {task.state!=='completed'&&task.goal&&<p>{task.goal}</p>}
-   {task.state!=='completed'&&<><strong>{moteText('任务状态')}</strong>{' · '}
-   <span role="status" data-message-kind={task.state==='running'||task.state==='waiting'?'progress':undefined}>{task.state==='running'?moteText('正在进行'):
-    task.state==='waiting'?moteText('排队中'):task.state==='stale'?moteText('已失效'):
-    task.state==='cancelled'?moteText('已取消'):moteText('未完成')}</span></>}
+   <TaskStatus task={task}/>
    {task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {reason==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {reason==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}

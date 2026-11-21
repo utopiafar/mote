@@ -1,6 +1,6 @@
 {
   "route": "#/chat",
-  "waitFor": ".chat-page:has(.chat-task-result):has([data-message-kind=\"calendar\"][data-state=\"succeeded\"]):has([data-progress=\"determinate\"])",
+  "waitFor": ".chat-page:has(.chat-task-result):has([data-message-kind=\"calendar\"][data-state=\"succeeded\"]):has([data-message-kind=\"calendar\"][data-state=\"uncertain\"]):has([data-progress=\"determinate\"])",
   "api": {
     "POST /api/login/exchange": {
       "status": 200,
@@ -88,7 +88,7 @@
         "title": "整理样例评审清单",
         "createdAt": "2026-11-20T09:00:00+08:00",
         "updatedAt": "2026-11-20T09:00:00+08:00",
-        "turnCount": 4,
+        "turnCount": 5,
         "scope": {},
         "status": "completed",
         "revision": 7,
@@ -145,6 +145,23 @@
               "trace": [],
               "currentAction": {
                 "id": "10000000-0000-4000-8000-000000000013",
+                "kind": "calendar.create"
+              }
+            }
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000006",
+            "question": "周四上午留一小时复盘",
+            "createdAt": "2026-11-20T09:44:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "已收到这个日程请求。",
+              "runId": "generated-answer-6",
+              "citations": [],
+              "trace": [],
+              "currentAction": {
+                "id": "10000000-0000-4000-8000-000000000014",
                 "kind": "calendar.create"
               }
             }
@@ -232,6 +249,32 @@
           "title": "准备发布评审",
           "start": "2026-11-25T14:00:00+08:00",
           "end": "2026-11-25T16:00:00+08:00",
+          "timeZone": "Asia/Shanghai",
+          "allDay": false,
+          "location": "",
+          "description": ""
+        }
+      }
+    },
+    "GET /api/actions/10000000-0000-4000-8000-000000000014": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000014",
+        "kind": "calendar.create",
+        "status": "uncertain",
+        "version": 2,
+        "ownerInstruction": {
+          "conversationId": "10000000-0000-4000-8000-000000000001",
+          "messageId": "10000000-0000-4000-8000-000000000006"
+        },
+        "target": {
+          "deviceId": "fixture",
+          "calendarId": "示例日历"
+        },
+        "event": {
+          "title": "样例评审复盘",
+          "start": "2026-11-26T10:00:00+08:00",
+          "end": "2026-11-26T11:00:00+08:00",
           "timeZone": "Asia/Shanghai",
           "allDay": false,
           "location": "",
