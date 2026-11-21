@@ -106,6 +106,7 @@ test('CH1-04 the calendar card uses the Action receipt time and connector name, 
 
   const releaseInventory = gate();
   t.after(releaseInventory.release);
+  let inventoryRead: Promise<unknown> | undefined;
   let actionReads = 0;
   const writes: string[] = [];
   const central = injectedApi(server.node.app, server.headers, (path, init) => {
@@ -113,7 +114,11 @@ test('CH1-04 the calendar card uses the Action receipt time and connector name, 
   });
   await f.render({...central, request: async <T>(path: string, init?: RequestInit) => {
     if (path === actionPath && ++actionReads === 1) throw new ApiError('Generated action read failure', 503);
-    if (path === '/api/actions') await releaseInventory.promise;
+    if (path === '/api/actions') {
+      const read = releaseInventory.promise.then(() => central.request<T>(path, init));
+      inventoryRead = read;
+      return read;
+    }
     return central.request<T>(path, init);
   }});
   const failedReceipt = '[data-message-kind="calendar"][data-state="read-failed"][role="alert"]';
@@ -126,8 +131,12 @@ test('CH1-04 the calendar card uses the Action receipt time and connector name, 
   assert.match(card.textContent!, /15:00.*16:00/);
   assert.equal(card.querySelector('[role="status"]')?.textContent, '已创建');
   assert.ok(!card.textContent!.includes(target.instanceId), 'the connector ID stays hidden while its name is loading');
-  releaseInventory.release();
-  await f.waitFor(() => card.textContent?.includes('Generated owner calendar'), 'calendar name from the Action list');
+  assert.ok(inventoryRead, 'the calendar receipt reads the Action list');
+  await act(async () => {
+    releaseInventory.release();
+    await inventoryRead;
+  });
+  assert.match(card.textContent!, /Generated owner calendar/);
   assert.equal(card.querySelector('a')?.getAttribute('href'), pageHash('actions', {action: id}));
   assert.equal(actionReads, 2);
   assert.deepEqual(writes, []);
