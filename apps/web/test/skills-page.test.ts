@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import {navigationFor,type PluginBuildView,type PluginCenterView,type PluginInstanceView,type PluginPackageView,type PluginSourceContribution,type Routine,type ServerConfiguration} from '@mote/shared';
+import {navigationFor,type PluginBuildView,type PluginCenterView,type PluginInstanceView,type PluginPackageView,type PluginSourceContribution,type Routine,type ServerConfiguration,type SourceConnection} from '@mote/shared';
 import type {Api} from '../src/api.js';
 import {resources} from '../src/resource-cache.js';
 
@@ -13,18 +13,26 @@ Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLEle
 const {createRoot}=await import('react-dom/client');
 const {SkillsPage,routinesPath,routineScopeSummary}=await import('../src/plugins/plugin-center/SkillsPage.js');
 const {pinnedNavPages}=await import('../src/plugins/plugin-center/pinned-pages.js');
+const {Sources}=await import('../src/plugins/sources/Sources.js');
 const {withPinnedPages}=await import('../src/WorkspaceSidebar.js');
 
 const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
+async function waitFor(check:()=>boolean,label:string){
+ const until=Date.now()+2000;
+ while(Date.now()<until){if(check())return;await act(async()=>{await tick();});}
+ assert.fail(label);
+}
 const source={repository:'generated-fixture/mote-compatible',tag:'generated-test-release',commit:'a'.repeat(40),digest:'b'.repeat(64)};
 const notionPackage:PluginPackageView={id:'mote.connector.notion',name:'Notion',version:'1.0.0',source,runtime:'service',state:'installed',desired:true,observed:'ready',issues:[],instanceIds:['generated-notion-instance'],allowedActions:['configure','uninstall']};
 const notionInstance:PluginInstanceView={id:'generated-notion-instance',packageId:notionPackage.id,name:'Notion',revision:4,scope:'default',configurationSchema:[],configuration:{},secretStatus:{},capabilities:[{id:'source.connector',state:'verified'}],desired:true,observed:'ready',issues:[],allowedActions:['configure','check','disable']};
 const readerPackage:PluginPackageView={id:'mote.page.generated-reader',name:'Generated reading list',version:'1.0.0',source,runtime:'service',state:'installed',desired:true,observed:'ready',issues:[],instanceIds:['generated-reader-instance'],allowedActions:['configure','uninstall']};
 const readerInstance:PluginInstanceView={id:'generated-reader-instance',packageId:readerPackage.id,name:'Generated reading list',revision:2,scope:'default',configurationSchema:[],configuration:{},secretStatus:{},capabilities:[],desired:true,observed:'ready',issues:[],allowedActions:['configure','disable']};
 const brokenPackage:PluginPackageView={id:'mote.generated-broken',name:'Generated broken adapter',version:'1.0.0',source,runtime:'service',state:'failed',desired:false,observed:'blocked',issues:['generated_failure'],instanceIds:[],allowedActions:['uninstall']};
-const notionContribution:PluginSourceContribution={packageId:notionPackage.id,packageName:notionPackage.name,contributionId:'generated-notion',title:'Generated Notion',body:'Generated fixture',note:'',icon:'notion',kinds:['generated'],target:{pageId:'sources',href:'#/connections'},state:'enabled',instanceId:notionInstance.id};
+const notionContribution:PluginSourceContribution={packageId:notionPackage.id,packageName:notionPackage.name,contributionId:'generated-notion',title:'Generated Notion',body:'Generated fixture',note:'',icon:'notion',kinds:['mote.official.notion'],target:{pageId:'sources',href:'#/connections'},state:'enabled',instanceId:notionInstance.id};
 const gmailBuild:PluginBuildView={id:'bundled:gmail',packageId:'mote.connector.gmail',installationId:'bundled:gmail',revision:2,desired:{packageId:'mote.connector.gmail',version:'1',configurationRevision:0},retired:false,observed:'active',blockers:[],operationId:'generated-build-operation',restartRequired:false,name:'Gmail',version:'1',runtime:'host',source:null,configuration:{},configurationSchema:[],capabilities:[],issues:[],allowedActions:['enable','disable'],package:false};
 const routine:Routine={id:'11111111-1111-4111-8111-111111111111',revision:1,enabled:true,nextDue:'2026-11-27T09:00:00.000Z',goal:'Generated weekly release review',scope:{kind:'all'},schedule:{revision:1,timeZone:'Asia/Shanghai',trigger:{kind:'weekly',weekday:5,localTime:'17:00'}},matterId:null,event:null};
+const notionSource:SourceConnection={id:'generated-notion-source',name:'Notion',kind:'mote.official.notion',deviceId:'generated-notion-device',platform:'import',retention:'snapshot',enabled:true,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z'};
+const fileSource:SourceConnection={id:'generated-file-source',name:'Generated files',kind:'local-files',deviceId:'generated-file-device',platform:'import',retention:'archive',enabled:true,createdAt:'2026-11-01T00:00:00Z',updatedAt:'2026-11-01T00:00:00Z'};
 const readingPageId=readerInstance.id+'/generated-reading-list',settingsPageId=readerInstance.id+'/generated-reader-settings';
 const pages=[{id:readingPageId,label:'Generated reading list',featureId:readerPackage.id},{id:settingsPageId,label:'Generated reader settings',featureId:readerPackage.id},{id:'generated-uninstalled-page',label:'Generated uninstalled page',featureId:'mote.generated-uninstalled'}];
 
@@ -34,7 +42,7 @@ function configuration(pinnedPages:string[]=[]):ServerConfiguration{
 
 function state(pinnedPages:string[]=[]){
  const plugins:PluginCenterView={revision:5,installation:{supported:true,runtime:'worker',restartRequired:false},packages:[structuredClone(notionPackage),structuredClone(readerPackage),structuredClone(brokenPackage)],instances:[structuredClone(notionInstance),structuredClone(readerInstance)],builds:[],catalog:[],sourceContributions:[structuredClone(notionContribution)]};
- return {plugins,builds:[structuredClone(gmailBuild)],config:configuration(pinnedPages),routines:{items:[structuredClone(routine)],nextCursor:null}};
+ return {plugins,builds:[structuredClone(gmailBuild)],config:configuration(pinnedPages),routines:{items:[structuredClone(routine)],nextCursor:null},sources:{items:[structuredClone(notionSource),structuredClone(fileSource)]}};
 }
 
 function generatedApi(initial=state()){
@@ -47,6 +55,11 @@ function generatedApi(initial=state()){
    if(path==='/api/plugin-builds')return structuredClone(initial.builds);
    if(path==='/api/configuration')return structuredClone(initial.config);
    if(path===routinesPath)return structuredClone(initial.routines);
+   if(path==='/api/sources')return structuredClone(initial.sources);
+   if(path==='/api/library/browse?limit=1')return {sources:[],sourcesTruncated:true};
+   if(path==='/api/connectors/status')return {};
+   if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:[]};
+   if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
    throw new Error('Unexpected fixture read '+path);
   }
   const body=init?.body?JSON.parse(String(init.body)):undefined;
@@ -91,8 +104,8 @@ async function mount(t:import('node:test').TestContext,api:Api){
 function row(element:Element,id:string){const found=element.querySelector<HTMLElement>(`[data-skill-id="${id}"]`);assert.ok(found,'row '+id);return found;}
 function control(element:Element,text:string){const found=[...element.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent?.includes(text));assert.ok(found,'control '+text);return found;}
 
-test('SK1-01 disabling a connector keeps unrelated rows and never writes sidebar pins',async t=>{
- const fixture=generatedApi(),{element}=await mount(t,fixture.api);
+test('SK1-01 disabling a connector hides only its own sources across the real Skills and Connections pages',async t=>{
+ const fixture=generatedApi(),{element,root}=await mount(t,fixture.api);
  const notion=row(element,'package:'+notionPackage.id);
  assert.match(notion.textContent!,/连接器/);
  const toggle=notion.querySelector<HTMLButtonElement>('[role=switch]')!;assert.equal(toggle.getAttribute('aria-checked'),'true');
@@ -103,9 +116,18 @@ test('SK1-01 disabling a connector keeps unrelated rows and never writes sidebar
  assert.equal(row(element,'package:'+notionPackage.id).querySelector('[role=switch]')!.getAttribute('aria-checked'),'false');
  assert.equal(fixture.writes.some(value=>value.path==='/api/configuration/ui'),false,'disabling a plugin never changes pins');
  assert.equal(row(element,'build:bundled:gmail').getAttribute('data-skill-state'),'enabled','the sibling build stays enabled');
- fixture.initial.plugins.sourceContributions=[];
- await act(async()=>{resources(fixture.api).invalidate(key=>key==='/api/plugins');await tick();await tick();});
- assert.doesNotMatch(element.querySelector(`[data-skill-id="package:${notionPackage.id}"]`)!.textContent!,/连接器/,'the connection contribution is gone after the owner command');
+ assert.equal(fixture.initial.plugins.sourceContributions?.length,1,'the package keeps its connector declaration; the instance carries the disabled state');
+ assert.equal(fixture.initial.sources.items.filter(source=>source.kind===notionContribution.kinds[0]).length,1,'the source record itself remains for archived evidence');
+ await act(async()=>{root.render(React.createElement(Sources,{api:fixture.api,onOpen:()=>{},onImport:()=>{}}));await tick();await tick();});
+ const rows=()=>[...element.querySelectorAll<HTMLElement>('.source-final-row')];
+ await waitFor(()=>rows().length===1,'Connections renders only the unrelated source');
+ assert.equal(rows().filter(row=>/Notion/.test(row.textContent??'')).length,0,'a stopped connector no longer lists its connected source');
+ assert.equal(rows().filter(row=>/Generated files/.test(row.textContent??'')).length,1,'other sources stay listed');
+ const reads=fixture.count('/api/sources');
+ await act(async()=>{[...element.querySelectorAll<HTMLButtonElement>('.source-heading-actions button')].find(button=>button.textContent?.includes('刷新'))!.click();await tick();await tick();});
+ await waitFor(()=>fixture.count('/api/sources')>reads,'Refresh rereads the source directory');
+ assert.equal(rows().filter(row=>/Notion/.test(row.textContent??'')).length,0,'Refresh does not resurrect the stopped connector');
+ assert.equal(fixture.writes.some(value=>value.path==='/api/configuration/ui'),false,'the cross-page path never changes pins');
 });
 
 test('SK1-02 pinning appends one daily sidebar item and unpinning removes it without changing the plugin',async t=>{
