@@ -30,6 +30,8 @@ internal class CentralContent(
     private val embeddedActions: Boolean = false,
     private val openCalendar: (() -> Unit)? = null,
 ) : ContextWrapper(activity) {
+    internal val hostsGoalsTab = initialPage == AssistantPlugin.GOALS_ROUTE && openLocalPage != null
+
     fun openCaptureReader(origin: String, row: org.json.JSONObject, conversationId: String?, returnScroll: Int? = null, workMemory: WorkMemoryReference? = null, citationExcerpt: String? = null) {
         val restore = if (conversationId != null && returnScroll != null) ReaderReturn(origin, accessGeneration, revision, conversationId, returnScroll) else null
         pendingReaderReturn = restore
@@ -65,7 +67,8 @@ internal class CentralContent(
         // removes everything it added, so the fallback never shares the body
         // with partial plugin UI.
         val parent = container as? android.view.ViewGroup
-        val slot: Any = parent?.let { android.widget.LinearLayout(activity).apply { orientation = android.widget.LinearLayout.VERTICAL }.also(it::addView) } ?: container
+        val mountContext = if (page in AssistantPlugin.PAGE_ROUTES && (hostsGoalsTab || page == AssistantPlugin.GOALS_ROUTE)) this else activity
+        val slot: Any = parent?.let { LinearLayout(mountContext).apply { orientation = LinearLayout.VERTICAL }.also(it::addView) } ?: container
         return try {
             session.registerView(factory(session, slot))
             pluginView = session
@@ -402,6 +405,7 @@ internal class CentralContent(
      * history so its back action returns to the home surface, not the thread. */
     internal fun openConversationList() { pageHistory.clear(); navigate("conversations", remember = false) }
     internal fun hostActivity(): MoteActivity = activity
+    internal fun assistantRouteScreen(): CentralScreens = checkNotNull(screens)
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
         return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)

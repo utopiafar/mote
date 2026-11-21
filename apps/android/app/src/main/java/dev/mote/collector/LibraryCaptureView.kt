@@ -42,7 +42,7 @@ internal class LibraryCaptureView(
     private var searchTick: Runnable? = null
     private var category = state?.getString("category")?.takeIf { it in setOf("all", "records", "images", "notifications", "files") } ?: "all"
     private var source = when (category) { "records" -> "note"; "notifications" -> "notification"; else -> "" }
-    private var location = state?.getString("location")?.takeIf { it in setOf("local", "central", "") }.orEmpty()
+    private var location = state?.getString("location")?.takeIf { it in setOf("local", "central", "") } ?: "local"
     private var query = state?.getString("query").orEmpty()
     private var day = state?.getString("day").orEmpty()
     private var localCursor: String? = null
@@ -128,7 +128,7 @@ internal class LibraryCaptureView(
     private fun selectLocation(value: String) {
         if (location == value) return
         location = value
-        resetFilter()
+        if (query.isNotBlank()) refresh() else { render(); resetFilter() }
     }
     fun showFilters() = LibraryBrowseUi.filters(activity, listOf("all" to "全部", "records" to "记录", "images" to "截图与照片", "notifications" to "通知", "files" to "网页与文件"), category, { value ->
         category = value; source = when (value) { "records" -> "note"; "notifications" -> "notification"; else -> "" }; resetFilter()

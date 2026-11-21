@@ -94,6 +94,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
 
     init {
         AssistantPlugin.owner(ui)
+        if (!ui.hostsGoalsTab) AssistantPlugin.bind(ui.hostActivity(), this)
     }
 
     /** The assistant route factory mounts this same controller into the host
@@ -116,12 +117,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if (ui.requestedFileOriginMatches()) library.openFile(id) else ui.text(MoteI18n.text("访问凭据已失效，请重新连接。"))
             } ?: library.show(page)
             "archive", "timeline", "materials", "coding", "memories", "insights", "sources", MoteNavigation.SEARCH -> library.show(page)
-            in AssistantPlugin.PAGE_ROUTES -> {
-                AssistantPlugin.bind(ui.hostActivity(), this)
-                if (!ui.pluginRoute(page, body)) {
-                    ui.text(MoteI18n.text("助理功能") + " · " + MoteI18n.text("已停用"))
-                    ui.button(MoteI18n.text("插件")) { ui.navigate("plugins") }
-                }
+            in AssistantPlugin.PAGE_ROUTES -> if (!ui.pluginRoute(page, body)) {
+                ui.text(MoteI18n.text("助理功能") + " · " + MoteI18n.text("已停用"))
+                ui.button(MoteI18n.text("插件")) { ui.navigate("plugins") }
             }
             else -> if (!ui.pluginRoute(page, body)) admin.show(page)
         }

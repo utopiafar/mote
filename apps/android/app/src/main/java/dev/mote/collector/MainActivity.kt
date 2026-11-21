@@ -2099,7 +2099,7 @@ class MainActivity : MoteActivity() {
                 }
                 Page.FEED -> ensureTabPage(Page.FEED, AssistantPlugin.FEED_ROUTE)
                 Page.IDEAS -> ensureTabPage(Page.IDEAS, IDEAS_ROUTE)
-                Page.GOALS -> ensureCentralTab(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
+                Page.GOALS -> ensureTabPage(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
                 Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
                 Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
                 Page.ACTIVITY -> {

@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import dev.mote.collector.AssistantJson
 import dev.mote.collector.CentralAccess
+import dev.mote.collector.CentralContent
 import dev.mote.collector.CentralFailure
 import dev.mote.collector.CentralScreens
 import dev.mote.collector.MoteApplication
@@ -121,10 +122,12 @@ internal class AssistantOwner internal constructor(
         if (scope != null) {
             scope.registerService(PluginServiceRegistration("assistant.workbench", "${AssistantPlugin.CAPABILITY}.workbench"))
             for (page in AssistantPlugin.PAGE_ROUTES) scope.registerRoute(page) { _, container ->
-                val view = container as? View ?: error("assistant route needs a view container")
-                val activity = view.context as? Activity ?: error("assistant route needs an Activity")
-                val screen = AssistantPlugin.screen(activity) ?: error("assistant screen is not bound")
-                val parent = container as ViewGroup
+                val parent = container as? ViewGroup ?: error("assistant route needs a view container")
+                val screen = when (val context = parent.context) {
+                    is CentralContent -> context.assistantRouteScreen()
+                    is Activity -> AssistantPlugin.screen(context) ?: error("assistant screen is not bound")
+                    else -> error("assistant route needs an Activity")
+                }
                 when (page) {
                     AssistantPlugin.WORKBENCH_ROUTE -> screen.mountWorkbench(parent)
                     AssistantPlugin.GOALS_ROUTE -> AssistantGoalsPage(screen, parent) { active }
