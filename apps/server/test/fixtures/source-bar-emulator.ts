@@ -66,6 +66,7 @@ async function buildPage(directory: string, token: string) {
         root: fileURLToPath(new URL('../../../web/', import.meta.url)),
         publicDir: false,
         logLevel: 'warn',
+        define: { 'process.env.NODE_ENV': JSON.stringify('production') },
         esbuild: { jsx: 'automatic' },
         build: {
             outDir: webRoot, emptyOutDir: false,
@@ -131,6 +132,9 @@ async function run(arg: string | undefined) {
                 assert.equal(response.statusCode, 200);
                 assert.match(String(response.headers['content-type']), mime);
             }
+            const bundle = await readFile(join(webRoot, 'source-bar.js'), 'utf8');
+            assert.doesNotMatch(bundle, /\bprocess\.env\.NODE_ENV\b/, 'source-bar.js must replace process.env.NODE_ENV at build time');
+            console.log('LB1 fixture source-bar.js has no unresolved process.env.NODE_ENV');
             const devices = async () => {
                 const response = await node.app.inject({ url: '/api/devices', headers });
                 assert.equal(response.statusCode, 200);
