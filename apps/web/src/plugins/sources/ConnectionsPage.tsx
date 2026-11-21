@@ -1,6 +1,6 @@
 import {useContext, useEffect, useRef, useState} from 'react';
 import {Plus} from 'lucide-react';
-import {pageRoutes, servicesViewSchema, type ConnectionJob, type ServiceItem, type SourceConnection} from '@mote/shared';
+import {pageRoutes, servicesViewSchema, type ConnectionJob, type PluginCenterView, type ServiceItem, type SourceConnection} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {ago, type Api} from '../../api';
 import {Loading} from '../../Loading';
@@ -105,17 +105,19 @@ export function ConnectionsPage({api}: {api: Api}) {
   const revisions = useContext(NavStateContext)?.revisions;
   const services = useResource<unknown>(api, servicesPath, undefined, revisions?.plugins);
   const sources = useResource<{items: SourceConnection[]}>(api, sourcesPath);
+  const plugins = useResource<PluginCenterView>(api, '/api/plugins', undefined, revisions?.plugins);
   const parsed = services.data !== undefined && servicesViewSchema.safeParse(services.data);
   const view = !services.error && parsed && parsed.success ? parsed.data : undefined;
   const sourceItems = sources.error ? [] : sources.data?.items ?? [];
+  const contributions = plugins.error ? [] : plugins.data?.sourceContributions ?? [];
   const cards = view?.services.flatMap(item => {
     if (item.kind !== 'service') return [];
-    const target = connectionTarget(item, sourceItems);
+    const target = connectionTarget(item, sourceItems, contributions);
     return target ? [{item, target}] : [];
   }) ?? [];
   const access = view?.services.filter(item => item.kind === 'ai-access') ?? [];
   const failure = services.error ? connectionReadState(services.error) : parsed && !parsed.success ? 'failed' : undefined;
-  const loading = !failure && (!view || !cards.length && !access.length && sources.loading);
+  const loading = !failure && (!view || !cards.length && !access.length && (sources.loading || plugins.loading));
 
   useEffect(() => {
     if (document.head.querySelector('link[data-mote-connections]')) return;

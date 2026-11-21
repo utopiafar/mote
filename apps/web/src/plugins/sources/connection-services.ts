@@ -1,4 +1,4 @@
-import {pageHash, type PluginBuildView, type PluginCenterView, type ServiceItem, type SourceConnection} from '@mote/shared';
+import {pageHash, type PluginBuildView, type PluginCenterView, type PluginSourceContribution, type ServiceItem, type SourceConnection} from '@mote/shared';
 import {ApiError, type Api} from '../../api';
 import {resources} from '../../resource-cache';
 import {navStateReader} from '../../use-nav-state';
@@ -19,8 +19,16 @@ const installed = new Map<string, {connector: string; packageId: string}>(
   Object.entries(officialConnectorDefinitions).map(([connector, {id, packageId}]) => [id, {connector, packageId}]),
 );
 const libraryKinds = new Set(['local-calendar', 'local-files', 'local-meeting-recording', 'coding-agent', 'upload']);
+const hashHref = (href: string | undefined) => href && href.startsWith('#/') && href.length <= 512 && !/[\r\n\0]/.test(href) ? href : undefined;
 
-export function connectionTarget(service: ServiceItem, sources: readonly SourceConnection[]) {
+export type ConnectionControl = {buildId?: string; packageId?: string; contributionId?: string; sourceId?: string};
+export type ConnectionTarget = {settings?: string; sync?: string; control?: ConnectionControl};
+
+/** A manifest service is identified by `sourceCatalog.id`; its source kinds are
+ * independent. Match a service to its sources by the job kinds Central already
+ * projects, and to an installed contribution by its declared kinds when the
+ * service is paused and has no fetch jobs. */
+export function connectionTarget(service: ServiceItem, sources: readonly SourceConnection[], contributions: readonly PluginSourceContribution[] = []): ConnectionTarget | undefined {
   const builtin = bundled.get(service.id);
   if (builtin) return {settings: builtin.settings(), sync: `/api/connectors/${builtin.connector}/sync`, control: {buildId: `bundled:${service.id}`}};
   const plugin = installed.get(service.id);
@@ -30,14 +38,18 @@ export function connectionTarget(service: ServiceItem, sources: readonly SourceC
   };
   if (service.id === 'mcp') return {settings: pageHash('connections', {setup: 'mcp'})};
   if (libraryKinds.has(service.id)) return;
-  const matching = sources.filter(source => source.kind === service.id && source.platform === 'import' && source.id !== 'manual-references');
-  if (!matching.length) return;
-  if (matching.length !== 1) return {};
-  const sourceId = matching[0].id;
-  return {settings: pageHash('connections', {sourceId}), control: {sourceId}};
+  const serviceKinds = new Set([service.id, ...service.jobs.map(job => job.kind)]);
+  const kindMatches = contributions.filter(item => item.kinds.some(kind => serviceKinds.has(kind)));
+  const contribution = contributions.find(item => item.contributionId === service.id) ?? (kindMatches.length === 1 ? kindMatches[0] : undefined);
+  const kinds = new Set([...serviceKinds, ...(contribution?.kinds ?? [])]);
+  const matching = sources.filter(source => kinds.has(source.kind) && source.platform === 'import' && source.id !== 'manual-references');
+  if (!matching.length && !contribution) return;
+  const settings = contribution ? hashHref(contribution.target?.href) : matching.length === 1 ? pageHash('connections', {sourceId: matching[0].id}) : undefined;
+  const control: ConnectionControl | undefined = contribution
+    ? {packageId: contribution.packageId, contributionId: contribution.contributionId}
+    : matching.length === 1 ? {sourceId: matching[0].id} : undefined;
+  return {...(settings ? {settings} : {}), ...(control ? {control} : {})};
 }
-
-export type ConnectionTarget = NonNullable<ReturnType<typeof connectionTarget>>;
 
 export function refreshConnections(api: Api, changedPath?: string) {
   resources(api).invalidate(path => path === servicesPath || path === changedPath);

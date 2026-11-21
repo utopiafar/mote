@@ -4,7 +4,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {pageHash, type ServiceItem} from '@mote/shared';
+import {pageHash, type PluginSourceContribution, type ServiceItem} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
 import {JSDOM} from 'jsdom';
 import React, {act} from 'react';
@@ -18,6 +18,7 @@ import {ask} from '../src/plugins/ask';
 import {pluginContributions} from '../src/plugins/default-inventory';
 import {connections, sources} from '../src/plugins/sources';
 import {ConnectionsPage} from '../src/plugins/sources/ConnectionsPage';
+import {connectionTarget} from '../src/plugins/sources/connection-services';
 import {resources} from '../src/resource-cache';
 import {useHashChoice} from '../src/useHashChoice';
 import {NavStateContext, navStateReader, useNavStateRead} from '../src/use-nav-state';
@@ -164,6 +165,74 @@ test('CN3-01 CN1 revision replaces expired authorization actions and NV2 lights 
   assert.deepEqual(actions(), ['reauth', 'settings']);
   assert.equal(card().querySelector('[role=switch]'), null);
   assert.equal(find(card(), '[data-action=reauth]').getAttribute('href'), pageHash('connections', {setup: 'gmail'}));
+});
+
+test('CN3-01 an installed external connector keeps its card and reauthorization when its ID differs from its source kind', async t => {
+  const {api, node} = await central(t);
+  const kind = 'mote.fixture.research-record', sourceId = 'fixture-research-source';
+  const serviceId = 'fixture-research-connector', packageId = 'mote.fixture.research';
+  node.sources.capabilities.register(kind, {lifecycle: 'continuous', discovery: 'explicit-selection', listening: 'polling',
+    readOriginal: 'none', synchronization: 'revisions', externalWrite: false});
+  node.sources.register({id: sourceId, name: 'Generated research source', kind, deviceId: 'generated-import', platform: 'import',
+    retention: 'snapshot', enabled: true});
+  const at = new Date().toISOString();
+  node.sources.reportStatus(sourceId, {state: 'idle', lastSyncAt: at,
+    coverage: {state: 'complete', window: {to: at}, processed: 2, remaining: 0, failed: 0, limitations: [], updatedAt: at}});
+  const putBuild = node.store.db.prepare('INSERT INTO plugin_build_instances VALUES(?, ?)');
+  putBuild.run(packageId, JSON.stringify({
+    id: packageId, packageId, kind: 'package', desired: null, observed: 'stopped', blockers: [],
+    package: {view: {state: 'installed'}, manifest: {
+      name: 'Generated research connector',
+      sourceCatalog: [{id: serviceId, title: 'Generated research connector', kinds: [kind]}],
+      actionCapabilities: [{id: 'fixture.research.tool'}],
+    }},
+  }));
+  putBuild.run('fixture-research-instance', JSON.stringify({
+    id: 'fixture-research-instance', packageId, kind: 'instance',
+    desired: {packageId, version: '1', configurationRevision: 1}, observed: 'active', blockers: [],
+    instance: {view: {packageId, desired: true, observed: 'ready', issues: [],
+      capabilities: [{id: 'fixture.research.tool', state: 'verified'}]}},
+  }));
+
+  const {document, render} = await dom(t);
+  await render(React.createElement(ConnectionsPage, {api}));
+  const card = () => document.querySelector<HTMLElement>(`[data-service-id="${serviceId}"]`);
+  const actions = () => [...card()!.querySelectorAll<HTMLElement>('[data-action]')].map(element => element.dataset.action);
+  await until(() => Boolean(card()));
+  assert.equal(card()!.getAttribute('data-state'), 'connected');
+  assert.equal(card()!.querySelector(`[data-job-kind="${kind}"] time`)?.getAttribute('datetime'), at);
+  assert.match(card()!.querySelector(`[data-job-kind="${kind}"]`)!.textContent ?? '', /2/);
+  assert.equal(card()!.querySelector('[aria-label="助理工具"] code')?.textContent, 'fixture.research.tool');
+  assert.deepEqual(actions(), ['dry-run', 'settings']);
+  assert.equal(card()!.querySelector('[data-action=reauth]'), null);
+  assert.equal(card()!.querySelector('[role=switch]')?.getAttribute('aria-checked'), 'true');
+
+  node.sources.register(gmail);
+  node.sources.reportStatus(gmail.id, {state: 'idle', lastSyncAt: at,
+    coverage: {state: 'complete', window: {to: at}, processed: 0, remaining: 0, failed: 0, limitations: [], updatedAt: at}});
+  node.sources.reportStatus(sourceId, {state: 'permission_required', code: 'generated_auth_expired'});
+  await act(async () => resources(api).invalidate(path => path === servicesPath || path === '/api/sources'));
+  await until(() => card()?.getAttribute('data-state') === 'reauth' && Boolean(document.querySelector('[data-service-id=gmail]')));
+  assert.deepEqual(actions(), ['reauth', 'settings']);
+  assert.equal(card()!.querySelector('[role=switch]'), null);
+  const href = card()!.querySelector('[data-action=reauth]')?.getAttribute('href');
+  assert.equal(href, pageHash('connections', {sourceId}));
+  assert.equal(card()!.querySelector('[data-action=settings]')?.getAttribute('href'), href);
+});
+
+test('CN3-01 a paused installed connector keeps its card through its declared kinds when no fetch job remains', () => {
+  const service: ServiceItem = {id: 'fixture-research-connector', name: 'Generated research connector', kind: 'service',
+    state: 'paused', jobs: [], tools: [], actions: ['resume', 'remove']};
+  const source = {id: 'fixture-research-source', name: 'Generated research source', kind: 'mote.fixture.research-record',
+    deviceId: 'generated-import', platform: 'import', retention: 'snapshot', enabled: false,
+    createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z'} as const;
+  const contribution: PluginSourceContribution = {packageId: 'mote.fixture.research', packageName: 'Generated research connector',
+    contributionId: 'fixture-research-connector', title: 'Generated research connector', body: 'Generated body', note: 'Generated note',
+    icon: 'link', kinds: ['mote.fixture.research-record'],
+    target: {pageId: 'sources', href: '#/connections?setup=fixture-research-connector'}, state: 'enabled'};
+  const target = connectionTarget(service, [source], [contribution]);
+  assert.equal(target?.settings, '#/connections?setup=fixture-research-connector');
+  assert.deepEqual(target?.control, {packageId: 'mote.fixture.research', contributionId: 'fixture-research-connector'});
 });
 
 test('CN3-02 cancelling preserves AI access and confirmation removes the row and revokes the credential', async t => {
