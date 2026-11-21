@@ -914,7 +914,7 @@ class MainActivity : MoteActivity() {
         }
         val server = selection.server.trimEnd('/')
         ConnectionServicesSection(this, content, client) {
-            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(server + "/#/connections"))) }
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(server + "/#/" + CentralPageRoutes.connections))) }
                 .onFailure { toast(MoteI18n.text("无法打开中央页面")) }
         }.load()
     }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {randomBytes,randomUUID} from 'node:crypto';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -30,6 +30,16 @@ checkPageRouteConstants(kotlin);
 const drifted = kotlin.replace(`const val chat = "${pageRoutes.chat}"`, 'const val chat = "drifted-chat"');
 assert.notEqual(drifted, kotlin, 'The drift self-check needs the generated chat constant');
 assert.throws(() => checkPageRouteConstants(drifted), /CentralPageRoutes\.chat/);
+// Production call sites must take central page paths from CentralPageRoutes; a
+// literal '/#/<route>' bypasses the table even when the constants still match.
+const androidMain = resolve(root, 'apps/android/app/src/main/java');
+for (const file of await readdir(androidMain, {recursive: true})) {
+  if (!file.endsWith('.kt')) continue;
+  const source = await readFile(join(androidMain, file), 'utf8');
+  for (const route of Object.values(pageRoutes)) {
+    assert.ok(!source.includes(`/#/${route}`), `${file} must take central page paths from CentralPageRoutes, not '/#/${route}'`);
+  }
+}
 const directory = await mkdtemp(join(tmpdir(), 'mote-kotlin-contract-'));
 const token = randomBytes(32).toString('hex');
 const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
