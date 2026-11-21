@@ -7694,5 +7694,6 @@ export const english: Readonly<Record<string, string>> = {
   "目标数据无法读取": "Goal data unavailable",
   "已记下": "Saved",
   "语音输入": "Voice input",
-  "语音输入不可用": "Voice input unavailable"
+  "语音输入不可用": "Voice input unavailable",
+  "模板": "Template"
 };

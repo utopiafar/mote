@@ -7694,5 +7694,6 @@ export const french: Readonly<Record<string, string>> = {
   "目标数据无法读取": "Données d'objectif indisponibles",
   "已记下": "Enregistré",
   "语音输入": "Saisie vocale",
-  "语音输入不可用": "Saisie vocale indisponible"
+  "语音输入不可用": "Saisie vocale indisponible",
+  "模板": "Modèle"
 };

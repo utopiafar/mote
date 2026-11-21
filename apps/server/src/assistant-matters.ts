@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
-import {queryScopeSchema,type OperationState,type QueryScope} from '@mote/shared';
+import {matterTemplateSchema,queryScopeSchema,type OperationState,type QueryScope} from '@mote/shared';
 import {z} from 'zod';
 import {decodeMemoryPrivate,encodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
@@ -20,7 +20,7 @@ const correctionText=z.string().min(1).max(4000).refine(value=>value.trim().leng
 const linkIds=z.array(uuid).max(100).refine(ids=>new Set(ids).size===ids.length,{message:'Linked IDs must be unique'}).transform(ids=>[...ids].sort());
 
 export const matterSchema=z.object({
-  id:uuid,goal:ownerText,scope:queryScopeSchema,state:matterStateSchema,revision,
+  id:uuid,goal:ownerText,template:matterTemplateSchema,scope:queryScopeSchema,state:matterStateSchema,revision,
   taskIds:linkIds,evidenceIds:linkIds,correction:correctionText.nullable(),
   createdAt:timestamp,updatedAt:timestamp,archivedAt:timestamp.nullable(),
 }).strict().superRefine((value,context)=>{
@@ -31,18 +31,23 @@ export type Matter=z.infer<typeof matterSchema>;
 
 export const matterRevisionSchema=z.object({
   matterId:uuid,revision,command:z.enum(['create','edit','pause','resume','archive']),
-  recordedAt:timestamp,state:matterStateSchema,goal:ownerText,scope:queryScopeSchema,
+  recordedAt:timestamp,state:matterStateSchema,goal:ownerText,template:matterTemplateSchema.default('project'),scope:queryScopeSchema,
   taskIds:linkIds,evidenceIds:linkIds,correction:correctionText.nullable(),
 }).strict();
 export type MatterRevision=z.infer<typeof matterRevisionSchema>;
 
+/** Existing stored JSON bodies predate the template field; the default reads
+ * them as `project` without a migration. Edited and new bodies always write it. */
 const matterPayloadSchema=z.object({
-  goal:ownerText,scope:queryScopeSchema,taskIds:linkIds,evidenceIds:linkIds,correction:correctionText.nullable(),
+  goal:ownerText,template:matterTemplateSchema.default('project'),scope:queryScopeSchema,taskIds:linkIds,evidenceIds:linkIds,correction:correctionText.nullable(),
 }).strict();
 type MatterPayload=z.infer<typeof matterPayloadSchema>;
 
-const createFields={goal:ownerText,scope:queryScopeSchema,taskIds:linkIds.default([]),evidenceIds:linkIds.default([]),correction:correctionText.nullable().default(null)};
-const editFields={goal:ownerText.optional(),scope:queryScopeSchema.optional(),taskIds:linkIds.optional(),evidenceIds:linkIds.optional(),correction:correctionText.nullable().optional()};
+// The model sees the fixed list; a value outside it is stored as project instead
+// of rejecting the rest of the command. The host performs no keyword matching.
+const modelTemplate=matterTemplateSchema.catch('project');
+const createFields={goal:ownerText,template:modelTemplate.optional(),scope:queryScopeSchema,taskIds:linkIds.default([]),evidenceIds:linkIds.default([]),correction:correctionText.nullable().default(null)};
+const editFields={goal:ownerText.optional(),template:modelTemplate.optional(),scope:queryScopeSchema.optional(),taskIds:linkIds.optional(),evidenceIds:linkIds.optional(),correction:correctionText.nullable().optional()};
 const transitionFields={matterId:uuid,expectedRevision:revision,correction:correctionText.optional()};
 
 /** A model may propose these typed commands; only the host executes them.
@@ -54,7 +59,7 @@ export const matterCommandSchema=z.discriminatedUnion('type',[
   z.object({type:z.literal('resume'),...transitionFields}).strict(),
   z.object({type:z.literal('archive'),...transitionFields}).strict(),
 ]).superRefine((value,context)=>{
-  if(value.type==='edit'&&value.goal===undefined&&value.scope===undefined&&value.taskIds===undefined&&
+  if(value.type==='edit'&&value.goal===undefined&&value.template===undefined&&value.scope===undefined&&value.taskIds===undefined&&
     value.evidenceIds===undefined&&value.correction===undefined)
     context.addIssue({code:z.ZodIssueCode.custom,message:'An edit requires at least one change'});
 });
@@ -260,7 +265,7 @@ export class AssistantMatters {
   }
 
   private create(command:Extract<MatterCommand,{type:'create'}>,authority:MatterAuthority):Matter{
-    const payload=matterPayloadSchema.parse({goal:command.goal,scope:command.scope,
+    const payload=matterPayloadSchema.parse({goal:command.goal,template:command.template??'project',scope:command.scope,
       taskIds:command.taskIds,evidenceIds:command.evidenceIds,correction:command.correction});
     const hash=sha256(JSON.stringify({type:'create',...payload}));
     return this.transaction(()=>{
@@ -282,6 +287,7 @@ export class AssistantMatters {
       const current=this.payload(row);
       const payload=matterPayloadSchema.parse({...current,
         ...(command.goal!==undefined?{goal:command.goal}:{}),
+        ...(command.template!==undefined?{template:command.template}:{}),
         ...(command.scope!==undefined?{scope:command.scope}:{}),
         ...(command.taskIds!==undefined?{taskIds:command.taskIds}:{}),
         ...(command.evidenceIds!==undefined?{evidenceIds:command.evidenceIds}:{}),

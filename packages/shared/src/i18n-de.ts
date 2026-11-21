@@ -7694,5 +7694,6 @@ export const german: Readonly<Record<string, string>> = {
   "目标数据无法读取": "Zieldaten nicht verfügbar",
   "已记下": "Gespeichert",
   "语音输入": "Spracheingabe",
-  "语音输入不可用": "Spracheingabe nicht verfügbar"
+  "语音输入不可用": "Spracheingabe nicht verfügbar",
+  "模板": "Vorlage"
 };

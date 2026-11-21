@@ -1,4 +1,5 @@
 import type {QueryScope} from './query-scope.js';
+import type {MatterTemplate} from './workspace-template.js';
 import type {OperationState} from './operations.js';
 import type {EvidenceDependencies} from './evidence-dependencies.js';
 import type {SourceContextDeclaration} from './material-context.js';
@@ -6,7 +7,7 @@ import type {SourceContextDeclaration} from './material-context.js';
 /** Browser projections of the existing assistant domain objects. These names
  * and fields mirror the domain services; they confer no evidence permission. */
 export type MatterState='active'|'paused'|'archived';
-export type Matter={id:string;goal:string;scope:QueryScope;state:MatterState;revision:number;taskIds:string[];evidenceIds:string[];
+export type Matter={id:string;goal:string;template:MatterTemplate;scope:QueryScope;state:MatterState;revision:number;taskIds:string[];evidenceIds:string[];
  correction:string|null;createdAt:string;updatedAt:string;archivedAt:string|null};
 export type MatterEvidenceView={id:string;title:string;sourceId?:string;deviceId?:string;at:string};
 export type MatterTaskView={id:string;state:OperationState;revision:number;updatedAt:string};

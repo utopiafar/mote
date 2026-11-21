@@ -138,8 +138,8 @@ test('ME1-04 pending 确认 publishes the stored version and moves a personal pr
  assert.equal(row(pending.title),undefined,'the personal preference is not counted as standing');
 });
 
-test('ME1-05 a person row opens the existing Memory person detail with its commitments',async t=>{
- const{root,d}=await fixture(t);const owner=api((path)=>{
+test('ME1-05 the person row retains access to Memory detail and its commitments',async t=>{
+ const{root,d,w}=await fixture(t);const owner=api((path)=>{
   if(path.startsWith('/api/memories/'+ids.person+'?'))return person;
   if(path.startsWith('/api/assistant/commitments'))return{items:[commitment],nextCursor:null};
   return undefined;
@@ -147,7 +147,8 @@ test('ME1-05 a person row opens the existing Memory person detail with its commi
  await render(root,owner);
  const row=[...d.querySelectorAll<HTMLElement>('.memory-page-row')].find(row=>row.textContent?.includes(person.title))!;
  assert.equal(row.dataset.type,'people');
- await act(async()=>row.querySelector<HTMLButtonElement>('.memory-page-row-main')!.click());
+ await act(async()=>row.querySelector<HTMLButtonElement>('.memory-page-row-detail')!.click());
+ assert.equal(w.location.hash,'#/assistant/memory');
  assert.match(d.querySelector('.memory-detail')!.textContent!,/周雨/);
  assert.match(d.querySelector('.memory-detail')!.textContent!,/相关承诺与互动/);
  assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'周雨');
