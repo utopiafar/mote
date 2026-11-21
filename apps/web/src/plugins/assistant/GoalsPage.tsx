@@ -92,7 +92,11 @@ export function GoalsPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
     void run('/api/assistant/matter-commands',{type:'edit',matterId:current.id,expectedRevision:edit.revision,goal:edit.goal},()=>setEdit(undefined));
   };
   const row=(group:GoalGroup,item:GoalItem)=>{
-    const about:AboutRef|undefined=item.kind==='commitment'?{kind:'commitment',id:item.id}:group.key.kind==='matter'?{kind:'matter',id:group.key.id}:undefined;
+    const about:AboutRef|undefined=item.kind==='commitment'?{kind:'commitment',id:item.id}
+      :group.key.kind==='matter'?{kind:'matter',id:group.key.id}
+      :item.lastProgress?.evidenceId?{kind:'evidence',id:item.lastProgress.evidenceId}
+      :item.kind==='todo'?{kind:'todo',id:item.id}
+      :undefined;
     const who=item.direction==='mine'?moteText('我'):group.key.kind==='person'?group.key.name:moteText('别人');
     const follow=item.followup;
     return <article className="goals-row" data-item-id={item.id} data-kind={item.kind} key={item.kind+':'+item.id}>

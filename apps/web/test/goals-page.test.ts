@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
+import {CHAT_ABOUT_PARAM,pageHash,parseAboutRef,type GoalGroup,type GoalItem,type GoalsView,type Matter,type QueryScope} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
-import {randomUUID} from 'node:crypto';
-import type {GoalGroup,GoalItem,GoalsView,Matter,QueryScope} from '@mote/shared';
 import {ApiError,type Api} from '../src/api';
 import {GoalsPage} from '../src/plugins/assistant/GoalsPage';
 import {AssistantWorkbenchPage,workbenchMatterTarget} from '../src/plugins/assistant-workbench';
+import {chatDom,injectedApi} from './fixtures/chat-dom';
 
 const all:QueryScope={kind:'all'};
 const at='2026-11-20T02:00:00Z';
@@ -178,6 +182,56 @@ test('GO2-04 adding one sentence and a deadline puts it under things I do',async
   assert.equal(ui.d.querySelector('.action-final-dialog'),null);
 });
 
+test('GO2-04 an unlinked manual Todo opens chat with that Todo as its reference',async t=>{
+  const f=await chatDom(t,'#/goals');
+  const {buildApp}=await import('../../server/src/app');
+  const directory=mkdtempSync(join(tmpdir(),'mote-goals-about-'));
+  const token='generated-goals-about-owner';
+  const node=await buildApp({
+    path:join(directory,'mote.yaml'),
+    privateCredential:{token,tokenPath:'fixture'},
+    initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},
+      server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},
+      models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},
+        embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}},
+  },{backgroundWorker:false,agent:{configured:false,query:async()=>assert.fail('Unexpected model call'),close:async()=>{}}});
+  t.after(async()=>{
+    try{await node.app.close();}
+    finally{rmSync(directory,{recursive:true,force:true});}
+  });
+  const headers={authorization:'Bearer '+token};
+  const requests:Call[]=[];
+  const api=injectedApi(node.app,headers,(path,init)=>requests.push({path,method:init.method??'GET'})) as Api;
+  await act(async()=>f.root.render(React.createElement(GoalsPage,{api,onOpen:()=>{}})));
+  await f.waitFor(()=>f.d.querySelector('.goals-empty')&&f.d.querySelector('.goals-add'),'ready goals with add available');
+  await f.click('.goals-add');
+  const title='Generated unlinked manual Todo';
+  await f.field('.action-final-dialog input:not([type])',title);
+  await f.click('.action-final-dialog button[type=submit]');
+
+  const rowSelector='.goals-group[data-group=none] [data-section=mine] [data-kind=todo]';
+  await f.waitFor(()=>f.d.querySelector(rowSelector),'saved unlinked Todo');
+  const row=f.element(rowSelector);
+  const id=row.dataset.itemId;
+  assert.ok(id);
+  assert.equal(row.querySelector('.goals-title')?.textContent,title);
+  assert.ok(requests.some(call=>call.method==='POST'&&call.path==='/api/assistant/goals'));
+  await f.click(rowSelector+' a.goals-action');
+  await f.waitFor(()=>f.w.location.hash.startsWith(pageHash('chat')),'go to chat link navigation');
+  const [route,search]=f.w.location.hash.split('?');
+  const about=new URLSearchParams(search).get(CHAT_ABOUT_PARAM);
+  assert.equal(route,pageHash('chat'));
+  assert.equal(about,'todo:'+id);
+  assert.deepEqual(parseAboutRef(about),{kind:'todo',id});
+
+  await f.render(api);
+  await f.waitFor(()=>f.d.querySelector('.chat-about-reference[data-state=ready]'),'Todo resolved in chat');
+  assert.equal(f.d.querySelector('.chat-about-reference strong')?.textContent,title);
+  assert.equal(f.d.querySelector('.chat-about-tag > span')?.textContent,title);
+  assert.ok(requests.some(call=>call.method==='GET'&&call.path==='/api/assistant/goals/todos/'+id));
+  assert.equal(requests.some(call=>call.method==='POST'&&call.path==='/api/conversations/messages'),false);
+});
+
 test('GO2-06 edit, pause and archive each send the shown revision and change the matter',async t=>{
   const ui=await fixture(t);await ui.render();
   await clickIn(group(ui.d,'matter:'+ids.release)!,'编辑');
@@ -213,7 +267,11 @@ test('GO2-07 an old matter revision reports a conflict and never overwrites the 
 });
 
 test('GO2 links carry the item or matter to chat, library and the workbench project page',async t=>{
-  const ui=await fixture(t);await ui.render();
+  const state=base();
+  const eventId=randomUUID();
+  state.rows.push({item:{id:eventId,kind:'event',title:'Generated event with progress',direction:'mine',
+    inferred:false,revision:1,actions:['complete'],lastProgress:{summary:'Generated update',at,evidenceId:ids.evidence}}});
+  const ui=await fixture(t,state);await ui.render();
   const release=group(ui.d,'matter:'+ids.release)!;
   const title=release.querySelector<HTMLAnchorElement>('a.goals-group-title')!;
   assert.equal(title.getAttribute('href'),'#/assistant/workbench?matter='+ids.release);
@@ -224,6 +282,8 @@ test('GO2 links carry the item or matter to chat, library and the workbench proj
   const alice=release.querySelector<HTMLElement>('[data-item-id="'+ids.alice+'"]')!;
   const itemChat=alice.querySelector<HTMLAnchorElement>('a[aria-label="去聊"]')!;
   assert.equal(new URLSearchParams(itemChat.hash.split('?')[1]).get('about'),'commitment:'+ids.alice);
+  const eventChat=ui.d.querySelector<HTMLAnchorElement>('[data-item-id="'+eventId+'"] a[aria-label="去聊"]')!;
+  assert.equal(new URLSearchParams(eventChat.hash.split('?')[1]).get('about'),'evidence:'+ids.evidence);
   await act(async()=>{[...alice.querySelectorAll('button')].find(item=>item.textContent==='查看原文')!.click();});
   assert.deepEqual(ui.opened,['capture:'+ids.evidence]);
 });
