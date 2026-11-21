@@ -118,11 +118,12 @@ class NativeAdministrationPluginTest {
         assertFalse(ConnectionServicesProjection.attention(connected.state))
     }
 
-    /** AN5-05: Memory detail keeps the four "More" actions and a confirmed delete action. */
-    @Test fun memoryDetailKeepsFourMoreActionsAndAConfirmedDeleteAction() {
+    /** AN5-05: Memory detail keeps the four "More" actions and the D28 delete confirmation. */
+    @Test fun memoryDetailKeepsFourMoreActionsAndTheD28DeleteConfirmation() {
         assertEquals(listOf("纠正这条记忆", "历史与有效时间", "生成信息", "删除记忆"), MemoryDetailPanel.moreItems)
         assertEquals("删除这条记忆？", MemoryDetailPanel.deleteTitle)
-        assertTrue(MemoryDetailPanel.deleteMessage.isNotBlank())
+        assertEquals("原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。", MemoryDetailPanel.deleteMessage)
         assertEquals("确认删除", MemoryDetailPanel.deleteConfirm)
+        assertEquals("取消", MemoryDetailPanel.deleteCancel)
     }
 }

@@ -16,7 +16,7 @@ internal object MemoryDetailPanel {
     val correctionAction = "纠正"
     val correctionCancel = "取消"
     val deleteTitle = "删除这条记忆？"
-    val deleteMessage = "原始资料保留，可重新判断"
+    val deleteMessage = "原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。"
     val deleteConfirm = "确认删除"
     val deleteCancel = "取消"
     private val editFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")

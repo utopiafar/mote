@@ -17,8 +17,9 @@ class ImageDedupeDiagnosticsDetailsTest {
         assertEquals(4, exactSample.getJSONObject("thresholds").getInt("maxChangedRowsCols"))
         val sampleReason = ImageDedupeDiagnosticsDetails.reason(exactSample)
         val fullReason = ImageDedupeDiagnosticsDetails.reason(metadata(ScreenshotDedupeHelper.Mode.EXACT, identical))
-        assertTrue(sampleReason.isNotBlank()); assertTrue(fullReason.isNotBlank())
-        assertNotEquals("Sample and full-image matches keep distinct reasons", sampleReason, fullReason)
+        assertTrue(sampleReason.contains("缩略图哈希一致"))
+        assertTrue(sampleReason.contains("原图未比较"))
+        assertTrue(fullReason.contains("全部像素"))
         pixels[0]++
         val changed = helper.shouldSkip(reference.toSignature(), helper.buildFeatures(96, 96, pixels), ScreenshotDedupeHelper.Mode.CONSERVATIVE)
         assertTrue(changed.duplicate); assertEquals("perceptual_match", changed.reason)

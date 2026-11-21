@@ -4377,6 +4377,11 @@
   {
     "rule": "too-long",
     "location": "message",
+    "text": "操作已请求；重复点击会合并，等待网络条件或当前操作完成"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
     "text": "攒够 {0} 条，或最早记录等待 {1} 分钟后发送，以先达到的条件为准。每条记录单独确认接收。"
   },
   {

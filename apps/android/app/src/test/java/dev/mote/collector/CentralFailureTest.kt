@@ -23,21 +23,31 @@ class CentralFailureTest {
     }
 
     @Test fun permissionTransportAndProviderFailuresKeepDistinctSafeRecoveryMessages() {
-        fun message(status: Int, error: String) = CentralFailure(status, error).message!!
-        fun message(status: Int, error: String, detail: String) = CentralFailure(status, error, detail).message!!
-        val origin = message(403, "origin_denied", "PRIVATE_SERVER_DETAIL")
-        val permission = message(403, "connection_scope_denied")
-        val unauthorized = message(401, "unauthorized")
-        val incompatible = message(426, "incompatible_protocol")
-        val quota = message(503, "provider_quota", "PRIVATE_PROVIDER_DETAIL")
-        assertTrue(origin.isNotBlank()); assertTrue(permission.isNotBlank())
-        assertEquals("Distinct failures keep distinct recovery messages", 5, setOf(origin, permission, unauthorized, incompatible, quota).size)
-        assertFalse(origin.contains("PRIVATE")); assertFalse(quota.contains("PRIVATE"))
+        val origin = CentralFailure(403, "origin_denied", "PRIVATE_SERVER_DETAIL").message!!
+        assertTrue("Origin denial identifies the web address", origin.contains("网页地址"))
+        assertFalse("Origin denial must not request an upgrade", origin.contains("升级"))
+        assertFalse(origin.contains("PRIVATE"))
+
+        val permission = CentralFailure(403, "connection_scope_denied").message!!
+        assertTrue("Scope denial identifies the connection permission", permission.contains("连接权限"))
+        assertFalse("Scope denial must not report expired credentials", permission.contains("失效"))
+
+        val unauthorized = CentralFailure(401, "unauthorized").message!!
+        assertTrue(unauthorized.contains("凭据已失效"))
+        assertTrue(unauthorized.contains("重新连接"))
+        assertTrue(CentralFailure(426, "incompatible_protocol").message!!.contains("协议版本"))
+
+        val quota = CentralFailure(503, "provider_quota", "PRIVATE_PROVIDER_DETAIL").message!!
+        assertTrue(quota.contains("额度不足"))
+        assertFalse(quota.contains("PRIVATE"))
+
         for (status in listOf(403, 413, 429, 502, 503, 504, 524)) {
-            val proxy = message(status, "", "PRIVATE_PROXY_BODY")
-            assertFalse(proxy.contains("PRIVATE"))
+            val proxy = CentralFailure(status, "", "PRIVATE_PROXY_BODY").message!!
+            assertFalse("HTTP $status must not expose the proxy body", proxy.contains("PRIVATE"))
+            assertFalse("HTTP $status must not report expired credentials", proxy.contains("失效"))
+            assertFalse("HTTP $status must not request an upgrade", proxy.contains("升级"))
         }
-        val unknown = message(503, "generated_unknown", "PRIVATE_PROVIDER_DETAIL")
+        val unknown = CentralFailure(503, "generated_unknown", "PRIVATE_PROVIDER_DETAIL").message!!
         assertTrue(unknown.contains("generated_unknown")); assertTrue(unknown.contains("503")); assertFalse(unknown.contains("PRIVATE"))
     }
 

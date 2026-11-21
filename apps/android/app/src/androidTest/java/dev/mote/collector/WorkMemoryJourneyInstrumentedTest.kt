@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 /** Activity receipt → exact owner-authorized Memory → original activity. Generated loopback only. */
 @RunWith(AndroidJUnit4::class)
 class WorkMemoryJourneyInstrumentedTest {
-    private val memoryDeletePromise="原始资料保留，可重新判断"
+    private val memoryDeletePromise="原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。"
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val context get()=instrumentation.targetContext
     private fun <T> main(block:()->T):T { val result=AtomicReference<Result<T>>();instrumentation.runOnMainSync{result.set(runCatching(block))};return result.get().getOrThrow() }
@@ -488,7 +488,8 @@ class WorkMemoryJourneyInstrumentedTest {
             assertTrue("More contains deletion",hasExact("删除记忆"))
             tag("memory-more-correct")
             for(field in listOf("标题","纠正后的内容","判断的边界","生效时间","失效时间"))assertTrue("Correction field $field",hasExact(field))
-            assertTrue("Correction action replaces the old label",hasExact("纠正")&&hasExact("保存纠正"))
+            assertTrue("Memory correction can be submitted",hasExact("纠正"))
+            assertTrue("Memory correction can be cancelled",hasExact("取消"))
             tag("memory-more-history");until("History and validity shows the current version"){has("当前版本")};idle(scenario)
             tag("memory-more-generation");until("Generation details shows the generated time"){has("生成时间")}
             tag("memory-more-delete");until("Delete confirmation"){has(memoryDeletePromise)}

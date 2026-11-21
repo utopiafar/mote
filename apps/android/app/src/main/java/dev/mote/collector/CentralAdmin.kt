@@ -346,6 +346,8 @@ internal class CentralAdmin(
         ui.work(MoteI18n.text("正在读取…"), {
             api.get(path + (scope?.let { "?scope=" + enc(it) } ?: "")) to api.get(if (integration) "/api/memory-integration-recipes" else "/api/memory-recipes")
         }) { (selection, catalog) ->
+            body.removeAllViews()
+            screens.setBack { memorySettings() }
             val current = if (integration) listOfNotNull(selection.optJSONObject("binding")?.optJSONObject("recipe"))
                 else selection.getJSONArray("items").let { items -> (0 until items.length()).map { items.getJSONObject(it).getJSONObject("binding").getJSONObject("recipe") } }
             val choices = catalog.getJSONArray("items"); val selected = mutableListOf<JSONObject>()

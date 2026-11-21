@@ -29,9 +29,9 @@ class MemoryDetailActionsTest {
         assertFalse(MemoryDetailPanel.correctionAction == "保存校正")
     }
 
-    @Test fun `delete confirmation offers the same actions as the web dialog`() {
+    @Test fun `delete confirmation keeps the common promise and both actions`() {
         assertEquals("删除这条记忆？", MemoryDetailPanel.deleteTitle)
-        assertTrue(MemoryDetailPanel.deleteMessage.isNotBlank())
+        assertEquals("原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。", MemoryDetailPanel.deleteMessage)
         assertEquals("确认删除", MemoryDetailPanel.deleteConfirm)
         assertEquals("取消", MemoryDetailPanel.deleteCancel)
     }
