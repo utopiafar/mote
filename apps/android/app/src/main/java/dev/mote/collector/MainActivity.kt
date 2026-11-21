@@ -932,16 +932,16 @@ class MainActivity : MoteActivity() {
         body.removeAllViews()
         val client = active ?: runCatching { CentralAccess.resolve(this) }.getOrNull()?.client
         if (client == null) {
-            body.addView(text(MoteI18n.text("尚未连接中央"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
-            body.addView(button(MoteI18n.text("连接"), true) { showPage(Page.CONNECTION) })
+            text(MoteI18n.text("尚未连接中央"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = body)
+            button(MoteI18n.text("连接"), true, parent = body) { showPage(Page.CONNECTION) }
             return
         }
         uiTask.start(MoteI18n.text("正在读取…"), {}, { NotificationSettings.read(client) }) { result ->
             if (isDestroyed || isFinishing) return@start
             body.removeAllViews()
             result.onSuccess { renderNotifications(body, client, it) }.onFailure { failure ->
-                body.addView(text(failure.message ?: MoteI18n.text("需要处理"), NativeFontRole.SUPPORT, NativeColorRole.WARNING))
-                body.addView(button(MoteI18n.text("重试")) { loadNotifications(body, client) })
+                text(failure.message ?: MoteI18n.text("需要处理"), NativeFontRole.SUPPORT, NativeColorRole.WARNING, parent = body)
+                button(MoteI18n.text("重试"), parent = body) { loadNotifications(body, client) }
             }
         }
     }
@@ -972,14 +972,16 @@ class MainActivity : MoteActivity() {
             contentDescription = MoteI18n.text("结束时间"); isSingleLine = true
             inputType = InputType.TYPE_CLASS_DATETIME
         })
-        hours.addView(text(MoteI18n.text("开始时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
+        text(MoteI18n.text("开始时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = hours)
         hours.addView(start, LinearLayout.LayoutParams(-1, dp(MoteTheme.controlHeight)))
-        hours.addView(text(MoteI18n.text("结束时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
+        text(MoteI18n.text("结束时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = hours)
         hours.addView(end, LinearLayout.LayoutParams(-1, dp(MoteTheme.controlHeight)))
         body.addView(hours)
-        body.addView(text(MoteI18n.text("时区") + " · " + value.timeZone, NativeFontRole.META, NativeColorRole.MUTED))
-        if (value.readOnly) body.addView(text(MoteI18n.text("当前服务只读，无法保存。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
-        val save = button(MoteI18n.text("保存"), true) {
+        text(MoteI18n.text("时区") + " · " + value.timeZone, NativeFontRole.META, NativeColorRole.MUTED, parent = body)
+        if (value.readOnly) {
+            text(MoteI18n.text("当前服务只读，无法保存。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = body)
+        }
+        val save = button(MoteI18n.text("保存"), true, parent = body) {
             if (value.readOnly) { toast(MoteI18n.text("当前服务只读，无法保存。")); return@button }
             val selected = if (quiet.checked) QuietHours(start.text.toString().trim(), end.text.toString().trim()) else null
             if (!NotificationSettings.validTime(selected)) { toast(MoteI18n.text("时间格式无法识别。")); return@button }
@@ -991,7 +993,6 @@ class MainActivity : MoteActivity() {
             }
         }
         save.isEnabled = !value.readOnly
-        body.addView(save)
     }
 
     private fun centralHost(server: String): String {
@@ -2406,11 +2407,17 @@ class MainActivity : MoteActivity() {
         }
     }
 
-    private fun text(value: String, size: NativeFontRole, color: NativeColorRole = NativeColorRole.INK): TextView = TextView(this).apply {
-        text = value; MoteUi.type(this, size); MoteUi.textColor(this, color)
+    private fun text(
+        value: String,
+        size: NativeFontRole,
+        color: NativeColorRole = NativeColorRole.INK,
+        parent: LinearLayout = content,
+    ): TextView = TextView(this).apply {
+        text = value
+        MoteUi.type(this, size)
+        MoteUi.textColor(this, color)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
-        content.addView(this)
-    }
+    }.also(parent::addView)
     private fun section(value: String) {
         text(value, NativeFontRole.SECTION).apply {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -2662,10 +2669,16 @@ class MainActivity : MoteActivity() {
         buttonTintList = android.content.res.ColorStateList.valueOf(MoteUi.accent)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }; content.addView(this); track(this, label, stableKey)
     }
-    private fun button(label: String, primary: Boolean = false, action: () -> Unit) = MoteUi.button(Button(this), primary).apply {
-        text = label; setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }; content.addView(this)
-    }
+    private fun button(
+        label: String,
+        primary: Boolean = false,
+        parent: LinearLayout = content,
+        action: () -> Unit,
+    ) = MoteUi.button(Button(this), primary).apply {
+        text = label
+        setOnClickListener { action() }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
+    }.also(parent::addView)
     private fun rowButtons(left: String, leftAction: () -> Unit, right: String, rightAction: () -> Unit, leftPrimary: Boolean = false) {
         val compact = resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f
         val row = LinearLayout(this).apply { orientation = if (compact) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
