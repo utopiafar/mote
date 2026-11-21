@@ -302,10 +302,10 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
         }
         record.addView(recordLabel, LayoutParams(-2, -2))
         actions.addView(record, LayoutParams(0, activity.moteDp(MoteTheme.controlHeight), 1f))
-        HomeFrame.captureEntries.forEach { entry ->
+        TabFrame.captureEntries.forEach { entry ->
             val glyph = when (entry) { MoteQuickEntry.PHOTO -> MoteGlyph.CAMERA; MoteQuickEntry.AUDIO -> MoteGlyph.MIC; else -> error("Unexpected capture entry: ${entry.id}") }
             val quick = MoteComponents.iconButton(activity, glyph, entry.labelKey, MoteIconButtonStyle.FILLED) {
-                activity.openRecordEditor(media = HomeFrame.startMedia(entry))
+                activity.openRecordEditor(media = TabFrame.startMedia(entry))
             }
             quick.tag = "home-${entry.id}-action"
             actions.addView(quick, LayoutParams(activity.moteDp(MoteTheme.controlHeight), activity.moteDp(MoteTheme.controlHeight)).apply {
@@ -317,7 +317,7 @@ class MotePrimaryNavigation(private val activity: Activity, private val onSelect
     }
     fun updateDraft(value: Boolean) {
         hasDraft = value
-        recordLabel.text = HomeFrame.recordLabel(value)
+        recordLabel.text = TabFrame.recordLabel(value)
         record.contentDescription = recordLabel.text
     }
     fun select(tab: MotePrimaryTab) { selected = tab; visibility = if (tab == MotePrimaryTab.HOME) VISIBLE else GONE }

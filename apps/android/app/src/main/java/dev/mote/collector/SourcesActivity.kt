@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import dev.mote.collector.plugins.CapturePlugin
 import dev.mote.collector.plugins.SourceProviderPlugin
 import dev.mote.collector.plugins.SourceSnapshot
 import dev.mote.collector.meeting.MeetingRecordingActivity
@@ -47,6 +48,10 @@ class SourcesActivity : MoteActivity() {
         { message -> operationStatusView.visibility = View.VISIBLE; show(message) }
     }
     private var rendering = false
+    private var applyingSwitch = false
+    private lateinit var screenSwitch: MoteComponents.MoteSwitch
+    private lateinit var screenFix: View
+    private lateinit var sendSwitch: MoteComponents.MoteSwitch
     private var editingSource: LocalSource? = null
     private val draftControls = linkedMapOf<String, android.view.View>()
     private data class Draft(val source: LocalSource, val values: Map<String, String>, val newSource: Boolean)
@@ -166,7 +171,8 @@ class SourcesActivity : MoteActivity() {
     private data class Overview(
         val rows: List<CaptureSyncPresentation.SourceRow>, val send: CaptureSyncPresentation.SendView,
         val sendMethod: String, val sendPaused: Boolean, val storageText: String,
-    ) { val signature get() = rows.toString() + send.toString() + sendMethod + sendPaused + storageText }
+        val switches: ManageMenuState,
+    ) { val signature get() = rows.toString() + send.toString() + sendMethod + sendPaused + storageText + switches }
 
     private fun loadOverview(): Overview {
         val settings = Settings(this)
@@ -206,7 +212,8 @@ class SourcesActivity : MoteActivity() {
             local.pending, settings.lastAcknowledgedAt())
         val storageBytes = local.active?.diskBytes?.plus(local.quarantine?.diskBytes ?: 0)
         return Overview(rows, send, CaptureSyncPresentation.sendMethodLabel(config.syncMode, config.wifiOnly),
-            config.syncPaused, CaptureSyncPresentation.storageLabel(storageBytes))
+            config.syncPaused, CaptureSyncPresentation.storageLabel(storageBytes),
+            ManageMenu.state(settings.enabled, config.screenCollectionEnabled, screenLive, config.syncPaused))
     }
 
     private fun showOverview(overview: Overview) {
@@ -220,6 +227,28 @@ class SourcesActivity : MoteActivity() {
             setLineSpacing(0f, 1.25f)
             setPadding(moteDp(4), moteDp(2), moteDp(4), 0)
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(18) })
+        val switchGroup = MoteComponents.group(this)
+        val screenTrailing = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
+        }
+        screenSwitch = MoteComponents.switch(this, overview.switches.screenOn, MoteI18n.text("屏幕采集")) { on -> changeScreen(on) }
+            .apply { tag = "sources-screen-toggle" }
+        screenFix = MoteComponents.smallButton(this, MoteI18n.text("处理")) { repairScreen() }
+            .apply { tag = "sources-screen-action" }
+        screenTrailing.addView(screenSwitch)
+        screenTrailing.addView(screenFix)
+        val trailing = CaptureSwitches.screenTrailing(overview.switches.screenPermission)
+        screenSwitch.visibility = if (trailing == CaptureSwitches.ScreenTrailing.FIX) View.GONE else View.VISIBLE
+        screenFix.visibility = if (trailing == CaptureSwitches.ScreenTrailing.FIX) View.VISIBLE else View.GONE
+        addTo(switchGroup, MoteComponents.row(this, MoteGlyph.SCREEN, MoteI18n.text("屏幕采集"),
+            subtitle = MoteI18n.text("等待采集权限").takeIf { overview.switches.screenPermission },
+            subtitleColor = NativeColorRole.WARNING, trailing = screenTrailing, verticalPaddingDp = 0, iconSizeDp = 20)
+            .apply { tag = "sources-screen" }, true)
+        sendSwitch = MoteComponents.switch(this, overview.switches.sendOn, MoteI18n.text("发送")) { on -> changeSendPause(CaptureSwitches.sendPaused(on)) }
+            .apply { tag = "sources-send-toggle" }
+        addTo(switchGroup, MoteComponents.row(this, MoteGlyph.SEND, MoteI18n.text("发送"),
+            trailing = sendSwitch, verticalPaddingDp = 0, iconSizeDp = 20).apply { tag = "sources-send" }, false)
+        list.addView(switchGroup, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(24) })
         val sourcesGroup = MoteComponents.group(this)
         overview.rows.forEachIndexed { index, row ->
             val trailing = row.actionLabel?.let { label -> MoteComponents.smallButton(this, label) { handleSourceRow(row) } }
@@ -295,13 +324,69 @@ class SourcesActivity : MoteActivity() {
     }
 
     private fun changeSendPause(paused: Boolean) {
-        if (task.busy) { render(); return }
+        if (task.busy) { renderedSignature = null; render(); return }
         task.start(MoteI18n.text("正在保存发送状态…"), statusProgress(read = false), {
             SendPauseControl.set(applicationContext, paused)
         }) { result ->
             result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+            renderedSignature = null
             render()
         }
+    }
+
+    /** The two owner switches moved here from 我的 Mote; the state and the commands stay the same. */
+    private fun changeScreen(on: Boolean) {
+        if (task.busy || applyingSwitch) { renderedSignature = null; render(); return }
+        val settings = Settings(this)
+        val config = runCatching { settings.read() }.getOrElse {
+            operationStatus = it.message ?: MoteI18n.text("操作失败，请重试")
+            return
+        }
+        val command = CaptureSwitches.screenCommand(on, settings.enabled, config.screenCollectionEnabled,
+            settings.screenPausedAt() != null)
+        when (command) {
+            CaptureSwitches.ScreenCommand.PAUSE_SCREEN -> CapturePlugin.controls().pauseScreen(this) { result ->
+                if (isDestroyed) return@pauseScreen
+                result.onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+                renderedSignature = null
+                render()
+            }
+            CaptureSwitches.ScreenCommand.DISABLE_SCREEN ->
+                applySwitch(config, config.copy(screenCollectionEnabled = false))
+            CaptureSwitches.ScreenCommand.ENABLE_SCREEN ->
+                applySwitch(config, config.copy(screenCollectionEnabled = true))
+            CaptureSwitches.ScreenCommand.OPEN_CAPTURE -> openMoteLocalPage("PRIVACY")
+            CaptureSwitches.ScreenCommand.RESUME_CAPTURE ->
+                handOff("captureAction", CaptureOverview.Action.RESUME.name)
+            CaptureSwitches.ScreenCommand.NONE -> { renderedSignature = null; render() }
+        }
+    }
+
+    private fun applySwitch(expected: CollectorConfig, next: CollectorConfig) {
+        if (applyingSwitch) { renderedSignature = null; render(); return }
+        applyingSwitch = true
+        operationStatus = MoteI18n.text("正在保存设置…")
+        RuntimeSettings.apply(this, next, expected = expected) { result ->
+            applyingSwitch = false
+            if (!isDestroyed) {
+                result.onSuccess { operationStatus = "" }
+                    .onFailure { operationStatus = it.message ?: MoteI18n.text("操作失败，请重试") }
+                renderedSignature = null
+                render()
+            }
+        }
+    }
+
+    private fun repairScreen() {
+        val projection = runCatching { Settings(this).read().effectiveMode() == "projection" }.getOrDefault(false)
+        handOff("captureAction", ManageMenu.screenPermissionAction(projection).name)
+    }
+
+    /** Repair and resume return to the app where the preview, permissions and system consent live. */
+    private fun handOff(key: String, value: String) {
+        startActivity(Intent(this, MainActivity::class.java).putExtra(key, value)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        finish()
     }
 
     private fun showSendMethod() {
@@ -596,4 +681,31 @@ class SourcesActivity : MoteActivity() {
         dialog.show()
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+}
+
+/**
+ * The two owner switches moved from 我的 Mote. Only their position changed: the checked
+ * state still comes from [ManageMenu.state] and each branch is the same pause, apply,
+ * resume or permission command the former row issued.
+ */
+internal object CaptureSwitches {
+    enum class ScreenCommand { PAUSE_SCREEN, DISABLE_SCREEN, OPEN_CAPTURE, RESUME_CAPTURE, ENABLE_SCREEN, NONE }
+    enum class ScreenTrailing { SWITCH, FIX }
+
+    fun screenTrailing(screenPermission: Boolean) = if (screenPermission) ScreenTrailing.FIX else ScreenTrailing.SWITCH
+
+    fun screenCommand(on: Boolean, enabled: Boolean, screenSelected: Boolean, screenPaused: Boolean): ScreenCommand =
+        if (on) when {
+            !enabled -> ScreenCommand.OPEN_CAPTURE
+            screenPaused -> ScreenCommand.RESUME_CAPTURE
+            !screenSelected -> ScreenCommand.ENABLE_SCREEN
+            else -> ScreenCommand.NONE
+        } else when {
+            enabled && screenSelected -> ScreenCommand.PAUSE_SCREEN
+            screenSelected -> ScreenCommand.DISABLE_SCREEN
+            else -> ScreenCommand.NONE
+        }
+
+    /** The old send switch checked "not paused"; off always stores the same pause. */
+    fun sendPaused(on: Boolean) = !on
 }
