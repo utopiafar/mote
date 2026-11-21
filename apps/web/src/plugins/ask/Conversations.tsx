@@ -19,6 +19,7 @@ import {ChatRevisionChanged, ChatSearch, chatPath, chatRevoked, mergeChatPages, 
 import {ChatMessage} from './ChatMessage';
 import {unsentDrafts} from './chat-drafts';
 import {useChatAttachments} from './chat-attachments';
+import {OnboardingChatProgress} from '../sources/OnboardingScan';
 import {admitConversationMessage, definiteAdmissionFailure, pendingMessageStatus, readConversationMessage,
   type ConversationMessage, type ConversationMessageInput, type ConversationMessageScope} from './conversation-messages';
 import {readOriginTurn} from './conversation-origin';
@@ -501,6 +502,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
     }}>
       <div className="conversation-messages chat-thread">
         {about && <ChatAboutReference about={about}/>}
+        <OnboardingChatProgress api={api}/>
         {preparing && !readError && <Loading label={moteText('正在打开对话…')}/>}
         {thread?.nextCursor && <button className="text-button chat-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
           {loadingOlder ? <LoadingText/> : moteText('加载更早的消息')}

@@ -14,10 +14,10 @@ import {webFeatures} from '../src/features/registry';
 import type {PageProps} from '../src/features/types';
 import {readPage, workspaceNavigation} from '../src/navigation';
 import {agentAccess} from '../src/plugins/agent-access';
+import {ask} from '../src/plugins/ask';
 import {pluginContributions} from '../src/plugins/default-inventory';
 import {connections, sources} from '../src/plugins/sources';
 import {ConnectionsPage} from '../src/plugins/sources/ConnectionsPage';
-import {OnboardingChatProgress} from '../src/plugins/sources/OnboardingScan';
 import {resources} from '../src/resource-cache';
 import {useHashChoice} from '../src/useHashChoice';
 import {NavStateContext, navStateReader, useNavStateRead} from '../src/use-nav-state';
@@ -197,8 +197,12 @@ test('CN3-02 cancelling preserves AI access and confirmation removes the row and
   assert.ok(document.querySelector(`[data-access-id="${second.credential.id}"]`));
 });
 
-test('CN3-03 CT1 selection links to Chat and the progress view follows the generated run', async t => {
+test('CN3-03 CT1 selection links to the real Chat page and its progress follows the generated run', async t => {
+  await installPages(t);
+  const askInstalled = await webFeatures.install({id: ask.id, version: '1', components: []}, pluginContributions(ask));
+  t.after(() => askInstalled.dispose());
   const {document, window, render} = await dom(t, pageHash('connections', {onboarding: lastRun}));
+  const chatId = '00000000-0000-4000-8000-000000000103';
   const requests: unknown[] = [];
   let state = 'running';
   const counts = {sources: 1, materials: 7, memories: 2, ideas: 4, feed: 3};
@@ -211,17 +215,22 @@ test('CN3-03 CT1 selection links to Chat and the progress view follows the gener
       requests.push(JSON.parse(String(init.body)));
       return {id: newRun, revision: 1};
     }
+    if (path === '/api/conversations/main') return {id: chatId};
+    if (path === `/api/conversations/${chatId}`) return {id: chatId, scope: {}, revision: 1, turns: []};
+    if (path.startsWith('/api/operations/changes?')) return {ids: [], cursor: 0, hasMore: false, reset: false};
     throw new Error('Unexpected generated request ' + path);
   }} as Api;
-  const readChat = (hash: string) => hash.split('?')[0];
+  const status = {agent: {configured: true, model: null, provider: 'generated'}} as unknown as PageProps['status'];
+  const pageProps = {api, status, devices: [], onPage: () => {}, onOpen: () => {}} as unknown as PageProps;
   function Route() {
-    const [page] = useHashChoice('page', readChat);
-    return page === pageHash('chat') ? React.createElement(OnboardingChatProgress, {api}) : React.createElement(ConnectionsPage, {api});
+    const [page] = useHashChoice('page', readLocationPage);
+    const entry = webFeatures.page(page);
+    return entry ? React.createElement(React.Fragment, null, entry.render(pageProps)) : null;
   }
 
   await render(React.createElement(Route));
   const summary = find(document, '[data-onboarding-summary]');
-  assert.equal(document.querySelector('[data-onboarding-chat-progress], progress'), null);
+  assert.equal(document.querySelector('[data-onboarding-chat-progress], .chat-page, progress'), null);
   await act(async () => button(summary, '再认识一次').click());
   const dialog = find(document, '[role=dialog]');
   const submit = find<HTMLButtonElement>(dialog, 'button[type=submit]');
@@ -233,13 +242,15 @@ test('CN3-03 CT1 selection links to Chat and the progress view follows the gener
   await act(async () => {setValue.call(days, '14'); days.dispatchEvent(new window.Event('input', {bubbles: true}));});
   assert.equal(submit.disabled, false);
   await act(async () => submit.click());
-  await until(() => Boolean(document.querySelector('[data-onboarding-chat-progress][data-state=running]')));
+  await until(() => Boolean(document.querySelector('.chat-page [data-onboarding-chat-progress][data-state=running]')));
+  assert.ok(document.querySelector('.chat-page .chat-thread [data-onboarding-chat-progress]'),
+    'the real AskPage mounts the progress card in its chat thread');
   assert.deepEqual(requests, [{sources: [gmail.id], window: {days: 14}}]);
   assert.equal(window.location.hash, pageHash('chat', {onboarding: newRun}));
   assert.equal(document.querySelector('[data-onboarding-summary]'), null);
   state = 'completed';
   await act(async () => resources(api).get(`${scanPath}/${newRun}`).refresh());
-  assert.ok(document.querySelector('[data-onboarding-chat-progress][data-state=completed]'));
+  assert.ok(document.querySelector('.chat-page [data-onboarding-chat-progress][data-state=completed]'));
 });
 
 test('the empty state offers New, and failures withdraw stale service cards and retry only the failed read', async t => {
