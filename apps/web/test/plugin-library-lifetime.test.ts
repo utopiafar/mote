@@ -58,7 +58,8 @@ test('the library package owns the archive page and every collection it renders'
   assert.equal(library.id,'mote.library');
   assert.equal(library.pages?.find(page=>page.id==='archive')?.route,'library');
   const ids=builtinCollections.map(entry=>entry.id);
-  for(const id of ['materials','records','segments','sources','files','activity','media','memories','coding-status'])assert.ok(ids.includes(id),id);
+  for(const id of ['materials','records','segments','sources','files','activity','media','coding-status'])assert.ok(ids.includes(id),id);
+  assert.ok(!ids.includes('memories'));
   assert.deepEqual(library.collections?.map(entry=>entry.id),ids);
 });
 
