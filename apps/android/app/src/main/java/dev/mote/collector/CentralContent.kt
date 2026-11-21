@@ -376,11 +376,14 @@ internal class CentralContent(
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
     var askBackToHistory: (() -> Boolean)? = null
+    /** A host tab may return directly to its local tab at the root. */
+    var rootBack: (() -> Boolean)? = null
     fun back(): Boolean {
         if (page == "files" && requestedFileId() != null) return false
         if (screens?.back() == true) { updateBackButton(); return true }
         if (page == "ask" && askBackToHistory?.invoke() == true) { updateBackButton(); return true }
         if (page == "insights" && pageHistory.isEmpty()) return false
+        if (pageHistory.isEmpty() && rootBack?.invoke() == true) { updateBackButton(); return true }
         val previous = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else MoteNavigation.centralParent(page)
         if (previous == null) return false
         navigate(previous, remember = false)
