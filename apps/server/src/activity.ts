@@ -18,7 +18,7 @@ const terminal=new Set<WorkState>(['completed','excluded','cancelled']);
 const stateRank=(value:string)=>({running:6,needs_input:5,stale:4,failed:3,waiting:2,completed:0,cancelled:-1,excluded:-2} as Record<string,number>)[state(value)]??2;
 const rankSql=(value:string)=>`CASE ${value} WHEN 'running' THEN 6 WHEN 'pausing' THEN 6 WHEN 'waiting_for_model' THEN 5 WHEN 'waiting_for_input' THEN 5 WHEN 'blocked' THEN 5 WHEN 'paused' THEN 5 WHEN 'invalidated' THEN 4 WHEN 'stale' THEN 4 WHEN 'failed' THEN 3 WHEN 'succeeded' THEN 0 WHEN 'completed' THEN 0 WHEN 'cancelled' THEN -1 WHEN 'skipped' THEN -2 ELSE 2 END`;
 function aggregate(values:WorkState[]):WorkState {if(!values.length)return 'waiting';for(const candidate of ['running','needs_input','stale','failed','waiting'] as const)if(values.includes(candidate))return candidate;return values.includes('cancelled')?'cancelled':values.every(value=>value==='excluded')?'excluded':'completed';}
-const goalKeys:Record<string,string>={image:'理解图片',file:'整理文件',capture:'理解采集内容',memory:'整理记忆',workflow:'整理上下文',import:'导入资料',query:'回答问题',insight:'生成生活回顾',embedding:'准备检索资料','material-index':'建立资料索引'};
+const goalKeys:Record<string,string>={image:moteText('理解图片'),file:moteText('整理文件'),capture:moteText('理解采集内容'),memory:moteText('整理记忆'),workflow:moteText('整理上下文'),import:moteText('导入资料'),query:moteText('回答问题'),insight:moteText('生成生活回顾'),embedding:moteText('准备检索资料'),'material-index':moteText('建立资料索引')};
 const destinations:Record<string,string>={image:'library',file:'files',capture:'timeline',memory:'memories',workflow:'timeline',import:'imports',query:'ask',insight:'insights',embedding:'ask','material-index':'library'};
 function lifecycleEvents(id:string,value:WorkState,createdAt:string,updatedAt:string):WorkEvent[]{return [{id:id+':started',type:'work.started',at:createdAt},...(terminal.has(value)||value==='failed'? [{id:id+':ended',type:value==='completed'||value==='excluded'?'work.completed':value==='failed'?'work.failed':'work.cancelled',at:updatedAt} as WorkEvent]:value==='needs_input'?[{id:id+':needs-input',type:'work.needs_input',at:updatedAt} as WorkEvent]:[])];}
 
@@ -111,7 +111,7 @@ export class ActivityProjection {
  }
  private operation(operation:OperationSummary):WorkActivity {
   const id=operation.id,rawId=id.slice(id.indexOf(':')+1),createdAt=new Date(operation.createdAt).toISOString(),updatedAt=new Date(operation.updatedAt).toISOString();
-  let status=state(operation.state),goal=moteText(goalKeys[operation.kind]??'整理上下文'),progress:WorkProgress={mode:'semantic',stage:status==='completed'?'finished':status==='running'?'organizing':'preparing'},artifacts:WorkArtifact[]=[],events=lifecycleEvents(id,status,createdAt,updatedAt),refs:string[]=[],runId:string|undefined;
+  let status=state(operation.state),goal=moteText(goalKeys[operation.kind]??moteText('整理上下文')),progress:WorkProgress={mode:'semantic',stage:status==='completed'?'finished':status==='running'?'organizing':'preparing'},artifacts:WorkArtifact[]=[],events=lifecycleEvents(id,status,createdAt,updatedAt),refs:string[]=[],runId:string|undefined;
   if(operation.kind==='import'){
    const job=this.json<ImportJob>('import_jobs',rawId);if(job){goal=moteText('导入 {0}',job.name);status=state(job.status);progress=job.progress.total>0?{mode:'determinate',unit:'records',total:job.progress.total,completed:job.progress.processed,failed:job.status==='failed'?Math.max(0,job.progress.total-job.progress.processed):0,needsInput:job.status==='awaiting_confirmation'?Math.max(0,job.progress.total-job.progress.processed):0,excluded:0}:{mode:'semantic',stage:job.status==='preparing'?'planning':job.status==='completed'?'finished':'preparing'};refs=job.captureIds;artifacts=job.progress.imported?[{id:id+':records',kind:'import',title:moteText('已归档 {0} 条资料',job.progress.imported),count:job.progress.imported,ref:'imports'}]:[];}
   }
@@ -120,7 +120,7 @@ export class ActivityProjection {
    if(run){let resultSaved=false;runId=run.resultRunId??run.id;status=state(run.status);progress=queryWorkProgress(run.events,status==='completed');
     if(run.turnId){const turn=this.json<{question:string;result?:{citations:{id:string}[];runId:string};evidenceDeleted?:boolean}>('conversation_turns',run.turnId);if(turn&&!turn.evidenceDeleted){goal=turn.question;resultSaved=Boolean(turn.result);refs=turn.result?.citations.map(citation=>citation.id)??[];runId=turn.result?.runId??runId;}}
     if(operation.kind==='insight'&&run.resultRunId)resultSaved=Boolean(this.json('insights',run.resultRunId));
-    if(status==='completed'&&resultSaved)artifacts=[{id:run.turnId??run.resultRunId??run.id,kind:operation.kind==='query'?'answer':'insight',title:moteText(operation.kind==='query'?'回答已归档':'生活回顾已保存'),ref:run.turnId??run.resultRunId,...(run.conversationId?{href:pageHash('chat',{conversation:run.conversationId})}:{})}];
+    if(status==='completed'&&resultSaved)artifacts=[{id:run.turnId??run.resultRunId??run.id,kind:operation.kind==='query'?'answer':'insight',title:operation.kind==='query'?moteText('回答已归档'):moteText('生活回顾已保存'),ref:run.turnId??run.resultRunId,...(run.conversationId?{href:pageHash('chat',{conversation:run.conversationId})}:{})}];
     events=[...events,...run.events.filter(event=>event.message).map((event,index)=>({id:id+':public:'+index,type:'plan.updated' as const,at:event.at,summary:event.message}))];
    }
   }
