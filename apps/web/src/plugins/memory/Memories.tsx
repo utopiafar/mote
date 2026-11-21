@@ -36,7 +36,7 @@ export interface Memory {
   reviewReceipt?:{decision:"independent"|"reused"|"empty";checkedAt:string;reviewRunId?:string;draftRunId:string};
   admission?:{layer:'observation'|'memory';reason:string;scope:string;attribution:'user'|'third_party'|'observed'|'inferred'};
   scopeRefs?:{projectName?:string;projectIdentity?:'workspace'|'session'|'unknown';sessionId:string;projectKey:string}[];
-  domain?:'personal'|'coding';coding?:{kind:string;scope:string;applicability:string;validation:string};
+  domain?:'personal'|'coding';coding?:{kind:string;scope:string;applicability:string;validation:string};contextPriority?:'standing';
   id:string;title:string;statement?:string;uncertainty?:string;evidenceIds?:string[];evidenceCount?:number;evidence?:MemoryEvidence[];
   tier?:string;kind?:string;status:string;createdAt:string;updatedAt?:string;model?:string;skillVersion?:string;staleReason?:string;
 }
