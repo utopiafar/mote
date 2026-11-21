@@ -178,6 +178,7 @@ function MemoryPageOwner({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
         {filters.map(item=><button key={item} type="button" className={filter===item?'active':undefined} aria-pressed={filter===item} onClick={()=>setFilter(item)}>{filterLabel(item)} <span>{count(item)}</span></button>)}
       </nav>
       {!online&&<p className="notice" role="status">{moteText('当前离线')} <button type="button" className="text-button" onClick={refresh}>{moteText('重新读取')}</button></p>}
+      {commitments.error!==undefined&&<p className="notice" role="status">{errorMessage(commitments.error)} <button type="button" className="text-button" onClick={commitments.refresh}>{moteText('重新读取')}</button></p>}
       {error&&<p className="error-banner" role="alert">{error} <button type="button" className="text-button" onClick={refresh}>{moteText('重新读取')}</button></p>}
       {notice&&<p className="notice" role="status">{notice}</p>}
       {quick&&<article className="memory-page-quick" data-state={quick.state}>
