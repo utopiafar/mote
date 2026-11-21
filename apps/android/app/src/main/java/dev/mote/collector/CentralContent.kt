@@ -11,6 +11,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import dev.mote.collector.plugins.AssistantPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
@@ -29,6 +30,9 @@ internal class CentralContent(
     private val embeddedActions: Boolean = false,
     private val openCalendar: (() -> Unit)? = null,
 ) : ContextWrapper(activity) {
+    internal val hostsGoalsTab = initialPage == AssistantPlugin.GOALS_ROUTE && openLocalPage != null
+    private val hostsAssistantTab = initialPage in setOf(AssistantPlugin.FEED_ROUTE, AssistantPlugin.IDEAS_ROUTE) && openLocalPage != null
+
     fun openCaptureReader(origin: String, row: org.json.JSONObject, conversationId: String?, returnScroll: Int? = null, workMemory: WorkMemoryReference? = null, citationExcerpt: String? = null) {
         val restore = if (conversationId != null && returnScroll != null) ReaderReturn(origin, accessGeneration, revision, conversationId, returnScroll) else null
         pendingReaderReturn = restore
@@ -64,7 +68,9 @@ internal class CentralContent(
         // removes everything it added, so the fallback never shares the body
         // with partial plugin UI.
         val parent = container as? android.view.ViewGroup
-        val slot: Any = parent?.let { android.widget.LinearLayout(activity).apply { orientation = android.widget.LinearLayout.VERTICAL }.also(it::addView) } ?: container
+        val mountContext = if (page in setOf(AssistantPlugin.FEED_ROUTE, AssistantPlugin.IDEAS_ROUTE, AssistantPlugin.GOALS_ROUTE) ||
+            hostsGoalsTab && page in AssistantPlugin.PAGE_ROUTES) this else activity
+        val slot: Any = parent?.let { LinearLayout(mountContext).apply { orientation = LinearLayout.VERTICAL }.also(it::addView) } ?: container
         return try {
             session.registerView(factory(session, slot))
             pluginView = session
@@ -140,6 +146,7 @@ internal class CentralContent(
     private lateinit var settingsAction: TextView
     private lateinit var moreAction: TextView
     private lateinit var memoryFilterAction: ImageButton
+    private var assistantHeaderAction: View? = null
     private var memoryFilter: (() -> Unit)? = null
     private val pageHistory = mutableListOf<String>()
     internal var client: CentralClient? = null; private set
@@ -372,17 +379,24 @@ internal class CentralContent(
         state.putBundle("insightState", Bundle().also { screens?.saveInsightState(it) ?: restoredInsightState?.let(it::putAll) })
     }
     var askBackToHistory: (() -> Boolean)? = null
+    /** A host tab may return directly to its local tab at the root. */
+    var rootBack: (() -> Boolean)? = null
     fun back(): Boolean {
         if (page == "files" && requestedFileId() != null) return false
-        if (screens?.back() == true) { updateBackButton(); return true }
+        if (screens?.back() == true) {
+            if (assistantHeaderAction == null) updateBackButton()
+            return true
+        }
         if (page == "ask" && askBackToHistory?.invoke() == true) { updateBackButton(); return true }
         if (page == "insights" && pageHistory.isEmpty()) return false
+        if (pageHistory.isEmpty() && rootBack?.invoke() == true) { updateBackButton(); return true }
         val previous = if (pageHistory.isNotEmpty()) pageHistory.removeAt(pageHistory.lastIndex) else MoteNavigation.centralParent(page)
         if (previous == null) return false
         navigate(previous, remember = false)
         return true
     }
     private fun updateBackButton() {
+        clearAssistantTabAction()
         backButton.visibility = View.VISIBLE
         addAction.visibility = View.GONE
         val ask = page == "ask"
@@ -401,6 +415,7 @@ internal class CentralContent(
      * history so its back action returns to the home surface, not the thread. */
     internal fun openConversationList() { pageHistory.clear(); navigate("conversations", remember = false) }
     internal fun hostActivity(): MoteActivity = activity
+    internal fun assistantRouteScreen(): CentralScreens = checkNotNull(screens)
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
         return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)
@@ -440,6 +455,34 @@ internal class CentralContent(
         title.visibility = View.VISIBLE
         title.text = value
         memoryFilterAction.visibility = View.GONE
+    }
+    internal var goalsRevisionChanged: ((Pair<String, String>) -> Unit)? = null
+    internal var assistantRevisionChanged: ((Pair<String, Int?>) -> Unit)? = null
+    internal var ideasCountChanged: ((Int) -> Unit)? = null
+
+    internal fun assistantTabHeader(title: String, icon: MoteGlyph, label: String, action: (View) -> Unit) {
+        detailTitle(title)
+        clearAssistantTabAction()
+        if (hostsAssistantTab) backButton.visibility = View.GONE
+        settingsAction.visibility = View.GONE
+        moreAction.visibility = View.GONE
+        headerDivider.visibility = View.GONE
+        val actions = memoryFilterAction.parent as LinearLayout
+        val button = MoteComponents.iconButton(this, icon, label, onClick = action)
+        actions.addView(button, actions.indexOfChild(memoryFilterAction) + 1, LinearLayout.LayoutParams(moteDp(48), moteDp(48)))
+        assistantHeaderAction = button
+    }
+
+    internal fun clearAssistantTabAction() {
+        assistantHeaderAction?.let { (it.parent as? LinearLayout)?.removeView(it) }
+        assistantHeaderAction = null
+    }
+
+    internal fun goalAdd(action: (() -> Unit)?) {
+        addAction.visibility = if (action == null) View.GONE else View.VISIBLE
+        addAction.text = if (action == null) MoteI18n.text("记下") else "+"
+        addAction.contentDescription = if (action == null) MoteI18n.text("记下") else MoteI18n.text("新建目标")
+        addAction.setOnClickListener { if (action != null) action() else activity.openRecordEditor() }
     }
     internal fun memoryLibraryHeader(filter: () -> Unit) {
         title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
@@ -481,6 +524,7 @@ internal class CentralContent(
         composer.removeAllViews(); composer.visibility = View.GONE; updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
+            page == AssistantPlugin.GOALS_ROUTE -> "连接你的 Mote"
             page == "ask" || page == "conversations" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
             MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
             else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
@@ -624,6 +668,7 @@ internal class CentralContent(
     internal fun advancedWebLabel(target: AdvancedWebTarget): String = when (target) {
         is AdvancedWebTarget.Recording -> MoteI18n.text(when(target.tool) { AdvancedWebTarget.RecordingTool.SPEAKERS -> "说话人试听与命名"; AdvancedWebTarget.RecordingTool.COMPARE -> "原文对照"; AdvancedWebTarget.RecordingTool.RAW -> "查看原始转写" })
         is AdvancedWebTarget.Models -> MoteI18n.text("中心本机处理") + " · " + MoteI18n.text(if(target.preparation == AdvancedWebTarget.Preparation.AUDIO) "录音" else "图片") + if(target.preparation == AdvancedWebTarget.Preparation.OCR) " · OCR" else if(target.preparation == AdvancedWebTarget.Preparation.IMAGE) " · InternVL" else ""
+        is AdvancedWebTarget.ChatAbout -> MoteI18n.text("回答")
     } + " · Web"
     internal fun openAdvancedWeb(target: AdvancedWebTarget) {
         val selected = CentralAccess.resolve(this); check(selected.server == server && server.isNotBlank()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
@@ -708,7 +753,7 @@ internal class CentralContent(
         linkNotice = MoteI18n.text(key)
         notice(linkNotice!!)
     }
-    internal fun enterDetail() { cancelAdvancedWeb(); backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
+    internal fun enterDetail() { cancelAdvancedWeb(); clearAssistantTabAction(); backButton.visibility = View.VISIBLE; revision++; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshRun); composer.removeAllViews(); composer.visibility = View.GONE }
     internal fun requestFailure(error: Throwable, generation: Long = accessGeneration) {
         val offline = page == "ask" && networkFailure(error)
         // The composer's own notice already says what happened; a raw transport

@@ -100,6 +100,73 @@ export class OwnerQuestions {
   const page=found.slice(0,selected.limit),last=page.at(-1);
   return {items:page.map(item=>item.question),nextCursor:found.length>selected.limit&&last?Buffer.from(JSON.stringify(last.cursor)).toString('base64url'):null};
  }
+ /** Remember which questions an unfiltered Ideas view actually contained, so a
+  * later bulk dismissal cannot include a question created after that read even
+  * when both share the same millisecond. Each read also records its exact set
+  * under its view revision, so a dismissal from that view hides only that set.
+  * Independent reads can share one millisecond watermark; the watermark-wide
+  * fallback keeps only what every read displayed, so a later read cannot widen
+  * the set a dismissal from a caller that cannot name its read may hide. */
+ markSurfaced(watermark:number,viewRevision:string,items:ReadonlyArray<{id:string;revision:number}>):void{
+  if(watermark<=0||!items.length)return;
+  const exact=items.map(item=>[item.id,item.revision] as [string,number]);
+  this.transaction(()=>{
+   const prior=this.store.db.prepare('SELECT questions FROM owner_question_surfaces WHERE watermark=?').get(watermark) as {questions:string}|undefined;
+   const seen=new Map(prior?JSON.parse(prior.questions) as Array<[string,number]>:[]);
+   const questions=prior?items.flatMap(item=>{
+    const revision=seen.get(item.id);
+    return revision===undefined?[]:[[item.id,Math.min(revision,item.revision)] as [string,number]];
+   }):items.map(item=>[item.id,item.revision] as [string,number]);
+   this.store.db.prepare(`INSERT INTO owner_question_surfaces(watermark,questions) VALUES(?,?)
+    ON CONFLICT(watermark) DO UPDATE SET questions=excluded.questions`)
+    .run(watermark,JSON.stringify(questions));
+   this.store.db.prepare(`DELETE FROM owner_question_surfaces WHERE watermark NOT IN
+    (SELECT watermark FROM owner_question_surfaces ORDER BY watermark DESC LIMIT 64)`).run();
+   this.store.db.prepare(`INSERT INTO owner_question_surface_views(view_revision,watermark,questions) VALUES(?,?,?)
+    ON CONFLICT(view_revision) DO UPDATE SET watermark=excluded.watermark,questions=excluded.questions`)
+    .run(viewRevision,watermark,JSON.stringify(exact));
+   this.store.db.prepare(`DELETE FROM owner_question_surface_views WHERE rowid NOT IN
+    (SELECT rowid FROM owner_question_surface_views ORDER BY rowid DESC LIMIT 64)`).run();
+  });
+ }
+ /** Hide the pending questions a surface actually read without answering them,
+  * so their work still waits for an answer in its own context. A newer update
+  * or a question created after that read stays. */
+ ignoreAll(upTo:number):number{
+  return this.transaction(()=>{
+   const surface=this.store.db.prepare('SELECT questions FROM owner_question_surfaces WHERE watermark=?').get(upTo) as {questions:string}|undefined;
+   if(!surface)return 0;
+   return this.ignoreSeen(new Map(JSON.parse(surface.questions) as Array<[string,number]>));
+  });
+ }
+ /** Hide exactly the questions one recorded view displayed. */
+ ignoreView(viewRevision:string):number{
+  return this.transaction(()=>{
+   const surface=this.store.db.prepare('SELECT questions FROM owner_question_surface_views WHERE view_revision=?').get(viewRevision) as {questions:string}|undefined;
+   return surface?this.ignoreSeen(new Map(JSON.parse(surface.questions) as Array<[string,number]>)):0;
+  });
+ }
+ private ignoreSeen(seen:ReadonlyMap<string,number>):number{
+  const at=this.now();
+  let ignored=0,cursor:string|undefined;
+  do{
+   const page=this.page({state:['open','deferred'],limit:100,cursor});
+   for(const question of page.items){
+    if(question.ignoredAt)continue;
+    const revision=seen.get(question.id);
+    if(revision===undefined||question.revision>revision)continue;
+    const value=this.decode(this.row(question.id));
+    if(value.record.question.ignoredAt||value.record.question.revision>revision)continue;
+    value.record.question.ignoredAt=at;
+    value.record.question.revision++;
+    value.record.question.updatedAt=at;
+    this.save(value.record,value.stored.installationEpoch);
+    ignored++;
+   }
+   cursor=page.nextCursor??undefined;
+  }while(cursor);
+  return ignored;
+ }
  /** Retire private prose in the same transaction as a dependency/work withdrawal. */
  obsolete(id:string){return this.transaction(()=>{const value=this.decode(this.row(id));if(value.record.question.state==='obsolete')return;value.record.question.state='obsolete';value.record.question.revision++;value.record.question.updatedAt=this.now();delete value.record.question.continuationId;this.save(value.record,value.stored.installationEpoch);});}
  private receipt(id:string,reply:OwnerQuestionReply,hash:string){const prior=this.store.db.prepare('SELECT request_hash FROM owner_question_replies WHERE question_id=? AND request_id=?').get(id,reply.requestId);if(prior&&prior.request_hash!==hash)throw new StoreError('Owner reply request ID was reused with different content',409);return Boolean(prior);}

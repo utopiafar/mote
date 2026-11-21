@@ -44,7 +44,7 @@ test('restoring recording source intake shows disabled sync and leads to its exp
  await act(async()=>button.click());
  assert.match(dom.window.document.querySelector('aside')!.textContent!,/录音同步未启用/);
  assert.doesNotMatch(dom.window.document.querySelector('aside')!.textContent!,/等待下次同步|已启用/);
- const link=dom.window.document.querySelector<HTMLAnchorElement>('.source-configuration a[href="#/connections/recordings?provider=generated"]');assert.ok(link);
+ const link=dom.window.document.querySelector<HTMLAnchorElement>('.source-configuration a[href="#/library?recordings=generated"]');assert.ok(link);
  assert.equal(link.textContent,'录音同步设置');
  assert.match(dom.window.document.querySelector('.source-configuration')!.textContent!,/恢复接入仅允许接收资料；录音同步需在录音同步设置中确认范围并启用/);
  assert.deepEqual(writes,[{path:'/api/sources/'+source.id,body:{enabled:true}}]);

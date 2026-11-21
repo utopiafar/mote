@@ -88,12 +88,15 @@ class AssistantHostTest {
     private lateinit var origin: String
     private val activities = mutableListOf<ActivityController<CentralActivity>>()
     private val requests = CopyOnWriteArrayList<Pair<String, JSONObject?>>()
-    private val cards = listOf(f.card(), f.card(f.life),
+    private val deferredIdea = "10000000-0000-4000-8000-000000000005"
+    private val ignoredIdea = "10000000-0000-4000-8000-000000000006"
+    private val cards = listOf(f.card(revision = 3), f.card(f.life, 3), f.card(deferredIdea), f.card(ignoredIdea),
         f.card("10000000-0000-4000-8000-000000000003").put("kind", "briefing").put("title", "Generated daily briefing"),
         f.card("10000000-0000-4000-8000-000000000004").put("kind", "activity").put("title", "Generated activity"))
     private var matter = f.matter()
     private var rule = f.routine()
     private val taskIds = mapOf(f.work to f.taskId, f.life to "30000000-0000-4000-8000-000000000002")
+    private val workbenchRequest = AtomicReference<JSONObject?>()
     @Volatile private var withdrawn = false
 
     @Before fun generatedCentral() {
@@ -121,7 +124,15 @@ class AssistantHostTest {
             requests += path to body
             val result = synchronized(this) {
                 when {
-                    path == "/api/assistant-cards" -> f.page(*if (withdrawn) emptyArray() else cards.toTypedArray())
+                    path == "/api/assistant-cards" -> {
+                        val kinds = query.getValue("kinds").split(',')
+                        val matching = if (withdrawn) emptyList() else cards.filter { it.getString("kind") in kinds }
+                        f.page(*matching.toTypedArray()).put("revision", "generated-feed").put("categories", JSONArray())
+                    }
+                    path == "/api/assistant/ideas" -> ideas()
+                    path == "/api/actions" -> f.page()
+                    path.startsWith("/api/assistant-cards/") && !path.endsWith("/feedback") ->
+                        cards.single { path.substringAfterLast('/') == it.getString("id") }
                     path.endsWith("/feedback") -> cards.single { path.contains(it.getString("id")) }.apply {
                         put("revision", getLong("revision") + 1)
                         getJSONArray("feedback").put(JSONObject().put("action", body!!.getString("action")))
@@ -140,6 +151,17 @@ class AssistantHostTest {
                     path == "/api/assistant/matters" -> f.page(matter.getJSONObject("matter"))
                     path == "/api/assistant/matters/${f.matterId}" -> matter
                     path == "/api/assistant/commitments" -> f.page(f.commitment())
+                    path == "/api/assistant/goals" -> goals()
+                    path == "/api/assistant/workbench" -> {
+                        val request = JSONObject(requireNotNull(query["request"]))
+                        workbenchRequest.set(request)
+                        JSONObject("""{
+                            "descriptor":{"id":"assistant.workbench.travel","kind":"declarative-view","apiVersion":"1",
+                                "platforms":["android"],"presentation":{"labelKey":"travel","i18nNamespace":"mote"},"commands":[]},
+                            "spec":{"components":[]},"data":{},"commands":[]
+                        }""").put("request", request)
+                    }
+                    path == "/api/assistant/matters/${f.matterId}/actions" -> JSONObject().put("items", JSONArray())
                     path == "/api/assistant/routines" -> f.page(rule)
                     path == "/api/assistant/matter-commands" -> {
                         matter = f.matter(if (body!!.getString("type") == "pause") "paused" else "active", body.getLong("expectedRevision") + 1)
@@ -181,6 +203,7 @@ class AssistantHostTest {
     private fun open(intent: Intent): CentralActivity = Robolectric.buildActivity(CentralActivity::class.java, intent).also { activities += it }.setup().get()
     private fun views(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
     private fun all(activity: CentralActivity) = views(activity.window.decorView)
+    private fun tagged(activity: CentralActivity, tag: String): View? = activity.window.decorView.findViewWithTag(tag)
     private fun contains(activity: CentralActivity, text: String) = all(activity).filterIsInstance<TextView>().any { it.text.toString() == text }
     private fun await(reason: String, condition: () -> Boolean) {
         val deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos()
@@ -200,6 +223,30 @@ class AssistantHostTest {
         var view = all(activity).filterIsInstance<TextView>().first { it.text.toString() == text } as View
         while (!view.isClickable) view = view.parent as View
         view.performClick()
+    }
+    private fun goals(): JSONObject {
+        val key = JSONObject().put("kind", "matter").put("id", f.matterId).put("title", "Generated trip").put("template", "travel")
+        val row = JSONObject().put("id", f.life).put("kind", "commitment").put("title", "Generated trip confirmation")
+            .put("direction", "mine").put("inferred", false).put("revision", 1).put("actions", JSONArray())
+        val group = JSONObject().put("key", key).put("theirs", JSONArray()).put("mine", JSONArray().put(row)).put("unconfirmed", JSONArray())
+        return JSONObject().put("revision", "generated-goals").put("groups", JSONArray().put(group))
+    }
+    private fun ideas(): JSONObject {
+        val mine = JSONArray()
+        val started = JSONArray()
+        cards.filter { it.getString("kind") == "suggestion" }.forEach { card ->
+            val task = AssistantJson.nullable(card, "acceptedTaskId")
+            val title = card.getString("title")
+            if (task != null) {
+                started.put(JSONObject().put("taskId", task).put("title", title).put("state", "blocked"))
+            } else if (card.getJSONArray("feedback").length() == 0) {
+                mine.put(JSONObject().put("id", card.getString("id")).put("source", "card").put("title", title)
+                    .put("detail", card.getString("body")).put("revision", card.getLong("revision")).put("seq", 1)
+                    .put("actions", JSONArray(listOf("start", "later", "ignore"))))
+            }
+        }
+        return JSONObject().put("revision", "generated-ideas").put("watermark", if (mine.length() == 0) 0 else 1)
+            .put("mine", mine).put("yours", JSONArray()).put("started", started)
     }
     private fun question(workId: String) = JSONObject().put("id", if (workId == "assistant.task:${f.taskId}") "60000000-0000-4000-8000-000000000001" else "60000000-0000-4000-8000-000000000002")
         .put("provider", JSONObject().put("id", "mote.assistant-task-question").put("version", "1"))
@@ -226,27 +273,61 @@ class AssistantHostTest {
         assertTrue(contains(workActivity, "回答并继续"))
     }
 
-    @Test fun productionRoutesMountBothPagesAndWorkLifeCommandsReachTheExistingTransport() {
+    @Test fun goalsTabOpensItsMatterWorkbenchWithoutReplacingTheLegacyAssistantBinding() {
         val activity = open(AssistantPlugin.FEED_ROUTE)
-        await("The production route must construct and attach AssistantFeedView") { all(activity).any { it is AssistantFeedView } && contains(activity, "Generated daily briefing") }
-        assertTrue(contains(activity, "Generated activity"))
-        for (title in listOf("Generated project preparation", "Generated family trip preparation")) {
-            button(activity, "稍后再看", title)
-            await("Later feedback is rendered") { contains(activity, "稍后再看") && all(activity).filterIsInstance<AssistantFeedView>().single().isAttachedToWindow && requests.any { it.second?.optString("action") == "later" } }
-            // A finished feedback redraw owns the next buttons.
-            await("Feedback redraw finished") { all(activity).filterIsInstance<TextView>().any { it.text.toString() == title } }
-            button(activity, "忽略", title)
-            await("Ignore feedback is rendered") { contains(activity, "已忽略") && contains(activity, title) }
-            button(activity, "开始", title)
-            await("Accepted task shows only the server needs_input state") { contains(activity, "需要处理") && contains(activity, title) }
+        await("Existing assistant route mounted") { tagged(activity, "assistant-page:${AssistantPlugin.FEED_ROUTE}") != null }
+        val existing = requireNotNull(AssistantPlugin.screen(activity))
+        val tab = CentralContent(activity, null, initialPage = AssistantPlugin.GOALS_ROUTE, openLocalPage = {})
+        try {
+            activity.setContentView(tab.root)
+            tab.resume()
+            await("Goals mounted in the second content host") { contains(activity, "Generated trip confirmation") }
+            assertSame(existing, AssistantPlugin.screen(activity))
+
+            clickText(activity, "Generated trip")
+            await("The matter template mounted in the same tab") {
+                tab.root.findViewWithTag<View>("workbench-templates") != null
+            }
+            val request = requireNotNull(workbenchRequest.get())
+            assertEquals("travel", request.getString("template"))
+            assertEquals(f.matterId, request.getString("matterId"))
+            assertSame(existing, AssistantPlugin.screen(activity))
+        } finally {
+            tab.close()
+        }
+    }
+
+    @Test fun productionRoutesMountBothPagesAndWorkLifeCommandsReachTheExistingTransport() {
+        val feed = open(AssistantPlugin.FEED_ROUTE)
+        await("The production feed route attaches its rows") { tagged(feed, "assistant-page:${AssistantPlugin.FEED_ROUTE}")?.isAttachedToWindow == true && contains(feed, "Generated daily briefing") }
+        assertTrue(contains(feed, "Generated activity"))
+        assertNull(tagged(feed, "ideas-action:${f.work}:start"))
+
+        val ideas = open(AssistantPlugin.IDEAS_ROUTE)
+        for ((id, action) in listOf(deferredIdea to "later", ignoredIdea to "ignore")) {
+            await("The pending idea offers its server action") { tagged(ideas, "ideas-action:$id:$action")?.isEnabled == true }
+            tagged(ideas, "ideas-action:$id:$action")!!.performClick()
+            await("The existing feedback route is used and the handled row goes away") {
+                tagged(ideas, "ideas-row:$id") == null &&
+                    requests.any { (path, body) -> path == "/api/assistant-cards/$id/feedback" && body?.optString("action") == action && body.optLong("expectedRevision") == 1L } &&
+                    requests.count { it.first == "/api/assistant/ideas" } >= if (action == "later") 2 else 3
+            }
+            await("The Ideas read has published its remaining buttons") { tagged(ideas, "ideas-action:${f.work}:start")?.isEnabled == true }
+        }
+        for ((card, task) in taskIds) {
+            await("A pending idea offers start") { tagged(ideas, "ideas-action:$card:start")?.isEnabled == true }
+            tagged(ideas, "ideas-action:$card:start")!!.performClick()
+            await("The accepted idea is in the started list") {
+                tagged(ideas, "ideas-started:$task") != null && tagged(ideas, "ideas-row:$card") == null
+            }
         }
         val starts = requests.filter { it.first == "/api/assistant/tasks" }.map { requireNotNull(it.second) }
         assertEquals(2, starts.size)
         assertEquals(setOf(f.work, f.life), starts.map { it.getString("cardId") }.toSet())
         assertTrue(starts.all { f.scope().same(AssistantScope(it.getJSONObject("scope"))) && it.getLong("expectedRevision") == 3L })
-        assertFalse(contains(activity, "已完成"))
+        assertFalse(contains(ideas, "已完成"))
 
-        button(activity, "事项与规则")
+        val activity = open(AssistantPlugin.MATTERS_ROUTE)
         await("The production matters entry lists current matters") { contains(activity, "Generated shared matter") }
         clickText(activity, "Generated shared matter")
         await("The production route must construct and attach AssistantMatterView") { all(activity).any { it is AssistantMatterView } && contains(activity, "Generated daily review") }
@@ -263,25 +344,27 @@ class AssistantHostTest {
         await("Matter task detail keeps the saved matter scope") { all(activity).any { it is AssistantTaskView } && contains(activity, "Generated missing choice") }
         questionBacklink(activity, "assistant.task:${f.taskId}", "Which generated work option should continue?")
 
-        val life = open(AssistantPlugin.FEED_ROUTE)
-        await("The accepted life card remains reachable from a fresh production entry") { contains(life, "Generated family trip preparation") }
-        button(life, "任务状态", "Generated family trip preparation")
+        val life = open(AssistantPlugin.IDEAS_ROUTE)
+        val lifeTask = "ideas-started:${taskIds.getValue(f.life)}"
+        await("The accepted life card remains reachable from a fresh production entry") { tagged(life, lifeTask) != null }
+        tagged(life, lifeTask)!!.performClick()
         await("The life task loads its own questions") { all(life).any { it is AssistantTaskView } && contains(life, "Generated missing choice") }
         questionBacklink(life, "assistant.task:${taskIds.getValue(f.life)}", "Which generated life option should continue?")
     }
 
     @Test fun pausingRemovesMountedPrivateContentAndResumeReadsWithdrawal() {
         val activity = open(AssistantPlugin.FEED_ROUTE)
-        await("The feed is mounted") { contains(activity, "Generated project preparation") }
-        val old = all(activity).filterIsInstance<AssistantFeedView>().single()
+        await("The feed is mounted") { contains(activity, "Generated activity") }
+        val pageTag = "assistant-page:${AssistantPlugin.FEED_ROUTE}"
+        val old = requireNotNull(tagged(activity, pageTag))
         activities.single().pause()
         assertNull("Pausing disposes the real plugin contribution", old.parent)
-        assertFalse(contains(activity, "Generated project preparation"))
+        assertFalse(contains(activity, "Generated activity"))
         withdrawn = true
         activities.single().resume()
-        await("Resuming remounts a current, empty feed") { contains(activity, "暂无助理动态。") }
-        assertFalse(contains(activity, "Generated project preparation"))
-        val fresh = all(activity).filterIsInstance<AssistantFeedView>().single()
+        await("Resuming remounts a current, empty feed") { tagged(activity, pageTag) != null && requests.count { it.first == "/api/assistant-cards" } == 2 && contains(activity, "没有新动态") }
+        assertFalse(contains(activity, "Generated activity"))
+        val fresh = requireNotNull(tagged(activity, pageTag))
         assertNotSame(old, fresh)
         (activity.application as MoteApplication).pluginHost.stopScope(AssistantPlugin.INSTANCE_ID)
         assertNull("Stopping the owning plugin withdraws the mounted page", fresh.parent)

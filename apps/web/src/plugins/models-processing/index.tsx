@@ -14,6 +14,7 @@ export {AutomaticActivitySettings} from './AutomaticActivitySettings';
 export {AutomaticProcessing} from './AutomaticProcessing';
 export {MaterialProcessing} from './MaterialProcessing';
 export {Processing} from './Processing';
+export {ProcessingStatus} from './Processing';
 export {ProcessingOverview} from './ProcessingOverview';
 export {useProcessingRelatedPages} from './ProcessingRelatedPages';
 export {automaticProcessingPlan,processingConnectionKey} from './automatic-processing-plan';

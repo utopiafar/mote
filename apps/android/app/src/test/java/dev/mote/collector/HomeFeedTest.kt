@@ -19,13 +19,13 @@ class HomeFeedTest {
         .put("appName", "生成应用").put("textPreview", "").put("hasImage", source == "screen")
         .apply(extra)
 
-    private fun feed(vararg items: JSONObject) = items.map { HomeFeed.original(it) }
+    private fun feed(vararg items: JSONObject) = items.map { LibraryPhoneFeed.original(it) }
 
     @Test fun `page validates every row before it reaches the feed`() {
         val page = JSONObject().put("items", JSONArray()
             .put(row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z"))
             .put(row("4f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-05T03:00:00Z", "media").put("durationMs", 76000)))
-        val originals = HomeFeed.page { page }
+        val originals = LibraryPhoneFeed.page { page }
         assertEquals(2, originals.size)
         assertEquals("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", originals[0].id)
         assertEquals(MoteI18n.text("录音") + " 1:16", originals[1].kind)
@@ -35,13 +35,13 @@ class HomeFeedTest {
 
     @Test fun `malformed rows fail the whole read instead of rendering partially`() {
         val bad = JSONArray().put(row("not-a-uuid", "2026-11-06T03:00:00Z"))
-        assertThrows(IllegalArgumentException::class.java) { HomeFeed.page { JSONObject().put("items", bad) } }
+        assertThrows(IllegalArgumentException::class.java) { LibraryPhoneFeed.page { JSONObject().put("items", bad) } }
         val missing = JSONObject(row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z").toString()).apply { remove("deviceId") }
-        assertThrows(Exception::class.java) { HomeFeed.original(missing) }
+        assertThrows(Exception::class.java) { LibraryPhoneFeed.original(missing) }
         val wrongType = row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z").put("hasImage", "yes")
-        assertThrows(IllegalArgumentException::class.java) { HomeFeed.original(wrongType) }
+        assertThrows(IllegalArgumentException::class.java) { LibraryPhoneFeed.original(wrongType) }
         val badDate = row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "not-a-date")
-        assertThrows(Exception::class.java) { HomeFeed.original(badDate) }
+        assertThrows(Exception::class.java) { LibraryPhoneFeed.original(badDate) }
     }
 
     @Test fun `days sorts newest first and groups by local calendar day`() {
@@ -51,7 +51,7 @@ class HomeFeedTest {
             row("5f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-05T16:30:00Z"), // Nov 6 00:30
             row("6f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-05T08:00:00Z"), // Nov 5 16:00
         )
-        val days = HomeFeed.days(originals, zone, now)
+        val days = LibraryPhoneFeed.days(originals, zone, now)
         assertEquals(3, days.size)
         assertEquals(MoteI18n.text("今天"), days[0].label)
         assertEquals(listOf("4f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "5f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"), days[0].items.map { it.id })
@@ -69,7 +69,7 @@ class HomeFeedTest {
             row("4f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", tie),
             row("5f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-01T10:00:00Z"),
         )
-        val days = HomeFeed.days(originals, zone, now)
+        val days = LibraryPhoneFeed.days(originals, zone, now)
         assertEquals(2, days.size)
         assertEquals(MoteI18n.text("昨天"), days[0].label)
         assertEquals(listOf("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "4f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"), days[0].items.map { it.id })
@@ -80,27 +80,27 @@ class HomeFeedTest {
 
     @Test fun `day label falls back to a localized date beyond yesterday`() {
         val date = LocalDate.of(2026, 10, 20)
-        val label = HomeFeed.dayLabel(date, LocalDate.of(2026, 11, 6))
+        val label = LibraryPhoneFeed.dayLabel(date, LocalDate.of(2026, 11, 6))
         assertTrue(label.contains("2026"))
     }
 
     @Test fun `title prefers captured text then window title then app name`() {
         val withText = row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z")
             .put("textPreview", "第一行内容\n第二行被忽略")
-        assertEquals("第一行内容", HomeFeed.title(withText))
+        assertEquals("第一行内容", LibraryPhoneFeed.title(withText))
         val noText = row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z")
             .put("textPreview", "  ").put("windowTitle", "")
-        assertEquals("生成应用", HomeFeed.title(noText))
+        assertEquals("生成应用", LibraryPhoneFeed.title(noText))
         val bare = JSONObject().put("source", "note")
-        assertEquals(HomeFeed.kind(bare), HomeFeed.title(bare))
+        assertEquals(LibraryPhoneFeed.kind(bare), LibraryPhoneFeed.title(bare))
         val long = row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z")
             .put("textPreview", "长".repeat(200))
-        assertEquals(80, HomeFeed.title(long).length)
+        assertEquals(80, LibraryPhoneFeed.title(long).length)
     }
 
     @Test fun `kind mirrors the library type wording`() {
         fun kindOf(source: String, configure: JSONObject.() -> Unit = {}) =
-            HomeFeed.kind(JSONObject().put("source", source).apply(configure))
+            LibraryPhoneFeed.kind(JSONObject().put("source", source).apply(configure))
         assertEquals(MoteI18n.text("照片"), kindOf("screen") { put("hasImage", true) })
         assertEquals(MoteI18n.text("截图"), kindOf("screen") { put("hasImage", false) })
         assertEquals(MoteI18n.text("通知"), kindOf("notification"))
@@ -115,8 +115,8 @@ class HomeFeedTest {
     }
 
     @Test fun `detail always carries time then type`() {
-        val original = HomeFeed.original(row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z"))
-        val detail = HomeFeed.detail(original)
+        val original = LibraryPhoneFeed.original(row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-06T03:00:00Z"))
+        val detail = LibraryPhoneFeed.detail(original)
         assertTrue(detail.contains(" · "))
         assertTrue(detail.endsWith(" · " + MoteI18n.text("照片")))
     }
@@ -125,7 +125,7 @@ class HomeFeedTest {
         val previous = TimeZone.getDefault()
         try {
             TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
-            val original = HomeFeed.original(row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-05T16:30:00Z"))
+            val original = LibraryPhoneFeed.original(row("3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d", "2026-11-05T16:30:00Z"))
             assertEquals("2026-11-06", original.day)
         } finally {
             TimeZone.setDefault(previous)
@@ -135,13 +135,13 @@ class HomeFeedTest {
     @Test fun `offline local original is a saved row and its central acknowledgement joins by exact identity`() {
         val id = "3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"
         val localRow = row(id, "2026-11-06T03:00:00Z", "note").put("textPreview", "生成的离线记录")
-        val local = HomeFeed.localPage { JSONObject().put("items", JSONArray().put(localRow)) }
+        val local = LibraryPhoneFeed.localPage { JSONObject().put("items", JSONArray().put(localRow)) }
         assertFalse(local.single().remote)
         assertTrue(local.single().saved)
-        assertTrue(HomeFeed.detail(local.single()).endsWith(" · " + MoteI18n.text("已保存")))
+        assertTrue(LibraryPhoneFeed.detail(local.single()).endsWith(" · " + MoteI18n.text("已保存")))
 
-        val central = listOf(HomeFeed.original(localRow))
-        val joined = HomeFeed.merge(local, mapOf(id to "https://central.invalid"), central, "https://central.invalid")
+        val central = listOf(LibraryPhoneFeed.original(localRow))
+        val joined = LibraryPhoneFeed.merge(local, mapOf(id to "https://central.invalid"), central, "https://central.invalid")
         assertEquals("the acknowledged id appears once", 1, joined.size)
         assertTrue(joined.single().remote)
         assertFalse(joined.single().saved)
@@ -149,14 +149,14 @@ class HomeFeedTest {
 
     @Test fun `connection switching never joins another origin or device and access loss keeps local rows`() {
         val id = "3f4b6d8a-1c3e-4a5b-8c7d-9e0f1a2b3c4d"
-        val local = HomeFeed.localPage { JSONObject().put("items", JSONArray().put(row(id, "2026-11-06T03:00:00Z", "note"))) }
+        val local = LibraryPhoneFeed.localPage { JSONObject().put("items", JSONArray().put(row(id, "2026-11-06T03:00:00Z", "note"))) }
         val central = listOf(
-            HomeFeed.original(row(id, "2026-11-06T03:00:00Z", "note")),
-            HomeFeed.original(row(id, "2026-11-06T03:00:00Z", "note").put("deviceId", "other-device")),
+            LibraryPhoneFeed.original(row(id, "2026-11-06T03:00:00Z", "note")),
+            LibraryPhoneFeed.original(row(id, "2026-11-06T03:00:00Z", "note").put("deviceId", "other-device")),
         )
-        val switched = HomeFeed.merge(local, mapOf(id to "https://old.invalid"), central, "https://new.invalid")
+        val switched = LibraryPhoneFeed.merge(local, mapOf(id to "https://old.invalid"), central, "https://new.invalid")
         assertEquals(3, switched.size)
-        val revoked = HomeFeed.merge(local, mapOf(id to "https://old.invalid"), emptyList(), "")
+        val revoked = LibraryPhoneFeed.merge(local, mapOf(id to "https://old.invalid"), emptyList(), "")
         assertEquals(1, revoked.size)
         assertFalse(revoked.single().remote)
         assertTrue(revoked.single().saved)

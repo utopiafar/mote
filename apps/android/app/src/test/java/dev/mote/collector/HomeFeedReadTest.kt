@@ -1,7 +1,7 @@
 package dev.mote.collector
 
 import dev.mote.collector.HomeArchiveProbe
-import dev.mote.collector.HomeFeed
+import dev.mote.collector.LibraryPhoneFeed
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -16,7 +16,7 @@ class HomeFeedReadTest {
         val page = JSONObject().put("items", JSONArray().put(JSONObject()
             .put("id", id).put("capturedAt", "2026-11-04T04:00:00Z").put("source", "note")
             .put("deviceId", "generated-device").put("hasImage", false)))
-        val rows = HomeFeed.page { path ->
+        val rows = LibraryPhoneFeed.page { path ->
             assertEquals("/api/capture-browser?limit=30", path)
             page
         }
@@ -26,7 +26,7 @@ class HomeFeedReadTest {
 
         val malformed = JSONObject().put("items", JSONArray().put(JSONObject()
             .put("id", "not-a-uuid").put("capturedAt", "2026-11-04T04:00:00Z").put("source", "note").put("deviceId", "generated-device")))
-        assertThrows(IllegalArgumentException::class.java) { HomeFeed.page { malformed } }
+        assertThrows(IllegalArgumentException::class.java) { LibraryPhoneFeed.page { malformed } }
 
         val archive = HomeArchiveProbe.empty { path ->
             when {

@@ -44,6 +44,23 @@ class NativeLibraryPluginTest {
         assertNotNull(registry.provider(NativeLibraryPlugin.CAPABILITY, NativeLibraryPlugin.API_VERSION))
     }
 
+    @Test fun sourceBarUsesReportedDeviceStatusAndActiveConnectionInventory() {
+        fun report(id: String, platform: String, state: String, sync: String = "idle") = JSONObject()
+            .put("deviceId", id).put("deviceName", "Generated $id").put("platform", platform).put("status", state)
+            .put("sync", JSONObject().put("state", sync))
+        fun collector(id: String) = JSONObject().put("deviceId", id).put("scope", "collector").put("label", "Generated $id").put("platform", "ios")
+        val reports = JSONObject().put("items", JSONArray(listOf(
+            report("paused", "android", "paused"), report("offline", "macos", "paused"),
+            report("active", "android", "capturing"), report("bad-sync", "android", "capturing", "error"),
+            report("this-phone", "android", "capturing"), report("revoked", "ios", "capturing"),
+        ))).put("disconnectedDeviceIds", JSONArray(listOf("offline")))
+        val connections = JSONObject().put("items", JSONArray(listOf(collector("paired"), collector("revoked").put("revokedAt", "2026-11-20T12:00:00Z"))))
+        val sources = SourceProviderPlugin.libraryDevices(reports, connections, "this-phone")
+        assertEquals(listOf("offline", "paused", "active", "bad-sync", "paired").map { LibrarySourceFilter.Device(it) }, sources.map { it.filter })
+        assertEquals(listOf(LibrarySourceStatus.OFFLINE, LibrarySourceStatus.PAUSED, null, LibrarySourceStatus.ERROR, null), sources.map { it.status })
+        assertEquals("deviceId=paired", sources.last().filter.queryParameter())
+    }
+
     @Test fun stoppedScopeOwnsNoLibrarySurface() {
         val registry = NativePluginRegistry().apply { NativeLibraryPlugin.register(this, "generated-build") }
         val host = NativePluginHost(registry)

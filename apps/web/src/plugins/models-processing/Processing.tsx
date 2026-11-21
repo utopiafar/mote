@@ -1,6 +1,7 @@
 import {FeaturePanels} from '../../features/runtime';
 import {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {moteText} from '@mote/shared/i18n';
+import {ChevronRight,FileText} from 'lucide-react';
 import type {OperationPage,OperationDetail,OperationState,OperationSummary} from '@mote/shared';
 import {type Api,errorMessage} from '../../api';
 import type {Page} from '../../navigation';
@@ -9,7 +10,7 @@ import {operationFeed} from '../work/operation-feed';
 import {ListPagination,useCursorPages} from '../../ListPagination';
 import {containDialogFocus} from '../../dialog-focus';
 import {WorkflowProcessing} from '../../WorkflowProcessing';
-import { Loading } from '../../Loading';
+import { Loading, LoadingText } from '../../Loading';
 const states:Record<OperationState,string>={waiting:'等待处理',running:'运行中',blocked:'受阻',failed:'失败',cancelled:'已取消',succeeded:'完成',stale:'来源变化待重验',skipped:'已跳过'};
 const kinds:Record<string,string>={'recording-sync':'录音同步','material-organizer':'资料整理','memory-provider-reconcile':'记忆供应商核对',image:'图片处理',file:'文件处理',capture:'截图处理',memory:'记忆整理',workflow:'上下文处理',import:'资料导入',query:'问答',insight:'洞察',embedding:'检索向量计算','material-index':'资料检索索引'};
 const steps:Record<string,string>={'material.organizer':'资料整理','memory.provider-reconcile':'记忆供应商核对','images.ocr':'文字识别','images.understanding':'图片理解','images.derived':'图片衍生成果','material.index':'资料检索索引','files.pipeline':'内容提取','files.summary':'文件摘要','file-step':'格式处理','perception.ocr':'文字识别','perception.semantic':'图片理解','memory.batch':'记忆批次','memory.extract':'提取记忆','memory.review':'独立审核','imports.prepare':'分析原件','imports.commit':'保存记录','query.run':'问答','insight.run':'洞察','lifecycle-window':'后台整理窗口','actions.extract':'日程分析','embedding.capture':'记录向量索引','embedding.file':'文件片段向量索引','embedding.query':'检索向量计算'};
@@ -66,5 +67,18 @@ function OperationsCentre({api,onNavigate}:{api:Api;onNavigate:(page:Page)=>void
   <details className="panel processing-advanced" onToggle={e=>setWorkflowsOpen(e.currentTarget.open)}><summary>{moteText('上下文步骤操作')}</summary>{workflowsOpen&&<WorkflowProcessing api={api} embedded onNavigate={onNavigate}/>}</details>
   <div className="processing-actions">{(['files','imports','memories','ask','actions'] as const).map((page,i)=><button className="text-button" key={page} onClick={()=>onNavigate(page)}>{moteText(['文件与录音','导入','记忆','问一问','行动'][i])}</button>)}</div>
  </div>;
+}
+/** Compact current processing shown inside diagnostics. The processing page
+ * keeps filters, pagination and per-step detail. */
+export function ProcessingStatus({api,onPage}:{api:Api;onPage:(page:Page)=>void}){
+ const running=useResource<OperationPage>(api,'/api/operations?state=running&limit=3');
+ const waiting=useResource<OperationPage>(api,'/api/operations?state=waiting&limit=3');
+ const error=running.error??waiting.error,loading=(running.loading&&!running.data)||(waiting.loading&&!waiting.data);
+ const items=[...(running.data?.items??[]),...(waiting.data?.items??[])];
+ return <section className="processing-status" aria-label={moteText('处理状态')} aria-busy={loading}>
+  {error!==undefined&&<p role="alert">{errorMessage(error)} <button type="button" className="text-button" onClick={()=>{running.refresh();waiting.refresh();}}>{moteText('重试')}</button></p>}
+  {loading&&!items.length?<LoadingText/>:items.length?items.map(operation=><button type="button" key={operation.id} className="processing-entry-row" onClick={()=>onPage('processing')}><span className="model-profile-symbol"><FileText size={18}/></span><span><strong>{moteText(kinds[operation.kind]||'上下文处理')}</strong></span><span className="processing-current"><Badge state={operation.state} reason={operation.waitingReason}/></span><ChevronRight size={15}/></button>):<p>{moteText('目前没有处理任务')}</p>}
+  <button type="button" className="text-button" onClick={()=>onPage('processing')}>{moteText('处理任务')} →</button>
+ </section>;
 }
 export function Processing({api,extensions=false,embedded=false,onNavigate}:{api:Api;extensions?:boolean;embedded?:boolean;onNavigate:(page:Page)=>void}){return extensions?<WorkflowProcessing api={api} extensions embedded={embedded} onNavigate={onNavigate}/>:<OperationsCentre api={api} onNavigate={onNavigate}/>;}
