@@ -114,6 +114,24 @@ test('LB2-03 an empty library shows one empty state with device and import actio
  assert.equal(opened[0].textContent,'导入');
 });
 
+test('LB2-03 the empty state add-device action opens the existing pairing sheet from the source bar',async t=>{
+ const {root,d}=await fixture(t);
+ const api=apiWith(path=>{
+  if(path.startsWith('/api/library/browse?'))return page([]);
+  if(path==='/api/devices')return {items:[],disconnectedDeviceIds:[]};
+  if(path==='/api/connections')return {items:[]};
+  if(path==='/api/sources')return {items:[]};
+  if(path==='/api/configuration')return {domains:[]};
+  throw Error('Unexpected generated request '+path);
+ });
+ await act(async()=>root.render(React.createElement(LibraryMaterials,{api,revision:0,onSelect:()=>{},sourceBar:true})));
+ const empty=Array.from(d.querySelectorAll<HTMLButtonElement>('.empty .button-row button')).find(item=>item.textContent==='添加设备');
+ assert.ok(empty);
+ await act(async()=>empty.click());
+ assert.ok(d.querySelector('[role="dialog"]'));
+ assert.equal(d.querySelector('[role="dialog"] h2')?.textContent,'添加设备');
+});
+
 test('LB2-04 a changed library navigation revision removes material deleted elsewhere',async t=>{
  const {root,d}=await fixture(t);
  let rows:OwnerBrowsePage['items']=[materialEntry(material,when)];
