@@ -31,11 +31,13 @@ async function metadata(){
  return {address,token,controlAddress,conversationId,workId,title:current.title,workTitle:work.goal,answer:latest.result?.answer??'',excerpt:latest.result?.citations[0]?.excerpt??'',olderQuestion:first.question,olderAnswer:first.result?.answer??'',olderExcerpt:first.result?.citations[0]?.excerpt??'',evidenceStale:latest.evidenceStale===true,evidenceDeleted:latest.evidenceDeleted===true,turnCount:current.turnCount,workArtifacts:work.artifacts.length,modelCalls};
 }
 async function reset(){
- generation++;modelCalls=0;original=randomUUID();artifactId=createHash('sha256').update('generated-history-'+generation).digest('hex');conversationId='';
+ generation++;modelCalls=0;original=randomUUID();artifactId=createHash('sha256').update('generated-history-'+generation).digest('hex');
+ if(conversationId)node.conversations.delete(conversationId);
+ conversationId=(await request('/api/conversations/main')).id;
  await node.store.ingest({id:original,deviceId:'generated-android-history',deviceName:'Generated Android history',platform:'import',source:'note',capturedAt:observedAt,durationMs:0,ocrText:Array.from({length:21},(_,i)=>'GENERATED_HISTORY_CITATION_'+String(i+1).padStart(2,'0')).join('\n')});
  save();
  for(let index=1;index<=21;index++){
-  const response=await request('/api/query',{question:'Generated Android history '+generation+' turn '+String(index).padStart(2,'0'),...(conversationId?{conversationId}:{})});conversationId=response.conversationId;
+  const response=await request('/api/query',{question:'Generated Android history '+generation+' turn '+String(index).padStart(2,'0'),conversationId});conversationId=response.conversationId;
  }
  const runs=(await request('/api/query-runs')).items.filter((run:any)=>run.conversationId===conversationId);assert.ok(runs.length);workId='query:'+runs[0].id;
  const value=await metadata();assert.equal(value.turnCount,21);assert.ok(value.answer&&value.excerpt&&value.olderAnswer&&value.olderExcerpt);assert.ok(value.workArtifacts>0);await writeFile(output,JSON.stringify(value,null,2),{mode:0o600});return value;

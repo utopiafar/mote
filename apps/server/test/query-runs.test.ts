@@ -44,7 +44,7 @@ test('background admission survives client departure, deduplicates and persists 
   assert.equal((await app.inject({url,headers:{authorization:`Bearer ${credential.token}`}})).statusCode,200);
   assert.equal((await app.inject({url:url.replace('groupBy=module','groupBy=invalid'),headers})).statusCode,400);
   assert.equal((await app.inject({url:url+'&status=invalid',headers})).statusCode,400);
-  await app.inject({method:'DELETE',url:`/api/conversations/${finished.conversationId}`,headers});
+  assert.equal((await app.inject({method:'DELETE',url:`/api/conversations/${finished.conversationId}`,headers})).statusCode,404);
   assert.ok(!(await app.inject({url:`/api/query-runs/${id}`,headers})).body.includes('Generated answer'));
   assert.equal((store.db.prepare('SELECT COUNT(*) AS n FROM model_usage').get() as any).n,1);
 });

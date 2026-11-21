@@ -166,16 +166,13 @@ class NativeUiPackInstrumentedTest {
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra("page", "ASK")).awaitMainUi().use { scenario ->
             await(scenario, "Native owner login") { visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "中央管理令牌" } }
             scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "中央管理令牌" }.setText(owner); click(activity, "登录并继续") }
-            await(scenario, "Native Ask is ready") { visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "问一问" } }
             fun idle(activity: MainActivity): Boolean {
                 val field = MainActivity::class.java.getDeclaredField("centralContent").apply { isAccessible = true }
                 return (field.get(activity) as? CentralContent)?.isWorking == false
             }
-            await(scenario, "Previous generated history finishes restoring") { idle(it) }
-            await(scenario, "The conversation list owns the new-conversation entry") { visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "问一问" && row.isEnabled } }
+            await(scenario, "The main conversation composer is ready") { idle(it) && visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "你的问题" && row.isEnabled } }
             val question = "Generated UI pack work ${UUID.randomUUID()}"
-            scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "问一问" }.setText(question); visible(activity).first { it.isClickable && it.contentDescription?.toString() == "发送" }.performClick() }
-            await(scenario, "New conversation is ready through the native entry point") { idle(it) && visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "你的问题" } }
+            scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText(question); visible(activity).first { it.isClickable && it.contentDescription?.toString() == "发送" }.performClick() }
             await(scenario, "Generated deterministic agent answer is actually archived") { idle(it) && visible(it).filterIsInstance<TextView>().any { row -> row.text.contains("Generated native answer") } && visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "你的问题" && row.text.isEmpty() } }
             val draft = "Generated unsent Ask draft remains private"
             scenario.onActivity { activity -> visible(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText(draft); activity.openMoteLocalPage("ACTIVITY") }
@@ -196,9 +193,8 @@ class NativeUiPackInstrumentedTest {
             await(scenario, "Activity detail selection and result section restore by origin") { visible(it).filterIsInstance<Button>().any { row -> row.text == "查看成果" } }
             scenario.onActivity { click(it, "查看成果") }
             await(scenario, "Actual saved conversation opens read-only") { visible(it).filterIsInstance<TextView>().any { row -> row.text.contains("Generated native answer") } }
-            scenario.onActivity { activity -> render(activity, "work-result"); activity.openGeneratedHome(); visible(activity).single { it.tag == "home-ask-action" }.performClick() }
-            await(scenario, "Returning to Ask shows the conversation list") { visible(it).any { row -> row.contentDescription?.toString()?.startsWith(question) == true } }
-            scenario.onActivity { activity -> visible(activity).single { row -> row.contentDescription?.toString()?.startsWith(question) == true }.performClick() }
+            scenario.onActivity { activity -> render(activity, "work-result"); visible(activity).single { it.tag == "local-tab:chat" }.performClick() }
+            await(scenario, "Returning to Chat shows the saved answer") { visible(it).filterIsInstance<TextView>().any { row -> row.text.contains("Generated native answer") } }
             await(scenario, "Returning to Ask preserves the separate unsent draft") { visible(it).filterIsInstance<EditText>().any { row -> row.contentDescription == "你的问题" && row.text.toString() == draft } }
             val binding = variant()
             var old: MainActivity? = null
