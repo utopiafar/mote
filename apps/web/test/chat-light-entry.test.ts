@@ -77,11 +77,11 @@ test('a Material revision change before the draft is sent leaves the reference u
 
 test('the real pending acquaintance can be cancelled in Conversations and a late controlled answer is not published',async t=>{
  const f=await fixture(t,true);await f.open();await until(()=>!f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,'verified Material draft');await f.send();await f.entered.promise;
- await until(()=>[...f.d.querySelectorAll('button')].some(button=>button.textContent==='停止这条回答'),'durable pending message');
- await act(async()=>[...f.d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==='停止这条回答')!.click());
+ await until(()=>[...f.d.querySelectorAll('button')].some(button=>button.getAttribute('aria-label')==='停止这条回答'),'durable pending message');
+ await act(async()=>[...f.d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.getAttribute('aria-label')==='停止这条回答')!.click());
  const accepted=f.calls.find(call=>call.path==='/api/conversations/messages'&&call.method==='POST')!.body;
  await until(()=>f.node.conversations.messageByClientRequestId(accepted.clientRequestId)?.status==='cancelled','actual owner cancel receipt');
  f.held.release();
- await until(()=>f.d.body.textContent!.includes('这条回答已取消，晚到的结果不会写回。'),'cancelled receipt DOM');
+ await until(()=>Boolean(f.d.querySelector('.chat-message[data-state=cancelled]')),'cancelled receipt DOM');
  assert.equal(f.d.body.textContent!.includes('Generated Light acquaintance from the selected Material.'),false);assert.equal(f.seen.length,1);assert.equal(f.calls.filter(call=>call.path.endsWith('/cancel')&&call.method==='POST').length,1);
 });

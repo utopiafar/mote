@@ -1,5 +1,6 @@
 import React,{useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import type {AssistantTaskRecord,AssistantActionDraft,QueryScope} from '@mote/shared';
+import {FileText} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {Answer,Api} from '../../api';
 import {FeaturePanels} from '../../features/runtime';
@@ -44,20 +45,24 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
   finally{if(openRequest.current===controller)openRequest.current=null;}
  })();};
  return <>
-  {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id}>
-   {task.goal&&<p>{task.goal}</p>}
-   <strong>{moteText('任务状态')}</strong>{' · '}
-   <span role="status">{task.state==='completed'?moteText('已完成'):task.state==='running'?moteText('正在进行'):
+  {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id} data-state={task.state}>
+   {task.state!=='completed'&&task.goal&&<p>{task.goal}</p>}
+   {task.state!=='completed'&&<><strong>{moteText('任务状态')}</strong>{' · '}
+   <span role="status" data-message-kind={task.state==='running'||task.state==='waiting'?'progress':undefined}>{task.state==='running'?moteText('正在进行'):
     task.state==='waiting'?moteText('排队中'):task.state==='stale'?moteText('已失效'):
-    task.state==='cancelled'?moteText('已取消'):moteText('未完成')}</span>
+    task.state==='cancelled'?moteText('已取消'):moteText('未完成')}</span></>}
    {task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {reason==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {reason==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}
    {task.state==='needs_input'&&reason&&reason!=='no_usable_evidence'&&reason!=='model_context_budget_unavailable'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {task.state==='failed'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
    {task.state==='needs_input'&&workId&&<FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.work.activity',schemaVersion:1,representation:'overview',ref:workId,revision:String(task.revision),title:'',text:''}}/>}
-   {task.state==='completed'&&result&&renderAnswer(result,ref=>open(task.id,ref))}
-   {task.state==='completed'&&result&&Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
+   {task.state==='completed'&&result&&<details className="chat-task-result" data-message-kind="result">
+    <summary><FileText size={18} aria-hidden="true"/><span><strong>{task.goal||moteText('结果')}</strong>
+      {result.citations.length>0&&<small>{moteText('引用 {0} 份资料', result.citations.length)}</small>}</span><span>{moteText('打开')}</span></summary>
+    {renderAnswer(result,ref=>open(task.id,ref))}
+    {Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
+   </details>}
   </section>)}
   {error&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
  </>;

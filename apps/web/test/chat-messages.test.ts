@@ -1,0 +1,240 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {act} from 'react';
+import sharp from 'sharp';
+import type {Answer} from '../src/api';
+import {ApiError} from '../src/api';
+import {resources} from '../src/resource-cache';
+import {currentInstructionFixture, gate} from '../../server/test/fixtures/current-owner-instruction';
+import {taskSteeringFixture} from '../../server/test/fixtures/assistant-task-steering';
+import {at, chatDom, chatId, chatPath, generatedApi, injectedApi, turnId} from './fixtures/chat-dom';
+
+test('CH1-02 and CH1-11 stop the active answer through its exact durable message receipt', {timeout: 30000}, async t => {
+  const entered = gate(), release = gate();
+  t.after(release.release);
+  const server = await currentInstructionFixture(t, async () => {
+    entered.release();
+    await release.promise;
+    return {answer: 'Generated late answer', citationIds: []};
+  });
+  const f = await chatDom(t);
+  const writes: string[] = [];
+  const api = injectedApi(server.node.app, server.headers, (path, init) => {
+    if (init.method === 'POST') writes.push(path);
+  });
+  await f.render(api);
+  await f.waitFor(() => f.d.querySelector('.chat-page[aria-busy="false"]'), 'open main conversation');
+  await f.field('.chat-compose-form textarea', 'Generated long owner instruction');
+  await f.submit();
+  await act(async () => {await entered.promise;});
+  await f.waitFor(() => f.d.querySelector('[data-message-kind="progress"]'), 'server-confirmed progress');
+  const messageId = f.element('.chat-message').id.slice('conversation-turn-'.length);
+  const progress = f.element('[data-message-kind="progress"]');
+  assert.equal(progress.querySelectorAll('button').length, 1);
+  assert.equal(f.d.querySelector('.chat-answer-actions'), null);
+  await f.click('[data-message-kind="progress"] button');
+  await f.waitFor(() => f.d.querySelector('.chat-message[data-state="cancelled"]'), 'cancelled receipt rendered');
+  assert.equal(server.node.conversations.message(messageId).status, 'cancelled');
+  assert.deepEqual(writes, ['/api/conversations/messages', chatPath(server.conversationId) + '/messages/' + messageId + '/cancel']);
+  release.release();
+  assert.equal(f.d.querySelector('[data-message-kind="progress"]'), null);
+  assert.doesNotMatch(f.d.body.textContent!, /Generated late answer/);
+});
+
+test('CH1-03 sends a follow-up through the message queue and shows the real Steering relationship without a second progress row',
+  {timeout: 30000}, async t => {
+    const server = await taskSteeringFixture(t);
+    const original = await server.start();
+    server.setMode('hold-terminal');
+    const f = await chatDom(t);
+    const writes: {path: string; body: {clientRequestId: string}}[] = [];
+    const api = injectedApi(server.node.app, server.headers, (path, init) => {
+      if (init.method === 'POST') writes.push({path, body: JSON.parse(String(init.body))});
+    });
+    await f.render(api);
+    await f.waitFor(() => f.d.querySelector('.assistant-task-result'), 'original task projection');
+    await f.field('.chat-compose-form textarea', 'GENERATED-FORMAL-TASK-CORRECTION');
+    assert.equal(f.element<HTMLButtonElement>('.send-button').disabled, false);
+    await f.submit();
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].path, '/api/conversations/messages');
+    await f.waitFor(() => server.node.conversations.messageByClientRequestId(writes[0].body.clientRequestId),
+      'follow-up admission committed');
+    const accepted = server.node.conversations.messageByClientRequestId(writes[0].body.clientRequestId)!;
+    const receipt = await act(async () => await server.settle(accepted.id));
+    assert.equal(receipt.taskSteering?.targetTaskId, original.taskId);
+    assert.equal(receipt.taskSteering?.state, 'accepted');
+    await f.waitFor(() => f.d.querySelector('#conversation-turn-' + receipt.id + ' .conversation-task-amendment'),
+      'the host-projected supplement is visible');
+    assert.equal(f.d.querySelector('#conversation-turn-' + receipt.id + ' [data-message-kind="progress"]'), null);
+    assert.equal(server.rpc().filter(record => record.method === 'turn/steer').length, 1);
+    assert.equal(f.d.querySelectorAll('.assistant-task-result').length, 1);
+  });
+
+test('CH1-04 the calendar card uses the Action receipt time and calendar, and retries a failed read', async t => {
+  const f = await chatDom(t);
+  const id = '10000000-0000-4000-8000-000000000004';
+  let unread = true, actionReads = 0;
+  const writes: string[] = [];
+  const result = {answer: 'Generated model text cannot assert a calendar write', runId: 'calendar', citations: [], trace: [],
+    currentAction: {id, kind: 'calendar.create'}};
+  const api = generatedApi((path, init) => {
+    if (init.method === 'POST') writes.push(path);
+    if (path.endsWith('/main')) return {id: chatId};
+    if (path === chatPath()) return {id: chatId, scope: {}, revision: 1,
+      turns: [{id: turnId, status: 'completed', question: 'Generated calendar request', createdAt: at, result}]};
+    assert.equal(path, '/api/actions/' + id);
+    actionReads++;
+    if (unread) throw new ApiError('Generated action read failure', 503);
+    return {id, kind: 'calendar.create', status: 'succeeded', version: 4,
+      ownerInstruction: {conversationId: chatId, messageId: turnId},
+      target: {deviceId: 'generated', calendarId: 'Generated calendar'},
+      event: {title: 'Generated review', start: '2026-11-25T14:00:00+08:00', end: '2026-11-25T16:00:00+08:00',
+        timeZone: 'Asia/Shanghai', allDay: false, location: '', description: ''}};
+  });
+  await f.render(api);
+  assert.ok(f.d.querySelector('[data-message-kind="calendar"][data-state="read-failed"][role="alert"]'));
+  assert.equal(f.d.querySelector('.chat-answer'), null);
+  unread = false;
+  await f.click('[data-message-kind="calendar"] button');
+  const card = f.element('[data-action-id="' + id + '"][data-state="succeeded"]');
+  assert.match(card.textContent!, /14:00.*16:00/);
+  assert.match(card.textContent!, /Generated calendar/);
+  assert.match(card.textContent!, /已创建/);
+  assert.match(card.querySelector('a')!.hash, new RegExp(id));
+  assert.equal(actionReads, 2);
+  assert.deepEqual(writes, []);
+});
+
+test('CH1-06 archive upload precedes message admission and the saved message reads its thumbnail', {timeout: 30000}, async t => {
+  const server = await currentInstructionFixture(t, () => ({answer: 'Generated archived image reply', citationIds: []}));
+  const f = await chatDom(t);
+  const calls: {path: string; body?: string}[] = [];
+  const api = injectedApi(server.node.app, server.headers, (path, init) => {
+    calls.push({path, body: typeof init.body === 'string' ? init.body : undefined});
+  });
+  await f.render(api);
+  await f.waitFor(() => f.d.querySelector('.chat-page[aria-busy="false"]'), 'open generated conversation');
+  const image = await sharp({create: {width: 3, height: 3, channels: 3, background: '#224466'}}).png().toBuffer();
+  const file = new File([image], 'generated-review.png', {type: 'image/png', lastModified: Date.parse(at)});
+  const picker = f.element<HTMLInputElement>('input[type="file"]');
+  async function select(files: File[]) {
+    await act(async () => {
+      Object.defineProperty(picker, 'files', {value: files, configurable: true});
+      picker.dispatchEvent(new f.w.Event('change', {bubbles: true}));
+    });
+  }
+  await select([file, file, file, file, file]);
+  assert.equal(calls.some(call => call.path.includes('file-sync')), false);
+  assert.equal(f.d.querySelector('.chat-error')?.getAttribute('role'), 'alert');
+  await select([file]);
+  await f.waitFor(() => f.d.querySelector('.chat-attachment-list .chat-attachment:not(.chat-image-upload)'),
+    'durable archive acknowledgement');
+  await f.field('.chat-compose-form textarea', 'Generated message with an image');
+  await f.submit();
+  const uploaded = calls.findIndex(call => call.path.endsWith('/commit'));
+  const sent = calls.findIndex(call => call.path === '/api/conversations/messages');
+  assert.ok(uploaded >= 0 && uploaded < sent);
+  const [attachmentId] = JSON.parse(calls[sent].body!).attachmentIds;
+  await act(async () => {
+    const archive = await server.api('GET', '/api/files?mimePrefix=image%2F');
+    assert.equal(archive.statusCode, 200, archive.body);
+    assert.equal(archive.json().items.filter((item: {captureId: string}) => item.captureId === attachmentId).length, 1);
+  });
+  await f.waitFor(() => f.d.querySelector('.conversation-turn .chat-attachment-preview img'), 'authorized conversation image');
+  assert.ok(calls.some(call => call.path === '/api/files/' + attachmentId + '/thumbnail'));
+  await f.click('.conversation-turn .chat-attachment-preview');
+  assert.deepEqual(f.opened, ['capture:' + attachmentId]);
+});
+
+const cite = '10000000-0000-4000-8000-000000000005';
+const answer: Answer = {answer: 'Generated answer with one original [' + cite + ']', runId: 'generated-answer',
+  citations: [{id: cite, appName: 'Generated original', capturedAt: at, excerpt: 'Generated source excerpt'}], trace: []};
+const replied = {id: turnId, question: 'Generated owner question', createdAt: at, status: 'completed', result: answer};
+
+test('CH1-09 numbered citations check availability and their exact message before opening the original', async t => {
+  const f = await chatDom(t);
+  let available = false;
+  const reads: string[] = [];
+  const api = generatedApi(path => {
+    reads.push(path);
+    if (path.endsWith('/main')) return {id: chatId};
+    if (path.includes('/references/')) return {id: cite, available};
+    assert.equal(path, chatPath());
+    return {id: chatId, scope: {}, revision: 1, turns: [replied]};
+  });
+  await f.render(api);
+  assert.equal(f.element('.inline-citation').textContent, '1');
+  await f.click('.inline-citation');
+  assert.equal(f.opened.length, 0);
+  await f.click('[role="dialog"] header button');
+  available = true;
+  await f.click('.inline-citation');
+  assert.deepEqual(reads.slice(-2), [chatPath() + '/references/' + cite, chatPath()]);
+  assert.deepEqual(f.opened, ['capture:' + cite]);
+});
+
+test('CH1-10 copies the answer and saves the original and owner addition separately from More', async t => {
+  const f = await chatDom(t);
+  const copies: string[] = [], notes: Record<string, any>[] = [];
+  const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: async (text: string) => {copies.push(text);}}});
+  t.after(() => clipboard ? Object.defineProperty(navigator, 'clipboard', clipboard) : Reflect.deleteProperty(navigator, 'clipboard'));
+  const api = generatedApi((path, init) => {
+    if (path.endsWith('/main')) return {id: chatId};
+    if (path === '/api/notes') {
+      const note = JSON.parse(String(init.body));
+      notes.push(note);
+      return {id: note.id};
+    }
+    assert.equal(path, chatPath());
+    return {id: chatId, scope: {}, revision: 1, turns: [replied]};
+  });
+  await f.render(api);
+  await f.click('.chat-answer-actions > button');
+  assert.deepEqual(copies, [answer.answer]);
+  assert.equal(f.element('.chat-answer-actions [role="status"]').textContent, '已复制');
+  assert.equal(f.element<HTMLDetailsElement>('.chat-answer-more').open, false);
+  await f.click('.chat-answer-more summary');
+  await f.click('.chat-answer-menu .save-conversation-record button');
+  const panel = f.element('[role="dialog"]');
+  assert.ok(panel.querySelector('.quoted-citation'));
+  assert.equal(panel.querySelector('.conversation-save-origin .inline-citation'), null);
+  await f.field('.conversation-save textarea', 'Generated owner addition');
+  await f.click('[role="dialog"] footer button[type="submit"]');
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].text, 'Generated owner addition');
+  assert.deepEqual(notes[0].metadata.noteOrigin, {
+    kind: 'conversation', text: replied.question + '\n\n' + answer.answer, conversationId: chatId, messageIds: [turnId],
+  });
+});
+
+test('CH1-01 current recording responses carry only answer text and do not supply a receipt type', {timeout: 30000}, async t => {
+  const acknowledgement = '记下了，跑了 5 公里。';
+  const server = await currentInstructionFixture(t, () => ({answer: acknowledgement, citationIds: [], draft: null}));
+  const sent = await server.post('跑了 5 公里');
+  const message = await server.settled(sent.message.id);
+  assert.equal(message.status, 'completed');
+  assert.equal(message.result?.answer, acknowledgement);
+  assert.equal(message.result?.draft, undefined);
+  assert.equal(message.result?.currentAction, undefined);
+  const f = await chatDom(t);
+  await f.render(injectedApi(server.node.app, server.headers));
+  await f.waitFor(() => f.d.querySelector('.chat-answer .markdown'), 'ordinary server answer');
+  assert.equal(f.element('.chat-answer .markdown').textContent, acknowledgement);
+});
+
+test('invalidated answers and their controls are withdrawn', async t => {
+  const f = await chatDom(t);
+  let stale = false;
+  const api = generatedApi(path => {
+    if (path.endsWith('/main')) return {id: chatId};
+    return {id: chatId, scope: {}, revision: stale ? 2 : 1, turns: [{...replied, evidenceDeleted: stale}]};
+  });
+  await f.render(api);
+  assert.ok(f.d.querySelector('.chat-answer-actions'));
+  stale = true;
+  await act(async () => resources(api).invalidate(path => path === chatPath()));
+  assert.ok(f.d.querySelector('[data-message-kind="stale"]'));
+  assert.equal(f.d.querySelector('.chat-answer-actions, .chat-answer'), null);
+});

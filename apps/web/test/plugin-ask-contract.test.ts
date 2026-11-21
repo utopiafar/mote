@@ -88,20 +88,20 @@ test('a real query run enters the Ask plugin with progress, its final answer and
     return {answer:'Generated plugin answer ['+citation+']',citations:[{id:citation,capturedAt:when,appName:'Generated Ask source',excerpt:'Generated Ask citation source.'}],trace:[{tool:'search_context',arguments:{query:'generated'},count:1}],runId:answerRunId,evidenceDependencies:{version:1,complete:true,ids:[citation]}};
   }});
   await node.store.ingest(capture(citation));
-  const {api}=apiFor(node,token),runId=randomUUID();
-  const accepted=await node.app.inject({method:'POST',url:'/api/query-runs',headers:{authorization:'Bearer '+token},payload:{id:runId,input:{question:'Generated plugin question',timeZone:'UTC'}}});
+  const {api}=apiFor(node,token),conversationId=node.conversations.main().id;
+  const accepted=await node.app.inject({method:'POST',url:'/api/conversations/messages',headers:{authorization:'Bearer '+token},
+    payload:{clientRequestId:randomUUID(),conversationId,question:'Generated plugin question',scope:{kind:'all',timeZone:'UTC'}}});
   assert.equal(accepted.statusCode,202,accepted.body);
   await running;
   const controller=createAskController({api,intervalMs:10,retryMs:10});
   controller.start();
   const {d,opened}=await render(t,api,controller);
-  await until(()=>d.body.textContent?.includes('正在回答')===true,'running progress');
-  assert.ok(d.querySelector('.query-progress-compact'),'the plugin renders the real run progress');
+  await until(()=>Boolean(d.querySelector('[data-message-kind="progress"]')),'running progress');
+  assert.ok(d.querySelector('.conversation-pending'),'the plugin renders the real run progress');
   release();
   await until(()=>d.body.textContent?.includes('Generated plugin answer')===true,'final answer');
-  const conversation=(await node.app.inject({url:'/api/conversations',headers:{authorization:'Bearer '+token}})).json().items[0];
-  assert.ok(conversation,'the terminal run created its conversation');
-  const detail=(await node.app.inject({url:'/api/conversations/'+conversation.id,headers:{authorization:'Bearer '+token}})).json();
+  const detail=(await node.app.inject({url:'/api/conversations/'+conversationId,headers:{authorization:'Bearer '+token}})).json();
+  assert.equal(detail.id,conversationId);
   assert.equal(detail.turns[0].question,'Generated plugin question');
   assert.equal(detail.turns[0].result.answer,'Generated plugin answer ['+citation+']');
   assert.equal(detail.turns[0].result.runId,answerRunId);
@@ -115,15 +115,15 @@ test('a real query run enters the Ask plugin with progress, its final answer and
 test('a real per-turn save keeps the server note receipt and the exact turn relationship',async t=>{
   const {node,token}=await fixture(t),citation=randomUUID();
   await node.store.ingest(capture(citation));
-  const saved=node.conversations.append(undefined,{question:'Generated saved question'},{
+  const main=node.conversations.get(node.conversations.main().id);
+  const saved=node.conversations.append(main,{question:'Generated saved question'},{
     answer:'Generated saved answer ['+citation+']',citations:[{id:citation,capturedAt:when,appName:'Generated Ask source',excerpt:'Generated Ask citation source.'}],
     trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[citation]},
   });
   const notes:{path:string;body:any}[]=[],{api}=apiFor(node,token,(path,init)=>{if(path==='/api/notes'&&init.method==='POST')notes.push({path,body:JSON.parse(String(init.body))});});
   const {d,opened}=await render(t,api);
-  await until(()=>[...d.querySelectorAll<HTMLButtonElement>('.conversation-item')].some(button=>button.textContent?.includes('Generated saved question')),'conversation history');
-  await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('.conversation-item')].find(button=>button.textContent?.includes('Generated saved question'))!.click());
-  await until(()=>d.body.textContent?.includes('Generated saved answer')===true,'saved turn');
+  await until(()=>d.body.textContent?.includes('Generated saved answer')===true,'main conversation saved turn');
+  await act(async()=>d.querySelector<HTMLElement>('.chat-answer-more summary')!.click());
   await act(async()=>{
     const button=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(value=>value.textContent==='保存为记录');assert.ok(button);button.click();
   });
