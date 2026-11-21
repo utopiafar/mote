@@ -7713,7 +7713,6 @@
   "安装不改变授权或 Memory": "Installing does not grant access or change Memory",
   "停止请求已发出，结果尚未确认": "Stop requested; the result is unconfirmed.",
   "外部结果可能尚未结束": "External work may still be running.",
-  "真实接入会产生模型费用": "A real connection incurs model costs.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Clear only a local copy whose upload was confirmed. Keep its time, source and receipt; the Central archive and your source files are unaffected.",
   "纠正此段文字": "Correct this text",
   "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nKept {1} · pending {2} · attention {3}",

@@ -321,7 +321,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         close(); listVisible = false; body.removeAllViews(); screens.setBack { load() }
         ui.text(MoteI18n.text("更换方案预览"), NativeFontRole.TITLE_MOBILE); ui.text(data.activePlan.name + " → " + plan.name, NativeFontRole.SECTION)
         capabilities(plan.capabilities, ui.card()); val scope = ui.field(MoteI18n.text("历史授权范围"), "default")
-        val fee = CheckBox(ui).apply { text = MoteI18n.text("真实接入会产生模型费用") }; body.addView(fee); MoteUi.styleTree(fee)
+        val fee = CheckBox(ui).apply { text = MoteI18n.text("已确认范围。真实接入可能产生模型与 Embedding 费用，费用以实际服务用量为准。") }; body.addView(fee); MoteUi.styleTree(fee)
         val start = ui.button(MoteI18n.text("开始准备"), true) { val selectedScope = scope.text.toString().trim(); require(fee.isChecked && selectedScope.isNotBlank()); submit(PluginControlClient.prepare(plan.id, selectedScope, data.revision, fee.isChecked)) { load() } }.apply { isEnabled = false }
         fee.setOnCheckedChangeListener { _, checked -> start.isEnabled = checked }
         ui.button(MoteI18n.text("取消")) { load() }

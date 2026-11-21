@@ -7713,7 +7713,6 @@
   "安装不改变授权或 Memory": "Instalar no cambia el acceso ni Memory",
   "停止请求已发出，结果尚未确认": "Parada solicitada; resultado sin confirmar.",
   "外部结果可能尚未结束": "El trabajo externo puede seguir en curso.",
-  "真实接入会产生模型费用": "Una conexión real genera costes de modelo.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Eliminar solo una copia local cuya carga se haya confirmado. Se conservan la fecha, la fuente y el recibo; no se modifican el archivo de Central ni tus archivos de origen.",
   "纠正此段文字": "Corregir este texto",
   "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nConservados {1} · pendientes {2} · por tratar {3}",

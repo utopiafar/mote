@@ -7714,7 +7714,6 @@ export const german: Readonly<Record<string, string>> = {
   "安装不改变授权或 Memory": "Installation ändert weder Zugriff noch Memory",
   "停止请求已发出，结果尚未确认": "Stopp angefragt; Ergebnis unbestätigt.",
   "外部结果可能尚未结束": "Externe Arbeit kann noch laufen.",
-  "真实接入会产生模型费用": "Eine echte Verbindung verursacht Modellkosten.",
   "仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。": "Nur eine lokale Kopie mit bestätigtem Upload löschen. Zeit, Quelle und Empfangsbeleg bleiben erhalten; das Central-Archiv und Ihre Quelldateien bleiben unberührt.",
   "纠正此段文字": "Diesen Text korrigieren",
   "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nBehalten {1} · ausstehend {2} · offen {3}",
