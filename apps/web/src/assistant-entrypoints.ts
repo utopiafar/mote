@@ -13,6 +13,14 @@ export interface AssistantEntrypoint {
   readonly requires?:readonly FeatureRequirement[];
 }
 
+export const assistantWorkbenchEntrypoint={
+  pageId:'assistantWorkbench',
+  href:'#/assistant/workbench',
+  title:'工作台',
+  purpose:'项目、人物、旅行和阅读的固定视图。',
+  requires:[{id:'http:GET:/api/assistant/workbench',version:'1',host:'server'}],
+} as const satisfies AssistantEntrypoint;
+
 export const assistantEntrypoints:readonly AssistantEntrypoint[]=Object.freeze([
   {
     pageId:'assistantMatters',
@@ -28,13 +36,7 @@ export const assistantEntrypoints:readonly AssistantEntrypoint[]=Object.freeze([
     purpose:'查看、纠正和遗忘助理对你的理解。',
     requires:['http:GET:/api/memories','http:GET:/api/context-trees','http:GET:/api/assistant/commitments'],
   },
-  {
-    pageId:'assistantWorkbench',
-    href:'#/assistant/workbench',
-    title:'工作台',
-    purpose:'项目、人物、旅行和阅读的固定视图。',
-    requires:[{id:'http:GET:/api/assistant/workbench',version:'1',host:'server'}],
-  },
+  assistantWorkbenchEntrypoint,
 ]);
 
 /** The same page/collection/capability resolver every directory link uses. */

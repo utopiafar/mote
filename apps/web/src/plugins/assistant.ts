@@ -1,6 +1,6 @@
 import type {BuiltinWebPlugin} from './types';
 import React,{createElement,lazy} from 'react';
-import {assistantEntrypoints} from '../assistant-entrypoints';
+import {assistantEntrypoints,assistantWorkbenchEntrypoint} from '../assistant-entrypoints';
 import {moteText} from '@mote/shared/i18n';
 import {AssistantWorkbenchPage} from './assistant-workbench';
 import {AssistantMatters} from './assistant/AssistantMatters';
@@ -28,8 +28,8 @@ export const assistant:BuiltinWebPlugin={id:'mote.assistant',pages:[{
   requires:['http:GET:/api/assistant/goals'],
   render:({api,onOpen})=>createElement(GoalsPage,{api,onOpen}),
 },{
-  id:'assistantWorkbench',route:'assistant/workbench',label:moteText('工作台'),featureId:'mote.assistant',
-  requires:[{id:'http:GET:/api/assistant/workbench',version:'1',host:'server'}],
+  id:assistantWorkbenchEntrypoint.pageId,route:assistantWorkbenchEntrypoint.href.slice(2),label:moteText('工作台'),featureId:'mote.assistant',
+  requires:[...assistantWorkbenchEntrypoint.requires],
   render:props=>createElement(AssistantWorkbenchPage,props),
 },{
  id:'assistantMatters',route:'assistant/matters',label:moteText('事项与规则'),featureId:'mote.assistant',

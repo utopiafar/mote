@@ -2,6 +2,7 @@ import React,{useContext,useEffect,useMemo,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {Check,Circle,CircleAlert,CircleHelp,FolderHeart,LoaderCircle,RefreshCw,Search,Sparkles,Star,UserRound} from 'lucide-react';
 import {errorMessage,type Api} from '../../api';
+import {assistantWorkbenchEntrypoint} from '../../assistant-entrypoints';
 import {NavStateContext} from '../../use-nav-state';
 import {useResource} from '../../useResource';
 import {ManualMemoryWorkspace,installMemoryWorkspaceStyles} from './ManualMemoryWorkspace';
@@ -220,16 +221,20 @@ function MemoryRow({item,type,manual,pending,onOpen,onConfirm,onDeny}:{item:Memo
   const stale=item.status==='stale';
   const count=item.evidenceCount??item.evidenceIds?.length??item.evidence?.length??0;
   const inferred=item.admission?.attribution==='inferred';
+  const content=<>
+    <Icon size={18} strokeWidth={1.6} aria-hidden="true"/>
+    <span className="memory-page-row-copy">
+      <strong>{item.title}{stale&&<small className="memory-page-state">{moteText('需要重验')}</small>}</strong>
+      {!stale&&item.statement&&<span>{item.statement}</span>}
+      <small>{inferred&&moteText('推断')}{inferred&&(count>0||manual)?' · ':''}{count>0&&moteText('{0} 份依据',count)}{count>0&&manual?' · ':''}{manual&&moteText('手动')}</small>
+    </span>
+    {label&&type!=='proposed'&&<span className="memory-page-kind">{label}</span>}
+  </>;
   return <article className="memory-page-row" data-type={type}>
-    <button type="button" className="memory-page-row-main" onClick={onOpen}>
-      <Icon size={18} strokeWidth={1.6} aria-hidden="true"/>
-      <span className="memory-page-row-copy">
-        <strong>{item.title}{stale&&<small className="memory-page-state">{moteText('需要重验')}</small>}</strong>
-        {!stale&&item.statement&&<span>{item.statement}</span>}
-        <small>{inferred&&moteText('推断')}{inferred&&(count>0||manual)?' · ':''}{count>0&&moteText('{0} 份依据',count)}{count>0&&manual?' · ':''}{manual&&moteText('手动')}</small>
-      </span>
-      {label&&type!=='proposed'&&<span className="memory-page-kind">{label}</span>}
-    </button>
+    {type==='people'?<>
+      <a className="memory-page-row-main" href={assistantWorkbenchEntrypoint.href+'?'+new URLSearchParams({person:item.id})}>{content}</a>
+      <button type="button" className="text-button memory-page-row-detail" onClick={onOpen}>{moteText('查看记忆')}</button>
+    </>:<button type="button" className="memory-page-row-main" onClick={onOpen}>{content}</button>}
     {type==='proposed'&&<div className="memory-page-pending">
       <button type="button" className="button" disabled={Boolean(pending)} onClick={onConfirm}>{pending==='confirm'?<LoaderCircle size={14} className="spin"/>:null}{moteText('确认')}</button>
       <button type="button" className="text-button" disabled={Boolean(pending)} onClick={onDeny}>{moteText('不对')}</button>
@@ -257,7 +262,9 @@ const styles=`
 .memory-page-filters button.active{background:var(--mote-ink);color:var(--mote-surface)}
 .memory-page-filters button span{opacity:.65;margin-left:2px}
 .memory-page-row{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--mote-hair)}
-.memory-page-row-main{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:start;gap:12px;flex:1;min-width:0;padding:18px 4px;border:0;background:transparent;color:var(--mote-ink);text-align:left;font:inherit;cursor:pointer}
+.memory-page-row-main{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:start;gap:12px;flex:1;min-width:0;padding:18px 4px;border:0;background:transparent;color:var(--mote-ink);text-align:left;text-decoration:none;font:inherit;cursor:pointer}
+a.memory-page-row-main:hover strong{text-decoration:underline}
+.memory-page-row-detail{flex:none;align-self:center;white-space:nowrap}
 .memory-page-row-main>svg{color:var(--mote-muted);margin-top:2px}
 .memory-page-row-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
 .memory-page-row-copy strong{font-size:var(--mote-font-row);font-weight:500;line-height:1.7;overflow-wrap:anywhere;display:flex;align-items:center;gap:8px}

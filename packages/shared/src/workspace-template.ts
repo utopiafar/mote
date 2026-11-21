@@ -2,6 +2,11 @@ import {z} from 'zod';
 import {queryScopeSchema} from './query-scope.js';
 import type {DeclarativeViewSpec,UiContributionDescriptor} from './plugin-ui.js';
 
+/** The layouts a saved matter may carry. A person is a Memory identity, never
+ * a matter template; use the full workspace template only for a request. */
+export const matterTemplateSchema=z.enum(['project','travel','reading']);
+export type MatterTemplate=z.infer<typeof matterTemplateSchema>;
+
 /** Fixed declarative-view compositions; this is not a layout DSL. */
 export const workspaceTemplateSchema=z.enum(['project','person','travel','reading']);
 export type WorkspaceTemplate=z.infer<typeof workspaceTemplateSchema>;
