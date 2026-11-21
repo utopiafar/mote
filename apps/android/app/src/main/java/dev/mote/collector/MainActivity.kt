@@ -135,7 +135,6 @@ class MainActivity : MoteActivity() {
     private val dailyTabPages = setOf(Page.ASK, Page.FEED, Page.IDEAS, Page.GOALS, Page.LIBRARY)
     private val placeholderTabs = mutableSetOf<Page>()
     private val IDEAS_ROUTE = "assistant.ideas"
-    private val GOALS_ROUTE = "assistant.goals"
     private var logExportHours = 24
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig, val appCapture: AppCaptureEditor.State?)
     private lateinit var name: EditText
@@ -412,6 +411,13 @@ class MainActivity : MoteActivity() {
                     if (badgeGate.current(stamp)) {
                         navBadges = NavBadgeRules.read(state, navBadges)
                         renderBadges()
+                        if (resumed) state.optJSONObject("revisions")?.let { revisions ->
+                            if (currentPage == Page.GOALS) {
+                                tabCentrals[Page.GOALS]?.goalsRevisionChanged?.invoke(revisions.optString("matters") to revisions.optString("commitments"))
+                            } else if (currentPage == Page.LIBRARY) {
+                                libraryView?.centralRevisions(revisions.optString("library"), revisions.optString("sources"))
+                            }
+                        }
                     }
                 }.onFailure { error ->
                     badgeGate.failure(end, (error as? CentralFailure)?.status)
@@ -427,14 +433,10 @@ class MainActivity : MoteActivity() {
         content.setPadding(dp(16), 0, dp(16), dp(28))
         designHeading(MoteI18n.text("我的 Mote"))
         val navigationGroup = menuGroup(0)
-        addGroupRow(navigationGroup, menuOption(MoteI18n.text("资料与记忆"), MoteGlyph.LIBRARY) { showPage(Page.LIBRARY) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("发现历史"), MoteGlyph.PULSE) { openCentral("insights") })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("通知"), MoteGlyph.PULSE) { startActivity(Intent(this, AssistantInboxActivity::class.java)) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("动态与建议"), MoteGlyph.PULSE) { openCentral(AssistantPlugin.FEED_ROUTE) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("事项与规则"), MoteGlyph.LIBRARY) { openCentral(AssistantPlugin.MATTERS_ROUTE) })
-        addGroupRow(navigationGroup, menuOption(MoteI18n.text("日程与待办"), MoteGlyph.CALENDAR) {
-            startActivity(Intent(this, CalendarActionsActivity::class.java))
-        })
         val captureGroup = menuGroup(24)
         val screenTrailing = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         manageScreenSwitch = MoteComponents.switch(this, checked = false, description = MoteI18n.text("屏幕采集")) { on -> setScreenCapture(on) }
@@ -680,10 +682,17 @@ class MainActivity : MoteActivity() {
             addView(TextView(this@MainActivity).apply { text = title; MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK); maxLines = 2 })
             addView(TextView(this@MainActivity).apply { text = "$timestamp · $kind"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
         }
-        row.setOnClickListener {
-            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
-        }
+        row.setOnClickListener { openLibraryCapture(item, remote, scope) }
         parent.addView(row)
+    }
+
+    private fun openLibraryCapture(item: org.json.JSONObject, remote: Boolean, scope: String) {
+        val day = java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        startActivity(Intent(this, CaptureRecordsActivity::class.java)
+            .putExtra("recordId", item.getString("id")).putExtra("directReader", true)
+            .putExtra("recordVersion", NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", NativeLibraryPlugin.observations(item))
+            .putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId"))
+            .putExtra("recordSource", item.optString("source")).putExtra("recordDate", day.toString()))
     }
 
     private fun buildLibrary() {
@@ -693,10 +702,10 @@ class MainActivity : MoteActivity() {
         heading.setPadding(0, 0, 0, 0)
         (heading.layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(10)
         val materials = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(LibraryBrowseUi.tabs(this, "materials") { value -> if (value == "memories") openCentral("memories") }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         content.addView(materials)
-        libraryView = LibraryCaptureView(this, materials, libraryState,
-            { parent, item, remote, location, scope -> addCaptureRow(parent, item, remote, location, scope) })
+        libraryView = LibraryCaptureView(this, materials, libraryState, ::addCaptureRow) { original ->
+            openLibraryCapture(original.row, remote = false, scope = "")
+        }
     }
     private fun openCentral(page: String) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", page)) }
 
@@ -2023,6 +2032,7 @@ class MainActivity : MoteActivity() {
                 } else if (::todaySummary.isInitialized) { if (snapshot.imagesReading) MoteComponents.reading(todaySummary, snapshot.imageLabel()) else todaySummary.text = snapshot.imageLabel() }
             }
             loadSourceRows()
+            if (currentPage == Page.LIBRARY) libraryView?.updateSourceStatus()
             if (snapshot.revision.records != libraryRecordsRevision) {
                 libraryRecordsRevision = snapshot.revision.records
                 if (currentPage == Page.LIBRARY) libraryView?.recordsChanged(snapshot.revision.records, snapshot.active?.records?.takeIf { snapshot.error == null })
@@ -2035,6 +2045,7 @@ class MainActivity : MoteActivity() {
         centralContent?.pause()
         activityContent?.pause()
         tabCentrals.values.forEach { it.pause() }
+        libraryView?.pause()
         localStateJob?.cancel(); localStateJob = null
         RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null)
         handler.removeCallbacks(refresh); notePoll?.let(handler::removeCallbacks)
@@ -2088,7 +2099,7 @@ class MainActivity : MoteActivity() {
                 }
                 Page.FEED -> ensureTabPage(Page.FEED, AssistantPlugin.FEED_ROUTE)
                 Page.IDEAS -> ensureTabPage(Page.IDEAS, IDEAS_ROUTE)
-                Page.GOALS -> ensureTabPage(Page.GOALS, GOALS_ROUTE)
+                Page.GOALS -> ensureCentralTab(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
                 Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
                 Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
                 Page.ACTIVITY -> {
@@ -2173,6 +2184,7 @@ class MainActivity : MoteActivity() {
             connectionOrigin = if (page == Page.CONNECTION) connectionEntryOrigin else null
             if (currentPage == Page.ASK) centralContent?.pause()
             if (currentPage == Page.ACTIVITY) activityContent?.pause()
+            if (currentPage == Page.LIBRARY) libraryView?.pause()
             tabCentrals[currentPage]?.pause()
             currentFocus?.clearFocus()
             getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(pagesHost.windowToken, 0)

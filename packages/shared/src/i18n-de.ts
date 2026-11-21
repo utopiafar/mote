@@ -4919,7 +4919,6 @@ export const german: Readonly<Record<string, string>> = {
   "中央管理令牌": "Zentrales Eigentümer-Token",
   "本次应用会话": "Diese App-Sitzung",
   "暂无记录": "Keine Aufzeichnungen",
-  "暂无记录。": "Noch keine Aufzeichnungen.",
   "高级 JSON": "Erweitertes JSON",
   "模型配置": "Modellkonfiguration",
   "并发与执行设置": "Parallelitäts- und Ausführungseinstellungen",
@@ -7648,5 +7647,17 @@ export const german: Readonly<Record<string, string>> = {
   "搜索动态": "Neuigkeiten durchsuchen",
   "3 天": "3 Tage",
   "按组织": "Nach Organisation",
-  "没有新动态": "Keine neuen Meldungen"
+  "没有新动态": "Keine neuen Meldungen",
+  "照做": "Ausführen",
+  "已交给 Mote": "Mote beobachtet",
+  "交给 Mote 盯着": "Mote bitten aufzupassen",
+  "不需要": "Nicht nötig",
+  "等别人": "Warten auf andere",
+  "我要做": "Zu tun",
+  "否定推断": "Vermutung ablehnen",
+  "按事项": "Nach Thema",
+  "按人": "Nach Person",
+  "目标已变化": "Ziel geändert",
+  "推断 ×": "Vermutet ×",
+  "新建目标": "Neues Ziel"
 };

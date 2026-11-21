@@ -94,7 +94,6 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
 
     init {
         AssistantPlugin.owner(ui)
-        AssistantPlugin.bind(ui.hostActivity(), this)
     }
 
     /** The assistant route factory mounts this same controller into the host
@@ -117,9 +116,12 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if (ui.requestedFileOriginMatches()) library.openFile(id) else ui.text(MoteI18n.text("访问凭据已失效，请重新连接。"))
             } ?: library.show(page)
             "archive", "timeline", "materials", "coding", "memories", "insights", "sources", MoteNavigation.SEARCH -> library.show(page)
-            in AssistantPlugin.PAGE_ROUTES -> if (!ui.pluginRoute(page, body)) {
-                ui.text(MoteI18n.text("助理功能") + " · " + MoteI18n.text("已停用"))
-                ui.button(MoteI18n.text("插件")) { ui.navigate("plugins") }
+            in AssistantPlugin.PAGE_ROUTES -> {
+                AssistantPlugin.bind(ui.hostActivity(), this)
+                if (!ui.pluginRoute(page, body)) {
+                    ui.text(MoteI18n.text("助理功能") + " · " + MoteI18n.text("已停用"))
+                    ui.button(MoteI18n.text("插件")) { ui.navigate("plugins") }
+                }
             }
             else -> if (!ui.pluginRoute(page, body)) admin.show(page)
         }
@@ -1414,7 +1416,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             "overview" to "中央工作台", "archive" to "资料库", MoteNavigation.SEARCH to "搜索资料", "ask" to "问一问", "conversations" to "对话", "activity" to "活动", "notes" to "记录",
             "materials" to "正式资料", "coding" to "Coding 会话同步状态", "timeline" to "片段", "files" to "文件与录音",
             "memories" to "记忆", "insights" to "洞察", "actions" to "行动", "agentView" to "Agent 视角",
-            AssistantPlugin.WORKBENCH_ROUTE to "工作台",
+            AssistantPlugin.WORKBENCH_ROUTE to "工作台", AssistantPlugin.GOALS_ROUTE to "目标",
             AssistantPlugin.FEED_ROUTE to "动态与建议", AssistantPlugin.MATTERS_ROUTE to "事项与规则",
             "sources" to "来源", "devices" to "设备", "connections" to "对外授权", "lark" to "飞书",
             "statistics" to "运行状态", "processing" to "处理任务", "plugins" to "插件", "settings" to "模型与服务",

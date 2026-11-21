@@ -4918,7 +4918,6 @@
   "中央管理令牌": "Token de propietario central",
   "本次应用会话": "Esta sesión de la app",
   "暂无记录": "Sin registros",
-  "暂无记录。": "Aún no hay registros.",
   "高级 JSON": "JSON avanzado",
   "模型配置": "Configuración del modelo",
   "并发与执行设置": "Configuración de concurrencia y ejecución",
@@ -7647,5 +7646,17 @@
   "搜索动态": "Buscar en las novedades",
   "3 天": "3 días",
   "按组织": "Por organización",
-  "没有新动态": "No hay novedades"
+  "没有新动态": "No hay novedades",
+  "照做": "Hacerlo",
+  "已交给 Mote": "Mote vigila",
+  "交给 Mote 盯着": "Pedir a Mote que vigile",
+  "不需要": "No hace falta",
+  "等别人": "Esperando a otros",
+  "我要做": "Por hacer",
+  "否定推断": "Rechazar inferencia",
+  "按事项": "Por asunto",
+  "按人": "Por persona",
+  "目标已变化": "Objetivo modificado",
+  "推断 ×": "Inferido ×",
+  "新建目标": "Nuevo objetivo"
 }
