@@ -12,7 +12,7 @@ import {
 /** The current functional catalogue, kept explicitly so a missing entry fails
  * instead of being skipped when the inventory or a plugin shard shrinks. */
 const expectedPages = [
-  'agentView', 'notes', 'help', 'localPreferences', 'about',
+  'agentView', 'notes', 'help', 'localPreferences', 'about', 'notifications',
   'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed',
   'search', 'ask', 'vault', 'statistics', 'sourceCatalog', 'sources',
   'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',

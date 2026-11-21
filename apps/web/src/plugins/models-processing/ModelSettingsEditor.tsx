@@ -9,6 +9,8 @@ import { ApiError, errorMessage, type Api } from '../../api';
 import { createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft } from './model-settings-form';
 import { codexReasoningChoices, type CatalogModel } from '../../model-reasoning';
 import { Loading, LoadingRing } from '../../Loading';
+/** A provider catalog probe must not keep the editor loading forever. */
+const MODEL_CATALOG_PROBE_TIMEOUT_MS = 20_000;
 const protocolNames: Record<ModelSettingsDraft['protocol'], string> = {
     'codex-app-server': "本机 Codex App Server",
     deepseek: "DeepSeek 原生",
@@ -67,9 +69,10 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
                 return;
             }
             setCatalogLoading(true);
+            const probeSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(MODEL_CATALOG_PROBE_TIMEOUT_MS)]);
             void api.request<{
                 items: CatalogModel[];
-            }>((initialProfile?'/api/model-settings':endpoint) + '/models', { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}), signal: controller.signal })
+            }>((initialProfile?'/api/model-settings':endpoint) + '/models', { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}), signal: probeSignal })
                 .then(result => { if (!controller.signal.aborted)
                 setCatalog(result.items); })
                 .catch(e => { if (!controller.signal.aborted)
