@@ -43,7 +43,7 @@ async function run() {
       if(input.question==='fixture-failure') throw Error('Generated model failure');
       if(input.question==='fixture-delayed-navigation') while(!existsSync(${JSON.stringify(released)})) await new Promise(resolve=>setTimeout(resolve,50));
       await new Promise(resolve=>setTimeout(resolve, 100));
-      return {answer:'合成回答：已有 '+(input.conversation?.turns.length??0)+' 轮。最初问题：'+(input.conversation?.turns[0]?.question??input.question),citations:[],trace:[],runId:randomUUID()};
+      return {answer:'合成回答：已有 '+(input.conversation?.turns.length??0)+' 轮。最初问题：'+(input.conversation?.turns[0]?.question??input.question),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}};
     }}});
     await app.listen({host:'127.0.0.1',port:${port}});
     process.once('SIGTERM',()=>{void app.close().then(()=>process.exit(0));});`, {mode: 0o600});
@@ -89,6 +89,7 @@ async function run() {
   }
   const saved = await readConversation();
   assert.equal(saved.turnCount, 1);
+  assert.equal(saved.turns[0].status, 'completed');
   assert.equal(saved.turns[0].question, '合成计划：周末去海边散步');
   await send('那要准备什么？'); await readyTurns(2);
   assert.ok(await js(`document.querySelector('.conversation-turn:last-of-type').textContent.includes('已有 1 轮')`));
@@ -101,6 +102,7 @@ async function run() {
   assert.equal(failedConversation.turns.at(-1).status, 'failed', 'failed turn is marked failed');
   assert.equal(failedConversation.turns.at(-1).question, 'fixture-failure', 'failed question is retained');
   assert.equal(await js(`document.querySelector('.conversation-turn[data-state="failed"] .asked-question').textContent`), 'fixture-failure');
+  assert.equal(await js(`document.querySelector('.conversation-turn[data-state="failed"] [role="alert"] button').disabled`), false, 'failed turn can be retried');
   await stopServer(); await startServer();
   await new Promise(resolve => {wc.once('did-finish-load', resolve); wc.reload();});
   await waitForSession(); await readyTurns(3);
@@ -125,6 +127,10 @@ async function run() {
   assert.equal(cancelled.question, 'fixture-cancel');
   assert.equal(cancelled.status, 'cancelled');
   assert.equal(cancelled.result, undefined, 'cancelled turn has no saved answer');
+  assert.ok(cancelled.runId, 'cancellation retains the run receipt');
+  const run = await request('/api/query-runs/' + cancelled.runId);
+  assert.equal(run.status, 200);
+  assert.equal((await run.json()).status, 'cancelled');
   assert.equal(await js(`document.querySelector('textarea[aria-label="向 Mote 提问"]').disabled`), false, 'cancel unlocks composer');
   await click('记录');await until(()=>js('Boolean(document.querySelector("#note-text"))'),'note composer');
   assert.equal(await js('Boolean(document.querySelector("#note-mood"))'),false);
