@@ -7648,5 +7648,14 @@ export const spanish: Readonly<Record<string, string>> = {
   "搜索动态": "Buscar en las novedades",
   "3 天": "3 días",
   "按组织": "Por organización",
-  "没有新动态": "No hay novedades"
+  "没有新动态": "No hay novedades",
+  "诊断": "Diagnóstico",
+  "中文": "Chino",
+  "助理通知": "Avisos del asistente",
+  "安静时段": "Horas tranquilas",
+  "目前没有后台活动": "Sin actividad en segundo plano",
+  "目前没有处理任务": "Sin tareas de procesamiento",
+  "开始和结束时间不能相同。": "Las horas de inicio y fin deben ser distintas.",
+  "当前服务只读，无法保存。": "Este servicio es de solo lectura; no se pueden guardar cambios.",
+  "{0}–{1} 安静": "{0}–{1} silencio"
 };

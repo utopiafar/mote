@@ -7647,5 +7647,14 @@
   "搜索动态": "Rechercher dans les actualités",
   "3 天": "3 jours",
   "按组织": "Par organisation",
-  "没有新动态": "Aucune nouvelle actualité"
+  "没有新动态": "Aucune nouvelle actualité",
+  "诊断": "Diagnostics",
+  "中文": "Chinois",
+  "助理通知": "Notifications de l'assistant",
+  "安静时段": "Heures calmes",
+  "目前没有后台活动": "Aucune activité en arrière-plan",
+  "目前没有处理任务": "Aucune tâche de traitement",
+  "开始和结束时间不能相同。": "Les heures de début et de fin doivent différer.",
+  "当前服务只读，无法保存。": "Ce service est en lecture seule ; les modifications ne peuvent pas être enregistrées.",
+  "{0}–{1} 安静": "{0}–{1} silencieux"
 }
