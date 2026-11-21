@@ -7,6 +7,7 @@ import type {BuiltinWebPlugin} from '../types';
 import {AgentInspector} from './AgentInspector';
 import {AgentAccessContext} from './context';
 import {AgentAccessController,createAgentAccessController} from './controller';
+import {agentInspectorRoute} from './routes';
 
 export {AgentInspector} from './AgentInspector';
 export {AgentAccessController,createAgentAccessController} from './controller';
@@ -69,7 +70,7 @@ export function AgentAccessPage(props:PageProps){
   return <AgentAccessContext.Provider value={plugin.context}><AgentInspector api={props.api} onOpen={props.onOpen} devices={props.devices}/></AgentAccessContext.Provider>;
 }
 
-export const pages:PageEntry[]=[{id:'agentView',route:'agent',label:moteText('Agent 视角'),featureId:'mote.agent-view',render:(props:PageProps)=><AgentAccessPage {...props}/>}];
+export const pages:PageEntry[]=[{id:'agentView',route:agentInspectorRoute,aliases:['agent'],section:'connections',label:moteText('Agent 视角'),featureId:'mote.agent-view',render:(props:PageProps)=><AgentAccessPage {...props}/>}];
 
 // Keep this small, read-only entry in the home bundle. An already-open home
 // remains navigable when a deployment removes the previous hashed assets.
