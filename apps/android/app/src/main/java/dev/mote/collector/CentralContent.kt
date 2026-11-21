@@ -11,6 +11,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import dev.mote.collector.plugins.AssistantPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
@@ -29,6 +30,8 @@ internal class CentralContent(
     private val embeddedActions: Boolean = false,
     private val openCalendar: (() -> Unit)? = null,
 ) : ContextWrapper(activity) {
+    internal val hostsGoalsTab = initialPage == AssistantPlugin.GOALS_ROUTE && openLocalPage != null
+
     fun openCaptureReader(origin: String, row: org.json.JSONObject, conversationId: String?, returnScroll: Int? = null, workMemory: WorkMemoryReference? = null, citationExcerpt: String? = null) {
         val restore = if (conversationId != null && returnScroll != null) ReaderReturn(origin, accessGeneration, revision, conversationId, returnScroll) else null
         pendingReaderReturn = restore
@@ -64,7 +67,8 @@ internal class CentralContent(
         // removes everything it added, so the fallback never shares the body
         // with partial plugin UI.
         val parent = container as? android.view.ViewGroup
-        val slot: Any = parent?.let { android.widget.LinearLayout(activity).apply { orientation = android.widget.LinearLayout.VERTICAL }.also(it::addView) } ?: container
+        val mountContext = if (page in AssistantPlugin.PAGE_ROUTES && (hostsGoalsTab || page == AssistantPlugin.GOALS_ROUTE)) this else activity
+        val slot: Any = parent?.let { LinearLayout(mountContext).apply { orientation = LinearLayout.VERTICAL }.also(it::addView) } ?: container
         return try {
             session.registerView(factory(session, slot))
             pluginView = session
@@ -401,6 +405,7 @@ internal class CentralContent(
      * history so its back action returns to the home surface, not the thread. */
     internal fun openConversationList() { pageHistory.clear(); navigate("conversations", remember = false) }
     internal fun hostActivity(): MoteActivity = activity
+    internal fun assistantRouteScreen(): CentralScreens = checkNotNull(screens)
     internal fun askComposer(): LinearLayout {
         composer.removeAllViews(); composer.visibility = View.VISIBLE
         return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16),moteDp(8),moteDp(16),moteDp(12)) }.also(composer::addView)
@@ -440,6 +445,14 @@ internal class CentralContent(
         title.visibility = View.VISIBLE
         title.text = value
         memoryFilterAction.visibility = View.GONE
+    }
+    internal var goalsRevisionChanged: ((Pair<String, String>) -> Unit)? = null
+
+    internal fun goalAdd(action: (() -> Unit)?) {
+        addAction.visibility = if (action == null) View.GONE else View.VISIBLE
+        addAction.text = if (action == null) MoteI18n.text("记下") else "+"
+        addAction.contentDescription = if (action == null) MoteI18n.text("记下") else MoteI18n.text("新建目标")
+        addAction.setOnClickListener { if (action != null) action() else activity.openRecordEditor() }
     }
     internal fun memoryLibraryHeader(filter: () -> Unit) {
         title.text = ""; memoryFilter = filter; memoryFilterAction.visibility = View.VISIBLE
@@ -481,6 +494,7 @@ internal class CentralContent(
         composer.removeAllViews(); composer.visibility = View.GONE; updateBackButton()
         title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
+            page == AssistantPlugin.GOALS_ROUTE -> "连接你的 Mote"
             page == "ask" || page == "conversations" -> "中央问答暂不可用。连接中央后，可以根据已整理的内容提问；文件和记录仍可在本机保存。"
             MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
             else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
