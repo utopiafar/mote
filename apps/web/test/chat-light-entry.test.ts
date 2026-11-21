@@ -18,7 +18,7 @@ import {Conversations} from '../src/plugins/ask/Conversations';
 import {AnswerView} from '../src/shell-components';
 import {unsentDrafts} from '../src/plugins/ask/chat-drafts';
 import {featuresReady} from '../src/features/bootstrap';
-const prompt='请只根据这份资料开始认识我，说明资料里明确呈现的事实、仍不确定的部分，以及需要我补充的问题。';
+const question='Generated Light acquaintance question';
 const deferred=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return {promise,release};};
 async function until(check:()=>boolean,label:string){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});}assert.fail('Generated Light DOM did not settle: '+label);}
 async function fixture(t:any,hold=false){
@@ -50,33 +50,35 @@ async function fixture(t:any,hold=false){
  t.after(async()=>{held.release();await act(async()=>root.unmount());await node.app.close();for(const[key,descriptor]of prior)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);dom.window.close();rmSync(directory,{recursive:true,force:true});});
  const renderDetail=()=>act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:()=>{}})));
  const renderChat=()=>act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:(answer,open)=>React.createElement(AnswerView,{answer,onOpen:open,compact:true})})));
- const open=async()=>{await renderDetail();await until(()=>Boolean(dom.window.document.querySelector('.material-reader-acquaintance')),'current Material read');await act(async()=>dom.window.document.querySelector<HTMLButtonElement>('.material-reader-acquaintance')!.click());await renderChat();await until(()=>Boolean(dom.window.document.querySelector<HTMLTextAreaElement>('textarea')?.value===prompt),'exact questionDraft handoff');};
+ const fill=(text:string)=>act(async()=>{const input=dom.window.document.querySelector<HTMLTextAreaElement>('.chat-compose-form textarea')!;input.focus();Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,text);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));input.dispatchEvent(new dom.window.KeyboardEvent('keyup',{bubbles:true,key:'a'}));});
+ const open=async()=>{await renderDetail();await until(()=>Boolean(dom.window.document.querySelector('.material-reader-acquaintance')),'current Material read');await act(async()=>dom.window.document.querySelector<HTMLButtonElement>('.material-reader-acquaintance')!.click());await renderChat();await until(()=>Boolean(dom.window.document.querySelector('.chat-about-tag')),'Material about tag');};
  const send=()=>act(async()=>dom.window.document.querySelector('form.ask-form')!.dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true})));
- return {node,api,material,sourceId,calls,seen,entered,held,publish,renderDetail,renderChat,open,send,d:dom.window.document,w:dom.window};
+ return {node,api,material,sourceId,calls,seen,entered,held,publish,renderDetail,renderChat,open,fill,send,d:dom.window.document,w:dom.window};
 }
 
-test('a real selected Material prepares a guarded acquaintance draft and the main conversation consumes its exact pin through owner HTTP',async t=>{
+test('a real selected Material prepares a guarded chat reference and the main conversation scopes the next message to it',async t=>{
  const f=await fixture(t);await f.renderDetail();await until(()=>Boolean(f.d.querySelector('.material-reader-acquaintance')),'Material entry');
  unsentDrafts.set(f.api,{question:'Generated unsent owner text',attachments:[]});f.w.confirm=()=>false;
  await act(async()=>f.d.querySelector<HTMLButtonElement>('.material-reader-acquaintance')!.click());assert.match(f.w.location.hash,/^#\/library/);assert.equal(unsentDrafts.get(f.api)?.question,'Generated unsent owner text');
- f.w.confirm=()=>true;await act(async()=>f.d.querySelector<HTMLButtonElement>('.material-reader-acquaintance')!.click());const route=new URLSearchParams(f.w.location.hash.split('?')[1]);assert.equal(route.get('fromMaterial'),f.material.ref);assert.equal(route.get('materialOnly'),'1');
- await f.renderChat();await until(()=>f.d.querySelector<HTMLTextAreaElement>('textarea')?.value===prompt,'prepared owner text');await until(()=>!f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,'fresh pin verification');
- assert.equal(f.calls.some(call=>call.method==='POST'),false,'navigation has not started a task or model request');await f.send();
+ f.w.confirm=()=>true;await act(async()=>f.d.querySelector<HTMLButtonElement>('.material-reader-acquaintance')!.click());const route=new URLSearchParams(f.w.location.hash.split('?')[1]);assert.equal(route.get('about'),f.material.ref);assert.equal(route.get('questionDraft'),null);assert.equal(route.get('fromMaterial'),null);
+ await f.renderChat();await until(()=>Boolean(f.d.querySelector('.chat-about-tag')),'Material reference tag');assert.equal(f.d.querySelector<HTMLTextAreaElement>('.chat-compose-form textarea')?.value,'');
+ assert.equal(f.calls.some(call=>call.method==='POST'),false,'navigation has not started a task or model request');await f.fill(question);await until(()=>!f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,'fresh Material verification');await f.send();
  await until(()=>f.d.body.textContent!.includes('Generated Light acquaintance from the selected Material.'),'actual completed answer DOM');
  const posts=f.calls.filter(call=>call.path==='/api/conversations/messages'&&call.method==='POST');assert.equal(posts.length,1);assert.equal(posts[0].body.anchorMaterialRef,f.material.ref);assert.equal(posts[0].body.scope.kind,'selection');assert.deepEqual(posts[0].body.scope.sourceIds,[f.sourceId]);
  assert.equal(f.seen.length,1);assert.deepEqual(f.seen[0].hostToolSelection,['material_read','evidence']);assert.equal(f.calls.some(call=>call.path==='/api/assistant/onboarding'&&call.method==='POST'),false);
  assert.equal(f.node.store.db.prepare("SELECT count(*) n FROM task_records WHERE kind='assistant.onboarding'").get()!.n,0);
 });
 
-test('a Material revision change before the draft is sent leaves the reference unavailable and does not replace the pin',async t=>{
- const f=await fixture(t);await f.renderDetail();await until(()=>Boolean(f.d.querySelector('.material-reader-acquaintance')),'original Material entry');
- await f.publish('v2','GENERATED_LIGHT_SELECTED_BODY changed version');await act(async()=>f.d.querySelector<HTMLButtonElement>('.material-reader-acquaintance')!.click());await f.renderChat();
- await until(()=>Boolean(f.d.querySelector('.ask-original-reference [role=alert]')),'stale reference rejection');assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,true);assert.equal(new URLSearchParams(f.w.location.hash.split('?')[1]).get('fromMaterial'),f.material.ref);
- assert.equal(f.calls.some(call=>call.method==='POST'),false);assert.equal(f.seen.length,0);
+test('a Material revision change after the chat reference loads fails the send without replacing the pin',async t=>{
+ const f=await fixture(t);await f.open();
+ await f.publish('v2','GENERATED_LIGHT_SELECTED_BODY changed version');await f.fill(question);await f.send();
+ await until(()=>Boolean(f.d.querySelector('.chat-error[role=alert]')),'failed reference verification');
+ assert.equal(f.calls.some(call=>call.path==='/api/conversations/messages'&&call.method==='POST'),false);assert.equal(f.seen.length,0);
+ assert.equal(new URLSearchParams(f.w.location.hash.split('?')[1]).get('about'),f.material.ref);
 });
 
 test('the real pending acquaintance can be cancelled in Conversations and a late controlled answer is not published',async t=>{
- const f=await fixture(t,true);await f.open();await until(()=>!f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,'verified Material draft');await f.send();await f.entered.promise;
+ const f=await fixture(t,true);await f.open();await f.fill(question);await until(()=>!f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,'verified Material question');await f.send();await f.entered.promise;
  await until(()=>[...f.d.querySelectorAll('button')].some(button=>button.getAttribute('aria-label')==='停止这条回答'),'durable pending message');
  await act(async()=>[...f.d.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.getAttribute('aria-label')==='停止这条回答')!.click());
  const accepted=f.calls.find(call=>call.path==='/api/conversations/messages'&&call.method==='POST')!.body;
