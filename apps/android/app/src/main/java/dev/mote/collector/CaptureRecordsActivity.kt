@@ -664,16 +664,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         }
                         fun showDetail() {
                             if (!actionCurrent()) return
-                            if (!centralReader) { NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record)); return }
-                            detailExecutor.execute {
-                                val conversations=runCatching { NativeOriginalDetail.conversations(selected()) }.getOrNull()
-                                runOnUiThread {
-                                    if (isDestroyed || !reading()) return@runOnUiThread
-                                    val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
-                                    if (selection==null || access==null || access.server!=selection.server || access.generation!=selection.generation) return@runOnUiThread
-                                    NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record, conversations))
-                                }
-                            }
+                            NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record))
                         }
                         val inlineDescriptions = !direct
                         fun sheet() {

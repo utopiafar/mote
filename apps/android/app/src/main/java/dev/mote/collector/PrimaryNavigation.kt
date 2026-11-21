@@ -368,7 +368,7 @@ object MoteNavigation {
     fun centralAllowsAdd(@Suppress("UNUSED_PARAMETER") page: String): Boolean = false
     fun centralTab(page: String): MotePrimaryTab = when (page) {
         "overview", "actions", "assistant.feed", "assistant.matters", "assistant.workbench" -> MotePrimaryTab.HOME
-        "ask", "conversations" -> MotePrimaryTab.ASK
+        "ask" -> MotePrimaryTab.ASK
         "sources", "devices", "connections", "lark" -> MotePrimaryTab.SOURCES
         "activity", "processing" -> MotePrimaryTab.ACTIVITY
         in libraryPages -> MotePrimaryTab.LIBRARY

@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp,type QueryAgent} from '../apps/server/src/app.js';
+import {Conversations} from '../apps/server/src/conversations.js';
 import type {ContextReader} from '@mote/agent';
 import {noteCapture} from '@mote/shared';
 import {materialId} from '../apps/server/src/materials.js';
@@ -64,7 +65,8 @@ async function reset(){
  if(node.store.evidence([noteId]).length)node.store.delete(noteId);
  if(contractNoteId&&node.store.evidence([contractNoteId]).length)node.store.delete(contractNoteId);
  if(detailCaptureId&&node.store.evidence([detailCaptureId]).length)node.store.delete(detailCaptureId);
- for(const conversation of node.conversations.list({limit:100}).items)node.conversations.delete(conversation.id);
+ const conversations=new Conversations(node.store);
+ for(const conversation of conversations.list({limit:100}).items)conversations.delete(conversation.id);
  askConversationId='';detailCaptureId='';detailCaptureVersion='';
  noteId=randomUUID();contractNoteId=randomUUID();ids=Array.from({length:67},()=>randomUUID()).sort().reverse();queryCalls=0;insightCalls=0;failNextConversationRead=false;lastQuery=null;seenRequests.length=0;dropAck=false;offline=false;
  await node.store.ingest(noteCapture({id:noteId,deviceId:'generated-discovery-phone',deviceName:'我的 iPhone',platform:'android',capturedAt:at(14,20),text:'Generated original discovery record: completion remains unknown.',mood:'Generated explicit mood'}));

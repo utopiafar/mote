@@ -72,25 +72,6 @@ class NativeAskPluginTest {
         assertEquals("the recreated view did not repeat the admission", conversation, restored.getString("conversationId"))
     }
 
-    @Test fun aListQuestionStartsANewThreadWithoutDroppingItsStagedImages() = temporary { directory ->
-        val controller = NativeAskController(storage(directory))
-        controller.restore()
-        val selected = UUID.randomUUID().toString()
-        controller.replace(JSONObject()
-            .put("conversationId", UUID.randomUUID().toString())
-            .put("messageId", UUID.randomUUID().toString()).put("runStatus", "running")
-            .put("question", "Generated prior question")
-            .put("attachments", JSONArray().put(JSONObject().put("id", UUID.randomUUID().toString())))
-            .put("imageUploads", JSONObject().put("file:///generated-image", JSONObject().put("status", "pending"))))
-        controller.startConversation("Generated list question", selected)
-        assertEquals("Generated list question", controller.state.getString("question"))
-        assertEquals(1, controller.state.getJSONArray("attachments").length())
-        assertEquals("pending", controller.state.getJSONObject("imageUploads").getJSONObject("file:///generated-image").getString("status"))
-        assertEquals(selected, controller.state.getString("conversationId"))
-        assertFalse(controller.state.has("messageId"))
-        assertFalse(controller.state.has("runStatus"))
-    }
-
     @Test fun recreatedActivityRetriesTheExactUnconfirmedAdmissionInsteadOfCreatingANewOne() = temporary { directory ->
         val first = NativeAskController(storage(directory))
         first.restore()
@@ -184,17 +165,4 @@ class NativeAskPluginTest {
         assertEquals("Generated second conversation draft", controller.state.getString("question"))
     }
 
-    @Test fun newConversationClearsOnlyTheUnsentDraftAndMessageIdentity() = temporary { directory ->
-        val conversation = UUID.randomUUID().toString()
-        val controller = NativeAskController(storage(directory))
-        controller.restore()
-        controller.selectConversation(conversation)
-        controller.editQuestion("Generated discarded question")
-        controller.state.put("runStatus", "completed").put("messageId", UUID.randomUUID().toString())
-        controller.newConversation()
-        assertFalse(controller.state.has("conversationId"))
-        assertFalse(controller.state.has("messageId"))
-        assertFalse(controller.state.has("runStatus"))
-        assertEquals("", controller.state.getString("question"))
-    }
 }

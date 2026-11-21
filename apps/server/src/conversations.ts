@@ -63,6 +63,8 @@ export class Conversations {
     }catch(error){if(store.db.isTransaction){store.db.exec('ROLLBACK TO conversation_history_receipts; RELEASE conversation_history_receipts');}throw error;}
   }
 
+  /** Owner-only storage read used by the lineaged history surfaces and tests; the
+   * removed multi-conversation list route no longer exposes it. */
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {
     let where='';const values:(string|number)[]=[];
     if(cursor) {
@@ -78,20 +80,13 @@ export class Conversations {
   }
 
   get(id:string):Conversation {return this.read(id);}
-  /** Create an empty side conversation; product admission is checked by the route. */
+  /** Storage-level helper for generated fixtures; no HTTP admission creates a
+   * side conversation any more. */
   create():{id:string} {return this.transaction(()=>this.createEmpty());}
   private createEmpty():{id:string} {
     const id=randomUUID(),now=new Date().toISOString();
     this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(id,'',now,now,JSON.stringify({scope:{},turnCount:0,status:'completed',bytes:0,revision:0,nextSeq:0}));
     return {id};
-  }
-  /** Select an existing conversation, without changing its contents or any other conversation. */
-  selectMain(id:string):{id:string} {
-    return this.transaction(()=>{
-      if(!this.store.db.prepare('SELECT 1 FROM conversations WHERE id=?').get(id))throw new StoreError('Conversation not found',404);
-      this.store.db.prepare("INSERT INTO settings(key,value) VALUES('main-conversation-id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(id);
-      return {id};
-    });
   }
   /** A stable, owner-local identity; deleting the conversation starts a new one. */
   main():{id:string} {
@@ -430,6 +425,8 @@ export class Conversations {
     });
   }
 
+  /** Retained owner-local erasure used by lifecycle tests; no HTTP route deletes
+   * a whole conversation any more. */
   delete(id:string) {
     const db=this.store.db;db.exec('SAVEPOINT delete_conversation');
     try{
