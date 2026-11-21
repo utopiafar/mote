@@ -27,7 +27,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                 }
                 if (isStopped) return Result.success()
                 UploadWorker.schedule(applicationContext, config, true)
-                report(MoteI18n.text("已安排补传 {0} 条记录", records, versions))
+                report(MoteI18n.text("已安排补传 {0} 条本机采集记录及 {1} 个保留来源版本；实际上传进度见下方同步状态。冲突和中央已删除记录保持隔离。", records, versions))
                 return Result.success()
             }
             // Durable checkpoint belongs to this WorkRequest; network retries resume its last checked batch.

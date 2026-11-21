@@ -7670,7 +7670,7 @@
   "确认后此来源保留正文原件": "Confirm to keep text originals for this source",
   "ZIP 为明文，不含中央归档": "ZIP is plaintext and excludes central archives",
   "本机删除不影响中央原件": "Local deletion keeps the central original",
-  "已安排补传 {0} 条记录": "Re-upload scheduled for {0} records",
+  "已安排补传 {0} 条本机采集记录及 {1} 个保留来源版本；实际上传进度见下方同步状态。冲突和中央已删除记录保持隔离。": "Queued {0} local captures and {1} retained source revisions for resend. See sync status below. Conflicts and centrally deleted records remain isolated.",
   "会话按应用与间隔分段": "Sessions split by app and gap",
   "本应用专用目录，非共享相册": "App-private storage, not a shared gallery",
   "检查完成：可见 {0}，不可见 {1}": "Check done: {0} visible, {1} not",

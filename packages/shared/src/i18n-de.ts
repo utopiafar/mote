@@ -7671,7 +7671,7 @@ export const german: Readonly<Record<string, string>> = {
   "确认后此来源保留正文原件": "Bestätigen, um Textoriginale zu behalten",
   "ZIP 为明文，不含中央归档": "ZIP ist Klartext und ohne zentrale Archive",
   "本机删除不影响中央原件": "Lokales Löschen lässt das zentrale Original",
-  "已安排补传 {0} 条记录": "Erneutes Senden für {0} Einträge geplant",
+  "已安排补传 {0} 条本机采集记录及 {1} 个保留来源版本；实际上传进度见下方同步状态。冲突和中央已删除记录保持隔离。": "{0} lokale Erfassungen und {1} aufbewahrte Quellrevisionen zum erneuten Senden eingereiht. Fortschritt siehe Synchronisierungsstatus unten. Konflikte und zentral gelöschte Aufzeichnungen bleiben isoliert.",
   "会话按应用与间隔分段": "Sitzungen nach App und Abstand getrennt",
   "本应用专用目录，非共享相册": "App-eigener Speicher, keine gemeinsame Galerie",
   "检查完成：可见 {0}，不可见 {1}": "Prüfung fertig: {0} sichtbar, {1} nicht",

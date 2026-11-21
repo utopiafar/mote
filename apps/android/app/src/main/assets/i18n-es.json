@@ -7670,7 +7670,7 @@
   "确认后此来源保留正文原件": "Confirma para conservar originales de texto",
   "ZIP 为明文，不含中央归档": "El ZIP es texto plano y excluye archivos centrales",
   "本机删除不影响中央原件": "Borrar localmente conserva el original central",
-  "已安排补传 {0} 条记录": "Reenvío programado para {0} registros",
+  "已安排补传 {0} 条本机采集记录及 {1} 个保留来源版本；实际上传进度见下方同步状态。冲突和中央已删除记录保持隔离。": "Se han puesto en cola {0} capturas locales y {1} revisiones retenidas de fuentes para reenviar. Ver el estado de sincronización abajo. Los conflictos y los registros eliminados en el nodo central permanecen aislados.",
   "会话按应用与间隔分段": "Sesiones divididas por app e intervalo",
   "本应用专用目录，非共享相册": "Almacenamiento privado de la app, no una galería compartida",
   "检查完成：可见 {0}，不可见 {1}": "Comprobación lista: {0} visibles, {1} no",
