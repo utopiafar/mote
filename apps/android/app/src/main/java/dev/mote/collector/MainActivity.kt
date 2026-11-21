@@ -21,11 +21,19 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.AssistantPlugin
+import dev.mote.collector.plugins.AdministrationConnectionStatus
+import dev.mote.collector.plugins.ConnectionServicesSection
+import dev.mote.collector.plugins.ManageBack
+import dev.mote.collector.plugins.ManageDestination
 import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativeLibraryPlugin
 import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
+import dev.mote.collector.plugins.NotificationSettings
+import dev.mote.collector.plugins.NotificationSettingsValue
+import dev.mote.collector.plugins.QuietHours
+import dev.mote.collector.plugins.SettingsAction
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
@@ -119,11 +127,12 @@ class MainActivity : MoteActivity() {
     private enum class Page(private val titleKey: String, val parent: String? = null) {
         OVERVIEW("首页"), MANAGE("我的 Mote", "OVERVIEW"), LIBRARY("资料库"), ASK("问一问"),
         FEED("动态"), IDEAS("点子"), GOALS("目标"), MEMORY("记忆"), SKILLS("技能"),
+        SERVICES("连接"),
         ACTIVITY("活动", "MANAGE"), NOTES("记录", "LIBRARY"), SOURCES("采集与同步", "MANAGE"), SETTINGS("设置"),
         CONNECTION("连接与设备", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
         PROCESSING("图像质量与去重", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("采集范围", "SETTINGS"), PERMISSIONS("系统权限与后台运行", "SETTINGS"),
-        APPEARANCE("外观与语言", "SETTINGS"),
+        APPEARANCE("外观与语言", "SETTINGS"), NOTIFICATIONS("通知", "SETTINGS"),
         ABOUT("关于、更新与反馈", "SETTINGS"), DEVELOPER("开发者选项", "SETTINGS"),
         DIAGNOSTICS("诊断与支持", "SETTINGS")
     ;
@@ -189,9 +198,11 @@ class MainActivity : MoteActivity() {
     private var settingsConnectionDetail: TextView? = null
     private var connectionCentralValue: TextView? = null
     private var connectionPermissionValue: TextView? = null
+    private var connectionStateValue: TextView? = null
     private var connectionTimeValue: TextView? = null
     private var connectionConnectAction: View? = null
     private var connectionDisconnectAction: View? = null
+    private var connectionReauthAction: View? = null
     private var localStateJob: kotlinx.coroutines.Job? = null
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connectionTitle: String, val connection: String,
@@ -374,11 +385,12 @@ class MainActivity : MoteActivity() {
         refreshBadges()
         val items = navigationCatalog.manage { it.packageId in navPackages() }
         MoteManageMenu(this) { item ->
-            when (item.id) {
-                "memory" -> showPage(Page.MEMORY)
-                "skills" -> showPage(Page.SKILLS)
-                "connections" -> showPage(Page.CONNECTION, connectionEntryOrigin = ConnectionOrigin.MANAGE_MENU)
-                "settings" -> showPage(Page.SETTINGS)
+            when (ManageDestination.forNavId(item.id)) {
+                ManageDestination.MEMORY -> showPage(Page.MEMORY)
+                ManageDestination.SKILLS -> showPage(Page.SKILLS)
+                ManageDestination.CONNECTIONS -> showPage(Page.SERVICES)
+                ManageDestination.SETTINGS -> showPage(Page.SETTINGS)
+                null -> Unit
             }
         }.show(items, navBadges)
     }
@@ -643,7 +655,28 @@ class MainActivity : MoteActivity() {
         page(Page.SETTINGS, null)
         content.setPadding(dp(16), 0, dp(16), dp(28))
         designHeading(MoteI18n.text("设置"))
-        val connectionGroup = menuGroup(0)
+        val groups = linkedMapOf<String, LinearLayout>()
+        fun group(id: String): LinearLayout = groups.getOrPut(id) { menuGroup(if (id == "connection") 0 else 24) }
+        SettingsAction.entries.forEach { entry ->
+            val label = MoteI18n.text(entry.label)
+            when (entry) {
+                SettingsAction.CONNECTION -> addGroupRow(group(entry.group), settingsConnectionCard())
+                SettingsAction.APPEARANCE -> addGroupRow(group(entry.group), settingsOption(label) { showPage(Page.APPEARANCE) })
+                SettingsAction.BACKUP -> addGroupRow(group(entry.group), settingsOption(label) { startActivity(Intent(this, BackupActivity::class.java)) })
+                SettingsAction.DIAGNOSTICS -> addGroupRow(group(entry.group), settingsOption(label) { showPage(Page.DIAGNOSTICS) })
+                SettingsAction.NOTIFICATIONS -> addGroupRow(group(entry.group), settingsOption(label) { showPage(Page.NOTIFICATIONS) })
+                SettingsAction.ABOUT -> addGroupRow(group(entry.group), settingsOption(label, BuildConfig.VERSION_NAME.substringBefore('-')) { showPage(Page.ABOUT) })
+                SettingsAction.CENTRAL_WORKBENCH -> addGroupRow(group(entry.group), MoteComponents.row(
+                    this, MoteGlyph.GLOBE, label,
+                    trailing = MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16),
+                    onClick = { openCentral("overview") },
+                ).apply { tag = "menu:" + entry.label })
+            }
+        }
+        renderSettingsSummaries()
+    }
+
+    private fun settingsConnectionCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
             minimumHeight = dp(64); setPadding(dp(14), dp(9), dp(14), dp(9))
@@ -674,16 +707,7 @@ class MainActivity : MoteActivity() {
         card.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 16),
             LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(12) })
         settingsConnectionRow = card
-        addGroupRow(connectionGroup, card)
-
-        val choices = menuGroup(24)
-        addGroupRow(choices, settingsOption(MoteI18n.text("外观与语言")) { showPage(Page.APPEARANCE) })
-        addGroupRow(choices, settingsOption(MoteI18n.text("备份与恢复")) { startActivity(Intent(this, BackupActivity::class.java)) })
-        addGroupRow(choices, settingsOption(MoteI18n.text("诊断与支持")) { showPage(Page.DIAGNOSTICS) })
-
-        val about = menuGroup(24)
-        addGroupRow(about, settingsOption(MoteI18n.text("关于与更新"), BuildConfig.VERSION_NAME.substringBefore('-')) { showPage(Page.ABOUT) })
-        renderSettingsSummaries()
+        return card
     }
 
     private fun CollectorConfig.settingsSummary() = SettingsSummaryConfig(server, syncPaused)
@@ -699,9 +723,12 @@ class MainActivity : MoteActivity() {
         val config = (state as? SettingsSummaryState.Current)?.config
         val server = fallback ?: centralHost(config!!.server)
         val detail = loadedConfig.deviceName
+        val connectionStatus = if (loadedConfig.hasSyncConnection())
+            AdministrationConnectionStatus.label(ConnectionClient(applicationContext).status())
+        else MoteI18n.text("未连接")
         settingsConnectionTitle?.let { if (state == SettingsSummaryState.Loading) MoteComponents.reading(it, server) else it.text = server }
-        settingsConnectionDetail?.text = detail
-        settingsConnectionRow?.contentDescription = listOf(MoteI18n.text("连接与设备"), server, detail.takeIf { fallback == null })
+        settingsConnectionDetail?.text = listOf(detail, connectionStatus).filter { it.isNotBlank() }.joinToString(" · ")
+        settingsConnectionRow?.contentDescription = listOf(MoteI18n.text("连接与设备"), server, detail.takeIf { fallback == null }, connectionStatus)
             .filterNotNull().joinToString("，")
     }
 
@@ -788,6 +815,7 @@ class MainActivity : MoteActivity() {
         val facts = menuGroup(0)
         connectionCentralValue = connectionRow(facts, MoteI18n.text("中央"))
         connectionPermissionValue = connectionRow(facts, MoteI18n.text("权限"))
+        connectionStateValue = connectionRow(facts, MoteI18n.text("状态"))
         connectionTimeValue = connectionRow(facts, MoteI18n.text("连接时间"))
 
         text(MoteI18n.text("设备名称"), NativeFontRole.SUPPORT, NativeColorRole.MUTED).apply {
@@ -807,6 +835,11 @@ class MainActivity : MoteActivity() {
 
         val actions = menuGroup(24)
         if (config.hasSyncConnection()) {
+            connectionReauthAction = connectionActionRow(MoteI18n.text("重新连接"), danger = false) {
+                discardPageDraft()
+                startActivity(Intent(this, ConnectionActivity::class.java))
+            }
+            addGroupRow(actions, connectionReauthAction!!)
             connectionDisconnectAction = connectionActionRow(MoteI18n.text("断开连接"), danger = true) { confirmDisconnect() }
             addGroupRow(actions, connectionDisconnectAction!!)
         } else {
@@ -861,8 +894,105 @@ class MainActivity : MoteActivity() {
             else -> MoteI18n.text("采集权限")
         }
         connectionTimeValue?.text = if (!connected) MoteI18n.text("尚未连接") else connectionTimeLabel(ConnectionClient(applicationContext).statusAt())
+        val status = ConnectionClient(applicationContext).status()
+        connectionStateValue?.text = if (connected) AdministrationConnectionStatus.label(status) else MoteI18n.text("未连接")
+        connectionReauthAction?.visibility = if (connected && AdministrationConnectionStatus.needsReauthorization(status)) View.VISIBLE else View.GONE
         connectionConnectAction?.visibility = if (connected) View.GONE else View.VISIBLE
         connectionDisconnectAction?.visibility = if (connected) View.VISIBLE else View.GONE
+    }
+
+    private fun buildConnectionServices() {
+        page(Page.SERVICES, null)
+        content.setPadding(dp(16), 0, dp(16), dp(28))
+        designHeading(MoteI18n.text("连接"))
+        val selection = runCatching { CentralAccess.resolve(this) }.getOrNull()
+        val client = selection?.client
+        if (client == null) {
+            text(MoteI18n.text("尚未连接中央"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+            button(MoteI18n.text("连接"), true) { showPage(Page.CONNECTION) }
+            return
+        }
+        val server = selection.server.trimEnd('/')
+        ConnectionServicesSection(this, content, client) {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(server + "/#/" + CentralPageRoutes.connections))) }
+                .onFailure { toast(MoteI18n.text("无法打开中央页面")) }
+        }.load()
+    }
+
+    private fun buildNotifications() {
+        page(Page.NOTIFICATIONS, null)
+        content.setPadding(dp(16), 0, dp(16), dp(28))
+        designHeading(MoteI18n.text("通知"))
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(body)
+        loadNotifications(body)
+    }
+
+    private fun loadNotifications(body: LinearLayout, active: CentralClient? = null) {
+        body.removeAllViews()
+        val client = active ?: runCatching { CentralAccess.resolve(this) }.getOrNull()?.client
+        if (client == null) {
+            text(MoteI18n.text("尚未连接中央"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = body)
+            button(MoteI18n.text("连接"), true, parent = body) { showPage(Page.CONNECTION) }
+            return
+        }
+        uiTask.start(MoteI18n.text("正在读取…"), {}, { NotificationSettings.read(client) }) { result ->
+            if (isDestroyed || isFinishing) return@start
+            body.removeAllViews()
+            result.onSuccess { renderNotifications(body, client, it) }.onFailure { failure ->
+                text(failure.message ?: MoteI18n.text("需要处理"), NativeFontRole.SUPPORT, NativeColorRole.WARNING, parent = body)
+                button(MoteI18n.text("重试"), parent = body) { loadNotifications(body, client) }
+            }
+        }
+    }
+
+    private fun renderNotifications(body: LinearLayout, client: CentralClient, value: NotificationSettingsValue) {
+        val enabled = MoteComponents.switch(this, value.enabled, MoteI18n.text("助理通知"))
+        val quiet = MoteComponents.switch(this, value.quietHours != null, MoteI18n.text("安静时段")) { on ->
+            body.findViewWithTag<View>("notifications-quiet-hours")?.visibility = if (on) View.VISIBLE else View.GONE
+        }
+        val toggles = MoteComponents.group(this)
+        toggles.addView(MoteComponents.row(this, null, MoteI18n.text("助理通知"), trailing = enabled))
+        toggles.addView(MoteComponents.divider(this))
+        toggles.addView(MoteComponents.row(this, null, MoteI18n.text("安静时段"), trailing = quiet))
+        body.addView(toggles)
+        val hours = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            tag = "notifications-quiet-hours"
+            setPadding(0, dp(12), 0, dp(4))
+            visibility = if (value.quietHours == null) View.GONE else View.VISIBLE
+        }
+        val start = MoteUi.field(EditText(this).apply {
+            setText(value.quietHours?.start ?: "22:00"); hint = "22:00"
+            contentDescription = MoteI18n.text("开始时间"); isSingleLine = true
+            inputType = InputType.TYPE_CLASS_DATETIME
+        })
+        val end = MoteUi.field(EditText(this).apply {
+            setText(value.quietHours?.end ?: "08:00"); hint = "08:00"
+            contentDescription = MoteI18n.text("结束时间"); isSingleLine = true
+            inputType = InputType.TYPE_CLASS_DATETIME
+        })
+        text(MoteI18n.text("开始时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = hours)
+        hours.addView(start, LinearLayout.LayoutParams(-1, dp(MoteTheme.controlHeight)))
+        text(MoteI18n.text("结束时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = hours)
+        hours.addView(end, LinearLayout.LayoutParams(-1, dp(MoteTheme.controlHeight)))
+        body.addView(hours)
+        text(MoteI18n.text("时区") + " · " + value.timeZone, NativeFontRole.META, NativeColorRole.MUTED, parent = body)
+        if (value.readOnly) {
+            text(MoteI18n.text("当前服务只读，无法保存。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = body)
+        }
+        val save = button(MoteI18n.text("保存"), true, parent = body) {
+            if (value.readOnly) { toast(MoteI18n.text("当前服务只读，无法保存。")); return@button }
+            val selected = if (quiet.checked) QuietHours(start.text.toString().trim(), end.text.toString().trim()) else null
+            if (!NotificationSettings.validTime(selected)) { toast(MoteI18n.text("时间格式无法识别。")); return@button }
+            if (!NotificationSettings.validate(selected)) { toast(MoteI18n.text("开始和结束时间不能相同。")); return@button }
+            uiTask.start(MoteI18n.text("正在保存…"), {}, { NotificationSettings.save(client, value, enabled.checked, selected) }) { result ->
+                if (isDestroyed || isFinishing) return@start
+                result.onSuccess { toast(MoteI18n.text("已保存")); loadNotifications(body, client) }
+                    .onFailure { toast(it.message ?: MoteI18n.text("需要处理")) }
+            }
+        }
+        save.isEnabled = !value.readOnly
     }
 
     private fun centralHost(server: String): String {
@@ -1963,6 +2093,7 @@ class MainActivity : MoteActivity() {
                 Page.GOALS -> ensureTabPage(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
                 Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
                 Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
+                Page.SERVICES -> buildConnectionServices()
                 Page.ACTIVITY -> {
                     val central = CentralContent(this, activityState, initialPage = "activity", openLocalPage = { next -> showPage(Page.valueOf(next), connectionEntryOrigin = if (next == "CONNECTION") ConnectionOrigin.LOCAL_ACTIVITY else null) })
                     activityContent = central
@@ -1975,6 +2106,7 @@ class MainActivity : MoteActivity() {
                 Page.SOURCES -> buildSources()
                 Page.SETTINGS -> buildSettings()
                 Page.APPEARANCE -> buildAppearance()
+                Page.NOTIFICATIONS -> buildNotifications()
                 Page.PERMISSIONS -> buildPermissions()
                 Page.ABOUT -> buildAbout()
                 else -> buildSettingsPage(page, loadedConfig)
@@ -1998,6 +2130,7 @@ class MainActivity : MoteActivity() {
             }
         })
         tabCentrals[page] = central
+        if (page == Page.MEMORY || page == Page.SKILLS) central.rootBack = { showLastTab(); true }
         installManageAction(central)
         central.root.visibility = View.GONE
         central.root.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -2058,7 +2191,7 @@ class MainActivity : MoteActivity() {
         MoteNavigation.tabId(page.name)?.let { selectedTabId = it }
         if (::tabBar.isInitialized) tabBar.select(selectedTabId)
         if (::statusStrip.isInitialized) statusStrip.setTab(if (page in dailyTabPages) MoteNavigation.tabId(page.name) else null)
-        val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
+        val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.SERVICES, Page.LIBRARY)
         val centralOwned = page == Page.ASK || page == Page.ACTIVITY || (page in centralTabPages && page !in placeholderTabs)
         homeHeader.visibility = if (centralOwned) View.GONE else View.VISIBLE
         headerTitle.text = page.title
@@ -2068,7 +2201,7 @@ class MainActivity : MoteActivity() {
         headerMarkAction.visibility = if (homeHeader.visibility == View.VISIBLE) View.VISIBLE else View.GONE
         homeHeader.setPadding(dp(if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0, dp(if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0)
         homeHeader.minimumHeight = dp(48)
-        val manageEntry = page == Page.SETTINGS || (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU)
+        val manageEntry = page == Page.SETTINGS || page == Page.SERVICES || (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU)
         headerBackAction.tag = "local-back:${page.name}"
         headerBackAction.visibility = if (page.parent != null || manageEntry) View.VISIBLE else View.GONE
         headerBackAction.contentDescription = if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER)
@@ -2123,13 +2256,14 @@ class MainActivity : MoteActivity() {
 
     private fun navigateBack() {
         if (initializing) { finish(); return }
+        val manageBack = ManageBack.target(currentPage.name, lastTabPage.name)
         when {
             currentPage == Page.ASK && centralContent?.back() == true -> Unit
             currentPage == Page.ACTIVITY && activityContent?.back() == true -> Unit
             tabCentrals[currentPage]?.back() == true -> Unit
             currentPage == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU -> showLastTab()
             currentPage.parent != null -> navigatePageBack(currentPage)
-            currentPage == Page.SETTINGS -> showLastTab()
+            manageBack != null -> showPage(Page.valueOf(manageBack))
             currentPage in dailyTabPages -> finish()
             currentPage != Page.OVERVIEW -> showLastTab()
             else -> finish()        }
@@ -2145,7 +2279,7 @@ class MainActivity : MoteActivity() {
         if (page == Page.PRIVACY && ::appCaptureEditor.isInitialized && appCaptureEditor.backToList()) return
         if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER) returnConnectionToCaller()
         else if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU) showLastTab()
-        else if (page == Page.SETTINGS) showLastTab()
+        else if (page == Page.SETTINGS || page == Page.SERVICES) showLastTab()
         else pageBackTarget(page)?.let { target -> if (target == Page.OVERVIEW) showLastTab() else showPage(target) }
     }
 
@@ -2273,11 +2407,17 @@ class MainActivity : MoteActivity() {
         }
     }
 
-    private fun text(value: String, size: NativeFontRole, color: NativeColorRole = NativeColorRole.INK): TextView = TextView(this).apply {
-        text = value; MoteUi.type(this, size); MoteUi.textColor(this, color)
+    private fun text(
+        value: String,
+        size: NativeFontRole,
+        color: NativeColorRole = NativeColorRole.INK,
+        parent: LinearLayout = content,
+    ): TextView = TextView(this).apply {
+        text = value
+        MoteUi.type(this, size)
+        MoteUi.textColor(this, color)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
-        content.addView(this)
-    }
+    }.also(parent::addView)
     private fun section(value: String) {
         text(value, NativeFontRole.SECTION).apply {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -2529,10 +2669,16 @@ class MainActivity : MoteActivity() {
         buttonTintList = android.content.res.ColorStateList.valueOf(MoteUi.accent)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }; content.addView(this); track(this, label, stableKey)
     }
-    private fun button(label: String, primary: Boolean = false, action: () -> Unit) = MoteUi.button(Button(this), primary).apply {
-        text = label; setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }; content.addView(this)
-    }
+    private fun button(
+        label: String,
+        primary: Boolean = false,
+        parent: LinearLayout = content,
+        action: () -> Unit,
+    ) = MoteUi.button(Button(this), primary).apply {
+        text = label
+        setOnClickListener { action() }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
+    }.also(parent::addView)
     private fun rowButtons(left: String, leftAction: () -> Unit, right: String, rightAction: () -> Unit, leftPrimary: Boolean = false) {
         val compact = resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f
         val row = LinearLayout(this).apply { orientation = if (compact) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }

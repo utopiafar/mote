@@ -30,6 +30,9 @@ checkPageRouteConstants(kotlin);
 const drifted = kotlin.replace(`const val chat = "${pageRoutes.chat}"`, 'const val chat = "drifted-chat"');
 assert.notEqual(drifted, kotlin, 'The drift self-check needs the generated chat constant');
 assert.throws(() => checkPageRouteConstants(drifted), /CentralPageRoutes\.chat/);
+const mainActivity = await readFile(resolve(root, 'apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt'), 'utf8');
+assert.ok(!mainActivity.includes(`/#/${pageRoutes.connections}`),
+  'Android connection management must use CentralPageRoutes.connections');
 const directory = await mkdtemp(join(tmpdir(), 'mote-kotlin-contract-'));
 const token = randomBytes(32).toString('hex');
 const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
