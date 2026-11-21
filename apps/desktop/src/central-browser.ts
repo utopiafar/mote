@@ -45,6 +45,29 @@ export function centralWindowUrl(serverUrl: string, loginTicket?: string, route:
   return origin + '/' + pageHash(route, loginTicket ? { loginTicket } : undefined);
 }
 
+/** Tracks whether the main window is on the local offline page and owns the
+ * single in-flight fallback load. Already being offline is not a reason to
+ * skip the fallback: a tray retry may fail after the first offline page. */
+export class CentralWindowFallback {
+  private offlineState = false;
+  private pending: Promise<void> | undefined;
+
+  get offline(): boolean { return this.offlineState; }
+
+  markOnline(): void { this.offlineState = false; }
+
+  restore(loadOffline: () => Promise<unknown>): Promise<void> {
+    this.offlineState = true;
+    if (this.pending) return this.pending;
+    const pending = Promise.resolve()
+      .then(loadOffline)
+      .then(() => undefined, () => undefined)
+      .finally(() => { if (this.pending === pending) this.pending = undefined; });
+    this.pending = pending;
+    return pending;
+  }
+}
+
 /** Only the main Central window main frame, on the paired origin or the local
  * offline page, may ask the host to open the local window. */
 export function trustedCentralWindowSender(

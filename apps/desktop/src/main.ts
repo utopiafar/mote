@@ -31,7 +31,7 @@ import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplicat
 import { ConnectionError, testConnection } from './connection';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { centralNavigationDecision, centralWindowOpenLocalChannel, centralWindowUrl, centralWindowWebPreferences, openCentralBrowser,trustedCentralWindowSender,validateCentralWorkId } from './central-browser';
+import { centralNavigationDecision, CentralWindowFallback, centralWindowOpenLocalChannel, centralWindowUrl, centralWindowWebPreferences, openCentralBrowser,trustedCentralWindowSender,validateCentralWorkId } from './central-browser';
 import { showCentral as navigateCentral, prepareBrowserSession, pollBrowserLogin, type BrowserLogin } from './central-navigation';
 import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -611,7 +611,12 @@ else {
     const allowedCentralOrigin = () => {
       try { return settings.serverUrl ? validateServerUrl(settings.serverUrl) : undefined; } catch { return undefined; }
     };
-    let centralOffline = false;
+    const centralFallback = new CentralWindowFallback();
+    const restoreCentralOffline = (): Promise<void> => {
+      const target = centralWindow;
+      if (!target || target.isDestroyed()) return Promise.resolve();
+      return centralFallback.restore(() => target.loadURL(centralWindowOfflineUrl));
+    };
     let centralLoad: Promise<void> | undefined;
     loadCentralWindow = async () => {
       if (!centralWindow || centralWindow.isDestroyed()) return;
@@ -620,8 +625,7 @@ else {
       const origin = allowedCentralOrigin();
       centralLoad = (async () => {
         if (!origin) {
-          centralOffline = true;
-          await centralWindow?.loadURL(centralWindowOfflineUrl).catch(() => {});
+          await restoreCentralOffline();
           return;
         }
         try {
@@ -634,16 +638,14 @@ else {
           }
           if (settings.serverUrl !== selected.serverUrl || connectionToken(settings) !== token || !centralWindow || centralWindow.isDestroyed()) return;
           await centralWindow.loadURL(centralWindowUrl(origin, ticket));
-          centralOffline = false;
+          centralFallback.markOnline();
         } catch {
-          if (centralOffline || !centralWindow || centralWindow.isDestroyed()) return;
-          centralOffline = true;
-          await centralWindow.loadURL(centralWindowOfflineUrl).catch(() => {});
+          await restoreCentralOffline();
         }
       })().finally(() => { centralLoad = undefined; });
       return centralLoad;
     };
-    retryCentralWindow = () => { if (centralOffline) void loadCentralWindow?.(); };
+    retryCentralWindow = () => { if (centralFallback.offline) void loadCentralWindow?.(); };
 
     centralWindow = new BrowserWindow({
       width: 1140, height: 840, minWidth: 820, minHeight: 620, show: false, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
@@ -671,11 +673,10 @@ else {
     centralWindow.webContents.on('will-attach-webview', event => event.preventDefault());
     centralWindow.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     centralWindow.webContents.on('did-fail-load', (_event, code, _description, failedUrl, isMainFrame) => {
-      if (!isMainFrame || code === -3 || centralOffline) return;
+      if (!isMainFrame || code === -3) return;
       const origin = allowedCentralOrigin();
       if (!origin || (failedUrl !== origin && !failedUrl.startsWith(origin + '/'))) return;
-      centralOffline = true;
-      void centralWindow?.loadURL(centralWindowOfflineUrl).catch(() => {});
+      void restoreCentralOffline();
     });
     centralWindow.on('close', event => { if (!quitting) { event.preventDefault(); centralWindow?.hide(); } });
     centralWindow.once('closed', () => { centralWindow = undefined; });

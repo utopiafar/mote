@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  centralNavigationDecision, centralWindowOpenLocalChannel, centralWindowUrl,
+  centralNavigationDecision, CentralWindowFallback, centralWindowOpenLocalChannel, centralWindowUrl,
   centralWindowWebPreferences, trustedCentralWindowSender,
 } from '../src/central-browser';
 
@@ -87,6 +87,42 @@ describe('MC2-04 offline main window', () => {
       buttons[0]!.click();
       expect(calls).toEqual([1]);
     } finally { dom.window.close(); }
+  });
+});
+
+describe('MC2-04 repeated offline fallback', () => {
+  it('restores offline.html again when a retry fails while the window is already offline', async () => {
+    const fallback = new CentralWindowFallback();
+    const loads: string[] = [];
+    await fallback.restore(async () => { loads.push('first'); });
+    expect(fallback.offline).toBe(true);
+    // The tray retry starts while this flag is already true; its failure must
+    // still put the offline page and its Connect action back.
+    await fallback.restore(async () => { loads.push('retry'); });
+    expect(loads).toEqual(['first', 'retry']);
+    expect(fallback.offline).toBe(true);
+  });
+
+  it('deduplicates an in-flight fallback and keeps it usable after a failed load', async () => {
+    const fallback = new CentralWindowFallback();
+    let finish!: () => void;
+    const first = fallback.restore(() => new Promise<void>(resolve => { finish = resolve; }));
+    const duplicate = fallback.restore(async () => { throw Error('must not start a second load'); });
+    expect(duplicate).toBe(first);
+    await Promise.resolve();
+    finish();
+    await duplicate;
+    await expect(fallback.restore(async () => { throw Error('offline page unavailable'); })).resolves.toBeUndefined();
+    expect(fallback.offline).toBe(true);
+  });
+
+  it('leaves the offline state only after a Central load succeeds', async () => {
+    const fallback = new CentralWindowFallback();
+    expect(fallback.offline).toBe(false);
+    await fallback.restore(async () => {});
+    expect(fallback.offline).toBe(true);
+    fallback.markOnline();
+    expect(fallback.offline).toBe(false);
   });
 });
 
