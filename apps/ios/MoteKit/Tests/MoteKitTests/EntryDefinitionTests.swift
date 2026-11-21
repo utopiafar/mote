@@ -37,11 +37,11 @@ final class EntryDefinitionTests: XCTestCase {
     }
 
     func testShortcutNamesAndSiriPhrasesMatchThePublishedContract() {
-        XCTAssertEqual(MoteEntry.allCases.map(\.title), ["记录", "拍照", "录音", "问一问", "暂停发送"])
+        XCTAssertEqual(MoteEntry.allCases.map(\.title), ["记录", "拍照", "录音", "聊天", "暂停发送"])
         XCTAssertEqual(MoteCaptureShortcut.allCases.map(\.title), ["保存截图", "保存通知"])
         XCTAssertEqual(MoteEntry.record.siriPhrases, ["用 Mote 记一下"])
         XCTAssertEqual(MoteEntry.recording.siriPhrases, ["用 Mote 录音"])
-        XCTAssertEqual(MoteEntry.ask.siriPhrases, ["问 Mote"])
+        XCTAssertEqual(MoteEntry.ask.siriPhrases, ["和 Mote 聊聊"])
         XCTAssertTrue(MoteEntry.allCases.filter { !$0.siriPhrases.isEmpty }.map(\.id)
             .elementsEqual(["record", "recording", "ask"]))
     }

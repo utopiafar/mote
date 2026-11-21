@@ -5,6 +5,6 @@
     <string name="tile_screen_capture">Capture d\'écran</string>
     <string name="tile_send_pause">Suspendre l\'envoi</string>
     <string name="widget_label">Accès rapides Mote</string>
-    <string name="widget_description">Demander et enregistrer depuis l\'écran d\'accueil</string>
-    <string name="widget_ask">Demander</string>
+    <string name="widget_description">Discuter et enregistrer depuis l\'écran d\'accueil</string>
+    <string name="widget_ask">Discussion</string>
 </resources>

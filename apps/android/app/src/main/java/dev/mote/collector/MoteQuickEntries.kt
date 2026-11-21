@@ -13,14 +13,14 @@ import dev.mote.collector.plugins.SystemEntriesPlugin
 
 /**
  * One definition for every system-level entry: launcher shortcuts, the capture notification and the widget.
- * Entries only open the app's own editor or Ask page; they never save, send or start capture by themselves.
+ * Entries only open the editor or main chat; they never save, send or start capture by themselves.
  * The system entries plugin decides whether they are offered at all.
  */
 internal enum class MoteQuickEntry(val id: String, val labelKey: String, val icon: Int) {
     RECORD("record", "记录", R.drawable.ic_entry_record),
     PHOTO("photo", "拍照", R.drawable.ic_entry_photo),
     AUDIO("audio", "录音", R.drawable.ic_entry_audio),
-    ASK("ask", "问一问", R.drawable.ic_entry_ask);
+    ASK("ask", "聊天", R.drawable.ic_entry_ask);
 
     val label get() = MoteI18n.text(labelKey)
     fun intent(context: Context): Intent = Intent(context, QuickEntryActivity::class.java).setAction(ACTION).putExtra(EXTRA, id)
@@ -30,7 +30,7 @@ internal enum class MoteQuickEntry(val id: String, val labelKey: String, val ico
 
     /** The in-app destination. A new task is required because entries start outside an activity. */
     fun destination(context: Context): Intent = when (this) {
-        ASK -> Intent(context, MainActivity::class.java).putExtra("page", "ASK")
+        ASK -> Intent(context, MainActivity::class.java).putExtra("page", TabFrame.ASK_PAGE)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         else -> Intent(context, if (this == AUDIO) MicrophoneRecordEditorActivity::class.java else RecordEditorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .apply { media?.let { putExtra("startMedia", it) } }
@@ -60,7 +60,7 @@ internal object MoteShortcuts {
 
 /**
  * Launchers start shortcuts with a cleared task. Entries land here in their own task and forward to the app,
- * so drafts, the Ask page and any reader position in the app's existing task are kept.
+ * so drafts, chat and any reader position in the app's existing task are kept.
  */
 class QuickEntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,8 +98,9 @@ class QuickEntryWidget : android.appwidget.AppWidgetProvider() {
                 setOnClickPendingIntent(R.id.widget_ask, null)
                 return@apply
             }
-            setTextViewText(R.id.widget_ask, MoteI18n.text("问一问"))
-            setContentDescription(R.id.widget_ask, MoteQuickEntry.ASK.label)
+            val chatLabel = MoteQuickEntry.ASK.label
+            setTextViewText(R.id.widget_ask, chatLabel)
+            setContentDescription(R.id.widget_ask, chatLabel)
             setOnClickPendingIntent(R.id.widget_ask, MoteQuickEntry.ASK.pendingIntent(context))
             listOf(R.id.widget_record to MoteQuickEntry.RECORD, R.id.widget_photo to MoteQuickEntry.PHOTO, R.id.widget_audio to MoteQuickEntry.AUDIO).forEach { (view, entry) ->
                 setContentDescription(view, entry.label); setOnClickPendingIntent(view, entry.pendingIntent(context))
