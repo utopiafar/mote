@@ -3,10 +3,16 @@ package dev.mote.collector.plugins
 import android.app.Activity
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
+import android.text.TextUtils
+import android.view.View
+import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
 import dev.mote.collector.CentralAccess
 import dev.mote.collector.CentralCaptureReader
 import dev.mote.collector.CentralClient
 import dev.mote.collector.CentralFileView
+import dev.mote.collector.CentralFailure
 import dev.mote.collector.CentralLibrary
 import dev.mote.collector.CentralMemoryTopics
 import dev.mote.collector.CentralScreens
@@ -16,16 +22,22 @@ import dev.mote.collector.LibraryRefreshPolicy
 import dev.mote.collector.LibrarySourceProjection
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.MoteI18n
+import dev.mote.collector.MoteActivity
+import dev.mote.collector.MoteUi
 import dev.mote.collector.WorkMemoryReference
 import dev.mote.collector.ArchivedOriginal
 import dev.mote.collector.CaptureUploadVersion
 import dev.mote.collector.ReleasedCapture
 import dev.mote.collector.Settings
 import dev.mote.collector.TransferRequestGuard
+import dev.mote.collector.UiTask
 import dev.mote.collector.captureLibraryVersion
 import dev.mote.collector.queue
 import dev.mote.collector.recordDraftStore
 import dev.mote.collector.meeting.meetingRecordings
+import dev.mote.collector.moteDp
+import dev.mote.collector.ui.MoteComponents
+import dev.mote.collector.ui.MoteGlyph
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -202,6 +214,11 @@ internal class NativeLibraryOwner internal constructor(
 
     fun sourceProjection() = LibrarySourceProjection()
 
+    fun sourceBar(activity: MoteActivity, filter: LibrarySourceFilter, select: (LibrarySourceFilter) -> Unit): LibrarySourceBar {
+        requireActive()
+        return LibrarySourceBar(activity, filter, select)
+    }
+
     fun refreshPolicy(revision: Long? = null, count: Int? = null) = LibraryRefreshPolicy(revision, count)
 
     fun localPage(context: Context, after: String, before: String, cursor: Pair<String, String>?, kind: String, sourceId: String): LibraryLocalSources.Page =
@@ -233,6 +250,139 @@ internal class NativeLibraryOwner internal constructor(
         if (closed) return
         closed = true
         readers.toList().forEach { runCatching(it) }; readers.clear()
+    }
+}
+
+internal class LibrarySourceBar(
+    private val activity: MoteActivity,
+    initial: LibrarySourceFilter,
+    private val onSelect: (LibrarySourceFilter) -> Unit,
+) : LinearLayout(activity) {
+    private val task = UiTask(activity)
+    private val settings = Settings(activity)
+    private var selected = initial
+    private var phone: LibrarySourceChoice? = null
+    private var centralChoices = emptyList<LibrarySourceChoice>()
+    private var accessGeneration: Pair<String, Long>? = null
+    private var lastReadAt: Long? = null
+    private var sourceRevision: String? = null
+    private var active = false
+    private val choices = LinearLayout(activity).apply { tag = "library-source-bar" }
+    private val status = LinearLayout(activity).apply { orientation = VERTICAL }
+
+    init {
+        orientation = VERTICAL
+        addView(HorizontalScrollView(activity).apply {
+            isHorizontalScrollBarEnabled = false
+            contentDescription = MoteI18n.text("来源")
+            addView(choices)
+        }, LayoutParams(-1, -2))
+        addView(status)
+        updatePhone()
+    }
+
+    fun updatePhone() {
+        val next = SourceProviderPlugin.libraryPhone(settings.enabled && settings.screenPausedAt() == null, settings.state(), settings.syncState())
+        if (phone == next) return
+        phone = next
+        render()
+    }
+
+    fun resume() { active = true; refresh() }
+    fun pause() { active = false }
+    fun close() { pause(); task.close() }
+
+    fun sourcesRevision(revision: String) {
+        val previous = sourceRevision
+        sourceRevision = revision
+        refresh(force = previous != null && previous != revision)
+    }
+
+    fun refresh(force: Boolean = false) {
+        if (!active) return
+        updatePhone()
+        val access = CentralAccess.resolve(activity)
+        val identity = access.server to access.generation
+        if (accessGeneration != identity) {
+            accessGeneration = identity
+            centralChoices = emptyList()
+            lastReadAt = null
+            status.removeAllViews()
+            if (selected is LibrarySourceFilter.Device || selected is LibrarySourceFilter.Service) select(LibrarySourceFilter.All)
+            else render()
+        }
+        val client = access.client ?: return
+        if (task.busy) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && lastReadAt?.let { now - it < 30_000 } == true) return
+        val prior = lastReadAt
+        lastReadAt = now
+        status.removeAllViews()
+        if (prior == null) status.addView(MoteComponents.loadingLine(activity, MoteI18n.text("正在读取…")))
+        task.start("", {}, {
+            fun read(path: String) = runCatching { client.get(path) }
+            val reports = read("/api/devices")
+            val connections = read("/api/connections")
+            val services = read("/api/sources").mapCatching(SourceProviderPlugin::libraryServices)
+            val devices = runCatching { SourceProviderPlugin.libraryDevices(reports.getOrNull(), connections.getOrNull(), settings.deviceId) }
+            val failures = listOf(reports, connections, services, devices).mapNotNull { it.exceptionOrNull() }
+            (devices.getOrDefault(emptyList()) + services.getOrDefault(emptyList())) to failures
+        }) { result ->
+            if (!active) { lastReadAt = null; return@start }
+            val current = CentralAccess.resolve(activity)
+            if (accessGeneration != identity || identity != (current.server to current.generation)) { refresh(); return@start }
+            val (values, errors) = result.getOrElse { emptyList<LibrarySourceChoice>() to listOf(it) }
+            centralChoices = values
+            if (errors.isEmpty() && selected !in values.map { it.filter } && (selected is LibrarySourceFilter.Device || selected is LibrarySourceFilter.Service)) {
+                select(LibrarySourceFilter.All)
+            } else render()
+            status.removeAllViews()
+            if (errors.isNotEmpty()) {
+                val text = when {
+                    errors.any { it is CentralFailure && it.status in setOf(401, 403, 410) } -> MoteI18n.text("已失效")
+                    errors.all { it is java.io.IOException } -> MoteI18n.text("已离线")
+                    else -> MoteI18n.text("状态读取失败。")
+                }
+                status.addView(MoteComponents.banner(activity, null, text, actionLabel = "重试") { refresh(force = true) })
+            }
+        }
+    }
+
+    private fun select(filter: LibrarySourceFilter) {
+        if (filter == selected) return
+        selected = filter
+        render()
+        onSelect(filter)
+    }
+
+    private fun render() {
+        choices.removeAllViews()
+        val all = LibrarySourceChoice(LibrarySourceFilter.All, MoteI18n.text("全部"), null)
+        for (choice in listOfNotNull(all, phone) + centralChoices) {
+            val activeChoice = selected == choice.filter
+            val label = listOfNotNull(choice.name, choice.status?.label()).joinToString(" · ")
+            val role = if (activeChoice) MoteUi.ButtonRole.PRIMARY else MoteUi.ButtonRole.SECONDARY
+            val chip = MoteComponents.button(activity, label, role) { select(choice.filter) }.apply {
+                isSelected = activeChoice
+                maxWidth = activity.moteDp(244)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                tag = when (val filter = choice.filter) {
+                    LibrarySourceFilter.All -> "library-source:all"
+                    LibrarySourceFilter.Phone -> "library-source:phone"
+                    is LibrarySourceFilter.Device -> "library-source:device:${filter.id}"
+                    is LibrarySourceFilter.Service -> "library-source:service:${filter.id}"
+                }
+                val glyph = when {
+                    choice.platform in setOf("android", "ios") -> MoteGlyph.PHONE
+                    choice.platform != null -> MoteGlyph.LAPTOP
+                    choice.filter is LibrarySourceFilter.Service -> MoteGlyph.LINK
+                    else -> null
+                }
+                glyph?.let { setCompoundDrawablesRelativeWithIntrinsicBounds(it.drawable, 0, 0, 0); compoundDrawablePadding = activity.moteDp(6) }
+            }
+            choices.addView(chip, LayoutParams(-2, -2).apply { marginEnd = activity.moteDp(6) })
+        }
     }
 }
 

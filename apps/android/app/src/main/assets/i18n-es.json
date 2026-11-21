@@ -4916,7 +4916,6 @@
   "中央管理令牌": "Token de propietario central",
   "本次应用会话": "Esta sesión de la app",
   "暂无记录": "Sin registros",
-  "暂无记录。": "Aún no hay registros.",
   "高级 JSON": "JSON avanzado",
   "模型配置": "Configuración del modelo",
   "并发与执行设置": "Configuración de concurrencia y ejecución",
@@ -7672,5 +7671,17 @@
   "个人 Slack 归档；发送需第二次授权并经行动平台逐条确认": "Archivo personal de Slack; enviar requiere una segunda autorización y confirmación por elemento en la plataforma de acciones",
   "在已有飞书账号上归档已勾选会话": "Archivar chats seleccionados en una cuenta de Feishu existente",
   "Markdown / Obsidian 导出": "Exportación a Markdown / Obsidian",
-  "按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）": "Escribir de forma continua las fuentes seleccionadas en una carpeta local o un vault de Obsidian por cursor (paquete de salida oficial)"
+  "按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）": "Escribir de forma continua las fuentes seleccionadas en una carpeta local o un vault de Obsidian por cursor (paquete de salida oficial)",
+  "照做": "Hacerlo",
+  "已交给 Mote": "Mote vigila",
+  "交给 Mote 盯着": "Pedir a Mote que vigile",
+  "不需要": "No hace falta",
+  "等别人": "Esperando a otros",
+  "我要做": "Por hacer",
+  "否定推断": "Rechazar inferencia",
+  "按事项": "Por asunto",
+  "按人": "Por persona",
+  "目标已变化": "Objetivo modificado",
+  "推断 ×": "Inferido ×",
+  "新建目标": "Nuevo objetivo"
 }

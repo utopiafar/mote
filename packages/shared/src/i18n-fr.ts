@@ -4917,7 +4917,6 @@ export const french: Readonly<Record<string, string>> = {
   "中央管理令牌": "Jeton du propriétaire central",
   "本次应用会话": "Cette session de l'application",
   "暂无记录": "Aucun enregistrement",
-  "暂无记录。": "Aucun enregistrement pour l’instant.",
   "高级 JSON": "JSON avancé",
   "模型配置": "Configuration du modèle",
   "并发与执行设置": "Paramètres de concurrence et d'exécution",
@@ -7673,5 +7672,17 @@ export const french: Readonly<Record<string, string>> = {
   "个人 Slack 归档；发送需第二次授权并经行动平台逐条确认": "Archive Slack personnelle ; l'envoi exige une seconde autorisation et une confirmation par élément dans la plateforme d'actions",
   "在已有飞书账号上归档已勾选会话": "Archiver les conversations sélectionnées sur un compte Feishu existant",
   "Markdown / Obsidian 导出": "Export Markdown / Obsidian",
-  "按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）": "Écrire en continu les sources sélectionnées dans un dossier local ou un vault Obsidian par curseur (paquet sortant officiel)"
+  "按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）": "Écrire en continu les sources sélectionnées dans un dossier local ou un vault Obsidian par curseur (paquet sortant officiel)",
+  "照做": "Faire",
+  "已交给 Mote": "Mote suit",
+  "交给 Mote 盯着": "Demander à Mote de suivre",
+  "不需要": "Pas utile",
+  "等别人": "En attente",
+  "我要做": "À faire",
+  "否定推断": "Rejeter l'hypothèse",
+  "按事项": "Par sujet",
+  "按人": "Par personne",
+  "目标已变化": "Objectif modifié",
+  "推断 ×": "Déduit ×",
+  "新建目标": "Nouvel objectif"
 };

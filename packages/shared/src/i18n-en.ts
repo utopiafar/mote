@@ -4917,7 +4917,6 @@ export const english: Readonly<Record<string, string>> = {
   "中央管理令牌": "Central owner token",
   "本次应用会话": "This app session",
   "暂无记录": "No records",
-  "暂无记录。": "No records yet.",
   "高级 JSON": "Advanced JSON",
   "模型配置": "Model configuration",
   "并发与执行设置": "Concurrency and execution settings",
@@ -7673,5 +7672,17 @@ export const english: Readonly<Record<string, string>> = {
   "个人 Slack 归档；发送需第二次授权并经行动平台逐条确认": "Personal Slack archive; sending requires a second authorization and per-item Action confirmation",
   "在已有飞书账号上归档已勾选会话": "Archive selected chats on an existing Feishu account",
   "Markdown / Obsidian 导出": "Markdown / Obsidian export",
-  "按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）": "Continuously write selected sources to a local folder or Obsidian vault by cursor (official outbound package)"
+  "按游标把已选来源连续写入本地文件夹或 Obsidian vault（官方出站包）": "Continuously write selected sources to a local folder or Obsidian vault by cursor (official outbound package)",
+  "照做": "Do it",
+  "已交给 Mote": "Mote is watching",
+  "交给 Mote 盯着": "Ask Mote to watch",
+  "不需要": "Not needed",
+  "等别人": "Waiting on others",
+  "我要做": "To do",
+  "否定推断": "Reject inference",
+  "按事项": "By matter",
+  "按人": "By person",
+  "目标已变化": "Goal changed",
+  "推断 ×": "Inferred ×",
+  "新建目标": "New goal"
 };
