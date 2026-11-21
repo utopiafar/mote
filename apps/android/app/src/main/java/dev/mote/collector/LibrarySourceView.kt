@@ -66,6 +66,10 @@ internal class LibrarySourceView(private val activity: MoteActivity, private val
     fun count(location: String) = projection.visible(location).size
     fun save() = Bundle().apply { putInt("pages", maxOf(pages, remotePages, 1)); putString("sourceId", source) }
     fun restore(state: Bundle?) { restore = state?.getInt("pages", 1)?.coerceIn(1,50) ?: 1 }
+    fun invalidate() {
+        stamp++; activeCriteria = emptyList(); candidates.clear()
+        pendingRefresh = false; localPending = false; remoteRequested = false
+    }
     fun refresh(kind: String, selectedDay: String) {
         val access = CentralAccess.resolve(activity)
         val scope = access.server to access.generation

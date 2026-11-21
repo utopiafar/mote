@@ -90,11 +90,10 @@ class MainActivity : MoteActivity() {
     private var localBadgeObserver: (() -> Unit)? = null
     private var renderedTabs: String? = null
     private var currentTabs: List<MoteNavItem> = emptyList()
-    private lateinit var homeRecordingBar: HomeRecordingBar
+    private lateinit var statusStrip: StatusStrip
     private lateinit var todaySummary: TextView
-    private lateinit var manageScreenSwitch: MoteComponents.MoteSwitch
-    private lateinit var manageSendSwitch: MoteComponents.MoteSwitch
-    private lateinit var manageScreenPermission: LinearLayout
+    private var localLibraryBadge: (() -> Unit)? = null
+    private var captureAttention = false
     private lateinit var homeSyncDetailStatus: TextView
     private lateinit var homeSyncRate: TextView
     private lateinit var homeSourceList: LinearLayout
@@ -135,7 +134,6 @@ class MainActivity : MoteActivity() {
     private val dailyTabPages = setOf(Page.ASK, Page.FEED, Page.IDEAS, Page.GOALS, Page.LIBRARY)
     private val placeholderTabs = mutableSetOf<Page>()
     private val IDEAS_ROUTE = "assistant.ideas"
-    private val GOALS_ROUTE = "assistant.goals"
     private var logExportHours = 24
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig, val appCapture: AppCaptureEditor.State?)
     private lateinit var name: EditText
@@ -198,7 +196,7 @@ class MainActivity : MoteActivity() {
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connectionTitle: String, val connection: String,
         val media: String, val config: CollectorConfig?, val syncQueue: String, val syncPolicy: String, val syncFacts: String, val captureAttention: Boolean,
-        val notice: HomeNotice?)
+        val hasDraft: Boolean)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); loadSourceRows(); refreshBadges(); handler.postDelayed(this, 2000) }
     }
@@ -268,9 +266,9 @@ class MainActivity : MoteActivity() {
             text = MoteI18n.text("保存设置"); setOnClickListener { saveConfig() }
         }, true), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(12) })
         root.footer(saveBar)
-        homeRecordingBar = HomeRecordingBar(this) { openRecordEditor() }
-        root.footer(homeRecordingBar)
-        homeRecordingBar.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+        statusStrip = StatusStrip(this) { openRecordEditor() }
+        root.footer(statusStrip)
+        statusStrip.layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
             leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(10)
         }
         navigationCatalog = MoteNavCatalog.fromAssets(assets)
@@ -278,6 +276,7 @@ class MainActivity : MoteActivity() {
         root.footer(tabBar)
         tabBar.dockInsets(root)
         localBadgeObserver = MoteLocalBadges.observe { handler.post { renderBadges() } }
+        localLibraryBadge = MoteLocalBadges.register("library") { captureAttention }
         setContentView(root)
         // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
         libraryState = savedInstanceState?.getBundle("library"); logExportHours=savedInstanceState?.getInt("logExportHours",24)?.takeIf { it in listOf(1,24,168) } ?: 24
@@ -412,6 +411,13 @@ class MainActivity : MoteActivity() {
                     if (badgeGate.current(stamp)) {
                         navBadges = NavBadgeRules.read(state, navBadges)
                         renderBadges()
+                        if (resumed) state.optJSONObject("revisions")?.let { revisions ->
+                            if (currentPage == Page.GOALS) {
+                                tabCentrals[Page.GOALS]?.goalsRevisionChanged?.invoke(revisions.optString("matters") to revisions.optString("commitments"))
+                            } else if (currentPage == Page.LIBRARY) {
+                                libraryView?.centralRevisions(revisions.optString("library"), revisions.optString("sources"))
+                            }
+                        }
                     }
                 }.onFailure { error ->
                     badgeGate.failure(end, (error as? CentralFailure)?.status)
@@ -427,40 +433,11 @@ class MainActivity : MoteActivity() {
         content.setPadding(dp(16), 0, dp(16), dp(28))
         designHeading(MoteI18n.text("我的 Mote"))
         val navigationGroup = menuGroup(0)
-        addGroupRow(navigationGroup, menuOption(MoteI18n.text("资料与记忆"), MoteGlyph.LIBRARY) { showPage(Page.LIBRARY) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("发现历史"), MoteGlyph.PULSE) { openCentral("insights") })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("通知"), MoteGlyph.PULSE) { startActivity(Intent(this, AssistantInboxActivity::class.java)) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("动态与建议"), MoteGlyph.PULSE) { openCentral(AssistantPlugin.FEED_ROUTE) })
         addGroupRow(navigationGroup, menuOption(MoteI18n.text("事项与规则"), MoteGlyph.LIBRARY) { openCentral(AssistantPlugin.MATTERS_ROUTE) })
-        addGroupRow(navigationGroup, menuOption(MoteI18n.text("日程与待办"), MoteGlyph.CALENDAR) {
-            startActivity(Intent(this, CalendarActionsActivity::class.java))
-        })
         val captureGroup = menuGroup(24)
-        val screenTrailing = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        manageScreenSwitch = MoteComponents.switch(this, checked = false, description = MoteI18n.text("屏幕采集")) { on -> setScreenCapture(on) }
-        screenTrailing.addView(manageScreenSwitch)
-        manageScreenPermission = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-        }
-        manageScreenPermission.addView(TextView(this).apply {
-            text = MoteI18n.text("等待采集权限")
-            MoteUi.type(this, NativeFontRole.BODY)
-            MoteUi.textColor(this, NativeColorRole.WARNING)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
-        manageScreenPermission.addView(MoteComponents.smallButton(this, MoteI18n.text("处理")) {
-            val action = ManageMenu.screenPermissionAction(loadedConfig.effectiveMode() == "projection")
-            runCaptureAction(action)
-        }, LinearLayout.LayoutParams(-2, dp(48)))
-        screenTrailing.addView(manageScreenPermission)
-        addGroupRow(captureGroup, MoteComponents.row(this, MoteGlyph.SCREEN, MoteI18n.text("屏幕采集"),
-            trailing = screenTrailing, verticalPaddingDp = 0).apply { tag = "menu:屏幕采集" })
-        manageSendSwitch = MoteComponents.switch(this, checked = false, description = MoteI18n.text("发送")) { changeSendPause() }
-        addGroupRow(captureGroup, MoteComponents.row(this, MoteGlyph.SEND, MoteI18n.text("发送"),
-            trailing = manageSendSwitch, verticalPaddingDp = 0).apply { tag = "menu:发送" })
         addGroupRow(captureGroup, menuOption(MoteI18n.text("采集与同步"), MoteGlyph.REFRESH) {
             startActivity(Intent(this, SourcesActivity::class.java))
         })
@@ -469,7 +446,6 @@ class MainActivity : MoteActivity() {
         addGroupRow(moreGroup, MoteComponents.row(this, MoteGlyph.GLOBE, MoteI18n.text("中央工作台"),
             trailing = MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16),
             onClick = { openCentral("overview") }).apply { tag = "menu:中央工作台" })
-        refreshManageMenu()
         // Operational inventory remains available under capture and sync, outside the light home/menu.
         ensurePage(Page.SOURCES)
         content = (pages.getValue(Page.SOURCES) as ScrollView).getChildAt(0) as LinearLayout
@@ -519,52 +495,6 @@ class MainActivity : MoteActivity() {
             MoteAddAction.NOTE -> openRecordEditor()
             MoteAddAction.FEISHU -> openCentral("lark")
         }
-    }
-
-    private fun changeSendPause() {
-        if (uiTask.busy) { refreshManageMenu(); return }
-        uiTask.start(MoteI18n.text("正在保存发送状态…"), {}, {
-            SendPauseControl.set(applicationContext, !Settings(applicationContext).read().syncPaused)
-            Settings(applicationContext).read()
-        }) { result ->
-            result.onSuccess { current -> loadedConfig = current; commitSettingsSummaries(current); refreshStatus() }
-                .onFailure {
-                    refreshManageMenu()
-                    toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失"))
-                }
-        }
-    }
-
-    private fun setScreenCapture(on: Boolean) {
-        if (applyingSettings || uiTask.busy) { refreshManageMenu(); return }
-        if (on) {
-            if (!settings.enabled) {
-                refreshManageMenu()
-                showPage(Page.PRIVACY)
-            } else if (settings.screenPausedAt() != null) {
-                resumeCapture()
-            } else if (!loadedConfig.screenCollectionEnabled) {
-                val next = loadedConfig.copy(screenCollectionEnabled = true)
-                changeRuntimeConfig(next) {
-                    if (next.effectiveMode() == "projection" && !ProjectionService.running) requestProjectionConsent()
-                }
-            }
-        } else if (settings.enabled && loadedConfig.screenCollectionEnabled) {
-            pauseScreenCapture()
-        } else if (loadedConfig.screenCollectionEnabled) {
-            changeRuntimeConfig(loadedConfig.copy(screenCollectionEnabled = false))
-        }
-    }
-
-    private fun refreshManageMenu() {
-        if (!::manageScreenSwitch.isInitialized) return
-        val live = loadedConfig.screenCollectionEnabled &&
-            (if (loadedConfig.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
-        val state = ManageMenu.state(settings.enabled, loadedConfig.screenCollectionEnabled, live, loadedConfig.syncPaused)
-        manageScreenSwitch.setChecked(state.screenOn)
-        manageSendSwitch.setChecked(state.sendOn)
-        manageScreenSwitch.visibility = if (state.screenPermission) View.GONE else View.VISIBLE
-        manageScreenPermission.visibility = if (state.screenPermission) View.VISIBLE else View.GONE
     }
 
     private fun menuGroup(topMarginDp: Int): LinearLayout {
@@ -680,10 +610,17 @@ class MainActivity : MoteActivity() {
             addView(TextView(this@MainActivity).apply { text = title; MoteUi.type(this, NativeFontRole.ROW, medium = true); MoteUi.textColor(this, NativeColorRole.INK); maxLines = 2 })
             addView(TextView(this@MainActivity).apply { text = "$timestamp · $kind"; MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
         }
-        row.setOnClickListener {
-            startActivity(Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")).putExtra("directReader",true).putExtra("recordVersion", dev.mote.collector.plugins.NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", dev.mote.collector.plugins.NativeLibraryPlugin.observations(item)).putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId")).putExtra("recordSource", item.optString("source")).putExtra("recordDate", java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()))
-        }
+        row.setOnClickListener { openLibraryCapture(item, remote, scope) }
         parent.addView(row)
+    }
+
+    private fun openLibraryCapture(item: org.json.JSONObject, remote: Boolean, scope: String) {
+        val day = java.time.Instant.parse(item.getString("capturedAt")).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        startActivity(Intent(this, CaptureRecordsActivity::class.java)
+            .putExtra("recordId", item.getString("id")).putExtra("directReader", true)
+            .putExtra("recordVersion", NativeLibraryPlugin.version(item)).putExtra("recordObservationCount", NativeLibraryPlugin.observations(item))
+            .putExtra("recordRemote", remote).putExtra("recordOrigin", scope).putExtra("recordDeviceId", item.optString("deviceId"))
+            .putExtra("recordSource", item.optString("source")).putExtra("recordDate", day.toString()))
     }
 
     private fun buildLibrary() {
@@ -693,10 +630,10 @@ class MainActivity : MoteActivity() {
         heading.setPadding(0, 0, 0, 0)
         (heading.layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(10)
         val materials = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(LibraryBrowseUi.tabs(this, "materials") { value -> if (value == "memories") openCentral("memories") }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         content.addView(materials)
-        libraryView = LibraryCaptureView(this, materials, libraryState,
-            { parent, item, remote, location, scope -> addCaptureRow(parent, item, remote, location, scope) })
+        libraryView = LibraryCaptureView(this, materials, libraryState, ::addCaptureRow) { original ->
+            openLibraryCapture(original.row, remote = false, scope = "")
+        }
     }
     private fun openCentral(page: String) { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", page)) }
 
@@ -1738,32 +1675,6 @@ class MainActivity : MoteActivity() {
         }
     }
 
-    /** The row opens the place that explains the state; its one action repairs it. */
-    private fun openHomeNotice(notice: HomeNotice) {
-        when (val operation = notice.operation) {
-            HomeNotice.Operation.Connect -> openConnection()
-            is HomeNotice.Operation.Capture -> when (operation.operation) {
-                CaptureStatusOperation.RECONNECT -> openConnection()
-                CaptureStatusOperation.RESUME_SEND, CaptureStatusOperation.OPEN_SYNC -> startActivity(Intent(this, SyncQueueActivity::class.java))
-                else -> startActivity(Intent(this, CaptureStatusActivity::class.java))
-            }
-        }
-    }
-
-    private fun runHomeNotice(notice: HomeNotice) {
-        when (val operation = notice.operation) {
-            HomeNotice.Operation.Connect -> openConnection()
-            is HomeNotice.Operation.Capture -> when (operation.operation) {
-                CaptureStatusOperation.RESUME_CAPTURE -> runCaptureAction(CaptureOverview.Action.RESUME)
-                CaptureStatusOperation.RESUME_SEND, CaptureStatusOperation.OPEN_SYNC -> startActivity(Intent(this, SyncQueueActivity::class.java))
-                CaptureStatusOperation.RECONNECT -> openConnection()
-                CaptureStatusOperation.RESTART_CAPTURE -> runCaptureAction(CaptureOverview.Action.RESTART)
-                CaptureStatusOperation.OPEN_PERMISSIONS -> showPage(Page.PERMISSIONS)
-                CaptureStatusOperation.OPEN_STORAGE -> showPage(Page.STORAGE)
-            }
-        }
-    }
-
     private fun openConnection() {
         startActivity(Intent(this, ConnectionActivity::class.java).putExtra("firstUse", firstUse))
     }
@@ -1780,16 +1691,6 @@ class MainActivity : MoteActivity() {
                 if (!wasEnabled) startConfiguredCapture()
                 else if (next.effectiveMode() == "projection" && next.observesSystem() && !ProjectionService.running) requestProjectionConsent()
             }
-        }
-    }
-    private fun pauseScreenCapture() {
-        if (applyingSettings || uiTask.busy) return
-        applyingSettings = true
-        dev.mote.collector.plugins.CapturePlugin.controls().pauseScreen(this) { result ->
-            applyingSettings = false
-            if (isDestroyed) return@pauseScreen
-            result.onSuccess { loadedConfig = settings.read(); refreshStatus(); loadSourceRows() }
-                .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
         }
     }
     private fun takeCaptureAction(source: Intent) {
@@ -1841,9 +1742,13 @@ class MainActivity : MoteActivity() {
                 result.onSuccess { snapshot ->
                     snapshot.config?.let { if (!applyingSettings && it != loadedConfig) reloadSettings(it) }
                     if (!applyingSettings && settingsSummaries.readResult(summaryToken, snapshot.config?.settingsSummary())) renderSettingsSummaries()
+                    if (::statusStrip.isInitialized) statusStrip.setDraft(snapshot.hasDraft)
                     homeSyncDetailStatus.text = snapshot.syncFacts
                     homeSyncRate.text = MoteI18n.text("上传速率") + " · " + UploadMeter.label()
-                    refreshManageMenu()
+                    if (snapshot.captureAttention != captureAttention) {
+                        captureAttention = snapshot.captureAttention
+                        MoteLocalBadges.changed()
+                    }
                     renderConnectionPage()
                     captureTitle.text = snapshot.title
                     if (captureAction.text != snapshot.action) {
@@ -1926,43 +1831,8 @@ class MainActivity : MoteActivity() {
             else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
         }
         val captureState = state + if (c?.screenCollectionEnabled == true && settings.enabled) "\n" + MoteI18n.text("屏幕采集：{0}", settings.screenStatus()) else ""
-        val notice = c?.let { config ->
-            val interrupted = (settings.enabled && (config.screenCollectionEnabled || config.observesSystem()) && !live && !missingSource) ||
-                (!settings.enabled && settings.state() in setOf("permission_required", "error"))
-            val screenPausedAt = settings.screenPausedAt()?.takeIf { !config.screenCollectionEnabled }
-            // The shared row treats `captureLive` as a running capture service: a screen-only pause keeps it true.
-            val captureServiceLive = CaptureAccessibilityService.connected || ProjectionService.running || MediaCollectionService.connected || screenPausedAt != null
-            runCatching {
-                HomeNotice.from(CaptureStatusFacts(
-                    connection = when {
-                        config.hasSyncConnection() -> CaptureConnection.CONNECTED
-                        config.server.isNotBlank() && config.token.isNotBlank() -> CaptureConnection.RECONNECT
-                        else -> CaptureConnection.UNCONFIGURED
-                    },
-                    captureEnabled = settings.enabled || interrupted,
-                    captureLive = captureServiceLive,
-                    screenPausedAt = screenPausedAt?.let { Instant.ofEpochMilli(it).toString() },
-                    permission = if (missingSource) CapturePermission.MISSING else null,
-                    interrupted = interrupted,
-                    syncState = when {
-                        !config.hasSyncConnection() -> CaptureSyncState.UNCONFIGURED
-                        config.syncPaused -> CaptureSyncState.PAUSED
-                        local.error != null || (local.active?.blocked ?: 0) > 0 -> CaptureSyncState.BLOCKED
-                        settings.syncState() == "error" -> CaptureSyncState.ERROR
-                        settings.syncState() == "uploading" -> CaptureSyncState.UPLOADING
-                        settings.syncState() == "waiting" -> CaptureSyncState.WAITING
-                        settings.syncState() == "paused" -> CaptureSyncState.PAUSED
-                        else -> CaptureSyncState.IDLE
-                    },
-                    pending = local.pending,
-                )).let { notice ->
-                    if (notice?.titleKey == "屏幕采集已暂停" && screenPausedAt != null)
-                        notice.copy(detail = CaptureOverview.since(screenPausedAt, Instant.now(), ZoneId.systemDefault()))
-                    else notice
-                }
-            }.getOrNull()
-        }
-        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, false), notice)
+        val hasDraft = runCatching { recordDraftStore().draft() }.getOrNull()?.let { StatusStripPolicy.hasDraft(it) } ?: false
+        return StatusSnapshot(title, action, captureState, syncText, totalsText, technicalText, connectionTitle, connectionText, MediaCollection.statusLabel(this), c, syncQueue, syncMessage, syncFacts, CaptureOverview.attention(settings.enabled, settings.state(), live, missingSource, false), hasDraft)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
@@ -2023,6 +1893,7 @@ class MainActivity : MoteActivity() {
                 } else if (::todaySummary.isInitialized) { if (snapshot.imagesReading) MoteComponents.reading(todaySummary, snapshot.imageLabel()) else todaySummary.text = snapshot.imageLabel() }
             }
             loadSourceRows()
+            if (currentPage == Page.LIBRARY) libraryView?.updateSourceStatus()
             if (snapshot.revision.records != libraryRecordsRevision) {
                 libraryRecordsRevision = snapshot.revision.records
                 if (currentPage == Page.LIBRARY) libraryView?.recordsChanged(snapshot.revision.records, snapshot.active?.records?.takeIf { snapshot.error == null })
@@ -2035,13 +1906,14 @@ class MainActivity : MoteActivity() {
         centralContent?.pause()
         activityContent?.pause()
         tabCentrals.values.forEach { it.pause() }
+        libraryView?.pause()
         localStateJob?.cancel(); localStateJob = null
         RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null)
         handler.removeCallbacks(refresh); notePoll?.let(handler::removeCallbacks)
         super.onPause()
     }
     override fun onStop() { super.onStop() }
-    override fun onDestroy() { localBadgeObserver?.invoke(); localBadgeObserver = null; homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { localBadgeObserver?.invoke(); localBadgeObserver = null; localLibraryBadge?.invoke(); localLibraryBadge = null; homeTask.close(); libraryView?.close(); centralContent?.close(); activityContent?.close(); tabCentrals.values.forEach { it.close() }; statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun help(title: String, message: String) {
@@ -2088,7 +1960,7 @@ class MainActivity : MoteActivity() {
                 }
                 Page.FEED -> ensureTabPage(Page.FEED, AssistantPlugin.FEED_ROUTE)
                 Page.IDEAS -> ensureTabPage(Page.IDEAS, IDEAS_ROUTE)
-                Page.GOALS -> ensureTabPage(Page.GOALS, GOALS_ROUTE)
+                Page.GOALS -> ensureTabPage(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
                 Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
                 Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
                 Page.ACTIVITY -> {
@@ -2173,6 +2045,7 @@ class MainActivity : MoteActivity() {
             connectionOrigin = if (page == Page.CONNECTION) connectionEntryOrigin else null
             if (currentPage == Page.ASK) centralContent?.pause()
             if (currentPage == Page.ACTIVITY) activityContent?.pause()
+            if (currentPage == Page.LIBRARY) libraryView?.pause()
             tabCentrals[currentPage]?.pause()
             currentFocus?.clearFocus()
             getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(pagesHost.windowToken, 0)
@@ -2184,7 +2057,7 @@ class MainActivity : MoteActivity() {
         if (page in dailyTabPages) lastTabPage = page
         MoteNavigation.tabId(page.name)?.let { selectedTabId = it }
         if (::tabBar.isInitialized) tabBar.select(selectedTabId)
-        if (::homeRecordingBar.isInitialized) homeRecordingBar.setHome(false)
+        if (::statusStrip.isInitialized) statusStrip.setTab(if (page in dailyTabPages) MoteNavigation.tabId(page.name) else null)
         val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
         val centralOwned = page == Page.ASK || page == Page.ACTIVITY || (page in centralTabPages && page !in placeholderTabs)
         homeHeader.visibility = if (centralOwned) View.GONE else View.VISIBLE

@@ -6,6 +6,8 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
 import android.widget.*
+import dev.mote.collector.plugins.LibrarySourceFilter
+import dev.mote.collector.plugins.NativeLibraryPlugin
 import dev.mote.collector.ui.MoteComponents
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,6 +21,7 @@ internal class LibraryCaptureView(
     parent: LinearLayout,
     state: Bundle?,
     private val capture: (LinearLayout, JSONObject, Boolean, String, String) -> Unit,
+    openPhone: (LibraryPhoneFeed.Original) -> Unit,
 ) {
     private val task = UiTask(activity)
     private val projection = dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).captureProjection()
@@ -26,7 +29,11 @@ internal class LibraryCaptureView(
     private val status = TextView(activity)
     private val host = parent
     private val rows = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+    private val phoneFeed = LibraryPhoneFeedView(activity, openPhone).apply { visibility = View.GONE }
     private val more = Button(activity)
+    private val retrySearch = MoteComponents.smallButton(activity, "重试") { refresh() }.apply { visibility = View.GONE }
+    private var selectedSource = if (state?.getBoolean("thisPhone") == true) LibrarySourceFilter.Phone else LibrarySourceFilter.All
+    private val sourceBar = NativeLibraryPlugin.owner(activity).sourceBar(activity, selectedSource, ::selectSource)
     private var deniedOrigin: String? = null
     private val sourceView by lazy { LibrarySourceView(activity, { render() }, { origin ->
         deniedOrigin = origin; projection.clearCentral(origin); remoteCursor = null; remoteMore = false; render()
@@ -44,11 +51,12 @@ internal class LibraryCaptureView(
     private var remoteBoundary: LibraryRefreshPolicy.Position? = null
     private var localMore = true
     private var remoteMore = true
-    private var stamp = 0
+    @Volatile private var stamp = 0
     private var refreshPending = false
     private var activeFilter = ""
     private var activeDay = ""
     private var session: Pair<String, Long>? = null
+    private var libraryRevision: String? = null
     private var files = emptyList<JSONObject>()
     @Volatile private var verifiedConnection: Pair<String, Long>? = null
     private val refreshPolicy = LocalStatusProducer.get(activity).state.value.let { dev.mote.collector.plugins.NativeLibraryPlugin.owner(activity).refreshPolicy(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
@@ -74,27 +82,53 @@ internal class LibraryCaptureView(
     private var anchor = state?.getString("anchor")
     private var anchorTop = state?.getInt("anchorTop") ?: 0
     init {
+        parent.addView(sourceBar, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(8) })
         val search = LibraryBrowseUi.search(activity, "搜索资料", query)
         parent.addView(search, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = activity.moteDp(16) })
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 query = s?.toString().orEmpty().take(500)
-                searchTick?.let(uiHandler::removeCallbacks); searchView.clear(); render()
-                searchTick = Runnable { if (query.isBlank()) refresh() else searchView.reset(query, category, day, location) }.also { uiHandler.postDelayed(it, 300) }
+                searchTick?.let(uiHandler::removeCallbacks)
+                searchView.clear()
+                if (query.isNotBlank()) {
+                    retireBrowse()
+                    phoneFeed.pause(); phoneFeed.visibility = View.GONE
+                    status.visibility = View.GONE; retrySearch.visibility = View.GONE; more.visibility = View.GONE
+                    showSearchLoading()
+                }
+                searchTick = Runnable { searchTick = null; refreshContent() }.also { uiHandler.postDelayed(it, 300) }
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
-        search.setOnEditorActionListener { _, _, _ -> searchTick?.let(uiHandler::removeCallbacks); if (query.isBlank()) refresh() else searchView.reset(query, category, day, location); true }
+        search.setOnEditorActionListener { _, _, _ -> refresh(); true }
         sourceView.restore(state?.getBundle("sourceView"))
-        parent.addView(status); parent.addView(rows)
-        more.text = MoteI18n.text("加载更多"); more.setOnClickListener { if (query.isNotBlank()) searchView.more() else { if (!task.busy) load(); sourceView.load() } }; parent.addView(MoteUi.button(more))
+        parent.addView(status); parent.addView(retrySearch); parent.addView(rows); parent.addView(phoneFeed)
+        more.text = MoteI18n.text("加载更多"); more.setOnClickListener { if (scopedList()) searchView.more() else { if (!task.busy) load(); sourceView.load() } }; parent.addView(MoteUi.button(more))
     }
+
+    private fun phoneRecent() = selectedSource == LibrarySourceFilter.Phone && query.isBlank() && category == "all" && day.isBlank()
+    private fun scopedList() = !phoneRecent() && (query.isNotBlank() || selectedSource != LibrarySourceFilter.All)
+    private fun browse() = !phoneRecent() && !scopedList()
+
+    private fun selectSource(value: LibrarySourceFilter) {
+        if (selectedSource == value) return
+        selectedSource = value
+        phoneFeed.pause()
+        retireBrowse()
+        refreshContent()
+    }
+
+    private fun retireBrowse() {
+        stamp++
+        refreshPending = false
+        sourceView.invalidate()
+    }
+
     private fun selectLocation(value: String) {
         if (location == value) return
         location = value
-        searchTick?.let(uiHandler::removeCallbacks); searchView.clear()
-        if (query.isNotBlank()) searchView.reset(query, category, day, value) else { render(); resetFilter() }
+        if (query.isNotBlank()) refresh() else { render(); resetFilter() }
     }
     fun showFilters() = LibraryBrowseUi.filters(activity, listOf("all" to "全部", "records" to "记录", "images" to "截图与照片", "notifications" to "通知", "files" to "网页与文件"), category, { value ->
         category = value; source = when (value) { "records" -> "note"; "notifications" -> "notification"; else -> "" }; resetFilter()
@@ -103,8 +137,9 @@ internal class LibraryCaptureView(
         DatePickerDialog(activity, { _, year, month, dateOfMonth -> day = LocalDate.of(year, month + 1, dateOfMonth).toString(); resetFilter() }, current.year, current.monthValue - 1, current.dayOfMonth).apply {
             setButton(android.content.DialogInterface.BUTTON_NEUTRAL, MoteI18n.text("全部日期")) { _, _ -> day = ""; resetFilter() }
         }.show()
-    }, dateLabel = day, location = location to ::selectLocation, refresh = ::refresh)
+    }, dateLabel = day, location = if (selectedSource == LibrarySourceFilter.All) location to ::selectLocation else null, refresh = ::refresh)
     fun saveState(): Bundle = Bundle().apply {
+        putBoolean("thisPhone", selectedSource == LibrarySourceFilter.Phone)
         putBundle("sourceView", sourceView.save()); putString("category", category); putString("location", location); putString("query", query); putString("day", day); putInt("pages", pages.coerceAtLeast(1))
         val row = descendants(rows).firstOrNull { it.transitionName != null && it.getGlobalVisibleRect(android.graphics.Rect()) }
         putString("anchor", row?.transitionName)
@@ -113,9 +148,22 @@ internal class LibraryCaptureView(
     private fun descendants(view: View): List<View> = listOf(view) + if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
     private fun resetFilter() { pages = 0; restorePages = 1; anchor = null; refresh() }
     fun resume() {
+        sourceBar.resume()
         val current = CentralAccess.resolve(activity)
-        if (session != (current.server to current.generation)) refresh()
+        if (!browse() || session != (current.server to current.generation)) refreshContent()
         else if (!incrementalScheduled && hasPendingRecords()) waitForRecordsVisibility()
+    }
+    fun pause() {
+        sourceBar.pause(); phoneFeed.pause()
+        searchTick?.let(uiHandler::removeCallbacks); searchTick = null
+        if (scopedList()) { searchView.clear(); rows.removeAllViews() }
+    }
+    fun updateSourceStatus() { sourceBar.updatePhone() }
+    fun centralRevisions(library: String, sources: String) {
+        sourceBar.sourcesRevision(sources)
+        val previous = libraryRevision
+        libraryRevision = library
+        if (previous != null && previous != library && selectedSource != LibrarySourceFilter.Phone) refreshContent()
     }
     private fun hasPendingRecords() = pendingFullRefresh || pendingInsertions > 0
     private fun waitForRecordsVisibility() {
@@ -148,7 +196,7 @@ internal class LibraryCaptureView(
             if (hasPendingRecords()) waitForRecordsVisibility()
             return
         }
-        if (query.isNotBlank()) { pendingFullRefresh = false; pendingInsertions = 0; searchView.reset(query, category, day, location); return }
+        if (!browse()) { refreshContent(); return }
         val current = CentralAccess.resolve(activity)
         if (session != (current.server to current.generation)) { refresh(); return }
         if (task.busy) { incrementalPending = true; return }
@@ -164,8 +212,33 @@ internal class LibraryCaptureView(
         incrementalLoad(insertions)
     }
     fun refresh() {
+        sourceBar.resume()
+        refreshContent()
+    }
+    private fun refreshContent() {
         cancelIncremental()
-        if (query.isNotBlank()) { searchView.reset(query, category, day, location); return }
+        searchTick?.let(uiHandler::removeCallbacks); searchTick = null
+        if (phoneRecent()) {
+            searchView.clear()
+            status.visibility = View.GONE; retrySearch.visibility = View.GONE; rows.visibility = View.GONE; more.visibility = View.GONE
+            phoneFeed.visibility = View.VISIBLE
+            phoneFeed.refresh()
+            return
+        }
+        phoneFeed.pause()
+        phoneFeed.visibility = View.GONE
+        rows.visibility = View.VISIBLE
+        if (scopedList()) {
+            val selectedLocation = when (selectedSource) {
+                LibrarySourceFilter.All -> location
+                LibrarySourceFilter.Phone -> "local"
+                else -> "central"
+            }
+            searchView.reset(query, category, day, selectedLocation, selectedSource)
+            return
+        }
+        searchView.clear()
+        retrySearch.visibility = View.GONE
         LocalStatusProducer.get(activity).state.value.let { refreshPolicy.baseline(it.revision.records, it.active?.records?.takeIf { _ -> it.error == null }) }
         val current = CentralAccess.resolve(activity)
         if (task.busy && session == current.server to current.generation && activeFilter == source && activeDay == day) {
@@ -184,7 +257,7 @@ internal class LibraryCaptureView(
     private data class AppendRead(val insertions: Int, val priorLocal: Set<Pair<String, String>>)
     private fun remotePosition(items: JSONArray) = if (items.length() == 0) null else items.getJSONObject(items.length() - 1).let { LibraryRefreshPolicy.Position(it.getString("capturedAt"), it.getString("id")) }
     private fun load() {
-        if (task.busy) return
+        if (task.busy || !browse()) return
         val selection = CentralAccess.resolve(activity)
         val identity = selection.server to selection.generation
         if (session != identity) { session = identity; projection.clear(); localCursor = null; remoteCursor = null; remoteBoundary = null; localMore = true; remoteMore = true; pages = 0 }
@@ -203,6 +276,7 @@ internal class LibraryCaptureView(
         task.start(MoteI18n.text("正在读取…"), if (placeholder == null) MoteComponents.progress(status) else { _: String -> }, {
             requestPage(selection, identity, generation, readEpoch, filter, after, until, nextLocal, nextRemote, readLocal, readRemote, priorCandidates)
         }) { result ->
+            if (!browse()) return@start
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
                 result.onSuccess { loaded ->
@@ -259,6 +333,7 @@ internal class LibraryCaptureView(
         task.start(MoteI18n.text("正在读取…"), MoteComponents.progress(status), {
             requestPage(selection, identity, generation, readEpoch, filter, after, until, null, null, readLocal = true, readRemote = true, priorCandidates, AppendRead(insertions, priorLocal))
         }) { result ->
+            if (!browse()) return@start
             val current = CentralAccess.resolve(activity)
             if (generation == stamp && identity == (current.server to current.generation)) {
                 result.onSuccess { loaded ->
@@ -343,7 +418,7 @@ internal class LibraryCaptureView(
                     candidates.put(JSONObject().put("deviceId", item.optString("deviceId").ifBlank { Settings(context).deviceId }).put("id", item.getString("id")))
             }
         }
-        val central = if (readRemote && filter !in setOf("file", "source", "material")) runCatching {
+        val central = if (readRemote && generation == stamp && filter !in setOf("file", "source", "material")) runCatching {
             val api = selection.client ?: error(MoteI18n.text("先登录中央，各页面会共用这次登录"))
             // The owner-scope check is per connection generation; device-view still authorizes each response.
             if (verifiedConnection != identity) {
@@ -367,7 +442,8 @@ internal class LibraryCaptureView(
         } ?: run { if (updateCursor) localMore = false }
     }
     private fun render() {
-        if (query.isNotBlank()) { renderSearch(); return }
+        if (phoneRecent()) return
+        if (scopedList()) { renderSearch(); return }
         rows.removeAllViews()
         val visible = projection.visible(location).filter { sourceView.matchesCapture(it.item) }.filterNot { sourceView.containsCapture(it.identity.scope, it.item) }
             .filter { LibraryBrowseRules.matches(it.item, category) && LibraryBrowseRules.matchesText(it.item, query) }
@@ -433,6 +509,19 @@ internal class LibraryCaptureView(
     }
     private fun renderSearch() {
         rows.removeAllViews()
+        val notice = searchView.notice()
+        status.text = notice.orEmpty(); status.visibility = if (notice != null) View.VISIBLE else View.GONE
+        retrySearch.visibility = if (notice != null && !searchView.loading) View.VISIBLE else View.GONE
+        more.visibility = if (searchView.hasMore) View.VISIBLE else View.GONE
+        more.isEnabled = !searchView.loading
+        val empty = !searchView.loading && !searchView.hasMore && notice == null
+        if (selectedSource == LibrarySourceFilter.Phone) {
+            val phone = searchView.captures().map { LibraryPhoneFeed.original(it.item, remote = false, saved = true) }
+            phoneFeed.visibility = View.VISIBLE
+            phoneFeed.show(phone, showEmpty = empty)
+            if (phone.isEmpty() && searchView.loading) showSearchLoading()
+            return
+        }
         data class Entry(val at: String, val capture: LibrarySearchView.Capture? = null, val original: LibrarySearchView.Original? = null)
         val entries = (searchView.captures().map { Entry(it.item.getString("capturedAt"), capture = it) } +
             searchView.originals().map { Entry(it.item.getString("sortAt"), original = it) }).sortedByDescending { Instant.parse(it.at) }
@@ -455,10 +544,13 @@ internal class LibraryCaptureView(
                 sourceView.renderItem(parent, if (hit.remote) LibrarySourceProjection.Row(key, central = hit.item) else LibrarySourceProjection.Row(key, local = hit.item))
             }
         }
-        status.text = searchView.notice(); status.visibility = if (status.text.isBlank()) View.GONE else View.VISIBLE
-        if (entries.isEmpty() && !searchView.loading) rows.addView(TextView(activity).apply { text = MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。") })
-        more.visibility = if (searchView.hasMore) View.VISIBLE else View.GONE
-        more.isEnabled = !searchView.loading
+        if (entries.isEmpty() && searchView.loading) showSearchLoading()
+        else if (entries.isEmpty() && empty) rows.addView(TextView(activity).apply { text = MoteI18n.text("暂无记录") })
+    }
+    private fun showSearchLoading() {
+        rows.visibility = View.VISIBLE
+        rows.removeAllViews()
+        rows.addView(MoteComponents.skeleton(activity, MoteI18n.text("正在读取…")))
     }
     private fun restoreAnchor(keep: Boolean = false) {
         restorePages = 1
@@ -471,5 +563,5 @@ internal class LibraryCaptureView(
         } }
         if (!keep) anchor = null
     }
-    fun close() { cancelIncremental(); searchTick?.let(uiHandler::removeCallbacks); stamp++; task.close(); sourceView.close(); searchView.close() }
+    fun close() { pause(); cancelIncremental(); stamp++; task.close(); sourceView.close(); searchView.close(); phoneFeed.close(); sourceBar.close() }
 }

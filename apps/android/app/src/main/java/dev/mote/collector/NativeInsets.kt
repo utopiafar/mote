@@ -17,7 +17,7 @@ fun View.moteInsets(topBar: Boolean = false) {
             val ime = insets.getInsets(WindowInsets.Type.ime())
             // Target 35+ draws edge-to-edge: adjustResize alone does not move content above the keyboard.
             val keyboard = maxOf(0, ime.bottom - bars.bottom)
-            val topInset = if (topBar) HomeFrame.topBarTop(bars.top, resources.displayMetrics.density) else bars.top
+            val topInset = if (topBar) TabFrame.topBarTop(bars.top, resources.displayMetrics.density) else bars.top
             val shell = view as? NativeAppShell
             if (shell != null) {
                 shell.systemBars(bars.left, topInset, bars.right, bars.bottom)
@@ -26,7 +26,7 @@ fun View.moteInsets(topBar: Boolean = false) {
                 view.setPadding(left + bars.left, top + topInset, right + bars.right, bottom + bars.bottom + keyboard)
             }
         } else {
-            @Suppress("DEPRECATION") val topInset = if (topBar) HomeFrame.topBarTop(insets.systemWindowInsetTop, resources.displayMetrics.density) else insets.systemWindowInsetTop
+            @Suppress("DEPRECATION") val topInset = if (topBar) TabFrame.topBarTop(insets.systemWindowInsetTop, resources.displayMetrics.density) else insets.systemWindowInsetTop
             @Suppress("DEPRECATION") view.setPadding(left + insets.systemWindowInsetLeft, top + topInset, right + insets.systemWindowInsetRight, bottom + insets.systemWindowInsetBottom)
         }; insets
     }

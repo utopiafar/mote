@@ -266,7 +266,7 @@ function App() {
       const anchor=event.target.closest<HTMLAnchorElement>('a[href]');if(!anchor||anchor.target&&anchor.target!=='_self'||anchor.hasAttribute('download'))return;
       const target=new URL(anchor.href,location.href);if(target.origin!==location.origin||target.pathname!==location.pathname||readPage(target.hash)!=='imports'||readPage(currentHash.current)==='imports')return;
       const route=readWorkspaceRoute(currentHash.current,readPage,collectionIds(),webViewPage);
-      preparedImport.current={api,origin:rememberImportOrigin(api,currentHash.current,window.scrollY,anchor,route.page==='archive'&&['materials','records','memories'].includes(route.collection)&&!hasUnsavedChanges())};
+      preparedImport.current={api,origin:rememberImportOrigin(api,currentHash.current,window.scrollY,anchor,route.page==='archive'&&['materials','records'].includes(route.collection)&&!hasUnsavedChanges())};
     };
     document.addEventListener('click',capture,true);return()=>document.removeEventListener('click',capture,true);
   },[api]);
@@ -346,7 +346,7 @@ function App() {
       if(done||pendingImportReturn.current!==pending||location.hash!==pending.origin.hash)return;
       const opener=importOriginOpener(pending.origin),heading=document.querySelector<HTMLElement>('.content h1'),content=document.querySelector('.content');if(!heading)return;
       const view=readPage(pending.origin.hash)==='archive'?new URLSearchParams(pending.origin.hash.split('?')[1]??'').get('view')??'materials':undefined;
-      const expected=view==='materials'?'.library-materials':view==='records'?'.library-time-final':view==='memories'?'.memories-page':readPage(pending.origin.hash)==='sourceCatalog'?'.discovery-source-catalog':undefined;
+      const expected=view==='materials'?'.library-materials':view==='records'?'.library-time-final':readPage(pending.origin.hash)==='sourceCatalog'?'.discovery-source-catalog':undefined;
       const region=expected?content?.querySelector<HTMLElement>(expected):undefined;if(expected&&region?.dataset.importReturnReady!=='true')return;
       if(view==='records'&&region?.querySelector('.library-time-group[open][data-import-return-ready="false"]'))return;
       const settled=Boolean(region?.dataset.importReturnReady==='true'||content?.querySelector('[role="alert"]'));
@@ -360,7 +360,7 @@ function App() {
   function onPage(next: Page) {
     const target=canonicalDestination(next,archiveTabRef.current,collectionIds());
     if(!webFeatures.page(target.page)&&target.page!=='extensions'){setNotice(moteText('当前服务未提供此入口'));return;}
-    const retainImportOrigin=page==='archive'&&['materials','records','memories'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
+    const retainImportOrigin=page==='archive'&&['materials','records'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
     if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return;
     const origin=target.page==='imports'&&page!=='imports'&&api?rememberImportOrigin(api,currentHash.current,window.scrollY,document.activeElement,retainImportOrigin):undefined;
     history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?pageRoutes.skills:target.page),target.page==='archive'?target.collection:undefined));

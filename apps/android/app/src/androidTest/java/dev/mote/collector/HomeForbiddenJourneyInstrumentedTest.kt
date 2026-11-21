@@ -104,7 +104,7 @@ class HomeForbiddenJourneyInstrumentedTest {
         var value: Pair<UiTask, HomeReadGate>? = null
         instrumentation.runOnMainSync {
             val section = shown(home).single { it.tag == "home-feed" }
-            fun field(name: String) = HomeFeedView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(section)
+            fun field(name: String) = section.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(section)
             value = (field("task") as UiTask) to (field("gate") as HomeReadGate)
         }
         return requireNotNull(value)
