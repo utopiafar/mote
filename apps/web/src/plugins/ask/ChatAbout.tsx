@@ -75,6 +75,12 @@ async function resolveChatAbout(api:Api,ref:AboutRef,signal:AbortSignal):Promise
         ...evidenceAnchor([...(commitment.evidenceDependencies?.ids ?? []),
           ...(commitment.timeline ?? []).flatMap(item => item.evidenceDependencies?.ids ?? [])])};
     }
+    case 'todo': {
+      const todo = await api.request<{id:string;title:string;evidenceIds:string[]}>(
+        '/api/assistant/goals/todos/' + encodeURIComponent(ref.id),{signal});
+      if (todo.id !== ref.id) throw new Error('Todo reference changed');
+      return {status:'ready',ref,title:todo.title,...evidenceAnchor(todo.evidenceIds)};
+    }
     case 'matter': {
       const detail = await api.request<{matter:{id:string;goal:string;evidenceIds?:string[]};linkedEvidence?:{id:string}[]}>(
         '/api/assistant/matters/' + encodeURIComponent(ref.id) + '?' + scopeQuery(),{signal});
@@ -133,6 +139,7 @@ function aboutKindLabel(kind:AboutRef['kind']):string {
     case 'material': return moteText('资料');
     case 'matter': return moteText('事项');
     case 'commitment': return moteText('承诺');
+    case 'todo': return moteText('待办');
     case 'memory': return moteText('记忆');
     case 'evidence': return moteText('原始记录');
     default: return moteText('引用');

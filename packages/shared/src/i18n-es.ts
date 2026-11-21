@@ -7684,5 +7684,15 @@ export const spanish: Readonly<Record<string, string>> = {
   "录音来源": "Fuentes de grabación",
   "返回录音来源": "Volver a las fuentes de grabación",
   "{0} 的设置": "Ajustes de {0}",
-  "部分读取失败": "Carga parcial"
+  "部分读取失败": "Carga parcial",
+  "人": "Persona",
+  "我": "Yo",
+  "别人": "Otra persona",
+  "去聊": "Chatear",
+  "添加目标": "Añadir objetivo",
+  "{0} 件": "{0} elementos",
+  "相关资料": "Materiales relacionados",
+  "事项状态暂不可用": "Estado de los asuntos no disponible",
+  "事项已变化，需重新读取": "El asunto cambió; recarga",
+  "目标数据无法读取": "Datos de objetivos no disponibles"
 };

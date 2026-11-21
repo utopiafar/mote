@@ -365,6 +365,7 @@ export const aboutRefSchema=z.discriminatedUnion('kind',[
   z.object({kind:z.literal('card'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('question'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('commitment'),id:aboutIdSchema}).strict(),
+  z.object({kind:z.literal('todo'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('matter'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('memory'),id:aboutIdSchema}).strict(),
   z.object({kind:z.literal('evidence'),id:aboutIdSchema}).strict(),
@@ -394,6 +395,7 @@ export function parseAboutRef(text:string):AboutRef|null{
     case 'card':return {kind:'card',id:id.data};
     case 'question':return {kind:'question',id:id.data};
     case 'commitment':return {kind:'commitment',id:id.data};
+    case 'todo':return {kind:'todo',id:id.data};
     case 'matter':return {kind:'matter',id:id.data};
     case 'memory':return {kind:'memory',id:id.data};
     case 'evidence':return {kind:'evidence',id:id.data};

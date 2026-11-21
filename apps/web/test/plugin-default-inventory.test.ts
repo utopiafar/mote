@@ -13,7 +13,7 @@ import {
  * instead of being skipped when the inventory or a plugin shard shrinks. */
 const expectedPages = [
   'agentView', 'notes', 'help', 'localPreferences', 'about', 'notifications',
-  'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed', 'assistantIdeas',
+  'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed', 'assistantIdeas', 'assistantGoals',
   'search', 'ask', 'vault', 'statistics', 'sourceCatalog', 'sources',
   'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',
   'settings', 'archive', 'connections', 'deviceConnections', 'developer',
