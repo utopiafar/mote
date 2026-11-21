@@ -118,6 +118,13 @@ export const connectorsConfigDomain = Object.freeze({id:'connectors',schema:conn
 export const pluginsConfigDomain = Object.freeze({id:'plugins',schema:pluginsConfigSchema}) satisfies ConfigDomainReference<typeof pluginsConfigSchema>;
 export const updatesConfigDomain = Object.freeze({id:'updates',schema:updatesConfigSchema}) satisfies ConfigDomainReference<typeof updatesConfigSchema>;
 export const mediaConfigDomain = Object.freeze({id:'media',schema:mediaConfigSchema}) satisfies ConfigDomainReference<typeof mediaConfigSchema>;
+/** Owner browser preferences kept apart from deployment settings. This domain
+ * only carries the pages the owner pinned to the workspace sidebar. */
+export const uiConfigSchema = z.object({
+  pinnedPages: z.array(z.string().min(1).max(256).regex(/^[\x21-\x7e]+$/)).max(64)
+    .refine(value => new Set(value).size === value.length).default([]),
+}).strict();
+export const uiConfigDomain = Object.freeze({id:'ui',schema:uiConfigSchema}) satisfies ConfigDomainReference<typeof uiConfigSchema>;
 export const conversationsConfigDomain = Object.freeze({id:'conversations',schema:conversationSettingsSchema}) satisfies ConfigDomainReference<typeof conversationSettingsSchema>;
 export const notificationsConfigDomain = Object.freeze({id:'notifications',schema:notificationSettingsSchema}) satisfies ConfigDomainReference<typeof notificationSettingsSchema>;
 export const actionsConfigDomain = Object.freeze({id:'actions',schema:actionsRuntimeSettingsSchema}) satisfies ConfigDomainReference<typeof actionsRuntimeSettingsSchema>;
@@ -188,6 +195,7 @@ export function configDocumentDomains(): ConfigDomainRegistration[] {
     definition(perceptionConfigDomain.id, perceptionConfigDomain.schema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'concurrency', effect: 'next-admission' }, { path: 'providerRevision', effect: 'next-request' }, { path: 'allowExternalProcessing', effect: 'next-request' }, { path: 'allowQueryImages', effect: 'next-request' }, { path: 'understandingEnabled', effect: 'next-request' }]),
     definition(memoryConfigDomain.id, memoryConfigDomain.schema, false, Object.keys(lifecycleSettingsSchema.parse({})).map(path => ({ path, effect: 'next-admission' as const }))),
     definition(conversationsConfigDomain.id, conversationsConfigDomain.schema, false, [{path:'multipleConversations',effect:'immediate'},{path:'context',effect:'next-request'}]),
+    definition(uiConfigDomain.id, uiConfigDomain.schema, false, [{path:'pinnedPages',effect:'immediate'}]),
     definition(actionsConfigDomain.id, actionsConfigDomain.schema, false, [{ path: 'enabled', effect: 'immediate' }, { path: 'timeZone', effect: 'next-request' }]),
     definition(activityConfigDomain.id, activityConfigDomain.schema, false, [{path:'enabled',effect:'immediate'},{path:'modelProfileId',effect:'next-request'}]),
     definition(notificationsConfigDomain.id, notificationsConfigDomain.schema, false, [{path:'enabled',effect:'immediate'},{path:'timeZone',effect:'immediate'},{path:'quietHours',effect:'immediate'},{path:'minIntervalMinutes',effect:'immediate'}]),

@@ -7,10 +7,10 @@ import type {z} from 'zod';
 import type {ModelDomain} from '../src/model-settings.js';
 import { spawnSync } from 'node:child_process';
 import { serializeConfigDocument } from '@mote/shared/config-file';
-import { configurationFromFile, configurationBootstrap, serverConfigDomain, storageConfigDomain, diagnosticsConfigDomain, modelsConfigDomain, connectorsConfigDomain, pluginsConfigDomain, processingConfigDomain, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, storageConfigSchema, serverConfigSchema, diagnosticsConfigSchema, executionConfigSchema, ConfigError,perceptionConfigDomain,mediaConfigDomain } from '../src/config.js';
+import { configurationFromFile, configurationBootstrap, serverConfigDomain, storageConfigDomain, diagnosticsConfigDomain, modelsConfigDomain, connectorsConfigDomain, pluginsConfigDomain, processingConfigDomain, parseConfigDocument, readConfigDocument, resolveConfigDocument, configDocumentDomains, registerBuiltinDomains, mediaConfigSchema, storageConfigSchema, serverConfigSchema, diagnosticsConfigSchema, executionConfigSchema, ConfigError,perceptionConfigDomain,mediaConfigDomain,uiConfigDomain,uiConfigSchema } from '../src/config.js';
 import { ConfigService } from '../src/config-service.js';
 
-type EffectiveDocument={server:z.output<typeof serverConfigSchema>;storage:z.output<typeof storageConfigSchema>;diagnostics:z.output<typeof diagnosticsConfigSchema>;media:z.output<typeof mediaConfigSchema>;execution:z.output<typeof executionConfigSchema>;models:ModelDomain;connectors:z.output<typeof connectorsConfigDomain.schema>;plugins:z.output<typeof pluginsConfigDomain.schema>;processing:z.output<typeof processingConfigDomain.schema>;version:1;revision:number};
+type EffectiveDocument={server:z.output<typeof serverConfigSchema>;storage:z.output<typeof storageConfigSchema>;diagnostics:z.output<typeof diagnosticsConfigSchema>;media:z.output<typeof mediaConfigSchema>;execution:z.output<typeof executionConfigSchema>;models:ModelDomain;connectors:z.output<typeof connectorsConfigDomain.schema>;plugins:z.output<typeof pluginsConfigDomain.schema>;processing:z.output<typeof processingConfigDomain.schema>;ui:z.output<typeof uiConfigSchema>;version:1;revision:number};
 const readEffective=(file:string):EffectiveDocument=>{
   const document=readConfigDocument(file);
   return {...document,...Object.fromEntries(configDocumentDomains().map(domain=>{const raw=document[domain.id]??domain.defaultValue;return [domain.id,domain.schema.parse(domain.resolve?.(raw,document)??raw)];}))} as unknown as EffectiveDocument;
@@ -405,6 +405,26 @@ test('registered metadata covers every default field with a real apply policy', 
   const saved = parseConfigDocument('version: 1\nrevision: 0\n');
   assert.equal((resolveConfigDocument(saved).execution as { agentConcurrency: number }).agentConcurrency, 8);
   assert.throws(() => parseConfigDocument('version: 2\nrevision: 0\n'), ConfigError);
+});
+
+test('ui domain only carries unique pinned page ids and older documents start empty', async t => {
+  const { file } = fixture(t, 'ui-pins');
+  const withoutUi = readEffective(file);
+  assert.deepEqual(withoutUi.ui.pinnedPages, []);
+  const domain = configDocumentDomains().find(value => value.id === 'ui')!;
+  assert.equal(domain.id, uiConfigDomain.id);
+  assert.equal(domain.fields?.find(field => field.path === 'pinnedPages')?.effect, 'immediate');
+  assert.deepEqual(uiConfigSchema.parse({ pinnedPages: ['generated.page'] }), { pinnedPages: ['generated.page'] });
+  assert.equal(uiConfigSchema.safeParse({ pinnedPages: ['same', 'same'] }).success, false);
+  assert.equal(uiConfigSchema.safeParse({ pinnedPages: ['bad space'] }).success, false);
+  assert.equal(uiConfigSchema.safeParse({ other: true }).success, false);
+  const service = new ConfigService({ path: file, watch: false });
+  registerBuiltinDomains(service); t.after(() => service.close()); await service.initialize();
+  await service.update('ui', { pinnedPages: ['generated.page', 'generated.second'] }, service.revision);
+  assert.deepEqual(service.current(uiConfigDomain).pinnedPages, ['generated.page', 'generated.second']);
+  assert.deepEqual(readEffective(file).ui.pinnedPages, ['generated.page', 'generated.second']);
+  await service.update('ui', { pinnedPages: [] }, service.revision);
+  assert.deepEqual(readEffective(file).ui.pinnedPages, []);
 });
 
 test('sensitive object keys cannot enter configuration field metadata', t => {

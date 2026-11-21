@@ -37,7 +37,7 @@ test('configuration projection is serializable, preserves effective domains and 
   const view=serverConfiguration(configurationBootstrap(service,config.privateCredential),service);
   assert.deepEqual(JSON.parse(JSON.stringify(view)),view);
   assert.equal(view.configFile,config.path);assert.equal(view.hostConfigFile,config.initialDocument.server.hostConfigFile);assert.equal(Object.hasOwn(view,'envFile'),false);assert.equal(Object.hasOwn(view,'groups'),false);
-  assert.equal(view.baseDir,directory);assert.equal(view.runtime,'docker');assert.equal(view.readOnly,false);assert.equal(view.restartRequired,false);
+  assert.equal(view.baseDir,directory);assert.equal(view.runtime,'docker');assert.equal(view.readOnly,false);assert.equal(view.restartRequired,false);assert.equal(view.description,'shared-configuration');assert.equal(view.storage.description,'container-storage');
   assert.equal(view.storage.sqlitePath,join(config.initialDocument.storage.dataDir,'mote.sqlite'));assert.equal(view.storage.assetDir,join(config.initialDocument.storage.dataDir,'files','objects'));
   assert.equal(view.storage.kind,'docker-volume');assert.equal(view.storage.source,'synthetic-private-volume-name');assert.equal(view.storage.mountPath,'/data');
   assert.equal(value(view,'storage','maxStorageBytes'),undefined);assert.equal(value(view,'storage','retentionDays'),undefined);assert.equal(value(view,'storage','maxExportBytes'),4*1024*1024);
@@ -53,7 +53,7 @@ test('the served configuration view exposes registered canonical domains without
   const directory=await mkdtemp(join(tmpdir(),'mote-configuration-sources-')),config=fixture(directory),{app}=await buildApp(config,{agent:inactive,backgroundWorker:false});
   t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   const response=await app.inject({url:'/api/configuration',headers:{authorization:'Bearer '+config.privateCredential.token}});assert.equal(response.statusCode,200,response.body);
-  const view=response.json<ServerConfiguration>();assert.ok(view.domains.some(domain=>domain.id==='models'));assert.equal(Object.hasOwn(view,'groups'),false);
+  const view=response.json<ServerConfiguration>();assert.equal(view.description,'shared-configuration');assert.equal(view.storage.description,'container-storage');assert.ok(view.domains.some(domain=>domain.id==='models'));assert.equal(Object.hasOwn(view,'groups'),false);
   for(const domain of view.domains){assert.ok(Object.hasOwn(domain,'saved'));assert.ok(Object.hasOwn(domain,'effective'));for(const field of domain.fields)assert.equal(Object.hasOwn(field,'envVar'),false);}
   assert.doesNotMatch(response.body,/MOTE_MODEL|environment|env-file/);
 });

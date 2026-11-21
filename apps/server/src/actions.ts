@@ -214,7 +214,7 @@ export class Actions {
     });
     const at=new Date().toISOString(),message=draft.kind==='message.send'?draft.message:undefined;
     const proposal=this.save({id:randomUUID(),kind:draft.kind,event:draft.kind==='calendar.create'?draft.event:
-      {title:('消息 · '+(message!.conversationName??message!.conversationId)).slice(0,200),start:null,end:null,timeZone:null,allDay:false,location:'',description:message!.text.slice(0,2000)},
+      {title:(moteText('消息 · ')+(message!.conversationName??message!.conversationId)).slice(0,200),start:null,end:null,timeZone:null,allDay:false,location:'',description:message!.text.slice(0,2000)},
       ...(message?{message}:{}),target,evidence,uncertainty:draft.kind==='calendar.create'?draft.uncertainty:'',status:'proposed',version:1,createdAt:at,updatedAt:at});
     if(message)this.setMeta('message-proposals',{revision:this.messageProposalRevision()+1});
     return proposal;
@@ -229,7 +229,7 @@ export class Actions {
       const priorRow=db.prepare('SELECT json FROM action_meta WHERE key=?').get(commandKey) as {json:string}|undefined;
       if(priorRow){const prior=JSON.parse(priorRow.json) as {fingerprint:string;receipt:{proposal:ActionProposal;revision:number}};if(prior.fingerprint!==fingerprint)throw new StoreError('Message proposal operation identity conflicts with its original request',409);db.exec('COMMIT');return prior.receipt;}
       const current=this.messageProposalRevision();if(current!==input.expectedRevision)throw new StoreError('Message proposals changed; refresh before retrying',409);
-      const at=new Date().toISOString(),message={...input.message},proposal:ActionProposal={id:randomUUID(),kind:'message.send',event:{title:('消息 · '+(message.conversationName??message.conversationId)).slice(0,200),start:null,end:null,timeZone:null,allDay:false,location:'',description:message.text.slice(0,2000)},message,target:input.target,uncertainty:'',evidence:[],status:'proposed',version:1,createdAt:at,updatedAt:at};
+      const at=new Date().toISOString(),message={...input.message},proposal:ActionProposal={id:randomUUID(),kind:'message.send',event:{title:(moteText('消息 · ')+(message.conversationName??message.conversationId)).slice(0,200),start:null,end:null,timeZone:null,allDay:false,location:'',description:message.text.slice(0,2000)},message,target:input.target,uncertainty:'',evidence:[],status:'proposed',version:1,createdAt:at,updatedAt:at};
       this.save(proposal);
       const receipt={proposal,revision:current+1};
       this.setMeta('message-proposals',{revision:receipt.revision});this.setMeta(commandKey,{fingerprint,receipt});

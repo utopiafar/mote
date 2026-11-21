@@ -41,6 +41,17 @@ function ConfigurationState({config}:{config:ServerConfiguration}) {
 function ConfigurationRegistry({config,domain:id}:{config:ServerConfiguration;domain?:string}) {
  return <>{config.domains.filter(domain=>!id||domain.id===id).map(domain=><details className="advanced-config-group" key={domain.id}><summary><code>{domain.id}</code>{' · '}{domain.status==='invalid'?moteText('配置应用失败'):domain.status==='restart-required'?moteText('重启后生效'):moteText('已应用')}</summary><p>{moteText('配置文件')}{' · '}{moteText('版本 {0}',config.revision)}</p>{domain.fields.map(field=><div key={field.path}><code>{domain.id}.{field.path}</code><small>{field.effect?effects[field.effect]:moteText('立即生效')}{field.sensitive?' · '+moteText('已保存，隐藏凭据'):''}</small></div>)}<div className="preference-grid"><div><h4>{moteText('文件中保存的值')}</h4><pre>{JSON.stringify(domain.saved,null,2)}</pre></div><div><h4>{moteText('当前生效值')}</h4><pre>{JSON.stringify(domain.effective,null,2)}</pre></div></div></details>)}</>;
 }
+export function configurationDescription(code:ServerConfiguration['description']):string {
+ switch(code){
+  case 'shared-configuration':return moteText('页面与文件同配置');
+ }
+}
+export function storageDescription(code:ServerConfiguration['storage']['description']):string {
+ switch(code){
+  case 'container-storage':return moteText('容器内路径');
+  case 'host-storage':return moteText('本机路径');
+ }
+}
 export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNavigate:(page:SettingsDestination)=>void;onModelApplied:()=>void}) {
  const [category,setCategory]=useHashChoice('category',settingsCategoryFromHash),[revision,setRevision]=useState(0),[modelDetail,setModelDetail]=useState(false),[serviceDetail,setServiceDetail]=useState(false),[materialDetail,setMaterialDetail]=useState(false);
  const activeCategory=category??'providers',isTab=['providers','model','processing','memory'].includes(activeCategory);
@@ -69,5 +80,5 @@ export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNaviga
 }
 export function AdvancedConfiguration({api,includeRuntime=true}:{api:Api;includeRuntime?:boolean}) {
  const {data:config,error,refresh}=useResource<ServerConfiguration>(api,'/api/configuration');
- return <>{error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}{config&&<><ConfigurationState config={config}/>{includeRuntime&&<RuntimeSettings api={api} kind="diagnostics" onApplied={refresh}/>}<details className="panel deployment-details"><summary><Settings2 size={17}/>{moteText("部署与全部生效配置")}</summary><p>{config.description}</p><dl className="settings-locations"><div><dt>{moteText("配置文件")}</dt><dd><code>{config.configFile||moteText("未设置")}</code></dd></div><div><dt>{moteText("数据目录")}</dt><dd><code>{config.storage.dataDir}</code></dd></div><div><dt>{moteText("相对路径基准")}</dt><dd><code>{config.baseDir}</code></dd></div></dl><ConfigurationRegistry config={config}/></details></>}</>;
+ return <>{error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}{config&&<><ConfigurationState config={config}/>{includeRuntime&&<RuntimeSettings api={api} kind="diagnostics" onApplied={refresh}/>}<details className="panel deployment-details"><summary><Settings2 size={17}/>{moteText("部署与全部生效配置")}</summary><p>{[configurationDescription(config.description),storageDescription(config.storage.description)].filter(Boolean).join(' · ')}</p><dl className="settings-locations"><div><dt>{moteText("配置文件")}</dt><dd><code>{config.configFile||moteText("未设置")}</code></dd></div><div><dt>{moteText("数据目录")}</dt><dd><code>{config.storage.dataDir}</code></dd></div><div><dt>{moteText("相对路径基准")}</dt><dd><code>{config.baseDir}</code></dd></div></dl><ConfigurationRegistry config={config}/></details></>}</>;
 }

@@ -16,7 +16,7 @@ test('concurrent requests localize presentation, retain protocol codes and leave
  t.after(async()=>{await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  const headers=(locale:string)=>({authorization:'Bearer '+token,'accept-language':locale});
  const responses=await Promise.all(Array.from({length:20},(_,i)=>node.app.inject({url:'/api/configuration',headers:headers(i%2?'zh-CN':'en-US')})));
- responses.forEach((r,i)=>{assert.equal(r.statusCode,200,r.body);assert.equal(r.headers['content-language'],i%2?'zh-CN':'en');assert.match(String(r.headers.vary),/Accept-Language/i);if(i%2)assert.match(r.body,/部署配置/);else assert.doesNotMatch(r.body,/只读展示|软件更新/);});
+ responses.forEach((r,i)=>{assert.equal(r.statusCode,200,r.body);assert.equal(r.headers['content-language'],i%2?'zh-CN':'en');assert.match(String(r.headers.vary),/Accept-Language/i);const view=r.json();assert.equal(view.description,'shared-configuration');assert.equal(view.storage.description,'host-storage');});
  for(const locale of ['en','zh-CN']) {
   const r=await node.app.inject({url:'/api/status',headers:{'accept-language':locale}});
   assert.equal(r.statusCode,401);assert.equal(r.headers['content-language'],locale);

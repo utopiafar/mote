@@ -5,7 +5,7 @@ import { useOperationUpdates } from '../../useOperationUpdates';
 import { moteText, cjkLocale } from '@mote/shared/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, FolderInput, Layers3, Plus, X,ChevronRight,FileText,Monitor,Mail,CalendarDays,Link2,Code2,Mic } from 'lucide-react';
-import type { SourceConnection, SourceItemRecord,LibrarySourceFacet } from '@mote/shared';
+import type { PluginCenterView,SourceConnection, SourceItemRecord,LibrarySourceFacet } from '@mote/shared';
 import { ApiError,type Api, errorMessage, dateTime } from '../../api';
 import {archivePageWithdrawn,currentArchivePages,mergeArchivePage,reconcileArchivePages,type ArchivePage,type ArchivePages} from '../../archive-pages';
 import { sourceMetadataSchema } from '@mote/shared';
@@ -16,6 +16,7 @@ import { useHashChoice } from '../../useHashChoice';
 import {useSourceConnectorStyle} from '../../source-connectors-ui';
 import { recordingSourceStatus, recordingSyncText } from '../../recording-status';
 import {sourcePluginBound,sourcePluginFor,sourcePluginStatus,sourcePlugins,sourcePluginForSetup} from './registry';
+import {stoppedSourceKinds} from '../plugin-center/source-availability';
 import { Loading } from '../../Loading';
 import {FileRetentionSettings} from './FileRetentionSettings';
 import {SourceOnboarding} from './SourceOnboarding';
@@ -63,6 +64,7 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
     const sourceList = useResource<{
         items: SourceConnection[];
     }>(api, '/api/sources');
+    const pluginView = useResource<PluginCenterView>(api, mode === 'connections' ? '/api/plugins' : null);
     const page = useResource<ArchivePage<SourceItemRecord>>(api, (mode === 'library'||!!selected) ? '/api/source-items?' + new URLSearchParams({ limit: '30', ...(selected ? { sourceId: selected } : {}), ...(cursor ? { cursor } : {}) }) : null);
     const versions = useResource<{
         items: SourceItemRecord[];
@@ -75,10 +77,11 @@ export function Sources({ api, onOpen, onImport, mode = 'connections', onBrowse,
     const withdrawn = archivePageWithdrawn(page.error);
     useEffect(() => { setPages(value => reconcileArchivePages(value,api,listScope,withdrawn)); }, [api, listScope, withdrawn]);
     useEffect(() => { setBusy(false);setError('');setSourceKind('');setAttentionOnly(false);setSourceSearch('');setDetailChoice(undefined); }, [api]);
-    const sources = sourceList.data?.items ?? [], items = mergeArchivePage(currentPages,page.data?.items??[],withdrawn), nextCursor = page.data?.nextCursor, history = versions.data?.items ?? null, catalog = connectorStatus.data ?? null, loading = sourceList.loading || page.loading;
+    const stopped = mode === 'connections' ? stoppedSourceKinds(pluginView.data) : new Set<string>();
+    const sources = (sourceList.data?.items ?? []).filter(source => !stopped.has(source.kind)), items = mergeArchivePage(currentPages,page.data?.items??[],withdrawn), nextCursor = page.data?.nextCursor, history = versions.data?.items ?? null, catalog = connectorStatus.data ?? null, loading = sourceList.loading || page.loading;
     const initialLoading = page.loading && page.data === undefined;
     const readError = sourceList.error || page.error || versions.error || connectorStatus.error, technicalError=mutationError||(readError?errorMessage(readError):''),error=mutationError?moteText('操作未完成，请重试'):readError?(readError instanceof ApiError?(readError.code&&commonFailureMessage(readError.code,readError.status)||httpStatusMessage(readError.status)):moteText('状态读取失败。')):'';
-    async function refresh(source = selected) { if(activeApi.current!==api||visit.current!==renderVisit)return;setError(''); setHistoryKey(null); setPages(undefined); resources(api).invalidate(key => /^\/api\/(sources|source-items|library\/browse|connectors\/status)([/?]|$)/.test(key)); }
+    async function refresh(source = selected) { if(activeApi.current!==api||visit.current!==renderVisit)return;setError(''); setHistoryKey(null); setPages(undefined); resources(api).invalidate(key => /^\/api\/(sources|source-items|library\/browse|connectors\/status|plugins)([/?]|$)/.test(key)); }
     function loadHistory(item: SourceItemRecord) { if(visit.current!==renderVisit||selected&&item.sourceId!==selected)return;setHistoryKey('/api/sources/' + encodeURIComponent(item.sourceId) + '/history?externalId=' + encodeURIComponent(item.externalId)); }
     function more() { if (!nextCursor || loading)
         return; setPages({api,scope:listScope,previous:items,cursor:nextCursor}); }
