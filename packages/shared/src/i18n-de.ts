@@ -7720,5 +7720,6 @@ export const german: Readonly<Record<string, string>> = {
   "{0}\n保留 {1} · 待发 {2} · 需处理 {3}": "{0}\nBehalten {1} · ausstehend {2} · offen {3}",
   "中央尚不支持两端检查。升级中央代码后重试；未修改本机状态": "Der zentrale Knoten unterstützt keine beidseitigen Prüfungen. Knoten aktualisieren; lokaler Status unverändert.",
   "所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。": "{0} Aufzeichnungen ausgewählt. {1}Behaltene Vergleichsbilder werden nicht gelöscht. Synchronisierte zentrale Kopien bleiben unberührt. Wiederhergestellte Aufzeichnungen setzen ihren ursprünglichen Sync- und OCR-Workflow fort.",
-  "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。": "{0}\n\nPrüft die eingelösten, verschlüsselt gespeicherten Anmeldedaten erneut online. Nach der Bestätigung werden ungebundene lokale Aufzeichnungen diesem Knoten zugeordnet und entsprechend den Synchronisierungseinstellungen gesendet."
+  "{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。": "{0}\n\nPrüft die eingelösten, verschlüsselt gespeicherten Anmeldedaten erneut online. Nach der Bestätigung werden ungebundene lokale Aufzeichnungen diesem Knoten zugeordnet und entsprechend den Synchronisierungseinstellungen gesendet.",
+  "模板": "Vorlage"
 };
