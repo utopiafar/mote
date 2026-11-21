@@ -1,6 +1,6 @@
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../../server/src/app.js';
 import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
@@ -19,14 +19,12 @@ const config:ConfigurationPlatformOptions={
  }
 };
 const result=(answer:string)=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
-const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async()=>result('Generated continued response'),close:async()=>{}}});
+const node=await buildApp(config,{webRoot:resolve('apps/web/dist'),backgroundWorker:false,agent:{configured:true,query:async()=>result('Generated continued response'),close:async()=>{}}});
 const conversations=node.conversations;
-let conversation:ReturnType<typeof conversations.get>|undefined;
+const {id:conversationId}=conversations.main();
 for(let index=1;index<=45;index++){
- const saved=conversations.append(conversation,{question:'Generated question '+index},result('Generated answer '+index));
- conversation=conversations.get(saved.conversationId);
+ conversations.append(conversations.get(conversationId),{question:'Generated question '+index},result('Generated answer '+index));
 }
-const conversationId=conversation!.id;
 const conversationPath=['','api','conversations',conversationId].join('/');
 let failNextPage=false;
 node.app.addHook('onRequest',async(request,reply)=>{
@@ -38,6 +36,11 @@ node.app.addHook('onRequest',async(request,reply)=>{
    return reply.code(503).send({error:'Generated temporary read failure'});
   }
  }
+});
+node.app.post('/fixture/advance-revision',async(request,reply)=>{
+ if(request.headers.authorization!=='Bearer '+token)return reply.code(403).send({});
+ conversations.append(conversations.get(conversationId),{question:'Generated other-client continuation'},result('Generated other-client answer'));
+ return {revision:conversations.get(conversationId).revision};
 });
 await node.app.listen({host:'127.0.0.1',port:0});
 const address=node.app.server.address();if(!address||typeof address==='string')throw Error('Missing fixture address');

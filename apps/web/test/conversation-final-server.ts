@@ -48,8 +48,8 @@ if(process.env.MOTE_CONVERSATION_RECOVERY==='1'){
   const forwarded=proxyRequest(url+(req.url??'/'),{method:req.method,headers:req.headers},upstream=>{
    const chunks:Buffer[]=[];upstream.on('data',chunk=>chunks.push(Buffer.from(chunk)));upstream.on('end',()=>{
     const send=async()=>{
-     if(req.method==='POST'&&req.url==='/api/query-runs'&&(upstream.statusCode??500)<300){const path=join(directory,'drop-query-acks'),left=existsSync(path)?Number(readFileSync(path,'utf8')):0;if(left>0){writeFileSync(path,String(left-1));res.writeHead(upstream.statusCode??202,upstream.headers);res.flushHeaders();res.write(Buffer.from('{'));await delay(30);res.destroy();return;}}
-     if(req.method==='GET'&&/^\/api\/query-runs\/[^/]+$/.test(req.url??'')&&existsSync(join(directory,'hide-run-receipt'))){res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({error:'not_found'}));return;}
+     if(req.method==='POST'&&req.url==='/api/conversations/messages'&&(upstream.statusCode??500)<300){const path=join(directory,'drop-query-acks'),left=existsSync(path)?Number(readFileSync(path,'utf8')):0;if(left>0){writeFileSync(path,String(left-1));res.writeHead(upstream.statusCode??202,upstream.headers);res.flushHeaders();res.write(Buffer.from('{'));await delay(30);res.destroy();return;}}
+     if(req.method==='GET'&&/^\/api\/conversations\/[0-9a-f-]{36}\/messages\/[0-9a-f-]{36}$/i.test(req.url??'')&&existsSync(join(directory,'hide-message-receipt'))){writeFileSync(join(directory,'message-receipt-hidden'),'true');res.writeHead(404,{'content-type':'application/json'});res.end(JSON.stringify({error:'not_found'}));return;}
      if(req.method==='POST'&&req.url?.endsWith('/cancel')){writeFileSync(join(directory,'cancel-accepted'),'true');while(existsSync(join(directory,'hold-cancel-ack'))&&!res.destroyed)await delay(20);}
      if(res.destroyed)return;res.writeHead(upstream.statusCode??502,upstream.headers);res.end(Buffer.concat(chunks));
     };void send().catch(()=>res.destroy());

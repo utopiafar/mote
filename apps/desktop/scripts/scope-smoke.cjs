@@ -1,115 +1,179 @@
 require('../../../scripts/fixture-background.cjs');
 require('../../../scripts/fixture-language.cjs');
-const {app,BrowserWindow}=require('electron');
-const {mkdtempSync,writeFileSync,readFileSync,mkdirSync}=require('node:fs');
-const {rm}=require('node:fs/promises');
-const {tmpdir}=require('node:os');
-const {join,resolve}=require('node:path');
-const assert=require('node:assert/strict');
-const {defaultConfig}=require('../dist/config');
-const fixture=JSON.parse(readFileSync(process.argv[2],'utf8'));
-assert.equal(new URL(fixture.url).hostname,'127.0.0.1');
-const profile=mkdtempSync(join(tmpdir(),'mote-desktop-conversation-ui-'));
-app.setPath('userData',profile);process.env.MOTE_PROFILE='dev';
-delete process.env.MOTE_URL;delete process.env.MOTE_TOKEN;delete process.env.MOTE_ENV_FILE;
-const dataDirectory=join(profile+'-profiles','dev');mkdirSync(dataDirectory,{recursive:true,mode:0o700});
-writeFileSync(join(dataDirectory,'config.json'),JSON.stringify({version:4,developmentToken:fixture.token,config:{...defaultConfig(),serverUrl:fixture.url,credentialScope:'owner',metadataEnabled:false,deviceName:'Generated conversation client'}}),{mode:0o600});
-writeFileSync(join(dataDirectory,'storage-format.json'),JSON.stringify({version:4}),{mode:0o600});
-// Replace only the OS browser launch; the ticket, URL, Web renderer and reader stay real.
-const child=require('node:child_process'),nativeExec=child.execFile;let openedUrl;
-child.execFile=function(file,args,...rest){if(file==='/usr/bin/open'){openedUrl=args.at(-1);rest.at(-1)(null,'','');return {};}return nativeExec.call(this,file,args,...rest);};
-const out=resolve(__dirname,'../.mote/scope-ui');mkdirSync(out,{recursive:true});
-const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));let main;
-const timeout=setTimeout(()=>{console.error('Scope UI timed out');app.exit(1);},120000);
-app.on('browser-window-created',(_event,window)=>{
- if(main)return;main=window;
- window.webContents.once('did-finish-load',()=>void(async()=>{
- const js=code=>window.webContents.executeJavaScript(code);
- const until=async(condition,label)=>{const deadline=Date.now()+20000;while(!await condition()){assert.ok(Date.now()<deadline,label);await delay(30);}};
- const headers={authorization:'Bearer '+fixture.token,'content-type':'application/json'};
- const api=async(path,body)=>{const r=await fetch(fixture.url+path,{headers,...(body?{method:'POST',body:JSON.stringify(body)}:{})});assert.ok(r.ok,await r.clone().text());return r.json();};
- const read=kind=>api(['','api','conversations',fixture.ids[kind]].join('/'));
- const select=async kind=>{
-  await js(`document.querySelector('#ask-refresh').click()`);
-  await until(()=>js(`!document.querySelector('#ask-new').disabled`),'Mac history ready');
-  await js(`([...document.querySelectorAll('#ask-history button')].find(b=>b.textContent==='Generated ${kind}')).click()`);
-  await until(()=>js(`!document.querySelector('#ask-new').disabled&&document.querySelectorAll('#ask-messages article').length>0`),'Mac selected '+kind);
- };
- const scope=()=>js(`document.querySelector('#ask-scope').innerText`);
- await until(()=>js(`Boolean(document.querySelector('[data-nav="ask"]'))&&!document.querySelector('#settings-fields').disabled`),'desktop ready');
- await js(`document.querySelector('[data-nav="ask"]').click()`);
- const web=new BrowserWindow({width:1280,height:900,show:false,webPreferences:{partition:'scope-generated-web',contextIsolation:true,sandbox:true,nodeIntegration:false}});
- const wjs=code=>web.webContents.executeJavaScript(code);
- for(const kind of ['anchor','strict']){
-  await select(kind);
-  const expected=kind==='strict'?'严格范围：只查询以下记录':'参考记录：可自动查找其他已授权内容';
-  assert.ok((await scope()).includes(expected));
-  await js(`document.querySelector('#ask-question').value='Generated retained draft'`);
-  if(kind==='anchor'){
-   await js(`document.querySelector('#ask-turns-more').click();document.querySelector('#ask-turns-more').click()`);
-   await until(()=>js(`document.querySelectorAll('#ask-messages article').length===21&&!document.querySelector('#ask-new').disabled`),'scope paging');assert.ok((await scope()).includes(expected));
+const {mkdirSync, writeFileSync} = require('node:fs');
+const {join, resolve} = require('node:path');
+const assert = require('node:assert/strict');
+const {pageHash} = require('@mote/shared');
+const {runDesktopChat, chatWindow, chatControls, conversationPath, turns, older} = require('./central-chat-fixture.cjs');
+
+runDesktopChat('scope', 120000, 20000, async ({fixture, until, api, handoff}) => {
+  const first = chatWindow('generated-scope-mac-browser');
+  const second = chatWindow('generated-scope-web-browser');
+  const chat = chatControls(first, until);
+  const other = chatControls(second, until);
+  const pending = 'Generated retained draft';
+  const scopeNav = '.chat-composer-area nav:is([aria-label="参考记录"], [aria-label="查询范围"])';
+  const selectorFor = kind => scopeNav + '[aria-label="' + (kind === 'strict' ? '查询范围' : '参考记录') + '"]';
+  const hasScope = (client, kind) => client.js('Boolean(document.querySelector(' + JSON.stringify(selectorFor(kind)) + '))');
+  const hasNoScope = client => client.js('!document.querySelector(' + JSON.stringify(scopeNav) + ')');
+  const read = kind => api(conversationPath(fixture.ids[kind]));
+  const out = resolve(__dirname, '../.mote/scope-ui');
+  mkdirSync(out, {recursive: true});
+
+  assert.equal(new Set(Object.values(fixture.ids)).size, 3);
+  async function setMain(kind) {
+    const id = fixture.ids[kind];
+    assert.equal((await api('/fixture/main', {kind})).id, id);
+    assert.equal((await api(conversationPath('main'))).id, id);
   }
-  openedUrl=undefined;await js(`document.querySelector('#ask-scope button').click()`);
-  await until(()=>Boolean(openedUrl),'original IPC navigation');
-  const parsed=new URL(openedUrl),params=new URLSearchParams(parsed.hash.split('?')[1]);
-  assert.equal(params.get('evidence'),'capture:'+fixture.evidenceIds[kind==='anchor'?0:1]);
-  await web.loadURL(openedUrl);
-  await until(()=>wjs(`document.body.innerText.includes('Generated scope original ${kind==='anchor'?0:1}')`),'real authorized original');
-  assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated retained draft');
-  await select(kind);
-  const before=(await read(kind)).turnCount;
-  await js(`document.querySelector('#ask-question').value='Mac ${kind} continuation';document.querySelector('#ask-form').requestSubmit();document.querySelector('#ask-form').requestSubmit()`);
-  await until(async()=>(await read(kind)).turnCount===before+1,'Mac '+kind+' committed');
-  await until(()=>js(`document.querySelector('#ask-progress').innerText.includes('回答已完成')&&!document.querySelector('#ask-send').disabled`),'Mac completed');
-  assert.equal((await api('/fixture/main',{kind})).id,fixture.ids[kind]);
-  const chatUrl=new URL(openedUrl);
-  chatUrl.hash='/chat';
-  await web.loadURL(chatUrl.href);
-  // Close evidence overlay through its real control if the route retains it.
-  await wjs(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==='关闭');b?.click()})()`);
-  await until(()=>wjs(`document.querySelector('.chat-page[aria-busy="false"]')&&[...document.querySelectorAll('.asked-question')].some(row=>row.textContent==='Mac ${kind} continuation')`),'Web main conversation');
-  assert.ok(await wjs(`Boolean(document.querySelector('nav[aria-label="${kind==='anchor'?'参考记录':'查询范围'}"]'))`));
-  await wjs(`(()=>{const e=document.querySelector('[aria-label="向 Mote 提问"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Web ${kind} continuation');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
-  await wjs(`document.querySelector('[aria-label="发送"]').click()`);
-  await until(async()=>(await read(kind)).turnCount===before+2,'Web '+kind+' committed');
-  await js(`document.querySelector('#ask-question').value='Generated retained draft';document.querySelector('#ask-refresh').click()`);
-  await until(()=>js(`document.querySelector('#ask-messages').innerText.includes('Web ${kind} continuation')&&!document.querySelector('#ask-new').disabled`),'Mac refresh sees Web');
-  assert.ok((await scope()).includes(expected));assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated retained draft');
-  await new Promise(resolve=>{web.webContents.once('did-finish-load',resolve);web.webContents.reload();});
-  await until(()=>wjs(`Boolean(document.querySelector('nav[aria-label="${kind==='anchor'?'参考记录':'查询范围'}"]'))`),'Web reload scope');
-  writeFileSync(join(out,kind+'-mac.png'),(await window.webContents.capturePage()).toPNG());
-  writeFileSync(join(out,kind+'-web.png'),(await web.webContents.capturePage()).toPNG());
- }
- const seen=await api('/fixture/seen');
- for(const origin of ['Mac','Web'])for(const kind of ['anchor','strict']){
-  const calls=seen.filter(x=>x.question===origin+' '+kind+' continuation');assert.equal(calls.length,1);
-  assert.deepEqual(calls[0][kind==='anchor'?'anchorEvidenceIds':'evidenceIds'],[fixture.evidenceIds[kind==='anchor'?0:1]]);
-  assert.equal(calls[0][kind==='anchor'?'evidenceIds':'anchorEvidenceIds'],undefined);
- }
- await api('/api/query',{conversationId:fixture.ids.strict,question:'Other client changes scope',anchorEvidenceIds:[fixture.evidenceIds[0]]});
- await js(`document.querySelector('#ask-refresh').click()`);
- await until(()=>js(`document.querySelector('#ask-scope').innerText.includes('参考记录：')&&!document.querySelector('#ask-new').disabled`),'changed snapshot');
- assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated retained draft');
- for(const status of [503,403]){
-  await fetch(fixture.url+'/fixture/fail',{method:'POST',headers:{...headers,'x-fixture-status':String(status)}});
-  await js(`document.querySelector('#ask-refresh').click()`);
-  await until(()=>js(`document.querySelector('#ask-error').innerText.length>0&&!document.querySelector('#ask-new').disabled`),'unavailable read');
-  if(status===503)assert.ok((await scope()).includes('暂不可用'));assert.equal(await js(`document.querySelectorAll('#ask-scope button').length`),0);
-  assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated retained draft');
-  if(status===403){
-   await js(`document.querySelector('#ask-token').value=${JSON.stringify(fixture.token)};document.querySelector('#ask-login').click()`);
-   await until(()=>js(`document.querySelectorAll('#ask-history button').length===3&&!document.querySelector('#ask-new').disabled`),'explicit relogin');
-   await select('strict');
-  }else await js(`document.querySelector('#ask-refresh').click()`);
-  await until(()=>js(`document.querySelector('#ask-scope').innerText.includes('参考记录：')&&!document.querySelector('#ask-new').disabled`),'scope retry');
- }
- await select('plain');assert.ok((await scope()).includes('未额外限定记录'));
- await select('anchor');await js(`document.querySelector('#ask-new').click()`);assert.equal(await js(`document.querySelectorAll('#ask-scope button').length`),0);
- await select('strict');await js(`document.querySelector('#ask-logout').click()`);
- await until(()=>js(`document.querySelectorAll('#ask-history button').length===0&&!document.querySelector('#ask-new').disabled`),'logout clears');assert.equal(await js(`document.querySelectorAll('#ask-scope button').length`),0);
- writeFileSync(join(out,'result.json'),JSON.stringify({passed:true,actualMacRendererPreloadIpc:true,actualWebRenderer:true,actualHttpSqlite:true,model:'generated only',osBrowserLaunch:'redirected to isolated hidden BrowserWindow',checks:['anchor and strict same-ID Mac-Web continuation','exact original IDs and authorized real reader','one admission after duplicate submit','current scope after older page and other-client change','refresh preserves drafts','Web reload restores scopes','simulated 503/403 clears stale labels and retry restores scope','plain/new/logout removes labels']},null,2));
- web.destroy();clearTimeout(timeout);console.log('PASS Mac/Web current scope, originals, continuation and recovery');app.exit(0);
- })().catch(error=>{console.error(error);clearTimeout(timeout);app.exit(1);}));
+  async function send(client, question, duplicate = false) {
+    await client.field(question);
+    if (duplicate) await client.js('(() => {const form = document.querySelector(".ask-form"); form.requestSubmit(); form.requestSubmit();})()');
+    else await client.click('.ask-form .send-button:enabled');
+    await client.completed(question);
+  }
+
+  await second.loadURL(fixture.url + '/' + pageHash('chat'));
+  await until(() => other.js('(() => {const button = Array.from(document.querySelectorAll("button")).find(node => node.textContent.trim() === "登录 Mote"); if (!button) return false; button.click(); return true;})()'), 'separate Web sign-in');
+  await until(() => other.js('Boolean(document.querySelector(".connect-modal input[type=password]"))'), 'Web login form');
+  await second.webContents.executeJavaScript('(() => {const input = document.querySelector(".connect-modal input[type=password]");' +
+    'Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, ' + JSON.stringify(fixture.token) + ');' +
+    'input.dispatchEvent(new Event("input", {bubbles:true}));})()');
+  await other.click('.connect-modal button[type=submit], .connect-modal form button.primary');
+  await until(() => other.ready(), 'independent Web session');
+
+  for (const [kind, index] of [['anchor', 0], ['strict', 1]]) {
+    await setMain(kind);
+    const evidenceId = fixture.evidenceIds[index];
+    const initial = await read(kind);
+    assert.equal(initial.id, fixture.ids[kind]);
+    assert.deepEqual(initial.scope[kind === 'anchor' ? 'anchorEvidenceIds' : 'evidenceIds'], [evidenceId]);
+    await handoff(first, 'capture:' + evidenceId, initial.id);
+    await until(() => chat.js('document.querySelector(".evidence-reader")?.textContent.includes(' +
+      JSON.stringify('Generated scope original ' + index) + ')'), 'authorized original for ' + kind);
+    await chat.click('.evidence-reader .evidence-back');
+    await until(() => chat.ready(), 'main chat after original');
+    await until(() => hasScope(chat, kind), 'stored ' + kind + ' scope');
+
+    await chat.field(pending);
+    if (kind === 'anchor') {
+      assert.equal((await chat.questions()).length, 20);
+      await chat.click(older);
+      await until(async () => (await chat.questions()).length === 21, '21 anchor turns');
+      assert.ok(await hasScope(chat, kind));
+    }
+    await chat.click(selectorFor(kind) + ' button:first-of-type');
+    await until(() => chat.js('document.querySelector(".evidence-reader")?.textContent.includes(' +
+      JSON.stringify('Generated scope original ' + index) + ')'), 'exact original from the pinned scope');
+    await chat.click('.evidence-reader .evidence-back');
+    await until(() => chat.ready(), 'return to the same main chat');
+    assert.equal(await chat.draft(), pending);
+
+    const firstQuestion = 'Mac browser ' + kind + ' continuation';
+    await send(chat, firstQuestion, true);
+    assert.equal((await read(kind)).turnCount, initial.turnCount + 1);
+
+    await other.refresh();
+    await other.completed(firstQuestion);
+    assert.ok(await hasScope(other, kind));
+    await chat.field(pending);
+    const secondQuestion = 'Web ' + kind + ' continuation';
+    await send(other, secondQuestion);
+    const saved = await read(kind);
+    assert.equal(saved.turnCount, initial.turnCount + 2);
+    assert.equal(saved.turns.at(-1).question, secondQuestion);
+    await chat.refresh();
+    await chat.completed(secondQuestion);
+    assert.ok(await hasScope(chat, kind));
+    assert.equal(await chat.draft(), pending);
+
+    const reloaded = new Promise(resolve => second.webContents.once('did-finish-load', resolve));
+    second.webContents.reload();
+    await reloaded;
+    await other.completed(secondQuestion);
+    assert.ok(await hasScope(other, kind), 'Web reload restores the same scope');
+    writeFileSync(join(out, kind + '-mac-handoff.png'), (await first.webContents.capturePage()).toPNG());
+    writeFileSync(join(out, kind + '-web.png'), (await second.webContents.capturePage()).toPNG());
+  }
+
+  const seen = await api('/fixture/seen');
+  for (const origin of ['Mac browser', 'Web']) {
+    for (const [kind, index] of [['anchor', 0], ['strict', 1]]) {
+      const calls = seen.filter(call => call.question === origin + ' ' + kind + ' continuation');
+      assert.equal(calls.length, 1);
+      assert.deepEqual(calls[0][kind === 'anchor' ? 'anchorEvidenceIds' : 'evidenceIds'], [fixture.evidenceIds[index]]);
+      assert.equal(calls[0][kind === 'anchor' ? 'evidenceIds' : 'anchorEvidenceIds'], undefined);
+    }
+  }
+
+  const changed = 'Other client changes scope';
+  await api('/api/query', {conversationId: fixture.ids.strict, question: changed, anchorEvidenceIds: [fixture.evidenceIds[0]]});
+  await chat.refresh();
+  await chat.completed(changed);
+  assert.ok(await hasScope(chat, 'anchor'));
+  assert.equal(await chat.draft(), pending);
+
+  const failures = [];
+  const currentPath = conversationPath(fixture.ids.strict);
+  first.webContents.session.webRequest.onCompleted({urls: [fixture.url + currentPath + '*']}, response => {
+    if (response.statusCode >= 400) failures.push(response.statusCode);
+  });
+  const retry = '.chat-error[role=alert] button';
+  await api('/fixture/fail', {}, {'x-fixture-status': '503'});
+  await chat.refresh();
+  await until(() => chat.js('Boolean(document.querySelector(".chat-error[role=alert] button"))'), 'transient read error');
+  assert.deepEqual(failures, [503]);
+  assert.ok(await hasScope(chat, 'anchor'), 'the last authorized scope is still visible during the transient failure');
+  assert.equal(await chat.draft(), pending);
+  await chat.click(retry);
+  await until(() => chat.js('!document.querySelector(".chat-error[role=alert]")'), 'transient read retry');
+  assert.ok(await hasScope(chat, 'anchor'));
+
+  await api('/fixture/fail', {}, {'x-fixture-status': '403'});
+  await chat.refresh();
+  await until(() => chat.js('Boolean(document.querySelector(".chat-error[role=alert] button")) && !document.querySelector(' +
+    JSON.stringify(turns) + ')'), 'forbidden read withdraws previous turns');
+  assert.deepEqual(failures, [503, 403]);
+  assert.ok(await hasNoScope(chat));
+  assert.equal(await chat.draft(), pending);
+  await handoff(first);
+  await chat.completed(changed);
+  assert.ok(await hasScope(chat, 'anchor'), 'a fresh Mac ticket restores the same main conversation');
+
+  await chat.click(selectorFor('anchor') + ' button:last-of-type');
+  assert.ok(await hasNoScope(chat), 'clearing the next-question scope leaves the conversation open');
+  assert.ok((await chat.questions()).includes(changed));
+
+  await setMain('plain');
+  await handoff(first);
+  await chat.completed('Generated plain');
+  assert.ok(await hasNoScope(chat));
+  assert.equal((await read('plain')).id, fixture.ids.plain);
+
+  await setMain('strict');
+  await handoff(first);
+  await chat.completed(changed);
+  assert.ok(await hasScope(chat, 'anchor'));
+  await chat.js('location.hash = "#/preferences/session"');
+  const logout = 'Array.from(document.querySelectorAll(".web-preferences button")).find(button => button.textContent === "退出登录")';
+  await until(() => chat.js('Boolean(' + logout + ')'), 'web sign-out control');
+  await chat.js(logout + '.click()');
+  await chat.click('.modal[role=dialog] .primary');
+  await chat.js('location.hash = ' + JSON.stringify(pageHash('chat')));
+  await until(() => chat.js('Boolean(document.querySelector("[data-session=signed-out]"))'), 'signed-out chat');
+  assert.ok(await hasNoScope(chat));
+  assert.deepEqual(await chat.questions(), []);
+  await other.refresh();
+  await other.completed(changed);
+
+  writeFileSync(join(out, 'result.json'), JSON.stringify({
+    passed: true, actualMacRendererPreloadIpc: true, actualWebRenderer: true, actualHttpSqlite: true, liveModel: false,
+    checks: ['anchor and strict main chats after a Mac handoff and in a separate Web session', 'exact authorized originals',
+      '21-turn anchor page and draft survive reader return', 'one admission per continuation including duplicate submit',
+      'persisted scope after reload and other-client change', '503 retry and 403 withdrawal with ticket re-login',
+      'scope clear, plain main, and logout remove scope controls'],
+  }, null, 2));
+  console.log('PASS Mac-to-Central scope: anchor/strict, exact originals, one admission per submit, 503/403, re-login and sign-out.');
+  first.destroy();
+  second.destroy();
 });
-app.on('quit',()=>{void rm(profile,{recursive:true,force:true});void rm(profile+'-profiles',{recursive:true,force:true});});
-require('../dist/main');

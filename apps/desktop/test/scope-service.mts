@@ -4,6 +4,7 @@ import {join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {buildApp} from '../../server/src/app.js';
+import {Conversations} from '../../server/src/conversations.js';
 import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 import type {QueryInput} from '@mote/agent';
 const ready=process.argv[2];if(!ready)throw Error('Private ready file required');
@@ -49,11 +50,14 @@ for(let i=0;i<2;i++){
  const response=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-scope',deviceName:'Generated scope',platform:'android',capturedAt:'2026-10-01T00:00:00Z',text:'Generated scope original '+i}});assert.equal(response.statusCode,201,response.body);
 }
 await node.materialOrganizer.tick(100);
+const stored=new Conversations(node.store);
 for(const kind of ['anchor','strict','plain']){
  const scope=kind==='anchor'?{anchorEvidenceIds:[evidenceIds[0]]}:kind==='strict'?{evidenceIds:[evidenceIds[1]]}:{};
- const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated '+kind,...scope}});assert.equal(response.statusCode,200,response.body);
- ids[kind]=response.json().conversationId;
- assert.ok(ids[kind],response.body);
+ const {id}=stored.create();
+ const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:id,question:'Generated '+kind,...scope}});
+ assert.equal(response.statusCode,200,response.body);
+ assert.equal(response.json().conversationId,id);
+ ids[kind]=id;
  readPaths.add(['','api','conversations',ids[kind]].join('/'));
  if(kind==='anchor')for(let i=1;i<21;i++)node.conversations.append(node.conversations.get(ids[kind]),{question:'Generated anchor older '+i,...scope},answer());
 }

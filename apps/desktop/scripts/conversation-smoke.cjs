@@ -1,67 +1,91 @@
 require('../../../scripts/fixture-background.cjs');
 require('../../../scripts/fixture-language.cjs');
-const {app,BrowserWindow}=require('electron');
-const {mkdtempSync,writeFileSync,readFileSync,mkdirSync}=require('node:fs');
-const {rm}=require('node:fs/promises');
-const {tmpdir}=require('node:os');
-const {join,resolve}=require('node:path');
-const assert=require('node:assert/strict');
-const {defaultConfig}=require('../dist/config');
-const fixture=JSON.parse(readFileSync(process.argv[2],'utf8'));
-assert.equal(new URL(fixture.url).hostname,'127.0.0.1');
-const profile=mkdtempSync(join(tmpdir(),'mote-desktop-conversation-ui-'));
-app.setPath('userData',profile);process.env.MOTE_PROFILE='dev';
-delete process.env.MOTE_URL;delete process.env.MOTE_TOKEN;delete process.env.MOTE_ENV_FILE;
-const dataDirectory=join(profile+'-profiles','dev');mkdirSync(dataDirectory,{recursive:true,mode:0o700});
-writeFileSync(join(dataDirectory,'config.json'),JSON.stringify({version:4,developmentToken:fixture.token,config:{...defaultConfig(),serverUrl:fixture.url,credentialScope:'owner',metadataEnabled:false,deviceName:'Generated conversation client'}}),{mode:0o600});
-writeFileSync(join(dataDirectory,'storage-format.json'),JSON.stringify({version:4}),{mode:0o600});
-const out=resolve(__dirname,'../.mote/conversation-ui');mkdirSync(out,{recursive:true});
-const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const errors=[];let main,finished=false;
-const timeout=setTimeout(()=>{console.error('Conversation UI timed out');app.exit(1);},60000);
-app.on('browser-window-created',(_event,window)=>{
- if(main)return;main=window;window.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
- window.webContents.once('did-finish-load',()=>void(async()=>{
-  const js=code=>window.webContents.executeJavaScript(code);
-  const until=async(condition,label)=>{const deadline=Date.now()+15000;while(!await condition()){assert.ok(Date.now()<deadline,label);await delay(25);}};
-  await until(()=>js(`Boolean(document.querySelector('[data-nav="ask"]'))&&!document.querySelector('#settings-fields').disabled`),'desktop ready');
-  await js(`document.querySelector('[data-nav="ask"]').click()`);
-  await until(()=>js(`document.querySelectorAll('#ask-history button').length===1&&!document.querySelector('#ask-new').disabled`),'shared history');
-  await js(`document.querySelector('#ask-history button').click()`);
-  await until(()=>js(`document.querySelectorAll('#ask-messages article').length===20&&!document.querySelector('#ask-turns-more').disabled`),'latest 20');
-  assert.equal(await js(`document.querySelector('#ask-messages h3').textContent`),'Generated question 26');
-  const headers={authorization:'Bearer '+fixture.token,'content-type':'application/json'};
-  await fetch(fixture.url+'/fixture/fail-next-page',{method:'POST',headers});
-  await js(`document.querySelector('#ask-question').value='Generated unsent draft';document.querySelector('#ask-turns-more').click()`);
-  await until(()=>js(`document.querySelector('#ask-error').textContent.includes('503')&&!document.querySelector('#ask-turns-more').disabled`),'retryable read error');
-  assert.equal(await js(`document.querySelectorAll('#ask-messages article').length`),20);
-  assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated unsent draft');
-  await js(`document.querySelector('#ask-question').value='Generated unsent draft';document.querySelector('#ask-turns-more').click();document.querySelector('#ask-turns-more').click()`);
-  await until(()=>js(`document.querySelectorAll('#ask-messages article').length===40&&!document.querySelector('#ask-turns-more').disabled`),'older 40');
-  await js(`document.querySelector('#ask-turns-more').click()`);
-  await until(()=>js(`document.querySelectorAll('#ask-messages article').length===45&&document.querySelector('#ask-turns-more').hidden`),'all 45');
-  assert.deepEqual(await js(`[...document.querySelectorAll('#ask-messages h3')].map(x=>x.textContent)`),Array.from({length:45},(_,i)=>'Generated question '+(i+1)));
-  assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated unsent draft');
-  await js(`document.querySelector('#ask-question').value='Generated explicit continuation';document.querySelector('#ask-form').requestSubmit()`);
-  await until(()=>js(`document.querySelector('#ask-progress').textContent.includes('回答已完成')&&!document.querySelector('#ask-send').disabled`),'actual continuation');
-  const conversationPath=['','api','conversations',fixture.conversationId].join('/');
-  const shared=await fetch(fixture.url+conversationPath,{headers}).then(response=>response.json());
-  assert.equal(shared.turnCount,46);assert.equal(shared.turns.at(-1).question,'Generated explicit continuation');
-  assert.equal(shared.turns.at(-1).result.answer,'Generated continued response');
-  await js(`document.querySelector('#ask-question').value='Generated retained after refresh';document.querySelector('#ask-refresh').click()`);
-  await until(()=>js(`!document.querySelector('#ask-new').disabled`),'refresh finishes');
-  assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated retained after refresh');
-  const changed=await fetch(fixture.url+'/api/query',{method:'POST',headers,body:JSON.stringify({conversationId:fixture.conversationId,question:'Generated other-client continuation'})});assert.equal(changed.status,200);
-  await js(`document.querySelector('#ask-turns-more').click()`);
-  await until(()=>js(`document.querySelector('#ask-error').textContent.includes('对话状态已变化')&&!document.querySelector('#ask-turns-more').disabled`),'changed revision rejected');
-  assert.equal(await js(`document.querySelectorAll('#ask-messages article').length`),20,'changed revision cannot silently mix page snapshots');
-  await js(`document.querySelector('#ask-refresh').click()`);await until(()=>js(`!document.querySelector('#ask-new').disabled`),'changed history refresh');
-  assert.equal(await js(`document.querySelector('#ask-messages h3:last-of-type').textContent`),'Generated question 28');
-  assert.equal(await js(`document.querySelector('#ask-question').value`),'Generated retained after refresh');
-  writeFileSync(join(out,'history.png'),(await window.webContents.capturePage()).toPNG());
-  assert.deepEqual(errors,[]);writeFileSync(join(out,'result.json'),JSON.stringify({passed:true,actualRendererPreloadIpc:true,actualCentralHttpSqlite:true,generatedModel:true,liveModel:false,checks:['20/40/45 ordered turn pages','503 retains page and draft then retries','duplicate click guard','unsent draft retained','same central conversation continued to 46 turns','other client revision change cannot mix pages','refresh retains input']}));
-  console.log('PASS actual Mac renderer/preload/IPC and Central shared conversation paging');finished=true;clearTimeout(timeout);app.exit(0);
- })().catch(error=>{console.error(error);clearTimeout(timeout);app.exit(1);}));
+const {mkdirSync, writeFileSync} = require('node:fs');
+const {join, resolve} = require('node:path');
+const assert = require('node:assert/strict');
+const {runDesktopChat, chatWindow, chatControls, conversationPath, older} = require('./central-chat-fixture.cjs');
+
+runDesktopChat('conversation', 60000, 15000, async ({fixture, until, api, handoff}) => {
+  const web = chatWindow('generated-desktop-conversation');
+  const chat = chatControls(web, until);
+  const path = conversationPath(fixture.conversationId);
+  const reads = [];
+  web.webContents.session.webRequest.onCompleted({urls: [fixture.url + path + '*']}, response => {
+    const url = new URL(response.url);
+    if (response.method === 'GET' && url.pathname === path) {
+      reads.push({cursor: url.searchParams.get('cursor'), status: response.statusCode});
+    }
+  });
+  const firstPageReads = () => reads.filter(read => read.cursor === null && read.status === 200).length;
+  const pageReads = () => reads.filter(read => read.cursor !== null);
+  const waitForPage = (count, first) => until(async () => {
+    const questions = await chat.questions();
+    return questions.length === count && questions[0] === first;
+  }, count + ' turns starting with ' + first);
+
+  assert.equal((await api(conversationPath('main'))).id, fixture.conversationId);
+  await handoff(web);
+  await waitForPage(20, 'Generated question 26');
+  await until(() => chat.js('Boolean(document.querySelector(".chat-older:enabled"))'), 'older turns action');
+  assert.ok(firstPageReads() >= 1);
+
+  const draft = 'Generated unsent draft';
+  await chat.field(draft);
+  await api('/fixture/fail-next-page', {});
+  await chat.click(older);
+  await until(() => chat.js('Boolean(document.querySelector(".chat-error[role=alert]") && document.querySelector(".chat-older:enabled"))'), 'retryable read error');
+  assert.deepEqual(pageReads().map(read => read.status), [503]);
+  assert.equal((await chat.questions()).length, 20);
+  assert.equal(await chat.draft(), draft);
+
+  await chat.js('const button = document.querySelector(".chat-older:enabled"); button.click(); button.click();');
+  await waitForPage(40, 'Generated question 6');
+  assert.deepEqual(pageReads().map(read => read.status), [503, 200]);
+  assert.equal(pageReads()[0].cursor, pageReads()[1].cursor, 'retry reads the same page');
+  await chat.click(older);
+  await waitForPage(45, 'Generated question 1');
+  assert.equal(await chat.js('Boolean(document.querySelector(".chat-older"))'), false);
+  assert.deepEqual(await chat.questions(), Array.from({length: 45}, (_, index) => 'Generated question ' + (index + 1)));
+  assert.equal(await chat.draft(), draft);
+
+  const followUp = 'Generated explicit continuation';
+  await chat.field(followUp);
+  await chat.click('.ask-form .send-button:enabled');
+  await chat.completed(followUp);
+  const saved = await api(path);
+  assert.equal(saved.id, fixture.conversationId);
+  assert.equal(saved.turnCount, 46);
+  assert.equal(saved.turns.at(-1).question, followUp);
+  assert.equal(saved.turns.at(-1).result.answer, 'Generated continued response');
+
+  const pending = 'Generated retained after refresh';
+  await chat.field(pending);
+  const beforeRefresh = firstPageReads();
+  await chat.refresh();
+  await until(() => firstPageReads() > beforeRefresh, 'explicit main refresh');
+  assert.equal(await chat.draft(), pending);
+
+  // Change the stored snapshot without a push notification, so the renderer must
+  // detect the revision change on the next cursor read and refresh the first page.
+  const previousPages = pageReads().length;
+  const changed = await api('/fixture/advance-revision', {});
+  assert.ok(changed.revision > saved.revision);
+  await chat.click(older);
+  await until(() => pageReads().length === previousPages + 1, 'older page at the new revision');
+  await waitForPage(20, 'Generated question 28');
+  assert.equal((await chat.questions()).at(-1), 'Generated other-client continuation');
+  assert.equal(await chat.draft(), pending);
+
+  const out = resolve(__dirname, '../.mote/conversation-ui');
+  mkdirSync(out, {recursive: true});
+  writeFileSync(join(out, 'history.png'), (await web.webContents.capturePage()).toPNG());
+  writeFileSync(join(out, 'result.json'), JSON.stringify({
+    passed: true, actualMacRendererPreloadIpc: true, actualWebRenderer: true,
+    actualCentralHttpSqlite: true, liveModel: false,
+    checks: ['Mac ticket opens main chat', '20/40/45 ordered turns', '503 retains turns and draft; same cursor retries',
+      'double click sends one page request', 'continuation persisted as turn 46',
+      'new revision replaces rather than mixes turn pages and keeps the draft'],
+  }, null, 2));
+  console.log('PASS Mac-to-Central main chat: 20/40/45 turns, 503 cursor retry, turn 46, revision and draft.');
+  web.destroy();
 });
-app.on('quit',()=>{void rm(profile,{recursive:true,force:true});void rm(profile+'-profiles',{recursive:true,force:true});});
-require('../dist/main');
