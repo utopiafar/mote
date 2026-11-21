@@ -4448,7 +4448,6 @@ export const english: Readonly<Record<string, string>> = {
   "离开并丢弃修改？": "Leave and discard changes?",
   "丢弃修改": "Discard changes",
   "本机状态详情": "Local status details",
-  "打开中央工作台": "Open central workspace",
   "依赖步骤未完成，请先检查上游任务": "Dependency incomplete; inspect the upstream task",
   "处理器版本不可用": "Processor version unavailable",
   "运行中断，等待恢复": "Interrupted; waiting to recover",

@@ -14,6 +14,53 @@ export function validateCentralWorkId(value:unknown):string{
   return value;
 }
 
+/** The main window renders the paired Central page as untrusted content. It
+ * never receives Node or the local preload, and its window keeps only these
+ * minimum capabilities. */
+export const centralWindowWebPreferences = {
+  contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+} as const;
+
+/** Keep in sync with central-window-preload.ts; the sandboxed preload cannot
+ * import this module without pulling Node-only configuration code with it. */
+export const centralWindowOpenLocalChannel = 'mote:central:open-local-window';
+
+/** Same-origin navigation stays in the window. Other HTTP(S) destinations go
+ * to the system browser. File, data, javascript and credential-bearing URLs
+ * are denied without being handed to any external handler. */
+export type CentralNavigationDecision = 'allow' | 'external' | 'deny';
+export function centralNavigationDecision(target: string, allowedOrigin: string | undefined): CentralNavigationDecision {
+  let url: URL;
+  try { url = new URL(target); } catch { return 'deny'; }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return 'deny';
+  if (allowedOrigin !== undefined && url.origin === allowedOrigin) return 'allow';
+  return 'external';
+}
+
+/** The initial main-window address. A login ticket is short-lived address data
+ * inside the hash query; the bearer token never enters the URL. */
+export function centralWindowUrl(serverUrl: string, loginTicket?: string, route: PageRouteKey = 'chat'): string {
+  const origin = validateServerUrl(serverUrl);
+  if (loginTicket !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(loginTicket)) throw Error('Invalid login ticket');
+  return origin + '/' + pageHash(route, loginTicket ? { loginTicket } : undefined);
+}
+
+/** Only the main Central window main frame, on the paired origin or the local
+ * offline page, may ask the host to open the local window. */
+export function trustedCentralWindowSender(
+  facts: {senderId:number; mainSenderId:number; frameIsMain:boolean; frameUrl?:string},
+  allowedOrigin: string | undefined,
+  offlineUrl: string,
+): boolean {
+  if (facts.senderId !== facts.mainSenderId || !facts.frameIsMain || facts.frameUrl === undefined) return false;
+  try {
+    const frame = new URL(facts.frameUrl);
+    if (frame.href === new URL(offlineUrl).href) return true;
+    if (frame.username || frame.password) return false;
+    return ['http:', 'https:'].includes(frame.protocol) && allowedOrigin !== undefined && frame.origin === allowedOrigin;
+  } catch { return false; }
+}
+
 /** Only short-lived login exchanges may enter a URL; bearer credentials never do. */
 export async function openCentralBrowser(serverUrl: string, page: string | undefined, platform: string,
   launchChrome: (url: string) => Promise<unknown>, openDefault: (url: string) => Promise<unknown>, evidenceId?: string, loginTicket?: string, loginRequestId?:string,workId?:string,conversationId?:string): Promise<void> {
