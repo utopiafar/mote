@@ -8,10 +8,10 @@ internal interface HomeSection {
 }
 
 /**
- * The home frame's android-free rules. The dock, the status notice and the JVM
- * tests share these decisions instead of repeating labels or launch modes.
+ * The tab shell's android-free rules. The dock, the capture entries and the
+ * JVM tests share these decisions instead of repeating labels or launch modes.
  */
-internal object HomeFrame {
+internal object TabFrame {
     /** The dock opens the existing Ask destination; it never starts a question by itself. */
     const val ASK_PAGE = "ASK"
 

@@ -162,18 +162,30 @@ function RecordingConnectionContent({ api, provider, onOpen }: {
  </section>;
 }
 function RecordingSetupHelp(){return <><div className="lark-boundary"><p>{moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')}</p></div><div className="discovery-recorder-steps"><span><b>1</b>{moteText("准备厂商账号与读取授权")}</span><span><b>2</b>{moteText("确认历史范围并启用同步")}</span><span><b>3</b>{moteText("查看转写归档与音频备份状态")}</span></div></>;}
-export function RecordingsSettings({ api, onSources, onOpen, onAdd }: {
+export function RecordingsSettings({ api, onSources, onOpen, onAdd, embedded = false, selected: controlled, onSelect }: {
     api: Api;
     onSources: () => void;
     onOpen: (ref: string) => void;
     onAdd?: () => void;
+    /** A panel shows the same directory and connection controls without its own page shell. */
+    embedded?: boolean;
+    selected?: string;
+    onSelect?: (provider: string) => void;
 }) {
     useSourceConnectorStyle();
     const registry = useResource<Record<string, RecordingStatus>>(api, '/api/connectors/status');
     const providers = Object.values(registry.data ?? {}).filter(status => status?.category === 'recordings');
-    const [selected]=useHashChoice('provider',readProvider);
+    const [hashSelected, choose] = useHashChoice('provider',readProvider);
+    const selected = controlled ?? hashSelected;
     const chosen = providers.find(status => status.provider === selected);
-    return <div className="lark-settings final-source-connector">{onAdd && <button className="back-link" onClick={onAdd}>{moteText("← 返回数据源目录")}</button>}<div className="page-heading"><h1>{chosen ? names[chosen.provider]?moteText(names[chosen.provider]):chosen.label ?? chosen.provider : moteText('录音归档')}</h1><p className="connector-help">{moteText('转写归档与音频备份分别显示状态；记忆整理按已有设置执行。')}</p></div>{Boolean(registry.error) && <p role="alert">{connectorFailure(registry.error)}</p>}
- {chosen ? <RecordingConnection key={chosen.provider} api={api} provider={chosen.provider} onOpen={onOpen}/> : <><div className="discovery-source-grid">{providers.map(status => <a className="panel discovery-source-card" key={status.provider} href={'#/connections/recordings?provider=' + encodeURIComponent(status.provider)}><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源 →")}</span></a>)}</div>{selected && registry.data && <p role="status">{moteText("该录音来源当前未注册。请重新选择可用来源；已归档资料仍可从资料库查看。")}</p>}</>}
- {!chosen&&<details className="connector-details connector-preparation"><summary>{moteText('接入准备')}</summary><RecordingSetupHelp/></details>}<button className="text-button connector-back" onClick={onSources}>{moteText('查看来源与归档')}</button></div>;
+    const chooseProvider = onSelect ?? choose;
+    const card = (status: RecordingStatus) => {
+        const content = <><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源 →")}</span></>;
+        return onSelect
+            ? <button type="button" className="panel discovery-source-card" key={status.provider} onClick={() => onSelect(status.provider)}>{content}</button>
+            : <a className="panel discovery-source-card" key={status.provider} href={'#/connections/recordings?provider=' + encodeURIComponent(status.provider)}>{content}</a>;
+    };
+    return <div className="lark-settings final-source-connector">{!embedded && onAdd && <button className="back-link" onClick={onAdd}>{moteText("← 返回数据源目录")}</button>}{!embedded && <div className="page-heading"><h1>{chosen ? names[chosen.provider]?moteText(names[chosen.provider]):chosen.label ?? chosen.provider : moteText('录音归档')}</h1><p className="connector-help">{moteText('转写归档与音频备份分别显示状态；记忆整理按已有设置执行。')}</p></div>}{Boolean(registry.error) && <p role="alert">{connectorFailure(registry.error)}</p>}
+ {chosen ? <>{embedded && <button className="text-button" onClick={() => chooseProvider('')}>{moteText('返回录音来源')}</button>}<RecordingConnection key={chosen.provider} api={api} provider={chosen.provider} onOpen={onOpen}/></> : <><div className="discovery-source-grid">{providers.map(status => card(status))}</div>{selected && registry.data && <p role="status">{moteText("该录音来源当前未注册。请重新选择可用来源；已归档资料仍可从资料库查看。")}</p>}</>}
+ {!chosen&&<details className="connector-details connector-preparation"><summary>{moteText('接入准备')}</summary><RecordingSetupHelp/></details>}{!embedded && <button className="text-button connector-back" onClick={onSources}>{moteText('查看来源与归档')}</button>}</div>;
 }

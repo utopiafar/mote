@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import dev.mote.collector.plugins.LibrarySourceFilter
 import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
@@ -9,7 +10,7 @@ import java.time.ZoneId
 internal class LibrarySearchView(private val activity: MoteActivity, private val changed: () -> Unit) {
     data class Capture(val item: JSONObject, val scope: String, val remote: Boolean)
     data class Original(val item: JSONObject, val scope: String, val remote: Boolean)
-    private data class Criteria(val query: String, val category: String, val after: String, val before: String, val identity: Pair<String, Long>)
+    private data class Criteria(val query: String, val category: String, val after: String, val before: String, val identity: Pair<String, Long>, val source: LibrarySourceFilter)
     private data class Cursor(var value: String? = null, var more: Boolean = true)
     private data class LocalPage(val captures: List<Capture>, val originals: List<Original>, val captureNext: String?, val sourceNext: Pair<String, String>?)
     private data class RemotePage(val captures: List<Capture>, val originals: List<Original>, val captureNext: String?, val materialNext: Map<String, String?>)
@@ -18,7 +19,6 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
     private val remoteTask = UiTask(activity)
     @Volatile private var generation = 0
     private var criteria: Criteria? = null
-    private var location = "local"
     private var localPending = false
     private var remotePending = false
     private val captureCursor = Cursor()
@@ -30,29 +30,33 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
     private val localOriginals = mutableListOf<Original>()
     private val remoteCaptures = mutableListOf<Capture>()
     private val remoteOriginals = mutableListOf<Original>()
-    private var notice = ""
+    private var localFailed = false
+    private var remoteNotice: String? = null
 
-    fun reset(query: String, category: String, day: String, location: String = "local") {
+    fun reset(query: String, category: String, day: String, location: String, source: LibrarySourceFilter) {
         generation++
         val selection = CentralAccess.resolve(activity)
         val after = day.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: "1970-01-01T00:00:00Z"
         val before = day.takeIf(String::isNotBlank)?.let { LocalDate.parse(it).plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toString() } ?: Instant.now().plusSeconds(1).toString()
-        criteria = Criteria(query.trim().take(500), category, after, before, selection.server to selection.generation)
-        this.location = location
-        captureCursor.value = null; captureCursor.more = location != "central"; sourceCursor = null; sourceMore = location != "central"
-        remoteCursor.value = null; remoteCursor.more = selection.client != null && location != "local"
+        criteria = Criteria(query.trim().take(500), category, after, before, selection.server to selection.generation, source)
+        val readLocal = location != "central" && source.queryParameter() == null
+        val readRemote = location != "local" && source != LibrarySourceFilter.Phone
+        captureCursor.value = null; captureCursor.more = readLocal; sourceCursor = null; sourceMore = readLocal && source != LibrarySourceFilter.Phone
+        remoteCursor.value = null; remoteCursor.more = selection.client != null && readRemote
         materialCursors.clear()
         val materialTypes = when (category) { "all" -> listOf(""); "records" -> listOf("note"); "images" -> listOf("image"); "files" -> listOf("document", "reference"); else -> emptyList() }
-        if (selection.client != null && location != "local") materialTypes.forEach { materialCursors[it] = Cursor() }
-        localCaptures.clear(); localOriginals.clear(); remoteCaptures.clear(); remoteOriginals.clear(); notice = ""
+        if (selection.client != null && readRemote) materialTypes.forEach { materialCursors[it] = Cursor() }
+        localCaptures.clear(); localOriginals.clear(); remoteCaptures.clear(); remoteOriginals.clear()
+        localFailed = false
+        remoteNotice = if (readRemote && selection.client == null && location == "central") MoteI18n.text("已离线") else null
         localPending = false; remotePending = false
-        changed(); loadLocal(); loadRemote()
+        loadLocal(); loadRemote(); changed()
     }
-    fun clear() { generation++; criteria = null; localCaptures.clear(); localOriginals.clear(); remoteCaptures.clear(); remoteOriginals.clear() }
-    val loading get() = localTask.busy || remoteTask.busy
-    val hasMore get() = captureCursor.more || sourceMore || remoteCursor.more || materialCursors.values.any { it.more }
+    fun clear() { generation++; criteria = null; localCaptures.clear(); localOriginals.clear(); remoteCaptures.clear(); remoteOriginals.clear(); localFailed = false; remoteNotice = null }
+    val loading get() = criteria != null && (localTask.busy || remoteTask.busy)
+    val hasMore get() = criteria != null && (captureCursor.more || sourceMore || remoteCursor.more || materialCursors.values.any { it.more })
     fun more() { loadLocal(); loadRemote() }
-    fun notice() = notice
+    fun notice(): String? = remoteNotice ?: if (localFailed) MoteI18n.text("读取失败") else null
     fun captures(): List<Capture> {
         val localVersions = localCaptures.associateBy { Triple(it.scope, it.item.optString("deviceId"), it.item.getString("id")) }
         return localCaptures + remoteCaptures.filterNot { remote ->
@@ -74,7 +78,8 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
                 val page = context.withNativeNotePreviews(queue.capturePage(current.after, current.before, nextCapture, source = localSource(current.category), libraryBindings = true, libraryVersion = context::captureLibraryVersion))
                 val items = page.getJSONArray("items"); val bindings = page.getJSONObject("bindings"); val versions = page.getJSONObject("versions")
                 repeat(items.length()) { index ->
-                    val row = items.getJSONObject(index); val full = queue.capture(row.getString("id"))
+                    val row = items.getJSONObject(index)
+                    val full = if (current.query.isBlank()) row else queue.capture(row.getString("id"))
                     if (full != null && LibraryBrowseRules.matches(row, current.category) && LibraryBrowseRules.matchesText(full, current.query)) {
                         row.put("libraryVersion", versions.getString(row.getString("id")))
                         val device = row.optString("deviceId").ifBlank { Settings(context).deviceId }; row.put("deviceId", device)
@@ -99,7 +104,7 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
                 if (readCaptures) { captureCursor.value = page.captureNext; captureCursor.more = page.captureNext != null }
                 if (readSources) { sourceCursor = page.sourceNext; sourceMore = page.sourceNext != null }
                 changed()
-            }.onFailure { notice = MoteI18n.text("操作失败"); captureCursor.more = false; sourceMore = false; changed() }
+            }.onFailure { localFailed = true; captureCursor.more = false; sourceMore = false; changed() }
             if (stamp != generation || localPending) { localPending = false; loadLocal() }
         }
     }
@@ -114,14 +119,16 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
         remoteTask.start("", {}, {
             val matches = mutableListOf<Capture>(); var nextCapture = captureAt
             val encode = CentralScreens::encode
-            val base = "&after=${encode(current.after)}&before=${encode(current.before)}&query=${encode(current.query)}&limit=20"
+            val base = listOfNotNull("after=${encode(current.after)}", "before=${encode(current.before)}", "limit=20",
+                current.query.takeIf(String::isNotBlank)?.let { "query=${encode(it)}" }, current.source.queryParameter()).joinToString("&")
             if (readCaptures) do {
                 val source = localSource(current.category)
-                val path = "/api/context/search?" + base.removePrefix("&") + (if (source.isBlank()) "" else "&source=${encode(source)}") + (nextCapture?.let { "&cursor=${encode(it)}" } ?: "")
+                val path = "/api/context/search?" + base + (if (source.isBlank()) "" else "&source=${encode(source)}") + (nextCapture?.let { "&cursor=${encode(it)}" } ?: "")
                 val page = api.get(path); val items = page.getJSONArray("items")
                 repeat(items.length()) { index ->
                     val hit = items.getJSONObject(index); val id = hit.getString("id")
-                    val row = api.get("/api/capture-browser/" + encode(id))
+                    val scope = current.source.queryParameter()?.let { "?$it" }.orEmpty()
+                    val row = api.get("/api/capture-browser/" + encode(id) + scope)
                     check(row.getString("id") == id)
                     if (LibraryBrowseRules.matches(row, current.category)) matches.add(Capture(row, selection.server, true))
                 }
@@ -129,7 +136,7 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
             } while (matches.isEmpty() && nextCapture != null && generation == stamp)
             val materials = mutableListOf<Original>(); val positions = linkedMapOf<String, String?>()
             requestedMaterials.forEach { (type, cursor) ->
-                val path = "/api/library/browse?" + base.removePrefix("&") + (if (type.isBlank()) "" else "&type=${encode(type)}") + (cursor?.let { "&cursor=${encode(it)}" } ?: "")
+                val path = "/api/library/browse?" + base + (if (type.isBlank()) "" else "&type=${encode(type)}") + (cursor?.let { "&cursor=${encode(it)}" } ?: "")
                 val page = api.get(path); val items = page.getJSONArray("items")
                 repeat(items.length()) { index ->
                     val hit = items.getJSONObject(index)
@@ -151,7 +158,11 @@ internal class LibrarySearchView(private val activity: MoteActivity, private val
                 changed()
             }.onFailure { error ->
                 remoteCaptures.clear(); remoteOriginals.clear(); remoteCursor.more = false; materialCursors.values.forEach { it.more = false }
-                notice = if (error is java.io.IOException) MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试") else error.message ?: MoteI18n.text("操作失败")
+                remoteNotice = when {
+                    error is CentralFailure && error.status in setOf(401, 403, 404, 409, 410) -> MoteI18n.text("已失效")
+                    error is java.io.IOException -> MoteI18n.text("已离线")
+                    else -> MoteI18n.text("读取失败")
+                }
                 changed()
             }
             if (stamp != generation || remotePending) { remotePending = false; loadRemote() }
