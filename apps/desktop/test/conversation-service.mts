@@ -3,13 +3,21 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../../server/src/app.js';
-import type {Config} from '../../server/src/config.js';
+import type {ConfigurationPlatformOptions} from '../../server/src/config.js';
 
 // Private generated fixture, with actual owner HTTP APIs and durable SQLite.
 // The model alone is replaced; no provider or personal archive is contacted.
 const ready=process.argv[2];if(!ready)throw Error('Private ready file required');
 const dataDir=await mkdtemp(join(tmpdir(),'mote-desktop-conversation-service-')),token=randomUUID()+randomUUID();
-const config:Config={dataDir,token,tokenPath:'generated-only',host:'127.0.0.1',port:0,maxExportBytes:1_000_000,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:ConfigurationPlatformOptions={
+ path:join(dataDir,'mote.yaml'),
+ privateCredential:{token,tokenPath:'generated-only'},
+ initialDocument:{
+  version:1,revision:0,storage:{dataDir,maxExportBytes:1_000_000},
+  server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
+  execution:{insightIntervalHours:0}
+ }
+};
 const result=(answer:string)=>({answer,citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1 as const,complete:true,ids:[] as string[]}});
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async()=>result('Generated continued response'),close:async()=>{}}});
 const conversations=node.conversations;
