@@ -7,9 +7,13 @@ import {join} from 'node:path';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {CHAT_ABOUT_PARAM,pageHash,parseAboutRef,type GoalGroup,type GoalItem,type GoalsView,type Matter,type QueryScope} from '@mote/shared';
+import {CHAT_ABOUT_PARAM,pageHash,parseAboutRef,type GoalGroup,type GoalItem,type GoalsView,type Matter,type QueryScope,type WorkspaceView} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
+import {fixtureMemoryResult} from '../../server/test/fixtures/memory-result';
 import {ApiError,type Api} from '../src/api';
+import {FeaturePage} from '../src/features/runtime';
+import type {PageProps} from '../src/features/types';
+import {readPage} from '../src/navigation';
 import {GoalsPage} from '../src/plugins/assistant/GoalsPage';
 import {AssistantWorkbenchPage,workbenchMatterTarget,workbenchTarget} from '../src/plugins/assistant-workbench';
 import {chatDom,injectedApi} from './fixtures/chat-dom';
@@ -362,12 +366,82 @@ test('GO3-04 the workbench reads the travel matter template from the goals route
   assert.equal(workbench.request.personMemoryId,undefined);
 });
 
-test('GO3-05 a person opened from Memory keeps the person template',async t=>{
-  const hash='#/assistant/workbench?person='+ids.alice;
-  assert.deepEqual(workbenchTarget(hash),{template:'person',target:ids.alice});
+test('GO3-05 clicking a person row in Memory opens that person’s workbench',async t=>{
+  const {featuresReady}=await import('../src/features/bootstrap');
+  await featuresReady;
+  const f=await chatDom(t,'#/assistant/memory');
+  const {buildApp}=await import('../../server/src/app');
+  const directory=mkdtempSync(join(tmpdir(),'mote-memory-workbench-'));
+  const token='generated-memory-workbench-owner';
+  const node=await buildApp({
+    path:join(directory,'mote.yaml'),
+    privateCredential:{token,tokenPath:'fixture'},
+    initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},
+      server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},
+      models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},
+        embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}},
+  },{backgroundWorker:false,agent:{configured:false,query:async()=>assert.fail('Unexpected model call'),close:async()=>{}}});
+  t.after(async()=>{
+    try{await node.app.close();}
+    finally{rmSync(directory,{recursive:true,force:true});}
+  });
+  const headers={authorization:'Bearer '+token};
+  const noteId=randomUUID(),title='Generated Mina',promise='Generated design handoff';
+  const body=title+' will provide the design handoff.';
+  const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{
+    id:noteId,deviceId:'generated-device',deviceName:'Generated',platform:'import',capturedAt:at,text:body,
+  }});
+  assert.equal(note.statusCode,201,note.body);
+  const extracted=node.memories.extract(fixtureMemoryResult(node.memories,{
+    answer:JSON.stringify({memories:[{title,statement:body+' ['+noteId+']',uncertainty:'Generated identity',evidenceIds:[noteId]}]}),
+    citations:[{id:noteId,capturedAt:at,appName:'Generated',excerpt:body}],trace:[],runId:randomUUID(),
+  }),'generated').items[0];
+  assert.ok(extracted);
+  const person=node.memories.publish(extracted.id,extracted.version);
+  node.featureServices.assistantCommitments.publish({
+    commitmentId:randomUUID(),eventId:randomUUID(),kind:'commitment',occurredAt:null,summary:body,
+    changes:{title:promise,personMemoryId:person.id,status:'confirmed'},
+    evidence:[{id:noteId,quote:body,offset:0}],evidenceDependencies:{version:1,complete:true,ids:[noteId]},
+  },undefined,all,()=>{});
+
+  const calls:Call[]=[],views:WorkspaceView[]=[];
+  const central=injectedApi(node.app,headers,(path,init)=>calls.push({path,method:init.method??'GET'}));
+  const api={...central,request:async<T>(path:string,init?:RequestInit):Promise<T>=>{
+    const value=await central.request<T>(path,init);
+    if(path.startsWith('/api/assistant/workbench?'))views.push(value as WorkspaceView);
+    return value;
+  }} as Api;
+  const props:PageProps={api,range:{},status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},
+    insights:[],onPage:()=>{},onOpen:ref=>f.opened.push(ref),archiveTab:'materials',setArchiveTab:()=>{},
+    timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'session',changeSessionLifetime:()=>{}};
+  const renderRoute=()=>f.root.render(React.createElement(React.Suspense,{fallback:null},
+    React.createElement(FeaturePage,{page:readPage(f.w.location.hash),props})));
+  assert.equal(readPage(f.w.location.hash),'assistantMemory');
+  await act(async()=>renderRoute());
+  const row='.memory-page-row[data-type="people"] .memory-page-row-main';
+  await f.waitFor(()=>f.d.querySelector(row),'generated person appears in Memory');
+  await act(async()=>{
+    const people=[...f.d.querySelectorAll<HTMLButtonElement>('.memory-page-filters button')]
+      .find(button=>button.textContent?.trim().startsWith('人物 '));
+    assert.ok(people);
+    people.click();
+  });
+  assert.equal(f.element(row).querySelector('strong')?.textContent,title);
+  await f.click(row);
+  await f.waitFor(()=>readPage(f.w.location.hash)==='assistantWorkbench','person row navigates to the registered workbench');
+  const hash=f.w.location.hash;
+  assert.deepEqual(workbenchTarget(hash),{template:'person',target:person.id});
   assert.equal(workbenchMatterTarget(hash),undefined,'a Memory person is not a matter target');
-  const workbench=await mountWorkbench(t,hash);
-  assert.equal(workbench.request.template,'person');
-  assert.equal(workbench.request.personMemoryId,ids.alice);
-  assert.equal(workbench.request.matterId,undefined);
+  await act(async()=>renderRoute());
+  await f.waitFor(()=>f.d.querySelector('.declarative-detail')?.textContent?.includes(title),'the person template renders the same Memory');
+  assert.ok(f.d.querySelector('.declarative-list')?.textContent?.includes(title));
+  assert.ok([...f.d.querySelectorAll('.declarative-list')].some(list=>list.textContent?.includes(promise)));
+  assert.deepEqual(views.map(view=>view.descriptor.id),['assistant.workbench.person']);
+  const workbench=calls.filter(call=>call.path.startsWith('/api/assistant/workbench?'));
+  assert.equal(workbench.length,1);
+  assert.equal(workbench[0].method,'GET');
+  assert.deepEqual(JSON.parse(new URLSearchParams(workbench[0].path.split('?')[1]).get('request')!),
+    {template:'person',personMemoryId:person.id,scope:all});
+  assert.equal(calls.some(call=>call.path.startsWith('/api/memories/'+person.id+'?')),false);
+  assert.deepEqual(f.opened,[]);
 });
