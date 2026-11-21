@@ -26,6 +26,14 @@ export function decodeWorkspaceView(raw:unknown):WorkspaceView{
 export const workspacePath=(request:WorkspaceRequest)=>'/api/assistant/workbench?'+new URLSearchParams({request:JSON.stringify(workspaceRequestSchema.parse(request))});
 export const workspaceTranslate=(key:string)=>moteText(workspaceLabels[key]??key);
 
+const matterIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The goals page opens the project template with one saved matter. The route
+ * carries only that identity; the server still resolves its own view. */
+export function workbenchMatterTarget(hash:string):string|undefined{
+  const value=new URLSearchParams(hash.split('?')[1]??'').get('matter');
+  return value&&matterIdPattern.test(value)?value:undefined;
+}
+
 const stateLabels:Readonly<Record<string,string>>={active:'进行中',paused:'已暂停',archived:'已归档',published:'有效',
   pending_confirmation:'待确认',confirmed:'已确认',completed:'已完成',cancelled:'已取消',
   pending:'待处理',partial:'部分可用',ready:'已就绪',failed:'失败',unsupported:'不支持'};
@@ -66,8 +74,12 @@ export function WorkspaceSurface({value,api,onResult}:{value:unknown;api:Pick<Ap
  * container. All four layouts and their data come from Central. */
 export function AssistantWorkbenchPage({api,range}:Pick<PageProps,'api'|'range'>){
   const [template,setTemplate]=useState<WorkspaceRequest['template']>('project');
-  const [target,setTarget]=useState<string>();
+  const [target,setTarget]=useState<string|undefined>(()=>workbenchMatterTarget(window.location.hash));
   const [commandFailed,setCommandFailed]=useState(false);
+  useEffect(()=>{
+    const sync=()=>{const next=workbenchMatterTarget(window.location.hash);if(!next)return;setTemplate('project');setTarget(next);setCommandFailed(false);};
+    window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);
+  },[]);
   const scope:QueryScope={kind:'all',...range};
   const request:WorkspaceRequest={template,scope,...(target?template==='person'?{personMemoryId:target}:{matterId:target}:{})};
   const path=workspacePath(request),read=useResource<unknown>(api,path,5000,undefined,undefined,true);

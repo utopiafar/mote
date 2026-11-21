@@ -7637,5 +7637,22 @@
   "为什么现在": "Pourquoi maintenant",
   "聊天": "Discussion",
   "点子": "Idées",
-  "技能": "Compétences"
+  "技能": "Compétences",
+  "人": "Personne",
+  "我": "Moi",
+  "别人": "Quelqu'un d'autre",
+  "去聊": "Discuter",
+  "照做": "Faire",
+  "已交给 Mote": "Mote suit",
+  "交给 Mote 盯着": "Demander à Mote de suivre",
+  "添加目标": "Ajouter un objectif",
+  "不需要": "Pas utile",
+  "等别人": "En attente",
+  "我要做": "À faire",
+  "{0} 件": "{0} éléments",
+  "相关资料": "Documents liés",
+  "事项状态暂不可用": "État des sujets indisponible",
+  "事项已变化，需重新读取": "Le sujet a changé ; rechargez",
+  "否定推断": "Rejeter l'hypothèse",
+  "目标数据无法读取": "Données d'objectif indisponibles"
 }

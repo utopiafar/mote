@@ -7638,5 +7638,22 @@ export const spanish: Readonly<Record<string, string>> = {
   "为什么现在": "Por qué ahora",
   "聊天": "Chat",
   "点子": "Ideas",
-  "技能": "Habilidades"
+  "技能": "Habilidades",
+  "人": "Persona",
+  "我": "Yo",
+  "别人": "Otra persona",
+  "去聊": "Chatear",
+  "照做": "Hacerlo",
+  "已交给 Mote": "Mote vigila",
+  "交给 Mote 盯着": "Pedir a Mote que vigile",
+  "添加目标": "Añadir objetivo",
+  "不需要": "No hace falta",
+  "等别人": "Esperando a otros",
+  "我要做": "Por hacer",
+  "{0} 件": "{0} elementos",
+  "相关资料": "Materiales relacionados",
+  "事项状态暂不可用": "Estado de los asuntos no disponible",
+  "事项已变化，需重新读取": "El asunto cambió; recarga",
+  "否定推断": "Rechazar inferencia",
+  "目标数据无法读取": "Datos de objetivos no disponibles"
 };

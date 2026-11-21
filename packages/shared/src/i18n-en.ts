@@ -7638,5 +7638,22 @@ export const english: Readonly<Record<string, string>> = {
   "为什么现在": "Why now",
   "聊天": "Chat",
   "点子": "Ideas",
-  "技能": "Skills"
+  "技能": "Skills",
+  "人": "Person",
+  "我": "Me",
+  "别人": "Someone else",
+  "去聊": "Chat",
+  "照做": "Do it",
+  "已交给 Mote": "Mote is watching",
+  "交给 Mote 盯着": "Ask Mote to watch",
+  "添加目标": "Add goal",
+  "不需要": "Not needed",
+  "等别人": "Waiting on others",
+  "我要做": "To do",
+  "{0} 件": "{0} items",
+  "相关资料": "Related materials",
+  "事项状态暂不可用": "Matter state unavailable",
+  "事项已变化，需重新读取": "Matter changed; reload",
+  "否定推断": "Reject inference",
+  "目标数据无法读取": "Goal data unavailable"
 };
