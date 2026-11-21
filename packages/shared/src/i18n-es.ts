@@ -6538,8 +6538,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "{0} 项待发送": "{0} elementos pendientes de envío",
   "返回导入列表": "Back to imports",
   "导入详情": "Import details",
-  "当前范围内暂无资料。": "No materials in this range.",
-  "保存记录或导入资料后，可以在这里查看。": "Save a note or import materials to view them here.",
   "搜索记忆": "Search memories",
   "历史与管理": "History and management",
   "本页 {0} 条": "{0} rows on this page",
@@ -7676,5 +7674,9 @@ export const spanish: Readonly<Record<string, string>> = {
   "搜索点子": "Buscar ideas",
   "没有新点子": "No hay ideas nuevas",
   "稍后": "Más tarde",
-  "这张卡片暂时不能开始。": "Esta tarjeta aún no puede empezar."
+  "这张卡片暂时不能开始。": "Esta tarjeta aún no puede empezar.",
+  "还没有资料": "Aún no hay materiales",
+  "录音来源": "Fuentes de grabación",
+  "返回录音来源": "Volver a las fuentes de grabación",
+  "{0} 的设置": "Ajustes de {0}"
 };

@@ -86,18 +86,18 @@ function disabled(element:HTMLElement){
   assert.equal(element.querySelector('a[href]'),null);
 }
 
-test('recording discovery does not fetch connector status when its local page is missing',async t=>{
- const f=await fixture(t,{capabilities:[capability(activityId)],pageIds:Object.keys(routes).filter(id=>id!=='recordings')});
+test('recording discovery does not fetch connector status when the library page is missing',async t=>{
+ const f=await fixture(t,{capabilities:[capability(activityId)],pageIds:Object.keys(routes).filter(id=>id!=='archive')});
  await f.render();
  assert.ok(f.reads.includes('/api/features'));
  assert.equal(f.reads.includes('/api/connectors/status'),false);
- assert.equal(f.d.querySelector('a[href*="provider="]'),null);f.workAvailable();
+ assert.equal(f.d.querySelector('a[href*="recordings="]'),null);f.workAvailable();
 });
 
 test('the global status transport is read without fictional HTTP capabilities and an empty registry is legitimate',async t=>{
  const f=await fixture(t,{capabilities:[capability(activityId)],emptyStatus:true});
  await f.render();await f.openRecorders();assert.equal(f.reads.filter(path=>path==='/api/connectors/status').length,1);
- assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+ assert.equal(f.d.querySelector('a[href*="recordings="]'),null);
  assert.equal(f.d.querySelector('section[aria-label="录音数据源"] [role=alert]'),null);
 });
 
@@ -105,7 +105,7 @@ test('a failed global status read shows its actual read error',async t=>{
  const f=await fixture(t,{capabilities:[capability(activityId)],statusError:true});
  await f.render();await f.openRecorders();assert.equal(f.reads.filter(path=>path==='/api/connectors/status').length,1);
  assert.match(f.d.querySelector('section[aria-label="录音数据源"] [role=alert]')?.textContent??'',/Generated connector status read failed/);
- assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+ assert.equal(f.d.querySelector('a[href*="recordings="]'),null);
 });
 
 test('registered recording providers link to the actual recording route with their exact provider query',async t=>{
@@ -115,14 +115,14 @@ test('registered recording providers link to the actual recording route with the
   await f.openRecorders();
   const link=card(f.d,recorder.label!) as HTMLAnchorElement;
   assert.equal(link.tagName,'A');
-  assert.equal(link.getAttribute('href'),'#/generated/recordings?provider='+encodeURIComponent(provider));
-  assert.equal(new URLSearchParams(link.hash.split('?')[1]).get('provider'),provider);
-  assert.equal(f.d.querySelectorAll('a[href*="provider="]').length,1,'unrelated connector categories do not become recording cards');
+  assert.equal(link.getAttribute('href'),'#/library?recordings='+encodeURIComponent(provider));
+  assert.equal(new URLSearchParams(link.hash.split('?')[1]).get('recordings'),provider);
+  assert.equal(f.d.querySelectorAll('a[href*="recordings="]').length,1,'unrelated connector categories do not become recording cards');
   await act(async()=>link.click());
-  assert.equal(location.hash,'#/generated/recordings?provider='+encodeURIComponent(provider));
+  assert.equal(location.hash,'#/library?recordings='+encodeURIComponent(provider));
   assert.deepEqual(f.pageCalls,[]);
   await f.updateInventory([capability(activityId)]);
-  assert.equal(f.d.querySelector('a[href*="provider="]'),null,'an unavailable recording target has no link');
+  assert.equal(f.d.querySelector('a[href*="recordings="]'),null,'an unavailable recording target has no link');
   assert.equal(f.reads.filter(path=>path==='/api/connectors/status').length,1,'changing a connector capability does not invent a new transport endpoint');
 });
 
@@ -135,14 +135,14 @@ for(const [name,detail] of [
   await f.render();
   assert.equal(f.reads.filter(path=>path==='/api/connectors/status').length,1);
   await f.openRecorders();disabled(card(f.d,recorder.label!));
-  assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+  assert.equal(f.d.querySelector('a[href*="recordings="]'),null);
 });
 
 test('a custom status key that differs from recordingManifest identity is not treated as a supported provider detail route',async t=>{
  const statusKey='generated-custom-status';
  const f=await fixture(t,{capabilities:[capability(activityId),capability('connector:'+statusKey)],statusKey});
  await f.render();await f.openRecorders();disabled(card(f.d,recorder.label!));
- assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+ assert.equal(f.d.querySelector('a[href*="recordings="]'),null);
 });
 
 for(const scenario of ['local Coding missing','remote Coding missing','remote Coding inactive','remote Coding version mismatch'] as const)test('the Coding source card stays disabled when '+scenario+' while unrelated Activity stays available',async t=>{
@@ -212,9 +212,9 @@ test('the default catalog includes the three official source setup entries with 
  const f=await fixture(t,{capabilities:[capability(activityId),capability(providerDetailId)]});await f.render();
  const entries=()=>[...f.d.querySelectorAll('.source-catalog-final>.discovery-source-grid>.source-catalog-entry h3')].map(node=>node.textContent);
  assert.deepEqual(entries(),['手机与电脑','Coding Agent 会话','文件与文件夹','飞书文档与日历','录音与转写','Gmail 邮件','Google Calendar','外部文件 / NAS 引用','MCP 资料服务','Notion','Slack','飞书会话']);
- assert.equal(f.d.querySelector<HTMLDetailsElement>('.source-catalog-more')!.open,false);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
- await f.openRecorders();assert.ok(f.d.querySelector('a[href*="provider=generated-recorder"]'));
- await act(async()=>f.d.querySelector<HTMLButtonElement>('.source-catalog-back')!.click());assert.equal(entries().length,12);assert.equal(f.d.querySelector('a[href*="provider="]'),null);
+ assert.equal(f.d.querySelector<HTMLDetailsElement>('.source-catalog-more')!.open,false);assert.equal(f.d.querySelector('a[href*="recordings="]'),null);
+ await f.openRecorders();assert.ok(f.d.querySelector('a[href*="recordings=generated-recorder"]'));
+ await act(async()=>f.d.querySelector<HTMLButtonElement>('.source-catalog-back')!.click());assert.equal(entries().length,12);assert.equal(f.d.querySelector('a[href*="recordings="]'),null);
 });
 
 test('installed connector packages declare 添加来源 cards without hardcoded registry entries',async t=>{

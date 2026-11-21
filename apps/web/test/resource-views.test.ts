@@ -9,7 +9,6 @@ import {JSDOM} from 'jsdom';
 import {Memories} from '../src/plugins/memory/index.js';
 import {MemoryIntegration} from '../src/MemoryIntegration.js';
 import { featuresReady } from '../src/features/bootstrap.js';
-import { FeaturePage } from '../src/features/runtime.js';
 import {Files,FileDetail} from '../src/plugins/intake/Files.js';
 import {Sources} from '../src/plugins/sources/Sources.js';
 import {ReferenceDetail} from '../src/plugins/reader/index.js';
@@ -470,13 +469,15 @@ test('Memory rolling-window polling retains selected detail while real scope and
  await act(async()=>render('month',next,'generated-device'));assert.equal(d.querySelector('.memory-detail'),null);assert.doesNotMatch(d.body.textContent!,/NEW SESSION DETAIL/);assert.match(d.querySelector('.workspace-list')!.textContent!,/Current evidence a/,'the new session authorizes its own original list preview; selected detail remains closed');
 });
 
-test('Library Memory keeps its selected card and integration panel across a 30-second rolling range',async t=>{
+test('Memory keeps its selected card and integration panel across a 30-second rolling range',async t=>{
  const {root,document:d}=await fixture(t);await featuresReady;
+ window.history.replaceState(null,'','#/assistant/memory');
  const item={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
  const pending=deferred();let slow=false,detailReads=0;
  const api=apiWith(path=>{
    if(path.startsWith('/api/memories?'))return {items:[item],nextCursor:null};
    if(path.startsWith('/api/memories/'+ids[0]+'?')){detailReads++;return slow?pending.promise:item;}
+   if(path.startsWith('/api/assistant/commitments?'))return {items:[],nextCursor:null};
    if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
    if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
    if(path==='/api/memory-recipes')return {items:[]};
@@ -484,14 +485,13 @@ test('Library Memory keeps its selected card and integration panel across a 30-s
  });
  const baseRequest=api.request;api.request=async(path,init)=>path==='/api/model-settings'?modelView():baseRequest(path,init);
  t.mock.timers.enable({apis:['setInterval','Date'],now:Date.parse('2026-09-28T00:00:00Z')});
- function LibraryShell({period,deviceId}:{period:string;deviceId?:string}){
+ function PollingMemory({period,deviceId}:{period:string;deviceId?:string}){
    const [revision,setRevision]=React.useState(0);
    React.useEffect(()=>{const timer=setInterval(()=>setRevision(value=>value+1),30000);return()=>clearInterval(timer);},[]);
    const range=React.useMemo(()=>({after:new Date(Date.now()-(period==='week'?7:30)*86400000).toISOString(),before:new Date().toISOString(),...(deviceId?{deviceId}:{})}),[period,revision,deviceId]);
-   const props={api,status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},recent:[],insights:[],onPage:()=>{},onOpen:()=>{},range,rangeSelectionKey:period,archiveTab:'memories',setArchiveTab:()=>{},timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'permanent',changeSessionLifetime:()=>{}} as any;
-   return React.createElement(React.Suspense,{fallback:null},React.createElement(FeaturePage,{page:'archive',props}));
+   return React.createElement(Memories,{api,range,rangeSelectionKey:period,onOpen:()=>{}});
  }
- const render=(period='week',deviceId?:string)=>root.render(React.createElement(LibraryShell,{period,deviceId}));
+ const render=(period='week',deviceId?:string)=>root.render(React.createElement(PollingMemory,{period,deviceId}));
  await act(async()=>render());
  await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  assert.ok(d.querySelector('.memory-detail'));
@@ -501,7 +501,7 @@ test('Library Memory keeps its selected card and integration panel across a 30-s
  const submit=()=>Array.from(d.querySelectorAll<HTMLButtonElement>('#manual-memory-integration button')).find(button=>button.textContent==='开始整理')!;
  assert.equal(submit().disabled,false);const selectedReads=detailReads;
  await act(async()=>t.mock.timers.tick(30000));
- assert.ok(d.querySelector('.memory-detail'),'Library selection survives the actual shell poll');
+ assert.ok(d.querySelector('.memory-detail'),'Memory selection survives the rolling range update');
  assert.ok(d.querySelector('#manual-memory-integration'),'the setup panel does not jump away');
  assert.equal(detailReads,selectedReads,'rolling range does not start a new selected-card request');
  slow=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+ids[0])));

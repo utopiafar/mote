@@ -6538,8 +6538,6 @@ export const russian: Readonly<Record<string, string>> = {
   "{0} 项待发送": "{0} элементов ожидают отправки",
   "返回导入列表": "Back to imports",
   "导入详情": "Import details",
-  "当前范围内暂无资料。": "No materials in this range.",
-  "保存记录或导入资料后，可以在这里查看。": "Save a note or import materials to view them here.",
   "搜索记忆": "Search memories",
   "历史与管理": "History and management",
   "本页 {0} 条": "{0} rows on this page",
@@ -7676,5 +7674,9 @@ export const russian: Readonly<Record<string, string>> = {
   "搜索点子": "Поиск идей",
   "没有新点子": "Новых идей нет",
   "稍后": "Позже",
-  "这张卡片暂时不能开始。": "Эту карточку пока нельзя начать."
+  "这张卡片暂时不能开始。": "Эту карточку пока нельзя начать.",
+  "还没有资料": "Материалов пока нет",
+  "录音来源": "Источники записей",
+  "返回录音来源": "Назад к источникам записей",
+  "{0} 的设置": "Настройки {0}"
 };

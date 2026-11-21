@@ -6538,8 +6538,6 @@ export const japanese: Readonly<Record<string, string>> = {
   "{0} 项待发送": "{0} 件が送信待ち",
   "返回导入列表": "Back to imports",
   "导入详情": "Import details",
-  "当前范围内暂无资料。": "No materials in this range.",
-  "保存记录或导入资料后，可以在这里查看。": "Save a note or import materials to view them here.",
   "搜索记忆": "Search memories",
   "历史与管理": "History and management",
   "本页 {0} 条": "{0} rows on this page",
@@ -7676,5 +7674,9 @@ export const japanese: Readonly<Record<string, string>> = {
   "搜索点子": "アイデアを検索",
   "没有新点子": "新しいアイデアはありません",
   "稍后": "あとで",
-  "这张卡片暂时不能开始。": "このカードはまだ開始できません。"
+  "这张卡片暂时不能开始。": "このカードはまだ開始できません。",
+  "还没有资料": "資料はまだありません",
+  "录音来源": "録音ソース",
+  "返回录音来源": "録音ソースに戻る",
+  "{0} 的设置": "{0} の設定"
 };
