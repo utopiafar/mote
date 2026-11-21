@@ -2,12 +2,17 @@ package dev.mote.collector.plugins
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import android.text.TextUtils
+import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import dev.mote.collector.CaptureAccessibilityService
+import dev.mote.collector.CaptureOverview
 import dev.mote.collector.CentralAccess
 import dev.mote.collector.CentralCaptureReader
 import dev.mote.collector.CentralClient
@@ -20,10 +25,15 @@ import dev.mote.collector.LibraryCaptureProjection
 import dev.mote.collector.LibraryLocalSources
 import dev.mote.collector.LibraryRefreshPolicy
 import dev.mote.collector.LibrarySourceProjection
+import dev.mote.collector.MediaCollectionService
 import dev.mote.collector.MoteApplication
 import dev.mote.collector.MoteI18n
 import dev.mote.collector.MoteActivity
 import dev.mote.collector.MoteUi
+import dev.mote.collector.NativeColorRole
+import dev.mote.collector.NativeRadiusRole
+import dev.mote.collector.ProjectionService
+import dev.mote.collector.SourcesActivity
 import dev.mote.collector.WorkMemoryReference
 import dev.mote.collector.ArchivedOriginal
 import dev.mote.collector.CaptureUploadVersion
@@ -267,7 +277,9 @@ internal class LibrarySourceBar(
     private var lastReadAt: Long? = null
     private var sourceRevision: String? = null
     private var active = false
+    private var face: LibraryCaptureFace? = null
     private val choices = LinearLayout(activity).apply { tag = "library-source-bar" }
+    private val capture = LinearLayout(activity).apply { orientation = VERTICAL; visibility = View.GONE }
     private val status = LinearLayout(activity).apply { orientation = VERTICAL }
 
     init {
@@ -277,14 +289,17 @@ internal class LibrarySourceBar(
             contentDescription = MoteI18n.text("来源")
             addView(choices)
         }, LayoutParams(-1, -2))
+        addView(capture)
         addView(status)
         updatePhone()
     }
 
     fun updatePhone() {
-        val next = SourceProviderPlugin.libraryPhone(settings.enabled && settings.screenPausedAt() == null, settings.state(), settings.syncState())
-        if (phone == next) return
-        phone = next
+        val nextPhone = SourceProviderPlugin.libraryPhone(settings.enabled && settings.screenPausedAt() == null, settings.state(), settings.syncState())
+        val nextFace = runCatching { LibraryCaptureFaces.of(captureFacts()) }.getOrNull()
+        if (phone == nextPhone && face == nextFace) return
+        phone = nextPhone
+        face = nextFace
         render()
     }
 
@@ -381,8 +396,67 @@ internal class LibrarySourceBar(
                 }
                 glyph?.let { setCompoundDrawablesRelativeWithIntrinsicBounds(it.drawable, 0, 0, 0); compoundDrawablePadding = activity.moteDp(6) }
             }
-            choices.addView(chip, LayoutParams(-2, -2).apply { marginEnd = activity.moteDp(6) })
+            val attention = choice.filter == LibrarySourceFilter.Phone && face?.attention == true
+            if (attention) chip.contentDescription = listOf(label, MoteI18n.text("需要处理")).joinToString("，")
+            choices.addView(if (attention) phoneDot(chip) else chip, LayoutParams(-2, -2).apply { marginEnd = activity.moteDp(6) })
         }
+        renderCapture()
+    }
+
+    /** The "这台手机" dot when capture needs the owner; the tab bar carries the same answer. */
+    private fun phoneDot(chip: View): View = FrameLayout(activity).apply {
+        addView(chip, FrameLayout.LayoutParams(-2, -2))
+        addView(View(activity).apply {
+            tag = "library-source-dot:phone"
+            background = MoteUi.shape(activity, NativeColorRole.WARNING, NativeRadiusRole.PILL, false)
+        }, FrameLayout.LayoutParams(activity.moteDp(8), activity.moteDp(8), Gravity.TOP or Gravity.END).apply {
+            topMargin = activity.moteDp(1); marginEnd = activity.moteDp(6)
+        })
+    }
+
+    /** The same one-line capture answer as the panel and notification, on the selected phone only. */
+    private fun renderCapture() {
+        capture.removeAllViews()
+        val face = face
+        if (selected != LibrarySourceFilter.Phone || face == null) { capture.visibility = View.GONE; return }
+        capture.addView(MoteComponents.row(activity, MoteGlyph.PHONE, MoteI18n.text("采集与同步"),
+            value = face.status, valueColor = if (face.warn) NativeColorRole.WARNING else NativeColorRole.MUTED,
+            iconSizeDp = 20) { activity.startActivity(Intent(activity, SourcesActivity::class.java)) }.apply {
+            tag = "library-capture-sync"
+        })
+        capture.visibility = View.VISIBLE
+    }
+
+    private fun captureFacts(): CaptureOverview.Facts {
+        val config = settings.read()
+        val projection = config.effectiveMode() == "projection"
+        val screenLive = config.screenCollectionEnabled && (if (projection) ProjectionService.running else CaptureAccessibilityService.connected)
+        val systemLive = config.observesSystem() && MediaCollectionService.connected
+        return CaptureOverview.Facts(
+            enabled = settings.enabled, state = settings.state(), message = settings.message(), used = true,
+            screenSelected = config.screenCollectionEnabled, screenLive = screenLive, projection = projection,
+            screenPausedAt = settings.screenPausedAt()?.takeIf { !config.screenCollectionEnabled },
+            notifications = config.notificationCollectionEnabled, deviceEvents = config.deviceEventCollectionEnabled,
+            media = config.mediaCollectionEnabled && config.metadataEnabled, systemLive = systemLive,
+            queueFull = false, folders = 0, connected = config.hasSyncConnection(), sendPaused = config.syncPaused,
+            sendState = settings.syncState(), pending = null, acknowledged = false,
+        )
+    }
+}
+
+/** The Library-side face of the capture state: the phone dot and the row above the records. */
+internal data class LibraryCaptureFace(val status: String, val warn: Boolean, val attention: Boolean)
+
+internal object LibraryCaptureFaces {
+    /** Reads the same one-line capture answer as the home, panel and notification. */
+    fun of(facts: CaptureOverview.Facts): LibraryCaptureFace {
+        val line = CaptureOverview.line(facts)
+        val attention = line.kind == CaptureOverview.Kind.ATTENTION
+        return LibraryCaptureFace(
+            status = line.title.ifBlank { MoteI18n.text("采集已暂停") },
+            warn = attention,
+            attention = attention,
+        )
     }
 }
 

@@ -78,9 +78,10 @@ test('production connector inventory opens built-in and third-party recording ca
     assert.equal(featureInventory.capabilities.some(capability=>capability.id==='http:GET:/api/connectors/'+provider+'-recordings'),false,'ConnectorRegistry does not advertise individual HTTP capabilities');
   }
   assert.equal(featureInventory.capabilities.some(capability=>capability.id==='http:GET:/api/connectors/status'),false,'the globally mounted status route is outside ServerFeatureHost HTTP inventory');
-  const catalogEntry=sourcePages.find(page=>page.id==='sourceCatalog'),recordingsEntry=sourcePages.find(page=>page.id==='recordings');
-  assert.ok(catalogEntry);assert.ok(recordingsEntry);
-  local=await webFeatures.install({id:catalogEntry.featureId,version:'1',components:[]},[catalogEntry,recordingsEntry].map(entry=>({surface:'page' as const,entry})));
+  const catalogEntry=sourcePages.find(page=>page.id==='sourceCatalog'),archiveEntry={id:'archive',route:'library',featureId:'generated.production-library',render:()=>null} as PageEntry;
+  assert.ok(catalogEntry);
+  assert.equal(sourcePages.some(page=>page.id==='recordings'),false,'recording settings are not a second connection page');
+  local=await webFeatures.install({id:catalogEntry.featureId,version:'1',components:[]},[catalogEntry,archiveEntry].map(entry=>({surface:'page' as const,entry})));
   dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/'+catalogEntry.route,pretendToBeVisual:true});
   configureLocale(()=>'zh-CN');
   for(const [key,value] of Object.entries({window:dom.window,location:dom.window.location,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){
@@ -89,24 +90,20 @@ test('production connector inventory opens built-in and third-party recording ca
   }
   root=createRoot(dom.window.document.getElementById('root')!);
   const props:PageProps={api,status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},recent:[],insights:[],onPage:page=>navigation.push(page),onOpen:()=>{},range:{},archiveTab:'materials',setArchiveTab:()=>{},timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'session',changeSessionLifetime:()=>{}};
-  const render=async(entry:PageEntry)=>{await act(async()=>root!.render(React.createElement(React.Suspense,{fallback:'Generated route loading'},entry.render(props))));};
-  const providerLink=(provider:string)=>Array.from(dom!.window.document.querySelectorAll<HTMLAnchorElement>('.discovery-source-catalog a[href]')).find(link=>new URLSearchParams(link.hash.split('?')[1]).get('provider')===provider);
+  const render=async(entry:PageEntry,key=entry.id)=>{await act(async()=>root!.render(React.createElement(React.Suspense,{fallback:'Generated route loading'},React.createElement(React.Fragment,{key},entry.render(props)))));};
+  const providerLink=(provider:string)=>Array.from(dom!.window.document.querySelectorAll<HTMLAnchorElement>('.discovery-source-catalog a[href]')).find(link=>new URLSearchParams(link.hash.split('?')[1]).get('recordings')===provider);
   for(const provider of ['feishu','dingtalk','generated']){
     await act(async()=>{location.hash='#/'+catalogEntry.route;});
-    await render(catalogEntry);
+    await render(catalogEntry,provider);
     await settle(()=>Boolean(dom!.window.document.querySelector<HTMLButtonElement>('.source-catalog-final button.discovery-source-card:not(:disabled)')));
     await act(async()=>dom!.window.document.querySelector<HTMLButtonElement>('.source-catalog-final button.discovery-source-card')!.click());
     await settle(()=>Boolean(providerLink(provider)));
     const link=providerLink(provider)!;
-    assert.equal(link.getAttribute('href'),'#/'+recordingsEntry.route+'?provider='+provider);
+    assert.equal(link.getAttribute('href'),'#/library?recordings='+provider);
     assert.equal(link.getAttribute('aria-disabled'),null);
     if(provider==='generated')assert.match(link.textContent!,/Generated third-party recorder/);
     await act(async()=>link.click());
-    assert.equal(location.hash,'#/'+recordingsEntry.route+'?provider='+provider);
-    await render(recordingsEntry);
-    const detailPath='/api/connectors/'+provider+'-recordings';
-    await settle(()=>requests.some(request=>request.path===detailPath&&request.status===200));
-    assert.equal(dom.window.document.querySelector('[role="alert"]'),null);
+    assert.equal(location.hash,'#/library?recordings='+provider);
   }
   assert.deepEqual(navigation,[],'provider links preserve their query rather than invoke a fallback page callback');
   assert.ok(requests.every(request=>request.method==='GET'&&request.status===200));

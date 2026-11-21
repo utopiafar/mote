@@ -33,7 +33,7 @@ function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {requ
   if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:['/api/capture-browser','/api/capture-browser/timeline','/api/capture-browser/timeline/members','/api/library/browse','/api/coding/uploads'].map(path=>({id:'http:GET:'+path,version:'1',state:'active'}))};
   const result=await read(path,init);return path.startsWith('/api/library/browse?')?{schemaVersion:1,types:[],sources:[],noteOrigin:{origin:'notes',label:'记录'},...result as object,items:((result as any).items??[]).map((material:any)=>material.entryType?material:{entryType:'material',ref:material.ref,contentAt:material.origin?.lastAt??material.updatedAt??when,material})}:result;
 },setAgentTimeout:()=>{}} as Api;}
-function view(api:Api,extras:Partial<React.ComponentProps<typeof Archive>>={}){return React.createElement(Archive,{api,devices:[{deviceId:'fixture-device',deviceName:'Generated device',platform:'macos',status:'capturing',queueDepth:0,lastSeenAt:when}],range:{},activity,revision:0,onOpen:()=>{},tab:'records',setTab:()=>{},...extras});}
+function view(api:Api,extras:Partial<React.ComponentProps<typeof Archive>>={}){return React.createElement(Archive,{api,devices:[{deviceId:'fixture-device',deviceName:'Generated device',platform:'macos',status:'capturing',queueDepth:0,lastSeenAt:when}],range:{},activity,revision:0,onOpen:()=>{},onPage:()=>{},tab:'records',setTab:()=>{},...extras});}
 const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===text)!;
 
 test('an invalid date deep link keeps filters recoverable without widening or crashing the library',async t=>{
@@ -57,7 +57,7 @@ test('explicit library navigation leads directly into rows and source details wi
   const {root,d}=await fixture(t),reads:string[]=[],opened:string[]=[];
   const api=apiWith(path=>{reads.push(path);if(path.startsWith('/api/capture-browser/timeline?'))return timeline([row()]);if(path.startsWith('/api/capture-browser/'))return capture();throw Error('Unexpected generated request '+path);});
   await act(async()=>root.render(view(api,{onOpen:ref=>opened.push(ref)})));
-  assert.deepEqual(new Set(Array.from(d.querySelectorAll('[data-collection-id]'),node=>node.getAttribute('data-collection-id'))),new Set(webFeatures.collections().filter(entry=>entry.id!=='memories').map(entry=>entry.id)),'all registered collections remain reachable in the primary, context or More links');
+  assert.deepEqual(new Set(Array.from(d.querySelectorAll('[data-collection-id]'),node=>node.getAttribute('data-collection-id'))),new Set(webFeatures.collections().map(entry=>entry.id)),'all registered collections remain reachable in the primary, context or More links');
   assert.equal(d.querySelector('[data-collection-id="coding-status"]')?.textContent,'Coding 同步状态','the accepted source exposes the existing receipt view as a contextual link');
   assert.ok(webFeatures.collections().some(entry=>entry.id==='coding-status'));
   assert.equal(d.querySelector('[data-collection-id="segments"]')?.textContent,'片段与应用相册');assert.equal(d.querySelector('select[aria-label="资料类型"]'),null);assert.equal(d.querySelector('[aria-label="记录视图"]'),null);
@@ -83,14 +83,15 @@ test('explicit library navigation leads directly into rows and source details wi
   assert.equal(d.activeElement,record,'return preserves the original list and keyboard opener');
 });
 
-test('two primary library tabs keep registered specialized views secondary and unavailable links recoverable',async t=>{
- const {root,d}=await fixture(t),selected:string[]=[];
+test('the library has no second memory tab and keeps registered specialized views secondary and unavailable links recoverable',async t=>{
+ const {root,d}=await fixture(t);
  const api=apiWith(path=>path.startsWith('/api/library/browse?')?{items:[],nextCursor:null}:timeline([row()]));
- await act(async()=>root.render(view(api,{setTab:tab=>selected.push(tab)})));
- assert.deepEqual(Array.from(d.querySelectorAll('.library-primary-tabs button'),node=>node.textContent),['我的资料','我的记忆']);
+ await act(async()=>root.render(view(api)));
+ assert.equal(d.querySelector('.library-primary-tabs'),null);
+ assert.equal(Array.from(d.querySelectorAll('button')).some(node=>node.textContent==='我的记忆'),false);
+ assert.equal(d.querySelector('[data-collection-id="memories"]'),null,'the memory view is not advertised from the library');
  assert.equal(d.querySelector('.library-secondary-views')?.hasAttribute('open'),false);
  assert.equal(d.querySelector('[data-collection-id="coding-status"]')?.textContent,'Coding 同步状态');
- await act(async()=>button(d,'我的记忆').click());assert.deepEqual(selected,['memories']);
  await act(async()=>root.render(view(api,{tab:'generated-removed-collection'})));
  assert.equal(d.querySelector('.library-secondary-views summary')?.textContent,'更多');
  assert.match(d.querySelector('.library-content')?.textContent??'',/当前不可用/);

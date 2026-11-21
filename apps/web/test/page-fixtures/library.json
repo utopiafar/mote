@@ -1,6 +1,6 @@
 {
   "route": "#/library",
-  "waitFor": ".content[data-session='ready'][aria-busy='false'] .library-materials .original-note-row",
+  "waitFor": ".content[data-session='ready'][aria-busy='false'] .library-record",
   "api": {
     "POST /api/login/exchange": {
       "status": 200,
@@ -30,20 +30,74 @@
         },
         "index": { "mode": "text", "model": null },
         "insightIntervalHours": 0,
-        "serverTime": "2026-11-20T09:00:00+08:00"
+        "serverTime": "2026-11-21T09:30:00+08:00"
       }
     },
     "GET /api/devices": {
       "status": 200,
       "body": {
-        "items": [{
-          "deviceId": "generated-library-device",
-          "deviceName": "样例设备",
-          "platform": "macos",
-          "status": "paused",
-          "queueDepth": 0,
-          "lastSeenAt": "2026-11-20T09:00:00+08:00"
-        }]
+        "items": [
+          {
+            "deviceId": "generated-library-mac",
+            "deviceName": "这台 Mac",
+            "platform": "macos",
+            "status": "capturing",
+            "queueDepth": 0,
+            "lastSeenAt": "2026-11-21T09:30:00+08:00"
+          },
+          {
+            "deviceId": "generated-library-pixel",
+            "deviceName": "Pixel 8",
+            "platform": "android",
+            "status": "paused",
+            "queueDepth": 0,
+            "lastSeenAt": "2026-11-21T09:10:00+08:00"
+          },
+          {
+            "deviceId": "generated-library-iphone",
+            "deviceName": "iPhone",
+            "platform": "ios",
+            "status": "capturing",
+            "queueDepth": 0,
+            "lastSeenAt": "2026-11-21T08:50:00+08:00"
+          }
+        ],
+        "disconnectedDeviceIds": []
+      }
+    },
+    "GET /api/connections": {
+      "status": 200,
+      "body": { "items": [] }
+    },
+    "GET /api/sources": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "generated-feishu",
+            "name": "飞书",
+            "kind": "mote.official.feishu-docs",
+            "deviceId": "generated-library-mac",
+            "platform": "import",
+            "enabled": true,
+            "retention": "archive",
+            "createdAt": "2026-11-01T09:00:00+08:00",
+            "updatedAt": "2026-11-21T09:20:00+08:00",
+            "capabilities": { "discovery": "provider-list" }
+          },
+          {
+            "id": "generated-notion",
+            "name": "Notion",
+            "kind": "mote.official.notion",
+            "deviceId": "generated-library-mac",
+            "platform": "import",
+            "enabled": true,
+            "retention": "archive",
+            "createdAt": "2026-11-02T09:00:00+08:00",
+            "updatedAt": "2026-11-21T09:15:00+08:00",
+            "capabilities": { "discovery": "provider-list" }
+          }
+        ]
       }
     },
     "GET /api/nav-state": {
@@ -87,69 +141,107 @@
       "body": {
         "schemaVersion": 1,
         "revision": "generated-library-revision",
-        "types": [],
-        "sources": [],
+        "types": [
+          { "id": "mote.note", "kind": "mote.note", "schemaVersion": 1, "label": "记录" },
+          { "id": "mote.file", "kind": "mote.file", "schemaVersion": 1, "label": "文件与录音" },
+          { "id": "mote.screen-segment", "kind": "mote.screen-segment", "schemaVersion": 1, "label": "屏幕片段" }
+        ],
+        "sources": [
+          { "id": "generated-feishu", "label": "飞书", "count": 1 },
+          { "id": "generated-notion", "label": "Notion", "count": 1 },
+          { "id": "generated-library-mac", "label": "这台 Mac", "count": 2 }
+        ],
         "sourcesTruncated": false,
-        "noteOrigin": { "origin": "notes", "label": "记录", "count": 3 },
+        "noteOrigin": { "origin": "notes", "label": "记录", "count": 2 },
         "items": [
+          {
+            "entryType": "material",
+            "ref": "material:mat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "contentAt": "2026-11-21T09:12:00+08:00",
+            "material": {
+              "id": "mat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "ref": "material:mat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "kind": "mote.file",
+              "schemaVersion": 1,
+              "title": "同步协议草案 v3.pdf",
+              "sequence": 1,
+              "textLength": 1200,
+              "blockCount": 2,
+              "coverage": { "state": "complete" },
+              "origin": {
+                "sourceId": "generated-feishu",
+                "deviceId": "generated-feishu",
+                "firstAt": "2026-11-21T09:12:00+08:00",
+                "lastAt": "2026-11-21T09:12:00+08:00"
+              },
+              "retention": { "original": "kept" },
+              "updatedAt": "2026-11-21T09:12:00+08:00"
+            }
+          },
           {
             "entryType": "capture",
             "ref": "capture:00000000-0000-4000-8000-000000000001",
-            "contentAt": "2026-11-20T08:30:00+08:00",
+            "contentAt": "2026-11-21T09:05:00+08:00",
             "revision": "generated-note-1",
             "capture": {
               "id": "00000000-0000-4000-8000-000000000001",
-              "capturedAt": "2026-11-20T08:30:00+08:00",
-              "deviceId": "generated-library-device",
-              "deviceName": "样例设备",
+              "capturedAt": "2026-11-21T09:05:00+08:00",
+              "deviceId": "generated-library-mac",
+              "deviceName": "这台 Mac",
               "platform": "macos",
               "source": "note",
               "appName": "Mote",
-              "windowTitle": "样例会议记录",
+              "windowTitle": "发布评审预演",
               "durationMs": 0,
               "hasImage": false,
               "ocr": { "status": "not_applicable" },
-              "textPreview": "对照资料列表，记录需要复查的页面状态。"
+              "textPreview": "录音 32 分钟，整理出三个待确认的发布门槛。"
+            }
+          },
+          {
+            "entryType": "material",
+            "ref": "material:mat_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "contentAt": "2026-11-20T18:40:00+08:00",
+            "material": {
+              "id": "mat_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "ref": "material:mat_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "revision": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "kind": "mote.file",
+              "schemaVersion": 1,
+              "title": "京都行程草稿",
+              "sequence": 2,
+              "textLength": 640,
+              "blockCount": 1,
+              "coverage": { "state": "complete" },
+              "origin": {
+                "sourceId": "generated-notion",
+                "deviceId": "generated-notion",
+                "firstAt": "2026-11-20T18:40:00+08:00",
+                "lastAt": "2026-11-20T18:40:00+08:00"
+              },
+              "retention": { "original": "kept" },
+              "updatedAt": "2026-11-20T18:40:00+08:00"
             }
           },
           {
             "entryType": "capture",
             "ref": "capture:00000000-0000-4000-8000-000000000002",
-            "contentAt": "2026-11-19T17:15:00+08:00",
+            "contentAt": "2026-11-20T17:15:00+08:00",
             "revision": "generated-note-2",
             "capture": {
               "id": "00000000-0000-4000-8000-000000000002",
-              "capturedAt": "2026-11-19T17:15:00+08:00",
-              "deviceId": "generated-library-device",
-              "deviceName": "样例设备",
-              "platform": "macos",
+              "capturedAt": "2026-11-20T17:15:00+08:00",
+              "deviceId": "generated-library-pixel",
+              "deviceName": "Pixel 8",
+              "platform": "android",
               "source": "note",
               "appName": "Mote",
-              "windowTitle": "样例阅读笔记",
+              "windowTitle": "跑了 5 公里，膝盖有点酸",
               "durationMs": 0,
               "hasImage": false,
               "ocr": { "status": "not_applicable" },
-              "textPreview": "把原文摘录和自己的想法分开记录。"
-            }
-          },
-          {
-            "entryType": "capture",
-            "ref": "capture:00000000-0000-4000-8000-000000000003",
-            "contentAt": "2026-11-19T14:00:00+08:00",
-            "revision": "generated-note-3",
-            "capture": {
-              "id": "00000000-0000-4000-8000-000000000003",
-              "capturedAt": "2026-11-19T14:00:00+08:00",
-              "deviceId": "generated-library-device",
-              "deviceName": "样例设备",
-              "platform": "macos",
-              "source": "note",
-              "appName": "Mote",
-              "windowTitle": "样例项目草稿",
-              "durationMs": 0,
-              "hasImage": false,
-              "ocr": { "status": "not_applicable" },
-              "textPreview": "整理导入的资料，留出时间检查来源。"
+              "textPreview": "记录"
             }
           }
         ],
