@@ -151,7 +151,7 @@ class AssistantHostTest {
                             "spec":{"components":[]},"data":{},"commands":[]
                         }""").put("request", request)
                     }
-                    path == "/api/assistant/matters/${f.matterId}/actions" -> f.page()
+                    path == "/api/assistant/matters/${f.matterId}/actions" -> JSONObject().put("items", JSONArray())
                     path == "/api/assistant/routines" -> f.page(rule)
                     path == "/api/assistant/matter-commands" -> {
                         matter = f.matter(if (body!!.getString("type") == "pause") "paused" else "active", body.getLong("expectedRevision") + 1)
