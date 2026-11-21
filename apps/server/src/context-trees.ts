@@ -167,12 +167,12 @@ export function createContextTreesReadCapability(trees:ContextTreeRegistry):Cont
 export function createContextTrees(){
   // These fixed host labels are generic navigation, not model/person data.
   const registry=new ContextTreeRegistry(['topics','knowledge','use']);
-  registry.register({id:'topics',version:'1',label:'主题',nodes:[
-    {id:'personal',label:'个人',select:{domain:'personal'}},{id:'coding',label:'工作与技术',select:{domain:'coding'}},
-    ...(['pitfall','decision','principle','preference'] as const).map((kind,index)=>({id:'coding.'+kind,parentId:'coding',label:['经验','决定','原则','偏好'][index],select:{domain:'coding' as const,codingKind:kind}})),
+  registry.register({id:'topics',version:'1',label:moteText('主题'),nodes:[
+    {id:'personal',label:moteText('个人'),select:{domain:'personal'}},{id:'coding',label:moteText('工作与技术'),select:{domain:'coding'}},
+    ...(['pitfall','decision','principle','preference'] as const).map((kind,index)=>({id:'coding.'+kind,parentId:'coding',label:[moteText('经验'),moteText('决定'),moteText('原则'),moteText('偏好')][index],select:{domain:'coding' as const,codingKind:kind}})),
   ]});
-  registry.register({id:'knowledge',version:'1',label:'知识性质',nodes:[{id:'episodic',label:'经历',select:{kind:'episodic'}},{id:'semantic',label:'知识',select:{kind:'semantic'}},{id:'procedural',label:'方法',select:{kind:'procedural'}}]});
-  registry.register({id:'use',version:'1',label:'使用场景',nodes:[{id:'personal',label:'个人助理',select:{domain:'personal'}},{id:'coding',label:'Coding Agent',select:{domain:'coding'}}]});
+  registry.register({id:'knowledge',version:'1',label:moteText('知识性质'),nodes:[{id:'episodic',label:moteText('经历'),select:{kind:'episodic'}},{id:'semantic',label:moteText('知识'),select:{kind:'semantic'}},{id:'procedural',label:moteText('方法'),select:{kind:'procedural'}}]});
+  registry.register({id:'use',version:'1',label:moteText('使用场景'),nodes:[{id:'personal',label:moteText('个人助理'),select:{domain:'personal'}},{id:'coding',label:'Coding Agent',select:{domain:'coding'}}]});
   return registry;
 }
 export function registerContextTreeRoutes(app:FastifyInstance,reader:TreeMemoryRead,trees:ContextTreeRegistry){

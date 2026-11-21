@@ -1,4 +1,6 @@
 /** Authenticated owner view. Contains private server paths; never embed in support bundles. */
+export type ConfigurationDescriptionCode = 'shared-configuration';
+export type StorageDescriptionCode = 'container-storage' | 'host-storage';
 export type ConfigurationSource = 'config-file' | 'default' | 'derived';
 export type ConfigurationEffect = 'immediate' | 'next-request' | 'next-admission' | 'restart' | 'migration';
 export interface ConfigFieldMetadata {
@@ -33,7 +35,8 @@ export interface ServerConfiguration extends ConfigServiceView {
   baseDir: string;
   readOnly: boolean;
   restartRequired: boolean;
-  description: string;
+  /** Stable presentation code; the client supplies the short label. */
+  description: ConfigurationDescriptionCode;
   storage: {
     dataDir: string;
     sqlitePath: string;
@@ -42,6 +45,7 @@ export interface ServerConfiguration extends ConfigServiceView {
     kind: 'local-directory' | 'docker-volume' | 'bind-mount' | 'unknown';
     source: string | null;
     mountPath: string | null;
-    description: string;
+    /** Stable presentation code; the client supplies the short label. */
+    description: StorageDescriptionCode;
   };
 }
