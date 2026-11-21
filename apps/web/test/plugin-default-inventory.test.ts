@@ -26,7 +26,7 @@ const expectedRenderers = [
   'source-item.metric', 'source-item.metric.v2', 'source-item.memory', 'source-item.memory.v2',
 ];
 const expectedPanels = [
-  'memory.saved', 'operation.saved', 'owner-questions.standalone-detail', 'owner-questions.history', 'owner-questions.conversation',
+  'memory.saved', 'operation.saved', 'owner-questions.standalone-detail', 'owner-questions.conversation',
   'owner-questions.work', 'owner-questions.material',
 ];
 

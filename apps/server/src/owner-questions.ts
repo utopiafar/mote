@@ -100,6 +100,31 @@ export class OwnerQuestions {
   const page=found.slice(0,selected.limit),last=page.at(-1);
   return {items:page.map(item=>item.question),nextCursor:found.length>selected.limit&&last?Buffer.from(JSON.stringify(last.cursor)).toString('base64url'):null};
  }
+ /** Hide pending questions from the Ideas surface without answering them, so
+  * their work still waits for an answer in its own context. */
+ ignoreAll(upTo:number):number{
+  return this.transaction(()=>{
+   const at=this.now();
+   let ignored=0,cursor:string|undefined;
+   do{
+    const page=this.page({state:['open','deferred'],limit:100,cursor});
+    for(const question of page.items){
+     if(question.ignoredAt)continue;
+     const updated=Date.parse(question.updatedAt);
+     if(!Number.isFinite(updated)||updated>upTo)continue;
+     const value=this.decode(this.row(question.id));
+     if(value.record.question.ignoredAt)continue;
+     value.record.question.ignoredAt=at;
+     value.record.question.revision++;
+     value.record.question.updatedAt=at;
+     this.save(value.record,value.stored.installationEpoch);
+     ignored++;
+    }
+    cursor=page.nextCursor??undefined;
+   }while(cursor);
+   return ignored;
+  });
+ }
  /** Retire private prose in the same transaction as a dependency/work withdrawal. */
  obsolete(id:string){return this.transaction(()=>{const value=this.decode(this.row(id));if(value.record.question.state==='obsolete')return;value.record.question.state='obsolete';value.record.question.revision++;value.record.question.updatedAt=this.now();delete value.record.question.continuationId;this.save(value.record,value.stored.installationEpoch);});}
  private receipt(id:string,reply:OwnerQuestionReply,hash:string){const prior=this.store.db.prepare('SELECT request_hash FROM owner_question_replies WHERE question_id=? AND request_id=?').get(id,reply.requestId);if(prior&&prior.request_hash!==hash)throw new StoreError('Owner reply request ID was reused with different content',409);return Boolean(prior);}

@@ -47,7 +47,7 @@ const taskStatus={
 export class AssistantIdeas{
  private readonly records:TaskRecords;
  constructor(private readonly store:EvidenceStore,private readonly cards:Pick<AssistantCards,'ideaCandidates'|'feedback'>,
-  private readonly questions:Pick<OwnerQuestions,'page'>,private readonly tasks:Pick<AssistantTasks,'get'>,
+  private readonly questions:Pick<OwnerQuestions,'page'|'ignoreAll'>,private readonly tasks:Pick<AssistantTasks,'get'>,
   private readonly reader:EvidenceReader){
   this.records=new TaskRecords(store);
  }
@@ -65,7 +65,7 @@ export class AssistantIdeas{
   }
  }
 
- private *questionIdeas(scope:QueryScope):Generator<IdeaItem>{
+ private *questionIdeas(scope:QueryScope,seen:{watermark:number}):Generator<IdeaItem>{
   if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return;
   const dependencyIds=this.store.db.prepare('SELECT evidence_id FROM owner_question_dependencies WHERE question_id=?');
   const scoped=!unfiltered(scope);
@@ -74,6 +74,7 @@ export class AssistantIdeas{
   do{
    const page=this.questions.page({state:['open','deferred'],limit:100,cursor});
    for(const question of page.items){
+    if(question.ignoredAt)continue;
     const ids=[...new Set([...dependencyIds.all(question.id).map(row=>String(row.evidence_id)),...question.evidence.map(span=>span.id)])];
     if(!this.reader.contextDependenciesAllowed(ids))continue;
     if(scoped){
@@ -81,6 +82,8 @@ export class AssistantIdeas{
      const records=this.reader.memories.readEvidenceIfCurrent(ids);
      if(!records||records.length!==ids.length||records.some(record=>record.privacy.excluded||!withinEvidenceScope(record,scope)))continue;
     }
+    const updated=Date.parse(question.updatedAt);
+    if(Number.isFinite(updated))seen.watermark=Math.max(seen.watermark,updated);
     const detail=displayText(question.prompt,200),title=displayText(question.title,80)||displayText(detail,80);
     if(title)yield {id:question.id,source:'owner-question',kind:'needs-info',title,detail:detail||undefined,
      revision:question.revision,seq:0,actions:['answer']};
@@ -111,7 +114,7 @@ export class AssistantIdeas{
 
  private read(scope:QueryScope,now:number,includeStarted=false){
   const mine:IdeaItem[]=[],yours:IdeaItem[]=[],started:StartedIdea[]=[];
-  const canIgnoreAll=unfiltered(scope);
+  const canIgnoreAll=unfiltered(scope),questionSeen={watermark:0};
   let watermark=0;
   for(const card of this.cards.ideaCandidates(scope,now,{includeStarted})){
    if(card.taskId){
@@ -126,8 +129,8 @@ export class AssistantIdeas{
    // supply a watermark for ignoring cards across the owner's scope.
    if(canIgnoreAll)watermark=Math.max(watermark,item.seq);
   }
-  for(const question of this.questionIdeas(scope))yours.push(question);
-  return {watermark,mine,yours,started};
+  for(const question of this.questionIdeas(scope,questionSeen))yours.push(question);
+  return {watermark,questionWatermark:canIgnoreAll?questionSeen.watermark:0,mine,yours,started};
  }
 
  private viewAt(scope:QueryScope,now:number):IdeasView{
@@ -146,7 +149,7 @@ export class AssistantIdeas{
   });
  }
 
- ignoreAll({upToSeq}:IdeasIgnoreAllInput):IdeasIgnoreAllResult{
+ ignoreAll({upToSeq,upToQuestionAt}:IdeasIgnoreAllInput):IdeasIgnoreAllResult{
   return this.snapshot(()=>{
    const now=Date.now();
    let ignored=0;
@@ -155,6 +158,7 @@ export class AssistantIdeas{
     this.cards.feedback(card.id,{action:'ignore',expectedRevision:card.revision},all);
     ignored++;
    }
+   if(upToQuestionAt!==undefined)ignored+=this.questions.ignoreAll(upToQuestionAt);
    return {ignored,revision:this.viewAt(all,now).revision};
   });
  }

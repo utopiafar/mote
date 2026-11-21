@@ -84,6 +84,7 @@
       "body": {
         "revision": "fixture-ideas-1",
         "watermark": 12,
+        "questionWatermark": 1795136400000,
         "mine": [
           {
             "id": "10000000-0000-4000-8000-000000000001",

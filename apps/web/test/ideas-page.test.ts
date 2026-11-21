@@ -21,7 +21,7 @@ function started(overrides:Partial<StartedIdea>&{title:string}):StartedIdea{
   return {taskId:overrides.taskId??randomUUID(),state:'running',progress:'读取资料 2/5',updatedAt:'2026-11-20T09:00:00+08:00',...overrides};
 }
 function view(changes:Partial<IdeasView>={}):IdeasView{
-  return {revision:'generated-ideas-1',watermark:11,mine:[],yours:[],started:[],...changes};
+  return {revision:'generated-ideas-1',watermark:11,questionWatermark:0,mine:[],yours:[],started:[],...changes};
 }
 
 async function fixture(t:import('node:test').TestContext){
@@ -72,7 +72,8 @@ function fakeApi(state:{view:IdeasView;card?:{taskScope:unknown}},requests:Reque
       if(method==='POST'&&path==='/api/assistant/ideas/ignore-all'){
         const body=JSON.parse(init!.body!);
         assert.equal(body.upToSeq,state.view.watermark);
-        state.view={...state.view,mine:[],yours:state.view.yours.filter(item=>item.source==='owner-question')};
+        assert.equal(body.upToQuestionAt,state.view.questionWatermark);
+        state.view={...state.view,mine:[],yours:[],questionWatermark:0};
         return {ignored:2,revision:'generated-ideas-2'};
       }
       throw new Error('Unexpected fixture request: '+method+' '+path);
@@ -140,17 +141,19 @@ test('ID2-03 started rows show a completion mark with the current progress and f
   assert.match(row(d,running.taskId).textContent!,/读取资料 4\/9/);
 });
 
-test('ID2-04 ignoring everything uses the visible watermark, clears the list and refreshes the badge read',async t=>{
-  const state={view:view({mine:[idea({title:'我可以整理发布清单'}),idea({title:'我可以对比两版设计稿'})],watermark:9})},requests:Request[]=[],refreshed:string[]=[];
+test('ID2-04 ignoring everything uses the visible watermarks, clears cards and clarifications and refreshes the badge read',async t=>{
+  const ownerQuestion=idea({title:'周六回家吃饭，要把读书会挪走吗？',source:'owner-question',kind:'needs-info',revision:4,actions:['answer']});
+  const questionWatermark=Date.parse('2026-11-20T09:00:00+08:00');
+  const state={view:view({mine:[idea({title:'我可以整理发布清单'}),idea({title:'我可以对比两版设计稿'})],yours:[ownerQuestion],watermark:9,questionWatermark})},requests:Request[]=[],refreshed:string[]=[];
   const {root,d,w}=await fixture(t),api=fakeApi(state,requests);
   await act(async()=>root.render(tree(api,()=>refreshed.push('nav'))));
   await settle(w);
-  assert.equal(d.querySelectorAll('.idea-row').length,2);
+  assert.equal(d.querySelectorAll('.idea-row').length,3);
   await act(async()=>button(d,'全部忽略')!.click());
   await settle(w);
   const ignoreAll=requests.find(request=>request.path==='/api/assistant/ideas/ignore-all')!;
   assert.ok(ignoreAll,'the bulk command is sent');
-  assert.deepEqual(JSON.parse(ignoreAll.body!),{upToSeq:9});
+  assert.deepEqual(JSON.parse(ignoreAll.body!),{upToSeq:9,upToQuestionAt:questionWatermark});
   assert.equal(d.querySelectorAll('.idea-row').length,0);
   assert.equal(d.querySelector('.ideas-empty')!.textContent,'没有新点子');
   assert.deepEqual(refreshed,['nav'],'the shared nav-state read refreshes so the ideas badge can drop');
@@ -218,4 +221,5 @@ test('the ideas page owns the nav item and the standalone question list entry is
   assert.equal(page.navItem,'ideas');
   assert.ok(workspaceNavigation().daily.some(value=>'id' in value&&value.id==='ideas'&&value.page==='assistantIdeas'));
   assert.deepEqual(webFeatures.views('panel',{kind:'mote.ask.history',schemaVersion:1,representation:'standalone'}),[]);
+  assert.deepEqual(webFeatures.views('panel',{kind:'mote.ask.history',schemaVersion:1,representation:'workspace'}),[]);
 });

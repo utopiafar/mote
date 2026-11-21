@@ -36,7 +36,7 @@ export function IdeasPage({api,refresh}:{api:Api;refresh:()=>void}){
   useForegroundResources(api,[ideaPath]);
   const view=read.error===undefined?read.data:undefined;
   const loading=read.loading&&read.data===undefined;
-  const mine=view?.mine??[],yours=view?.yours??[],started=view?.started??[];
+  const mine=view?.mine??[],yours=view?.yours??[],started=view?.started??[],questionWatermark=view?.questionWatermark??0;
   const counts={all:mine.length+yours.length+started.length,yours:yours.length,mine:mine.length,started:started.length};
 
   const afterCommand=()=>{
@@ -70,7 +70,7 @@ export function IdeasPage({api,refresh}:{api:Api;refresh:()=>void}){
     });
   });
   const ignoreAll=()=>view&&run('all',()=>api.request('/api/assistant/ideas/ignore-all',{
-    method:'POST',body:JSON.stringify({upToSeq:view.watermark}),
+    method:'POST',body:JSON.stringify({upToSeq:view.watermark,upToQuestionAt:questionWatermark}),
   }));
 
   const needle=search.trim().toLocaleLowerCase();
@@ -86,7 +86,7 @@ export function IdeasPage({api,refresh}:{api:Api;refresh:()=>void}){
     <style>{ideaStyles}</style>
     <div className="ideas-heading">
       <h1>{moteText('点子')}</h1>
-      <button type="button" className="text-button ideas-ignore-all" disabled={!view||view.watermark===0||busy!==null} onClick={()=>void ignoreAll()}>
+      <button type="button" className="text-button ideas-ignore-all" disabled={!view||(view.watermark===0&&questionWatermark===0)||busy!==null} onClick={()=>void ignoreAll()}>
         {moteText('全部忽略')}
       </button>
     </div>

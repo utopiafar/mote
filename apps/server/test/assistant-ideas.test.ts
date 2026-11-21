@@ -66,7 +66,7 @@ async function fixture(t:TestContext){
   assert.equal(response.statusCode,200,response.body);
   return {count:response.json<NavState>().badges.ideas,etag:response.headers.etag};
  };
- const ignoreAll=(upToSeq:number)=>app.inject({method:'POST',url:ignoreAllUrl,headers,payload:{upToSeq}});
+ const ignoreAll=(upToSeq:number,upToQuestionAt?:number)=>app.inject({method:'POST',url:ignoreAllUrl,headers,payload:{upToSeq,...upToQuestionAt!==undefined?{upToQuestionAt}:{}}});
  const taskInput=async(item:IdeaItem)=>{
   const response=await app.inject({url:'/api/assistant-cards/'+item.id+'?'+scoped(all),headers});
   assert.equal(response.statusCode,200,response.body);
@@ -139,6 +139,28 @@ test('ID1-03 a stale watermark keeps new cards and newly published versions',asy
  const retried=await f.ignoreAll(before.watermark);
  assert.equal(retried.statusCode,200,retried.body);
  assert.deepEqual(retried.json(),{ignored:0,revision:after.revision});
+});
+
+test('ID2-04 bulk ignore dismisses the clarifications the surface has seen',async t=>{
+ const f=await fixture(t),card=f.publish('suggestion'),question=f.question();
+ const before=await f.read();
+ assert.equal(before.mine.length,1);
+ assert.equal(before.yours.length,1);
+ assert.ok(before.questionWatermark>0);
+ assert.equal((await f.nav()).count,2);
+ const response=await f.ignoreAll(before.watermark,before.questionWatermark);
+ assert.equal(response.statusCode,200,response.body);
+ const result=ideasIgnoreAllResultSchema.parse(response.json()),after=await f.read();
+ assert.deepEqual(result,{ignored:2,revision:after.revision});
+ assert.deepEqual(after.mine,[]);
+ assert.deepEqual(after.yours,[]);
+ assert.equal(after.questionWatermark,0);
+ assert.equal((await f.nav()).count,0);
+ const detail=await f.app.inject({url:'/api/owner-questions/'+question.id,headers});
+ assert.equal(detail.statusCode,200,detail.body);
+ assert.equal(detail.json().state,'open','ignoring the Ideas row does not answer the work question');
+ assert.ok(detail.json().ignoredAt);
+ assert.deepEqual(f.cards.get(card.id,all).feedback.map(value=>value.action),['ignore']);
 });
 
 test('ID1-04 a snoozed card stays out of both views until tomorrow at 09:00',async t=>{
@@ -214,6 +236,7 @@ test('scoped ideas hide other originals and cannot supply a global dismissal wat
  assert.deepEqual(filtered.mine.map(item=>item.id),[card.id]);
  assert.deepEqual(filtered.yours.map(item=>item.id),[question.id]);
  assert.equal(filtered.watermark,0);
+ assert.equal(filtered.questionWatermark,0,'a scoped view cannot supply a global clarification watermark');
  const ignored=await f.ignoreAll(filtered.watermark);
  assert.equal(ignored.statusCode,200,ignored.body);
  assert.equal(ignored.json().ignored,0);

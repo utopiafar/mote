@@ -166,7 +166,7 @@ test('Activity contribution follows operation children across regrouped public w
  await act(async()=>root.render(contribution.render({api,value:{...value,ref:'direct-generated-work',operationIds:[]},onOpen:()=>{}})));
  assert.equal(new URLSearchParams(reads.at(-1)!.split('?')[1]).get('workId'),'direct-generated-work');
 });
-test('Ask host shows waiting questions in existing history and routes back to an ordinary conversation',async t=>{
+test('Ask host opens the question detail without a second pending list and routes back to an ordinary conversation',async t=>{
  const {root,d,w}=await fixture(t);await featuresReady;
  const ids=['http:GET:/api/owner-questions','http:GET:/api/owner-questions/:id','http:POST:/api/owner-questions/:id/reply'];
  const api={request:async(path:string)=>{
@@ -181,10 +181,10 @@ test('Ask host shows waiting questions in existing history and routes back to an
  },setAgentTimeout:()=>{}} as Api;
  await act(async()=>{w.location.hash=ownerQuestionRoute(generated.id);});
  await act(async()=>root.render(React.createElement(Conversations,{api,configured:false,devices:[],renderAnswer:answer=>answer.answer})));
- assert.equal(d.querySelectorAll('.conversation-history').length,1);assert.equal(d.querySelector('.owner-question-conversation h2')?.textContent,generated.title);assert.equal(d.querySelector('.owner-question-history a')?.getAttribute('href'),ownerQuestionRoute(generated.id));
+ assert.equal(d.querySelectorAll('.conversation-history').length,1);assert.equal(d.querySelector('.owner-question-conversation h2')?.textContent,generated.title);assert.equal(d.querySelector('.owner-question-history'),null,'the chat history sidebar no longer hosts a separate pending list');
  await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-list button.conversation-item')!.click());
  assert.equal(d.querySelector('.owner-question-conversation'),null);assert.match(d.querySelector('.conversation-messages')?.textContent??'',/合成回答/);assert.equal(readOwnerQuestion(w.location.hash),null);
- assert.ok(webFeatures.views('panel',{kind:'mote.ask.history',schemaVersion:1,representation:'workspace'}).some(entry=>entry.id==='owner-questions.history'));
+ assert.deepEqual(webFeatures.views('panel',{kind:'mote.ask.history',schemaVersion:1,representation:'workspace'}),[]);
 });
 test('owner question contributions dispose as one feature and match only explicit host contexts',async()=>{
  const host=new WebFeatureHost();
