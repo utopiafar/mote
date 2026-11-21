@@ -30,11 +30,11 @@ const goal = (extra:{id?:string} = {}) => ({
   createdAt:at,updatedAt:at,
 });
 
-function aboutApi(read:(path:string,init:RequestInit) => unknown = () => {throw Error('Unexpected read');}) {
+function aboutApi(read:(path:string,init:RequestInit) => unknown = () => {throw Error('Unexpected read');},storedScope:Record<string,unknown> = {}) {
   const posts:{anchorEvidenceIds?:string[];anchorMaterialRef?:string;scope:{kind:string;sourceIds?:string[];evidenceIds?:string[]}}[] = [];
   const api = generatedApi((path,init) => {
     if (path.endsWith('/main')) return {id:chatId};
-    if (path === chatPath()) return {id:chatId,scope:{},revision:1,turns:[]};
+    if (path === chatPath()) return {id:chatId,scope:storedScope,revision:1,turns:[]};
     if (path === '/api/conversations/messages') {
       const input = JSON.parse(String(init.body));
       posts.push(input);
@@ -73,7 +73,7 @@ test('CH2-01 opening chat from a goal item shows its reference and sends the nex
 test('CH2-02 clearing the tag removes it from the address and the next message carries no range',async t => {
   const f = await chatDom(t,chatHref({kind:'commitment',id:goalId}));
   const {api,posts} = aboutApi(path => path === '/api/assistant/commitments/' + goalId + '?scope=' + encodeURIComponent(JSON.stringify({kind:'all'}))
-    ? goal() : assert.fail('Unexpected fixture read ' + path));
+    ? goal() : assert.fail('Unexpected fixture read ' + path),{kind:'selection',sourceIds:['generated-previous-source']});
   await f.render(api);
   await f.waitFor(() => f.d.querySelector('.chat-about-tag'),'reference tag');
   await f.click('.chat-about-tag button');
@@ -84,6 +84,7 @@ test('CH2-02 clearing the tag removes it from the address and the next message c
   assert.equal(posts[0].anchorEvidenceIds,undefined);
   assert.equal(posts[0].anchorMaterialRef,undefined);
   assert.equal(posts[0].scope.kind,'all');
+  assert.equal(posts[0].scope.sourceIds,undefined);
 });
 
 test('CH2-03 a fresh chat mount at the same address still shows the reference tag',async t => {
@@ -108,7 +109,7 @@ test('CH2-04 a deleted referenced item shows expired and the next message carrie
   const {api,posts} = aboutApi(path => {
     if (path.startsWith('/api/assistant/commitments/')) throw new ApiError('Generated missing commitment',404);
     assert.fail('Unexpected fixture read ' + path);
-  });
+  },{kind:'selection',sourceIds:['generated-previous-source']});
   await f.render(api);
   await f.waitFor(() => f.d.querySelector('.chat-about-tag')?.getAttribute('data-state') === 'expired','expired reference tag');
   assert.equal(f.d.querySelector('.chat-about-tag > span')?.textContent,'已失效');
@@ -118,6 +119,7 @@ test('CH2-04 a deleted referenced item shows expired and the next message carrie
   assert.equal(posts[0].anchorEvidenceIds,undefined);
   assert.equal(posts[0].anchorMaterialRef,undefined);
   assert.equal(posts[0].scope.kind,'all');
+  assert.equal(posts[0].scope.sourceIds,undefined);
 });
 
 test('CH2-05 the reader acquaintance button opens the canonical chat link without an authored question',async t => {

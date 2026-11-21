@@ -126,7 +126,9 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const aboutScope = about?.status === 'ready' && about.sourceIds?.length
     ? {kind:'selection' as const, timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone, sourceIds:about.sourceIds}
     : undefined;
-  const outgoingScope = aboutScope ?? admissionScope(sourceScope, scopeChoice);
+  // A current address reference owns the next range. It never inherits an older
+  // turn's stored selection or a withdrawn reference's stale pin.
+  const outgoingScope = aboutScope ?? (about ? admissionScope(undefined, {kind:'all'}) : admissionScope(sourceScope, scopeChoice));
   const aboutAnchor = about?.status === 'ready'
     ? about.anchorMaterialRef ? {anchorMaterialRef:about.anchorMaterialRef}
       : about.anchorEvidenceIds?.length ? {anchorEvidenceIds:about.anchorEvidenceIds}
@@ -390,10 +392,10 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
         else await reference.verify(controller.signal);
       }
       controller.signal.throwIfAborted();
-      const anchor = original ? original.scope : scopeChoice ? undefined : aboutAnchor
-        ?? (reference.origin
+      const anchor = original ? original.scope : scopeChoice ? undefined : about ? aboutAnchor
+        : reference.origin
           ? {anchorMaterialRef: reference.materialRef, anchorEvidenceIds: reference.ids.length ? reference.ids : undefined}
-          : storedScope);
+          : storedScope;
       const attachments = original ? original.attachments ?? [] : unsentDrafts.get(api)?.attachments ?? [];
       const clientRequestId = crypto.randomUUID();
       const modelProfileId = original ? original.modelProfileId : model;
@@ -469,6 +471,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const clearAbout = () => {
     queryRecovery.contextChanged(api);
     setAboutValue(null);
+    setScopeChoice({kind:'all'});
   };
   const changeModel = useCallback((value: string) => {queryRecovery.draftEdited(api); setModel(value);}, [api]);
   const changeOverride = useCallback((value: string) => {queryRecovery.draftEdited(api); setOverride(value);}, [api]);
@@ -535,7 +538,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
         <span>{moteText('未连接模型')}</span><button className="text-button" onClick={onSettings}>{moteText('打开模型设置')}</button>
       </div>}
       <ChatComposer api={api} draft={draft} files={files} busy={busy} preparing={preparing}
-        blocked={preparing || !configured || !reference.ready || Boolean(recovery)} model={model} override={override}
+        blocked={preparing || !configured || !reference.ready || about?.status === 'loading' || Boolean(recovery)} model={model} override={override}
         onModel={changeModel} onOverride={changeOverride}
         onEdit={value => {queryRecovery.draftEdited(api); draft.set(value);}}
         onSend={() => void submit()}
