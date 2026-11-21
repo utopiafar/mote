@@ -7638,5 +7638,9 @@ export const german: Readonly<Record<string, string>> = {
   "为什么现在": "Warum jetzt",
   "聊天": "Chat",
   "点子": "Ideen",
-  "技能": "Fähigkeiten"
+  "技能": "Fähigkeiten",
+  "搜索动态": "Neuigkeiten durchsuchen",
+  "3 天": "3 Tage",
+  "按组织": "Nach Organisation",
+  "没有新动态": "Keine neuen Meldungen"
 };

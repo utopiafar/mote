@@ -13,8 +13,6 @@ export const pages: PageEntry[] = [
     id: 'insights',
     route: 'library/insights',
     label: moteText('发现'),
-    section: 'library',
-    order: 7,
     featureId: 'mote.insights',
     render: ({ api, status, onOpen: setEvidenceId, range, timelineRevision, refresh }: PageProps) => <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured ?? false} onOpen={setEvidenceId} onSettings={() => { window.location.hash = modelSetupHref('providers', window.location.hash); }} onChanged={refresh} />,
   },
