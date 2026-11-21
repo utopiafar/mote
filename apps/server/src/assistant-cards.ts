@@ -88,6 +88,10 @@ type ReviewEvidence={current:Map<string,CaptureRecord[]>;historical:Map<string,C
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
 type NotificationCandidate={id:string;revision:number;title:string;reason:string;state:CardRow['state'];readAt:string|null;
  feedback:{action:FeedbackRow['action'];until?:string;createdAt:string}[];origin:string;currentVersionAt:string};
+type IdeaCard={
+ id:string;kind:'suggestion'|'question';seq:number;revision:number;title:string;body:string;
+ taskId:string|null;startable:boolean;
+};
 
 /** Only the domain caller chooses object identity and semantic updates. This
  * store handles conditional publication and disclosure; it never generates a
@@ -311,6 +315,42 @@ export class AssistantCards {
     candidates.push({id:row.id,revision:row.revision,title:visible.body.title,reason,state:row.state,readAt:row.read_at,feedback,...timing});
    }
    return candidates;
+  });
+ }
+ /** Use the current publication's sequence so a new version is outside the
+  * watermark of a page that only saw its predecessor. */
+ ideaCandidates(scope:QueryScope,now:number,{upToSeq=Number.MAX_SAFE_INTEGER,includeStarted=false}={}):IdeaCard[]{
+  if(scope.evidenceIds?.length===0||scope.kind==='selection'&&scope.sourceIds?.length===0)return [];
+  return this.transaction(()=>{
+   const db=this.store.db,items:IdeaCard[]=[];
+   const rows=db.prepare(`SELECT c.* FROM assistant_card_versions v
+    JOIN assistant_cards c ON c.id=v.card_id AND c.current_version=v.version
+    WHERE v.seq<=? AND v.stale=0 AND v.private_json IS NOT NULL AND c.kind IN ('suggestion','question')
+     AND ((c.state='open' AND c.accepted_task_id IS NULL)
+       OR (?=1 AND c.state!='stale' AND c.accepted_task_id IS NOT NULL))
+    ORDER BY v.seq DESC`).all(upToSeq,Number(includeStarted)) as (CardRow&{kind:IdeaCard['kind']})[];
+   const decisions=db.prepare("SELECT count(*) AS n FROM assistant_card_feedback WHERE card_id=? AND action IN ('later','ignore','never_remind')");
+   const evidence:ReviewEvidence={current:new Map(),historical:new Map(),
+    selection:scope.evidenceIds&&new Set(taskEvidenceIds(this.store,{version:1,complete:true,ids:scope.evidenceIds}))};
+   for(const row of rows){
+    const snapshot=this.versionRow(row.id,row.current_version);
+    const visible=snapshot&&this.visibleVersion(snapshot,scope,false,evidence);
+    if(!visible||!this.feedEligible(row,visible.body))continue;
+    const taskId=this.acceptedTask(row,scope);
+    if(row.accepted_task_id){
+     if(!taskId)continue;
+    }else{
+     const feedback=this.visibleFeedback(row.id,scope,evidence).map(({item})=>item)
+      .filter(({action})=>action==='later'||action==='ignore'||action==='never_remind');
+     // A hidden decision cannot make a handled card actionable again.
+     if(decisions.get(row.id)?.n!==feedback.length||feedback.some(({action})=>action!=='later'))continue;
+     const later=feedback.at(-1);
+     if(later&&(!later.until||now<Date.parse(later.until)))continue;
+    }
+    items.push({id:row.id,kind:row.kind,seq:visible.snapshot.seq,revision:row.revision,title:visible.body.title,
+     body:visible.body.body,taskId,startable:!taskId&&this.taskInput(row,visible.snapshot,visible.ids).taskScope!==null});
+   }
+   return items;
   });
  }
  feedback(id:string,raw:AssistantCardFeedback,rawScope:QueryScope){
