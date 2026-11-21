@@ -14,7 +14,6 @@ import type { CollectionEntry, CollectionProps } from '../../features/types';
 import { Loading } from '../../Loading';
 const CaptureSessions = React.lazy(() => import('./CaptureSessions').then(module => ({ default: module.CaptureSessions })));
 const Sources = React.lazy(() => import('../sources/Sources').then(module => ({ default: module.Sources })));
-const Memories = React.lazy(() => import('../memory/Memories').then(module => ({ default: module.Memories })));
 function ActivityCollection({ api, range, revision, rangeSelectionKey }: CollectionProps) {
     const continuity=rangeSelectionKey===undefined?undefined:JSON.stringify([rangeSelectionKey,range.deviceId]);
     const activity = useResource<Activity>(api, '/api/activity' + queryString(range), undefined, revision, continuity);
@@ -33,5 +32,4 @@ export const builtinCollections: CollectionEntry[] = [
     { id: 'files', usesTimeRange: false, featureId: 'mote.files', label: moteText('文件与录音'), order: 3, group: 'views', render: props => <Files {...props}/> },
     { id: 'activity', featureId: 'mote.capture', label: moteText('应用活动'), order: 4, group: 'views', render: props => <ActivityCollection {...props}/> },
     { id: 'media', featureId: 'mote.media', label: moteText('媒体播放'), order: 5, group: 'views', render: props => <MediaActivitySummary {...props}/> },
-    { id: 'memories', featureId: 'mote.memory', label: moteText('记忆'), order: 6, group: 'views', render: props => <Memories {...props} embedded refreshVersion={props.revision}/> },
 ];

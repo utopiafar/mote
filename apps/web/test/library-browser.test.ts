@@ -57,7 +57,7 @@ test('explicit library navigation leads directly into rows and source details wi
   const {root,d}=await fixture(t),reads:string[]=[],opened:string[]=[];
   const api=apiWith(path=>{reads.push(path);if(path.startsWith('/api/capture-browser/timeline?'))return timeline([row()]);if(path.startsWith('/api/capture-browser/'))return capture();throw Error('Unexpected generated request '+path);});
   await act(async()=>root.render(view(api,{onOpen:ref=>opened.push(ref)})));
-  assert.deepEqual(new Set(Array.from(d.querySelectorAll('[data-collection-id]'),node=>node.getAttribute('data-collection-id'))),new Set(webFeatures.collections().filter(entry=>entry.id!=='memories').map(entry=>entry.id)),'all registered collections remain reachable in the primary, context or More links');
+  assert.deepEqual(new Set(Array.from(d.querySelectorAll('[data-collection-id]'),node=>node.getAttribute('data-collection-id'))),new Set(webFeatures.collections().map(entry=>entry.id)),'all registered collections remain reachable in the primary, context or More links');
   assert.equal(d.querySelector('[data-collection-id="coding-status"]')?.textContent,'Coding 同步状态','the accepted source exposes the existing receipt view as a contextual link');
   assert.ok(webFeatures.collections().some(entry=>entry.id==='coding-status'));
   assert.equal(d.querySelector('[data-collection-id="segments"]')?.textContent,'片段与应用相册');assert.equal(d.querySelector('select[aria-label="资料类型"]'),null);assert.equal(d.querySelector('[aria-label="记录视图"]'),null);

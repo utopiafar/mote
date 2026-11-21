@@ -69,7 +69,7 @@ export function Archive({ api, devices, range, rangeSelectionKey, activity, revi
     const collectionLink=(id:string,label:string)=> <DiscoveryLink key={id} className={'library-view-link'+(tab===id?' active':'')} target={{pageId:'archive',href:'#/library?view='+id,collectionId:id}} onNavigate={()=>visit(id)}><span data-collection-id={id} aria-current={tab===id?'page':undefined}>{label}</span></DiscoveryLink>;
     const viewNavigation=<nav className="library-view-tabs" aria-label={moteText('资料视图')}>{collectionLink('materials',moteText('资料'))}{collectionLink('records',moteText('时间回看'))}</nav>;
     const contextual=['segments','activity','media','coding-status','records'];
-    const otherCollections=entries.filter(item=>!['materials','records','memories',...contextual].includes(item.id));
+    const otherCollections=entries.filter(item=>!['materials',...contextual].includes(item.id));
     const otherPages=sections.library.filter(id=>id!=='archive'&&id!=='imports');
     const browseNavigation=<nav className="library-context-links" aria-label={moteText('更多上下文视图')}>
       {contextual.filter(id=>entries.some(item=>item.id===id)).map(id=>collectionLink(id,id==='segments'?moteText('片段与应用相册'):id==='coding-status'?moteText('Coding 同步状态'):id==='records'?moteText('时间回看'):entries.find(item=>item.id===id)!.label))}
@@ -81,7 +81,7 @@ export function Archive({ api, devices, range, rangeSelectionKey, activity, revi
     const content = <LibraryCollectionBoundary key={entry?.id}>{entry ? <CollectionContent entry={entry} props={props}/> : <p role="status">{moteText('此资料库分类当前不可用。请从资料库分类中选择可用入口。')}</p>}</LibraryCollectionBoundary>;
     return <DiscoveryProvider state={availability}><div className={'archive-page library-archive' + (selected ? ' has-selection' : '')}>
    <div ref={listHeading} tabIndex={-1} className="page-heading library-heading" hidden={Boolean(selected)}><h1>{moteText('资料库')}</h1><button type="button" className="button" onClick={event=>setImportPanel({opener:event.currentTarget})}>{moteText('导入')}</button></div>
-   {tab!=='materials'&&tab!=='memories'&&tab!=='records'&&<div hidden={Boolean(selected)} className="library-view-navigation">{viewNavigation}{browseNavigation}</div>}
+   {tab!=='materials'&&tab!=='records'&&<div hidden={Boolean(selected)} className="library-view-navigation">{viewNavigation}{browseNavigation}</div>}
    <div className="library-workspace central-library-workspace"><div className="library-content">{entry?.layout === 'standalone' ? content : <LibraryBrowseLayout reference={selected} api={api} onClose={clearSelection} onOpen={onOpen} supporting={entry?.layout !== 'browser'}>{content}</LibraryBrowseLayout>}</div></div>
    {importPanel&&<ImportPanel api={api} refreshVersion={revision} opener={importPanel.opener} onClose={()=>setImportPanel(null)} onOpen={(ref)=>{setImportPanel(null);onOpen(ref);}} onChanged={onChanged??(()=>{})}
      onMemories={()=>{setImportPanel(null);onPage('assistantMemory');}}

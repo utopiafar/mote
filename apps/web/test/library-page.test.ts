@@ -4,10 +4,14 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {configureLocale} from '@mote/shared/i18n';
-import type {NavState} from '@mote/shared';
+import type {ImportJob,NavState} from '@mote/shared';
 import {featuresReady} from '../src/features/bootstrap.js';
 import {webFeatures} from '../src/features/registry.js';
+import {FeaturePage} from '../src/features/runtime.js';
+import type {PageProps} from '../src/features/types.js';
 import {readPage} from '../src/navigation.js';
+import {readWorkspaceRoute} from '../src/workspace-route.js';
+import {importQueue} from '../src/plugins/intake/import-queue.js';
 import {Archive} from '../src/plugins/library/Archive.js';
 import {LibraryMaterials} from '../src/plugins/library/LibraryBrowse.js';
 import {NavStateContext} from '../src/use-nav-state.js';
@@ -53,6 +57,12 @@ const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonE
 async function settle(check:()=>boolean,label:string){
  for(let attempt=0;attempt<100&&!check();attempt++)await act(async()=>new Promise(resolve=>setTimeout(resolve,5)));
  assert.ok(check(),label);
+}
+function workspacePage(api:Api,overrides:Partial<PageProps>={}){
+ const {page,collection}=readWorkspaceRoute(window.location.hash,readPage,webFeatures.collections().map(entry=>entry.id));
+ const props:PageProps={api,status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},insights:[],range:{},archiveTab:collection,
+  onOpen:()=>{},onPage:()=>{},setArchiveTab:()=>{},timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'permanent',changeSessionLifetime:()=>{},...overrides};
+ return React.createElement(React.Suspense,{fallback:null},React.createElement(FeaturePage,{page,props}));
 }
 
 test('LB2-01 the type row reads only the selected existing material type',async t=>{
@@ -153,4 +163,46 @@ test('LB2-06 removed device, recording and coding addresses are not registered p
  assert.equal(webFeatures.page('devices'),undefined);
  assert.equal(webFeatures.page('recordings'),undefined);
  assert.equal(webFeatures.page('coding'),undefined);
+});
+
+test('the library registry has no Memory collection',async()=>{
+ await featuresReady;
+ assert.equal(webFeatures.collections().find(entry=>entry.id==='memories'),undefined);
+});
+
+test('the retired Library Memory hash shows an unavailable collection without mounting Memory',async t=>{
+ const {root,d,w}=await fixture(t),paths:string[]=[];
+ w.history.replaceState(null,'','#/library?view=memories');
+ const api=apiWith(path=>{
+  paths.push(path);
+  if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:[]};
+  if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};
+  return {items:[],nextCursor:null};
+ });
+ await act(async()=>root.render(workspacePage(api)));
+ await settle(()=>Boolean(d.querySelector('.library-content [role="status"], .memories-page')),'the requested collection settles');
+ assert.ok(!d.querySelector('.memories-page'),'the retired hash does not mount the Memory page');
+ assert.match(d.querySelector('.library-content [role="status"]')?.textContent??'',/当前不可用/);
+ assert.equal(paths.some(path=>/^\/api\/(memories|memory-jobs)([/?]|$)/.test(path)),false);
+});
+
+test('a completed import on the standalone page opens the registered Memory page',async t=>{
+ const {root,d,w}=await fixture(t),destinations:string[]=[],collections:string[]=[];
+ w.history.replaceState(null,'','#/library/import');
+ const job:ImportJob={id:'generated-import',name:'Generated PDF import',instruction:'',sourceId:'generated-import',status:'completed',
+  processingStatus:'saved',createdAt:when,updatedAt:when,files:[],summary:'',warnings:[],archive:{files:1,bytes:24,expandedFiles:1},
+  progress:{total:1,processed:1,imported:1,duplicates:0},captureIds:[]};
+ const api=apiWith(path=>{
+  if(path==='/api/imports')return {items:[job]};
+  if(path==='/api/file-processing')return {policy:{profiles:[]},processors:[]};
+  if(path==='/api/import-source-packs')return {items:[]};
+  throw Error('Unexpected generated request '+path);
+ });
+ t.after(()=>importQueue(api).close());
+ await act(async()=>root.render(workspacePage(api,{onPage:next=>destinations.push(next),setArchiveTab:next=>collections.push(next)})));
+ await settle(()=>Boolean(d.querySelector('.import-job-row')),'the generated completed import is listed');
+ await act(async()=>d.querySelector<HTMLButtonElement>('.import-job-row')!.click());
+ await act(async()=>button(d,'前往记忆').click());
+ assert.deepEqual({destinations,collections},{destinations:['assistantMemory'],collections:[]});
+ assert.equal(readPage('#/assistant/memory'),destinations[0]);
 });
