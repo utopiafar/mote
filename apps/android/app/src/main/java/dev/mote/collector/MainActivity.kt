@@ -134,7 +134,6 @@ class MainActivity : MoteActivity() {
     private val centralTabPages = listOf(Page.FEED, Page.IDEAS, Page.GOALS, Page.MEMORY, Page.SKILLS)
     private val dailyTabPages = setOf(Page.ASK, Page.FEED, Page.IDEAS, Page.GOALS, Page.LIBRARY)
     private val placeholderTabs = mutableSetOf<Page>()
-    private val IDEAS_ROUTE = "assistant.ideas"
     private var logExportHours = 24
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig, val appCapture: AppCaptureEditor.State?)
     private lateinit var name: EditText
@@ -405,6 +404,7 @@ class MainActivity : MoteActivity() {
             handler.post {
                 badgeLoading = false
                 if (isDestroyed || isFinishing) return@post
+                if (!badgeGate.current(stamp)) { refreshBadges(); return@post }
                 val end = SystemClock.elapsedRealtime()
                 result.onSuccess { state ->
                     badgeGate.success(end)
@@ -416,6 +416,9 @@ class MainActivity : MoteActivity() {
                                 tabCentrals[Page.GOALS]?.goalsRevisionChanged?.invoke(revisions.optString("matters") to revisions.optString("commitments"))
                             } else if (currentPage == Page.LIBRARY) {
                                 libraryView?.centralRevisions(revisions.optString("library"), revisions.optString("sources"))
+                            } else if (currentPage == Page.FEED || currentPage == Page.IDEAS) {
+                                val ideas = navBadges.ideas.takeIf { currentPage == Page.IDEAS }
+                                tabCentrals[currentPage]?.assistantRevisionChanged?.invoke(revisions.optString("cards") to ideas)
                             }
                         }
                     }
@@ -2098,7 +2101,7 @@ class MainActivity : MoteActivity() {
                     pagesHost.addView(central.root, FrameLayout.LayoutParams(-1, -1))
                 }
                 Page.FEED -> ensureTabPage(Page.FEED, AssistantPlugin.FEED_ROUTE)
-                Page.IDEAS -> ensureTabPage(Page.IDEAS, IDEAS_ROUTE)
+                Page.IDEAS -> ensureTabPage(Page.IDEAS, AssistantPlugin.IDEAS_ROUTE)
                 Page.GOALS -> ensureTabPage(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
                 Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
                 Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
@@ -2136,6 +2139,14 @@ class MainActivity : MoteActivity() {
                 showPage(target, connectionEntryOrigin = if (target == Page.CONNECTION) ConnectionOrigin.LOCAL_ASK else null)
             }
         })
+        if (page == Page.IDEAS) central.ideasCountChanged = { count ->
+            if (resumed && currentPage == Page.IDEAS) {
+                navBadges = navBadges.copy(ideas = count)
+                renderBadges()
+                badgeGate.wake()
+                refreshBadges()
+            }
+        }
         tabCentrals[page] = central
         installManageAction(central)
         central.root.visibility = View.GONE

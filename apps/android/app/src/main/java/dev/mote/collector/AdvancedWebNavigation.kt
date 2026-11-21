@@ -13,9 +13,14 @@ internal sealed interface AdvancedWebTarget {
         init { require(MoteLink.uuidId(id) == id) }
     }
     data class Models(val preparation: Preparation) : AdvancedWebTarget
+    data class ChatAbout(val kind: Kind, val id: String) : AdvancedWebTarget {
+        enum class Kind(val wire: String) { CARD("card"), QUESTION("question") }
+        init { require(MoteLink.uuidId(id) == id) }
+    }
     fun hash(): String = when (this) {
         is Recording -> "#/" + CentralPageRoutes.library + "?evidence=" + URLEncoder.encode("capture:$id", "UTF-8") + "&recordingTool=" + tool.query
         is Models -> "#/" + CentralPageRoutes.models + "?category=" + preparation.category + "&prepare=" + preparation.role
+        is ChatAbout -> "#/" + CentralPageRoutes.chat + "?about=" + URLEncoder.encode("${kind.wire}:$id", "UTF-8")
     }
 }
 

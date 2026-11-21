@@ -17,7 +17,6 @@ internal class AssistantPages(private val screens: CentralScreens) {
     private var matterId: String? = null
     private var matterScope = allScope()
     private var cursor: String? = null
-    private var route = AssistantPlugin.FEED_ROUTE
 
     fun save() = JSONObject().put("matterId", matterId).put("scope", matterScope.json()).put("cursor", cursor)
     fun restore(value: JSONObject) {
@@ -30,11 +29,10 @@ internal class AssistantPages(private val screens: CentralScreens) {
 
     fun mount(page: String, parent: ViewGroup): PluginViewContribution {
         dispose()
-        route = page
         val body = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
         parent.addView(body)
         container = body
-        if (page == AssistantPlugin.FEED_ROUTE) feed() else matters()
+        matters()
         return object : PluginViewContribution {
             override val routeId = page
             override fun dispose() {
@@ -63,29 +61,13 @@ internal class AssistantPages(private val screens: CentralScreens) {
         body.addView(view, LinearLayout.LayoutParams(-1, -2))
         view.refresh()
     }
-    private fun feed() {
-        val body = reset() ?: return
-        screens.clearBack()
-        ui.detailTitle(MoteI18n.text("动态与建议"))
-        ui.button(MoteI18n.text("事项与规则"), parent = body) {
-            matterId = null; ui.navigate(AssistantPlugin.MATTERS_ROUTE)
-        }
-        val api = api(allScope()); val store = screens.stateFile("assistant-feed")
-        val valid = current()
-        // The constructor reads pending state on a worker, never the UI thread.
-        ui.work(MoteI18n.text("正在读取…"), {
-            AssistantFeedViewModel(api, { CentralDraftWrites.barrier(store::read) }, { value -> CentralDraftWrites.barrier { store.write(value) } })
-        }) { model ->
-            if (valid()) mountPanel(AssistantFeedView(ui.hostActivity(), model, valid, ::open), body)
-        }
-    }
     private fun matters() {
         val selected = matterId
         if (selected != null) { matter(selected, matterScope); return }
         val body = reset() ?: return
         screens.clearBack()
         ui.detailTitle(MoteI18n.text("事项与规则"))
-        ui.button(MoteI18n.text("动态与建议"), parent = body) { ui.navigate(AssistantPlugin.FEED_ROUTE) }
+        ui.button(MoteI18n.text("动态"), parent = body) { ui.navigate(AssistantPlugin.FEED_ROUTE) }
         ui.button(MoteI18n.text("刷新"), parent = body) { matters() }
         val api = api(allScope()); val valid = current()
         ui.work(MoteI18n.text("正在读取…"), { api.matters(cursor) }) { page ->
@@ -111,31 +93,30 @@ internal class AssistantPages(private val screens: CentralScreens) {
     }
     private fun open(destination: AssistantOpen) {
         when (destination) {
-            is AssistantOpen.Matter -> {
-                selectMatter(destination.id, destination.scope)
-                ui.navigate(AssistantPlugin.MATTERS_ROUTE)
-            }
             is AssistantOpen.Evidence -> screens.openWorkEvidence(destination.ref)
             is AssistantOpen.Task -> {
                 val body = reset() ?: return
-                screens.setBack { if (route == AssistantPlugin.FEED_ROUTE) feed() else matters() }
+                screens.setBack { matters() }
                 ui.detailTitle(MoteI18n.text("任务状态"))
-                ui.button(MoteI18n.text("返回"), parent = body) { if (route == AssistantPlugin.FEED_ROUTE) feed() else matters() }
+                ui.button(MoteI18n.text("返回"), parent = body) { matters() }
                 mountPanel(AssistantTaskView(ui.hostActivity(), api(destination.scope), destination.id, current(), ::open), body)
             }
-            is AssistantOpen.Question -> {
-                val api = api(destination.scope); val valid = current()
-                ui.work(MoteI18n.text("正在读取…"), {
-                    AssistantJson.rows(api.questions(destination.workId), "items", AssistantQuestionLink::read)
-                        .single { it.id == destination.id && it.workId == destination.workId }
-                }) {
-                    if (valid()) ui.startActivity(Intent(ui.hostActivity(), CentralActivity::class.java).putExtra("link",
-                        MoteLink.serialize(MoteLink.Scope(ui.server), MoteLink.Route.Run(destination.workId))))
-                }
-            }
+            is AssistantOpen.Question -> screens.openAssistantQuestion(destination, current())
         }
     }
     companion object { private fun allScope() = AssistantScope(JSONObject().put("kind", "all")) }
 }
 
 internal fun CentralScreens.mountAssistant(page: String, container: ViewGroup): PluginViewContribution = assistantPages().mount(page, container)
+
+internal fun CentralScreens.openAssistantQuestion(destination: AssistantOpen.Question, valid: () -> Boolean) {
+    val api = CentralAssistant(client, destination.scope)
+    ui.work(MoteI18n.text("正在读取…"), {
+        AssistantJson.rows(api.questions(destination.workId), "items", AssistantQuestionLink::read)
+            .single { it.id == destination.id && it.workId == destination.workId }
+    }) {
+        if (valid()) ui.startActivity(Intent(ui.hostActivity(), CentralActivity::class.java).putExtra(
+            "link", MoteLink.serialize(MoteLink.Scope(ui.server), MoteLink.Route.Run(destination.workId)),
+        ))
+    }
+}
