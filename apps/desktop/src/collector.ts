@@ -130,7 +130,7 @@ export class Collector {
   }
   /** Freeze every producer/consumer before applying settings; preserve the user's running intent. */
   async suspendForSettings(): Promise<() => Promise<void>> {
-    if (this.connectionHeld || this.closed) throw new Error(moteText("设置正在应用或应用正在退出，请稍后重试"));
+    if (this.connectionHeld || this.closed) throw new Error(moteText("设置正在应用或应用正在退出，稍后重试"));
     const resume = this.running, intent = this.stopIntent;
     this.connectionHeld = true; this.running = false; this.lastSample = undefined;
     if (this.timer) clearTimeout(this.timer);
@@ -143,7 +143,7 @@ export class Collector {
       if (this.closed) return;
       if (resume && intent === this.stopIntent) {
         try { await this.start(); }
-        catch (error) { this.state = 'error'; this.message = moteText("设置已应用，采集暂未恢复：{0}", error instanceof Error ? error.message : moteText("请检查采集条件")); this.publish(); }
+        catch (error) { this.state = 'error'; this.message = moteText("设置已应用，采集暂未恢复：{0}", error instanceof Error ? error.message : moteText("检查采集条件")); this.publish(); }
       } else { this.state = 'stopped'; this.message = moteText("设置已应用；采集保持停止"); this.publish(); }
       void this.upload();
     };
@@ -155,7 +155,7 @@ export class Collector {
   }
   updateConfig(config: Config): void {
     // Config edits cannot change a privacy policy in the middle of capture.
-    if (this.running || this.capturing) throw new Error(moteText("请先停止采集，再修改配置"));
+    if (this.running || this.capturing) throw new Error(moteText("先停止采集，再修改配置"));
     this.uploadAbort?.abort();
 
     if (config.token !== this.config.token || config.serverUrl !== this.config.serverUrl || config.deviceId !== this.config.deviceId || config.authSignedOut !== this.config.authSignedOut) this.authorizationGeneration++;
@@ -165,9 +165,9 @@ export class Collector {
     this.publish();
   }
   async start(): Promise<void> {
-    if (this.closed || this.connectionHeld) throw new Error(moteText("正在应用设置或退出，请稍后重试"));
+    if (this.closed || this.connectionHeld) throw new Error(moteText("正在应用设置或退出，稍后重试"));
     if (this.running) return;
-    if (this.capturing) throw new Error(moteText("正在结束上一轮采集，请稍后再试"));
+    if (this.capturing) throw new Error(moteText("正在结束上一轮采集，稍后再试"));
     if (currentPlatform !== 'macos') throw new Error(moteText("此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用"));
     void this.events?.record('CAPTURE', 'STARTED');
     this.running = true; this.state = 'capturing'; this.message = moteText("已开启；按应用级别记录，完整内容先经过本地隐私过滤");

@@ -23,7 +23,7 @@ export function createCaptureContextUi(api:DesktopApi,root:Document=document,onD
   const drafts=new Map<CaptureContextChannel,{expectedVersion:number;description:string}>();
   const changed=(entry:typeof entries[number])=>Boolean(entry.state&&(entry.input.value!==(drafts.get(entry.channel)?.description??entry.state.pending?.description??entry.state.snapshot.description)||entry.state.conflict||Boolean(drafts.get(entry.channel)&&drafts.get(entry.channel)!.expectedVersion!==entry.state.snapshot.version)));
   const controls=()=>{button.disabled=saving;cancel.disabled=saving;dismiss.disabled=saving;for(const entry of entries)entry.input.disabled=entry.reading||saving||!entry.state||entry.state.error==='denied';save.disabled=saving||entries.some(e=>e.reading)||!entries.some(e=>e.state?.error!=='denied'&&changed(e));};
-  const stateMessage=(entry:typeof entries[number])=>{const next=entry.state!;entry.message.replaceChildren(root.createTextNode(next.conflict||drafts.get(entry.channel)&&drafts.get(entry.channel)!.expectedVersion!==next.snapshot.version?moteText('说明已在其他地方更新，请核对后再保存。'):drafts.has(entry.channel)?moteText('有未保存的修改，离开前会提醒。保存后立即生效。'):next.pending?moteText('已保存在本机，等待同步。'):next.error==='denied'?moteText('没有访问权限'):next.error?moteText('暂时无法读取中央说明，可在本机保存后同步。'):''));};
+  const stateMessage=(entry:typeof entries[number])=>{const next=entry.state!;entry.message.replaceChildren(root.createTextNode(next.conflict||drafts.get(entry.channel)&&drafts.get(entry.channel)!.expectedVersion!==next.snapshot.version?moteText('说明已在其他地方更新，核对后再保存。'):drafts.has(entry.channel)?moteText('有未保存的修改，离开前会提醒。保存后立即生效。'):next.pending?moteText('已保存在本机，等待同步。'):next.error==='denied'?moteText('没有访问权限'):next.error?moteText('暂时无法读取中央说明，可在本机保存后同步。'):''));};
   const clear=()=>{for(const entry of entries){entry.input.value='';entry.message.replaceChildren();entry.state=undefined;entry.reading=false;}};
   async function read(){const revision=++generation;more.open=false;clear();for(const entry of entries){entry.reading=true;showLoadingText(entry.message);}controls();
     await Promise.all(entries.map(async entry=>{try{const next=await api.captureContext(entry.channel);if(revision!==generation||!dialog.open)return;entry.state=next;entry.input.value=drafts.get(entry.channel)?.description??next.pending?.description??next.snapshot.description;stateMessage(entry);}catch(error){if(revision===generation&&dialog.open){entry.message.textContent=moteText('操作未完成，请检查权限与配置后重试');appendDiagnostic(entry.message,error instanceof Error?error.message:String(error));}}finally{if(revision===generation){entry.reading=false;controls();}}}));
@@ -39,13 +39,13 @@ export function createCaptureContextUi(api:DesktopApi,root:Document=document,onD
     close();onDraftChange();
   });
   function prepareSave(){
-    if(saving)throw Error(moteText('这项后台操作正在进行，请等待完成'));
+    if(saving)throw Error(moteText('这项后台操作正在进行，等待完成'));
     const revision=generation,pending=[...drafts.entries()];saving=true;controls();
     return {async persist(){for(const [channel,input] of pending){
-      if(revision!==generation)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
+      if(revision!==generation)throw Error(moteText('登录会话已变更，重新打开中央页面。'));
       const next=await api.saveCaptureContext(channel,input);
-      if(revision!==generation)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
-      if(next.conflict)throw Error(moteText('说明已在其他地方更新，请核对后再保存。'));
+      if(revision!==generation)throw Error(moteText('登录会话已变更，重新打开中央页面。'));
+      if(next.conflict)throw Error(moteText('说明已在其他地方更新，核对后再保存。'));
       if(drafts.get(channel)===input)drafts.delete(channel);
       const entry=entries.find(value=>value.channel===channel)!;entry.state=next;stateMessage(entry);
     }},release(){if(revision===generation){saving=false;controls();}}};

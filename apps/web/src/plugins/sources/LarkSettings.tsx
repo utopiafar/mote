@@ -11,32 +11,32 @@ import {SourceContextEditor} from './SourceContextEditor';
 import {BundledConnector} from './BundledConnector';
 
 const errors:Record<string,string>={
- lark_cli_deployment_required:'缺失或版本不符时，请管理员运行当前部署的 connectors-prepare，再重新检测。',
- lark_cli_version_unsupported:'缺失或版本不符时，请管理员运行当前部署的 connectors-prepare，再重新检测。',
- lark_cli_missing:'服务端尚未安装 Lark CLI。请点击安装，然后重新检测。',
+ lark_cli_deployment_required:'缺失或版本不符时，管理员运行当前部署的 connectors-prepare，再重新检测。',
+ lark_cli_version_unsupported:'缺失或版本不符时，管理员运行当前部署的 connectors-prepare，再重新检测。',
+ lark_cli_missing:'服务端尚未安装 Lark CLI。点击安装，然后重新检测。',
  lark_not_configured:'尚未配置飞书应用。请创建应用或填写已有应用凭据。',
- lark_not_connected:'尚未连接飞书账号，请完成只读授权。',
+ lark_not_connected:'尚未连接飞书账号，完成只读授权。',
  lark_permission_required:'读取权限未完整授予。请在飞书应用后台开通下方只读权限，然后重新授权。',
- lark_authorization_expired:'授权链接已过期，请重新发起登录。',
+ lark_authorization_expired:'授权链接已过期，重新发起登录。',
  lark_account_changed:'检测到账号变化，已暂停旧来源。请重新授权并选择同步范围。',
- lark_busy:'另一个操作正在进行，请稍后重试。',
- lark_operation_timeout:'操作超时。请检查服务端网络，或重新发起授权。',
+ lark_busy:'另一个操作正在进行，稍后重试。',
+ lark_operation_timeout:'操作超时。检查服务端网络，或重新发起授权。',
  lark_command_failed:'飞书 CLI 操作未完成。请检查网络、应用权限及服务账号的系统钥匙串访问，再重试。',
  lark_operation_cancelled:'操作已取消，可以重新开始。',
- lark_calendar_not_available:'选中的日历不再可读，请重新加载日历列表。',
- lark_document_invalid:'请填写飞书或 Lark 的 docx、wiki 文档链接或文档 token。',
+ lark_calendar_not_available:'选中的日历不再可读，重新加载日历列表。',
+ lark_document_invalid:'填写飞书或 Lark 的 docx、wiki 文档链接或文档 token。',
  lark_response_invalid:'飞书返回格式不符合预期，本次未标记同步成功。请检查 CLI 版本和文档访问权限。',
- lark_partial_failure:'部分文档未完成读取，成功归档已保留。请逐篇重试失败项。',
- lark_document_sync_incomplete:'文档同步尚未完成，请检查失败项并重试。',
- lark_document_scope_changed:'文档范围已变化，请保存后重新预览。',
- lark_document_not_selected:'此文档已不在同步范围内，请检查范围后重试。',
- lark_search_pagination_invalid:'飞书搜索分页未完整返回，本次未标记检查完成。请重试。',
+ lark_partial_failure:'部分文档未完成读取，成功归档已保留。逐篇重试失败项。',
+ lark_document_sync_incomplete:'文档同步尚未完成，检查失败项并重试。',
+ lark_document_scope_changed:'文档范围已变化，保存后重新预览。',
+ lark_document_not_selected:'此文档已不在同步范围内，检查范围后重试。',
+ lark_search_pagination_invalid:'飞书搜索分页未完整返回，本次未标记检查完成。重试。',
  lark_document_unsupported:'此资料类型暂不能读取正文，已保留可用引用。',
  lark_document_archive_required:'此来源当前不保留完整原件。确认后，此来源的后续归档也会保留文档正文原件；图片和附件仍只保留引用。',
  lark_file_archive_unavailable:'中央的文档原件归档暂不可用。检查节点版本与存储后重试',
 };
 const requestError=(error:unknown)=>error instanceof Error&&(error.message.startsWith('lark_')||error.message==='connector_input_invalid')?larkError(error.message):connectorFailure(error);
-export const larkError=(code:string)=>moteText(errors[code]??'飞书操作失败，请重新检测连接后重试。');
+export const larkError=(code:string)=>moteText(errors[code]??'飞书操作失败，重新检测连接后重试。');
 const emptySelection:LarkSelection={documents:[],calendarIds:[],pastDays:30,futureDays:90,timeZone:'Asia/Shanghai',autoSync:false};
 const noDiscovery={created:false,edited:false,opened:false,firstSyncDays:30};
 const lines=(value:string)=>value.split('\n').map(v=>v.trim()).filter(Boolean);
@@ -51,7 +51,7 @@ export function LarkJobStatus({job}:{job:LarkJob}){
   <strong>{name} · {job.state==='waiting'?moteText('等待扫码或网页授权'):job.state==='running'?moteText('正在处理…'):job.state==='completed'?moteText('已完成'):job.state==='cancelled'?moteText('已取消'):moteText('未完成')}</strong>
   {job.error&&<p role="alert">{larkError(job.error)}</p>}
   {job.result&&<>{job.kind==='preview'?<p>{moteText('发现 {0} 篇文档，尚未读取正文。',job.result.discovered??0)}</p>:<p>{moteText('新增 {0} 条，已有 {1} 条。',job.result.imported,job.result.duplicates)}</p>}{job.result.activities!==undefined&&<p>{moteText('保存 {0} 条文档活动线索。',job.result.activities)}</p>}{!!job.result.documentFailures&&<p>{moteText('{0} 篇文档读取失败，成功资料已保留；可在下方逐篇重试。',job.result.documentFailures)}</p>}</>}
-  {job.authorizationUrl&&<div className="lark-authorization"><p>{moteText('在你的手机或当前浏览器完成授权，页面会自动更新。')}</p><a className="button" href={job.authorizationUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{moteText('打开飞书授权页面')}<ExternalLink size={15}/></a><button className="button subtle" onClick={async()=>{try{await navigator.clipboard.writeText(job.authorizationUrl!);setCopyState(moteText('授权链接已复制。'));}catch{setCopyState(moteText('复制失败，请使用二维码或授权链接。'));}}}>{moteText('复制授权链接')}</button><p className="fine-print">{copyState||moteText('如果无法打开，可复制链接到浏览器，或扫码。')}</p>{qr&&<img src={qr} alt={moteText('飞书授权二维码')} width={220} height={220}/>} {qrError&&<p>{moteText('二维码生成失败，请使用上方授权链接。')}</p>}{job.expiresAt&&<p className="fine-print">{moteText('链接有效至')} {new Date(job.expiresAt).toLocaleTimeString()}</p>}</div>}
+  {job.authorizationUrl&&<div className="lark-authorization"><p>{moteText('在你的手机或当前浏览器完成授权，页面会自动更新。')}</p><a className="button" href={job.authorizationUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{moteText('打开飞书授权页面')}<ExternalLink size={15}/></a><button className="button subtle" onClick={async()=>{try{await navigator.clipboard.writeText(job.authorizationUrl!);setCopyState(moteText('授权链接已复制。'));}catch{setCopyState(moteText('复制失败，使用二维码或授权链接。'));}}}>{moteText('复制授权链接')}</button><p className="fine-print">{copyState||moteText('如果无法打开，可复制链接到浏览器，或扫码。')}</p>{qr&&<img src={qr} alt={moteText('飞书授权二维码')} width={220} height={220}/>} {qrError&&<p>{moteText('二维码生成失败，使用上方授权链接。')}</p>}{job.expiresAt&&<p className="fine-print">{moteText('链接有效至')} {new Date(job.expiresAt).toLocaleTimeString()}</p>}</div>}
  </div>;
 }
 export function LarkSettings(props:{api:Api;onSources:()=>void}){return <BundledConnector api={props.api} id="lark"><LarkSettingsContent {...props}/></BundledConnector>;}
@@ -110,7 +110,7 @@ function LarkSettingsContent({api,onSources}:{api:Api;onSources:()=>void}){
     <div className="lark-scope-review"><strong>{moteText('保存前确认')}</strong><p>{moteText('首次回溯 {0} 天；指定 {1} 篇文档、{2} 个文件夹、{3} 个知识库分支；排除 {4} 篇文档。',discovery.firstSyncDays,lines(documents).length,lines(folders).length,lines(wikiRoots).length,lines(excludedDocuments).length)}</p><p className="fine-print">{moteText('首次保存后，先预览实际发现的文档，再确认开始归档。同步归档完成后，Memory 按现有设置继续处理；并非每篇文档都会生成精选记忆。')}</p></div>
     <button className="button primary" onClick={()=>void perform(async()=>{const next=await request<LarkStatus>('/api/connectors/lark/selection',{method:'PUT',body:JSON.stringify({...selection,documents:lines(documents),folders:lines(folders),wikiRoots:lines(wikiRoots),excludedDocuments:lines(excludedDocuments)})});accept(next,true);setNotice(moteText('同步范围已保存。'));})}>{moteText('保存同步范围')}</button>
    </fieldset></section>
-   <section className="connector-section"><h2>{moteText('同步与归档')}</h2><p>{status.lastSyncAt?`${moteText('最近成功同步：')}${new Date(status.lastSyncAt).toLocaleString()}`:moteText('还没有完成过同步。')}</p><div className="lark-buttons"><button className="button subtle" disabled={running||!status.connected||dirty.current||!hasDocumentScope(status.selection)} onClick={()=>command('preview')}>{moteText('预览文档范围')}</button><button className="button primary" disabled={running||!status.connected||dirty.current||!hasScope(status.selection)||needsConfirmation&&!status.documentSync?.preview||source?.enabled===false} onClick={()=>command('sync')}>{needsConfirmation?moteText('确认并开始归档'):moteText('立即同步')}</button></div>{dirty.current&&<p className="fine-print">{moteText('请先保存修改后的同步范围。')}</p>}
+   <section className="connector-section"><h2>{moteText('同步与归档')}</h2><p>{status.lastSyncAt?`${moteText('最近成功同步：')}${new Date(status.lastSyncAt).toLocaleString()}`:moteText('还没有完成过同步。')}</p><div className="lark-buttons"><button className="button subtle" disabled={running||!status.connected||dirty.current||!hasDocumentScope(status.selection)} onClick={()=>command('preview')}>{moteText('预览文档范围')}</button><button className="button primary" disabled={running||!status.connected||dirty.current||!hasScope(status.selection)||needsConfirmation&&!status.documentSync?.preview||source?.enabled===false} onClick={()=>command('sync')}>{needsConfirmation?moteText('确认并开始归档'):moteText('立即同步')}</button></div>{dirty.current&&<p className="fine-print">{moteText('先保存修改后的同步范围。')}</p>}
     {source?.enabled===false&&<p role="status">{moteText('此文档来源已暂停；保存范围或重新授权不会恢复接入。')}</p>}{Boolean(sourceList.error)&&<p role="alert">{requestError(sourceList.error)}</p>}
     {status.documentSync?.preview&&!dirty.current&&<div className="lark-scope-review"><strong>{moteText('实际发现的文档')}</strong><p>{moteText('下列为可用文档标题与引用，尚未因预览读取正文。归档时保存当前版本及可获得的活动线索。')}</p><p>{moteText('发现 {0} 篇文档，以下显示 {1} 篇。',status.documentSync.previewTotal??status.documentSync.preview.length,status.documentSync.preview.length)}</p>{status.documentSync.preview.length===0?<p>{moteText('本次范围内没有发现文档。')}</p>:<ul>{status.documentSync.preview.map(item=><li key={item.reference}>{item.title||item.reference}</li>)}</ul>}<p className="fine-print">{moteText('预览最多显示 50 篇；同步会分页处理全部选定范围。')}</p></div>}
     {status.documentSync&&<div className="lark-document-status"><p>{moteText('已归档 {0} 篇文档 · {1} 条活动线索 · {2} 项待处理 · {3} 项失败',status.documentSync.documents,status.documentSync.activities,status.documentSync.pending,status.documentSync.failed)}</p>{status.documentSync.lastAttemptAt&&<p className="fine-print">{moteText('最近检查：{0}',new Date(status.documentSync.lastAttemptAt).toLocaleString())}</p>}{status.documentSync.errors.map(failure=><div className="lark-document-failure" key={failure.reference}><div><strong>{failure.reference}</strong><p>{larkError(failure.code)}</p></div><button className="button subtle" disabled={running||!status.connected||dirty.current||source?.enabled===false} onClick={()=>failure.code==='lark_document_archive_required'&&sourcePath?void perform(async()=>{await request(sourcePath,{method:'PATCH',body:JSON.stringify({retention:'archive'})});sourceList.refresh();await request('/api/connectors/lark/sync',{method:'POST',body:JSON.stringify({document:failure.reference})});accept(await request<LarkStatus>('/api/connectors/lark'));}):command('sync',{document:failure.reference})}>{moteText(failure.code==='lark_document_archive_required'?'为此来源保留完整正文并重试':'重试此文档')}</button></div>)}</div>}

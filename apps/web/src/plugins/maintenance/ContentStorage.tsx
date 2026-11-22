@@ -24,7 +24,7 @@ export function ContentStorage({api,onChange}:{api:Api;onChange?:()=>void}) {
     {!state&&!error&&<Loading label={moteText('正在读取存储设置…')}/>}
     {state&&state.job.state!=='idle'&&<div role="status" aria-live="polite">
       {running?moteText("正在解密"):state.job.state==='cancelled'?moteText("已取消"):moteText("处理完成")}{' '}{moteText("· 已检查")}{' '}{state.job.processed}/{state.job.total}{' '}{moteText("项 · 已转换")}{' '}{state.job.converted}{' '}{moteText("项 · 无需转换")}{' '}{state.job.skipped}{' '}{moteText("项 · 失败")}{' '}{state.job.failed}{' '}{moteText("项")}{running&&<progress aria-label={moteText("批量解密进度")} value={state.job.processed} max={Math.max(1,state.job.total)}/>}
-      {state.job.failed>0&&<p>{moteText("失败项保留原文件，请检查原密钥和存储空间后重试。")}</p>}
+      {state.job.failed>0&&<p>{moteText("失败项保留原文件，检查原密钥和存储空间后重试。")}</p>}
     </div>}
     {error&&<p className="notice error" role="alert">{error}</p>}
     {error&&<button className="button subtle" disabled={busy} onClick={()=>controller.reloadContent()}>{moteText('重新读取')}</button>}

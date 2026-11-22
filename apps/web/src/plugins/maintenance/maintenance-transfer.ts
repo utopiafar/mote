@@ -27,8 +27,8 @@ export async function provideMaintenanceDownload(response:Response,name:string,c
  return moteText('已向浏览器提供下载文件，请在下载列表确认保存结果。');
 }
 export function maintenanceFailure(error:unknown){
- if(error instanceof SyntaxError)return moteText('请选择 Mote v2 JSON 归档文件。');
+ if(error instanceof SyntaxError)return moteText('选择 Mote v2 JSON 归档文件。');
  if(error instanceof ApiError)return error.code&&commonFailureMessage(error.code,error.status)||httpStatusMessage(error.status);
- return error instanceof Error&&error.message===moteText('请选择 Mote v2 JSON 归档文件。')?error.message:moteText('操作未完成，请重试');
+ return error instanceof Error&&error.message===moteText('选择 Mote v2 JSON 归档文件。')?error.message:moteText('操作未完成，重试');
 }
 export function maintenanceTechnicalFailure(error:unknown){return error instanceof ApiError?JSON.stringify({message:error.message,status:error.status,code:error.code,requestId:error.requestId,retryAfterMs:error.retryAfterMs},null,2):error instanceof Error?error.message:errorMessage(error);}

@@ -63,7 +63,7 @@ export class QueueStorage {
   }
   private async checkDirectory(path: string): Promise<void> {
     const info = await lstat(path);
-    if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) throw new Error(moteText("截图目录不能是符号链接或其他文件；请重新选择"));
+    if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) throw new Error(moteText("截图目录不能是符号链接或其他文件；重新选择"));
   }
   private async readOwner(path: string): Promise<Owner | undefined> {
     try { const info = await lstat(join(path, OWNER)); if (!info.isFile() || info.isSymbolicLink() || info.size > 4096) throw new Error(moteText("存储目录归属标记无效")); return JSON.parse(await readFile(join(path, OWNER), 'utf8')) as Owner; }
@@ -121,7 +121,7 @@ export class QueueStorage {
     let journal: Journal;
     try { const info = await lstat(this.journalPath); if (!info.isFile() || info.isSymbolicLink() || info.size > 16384) throw new Error(moteText("迁移恢复记录无效")); journal = JSON.parse(await readFile(this.journalPath, 'utf8')) as Journal; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
-    if (typeof journal.source !== 'string' || typeof journal.target !== 'string' || typeof journal.id !== 'string' || !isAbsolute(journal.source) || resolve(journal.source) !== journal.source || journal.version !== 1 || journal.profile !== this.owner.profile || journal.deviceId !== this.owner.deviceId || !/^[a-f0-9-]{36}$/.test(journal.id) || journal.staging !== `${journal.target}.migrating-${journal.id}` || ![journal.source, journal.target].includes(selected)) throw new Error(moteText("迁移记录与当前环境不匹配，请保留目录并检查配置"));
+    if (typeof journal.source !== 'string' || typeof journal.target !== 'string' || typeof journal.id !== 'string' || !isAbsolute(journal.source) || resolve(journal.source) !== journal.source || journal.version !== 1 || journal.profile !== this.owner.profile || journal.deviceId !== this.owner.deviceId || !/^[a-f0-9-]{36}$/.test(journal.id) || journal.staging !== `${journal.target}.migrating-${journal.id}` || ![journal.source, journal.target].includes(selected)) throw new Error(moteText("迁移记录与当前环境不匹配，保留目录并检查配置"));
     this.checkRelationship(journal.source, journal.target);
     try {
       if (selected === journal.target) { await this.assertOwned(journal.target); await this.removeOwned(journal.source); }
@@ -136,7 +136,7 @@ export class QueueStorage {
     if (target !== this.defaultDirectory && this.protectedRoots.some(root => inside(target, resolve(root)))) throw new Error(moteText("目标位置与应用环境目录冲突"));
     if (await exists(target)) throw new Error(moteText("新位置已存在文件，迁移不会覆盖或合并已有记录"));
     const files = await filesIn(source), totalBytes = files.reduce((total, file) => total + file.bytes, 0), capacity = await statfs(dirname(target));
-    if (capacity.bavail * capacity.bsize < totalBytes + 1024 * 1024) throw new Error(moteText("新位置空间不足；请释放空间或选择其他位置"));
+    if (capacity.bavail * capacity.bsize < totalBytes + 1024 * 1024) throw new Error(moteText("新位置空间不足；释放空间或选择其他位置"));
     const id = randomUUID(), staging = `${target}.migrating-${id}`, journal: Journal = { version: 1, profile: this.owner.profile, deviceId: this.owner.deviceId, id, source, target, staging };
     await writeJson(this.journalPath, journal);
     let committed = false;

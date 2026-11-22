@@ -17,7 +17,7 @@ export class FileAccessMarkers {
         if (!/^[a-f0-9]{64}$/.test(key) || !entry || typeof entry.identity !== 'string' || !/^[a-f0-9]{64}$/.test(entry.identity) || !Number.isFinite(entry.readAtimeMs) || !Number.isFinite(entry.reportedAtimeMs)) throw new Error('invalid markers');
       }
       this.entries = value.entries;
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("文件访问时间标记无法读取，请保留来源状态并修复")); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("文件访问时间标记无法读取，保留来源状态并修复")); }
   }
   record(key: string, before: Stats, after: Stats): number {
     const id = sourceHash(key);

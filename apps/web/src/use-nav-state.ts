@@ -58,7 +58,7 @@ class NavStateReader {
    }
    const raw=await response.json() as unknown;
    if(controller.signal.aborted)return;
-   if(!raw||typeof raw!=='object'||typeof (raw as NavState).revisions!=='object'||typeof (raw as NavState).badges!=='object')throw new ApiError(moteText('中央响应格式无效，请刷新后重试。'),502,undefined,'invalid_response');
+   if(!raw||typeof raw!=='object'||typeof (raw as NavState).revisions!=='object'||typeof (raw as NavState).badges!=='object')throw new ApiError(moteText('中央响应格式无效，刷新后重试。'),502,undefined,'invalid_response');
    const value=raw as NavState;
    invalidateNavigationResources(this.api,previous,value);
    const etag=response.headers.get('ETag');

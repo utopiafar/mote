@@ -24,7 +24,7 @@ export function useFileStatus(api:Api,id:string){
  useOperationUpdates(api);useForegroundResources(api,[path]);
  const parsed=useMemo(()=>fileViewSchema.safeParse(page.data),[page.data]);
  const view=parsed.success&&parsed.data.captureId===id?parsed.data:undefined;
- const error=page.error??(page.data!==undefined&&!view?new Error(moteText('中央响应格式无效，请刷新后重试。')):undefined);
+ const error=page.error??(page.data!==undefined&&!view?new Error(moteText('中央响应格式无效，刷新后重试。')):undefined);
  const current=Boolean(view&&error===undefined);
  const supports=(method:string,route:string)=>!discovery.inventoryError&&featureRequirementsAvailable(['http:'+method+':'+route],discovery.inventory);
  const revoked=error instanceof ApiError&&[401,403,404,410].includes(error.status);

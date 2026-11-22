@@ -37,7 +37,7 @@ export class NoteDraftStore {
       if (value.completed && (!uuid.test(value.completed.draftId) || !uuid.test(value.completed.eventId))) throw new Error('invalid completion');
       if (value.submission && (value.submission.id !== value.draft.id || value.submission.source !== 'note' || value.submission.ocrText !== value.draft.text || (value.submission.metadata?.ownerDescription??'')!==(value.draft.description.trim()?value.draft.description:'') || typeof value.targetOrigin !== 'string')) throw new Error('invalid prepared note');
       this.value = value;
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("记录草稿无法读取；请先备份草稿文件再修复")); await this.persist(this.value); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("记录草稿无法读取；先备份草稿文件再修复")); await this.persist(this.value); }
     for (const name of await readdir(this.directory)) if (name.endsWith('.tmp') && uuid.test(name.slice(0, -4))) await unlink(join(this.directory, name));
   }
   get(): NoteDraft { return { ...this.value.draft, prepared: Boolean(this.value.submission) }; }
@@ -59,7 +59,7 @@ export class NoteDraftStore {
   update(input: NoteDraft): Promise<NoteDraft> {
     return this.exclusive(async () => {
       validateDraft(input);
-      if (input.id !== this.value.draft.id) throw new Error(moteText("草稿已更新，请重新载入当前草稿"));
+      if (input.id !== this.value.draft.id) throw new Error(moteText("草稿已更新，重新载入当前草稿"));
       if (input.revision <= this.value.draft.revision) return this.get();
       if (this.value.submission) throw new Error(moteText("此草稿已有待完成保存，请先重试保存；不能改写已准备的记录"));
       await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, description: input.description, revision: input.revision } });
@@ -71,12 +71,12 @@ export class NoteDraftStore {
       validateDraft(input);
       if (this.value.completed?.draftId === input.id) return { id: this.value.completed.eventId, draft: this.get() };
       if (input.id !== this.value.draft.id) throw new Error(moteText("草稿已更新，此提交不会重复创建记录"));
-      if (!input.text.trim()) throw new Error(moteText("请填写记录正文，不能只有空白"));
+      if (!input.text.trim()) throw new Error(moteText("填写记录正文，不能只有空白"));
       if (input.mood && !input.mood.trim()) throw new Error(moteText("心情不能只有空白；清空心情后也可以保存"));
-      if (input.revision < this.value.draft.revision) throw new Error(moteText("提交版本已过期，请重新保存当前草稿"));
+      if (input.revision < this.value.draft.revision) throw new Error(moteText("提交版本已过期，重新保存当前草稿"));
       if (this.value.submission) {
         if (this.value.targetOrigin !== (config.serverUrl && config.token ? config.serverUrl : '')) throw new Error(moteText("待完成记录属于原中央；恢复原节点后完成保存"));
-        if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood || input.description !== this.value.draft.description) throw new Error(moteText("待完成记录不能改写，请重新载入草稿后重试"));
+        if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood || input.description !== this.value.draft.description) throw new Error(moteText("待完成记录不能改写，重新载入草稿后重试"));
       } else {
         const observed = config.metadataEnabled ? await metadataProvider?.() : undefined;
         const capturedAt=new Date().toISOString();

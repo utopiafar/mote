@@ -153,7 +153,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
         }
         const choices = codexReasoningChoices(selectedModel);
         if (kind !== 'restore' && active.draft.protocol === 'codex-app-server' && choices.known && active.draft.reasoningEffort !== 'auto' && !choices.options.some(option => option.value === active.draft.reasoningEffort)) {
-            setError(moteText("当前推理强度不受所选 Codex 模型支持，请重新选择。"));
+            setError(moteText("当前推理强度不受所选 Codex 模型支持，重新选择。"));
             return;
         }
         let body: unknown;

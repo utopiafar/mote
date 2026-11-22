@@ -136,6 +136,6 @@ export class DesktopAssistantNotifications {
   private async failure(error?: unknown): Promise<void> {
     const owner = this.options.owner();
     if (owner && !owner.isDestroyed() && !this.closed) await dialog.showMessageBox(owner, { title: moteText('通知'),
-      message: error instanceof AssistantNotificationError ? error.message : moteText('连接暂时中断，请检查网络。'), buttons: [moteText('确定')] });
+      message: error instanceof AssistantNotificationError ? error.message : moteText('连接暂时中断，检查网络。'), buttons: [moteText('确定')] });
   }
 }

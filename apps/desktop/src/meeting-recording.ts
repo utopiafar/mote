@@ -155,7 +155,7 @@ export class MeetingRecordingManager {
 
   async start(): Promise<MeetingRecordingStatus> {
     await this.ensureInitialized();
-    if (this.handle || this.active) throw new Error(moteText('一场会议录音正在进行。请先结束当前会议。'));
+    if (this.handle || this.active) throw new Error(moteText('一场会议录音正在进行。先结束当前会议。'));
     if (!this.state.noticeAcknowledgedAt) throw new MeetingNoticeRequiredError();
     const permissions = this.options.permissions();
     if (permissions.microphone !== 'granted') throw new Error(moteText('麦克风权限未授予，会议录音没有开始。请在系统设置中允许麦克风后重试。'));

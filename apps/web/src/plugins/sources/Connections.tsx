@@ -177,7 +177,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     useEffect(() => { if (expired) {
         setInvite(undefined);
         setQr('');
-        setMessage(moteText("连接邀请已到期，请重新生成；已经连接的设备不受影响。"));
+        setMessage(moteText("连接邀请已到期，重新生成；已经连接的设备不受影响。"));
     } }, [expired]);
     async function refresh(signal: AbortSignal) {
         resources(api).invalidate(key => key === '/api/connections' || key === servicesPath);
@@ -213,7 +213,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     async function copy(value: string) {
         try {
             await navigator.clipboard.writeText(value);
-            setMessage(moteText("已复制，请只粘贴到你信任的客户端。"));
+            setMessage(moteText("已复制，只粘贴到你信任的客户端。"));
         }
         catch {
             setError(moteText("当前环境无法访问剪贴板，请使用下载 JSON，或展开内容手动复制。"));
@@ -266,7 +266,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
             await api.request(`/api/connections/mcp/oauth/requests/${encodeURIComponent(id)}/${decision}`, { method: 'POST', signal, body: '{}' });
             if (mounted.current && !signal.aborted) {
                 setOauthRequests(current => current.filter(item => item.id !== id));
-                setMessage(moteText(decision === 'approve' ? '已批准，请在客户端继续完成连接。' : '已拒绝此连接请求。'));
+                setMessage(moteText(decision === 'approve' ? '已批准，在客户端继续完成连接。' : '已拒绝此连接请求。'));
             }
         });
     }
@@ -326,11 +326,11 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
           </select></label>
           {mcpAccess==='calendar'?<>
             <label>{moteText('授权目标日历')}<select value={calendarKey} disabled={!!busy||!calendarChoices.length} onChange={event=>setCalendarKey(event.target.value)} required>
-              <option value="">{moteText('请选择目标日历')}</option>
+              <option value="">{moteText('选择目标日历')}</option>
               {calendarChoices.map(({target,name})=><option key={JSON.stringify(target)} value={JSON.stringify(target)}>{name}</option>)}
             </select></label>
             <p>{moteText('此连接可根据你的当次指令，仅在所选日历创建日程。')}</p>
-            {!calendarChoices.length&&<p role="status">{moteText('请先在来源中选择日历并授权写入。')}</p>}
+            {!calendarChoices.length&&<p role="status">{moteText('先在来源中选择日历并授权写入。')}</p>}
           </>:<p>{mcpAccess==='write'?moteText('仅可写入：{0}。',inventory?.mcp.writeSourceIds.join('、')||moteText('未配置')):moteText('检索和读取已获准访问的资料，不修改内容。')}</p>}
           {mcpAccess!=='calendar'&&inventory?.mcp.enabled&&<div className="connection-mcp oauth-access" aria-label={moteText('OAuth MCP 服务地址')}><h3>{moteText('OAuth 客户端')}</h3><p>{moteText('只接受 OAuth 的客户端填写此服务地址，会自动发现授权，不需要 Bearer 头。')}</p><code>{oauthServiceUrl}</code><div className="connection-actions"><button type="button" className="button" disabled={!!busy||!oauthServiceUrl} onClick={()=>void copy(oauthServiceUrl)}><Copy size={15}/>{moteText('复制服务地址')}</button></div></div>}
           {mcpAccess!=='calendar'&&<details className="connection-help"><summary>{moteText('客户端兼容性')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{oauthServiceUrl?moteText('只接受 OAuth 的客户端请填写服务地址 {0}；客户端会自动发现授权，首次连接需要在此页批准。',oauthServiceUrl):moteText('只接受 OAuth 的客户端需要可访问的中央地址；填写后再复制服务地址。')}</p></details>}
@@ -380,6 +380,6 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     {mcp && <div className="connection-mcp" aria-label={moteText("MCP 连接配置")}><h3>{moteText("保存此 MCP 配置")}</h3><p>{moteText("专用凭据仅在此次生成时显示。离开页面后仍有效；丢失时可以撤销并重新生成。")}</p><textarea readOnly aria-label="MCP JSON" value={JSON.stringify(mcp.config, null, 2)} spellCheck={false}/><div className="connection-actions"><button className="button" onClick={() => void copy(JSON.stringify(mcp.config, null, 2))}><Copy size={15}/>{moteText("复制 MCP JSON")}</button><button className="button" onClick={() => downloadFile('mote-mcp.json', new Blob([JSON.stringify(mcp.config, null, 2)], { type: 'application/json' }))}><Download size={15}/>{moteText("下载 MCP JSON")}</button><button className="button subtle" onClick={() => setMcp(undefined)}>{moteText("已保存，隐藏凭据")}</button></div></div>}
     {!embedded && <><details className="device-authorizations"><summary>{moteText("管理连接授权")}</summary><div className="section-heading connection-list-heading"><div><h3>{moteText("已授权的连接")}</h3><p>{moteText("撤销立即阻止后续请求，已归档资料保持不变。")}</p></div><button className="button subtle" disabled={!!busy} onClick={() => void action('refresh', refresh)}><RefreshCw size={15}/>{moteText("刷新连接")}</button></div>
     {!inventory ? inventoryResource.loading ? <Loading label={moteText('正在读取连接…')}/> : null : !visibleCredentials.length ? <p className="fine-print">{moteText(mode === 'device' ? '还没有设备连接。生成邀请即可添加。' : '还没有 AI 连接。生成 MCP 配置即可添加。')}</p> : <ul className="connection-list">{visibleCredentials.map(item => <li key={item.id}><div><strong>{item.label}</strong><span className={`badge ${item.revokedAt ? 'muted' : 'green'}`}>{item.revokedAt ? moteText("已撤销") : moteText(scopes[item.scope])}</span><p>{item.deviceName || moteText("外部 Chatbot")}{item.platform ? ` · ${item.platform}` : ''}{' '}{moteText("· 创建于")}{' '}{dateTime(item.createdAt)}</p><code>{item.tokenHint} {item.deviceId ? `· ${item.deviceId}` : ''}</code>{item.revokedAt && <small>{moteText("撤销于")}{' '}{ago(item.revokedAt)}</small>}</div>{!item.revokedAt && (revoking === item.id ? <div className="connection-revoke"><span>{moteText("停止此连接的后续访问与同步？")}</span><button className="button danger" disabled={!!busy} onClick={() => revoke(item.id)}>{moteText("确认撤销")}</button><button className="button subtle" disabled={!!busy} onClick={() => setRevoking('')}>{moteText("取消")}</button></div> : <button className="button subtle" disabled={!!busy} onClick={() => setRevoking(item.id)}><Unplug size={15}/>{moteText("撤销")}</button>)}</li>)}</ul>}
-  </details><section className="device-native-guide"><h2>{moteText('尚未安装客户端')}</h2><a className="text-button" href="https://github.com/utopiafar/mote/releases" target="_blank" rel="noreferrer">{moteText('下载 Mac / Android 客户端 →')}</a><details><summary>{moteText('连接前准备')}</summary><p>{moteText('此页面只生成连接授权。先安装 Mac / Android 客户端，再填写客户端可访问的节点地址；二维码不会创建公网地址或隧道。')}</p></details></section></>}
+  </details><section className="device-native-guide"><h2>{moteText('尚未安装客户端')}</h2><a className="text-button" href="https://github.com/utopiafar/mote/releases" target="_blank" rel="noreferrer">{moteText('下载 Mac / Android 客户端')}</a><details><summary>{moteText('连接前准备')}</summary><p>{moteText('此页面只生成连接授权。先安装 Mac / Android 客户端，再填写客户端可访问的节点地址；二维码不会创建公网地址或隧道。')}</p></details></section></>}
   </section>;
 }

@@ -26,7 +26,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
       badge.className = 'permission-badge ' + (granted ? 'granted' : unknown ? 'unknown' : 'denied');
       badge.textContent = (granted ? '✓ ' : unknown ? '? ' : '! ') + (labels[value] ?? labels.unknown);
       const button = root.querySelector<HTMLButtonElement>(`[data-permission-request="${kind}"]`)!;
-      button.textContent = pending.has(kind) ? moteText('正在打开…') : granted ? moteText('管理权限 ↗') : kind === 'calendar' ? moteText('授权日历') : moteText('前往授权 ↗');
+      button.textContent = pending.has(kind) ? moteText('正在打开…') : granted ? moteText('管理权限') : kind === 'calendar' ? moteText('授权日历') : moteText('前往授权');
     }
     for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-permission-request], [data-permission]'))) {
       const kind = (button.dataset.permissionRequest ?? button.dataset.permission) as PermissionKind;
@@ -70,7 +70,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
   byId('permission-restart').addEventListener('click', async () => {
     const button = byId<HTMLButtonElement>('permission-restart'); button.disabled = true;
     try { await api.restartForPermissions(); }
-    catch { actionError = moteText('重新启动失败，请完全退出 Mote 后重新打开。'); renderError(); }
+    catch { actionError = moteText('重新启动失败，完全退出 Mote 后重新打开。'); renderError(); }
     finally { button.disabled = false; }
   }, { signal: controller.signal });
   window.addEventListener('focus', () => void refresh(), { signal: controller.signal });

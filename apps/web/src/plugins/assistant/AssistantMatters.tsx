@@ -21,7 +21,7 @@ function AssistantMattersContent({api,onOpen}:{api:Api;onOpen:(ref:string)=>void
  let scope:QueryScope=all;
  if(query.has('scope')){
   try{scope=queryScopeSchema.parse(JSON.parse(query.get('scope')!));}
-  catch{return <p role="alert">{moteText('输入格式无效，请检查必填项和取值范围。')}</p>;}
+  catch{return <p role="alert">{moteText('输入格式无效，检查必填项和取值范围。')}</p>;}
  }
  const selectionKey=JSON.stringify([kind,id,scope]);
  const tab=query.get('tab')==='routine'?'routine':query.get('tab')==='commitment'?'commitment':'matter',back=query.get('returnTo');

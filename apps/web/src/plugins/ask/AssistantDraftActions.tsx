@@ -61,10 +61,10 @@ export function AssistantDraftActions({api,conversationId,turnId,draft,renderAns
       else setStatus(moteText('草稿范围已确认。'));
     }catch(reason){
       if(reason instanceof ApiError&&reason.status===413)
-        setError(moteText('处理服务拒绝了内容大小，请缩小本次处理范围。'));
+        setError(moteText('处理服务拒绝了内容大小，缩小本次处理范围。'));
       else if(reason instanceof ApiError&&[403,404,409,410].includes(reason.status))
-        setError(moteText('这份草稿已失效，请回到原回答重新生成。'));
-      else setError(moteText('草稿提交失败，请重试。'));
+        setError(moteText('这份草稿已失效，回到原回答重新生成。'));
+      else setError(moteText('草稿提交失败，重试。'));
     }finally{setBusy(false);}
   };
   if(draft.input==='current-instruction')return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>

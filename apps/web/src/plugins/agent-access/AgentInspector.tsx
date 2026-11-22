@@ -40,7 +40,7 @@ function EntryDetail({api,entry,scope,onSelect}:{api:Api;entry:Entry;scope:Scope
    {item.textRange&&<><p className="fine-print">{moteText('已展开 {0}–{1} / {2} 个字符',item.textRange.offset,item.textRange.offset+(item.statement??item.ocrText??item.text??'').length,item.textRange.total)}</p><div className="processing-actions">{offset>0&&<button className="button" onClick={()=>setOffset(0)}>{moteText('返回第一页')}</button>}{typeof item.textRange.nextOffset==='number'&&item.textRange.nextOffset>item.textRange.offset&&<button className="button" onClick={()=>setOffset(item.textRange!.nextOffset!)}>{moteText('继续展开')}</button>}</div></>}
   </div>)}
   {page.data?.sourceSpans?.map(span=><div className="agent-proof" key={span.record.id}><strong>{moteText('已核验的支持原文')}</strong><div className="agent-body">{span.record.ocrText.slice(span.offset,span.offset+span.length)}</div></div>)}
-  {page.data?.sourceCoverage?.partial&&<p className="fine-print">{moteText('支持原文仅部分展开，请按需继续读取。')}</p>}
+  {page.data?.sourceCoverage?.partial&&<p className="fine-print">{moteText('支持原文仅部分展开，按需继续读取。')}</p>}
  </section>;
 }
 function Catalog({api,scope,onOpen}:{api:Api;scope:Scope;onOpen:(ref:string)=>void}){

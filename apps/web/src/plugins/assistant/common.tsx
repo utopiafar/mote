@@ -36,7 +36,7 @@ export function useAssistantCommand(api:Api,onSaved:()=>void){
   const controller=new AbortController();request.current=controller;setBusy(true);setError('');
   const active=()=>!controller.signal.aborted&&request.current===controller&&owner.current===api;
   try{await api.request(path,{method:'POST',body:JSON.stringify(body),signal:controller.signal});if(!active())return false;onSaved();return true;}
-  catch(reason){if(active())setError(reason instanceof ApiError&&reason.status===409?moteText('内容已在其他地方修改或失效。请重新读取后再编辑。'):errorMessage(reason));return false;}
+  catch(reason){if(active())setError(reason instanceof ApiError&&reason.status===409?moteText('内容已在其他地方修改或失效。重新读取后再编辑。'):errorMessage(reason));return false;}
   finally{if(active()){request.current=null;setBusy(false);}}
  };
  return {busy,error,run};

@@ -94,7 +94,7 @@ export class NoteOutbox {
       return;
     }
     const items = this.items();
-    if (items.length >= 100 || new TextEncoder().encode(JSON.stringify([...items, { note: normalized }])).length > MAX_QUEUED_BYTES) throw new Error(moteText("本机记录待同步空间已满，请先同步或导出待传内容。"));
+    if (items.length >= 100 || new TextEncoder().encode(JSON.stringify([...items, { note: normalized }])).length > MAX_QUEUED_BYTES) throw new Error(moteText("本机记录待同步空间已满，先同步或导出待传内容。"));
     this.storage.setItem(key, JSON.stringify({ note: normalized }));
   }
   mark(id: string, error: string, blocked: boolean, unknown = false): void {

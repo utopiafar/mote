@@ -14,10 +14,10 @@ const PAGE_SIZE = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function captureDayRange(day: string): { after: string; before: string } {
-  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(moteText("请选择有效日期"));
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(moteText("选择有效日期"));
   const [year, month, date] = day.split('-').map(Number);
   const start = new Date(year, month - 1, date);
-  if (year < 2000 || year > 2100 || start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== date) throw new Error(moteText("请选择有效日期"));
+  if (year < 2000 || year > 2100 || start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== date) throw new Error(moteText("选择有效日期"));
   const end = new Date(year, month - 1, date + 1);
   return { after: start.toISOString(), before: end.toISOString() };
 }
@@ -103,7 +103,7 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
 export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string,authorize:()=>void=()=>{}): Promise<BrowserDetail> {
   location(source); validId(id);
   if (source === 'local') {
-    const record = queue.recordForBrowser(id); if (!record) throw new Error(moteText("该记录已完成同步，请切换到中央已归档查看"));
+    const record = queue.recordForBrowser(id); if (!record) throw new Error(moteText("该记录已完成同步，切换到中央已归档查看"));
     if(record.localContentRelease){requireOrigin(record,config);const value=await remoteDetail(config,id,authorize);authorize();return {...preview({...value,hasImage:Boolean(value.imageMime)}),localContentRelease:record.localContentRelease,ocrText:String(value.ocrText??'').slice(0,100000),deviceName:record.event.deviceName};}
     return { ...preview(record.event, record), ocrText: record.event.ocrText ?? '', deviceName: record.event.deviceName };
   }
@@ -118,7 +118,7 @@ export async function captureImage(queue: DurableQueue, config: Config, source: 
   current();if(local?.localContentRelease)requireOrigin(local,config);
   if(source==='local'&&!local?.localContentRelease)bytes=await queue.imageForBrowser(id);
   else { await remoteDetail(config,id,authorize); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`,authorize), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES,current); }
-  if (!bytes) throw new Error(moteText("图片已同步，请切换到中央已归档查看"));
+  if (!bytes) throw new Error(moteText("图片已同步，切换到中央已归档查看"));
   current();const result=await previewWork.run<string>({ kind: 'preview', bytes, thumbnail });current();return result;
 }
 

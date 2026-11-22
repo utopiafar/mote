@@ -131,7 +131,7 @@ test('provider throttling retains localized messages, request identity and authe
    const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({...payload,message:'RAW EXTERNAL LIMIT DETAIL',requestId}),{status:429}));
    await assert.rejects(createApi({token:'synthetic'},()=>unauthorized++).request('/api/files'),error=>{
     assert.ok(error instanceof ApiError);assert.equal(error.status,429);assert.equal(error.code,code);
-    const message=errorMessage(error),expected=locale==='en'?'The model service is rate limiting requests. Wait for the task to update.':'模型服务暂时限流，请等待任务更新。';
+    const message=errorMessage(error),expected=locale==='en'?'The model service is rate limiting requests. Wait for the task to update.':'模型服务暂时限流，等待任务更新。';
     assert.ok(message.startsWith(expected),message);assert.ok(message.includes(requestId));
     assert.doesNotMatch(message,/RAW EXTERNAL LIMIT DETAIL/);return true;
    });

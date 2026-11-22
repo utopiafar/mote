@@ -114,7 +114,7 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
       setAccepted({api,id,value});edit({draft:'',choiceId:undefined,reopened:false,pending:undefined});pending.current=undefined;
       resources(api).invalidate(key=>key.startsWith('/api/owner-questions')||key.startsWith('/api/work-activity')||key.startsWith('/api/materials'));
     }catch(e){if(current()){
-      setError(e instanceof ApiError&&e.status===409&&e.code==='conflict'?moteText('这个问题已更新，请查看最新内容后再回答。'):errorMessage(e));
+      setError(e instanceof ApiError&&e.status===409&&e.code==='conflict'?moteText('这个问题已更新，查看最新内容后再回答。'):errorMessage(e));
       if(e instanceof ApiError&&[401,403,404,409,410].includes(e.status)){pending.current=undefined;edit({pending:undefined});setAccepted(undefined);detail.refresh();}
     }}finally{if(current()){setBusy(false);controller.current=null;}}
   }
@@ -124,7 +124,7 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
     const current=()=>!request.signal.aborted&&workController.current===request&&identity.current.api===api&&identity.current.id===id&&latestQuestion.current?.revision===revision&&latestQuestion.current?.state==='answered'&&latestQuestion.current?.workId===workId;
     try{const work=await api.request<{id:string}>('/api/work-activity/'+encodeURIComponent(workId),{signal:request.signal});
       if(!current())return;
-      if(typeof work.id!=='string'||work.id!==workId)throw new Error(moteText('后续活动暂不可读取，请稍后重试。'));
+      if(typeof work.id!=='string'||work.id!==workId)throw new Error(moteText('后续活动暂不可读取，稍后重试。'));
       window.location.hash='#/activity?'+new URLSearchParams({work:work.id});
     }catch(e){if(current())setWorkError(errorMessage(e));}
     finally{if(current()){workController.current=null;setWorkBusy(false);}}
@@ -153,7 +153,7 @@ export function OwnerQuestionConversation({api,id,onOpen,standalone=false}:{api:
         <label><span>{moteText('补充你知道的信息')}</span><textarea aria-label={moteText('回复补充问题')} placeholder={moteText('补充你知道的信息，也可以选择上面的回答。')} value={draft} onChange={event=>{setDraft(event.target.value);setChoiceId(undefined);}} disabled={!canReply} maxLength={6000} rows={4}/></label>
         <div className="owner-question-actions"><button className="button primary" type="submit" disabled={!canReply||!draft.trim()} aria-label={moteText('回答并继续')}>{moteText('回答并继续')}</button><button className="text-button" type="button" disabled={!canReply} onClick={()=>void reply('defer')}>{moteText('稍后再说')}</button><button className="text-button" type="button" disabled={!canReply} onClick={()=>void reply('unknown')}>{moteText('我也不知道')}</button></div>
       </form>}
-      {question.state==='answered'&&<div className="owner-question-followup"><button type="button" className="button subtle" disabled={workBusy} onClick={()=>void openFollowup()}>{workBusy?<LoaderCircle className="spin" size={17}/>:null}{moteText(workError?'重试':'查看后续处理')}</button>{workError&&<div className="notice error" role="alert"><p>{moteText('后续活动暂不可读取，请稍后重试。')}</p><p>{workError}</p><a className="text-button" href="#/activity">{moteText('查看活动')}</a></div>}</div>}
+      {question.state==='answered'&&<div className="owner-question-followup"><button type="button" className="button subtle" disabled={workBusy} onClick={()=>void openFollowup()}>{workBusy?<LoaderCircle className="spin" size={17}/>:null}{moteText(workError?'重试':'查看后续处理')}</button>{workError&&<div className="notice error" role="alert"><p>{moteText('后续活动暂不可读取，稍后重试。')}</p><p>{workError}</p><a className="text-button" href="#/activity">{moteText('查看活动')}</a></div>}</div>}
     </>}
   </section>;
 }

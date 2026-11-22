@@ -76,8 +76,8 @@ export function DeveloperAccess({ api }: { api: Api }) {
         await inventory.refresh();
     }
     async function copy(value: string) {
-        try { await navigator.clipboard.writeText(value); setMessage(moteText('已复制，请只粘贴到你信任的客户端。')); }
-        catch { setError(moteText('当前环境无法访问剪贴板，请手动选择文本复制。')); }
+        try { await navigator.clipboard.writeText(value); setMessage(moteText('已复制，只粘贴到你信任的客户端。')); }
+        catch { setError(moteText('当前环境无法访问剪贴板，手动选择文本复制。')); }
     }
     function createCredential() {
         void action('credential', async () => {

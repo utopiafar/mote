@@ -6,7 +6,7 @@ import type {Config} from './contracts';
 import {validateServerUrl} from './config';
 import {ConnectionError} from './connection';
 
-const invalid=()=>new ConnectionError('INVALID_RESPONSE',moteText('中央响应格式无效，请刷新后重试。'));
+const invalid=()=>new ConnectionError('INVALID_RESPONSE',moteText('中央响应格式无效，刷新后重试。'));
 const LIMIT=512*1024;
 async function responseJson(response:Response):Promise<unknown>{
   if(Number(response.headers.get('content-length'))>LIMIT||!response.body){await response.body?.cancel();throw invalid();}

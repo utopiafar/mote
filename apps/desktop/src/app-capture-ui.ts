@@ -76,7 +76,7 @@ export function createAppCaptureUi(options:AppCaptureUiOptions) {
       list.append(control);
     }
     if(!shown.length)list.append(loaded?element('p',moteText('没有符合此范围的应用'),'helper'):skeleton(list,moteText('正在读取已安装应用…')));
-    hint.textContent=loadError||(parsedRules()===undefined?moteText('页面规则格式有误，请在高级规则中修正。'):moteText('{0} 个应用 · 修改后保存生效',shown.length));
+    hint.textContent=loadError||(parsedRules()===undefined?moteText('页面规则格式有误，在高级规则中修正。'):moteText('{0} 个应用 · 修改后保存生效',shown.length));
   }
   function renderDetail(){
     const row=rows().find(row=>row.appId===selected);detail.replaceChildren();

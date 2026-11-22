@@ -36,7 +36,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
     case 'json-write': {
       const body = JSON.stringify(request.value);
       const encoded = encodeLocalContent(body);
-      if (request.maximum !== undefined && encoded.length > request.maximum) throw new Error(moteText("来源待同步队列已满，请恢复网络后重试"));
+      if (request.maximum !== undefined && encoded.length > request.maximum) throw new Error(moteText("来源待同步队列已满，恢复网络后重试"));
       await mkdir(dirname(request.path), { recursive: true, mode: 0o700 });
       const temporary = request.path + '.' + randomUUID() + '.tmp';
       try {
@@ -107,7 +107,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       const input = await open(request.path, 'r');
       let archive: QueueArchive;
       try {
-        if ((await input.stat()).size > 360 * 1024 * 1024) throw new Error(moteText("备份超过 360 MiB，请使用完整 queue 文件夹迁移"));
+        if ((await input.stat()).size > 360 * 1024 * 1024) throw new Error(moteText("备份超过 360 MiB，使用完整 queue 文件夹迁移"));
         archive = JSON.parse(await input.readFile('utf8')) as QueueArchive;
       } finally { await input.close(); }
       if (archive?.format !== 'mote-desktop-queue' || archive.version !== DESKTOP_STORAGE_VERSION || !Array.isArray(archive.records) || archive.records.length > 1_000_000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error(moteText("不是 Mote 电脑端队列备份"));

@@ -65,8 +65,8 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
    {task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {reason==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}
    {reason==='model_context_budget_unavailable'&&<p>{moteText('模型上下文预算尚未就绪，任务未执行。')}</p>}
-   {task.state==='needs_input'&&reason&&reason!=='no_usable_evidence'&&reason!=='model_context_budget_unavailable'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
-   {task.state==='failed'&&<p>{moteText('任务未能完成，请查看处理状态。')}</p>}
+   {task.state==='needs_input'&&reason&&reason!=='no_usable_evidence'&&reason!=='model_context_budget_unavailable'&&<p>{moteText('任务未能完成，查看处理状态。')}</p>}
+   {task.state==='failed'&&<p>{moteText('任务未能完成，查看处理状态。')}</p>}
    {task.state==='needs_input'&&workId&&<FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.work.activity',schemaVersion:1,representation:'overview',ref:workId,revision:String(task.revision),title:'',text:''}}/>}
    {task.state==='completed'&&result&&<details className="chat-task-result" data-message-kind="result">
     <summary><FileText size={18} aria-hidden="true"/><span><strong>{task.goal||moteText('结果')}</strong>
@@ -78,6 +78,6 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
     {Boolean(actionDrafts?.length)&&<AssistantActionResults api={api} taskId={task.id} scope={scope}/>}
    </details>}
   </section>)}
-  {error&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
+  {error&&<p role="alert">{moteText('读取任务状态失败，刷新重试。')}</p>}
  </>;
 }

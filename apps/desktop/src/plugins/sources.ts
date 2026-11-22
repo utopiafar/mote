@@ -146,7 +146,7 @@ export function createSourcesPlugin(options: SourcesPluginOptions): SourcesPlugi
           return manager.saveSourceContext(id, args[1]);
         })));
         register(sourcesChannels.sync, sourcesWriteCapability, args => execute(sourcesChannels.sync, async () => {
-          const scope=args[0],assertScope=()=>{if(typeof scope!=='string'||scope!==sourceSyncScope(manager.status(),publicConfig(options.settings())))throw new Error(moteText('设置已改变，请刷新后重新预览'));};
+          const scope=args[0],assertScope=()=>{if(typeof scope!=='string'||scope!==sourceSyncScope(manager.status(),publicConfig(options.settings())))throw new Error(moteText('设置已改变，刷新后重新预览'));};
           assertScope();
           const scan = manager.sync(true);
           await options.retry?.();

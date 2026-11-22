@@ -21,7 +21,7 @@ export function FileRetentionSettings({api,source}:{api:Api;source:SourceConnect
   try{
    const result=await api.request<SourceConnection>('/api/sources/'+encodeURIComponent(source.id),{method:'PATCH',body:JSON.stringify({retention}),signal:controller.signal});
    if(controller.signal.aborted||request.current!==controller)return;
-   if(result.id!==source.id||result.retention!==retention)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+   if(result.id!==source.id||result.retention!==retention)throw Error(moteText('中央响应格式无效，刷新后重试。'));
    setDraft(undefined);resources(api).invalidate(key=>/^\/api\/(sources|source-items|files|capture-browser|materials|library)([/?]|$)/.test(key));
   }catch(error){if(!controller.signal.aborted&&request.current===controller)setError(errorMessage(error));}
   finally{if(request.current===controller){request.current=null;setBusy(false);}}

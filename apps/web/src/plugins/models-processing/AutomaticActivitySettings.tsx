@@ -52,11 +52,11 @@ export function AutomaticActivitySettings({api}: {api: Api}) {
     {draft && <form onSubmit={event => {event.preventDefault(); void save();}}><fieldset disabled={busy}>
       <label className="preference-toggle"><span>{moteText('自动整理新采集的活动')}</span><input type="checkbox" checked={draft.enabled} onChange={event => change({enabled: event.target.checked})}/></label>
       <label>{moteText('活动整理模型连接')}<select value={draft.modelProfileId ?? ''} onChange={event => change({modelProfileId: event.target.value || null})}>
-        <option value="">{moteText('请选择模型连接')}</option>
+        <option value="">{moteText('选择模型连接')}</option>
         {missingProfile && <option value={draft.modelProfileId!}>{moteText('所选模型连接已不可用')}</option>}
         {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
       </select></label>
-      {draft.enabled && (!draft.modelProfileId || missingProfile) && <p role="status">{moteText('请选择可用的模型连接后启用活动整理。')}</p>}
+      {draft.enabled && (!draft.modelProfileId || missingProfile) && <p role="status">{moteText('选择可用的模型连接后启用活动整理。')}</p>}
       <button className="button primary" disabled={!dirty || busy || draft.enabled && (!draft.modelProfileId || missingProfile || models.error !== undefined)}>{busy ? moteText('保存中…') : moteText('保存并应用')}</button>
       <button className="button subtle" type="button" onClick={() => {setDraft(undefined); setBaseline(undefined); setRevision(undefined); setError(''); setSaved(false); read.refresh(); models.refresh();}}>{moteText('重新读取并还原草稿')}</button>
     </fieldset></form>}

@@ -34,9 +34,9 @@ function offset(value: unknown): number { if (value === undefined) return 0; if 
 function validSource(value: unknown): asserts value is SyncSource | undefined { if (value !== undefined && !syncSources.includes(value as SyncSource)) throw Error(moteText('记录来源无效')); }
 function validOutcome(value: unknown): void { if (value !== undefined && value !== 'received' && value !== 'unconfirmed') throw Error(moteText('同步结果筛选无效')); }
 export function historyRange(day: string, days: 1 | 7 = 1): { after: string; before: string; days: string[] } {
-  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day) || ![1, 7].includes(days)) throw Error(moteText('请选择有效日期'));
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day) || ![1, 7].includes(days)) throw Error(moteText('选择有效日期'));
   const [y, m, d] = day.split('-').map(Number), end = new Date(y, m - 1, d);
-  if (y < 2000 || y > 2100 || end.getFullYear() !== y || end.getMonth() !== m - 1 || end.getDate() !== d) throw Error(moteText('请选择有效日期'));
+  if (y < 2000 || y > 2100 || end.getFullYear() !== y || end.getMonth() !== m - 1 || end.getDate() !== d) throw Error(moteText('选择有效日期'));
   const localDay = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   // At the earliest supported date the summary contains only supported days.
   const dates = Array.from({ length: days }, (_, i) => new Date(y, m - 1, d - days + 1 + i)).filter(date => date.getFullYear() >= 2000);

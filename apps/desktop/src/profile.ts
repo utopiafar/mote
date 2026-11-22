@@ -12,7 +12,7 @@ export function resolveProfile(argv: readonly string[], env: NodeJS.ProcessEnv, 
   const selected: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--profile') {
-      if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(moteText("请为 --profile 指定环境短名"));
+      if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(moteText("为 --profile 指定环境短名"));
       selected.push(argv[++i]);
     } else if (argv[i].startsWith('--profile=')) selected.push(argv[i].slice('--profile='.length));
   }

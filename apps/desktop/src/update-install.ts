@@ -21,7 +21,7 @@ export async function inspectBundle(helper: string, path: string, version: strin
   } catch { throw new Error('UPDATE_BUNDLE_INVALID'); }
 }
 export async function installationEligibility(bundlePath: string | undefined, dataDirectory: string): Promise<{ allowed: boolean; reason: string }> {
-  if (process.platform !== 'darwin' || !bundlePath) return { allowed: false, reason: moteText("开发运行不能替换 Electron。请使用安装后的 Mac App；仍可下载更新包。") };
+  if (process.platform !== 'darwin' || !bundlePath) return { allowed: false, reason: moteText("开发运行不能替换 Electron。使用安装后的 Mac App；仍可下载更新包。") };
   if (bundlePath.includes('/AppTranslocation/') || relative(bundlePath, dataDirectory).split(/[\\/]/)[0] !== '..') return { allowed: false, reason: moteText("请先把 App 移到可写的应用目录，再打开更新；资料目录不能位于 App 包内。") };
   try {
     if ((await lstat(bundlePath)).isSymbolicLink() || await realpath(bundlePath) !== bundlePath) throw new Error();

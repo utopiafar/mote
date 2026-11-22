@@ -65,7 +65,7 @@ export class SettingsCoordinator {
     try {
       if (d.defaultProfile && updated.openAtLogin !== previous.openAtLogin) {
         d.loginItems.set(updated.openAtLogin);
-        if (d.loginItems.get() !== updated.openAtLogin) throw new Error(moteText('系统未允许修改登录启动项，请在系统设置检查'));
+        if (d.loginItems.get() !== updated.openAtLogin) throw new Error(moteText('系统未允许修改登录启动项，在系统设置检查'));
       }
       await d.sources.changeConnection(updated);
       d.installSettings(updated); d.collector.updateConfig(updated); await d.configureDiagnostics();

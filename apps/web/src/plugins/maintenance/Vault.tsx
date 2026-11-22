@@ -37,13 +37,13 @@ export function Vault({ api, status, refresh, disconnect, embedded = false, chil
             const archive = JSON.parse(raw);
             const sections = ['captures', 'sources', 'sourceHeads', 'sourceVersions', 'memories', 'memoryDeletions', 'files', 'captureFiles', 'perceptionResults', 'todos'];
             if (!archive || archive.version !== 2 || !sections.every(key => Array.isArray(archive[key])))
-                throw new Error(moteText("请选择 Mote v2 JSON 归档文件。"));
+                throw new Error(moteText("选择 Mote v2 JSON 归档文件。"));
             const result = await api.request<{
                 imported: number;
                 duplicates: number;
             }>("/api/import", { method: "POST", body: raw });
             if(!Number.isSafeInteger(result.imported)||result.imported<0||!Number.isSafeInteger(result.duplicates)||result.duplicates<0)
-                throw new ApiError(moteText('中央响应格式无效，请刷新后重试。'),200,undefined,'invalid_response');
+                throw new ApiError(moteText('中央响应格式无效，刷新后重试。'),200,undefined,'invalid_response');
             return moteText("已导入 {0} 条记录，跳过 {1} 条重复记录。", result.imported, result.duplicates);
         });
         if (canClear()&&input.current)

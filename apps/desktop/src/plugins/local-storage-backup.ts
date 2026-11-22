@@ -93,7 +93,7 @@ export function createLocalStorageBackupPlugin(options: LocalStorageBackupOption
           const directory = options.queue().directory;
           await getStorage().assertOwned(directory);
           const error = await options.openPath(directory);
-          if (error) throw new Error(moteText('无法打开截图目录，请检查磁盘是否已连接'));
+          if (error) throw new Error(moteText('无法打开截图目录，检查磁盘是否已连接'));
         }));
         register(localStorageBackupChannels.exportQueue, () => execute(localStorageBackupChannels.exportQueue, async () => {
           const path = await options.chooseExport();

@@ -97,7 +97,7 @@ class LibraryCollectionBoundary extends React.Component<{
 }> {
     state = { failed: false };
     static getDerivedStateFromError() { return { failed: true }; }
-    render() { return this.state.failed ? <p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p> : this.props.children; }
+    render() { return this.state.failed ? <p role="status">{moteText('专用视图暂不可用，查看资料库或重试。')}</p> : this.props.children; }
 }
 export function Timeline(props: {
     api: Api;

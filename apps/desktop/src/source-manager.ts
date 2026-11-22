@@ -154,7 +154,7 @@ export class LocalSourceManager {
   connectionActivity(): { pending: number; inFlight: boolean } { const recorded=this.recordedActivity?.();return { pending: (recorded?.pending??0)+[...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending+engine.status().blocked, 0)+this.sources.filter(source=>this.contexts?.pending(source.id)).length+this.captureContextIds().filter(id=>this.contexts?.pending(id)).length, inFlight: Boolean(recorded?.inFlight||this.task || this.uploadTask || this.permissionTask || this.contextTask) }; }
   async holdConnection(): Promise<() => void> {
     this.connectionEpoch++;
-    if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
+    if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，稍后重试连接"));
     this.connectionHeld = true;
     try { await this.interrupt(); return () => { this.connectionHeld = false; }; }
     catch (error) { this.connectionHeld = false; throw error; }
@@ -195,7 +195,7 @@ export class LocalSourceManager {
   }
   async addCalendar(id: string, input: unknown): Promise<string> {
     const calendar = this.choices.find(c => c.id === id);
-    if (!calendar) throw new Error(moteText("请先连接日历，再从已授权列表中选择"));
+    if (!calendar) throw new Error(moteText("先连接日历，再从已授权列表中选择"));
     return this.add({ calendarId: calendar.id, name: calendar.title.slice(0, 200) || moteText("本地日历"), kind: 'local-calendar' }, input);
   }
   async addFiles(path: string, input: unknown): Promise<string> { return this.add({ path, name: basename(path).slice(0, 200) || moteText("本地文件"), kind: 'local-files' }, input); }
@@ -213,7 +213,7 @@ export class LocalSourceManager {
     if (this.sources.some(s => s.kind === fields.kind && (
       typeof fields.path === 'string' ? s.path === fields.path :
       typeof fields.calendarId === 'string' ? s.calendarId === fields.calendarId : false
-    ))) throw new Error(moteText("此来源已连接，请在列表中修改"));
+    ))) throw new Error(moteText("此来源已连接，在列表中修改"));
     await this.interrupt();
     const source: LocalSource = { ...fields, ...options, id: 'local-' + randomUUID(), deviceId: this.connection.deviceId, platform: 'macos', enabled: true } as LocalSource;
     this.adapters.get(source.kind).validateConfiguration(source);
@@ -363,7 +363,7 @@ export class LocalSourceManager {
       current();requestSignal?.throwIfAborted();
       if (!this.connection.serverUrl || !connectionToken(this.connection) || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
       const response = await fetch(this.connection.serverUrl + path, { method, headers: { ...INGRESS_VERSION_HEADERS,Authorization: 'Bearer ' + requireConnectionToken(this.connection), 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body),onBytes), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
-      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       const result=JSON.parse(await readResponseText(response, 1024 * 1024));current();requestSignal?.throwIfAborted();return result;
     };
   }

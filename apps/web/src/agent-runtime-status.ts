@@ -8,6 +8,6 @@ export function parseAgentRuntimeStatus(value: unknown): AgentRuntimeStatusRecei
   try {
     return agentRuntimeStatusReceiptSchema.parse(value);
   } catch {
-    throw new ApiError(moteText('中央响应格式无效，请刷新后重试。'), 200, undefined, 'invalid_response');
+    throw new ApiError(moteText('中央响应格式无效，刷新后重试。'), 200, undefined, 'invalid_response');
   }
 }

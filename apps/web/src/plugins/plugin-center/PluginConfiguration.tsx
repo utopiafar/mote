@@ -20,7 +20,7 @@ export function PluginConfiguration({api,item,instance,busy,onSave,guided=false}
   if(field.type==='boolean')return <input type="checkbox" checked={value===true} onChange={event=>update(event.target.checked)} disabled={busy}/>;
   if(field.type==='select'||field.type==='model-profile'){
    const options=field.type==='model-profile'?(models.data?.profiles.map(profile=>({value:profile.id,label:profile.name}))??[]):field.options??[];
-   return <select value={typeof value==='string'?value:''} required={field.required} disabled={busy||Boolean(field.type==='model-profile'&&models.loading)} onChange={event=>update(event.target.value)}><option value="">{moteText('请选择')}</option>{options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>;
+   return <select value={typeof value==='string'?value:''} required={field.required} disabled={busy||Boolean(field.type==='model-profile'&&models.loading)} onChange={event=>update(event.target.value)}><option value="">{moteText('选择')}</option>{options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>;
   }
   return <input type={field.type==='number'?'number':'text'} value={typeof value==='boolean'?'':value??''} required={field.required} disabled={busy} autoComplete="off" onChange={event=>update(field.type==='number'&&event.target.value!==''?Number(event.target.value):event.target.value)}/>;
  }

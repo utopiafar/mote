@@ -59,7 +59,7 @@ export function Diagnostics({api,profile,advanced,deployment}:{api:Api;profile?:
   }
   async function copyLogs() {
     try {await navigator.clipboard.writeText(rawLog);setCopyStatus(moteText("已复制当前页日志。"));}
-    catch {logRef.current?.focus();logRef.current?.select();setCopyStatus(moteText("剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。"));}
+    catch {logRef.current?.focus();logRef.current?.select();setCopyStatus(moteText("剪贴板不可用，已全选，按 ⌘/Ctrl+C 复制。"));}
   }
   return <section className="diagnostics-panel" aria-labelledby="diagnostics-title">
     <BrowserLogSettings profile={profile}/>

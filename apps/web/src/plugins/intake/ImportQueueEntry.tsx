@@ -40,7 +40,7 @@ export function ImportQueueDetail({api,entry,queue,onEdit}:{api:Api;entry:Entry;
     <Progress entry={entry}/>
     {Boolean(entry.archivedFileIds?.length)&&<p className="notice" role="status">{moteText('原件已保留')}</p>}
     {entry.state==='paused'&&<p className="notice" role="status">{moteText('上传已暂停，文件和已上传的分片仍保留，点击继续上传即可恢复。')}</p>}
-    {entry.state==='creating'&&<p role="status">{moteText('正在归档并提交任务，请等待服务器返回。')}</p>}
+    {entry.state==='creating'&&<p role="status">{moteText('正在归档并提交任务，等待服务器返回。')}</p>}
     {entry.failure&&<div className="error-banner" role="alert">{entry.failure.message}</div>}
     <Controls entry={entry} queue={queue} onEdit={onEdit}/>
     {entry.source.kind==='files'?<section className="import-originals"><h3>{moteText('本次提交的文件')}</h3>{entry.source.files.map((file,index)=><div className="file-row" key={file.name}><FileText size={15}/><span>{file.name}</span><small>{bytes(file.size)}</small>{entry.archivedFileIds?.[index]&&<ArchivedFileButton api={api} id={entry.archivedFileIds[index]} name={file.name}/>}</div>)}</section>:<p className="import-source-path">{entry.source.path}</p>}

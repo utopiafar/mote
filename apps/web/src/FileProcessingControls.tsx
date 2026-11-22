@@ -48,7 +48,7 @@ export function FileProcessingControls({api,id,mode='detail',disabled=false,onCh
   if(scoped){
    const artifactId=file.artifacts?.find(a=>a.kind==='transcript')?.id;if(!artifactId)return;
    const options=fileDiarizationOptionsSchema.safeParse({processor:'audio.diarize',speakerCount:countMode==='exact'?Number(exact):null,range:countMode==='range'?{min:Number(minimum),max:Number(maximum)}:null});
-   if(!options.success){setError(moteText('请选择 1–16 的准确人数或完整有序范围。'));return;}
+   if(!options.success){setError(moteText('选择 1–16 的准确人数或完整有序范围。'));return;}
    diarization={artifactId,options:options.data};
   }
   const controller=new AbortController();request.current=controller;setBusy(true);setError('');

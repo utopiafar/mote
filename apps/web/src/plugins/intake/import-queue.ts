@@ -74,9 +74,9 @@ export class ImportQueue {
   /** Called by the connection owner on logout/node change, never on page navigation. */
   close(){this.active=false;this.suspended=false;this.suspendedIds.clear();this.generation++;clearTimeout(this.timer);this.timer=undefined;this.wakeAt=0;for(const controller of this.running.values())controller.abort();this.running.clear();this.tasks=[];this.publish();}
   enqueue(input:ImportDraft):string{
-    if(!this.active)throw Error(moteText('登录连接已结束，请重新登录后添加资料。'));
+    if(!this.active)throw Error(moteText('登录连接已结束，重新登录后添加资料。'));
     const source:ImportSource=input.source.kind==='files'?{kind:'files',files:[...input.source.files]}:{kind:'directory',path:input.source.path.trim()};
-    if(source.kind==='files'){const error=validateImportFiles(source.files);if(error)throw Error(error);if(!source.files.length)throw Error(moteText('请选择导入文件。'));}
+    if(source.kind==='files'){const error=validateImportFiles(source.files);if(error)throw Error(error);if(!source.files.length)throw Error(moteText('选择导入文件。'));}
     else if(!source.path)throw Error(moteText('填写中央所在机器上的目录'));
     const draft={...input,name:input.name.trim(),source};
     const name=draft.name||(source.kind==='files'?(source.files.length===1?source.files[0].name:moteText('导入 {0} 个文件',source.files.length)):source.path);

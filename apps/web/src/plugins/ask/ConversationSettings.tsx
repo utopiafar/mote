@@ -19,13 +19,13 @@ export function ConversationSettingsView({api,settings,revision,onSaved}:{api:Ap
     if(!Number.isFinite(context.historyRatio)||context.historyRatio<0||context.historyRatio>1){setError(moteText('历史预算比例需要在 0 到 1 之间。'));return;}
     if(!Number.isFinite(context.lowWatermarkRatio)||context.lowWatermarkRatio<0||context.lowWatermarkRatio>=1){setError(moteText('低水位比例需要大于等于 0 且小于 1。'));return;}
     if(context.contextWindowSource==='configured'&&(!Number.isSafeInteger(context.contextWindow)||(context.contextWindow??0)<=0)){setError(moteText('指定模型窗口需要填写正整数。'));return;}
-    if(revision===undefined){setError(moteText('设置尚未读取完成，请稍后重试。'));return;}
+    if(revision===undefined){setError(moteText('设置尚未读取完成，稍后重试。'));return;}
     setBusy(true);setError('');setNotice('');
     try{
       const view=await api.request<{revision:number;domains:{id:string;effective:unknown}[]}>('/api/configuration/conversations',{method:'PUT',body:JSON.stringify({value:draft,revision})});
       const effective=view?.domains?.find(domain=>domain.id==='conversations')?.effective;
       const parsed=conversationSettingsSchema.safeParse(effective);
-      if(!parsed.success)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+      if(!parsed.success)throw Error(moteText('中央响应格式无效，刷新后重试。'));
       setDraft(parsed.data);onSaved(parsed.data);invalidateConfiguration(api);setNotice(moteText('对话设置已保存。'));
     }catch(cause){setError(errorMessage(cause));}
     finally{setBusy(false);}

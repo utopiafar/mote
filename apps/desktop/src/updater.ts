@@ -29,15 +29,15 @@ const dependencies: UpdateDependencies = {
 const messages: Record<string, string> = {
   get release_access_denied() { return moteText('更新服务器拒绝访问，请检查网络入口或发布资源的访问权限。'); },
   get release_not_found() { return moteText("此渠道暂未提供可验证的发布清单。请稍后检查；旧版未签名发布不能用于应用内安装。"); },
-  get release_rate_limited() { return moteText("GitHub 暂时限制请求，请稍后重试。"); },
+  get release_rate_limited() { return moteText("GitHub 暂时限制请求，稍后重试。"); },
   get invalid_manifest_signature() { return moteText("发布清单签名无效，已停止更新。"); }, get unknown_release_key() { return moteText("发布密钥不受此 App 信任，已停止更新。"); },
   get asset_checksum_mismatch() { return moteText("安装包校验失败，已删除不完整下载。请重新下载。"); }, get asset_size_mismatch() { return moteText("安装包大小不符，已停止更新。"); },
   get UPDATE_ARCHIVE_INVALID() { return moteText("安装包目录、压缩格式或链接不安全，已停止解压。"); }, get UPDATE_BUNDLE_INVALID() { return moteText("应用签名、版本或架构校验失败，未替换现有 App。"); },
-  get UPDATE_STAGE_CHANGED() { return moteText("待安装应用在校验后发生变化，已停止安装，请重新下载。"); },
-  get UPDATE_OTHER_PROFILES_RUNNING() { return moteText("同一个 App 还有其他 profile 正在运行。请先退出这些实例，再安装。"); },
+  get UPDATE_STAGE_CHANGED() { return moteText("待安装应用在校验后发生变化，已停止安装，重新下载。"); },
+  get UPDATE_OTHER_PROFILES_RUNNING() { return moteText("同一个 App 还有其他 profile 正在运行。先退出这些实例，再安装。"); },
   get UPDATE_INSTALL_LOCKED() { return moteText("另一个更新正在进行，或上次更新事务尚未结束。请保留应用旁的旧包并检查更新状态。"); },
-  get UPDATE_TARGET_NOT_WRITABLE() { return moteText("应用目录不可写。请显示已验证安装包，用 Finder 手动替换 App。"); },
-  get UPDATE_HELPER_NOT_READY() { return moteText("安装助手未能就绪，当前 App 保持运行。请检查应用目录并重试。"); },
+  get UPDATE_TARGET_NOT_WRITABLE() { return moteText("应用目录不可写。显示已验证安装包，用 Finder 手动替换 App。"); },
+  get UPDATE_HELPER_NOT_READY() { return moteText("安装助手未能就绪，当前 App 保持运行。检查应用目录并重试。"); },
 };
 export function updateMessage(error: unknown): string {
   const key = (error as { code?: string })?.code || (error as Error)?.message;
@@ -122,7 +122,7 @@ export class DesktopUpdater {
   }
   download(): UpdateStatus {
     if (this.task || this.value.state === 'installing') return this.status();
-    if (!this.manifest || !this.asset || compareVersions(this.manifest.version, this.options.currentVersion) <= 0) throw new Error(moteText("请先检查可用更新"));
+    if (!this.manifest || !this.asset || compareVersions(this.manifest.version, this.options.currentVersion) <= 0) throw new Error(moteText("先检查可用更新"));
     const asset = structuredClone(this.asset), manifest = this.manifest, controller = new AbortController(); this.controller = controller;
     this.staged = undefined; this.archive = undefined;
     Object.assign(this.value, { state: 'downloading', message: moteText("下载经过签名清单绑定的安装包…"), received: 0, total: asset.size });
@@ -149,7 +149,7 @@ export class DesktopUpdater {
   }
   archivePath(): string | undefined { return this.archive; }
   async cancel(): Promise<UpdateStatus> {
-    if (this.value.state === 'installing') throw new Error(moteText("安装交接已开始，请等待新版本启动"));
+    if (this.value.state === 'installing') throw new Error(moteText("安装交接已开始，等待新版本启动"));
     this.controller?.abort(); await this.task; return this.status();
   }
   async install(beforeQuit: () => Promise<void>, quit: () => void): Promise<void> {

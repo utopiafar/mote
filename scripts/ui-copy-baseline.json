@@ -462,11 +462,6 @@
   {
     "rule": "banned-phrase(不代表)",
     "location": "message",
-    "text": "连接成功只表示可以同步，不代表全库已经理解。"
-  },
-  {
-    "rule": "banned-phrase(不代表)",
-    "location": "message",
     "text": "重叠检测覆盖未知；未标记不代表没有重叠说话。"
   },
   {
@@ -493,11 +488,6 @@
     "rule": "banned-phrase(不等于)",
     "location": "message",
     "text": "只读连接和启用同步不等于写出授权。写出需在这里单独授权，并在行动平台确认范围。"
-  },
-  {
-    "rule": "banned-phrase(不等于)",
-    "location": "message",
-    "text": "同步、正文提取和语义理解分别计算；连接或提取完成不等于语义理解完成。"
   },
   {
     "rule": "banned-phrase(不等于)",
@@ -550,11 +540,6 @@
     "text": "需要对应模块可用模型；保存这些设置会影响后续接收或任务，不等于切换整套插件方案。"
   },
   {
-    "rule": "banned-phrase(只表示)",
-    "location": "message",
-    "text": "连接成功只表示可以同步，不代表全库已经理解。"
-  },
-  {
     "rule": "polite",
     "location": "message",
     "text": " · 未完成，请重试"
@@ -582,11 +567,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "GitHub 暂时限制请求，请稍后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "Gmail 使用现有 Google OAuth 客户端与回调地址。请在 Google Cloud 启用 Gmail API，再到模型与服务配置客户端。"
   },
   {
@@ -607,22 +587,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "OCR、索引和记忆分别处理；处理进度请在任务中心查看。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "Session 已变化或被清理，请返回并刷新分组"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "一场会议录音正在进行。请先结束当前会议。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "上一次处理仍在结束，请稍后再点击重试。"
   },
   {
     "rule": "polite",
@@ -657,11 +622,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "专用视图暂不可用，请查看资料库或重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "中央凭据身份确认不一致，原连接未修改；请重新生成邀请"
   },
   {
@@ -672,27 +632,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "中央处理状态待查询，请在中央任务中心查看"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "中央文字识别被阻止，请检查中央感知配置与处理状态。截图已保留。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "中央日程操作失败，请刷新或重新授权"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "中央服务暂不可用（503），请检查节点状态后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "中央来源已暂停，请在中央来源页恢复"
   },
   {
     "rule": "polite",
@@ -707,22 +652,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "中央说明已改变，请核对后保存。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "中央说明已改变。你的输入已保留，请核对当前说明后再保存。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "二维码图片导入暂仅支持 macOS，请使用 JSON 或连接链接"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "二维码生成失败，请使用上方授权链接。"
   },
   {
     "rule": "polite",
@@ -742,47 +672,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "任务未能完成，请查看处理状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "会议录音没有生成可上传的音频，请检查麦克风与系统音频权限。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "使用 HTTP 服务的 APIPassword。预设为 X2 地址，其他版本请按控制台修改地址和模型 ID。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "依赖步骤未完成，请先核对上游处理状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "依赖步骤未完成，请先检查上游任务"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "保存未完成，说明仍保留。请重新核对后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "保存未完成，请重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "保存结果尚未核实，请检查当前日程或重试同一请求。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "保存结果待核实，请查看系统日历后重试"
   },
   {
     "rule": "polite",
@@ -812,32 +707,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "内容已在其他地方修改或失效。请重新读取后再编辑。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "内容已接收，中央仍在处理正文。请稍后刷新。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "内容暂不可完整读取，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "内容超过大小限制，请分批处理。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "内部规划未完成，已保存的结果和未完成范围均保留。请查看失败原因后决定是否重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "最多 100 个遮挡区域，需要位于屏幕以内，宽高大于 0。请检查高级 JSON。"
   },
   {
     "rule": "polite",
@@ -852,37 +727,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "准备未完成，请检查网络和可用空间后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "准备状态待核实，请先准备扩展与本机桥接。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "凭据存储方式与当前 Profile 不匹配；请保留原目录并使用新的 Profile 重新登录。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "分页内容已变化或游标无效，请返回第一页重新读取。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "切换语言会重新加载界面，请先保存未提交的设置。继续？"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "切换语言会重新加载页面，请先保存未提交的修改。继续？"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。"
   },
   {
     "rule": "polite",
@@ -897,36 +747,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "压缩参数已带回设置，请点击保存后应用。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "原件归档不能应用文字遮盖，请选择内容索引。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "原任务入口当前不可用，请从主导航继续。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "原始资料已变化，此结果不能发布，请重新处理。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "原始转写导出无效，请重新读取。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "原始转写版本已变化，请重新打开。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "原始轮次与保存的引用不同；请打开原始对话核对，保存的引用未改变。"
   },
   {
@@ -937,22 +757,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "原文提取未完成，请查看来源与处理状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "原日程版本已改变，请核实已有操作"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "参考原件暂不可用，请清除参考后继续。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "另一个操作正在进行，请稍后重试。"
   },
   {
     "rule": "polite",
@@ -972,11 +782,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "同一个 App 还有其他 profile 正在运行。请先退出这些实例，再安装。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "同一次导入中的文件路径不能重复，请移除重复文件或分开提交。"
   },
   {
@@ -987,27 +792,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "同步已暂停，请恢复同步后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "同步未完成（原因代码：{0}）。请查看同步步骤，核对实际原因后再重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "后台任务繁忙，请稍后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "后台处理进程已退出，请重试；原数据保留"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "后续活动暂不可读取，请稍后重试。"
   },
   {
     "rule": "polite",
@@ -1027,11 +812,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "图片已同步，请切换到中央已归档查看"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "填写完整模型 ID；请选择支持 tools 的模型与路由。"
   },
   {
@@ -1042,17 +822,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "处理插件实例已停用，请检查配置后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "处理方案已保存，图片设置尚未确认；请保留草稿并重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "处理曾中断，请查看任务中心的恢复状态。"
   },
   {
     "rule": "polite",
@@ -1092,42 +862,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "处理服务离线，请检查服务状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "处理服务返回了重定向，请配置最终服务地址。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "处理未完成，请在来源页面查看详情"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "处理队列已停用，请启用后继续。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "备份文件包含个人资料，请保存在自己的位置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "备份超过 360 MiB，请使用完整 queue 文件夹迁移"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "复制失败，请使用二维码或授权链接。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "失败项保留原文件，请检查原密钥和存储空间后重试。"
   },
   {
     "rule": "polite",
@@ -1157,17 +897,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "安装交接已开始，请等待新版本启动"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "安装前请保存尚未提交的设置。记录草稿会先保存；所有 profile、Keychain、草稿、队列与模型目录保留。请先退出同一 App 的其他 profile。ad-hoc 签名更新后，macOS 可能再次要求授权；不会重置你的资料。安装目录不可写时可使用 Finder 手动替换 App。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "安装助手未能就绪，当前 App 保持运行。请检查应用目录并重试。"
   },
   {
     "rule": "polite",
@@ -1187,32 +917,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "对话存储已达到容量限制，请检查存储用量后再试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "对话状态已变化，请重新读取后继续。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "导入仍保留原始文件与解析资料；如需一并删除，请到导入页删除整次导入。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "导入尚未完成，当前写入结果待核实。请检查本机内容。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "导入未完成，可能已有记录保存在本机。请检查本机内容后重试所选备份。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "导出未完成，请重试"
   },
   {
     "rule": "polite",
@@ -1232,22 +942,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "尚未核对全部原件，请检查文件解析情况。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "尚未读取主对话，请刷新后重试。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "尚未连接 Google 账号，请在对应来源设置中完成授权。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "尚未连接飞书账号，请完成只读授权。"
   },
   {
     "rule": "polite",
@@ -1267,17 +967,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "已复制，请只粘贴到你信任的客户端。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "已归档的原件会保留。未上传完的本地文件需保持当前浏览器会话，刷新或关闭后请重新选择。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "已批准，请在客户端继续完成连接。"
   },
   {
     "rule": "polite",
@@ -1292,17 +982,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "已达到预览上限，请缩小来源或类型范围。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "已选择的截图目录不可用；请连接原磁盘后重试。不会新建空队列或自动回退旧副本"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "应用目录不可写。请显示已验证安装包，用 Finder 手动替换 App。"
   },
   {
     "rule": "polite",
@@ -1327,22 +1007,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "开发运行不能替换 Electron。请使用安装后的 Mac App；仍可下载更新包。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "开启后若仍无法采集，请回到 Mote 重新启动。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "开始前请先确认已告知在场的人。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "归档内容不完整，无法导入。请检查归档文件。"
   },
   {
     "rule": "polite",
@@ -1352,32 +1017,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "归档导入服务暂不可用，请检查节点状态后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "归档尚未准备好，请查看导出任务状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "归档操作状态已变化，请重新读取操作回执后再确认。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "归档校验失败，无法导入。请检查归档文件。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "归档超过节点当前大小限制，请检查归档和容量配置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "当前使用自定义处理连接，请在对应服务准备依赖。"
   },
   {
     "rule": "polite",
@@ -1392,11 +1032,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "当前推理强度不受所选 Codex 模型支持，请重新选择。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "当前是本机地址，只能由同一设备上的客户端访问。跨设备使用请填写可访问的 HTTPS 地址。"
   },
   {
@@ -1407,22 +1042,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "当前显示正文前 100000 个字符；完整内容请在中央打开。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "当前正文列表已变化，请重新读取。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "当前环境无法访问剪贴板，请使用下载 JSON，或展开内容手动复制。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "当前环境无法访问剪贴板，请手动选择文本复制。"
   },
   {
     "rule": "polite",
@@ -1447,37 +1067,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "待办已变化，请重新读取后再保存。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "待安装应用在校验后发生变化，已停止安装，请重新下载。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "待完成记录不能改写，请重新载入草稿后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "快照的临时输入已清理，请重新同步来源文件后重试。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "截图存储目录不完整，请连接原磁盘后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "截图目录不可用；请连接原磁盘后重试，已有记录不会被空目录替代"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "截图目录不能是符号链接或其他文件；请重新选择"
   },
   {
     "rule": "polite",
@@ -1497,17 +1092,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "所选服务已不可用，请返回后重新选择。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "所选模型配置不存在，请重新选择。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "所选正式资料已变化或暂不可提取，请重新打开当前版本。"
   },
   {
     "rule": "polite",
@@ -1532,27 +1117,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "所选资料无效，请重新打开原始记录。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "所选资料版本已变更或不可用。请清除参考或重新选择；草稿已保留。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "所需处理器版本当前不可用，请核对当前插件与来源处理。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "所需资料不可用，请查看来源与处理状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "所需资料处理失败，请查看来源并修复后重新检查。"
   },
   {
     "rule": "polite",
@@ -1567,37 +1132,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "报告暂不可读取，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "授权未完成，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "授权未完成或已过期。请返回 Mote 重新连接 Google 日历。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "授权条件已变化，请重新核对"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "授权链接已过期，请重新发起授权。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "授权链接已过期，请重新发起登录。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "授权链接无效，请重新发起授权。"
   },
   {
     "rule": "polite",
@@ -1608,21 +1143,6 @@
     "rule": "polite",
     "location": "message",
     "text": "接收成功或任务完成不代表源会话内容完整；请在正文中核对覆盖范围和缺片提示。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "接收状态暂不可用，请展开重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "提交版本已过期，请重新保存当前草稿"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "插件中心暂时不可用；请重新加载或返回设置。"
   },
   {
     "rule": "polite",
@@ -1642,11 +1162,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "操作未完成，请重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "操作未完成，请重试；重复开始会回到同一任务。"
   },
   {
@@ -1657,37 +1172,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "操作超时。请检查服务端网络，或重新发起授权。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "支持原文仅部分展开，请按需继续读取。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "数值诊断未开启；如需持续处理计数、资源与耗时，请在开发者设置中启用。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "文件仍在处理中，请等待当前任务结束后再操作。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "文件使用的服务已变更；请明确重新处理文件以应用新方案"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "文件处理已取消，请查看任务状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "文件夹层级或条目数超过上限，请拆分后导入。"
   },
   {
     "rule": "polite",
@@ -1707,37 +1197,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "文件访问时间标记无法读取，请保留来源状态并修复"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "文件选择已失效，请重新选择"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "文档同步尚未完成，请检查失败项并重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "文档搜索、文档读取与知识库读取；选择文件夹或日历时再增加对应只读权限。保存新增范围后，如有缺失权限，请重新授权。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "文档范围已变化，请保存后重新预览。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "新产物不在本次选择的证据范围内，请重新发起提取。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "新位置空间不足；请释放空间或选择其他位置"
   },
   {
     "rule": "polite",
@@ -1747,47 +1207,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "无法保存外观偏好，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法保存语言偏好，请检查浏览器存储。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法保留当前问题草稿，请稍后再切换语言。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法启动日历助手，请检查应用安装"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法恢复记录草稿，请重启应用。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法打开 Chrome，请手动打开扩展管理。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法打开截图目录，请检查磁盘是否已连接"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "无法打开权限授权，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法持久保存设置，请检查存储空间"
   },
   {
     "rule": "polite",
@@ -1803,11 +1223,6 @@
     "rule": "polite",
     "location": "message",
     "text": "无法读取所选文件，文件可能已移动或访问权限已失效。请重新选择文件。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "无法读取文件夹中的条目，请重新选择文件夹。"
   },
   {
     "rule": "polite",
@@ -1832,11 +1247,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "无法连接采集器进程，请重新打开 Mote。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "日历未授权或权限已撤销，请点击连接日历并检查系统设置"
   },
   {
@@ -1852,51 +1262,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "日志写入失败，请检查浏览器存储。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日志读取失败，请检查浏览器存储。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日志读取失败，请点击查看本地日志重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日志读取失败，请重试；原文件保留。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日程信息已变化，请读取最新内容后再继续。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日程分析服务已停止，请检查节点状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日程分析未完成，请查看批次状态后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日程分析未开启，请检查发现设置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "日程分析设置已变化，请重新分析。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "日程已过期，请检查日期"
   },
   {
@@ -1908,11 +1273,6 @@
     "rule": "polite",
     "location": "message",
     "text": "旧更新缓存暂时无法清理，请检查磁盘权限；采集资料未变动。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "时间回看内容已变化，请重新读取当前范围。"
   },
   {
     "rule": "polite",
@@ -1947,16 +1307,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "更新检查未完成，请检查网络和发布服务后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "更新检查未完成，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "有效期内，持有邀请的人可以领取该连接。请勿公开分享；关闭此页面不会取消邀请，需使用下面的取消按钮。"
   },
   {
@@ -1973,11 +1323,6 @@
     "rule": "polite",
     "location": "message",
     "text": "服务暂不可用，请检查节点状态与模型配置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "服务端尚未安装 Lark CLI。请点击安装，然后重新检测。"
   },
   {
     "rule": "polite",
@@ -2002,17 +1347,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "本地来源授权尚未结束，请稍后重试连接"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "本地队列仍绑定原节点，请恢复已确认的连接"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "本机内容暂不可读取，请重试。"
   },
   {
     "rule": "polite",
@@ -2022,27 +1357,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "本机处理未能启动，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "本机处理连接尚未配置，请检查运行设置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "本机存储不可用或已满；草稿目前只在此窗口，请先复制保存。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "本机记录保留，请检查目标位置后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "本机记录待同步空间已满，请先同步或导出待传内容。"
   },
   {
     "rule": "polite",
@@ -2067,11 +1382,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "本次选择的方案已不可用，请重新选择方案并发起提取。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "权限检查失败，请重试。"
   },
   {
@@ -2087,32 +1397,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "来源待同步队列已满，请恢复网络后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "来源状态暂不可用，请重新打开应用"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "查询所用资料已变化，请重新核对证据后发起查询。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "桥接尚未完成检查。请确认 Chrome 扩展已连接后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "桥接正在处理采集，请稍后重新检查。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "检查期间连接或站点范围已改变，请重新检查。"
   },
   {
     "rule": "polite",
@@ -2137,27 +1422,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "模型服务地址不正确，请检查配置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "模型服务拒绝了本次请求，请调整内容或处理范围。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "模型服务暂时不可用，请检查服务配置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "模型服务暂时限流，请等待任务更新。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "模型服务未完成请求，请查看任务状态。"
   },
   {
     "rule": "polite",
@@ -2173,16 +1438,6 @@
     "rule": "polite",
     "location": "message",
     "text": "模型服务请求未完成，请检查地址、凭据和模型配置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "模型服务重定向未获允许，请检查地址配置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "模型服务额度不足，请补充额度后继续。"
   },
   {
     "rule": "polite",
@@ -2237,11 +1492,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "模型返回的日程建议未通过校验，请重试分析。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "模型配置已变化，请在任务中心确认后继续；已完成的步骤会保留。"
   },
   {
@@ -2257,42 +1507,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "模型配置暂不可用，请检查模型设置和授权。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "正在处理，请稍候…"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "正在应用设置或退出，请稍后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "正在归档并提交任务，请等待服务器返回。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "正在结束上一轮采集，请稍后再试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "正在自动重新连接；请勿重复发送。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "正文暂不可读取，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "此主题已不可用，请返回全部记忆。"
   },
   {
     "rule": "polite",
@@ -2302,17 +1517,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "此任务当前不能重试，请重新读取任务状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "此客户端尚未上报同步策略。采集与同步偏好请在客户端设置。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "此文档已不在同步范围内，请检查范围后重试。"
   },
   {
     "rule": "polite",
@@ -2322,32 +1527,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "此来源已连接，请在列表中修改"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "此查询当前不能继续，请重新读取运行状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "此步骤在等待你确认。请查看下方已有问题或相关资料。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "此步骤需要处理，请查看当前具体原因。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "此渠道暂未提供可验证的发布清单。请稍后检查；旧版未签名发布不能用于应用内安装。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "此版本已变化，请返回资料列表重新选择。"
   },
   {
     "rule": "polite",
@@ -2382,16 +1567,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "理解没有完成，请检查模型与服务后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "登录会话已变更，请重新打开中央页面。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "登录已失效，请重新输入管理令牌。"
   },
   {
@@ -2403,11 +1578,6 @@
     "rule": "polite",
     "location": "message",
     "text": "登录请求已失效或过期，请重新发起登录。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "登录连接已结束，请重新登录后添加资料。"
   },
   {
     "rule": "polite",
@@ -2427,11 +1597,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "系统未允许修改登录启动项，请在系统设置检查"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "系统音频权限未授予，会议录音没有开始。请允许屏幕与系统音频录制后重试；不会在缺少系统声时只录麦克风。"
   },
   {
@@ -2447,42 +1612,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "统计读取失败，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "缺失或版本不符时，请管理员运行当前部署的 connectors-prepare，再重新检测。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "网页与服务版本不一致，请重新构建网页并刷新页面。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "自动恢复期限已结束，请在任务中心手动重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "自动整理窗口正在运行；请等待它结束后再提交手动整理。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "自动重试已停止，请核对原因后手动重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "草稿已更新，请重新载入当前草稿"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "草稿提交失败，请重试。"
   },
   {
     "rule": "polite",
@@ -2498,11 +1628,6 @@
     "rule": "polite",
     "location": "message",
     "text": "解析未说明是否需要确认，请核对预览。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "解析未说明继续处理的依据，请核对预览。"
   },
   {
     "rule": "polite",
@@ -2527,37 +1652,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "记录草稿无法读取；请先备份草稿文件再修复"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "记忆版本已变化，请重新打开后导出。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "设备：{0} · ID {1}。迁移已有设备时，请在中央邀请中选择此 ID。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "设备已在中央登记，或邀请已使用；请在中央选择此设备重新生成邀请"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "设置尚未读取完成，请稍后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "设置已变化，请重新读取并核对后继续。"
   },
   {
     "rule": "polite",
@@ -2577,11 +1677,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "设置正在应用或应用正在退出，请稍后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "访问凭据已失效，请重新连接。"
   },
   {
@@ -2597,37 +1692,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "该记录已完成同步，请切换到中央已归档查看"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "该配置仍是某项功能的默认模型，请先修改功能默认值。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "语言保存失败，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "说明已修改，请先重新生成预览。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "说明已在其他地方更新，请核对后再保存。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请为 --profile 指定环境短名"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请为下方路径中的当前应用授权，避免选中其他版本。"
   },
   {
     "rule": "polite",
@@ -2647,32 +1712,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请允许日历访问后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先保存修改后的同步范围。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先保存或还原修改，再开始采集。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先保存或还原设置修改，再安装更新。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请先保存截图位置，再单独保存节点连接；每次切换均会自动应用"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先停止采集，再修改配置"
   },
   {
     "rule": "polite",
@@ -2702,27 +1742,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请先在来源中选择日历并授权写入。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请先在设置 → 模型与服务 → 来源与外部应用中准备 Google OAuth 客户端与回调地址，然后重启节点。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "请先填写模型和所需凭据。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先完成当前记录输入，再安装更新。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先完成模型配置。"
   },
   {
     "rule": "polite",
@@ -2737,32 +1762,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请先检查可用更新"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请先确认中央地址"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "请先连接日历，再从已授权列表中选择"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先选择一条当前有效的精选记忆。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请先选择服务商并填写服务地址；可用模型目录会随后加载。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请先选择要编辑的来源"
   },
   {
     "rule": "polite",
@@ -2792,11 +1797,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请在 Chrome 完成扩展安装和站点授权，再返回重新检查。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请在中央网页的行动设置中授权此设备查看和确认日程建议"
   },
   {
@@ -2812,27 +1812,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请填写扩展名，例如 .md,.txt"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请填写新 API key，或选择清除已有密钥。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请填写新的服务密钥。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请填写记录正文，不能只有空白"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请填写飞书或 Lark 的 docx、wiki 文档链接或文档 token。"
   },
   {
     "rule": "polite",
@@ -2842,17 +1822,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请导入连接邀请文字"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请提供有效访问令牌；管理网页请重新登录"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请检查采集条件"
   },
   {
     "rule": "polite",
@@ -2872,27 +1842,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请求未完成，请稍后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请求的接口或资源不存在，请检查节点地址和当前操作。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "请求的操作或资源已失效，请重新读取后再确认。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请求等待超时，请查看任务状态。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请求等待超时，请检查节点和网络状态后重试。"
   },
   {
     "rule": "polite",
@@ -2927,11 +1882,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请留意这些信息"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请确认已告知在场的人并得到同意。该确认只在本机记住一次；之后开始会议录音不再重复询问。取消则不会开始录音。"
   },
   {
@@ -2947,97 +1897,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "请输入有效的应用 Bundle ID"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请输入管理访问令牌。"
   },
   {
     "rule": "polite",
     "location": "message",
-    "text": "请选择"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择 1–16 的准确人数或完整有序范围。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择 Mote v2 JSON 归档文件。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "请选择 Mote 应用数据目录以外的文件夹，避免与其他环境或应用文件混用"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择一条记录查看内容。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择可用的模型连接后启用活动整理。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择导入文件。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择执行位置"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择有效日期"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择有效日期，最多查看 32 天。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择模型连接"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请选择目标日历"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请通过文件夹选择器选择截图保存位置"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请通过本机文件夹选择器选择截图位置，再保存设置"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请配置中央处理服务"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "请配置模型服务"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "读取任务状态失败，请刷新重试。"
   },
   {
     "rule": "polite",
@@ -3052,22 +1917,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "读取活动失败，请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "读取记录失败，请刷新后重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "读取通知需要辅助功能权限，请先授权后再启用。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "读取采集记录失败，请重试"
   },
   {
     "rule": "polite",
@@ -3082,22 +1932,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "资料目录已变化，请返回第一页继续浏览。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "资料范围尚不完整或仍在整理。请核对已有正文；缺失部分不能作为已经读取的证据。"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "资料说明版本已变化；草稿已保留，请重新加载最新版本后再保存。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "转写服务未完成，请检查服务后重试"
   },
   {
     "rule": "polite",
@@ -3112,16 +1952,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "迁移记录与当前环境不匹配，请保留目录并检查配置"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "运行已中断，请查看历史结果后重新发起。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "还有待上传截图、记录或来源版本，不能更换节点或凭据；请先完成上传或备份处理旧队列"
   },
   {
@@ -3132,22 +1962,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "这个问题已更新，请查看最新内容后再回答。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "这份发现当前不可用，请从历史选择其他发现。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "这份建议暂不能确认，请查看当前原文。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "这份报告已因原始资料变化而失效，请重新生成回顾。"
   },
   {
     "rule": "polite",
@@ -3157,17 +1972,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "这份草稿已失效，请回到原回答重新生成。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "这条引用暂时打不开，请稍后重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "这次选择的资料超过单次处理上限，请减少选择后重试。"
   },
   {
     "rule": "polite",
@@ -3182,27 +1987,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "这组记录当前不可用，请重新读取当前范围。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "这项后台操作正在进行，请等待完成"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "连接失败或超时；请检查中央地址、HTTPS 证书和网络，不接受重定向"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "连接已改变，请刷新采集记录"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "连接暂时中断，请检查网络。"
   },
   {
     "rule": "polite",
@@ -3212,22 +1997,7 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "连接邀请已到期，请重新生成；已经连接的设备不受影响。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "选中的日历不再可读，请重新加载日历列表。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "遮挡区域格式无效，或超出了屏幕范围。请检查高级 JSON。"
   },
   {
     "rule": "polite",
@@ -3243,16 +2013,6 @@
     "rule": "polite",
     "location": "message",
     "text": "邀请无效、已使用或已过期，请在中央重新生成"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "部分原件未作为证据解析，请核对原件与预览。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "部分文档未完成读取，成功归档已保留。请逐篇重试失败项。"
   },
   {
     "rule": "polite",
@@ -3282,11 +2042,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "配置已不可用，请重新选择"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "配置已发生变化，请刷新后重试。"
   },
   {
@@ -3312,11 +2067,6 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "重新启动失败，请完全退出 Mote 后重新打开。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "重新配对时，请选择原设备以保留身份。成功配对后会替换该设备同权限类型的旧凭据。"
   },
   {
@@ -3337,37 +2087,12 @@
   {
     "rule": "polite",
     "location": "message",
-    "text": "队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "页面规则格式有误，请在高级规则中修正。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "预览失败，请调整参数重试"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
     "text": "预览已过期或设置已改变，请重新预览"
   },
   {
     "rule": "polite",
     "location": "message",
     "text": "飞书 CLI 操作未完成。请检查网络、应用权限及服务账号的系统钥匙串访问，再重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "飞书搜索分页未完整返回，本次未标记检查完成。请重试。"
-  },
-  {
-    "rule": "polite",
-    "location": "message",
-    "text": "飞书操作失败，请重新检测连接后重试。"
   },
   {
     "rule": "polite",
@@ -4298,11 +3023,6 @@
     "rule": "too-long",
     "location": "message",
     "text": "同一设备、同一应用的连续截图归为一段；切换应用或相邻采样超过 5 分钟即分段。范围仅限所选日期，本机与中央按各自保留的记录分组。"
-  },
-  {
-    "rule": "too-long",
-    "location": "message",
-    "text": "同步、正文提取和语义理解分别计算；连接或提取完成不等于语义理解完成。"
   },
   {
     "rule": "too-long",
@@ -6682,162 +5402,12 @@
   {
     "rule": "trailing-arrow",
     "location": "message",
-    "text": "{0} 条记录 · {1} 张图片 · 展开 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "Chrome 页面采集 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "下载 Mac / Android 客户端 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "下载 Mac 客户端 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "中央工作台管理 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "全部功能与设置 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "前往授权 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "发布说明 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "发送设置 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "发送详情 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "在中央打开 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "在中央打开完整内容 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "在处理任务中查看接收状态 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
     "text": "对话历史 →"
   },
   {
     "rule": "trailing-arrow",
     "location": "message",
-    "text": "导入资料 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "屏幕录制已授权 · 管理 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "屏幕录制未授权 · 去授权 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "屏幕录制权限 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "屏幕记录状态 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "打开图片压缩预览 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "打开完整磁盘访问 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "打开当前目录 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "打开数据目录 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "打开此录音来源 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "打开系统设置 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "日历权限 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "本机采集与同步 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
     "text": "查看全部 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "查看具体参数 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "查看内容 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "查看原文 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "查看图片处理设置 →"
   },
   {
     "rule": "trailing-arrow",
@@ -6848,56 +5418,6 @@
     "rule": "trailing-arrow",
     "location": "message",
     "text": "查看结果与依据 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "检查 / 分配对应模块 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "检查模型连接 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "管理本机来源 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "管理权限 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "管理自动记忆与当前方案 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "管理连接地址 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "详情 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "连接到中央 →"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "需处理 · 当前 ↗"
-  },
-  {
-    "rule": "trailing-arrow",
-    "location": "message",
-    "text": "麦克风与系统音频权限 ↗"
   },
   {
     "rule": "too-long",

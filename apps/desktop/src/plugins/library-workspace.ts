@@ -47,7 +47,7 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
   const withConnection = async <T>(operation: (config: Config,authorize:()=>void) => Promise<T>): Promise<T> => {
     active();
     const requested=options.settings(),generation=options.generation?.(),token=connectionToken(requested);
-    const authorize=()=>{active();if(options.settings()!==requested||options.generation?.()!==generation||connectionToken(options.settings())!==token)throw Error(moteText('连接已改变，请刷新采集记录'));};
+    const authorize=()=>{active();if(options.settings()!==requested||options.generation?.()!==generation||connectionToken(options.settings())!==token)throw Error(moteText('连接已改变，刷新采集记录'));};
     authorize();const result=await operation({...requested},authorize);authorize();
     return result;
   };

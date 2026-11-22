@@ -23,7 +23,7 @@ export function localContentPage(queue:DurableQueue,sources:LocalSourceManager,o
 export async function localContentDetail(queue:DurableQueue,sources:LocalSourceManager,key:string,image=false):Promise<ContentDetail>{
   if(typeof key!=='string'||key.length>160||typeof image!=='boolean')throw Error(moteText('记录标识无效'));
   if(key.startsWith('queue:')){
-    const record=queue.recordForHistory(key.slice(6));if(!record)throw Error(moteText('该记录已完成同步，请切换到中央已归档查看'));
+    const record=queue.recordForHistory(key.slice(6));if(!record)throw Error(moteText('该记录已完成同步，切换到中央已归档查看'));
     if(record.localContentRelease)return {localContentRelease:record.localContentRelease,canRelease:Boolean(record.localContentRelease.pending),text:'',sourceName:record.event.deviceName,metadata:JSON.stringify({id:record.event.id,capturedAt:record.event.capturedAt,source:record.event.source,archiveAcknowledgment:record.archiveAcknowledgment},null,2),retainsOriginal:false};
     const event=record.event;let text=event.source==='note'?noteBody(event.ocrText??'',event.metadata):event.ocrText??'';
     if(event.source==='activity')text=moteText('仅记录应用活动；未采集屏幕、窗口标题或正文');
@@ -67,7 +67,7 @@ export async function centralSourceContentPage(config:import('./contracts').Conf
   if(cursor!==undefined&&(typeof cursor!=='string'||cursor.length>4096))throw Error(moteText('分页参数无效'));
   const query=new URLSearchParams({deviceId:config.deviceId,limit:'30',...(cursor?{cursor}:{})});
   const response=await fetch(`${validateServerUrl(config.serverUrl)}/api/sources/${encodeURIComponent(source.id)}/items?${query}`,{headers:{Authorization:`Bearer ${requireConnectionToken(config)}`},redirect:'error',signal:AbortSignal.timeout(20000)});
-  if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)return {items:[],authorizationDenied:true};if(response.status===404)return {items:[]};throw Error(moteText('内容暂不可完整读取，请重试。'));}
+  if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)return {items:[],authorizationDenied:true};if(response.status===404)return {items:[]};throw Error(moteText('内容暂不可完整读取，重试。'));}
   const page=JSON.parse(await readResponseText(response,4*1024*1024)) as {items:Record<string,unknown>[];nextCursor?:string|null};
   if(!Array.isArray(page.items)||page.items.length>30||page.nextCursor!=null&&typeof page.nextCursor!=='string')throw Error(moteText('记录不属于当前设备'));
   const items=page.items.map(row=>{const {captureId,sourceId,receivedAt,current,...raw}=row;

@@ -20,7 +20,7 @@ export class BackgroundJobs {
     const prior = this.rows.get(id); if (prior?.state === 'running') this.rows.set(id, { ...prior, ...value });
   }
   run<T>(id: string, label: string, work: () => T | Promise<T>): Promise<T> {
-    if (this.running.has(id)) return Promise.reject(new Error(moteText("这项后台操作正在进行，请等待完成")));
+    if (this.running.has(id)) return Promise.reject(new Error(moteText("这项后台操作正在进行，等待完成")));
     this.rows.set(id, { id, message: label, startedAt: Date.now(), state: 'running' });
     const result = Promise.resolve().then(work);
     this.running.set(id, result);

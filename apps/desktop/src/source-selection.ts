@@ -19,7 +19,7 @@ export class SourceSelectionController {
 
   async confirm(id: unknown, input: unknown): Promise<{sourceIds:string[]}> {
     const selection = typeof id === 'string' ? this.selections.get(id) : undefined;
-    if (!selection) throw new Error(moteText('文件选择已失效，请重新选择'));
+    if (!selection) throw new Error(moteText('文件选择已失效，重新选择'));
     const options = normalizeSourceOptions(input);
     // Remove each success immediately: retry after a partial failure never duplicates it.
     while (selection.paths.length) { const sourceId=await this.addFiles(selection.paths[0], options);selection.sourceIds.push(sourceId);selection.paths.shift(); }

@@ -38,7 +38,7 @@ function RecordingSteps({api,path}:{api:Api;path:string}){
     return <>{read.error&&<p role="alert">{connectorFailure(read.error)}</p>}<div className="discovery-bounded-list" role="region" aria-label={moteText("同步步骤与状态明细")} tabIndex={0}>{read.data?.items.map(step=><Step key={step.id} step={step}/>)}</div><ListPagination label={moteText('步骤分页')} paging={paging} nextCursor={read.data?.nextCursor} count={read.data?.items.length??0} loading={read.loading}/></>;
 }
 function Step({step}:{step:RecordingStatus['steps'][number]}){
-    return <p>{step.title&&<strong>{step.title} · </strong>}{phases[step.phase]?moteText(phases[step.phase]):step.phase} · {states[step.state]?moteText(states[step.state]):step.state} · {moteText('尝试 {0} 次',step.attempts)}{step.error&&<> · {problem(step.error,step.phase)} <code className="discovery-technical-id">{step.error}</code></>}{step.state==='waiting'&&Boolean(step.availableAt)&&step.availableAt!>Date.now()&&<> · {moteText('下次可运行时间')} {new Date(step.availableAt!).toLocaleString()}</>}{step.state==='failed'&&<> · {moteText('自动重试已停止，请核对原因后手动重试')}</>}</p>;
+    return <p>{step.title&&<strong>{step.title} · </strong>}{phases[step.phase]?moteText(phases[step.phase]):step.phase} · {states[step.state]?moteText(states[step.state]):step.state} · {moteText('尝试 {0} 次',step.attempts)}{step.error&&<> · {problem(step.error,step.phase)} <code className="discovery-technical-id">{step.error}</code></>}{step.state==='waiting'&&Boolean(step.availableAt)&&step.availableAt!>Date.now()&&<> · {moteText('下次可运行时间')} {new Date(step.availableAt!).toLocaleString()}</>}{step.state==='failed'&&<> · {moteText('自动重试已停止，核对原因后手动重试')}</>}</p>;
 }
 const inputTime = (value?: string) => {
     if (!value) return '';
@@ -180,7 +180,7 @@ export function RecordingsSettings({ api, onSources, onOpen, onAdd, embedded = f
     const chosen = providers.find(status => status.provider === selected);
     const chooseProvider = onSelect ?? choose;
     const card = (status: RecordingStatus) => {
-        const content = <><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源 →")}</span></>;
+        const content = <><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源")}</span></>;
         return onSelect
             ? <button type="button" className="panel discovery-source-card" key={status.provider} onClick={() => onSelect(status.provider)}>{content}</button>
             : <a className="panel discovery-source-card" key={status.provider} href={'#/connections/recordings?provider=' + encodeURIComponent(status.provider)}>{content}</a>;

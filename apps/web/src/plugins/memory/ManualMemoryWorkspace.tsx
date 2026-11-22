@@ -62,13 +62,13 @@ export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMem
   if(snapshot.scope.kind==='source'){
    const selected=snapshot.scope.choice;
    if(selected.kind==='material'){
-    const id=selected.ref.match(/^material:(mat_[a-f0-9]{64})@[a-f0-9]{64}$/)?.[1];if(!id)throw Error(moteText('所选正式资料已变化或暂不可提取，请重新打开当前版本。'));
+    const id=selected.ref.match(/^material:(mat_[a-f0-9]{64})@[a-f0-9]{64}$/)?.[1];if(!id)throw Error(moteText('所选正式资料已变化或暂不可提取，重新打开当前版本。'));
     const fresh=await api.request<Material>('/api/materials/'+encodeURIComponent(id),{signal});
-    if(fresh.ref!==selected.ref||fresh.memorySource?.status!=='ready'||JSON.stringify(fresh.memorySource.evidenceIds)!==JSON.stringify(body.evidenceIds))throw Error(moteText('所选正式资料已变化或暂不可提取，请重新打开当前版本。'));
+    if(fresh.ref!==selected.ref||fresh.memorySource?.status!=='ready'||JSON.stringify(fresh.memorySource.evidenceIds)!==JSON.stringify(body.evidenceIds))throw Error(moteText('所选正式资料已变化或暂不可提取，重新打开当前版本。'));
    }else{
-    const id=parseEvidenceRef(selected.ref)?.id;if(!id)throw Error(moteText('所选资料无效，请重新打开原始记录。'));
+    const id=parseEvidenceRef(selected.ref)?.id;if(!id)throw Error(moteText('所选资料无效，重新打开原始记录。'));
     const fresh=await api.request<Capture&{libraryVersion?:string}>('/api/capture-browser/'+encodeURIComponent(id),{signal});
-    if(fresh.id!==id||!snapshot.pin||fresh.libraryVersion!==snapshot.pin)throw Error(moteText('此版本已变化，请返回资料列表重新选择。'));
+    if(fresh.id!==id||!snapshot.pin||fresh.libraryVersion!==snapshot.pin)throw Error(moteText('此版本已变化，返回资料列表重新选择。'));
    }
   }
  };
@@ -86,7 +86,7 @@ export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMem
    const snapshot=saved??{body,scope:structuredClone(work.scope),pin:choice?.kind==='capture'?sourcePin:undefined,modelPin:selectedModelPin(models.data!,options.model||undefined)};
    await freshSnapshot(snapshot,signal);if(!current())return;
    const result=await api.request<{id:string}>('/api/memory-jobs',{method:'POST',body:snapshot.body,signal});
-   if(typeof result.id!=='string'||!result.id.trim())throw Error(moteText('中央响应格式无效，请刷新后重试。'));if(visit.current.api!==api||signal.aborted)return;owned.current.items.set(result.id,snapshot);refresh();if(current())change({view:'job',jobId:result.id,scope:snapshot.scope});
+   if(typeof result.id!=='string'||!result.id.trim())throw Error(moteText('中央响应格式无效，刷新后重试。'));if(visit.current.api!==api||signal.aborted)return;owned.current.items.set(result.id,snapshot);refresh();if(current())change({view:'job',jobId:result.id,scope:snapshot.scope});
   });
  }
  async function control(action:'pause'|'resume'|'cancel'|'retry'){
@@ -102,7 +102,7 @@ export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMem
   {work.view==='extract-entry'&&<><button className="button" disabled={busy} onClick={()=>change({view:'range',scope:chosenRange})}>{moteText('按时间范围提取')}</button><MemoryWorkChoices api={api} kind="extract" deviceId={range.deviceId} disabled={allBusy} onMaterial={choice=>change({view:'source',scope:{kind:'source',choice}})} onMemory={()=>{}}/><button className="text-button" onClick={()=>change({view:'job',jobId:work.jobId??launch.jobId??recent.data?.items[0]?.id})}>{moteText('查看最近的处理')}</button></>}
   {work.view==='integrate-entry'&&<><MemoryWorkChoices api={api} kind="integrate" deviceId={range.deviceId} disabled={allBusy} onMaterial={()=>{}} onMemory={candidate=>change({view:'integration',candidate})}/><button className="text-button" onClick={()=>change({view:'integration'})}>{moteText('查看最近的处理')}</button></>}
   {(work.view==='range'||work.view==='source')&&<form className="memory-work-scope" onSubmit={event=>{event.preventDefault();void submit();}}>
-   {work.scope.kind==='range'?<div className="memory-work-dates"><label>{moteText('开始日期')}<input type="date" disabled={allBusy} required value={work.scope.after} max={work.scope.before||undefined} onChange={event=>changeRange({...work.scope as Extract<Scope,{kind:'range'}>,after:event.target.value})}/></label><label>{moteText('结束日期')}<input type="date" disabled={allBusy} required min={work.scope.after||undefined} value={work.scope.before} onChange={event=>changeRange({...work.scope as Extract<Scope,{kind:'range'}>,before:event.target.value})}/></label></div>:<div className="memory-work-scope-notice"><strong>{work.scope.choice.title||material.data?.title||source.data?.windowTitle||source.data?.appName||moteText('原始记录')}</strong><p>{moteText('本次只提取这份资料。')}</p>{!source.data&&!material.data&&(source.loading||material.loading)&&<Loading/>}<button type="button" className="text-button" onClick={()=>onOpen(work.scope.kind==='source'?work.scope.choice.ref:'')}>{moteText('查看原文')}</button>{!readable&&!source.loading&&!material.loading&&<p role="alert">{source.error||material.error?errorMessage(source.error||material.error):!captureId&&!materialId?moteText('所选资料无效，请重新打开原始记录。'):choice?.kind==='material'?moteText('所选正式资料已变化或暂不可提取，请重新打开当前版本。'):moteText('此版本已变化，请返回资料列表重新选择。')}</p>}</div>}
+   {work.scope.kind==='range'?<div className="memory-work-dates"><label>{moteText('开始日期')}<input type="date" disabled={allBusy} required value={work.scope.after} max={work.scope.before||undefined} onChange={event=>changeRange({...work.scope as Extract<Scope,{kind:'range'}>,after:event.target.value})}/></label><label>{moteText('结束日期')}<input type="date" disabled={allBusy} required min={work.scope.after||undefined} value={work.scope.before} onChange={event=>changeRange({...work.scope as Extract<Scope,{kind:'range'}>,before:event.target.value})}/></label></div>:<div className="memory-work-scope-notice"><strong>{work.scope.choice.title||material.data?.title||source.data?.windowTitle||source.data?.appName||moteText('原始记录')}</strong><p>{moteText('本次只提取这份资料。')}</p>{!source.data&&!material.data&&(source.loading||material.loading)&&<Loading/>}<button type="button" className="text-button" onClick={()=>onOpen(work.scope.kind==='source'?work.scope.choice.ref:'')}>{moteText('查看原文')}</button>{!readable&&!source.loading&&!material.loading&&<p role="alert">{source.error||material.error?errorMessage(source.error||material.error):!captureId&&!materialId?moteText('所选资料无效，重新打开原始记录。'):choice?.kind==='material'?moteText('所选正式资料已变化或暂不可提取，重新打开当前版本。'):moteText('此版本已变化，返回资料列表重新选择。')}</p>}</div>}
    <details className="memory-processing-options"><summary>{moteText('处理选项')}</summary><ModelSelector api={api} feature="memory" detachedFromForm value={options.model} onChange={model=>setSettings({...options,model})} disabled={busy||running}/><ManualMemoryRecipes api={api} value={options.recipes} onChange={recipes=>setSettings({...options,recipes})} disabled={busy||running}/></details>
    {Boolean(models.error)&&<p role="alert">{errorMessage(models.error)}<button type="button" className="text-button" onClick={models.refresh}>{moteText('重新读取')}</button></p>}
    <button className="button primary" type="submit" disabled={busy||running||!!choice&&!readable||!models.data||!!models.error||models.loading}>{busy?moteText('正在提交…'):moteText('开始提取')}</button>

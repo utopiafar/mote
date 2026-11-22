@@ -270,7 +270,7 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
             const kind = args[0];
             if (kind !== 'json' && kind !== 'qr') throw new Error(moteText('邀请导入方式无效'));
             onboarding.clear();
-            if (kind === 'qr' && options.platform !== 'macos') throw new Error(moteText('二维码图片导入暂仅支持 macOS，请使用 JSON 或连接链接'));
+            if (kind === 'qr' && options.platform !== 'macos') throw new Error(moteText('二维码图片导入暂仅支持 macOS，使用 JSON 或连接链接'));
             const path = await d.chooseInvitation(kind);
             if (!path) return {canceled: true};
             try {
@@ -296,7 +296,7 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
             if (!options.defaultProfile && updated.openAtLogin) throw new Error(moteText('命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数'));
             const relocating = updated.captureStorageDirectory !== current.captureStorageDirectory;
             const changingConnection = updated.serverUrl !== current.serverUrl || updated.token !== current.token;
-            if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== d.pendingStorageDirectory()) throw new Error(moteText('请通过本机文件夹选择器选择截图位置，再保存设置'));
+            if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== d.pendingStorageDirectory()) throw new Error(moteText('通过本机文件夹选择器选择截图位置，再保存设置'));
             if (relocating && changingConnection) throw new Error(moteText('请先保存截图位置，再单独保存节点连接；每次切换均会自动应用'));
             if (changingConnection && updated.token) {
               const identity = await testConnection(updated, fetch, false);

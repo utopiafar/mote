@@ -9,12 +9,12 @@ export function BrowserLogSettings({profile}:{profile?:string}) {
   useEffect(()=>{setPolicy(initializeBrowserLogging(profile));},[profile]);
   useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='mote-browser-log-settings')setPolicy(initializeBrowserLogging(profile));};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[profile]);
   async function read() {
-    try {const rows=await readStoredBrowserLogs();const text=rows.map(row=>JSON.stringify(row)).join('\n');setLogs(text);setMessage(browserLogWriteFailed()?moteText('日志写入失败，请检查浏览器存储。'):'');return text;}
-    catch {setMessage(moteText('日志读取失败，请检查浏览器存储。'));return undefined;}
+    try {const rows=await readStoredBrowserLogs();const text=rows.map(row=>JSON.stringify(row)).join('\n');setLogs(text);setMessage(browserLogWriteFailed()?moteText('日志写入失败，检查浏览器存储。'):'');return text;}
+    catch {setMessage(moteText('日志读取失败，检查浏览器存储。'));return undefined;}
   }
   function save() {
     try {setPolicy(saveBrowserLogPolicy(policy));setMessage(moteText('已保存，立即生效。'));}
-    catch {setMessage(moteText('无法持久保存设置，请检查存储空间'));}
+    catch {setMessage(moteText('无法持久保存设置，检查存储空间'));}
   }
   async function download() {
     const text=await read();if(text===undefined)return;

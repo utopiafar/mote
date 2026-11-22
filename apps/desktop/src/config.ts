@@ -78,7 +78,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   const imageDedupeMode = input.imageDedupeMode ?? current.imageDedupeMode;
   if (!['off', 'exact', 'conservative', 'balanced', 'aggressive'].includes(imageDedupeMode)) throw new Error('Invalid image deduplication mode');
   const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory;
-  if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error(moteText("请通过文件夹选择器选择截图保存位置"));
+  if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error(moteText("通过文件夹选择器选择截图保存位置"));
   if (typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
   if (typeof input.diagnosticsEnabled !== 'boolean' || typeof input.pauseOnBattery !== 'boolean') throw new Error(moteText("诊断或电量策略开关值无效"));
   if (input.token !== undefined && (typeof input.token !== 'string' || input.token.length > 4096 || /[\r\n]/.test(input.token))) throw new Error(moteText("令牌格式不正确"));

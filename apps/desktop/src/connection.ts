@@ -53,7 +53,7 @@ export class ConnectionOnboarding {
   constructor(private fetcher: typeof fetch = fetch, private now = Date.now) {}
   preview(input: unknown): ConnectionPreview {
     this.pending = undefined;
-    if (typeof input !== 'string') throw new ConnectionError('INPUT', moteText("请导入连接邀请文字"));
+    if (typeof input !== 'string') throw new ConnectionError('INPUT', moteText("导入连接邀请文字"));
     const invitation = parseConnectionInvitation(input, this.now());
     const preview = { id: randomUUID(), serverUrl: invitation.serverUrl, expiresAt: invitation.expiresAt };
     this.pending = { preview, invitation }; return { ...preview };

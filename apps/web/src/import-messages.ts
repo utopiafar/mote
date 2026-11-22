@@ -12,10 +12,10 @@ function hostGateKey(job:ImportJob):string|undefined {
  // Manual processing is not public. Its sentence cannot prove a host branch.
  if(gate.decision==='confirmation'){
   if(gate.reason===missingAssessment&&!decision)return '解析未说明是否需要确认，请核对预览。';
-  if(gate.reason===unexplainedAssessment&&decision&&!decision.reason?.trim())return '解析未说明继续处理的依据，请核对预览。';
+  if(gate.reason===unexplainedAssessment&&decision&&!decision.reason?.trim())return '解析未说明继续处理的依据，核对预览。';
   if(decision?.requiresConfirmation===false&&decision.reason?.trim()){
-   if(gate.reason===missingOriginals&&(!job.dispositions||job.dispositions.items.length!==job.files.length))return '尚未核对全部原件，请检查文件解析情况。';
-   if(gate.reason===unparsedOriginals&&job.dispositions&&job.dispositions.items.length===job.files.length&&(job.dispositions.counts.unsupported||(!job.dispositions.counts.parsed&&!job.dispositions.counts.processing)))return '部分原件未作为证据解析，请核对原件与预览。';
+   if(gate.reason===missingOriginals&&(!job.dispositions||job.dispositions.items.length!==job.files.length))return '尚未核对全部原件，检查文件解析情况。';
+   if(gate.reason===unparsedOriginals&&job.dispositions&&job.dispositions.items.length===job.files.length&&(job.dispositions.counts.unsupported||(!job.dispositions.counts.parsed&&!job.dispositions.counts.processing)))return '部分原件未作为证据解析，核对原件与预览。';
   }
  }
 }

@@ -30,7 +30,7 @@ async function start() {
   apply.addEventListener('click',async()=>{
     if(saving||!dirty())return;
     const next=languagePreference(select.value);
-    if(next!==language.preference&&!window.confirm(translate(language.locale,'切换语言会重新加载界面，请先保存未提交的设置。继续？')))return;
+    if(next!==language.preference&&!window.confirm(translate(language.locale,'切换语言会重新加载界面，先保存未提交的设置。继续？')))return;
     saving=true;update();error.hidden=true;
     try {
       if(appearance.value!==desktopAppearance.getSnapshot().preference)receiveAppearance(await window.mote.setAppearance(appearance.value as 'light'|'dark'|'auto'));
@@ -38,7 +38,7 @@ async function start() {
       preferences.dataset.dirty='false';
     } catch {
       window.dispatchEvent(new Event('mote-language-change-failed'));
-      error.textContent=translate(language.locale,next!==language.preference?'语言保存失败，请重试。':'无法保存外观偏好，请重试。');error.hidden=false;
+      error.textContent=translate(language.locale,next!==language.preference?'语言保存失败，重试。':'无法保存外观偏好，重试。');error.hidden=false;
     } finally {saving=false;update();}
   });
   await import('./ui');

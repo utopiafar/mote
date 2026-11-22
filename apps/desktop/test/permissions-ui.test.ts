@@ -29,7 +29,7 @@ it('requests only the selected permission, manages existing grants, and never cl
   expect(api.requestPermission).not.toHaveBeenCalled();
   expect(el('#permission-screen').textContent).toBe('! 未授权');
   expect(el('#permission-calendar').textContent).toBe('! 尚未授权');
-  expect(button('accessibility').textContent).toBe('管理权限 ↗');
+  expect(button('accessibility').textContent).toBe('管理权限');
   expect(el('#permission-drag-help').hidden).toBe(false);
   button('screen').click(); await flush(); expect(api.requestPermission).toHaveBeenCalledWith('screen');
   button('accessibility').click(); await flush(); expect(api.permissionSettings).toHaveBeenCalledWith('accessibility');

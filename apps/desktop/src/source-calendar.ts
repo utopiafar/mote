@@ -13,7 +13,7 @@ export async function calendarHelper(path: string, command: 'calendar-permission
     const timer = setTimeout(() => { child.kill('SIGKILL'); finish(new Error(moteText("日历读取超时，可重试或检查系统权限"))); }, command === 'calendar-permission' ? 120000 : 20000);
     signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
     child.stdout.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > 9 * 1024 * 1024) { child.kill('SIGKILL'); finish(new Error(moteText("日历读取超过安全上限"))); } else chunks.push(chunk); });
-    child.on('error', () => finish(new Error(moteText("无法启动日历助手，请检查应用安装"))));
+    child.on('error', () => finish(new Error(moteText("无法启动日历助手，检查应用安装"))));
     child.on('close', code => { if (done) return; if (code !== 0) return finish(new Error(moteText("日历读取失败，请检查日历权限后重试"))); try { finish(undefined, JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { finish(new Error(moteText("日历助手返回格式无效"))); } });
     child.stdin.on('error', () => {}); child.stdin.end(input ? JSON.stringify(input) : '');
   });

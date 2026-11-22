@@ -506,7 +506,7 @@ export function EvidenceDialog({
       setReaderTools(false);
       const body=readerPanel.current?.querySelector('.evidence-text>pre'),selection=window.getSelection();
       if(body&&selection){const range=document.createRange();range.selectNodeContents(body);selection.removeAllRanges();selection.addRange(range);}
-      setError(moteText("剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。"));
+      setError(moteText("剪贴板不可用，已全选，按 ⌘/Ctrl+C 复制。"));
     }
   }
   const presentation = capture ? evidencePresentation(capture) : null;
