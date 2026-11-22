@@ -42,7 +42,7 @@ test('changing a credential destination requires explicit reuse for every retain
   for (const patch of [{provider: 'openai'}, {protocol: 'openai-responses' as const}, {baseUrl: 'https://other.fixture.example/v1'}]) {
     const changed = {...draft, ...patch};
     assert.equal(retainedCredentialsNeedConfirmation(changed, snapshot.settings), true);
-    assert.throws(() => modelSettingsRequest(snapshot, changed), /请填写新凭据/);
+    assert.throws(() => modelSettingsRequest(snapshot, changed), /填入、清除或明确复用凭据/);
     assert.equal(modelSettingsRequest(snapshot, {...changed, allowCredentialReuse: true}).allowCredentialReuse, true);
     assert.doesNotThrow(() => modelSettingsRequest(snapshot, {...changed, apiKeyAction: 'clear', headersAction: 'clear', extraBodyAction: 'clear'}));
   }

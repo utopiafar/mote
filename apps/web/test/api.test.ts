@@ -111,13 +111,13 @@ test('structured provider errors use localized codes and retain correlation with
   const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:code,message:'RAW EXTERNAL ENGINE TEXT',requestId}),{status:503}));
   await assert.rejects(createApi({token:'synthetic'}).request('/api/query-runs'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.code,code);assert.doesNotMatch(errorMessage(error),/RAW EXTERNAL/);assert.match(errorMessage(error),new RegExp(requestId));if(code==='unknown_generated_code')assert.match(errorMessage(error),/错误码：unknown_generated_code/);return true;});mock.mock.restore();
  }
- const {failureMessage}=await import('../src/failure-message.js');assert.match(failureMessage({code:'provider_authentication',safeMessage:'Private provider detail'}),/检查凭据/);assert.doesNotMatch(failureMessage({code:'unknown_generated_code',message:'Private provider detail'}),/Private provider/);
+ const {failureMessage}=await import('../src/failure-message.js');assert.match(failureMessage({code:'provider_authentication',safeMessage:'Private provider detail'}),/认证失败.*核对凭据/);assert.doesNotMatch(failureMessage({code:'unknown_generated_code',message:'Private provider detail'}),/Private provider/);
 });
 
 test('provider reason outranks generic HTTP category and local configuration guidance remains actionable',async t=>{
  const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'model_not_configured',reason:'provider_quota',message:'RAW EXTERNAL ENGINE'}),{status:502}));
  await assert.rejects(createApi({token:'fixture'}).request('/api/query-runs'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.code,'provider_quota');assert.match(errorMessage(error),/补充额度/);return true;});mock.mock.restore();
- const {failureMessage}=await import('../src/failure-message.js');assert.match(failureMessage('model_settings_credential_reuse'),/确认复用已有凭据/);assert.match(failureMessage('validation'),/必填项和取值范围/);
+ const {failureMessage}=await import('../src/failure-message.js');assert.match(failureMessage('model_settings_credential_reuse'),/确认复用凭据/);assert.match(failureMessage('validation'),/必填项和取值范围/);
 });
 
 test('provider throttling retains localized messages, request identity and authentication',async t=>{

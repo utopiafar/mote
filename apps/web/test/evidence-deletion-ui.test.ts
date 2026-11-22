@@ -27,7 +27,7 @@ test('a virtual original without a unique deletion capability stays readable wit
 });
 
 for(const receipt of [undefined,null,{}, {deleted:0},{deleted:-1},{deleted:1.5},{deleted:'1'},{deleted:Number.NaN}] )test('an unconfirmed deletion receipt '+JSON.stringify(receipt)+' preserves the exact original and does not close',async t=>{
- const f=await fixture(t,async()=>receipt);await f.confirm();assert.equal(f.writes.length,1);assert.deepEqual(f.events,{closed:0,deleted:0});assert.equal(f.d.querySelector('.evidence-text pre')!.textContent,original.ocrText);assert.match(f.d.body.textContent!,/未能确认删除完成。请刷新查看当前状态。/);assert.equal(f.d.querySelector<HTMLDetailsElement>('.deletion-diagnostic')!.open,false);assert.equal(f.d.querySelector<HTMLButtonElement>('.evidence-footer .danger')!.disabled,false);
+ const f=await fixture(t,async()=>receipt);await f.confirm();assert.equal(f.writes.length,1);assert.deepEqual(f.events,{closed:0,deleted:0});assert.equal(f.d.querySelector('.evidence-text pre')!.textContent,original.ocrText);assert.match(f.d.body.textContent!,/删除待确认.*刷新/);assert.equal(f.d.querySelector<HTMLDetailsElement>('.deletion-diagnostic')!.open,false);assert.equal(f.d.querySelector<HTMLButtonElement>('.evidence-footer .danger')!.disabled,false);
  await act(async()=>{});assert.equal(f.writes.length,1,'rendering never repeats the write');
 });
 

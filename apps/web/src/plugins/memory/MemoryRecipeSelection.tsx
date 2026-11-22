@@ -37,8 +37,8 @@ export function MemoryRecipeSelection({api}:{api:Api}){
   return <section className="memory-recipe-selection"><h3>{moteText('自动 Memory 组合')}</h3>
     <p>{moteText('策略用于新资料，可共用成果。保留历史记忆，不重算。')}</p>
     <label>{moteText('应用范围')}<select aria-label={moteText('应用范围')} value={source} disabled={busy||dirty} onChange={e=>setSource(e.target.value)}><option value="">{moteText('默认组合')}</option><option value="capture">{moteText('截图和页面采集默认组合')}</option><option value="lark-docs">{moteText('飞书文档默认组合')}</option>{sources.data?.items.map(s=><option value={'source:'+s.id} key={s.id}>{s.name}</option>)}</select></label>
-    <p className="muted">{moteText('截图、页面分别设置默认策略。来源设置优先，日常事件可按天回顾。')}</p>
-    {scope==='lark-docs'&&<p className="muted">{moteText('飞书正文独立设置，来源规则优先。打开线索仅入日常事件，不重新计算历史。')}</p>}
+    <p className="muted">{moteText('截图和页面采集使用独立默认组合；来源覆盖优先。日常事件保留浏览和行动线索，区分计划与完成，并可在对话中按天回顾。')}</p>
+    {scope==='lark-docs'&&<p className="muted">{moteText('飞书文档正文使用独立默认组合；活动线索仅进入日常事件，不能将打开文档视为认同内容。来源覆盖优先，保存不会重算历史资料。')}</p>}
     {Boolean(error||read.error||catalog.error||sources.error)&&<p role="alert" className="notice error">{error||errorMessage(read.error||catalog.error||sources.error)}</p>}
     {draft&&<form onSubmit={e=>{e.preventDefault();void save();}}><fieldset disabled={busy}>
       <legend>{moteText('选择记忆策略')}</legend>

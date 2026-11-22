@@ -7,8 +7,8 @@ import {ApiError,createApi,errorMessage} from '../src/api.js';
 
 const requestId='c919bc95-272d-4094-92a1-7f9c0ae944ca';
 for(const [status,code,expected] of [
-  [401,'unauthorized',/凭据已失效/],[403,'origin_denied',/公开地址或反向代理配置/],
-  [403,'connection_scope_denied',/连接权限/],[410,'login_expired',/登录请求已失效/],
+  [401,'unauthorized',/凭据已失效/],[403,'origin_denied',/公开地址.*反向代理/],
+  [403,'connection_scope_denied',/当前连接无此权限/],[410,'login_expired',/登录已过期或失效.*重新发起登录/],
   [426,'incompatible_protocol',/协议版本不匹配/],
 ] as const)test(`owner authentication preserves its safe response reason: ${status} ${code}`,async t=>{
   configureLocale(()=> 'zh-CN');
@@ -43,7 +43,7 @@ test('owner login recovers from origin refusal and a proxy failure before instal
     if(phase===1)return new Response('<html>PRIVATE_PROXY_BODY</html>',{status:503});
     return Response.json({token:'generated-independent-owner-token',expiresAt:Date.now()+86400000});
   });
-  await h.submit();assert.match(h.dom.window.document.body.textContent!,/公开地址或反向代理配置/);assert.equal(h.connected(),0);
+  await h.submit();assert.match(h.dom.window.document.body.textContent!,/公开地址.*反向代理/);assert.equal(h.connected(),0);
   phase=1;await h.submit();assert.match(h.dom.window.document.body.textContent!,/503/);assert.doesNotMatch(h.dom.window.document.body.textContent!,/PRIVATE|凭据已失效|请升级/);assert.equal(h.connected(),0);
   phase=2;await h.submit();assert.equal(h.connected(),1);
   assert.deepEqual(calls,['/api/configuration','/api/configuration','/api/login/session','/api/configuration','/api/login/session']);

@@ -59,7 +59,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved, composerOnly=
         }}/></label><p role="status">{uploading ? moteText("正在上传附件…") : moteText("已添加 {0} 个附件", draft.attachments?.length ?? 0)}</p>
       <p className="fine-print note-attachment-boundary">{moteText("已有文件 · 不现场录音 · 附件先归档 · 每个附件最多 50 MiB。")}</p>
       <details className="note-attachment-help"><summary>{moteText("附件与处理说明")}</summary><p>{moteText("到资料库查看文字识别与音频转写。")}</p></details>
-      <p className="note-storage-hint">{moteText("本机按中央地址保存草稿和待同步内容。清除应用数据会移除它们，打开记录可续传。")}</p>
+      <p className="note-storage-hint">{moteText("草稿和待同步内容保存在此应用的本机存储中，清除应用数据会移除它们。打开记录时自动续传；按中央地址分别保存。")}</p>
       </div></details>{(draftSaved||!composerOnly||draft.text.length>0)&&<span>{draftSaved && <><Check size={14}/> {' '}{moteText("草稿已保存在本机 ·")}{' '}</>} {(!composerOnly||draft.text.length>0)&&draft.text.length.toLocaleString(getLocale())}{' '}{(!composerOnly||draft.text.length>0)&&moteText("字")}</span>}{onClose&&<button type="button" className="button" onClick={onClose}>{moteText("收起")}</button>}<button className="button primary" disabled={uploading || (!draft.text.trim() && !draft.attachments?.length)}>{!composerOnly&&<CloudUpload size={16}/>} {moteText(composerOnly?"保存":"保存并同步")}</button></div>
 
     </form>}

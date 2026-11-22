@@ -86,7 +86,7 @@ export function TrustedGithubPluginInstall({api}:{api:Api}){
    </dl>
    <ul className="plugin-capabilities">{preview.capabilities.map(item=><li key={item.id}><span>{item.id}</span><span className={'badge '+(item.state==='verified'?'green':'muted')}>{capabilityLabel(item.state)}</span>{item.reason&&<small>{blockerLabel(item.reason)}</small>}</li>)}</ul>
    {hasRequiresBuild(preview.capabilities.map(item=>item.reason??''))&&<p className="notice" role="status">{moteText('需要重新构建（requires-build）')}</p>}
-   <p className="notice">{moteText('可信插件拥有中央宿主权限，访问声明不隔离进程。安装后仍须配置、启用和绑定。')}</p>
+   <p className="notice">{moteText('可信插件代码拥有中央宿主权限。访问声明无法提供沙箱隔离。安装后仍须配置、启用和绑定。')}</p>
    {preview.issues.map((issue,index)=><p className="notice" key={index}>{issue}</p>)}
    <div className="plugin-footer">
     <button className="button primary" disabled={busy||!preview.installable||!supported} onClick={()=>void install()}>{busy?moteText('正在安装…'):moteText('安装此版本')}</button>

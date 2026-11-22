@@ -71,7 +71,7 @@ function ScopedSettings({api}:{api:ReturnType<typeof createApi>}){
  const outdated=data?.declarations.some(d=>!currentCapability(d))||data?.drafts.some(d=>d.state==='draft'&&!choices.some(c=>c.value===JSON.stringify(d.target)&&c.capability.id===d.capability.id&&c.capability.version===d.capability.version))||saved&&!currentSaved;
  const targetLabel=(target:ActionCapabilityDraft['target'])=>'deviceId' in target?`${target.deviceId} · ${target.calendarId}`:`${data?.centralConnectors.find(c=>JSON.stringify(c.target)===JSON.stringify(target))?.name??moteText('中央连接器')} · ${target.capabilityId}`;
  return <details className="panel action-settings"><summary>{moteText('日程执行范围授权')}</summary>
- <p>{moteText('范围内日历写入可自动执行，消息逐条确认。只更新或取消 Mote 创建的原事件。完成仅记在 Mote，不邀请参与人或扩大范围。')}</p>
+ <p>{moteText('授权后，范围内明确的日历写入可自动执行；消息发送仍需逐条确认。更新和取消只作用于 Mote 创建的原事件；完成仅记录在 Mote。不会邀请参与人或扩大目标范围。')}</p>
  {read.loading&&!data&&<Loading/>}{(!!error||read.error!==undefined||malformed)&&<p role="alert">{error||(read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，刷新后重试。'))}</p>}
  <button className="button" disabled={busy} onClick={()=>read.refresh()}>{moteText('刷新')}</button>
  {data&&<><p>{moteText('先连接设备日历或启用官方连接器，再另行授权。')}</p><p>{moteText('写出授权须确认目标日历和资料来源。')}</p>

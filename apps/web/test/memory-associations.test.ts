@@ -56,7 +56,7 @@ async function fixture(t:TestContext){
     commitmentId:randomUUID(),eventId:randomUUID(),kind:'commitment',occurredAt:null,summary:person.text,
     changes:{title,status:'confirmed',personMemoryId:person.memory.id,...options},evidence:[{id:person.id,offset:0,quote:person.text}],evidenceDependencies:{version:1,complete:true,ids:[person.id]},
   },undefined,{kind:'all'},()=>{});
-  const mount=async(range:Record<string,string>={})=>{await act(async()=>root.render(React.createElement(Memories,{api,range,onOpen:ref=>opened.push(ref)})));await settled(()=>Boolean(d.querySelector('.workspace-select'))||d.body.textContent!.includes('当前筛选下没有匹配'));};
+  const mount=async(range:Record<string,string>={})=>{await act(async()=>root.render(React.createElement(Memories,{api,range,onOpen:ref=>opened.push(ref)})));await settled(()=>Boolean(d.querySelector('.workspace-select'))||d.body.textContent!.includes('无匹配记忆'));};
   return {node,root,d,api,reads,opened,add,commitment,mount,setGate:(value:typeof gate)=>{gate=value;}};
 }
 
@@ -110,11 +110,11 @@ test('forgetting retires warm caches and an already serialized late people respo
   let release!:()=>void,signal:AbortSignal|null|undefined,held=false;
   f.setGate(async(url,value,currentSignal)=>{if(url!==path||held)return;assert.ok(JSON.stringify(value).includes(a.memory.id),'the delayed response really contains the soon-forgotten identity');held=true;signal=currentSignal;await new Promise<void>(done=>release=done);});t.after(()=>release?.());
   await act(async()=>resources(f.api).get(path).refresh());await settled(()=>held);
-  await click(f.d,'更多');await click(f.d,'删除记忆');await click(f.d,'确认删除');await settled(()=>f.d.body.textContent!.includes('记忆已禁止使用'));
+  await click(f.d,'更多');await click(f.d,'删除记忆');await click(f.d,'确认删除');await settled(()=>/记忆已禁止使用|记忆已停用/.test(f.d.body.textContent!));
   assert.equal(signal?.aborted,true,'the pre-forget generation is cancelled');assert.equal(resources(f.api).get('/api/context-trees').getSnapshot().data,undefined,'unmounted topic labels are retired too');
   await settled(()=>f.d.querySelector('[data-person-memory]')===null);await act(async()=>release());await act(turn);
   assert.equal(f.d.querySelector('[data-person-memory]'),null);assert.doesNotMatch(f.d.body.textContent!,/Generated forgotten/);
-  await click(f.d,'全部记忆');await settled(()=>!f.d.querySelector('.workspace-select'));assert.match(f.d.body.textContent!,/当前筛选下没有匹配的记忆/);
+  await click(f.d,'全部记忆');await settled(()=>!f.d.querySelector('.workspace-select'));assert.match(f.d.body.textContent!,/无匹配记忆/);
 });
 
 test('existing Memory shows inference, validity and truthful empty associations without an initial acquaintance run',async t=>{

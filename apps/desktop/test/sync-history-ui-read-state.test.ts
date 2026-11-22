@@ -35,11 +35,14 @@ it('keeps an unknown local original and a later confirmed central read captioned
  expect(preview.textContent).toContain('中央接收待确认');expect(preview.textContent).not.toContain('已上传内容从中央读取');
  expect(preview.querySelector('#upload-preview-central')).toBeNull();expect(preview.querySelector('.upload-content-description')!.textContent).toContain('Generated independent description.');
  configureLocale(()=> 'en');el('upload-preview-refresh').click();await flush();
- expect(preview.querySelector('.upload-note')!.textContent).toBe(moteText('本机副本，中央接收待确认。预览最多 100000 字符。'));
- expect(preview.querySelector('.upload-note')!.textContent).not.toContain('当前');
+ const locationBadge=()=>preview.querySelector('.actions .upload-badge:last-child')!.textContent;
+ expect(locationBadge()).toBe(moteText('本机待传副本'));
+ expect(preview.querySelector('.upload-note')!.textContent).toMatch(/100[,\s]?000/);
+ expect(preview.querySelector('#upload-preview-central')).toBeNull();
  vi.mocked(api.syncHistoryContent).mockResolvedValueOnce({item,location:'central',captureId:key,text:'Generated body, not a model answer.',metadata:'{}'});
  el('upload-preview-refresh').click();await flush();
- expect(preview.querySelector('.upload-note')!.textContent).toBe(moteText('内容来自中央归档。本机副本可能已清理。预览最多 100000 字符，完整内容在中央。'));
+ expect(locationBadge()).toBe(moteText('中央已归档'));
+ expect(preview.querySelector('.upload-note')!.textContent).toMatch(/100[,\s]?000/);
  expect(preview.querySelector<HTMLButtonElement>('#upload-preview-central')!.dataset.capture).toBe(key);
  expect(api.syncHistoryContent).toHaveBeenCalledTimes(3);for(const args of vi.mocked(api.syncHistoryContent).mock.calls)expect(args).toEqual([run.id,key,0]);
  expect(api.retry).not.toHaveBeenCalled();expect(el('upload-content-list').querySelector('[aria-pressed=true]')!.getAttribute('data-upload-key')).toBe(key);

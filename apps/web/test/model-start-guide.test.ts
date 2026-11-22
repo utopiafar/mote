@@ -27,7 +27,7 @@ test('direct model settings keep setup steps without inventing a task return des
  assert.equal(d.querySelectorAll('a').length,2);
  assert.ok([...d.querySelectorAll('a')].every(link=>!new URLSearchParams(link.getAttribute('href')!.split('?')[1]).has('returnTo')));
  assert.match(d.body.textContent!,/已有可用默认时可直接使用/);
- assert.match(d.body.textContent!,/无需创建新预设或修改所有模块/);
+ assert.match(d.body.textContent!,/检查对应模块/);
  const help=d.querySelector<HTMLDetailsElement>('details')!;
  assert.equal(help.open,false);assert.match(help.querySelector('summary')!.textContent!,/模型设置说明/);
  assert.equal(d.querySelectorAll('nav a').length,2,'Setup steps remain immediately reachable outside the folded help');

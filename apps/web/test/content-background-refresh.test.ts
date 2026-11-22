@@ -61,7 +61,7 @@ test('Memory pagination still reads a new page and a revoked refresh removes sav
  revoking=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories?')&&!path.includes('cursor=')));
  assert.match(d.querySelector('.workspace-list')!.textContent!,/Generated memory/);
  await act(async()=>revocation.reject(new ApiError('Generated permission revoked',403)));
- assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/Generated memory|当前筛选下没有匹配/);assert.match(d.body.textContent!,/Generated permission revoked/);
+ assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/Generated memory|无匹配记忆/);assert.match(d.body.textContent!,/Generated permission revoked/);
 });
 
 test('Memory rolling range keeps its list and detail while reading the latest window, then withdraws a revoked list',async t=>{
@@ -76,7 +76,7 @@ test('Memory rolling range keeps its list and detail while reading the latest wi
  await act(async()=>root.render(memoryView(api,{range:range('2026-10-07T00:00:30Z'),rangeSelectionKey:'week',refreshVersion:1})));
  assert.equal(reads.length,2);assert.match(reads[1],/before=2026-10-07T00%3A00%3A30Z/);assert.equal(d.querySelector('.workspace-select'),row);assert.equal(d.querySelector('.memory-detail'),detail);assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/正在读取/);
  await act(async()=>refresh.reject(new ApiError('Generated rolling list revoked',403)));
- assert.equal(d.querySelector('.workspace-select'),null);assert.match(d.body.textContent!,/Generated rolling list revoked/);assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/当前筛选下没有匹配/);
+ assert.equal(d.querySelector('.workspace-select'),null);assert.match(d.body.textContent!,/Generated rolling list revoked/);assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/无匹配记忆/);
 });
 
 for(const change of ['period','device','unkeyed-range','filter'] as const)test(`Memory continuity cannot carry list rows across a changed ${change}`,async t=>{
@@ -87,7 +87,7 @@ for(const change of ['period','device','unkeyed-range','filter'] as const)test(`
  if(change==='filter')await act(async()=>button(d,'需要重验').click());
  else await act(async()=>root.render(memoryView(api,{...initial,range:{...initial.range,...(change==='device'?{deviceId:'generated-other-device'}:{after:'2026-09-01T00:00:00Z'})},...(change==='period'?{rangeSelectionKey:'month'}:{})})));
  assert.equal(d.querySelector('.workspace-select'),null);assert.match(d.querySelector('.workspace-list')!.textContent!,/正在读取/);assert.equal(reads,2);
- await act(async()=>pending.resolve({items:[],nextCursor:null}));assert.match(d.querySelector('.workspace-list')!.textContent!,/当前筛选下没有匹配/);
+ await act(async()=>pending.resolve({items:[],nextCursor:null}));assert.match(d.querySelector('.workspace-list')!.textContent!,/无匹配记忆/);
 });
 
 for(const kind of ['capture','material'] as const)test(`Memory selected ${kind} stays readable while its current version is revalidated`,async t=>{
@@ -165,7 +165,7 @@ for(const populated of [false,true])test(`Import ${populated?'populated':'empty'
  refreshing=true;await act(async()=>root.render(importView(api,{refreshVersion:1})));
  assert.doesNotMatch(list.textContent!,/正在读取/);assert.equal(list.querySelector(populated?'.workspace-select':'p.muted'),settled);assert.equal(d.querySelector('.import-detail'),detail);assert.equal(d.querySelector('.imports-page')!.getAttribute('aria-busy'),'false');
  await act(async()=>refresh.reject(new ApiError('Generated import refresh unavailable',503)));
- assert.match(d.body.textContent!,/中央服务暂不可用（503），请检查节点状态后重试。/);assert.equal(d.querySelector('.import-detail'),detail);
+ assert.match(d.body.textContent!,/中央服务暂不可用（503）.*中央状态/);assert.equal(d.querySelector('.import-detail'),detail);
 });
 
 test('Import revocation removes archived content and a different node keeps its first-read loader',async t=>{
@@ -173,7 +173,7 @@ test('Import revocation removes archived content and a different node keeps its 
  const api=apiWith(path=>path==='/api/imports'?(revoked?revocation.promise:{items:[importJob]}):{items:[]});
  await act(async()=>root.render(importView(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  revoked=true;await act(async()=>root.render(importView(api,{refreshVersion:1})));await act(async()=>revocation.reject(new ApiError('Generated imports revoked',403)));
- assert.equal(d.querySelector('.import-detail'),null);assert.doesNotMatch(d.body.textContent!,/Generated import(?!s)/);assert.match(d.body.textContent!,/请求被拒绝（403），请检查连接权限和入口访问配置。/);
+ assert.equal(d.querySelector('.import-detail'),null);assert.doesNotMatch(d.body.textContent!,/Generated import(?!s)/);assert.match(d.body.textContent!,/访问被拒绝（403）.*连接权限/);
  const nextApi=apiWith(path=>path==='/api/imports'?next.promise:{items:[]});await act(async()=>root.render(importView(nextApi)));
  assert.match(d.querySelector('.workspace-list')!.textContent!,/正在读取/);assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/你的第一份导入/);
  await act(async()=>next.resolve({items:[]}));assert.match(d.querySelector('.workspace-list')!.textContent!,/你的第一份导入/);

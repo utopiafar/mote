@@ -75,7 +75,7 @@ test('an external file revision does not silently rebase the owner draft or over
   await act(async()=>{retention.value='1800';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
   await act(async()=>root.render(render(configuration(8,3600))));
   assert.equal(retention.value,'1800');await act(async()=>button(d,'保存并应用').click());
-  assert.equal(writes[0].revision,7);assert.match(d.body.textContent!,/配置或相关操作状态已变化/);assert.equal(retention.value,'1800');
+  assert.equal(writes[0].revision,7);assert.match(d.body.textContent!,/配置或操作状态已变/);assert.equal(retention.value,'1800');
   await act(async()=>button(d,'重新读取并还原草稿').click());assert.equal(retention.value,'3600');
 });
 
@@ -99,7 +99,7 @@ test('diagnostics settings retain the original revision on refresh and allow rel
   revision=4;await act(async()=>resources(api).invalidate(path=>path==='/api/diagnostics-settings'));
   await act(async()=>button(d,'保存并应用').click());
   assert.deepEqual(writes[0],{revision:3,enabled:false,debug:false,traceEnabled:false,level:'info'});
-  assert.match(d.body.textContent!,/配置或相关操作状态已变化/);
+  assert.match(d.body.textContent!,/配置或操作状态已变/);
   await act(async()=>button(d,'重新读取并还原草稿').click());assert.equal(d.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,true);
 });
 
@@ -116,7 +116,7 @@ test('memory timing settings save their draft with the configuration revision an
   revision=4;await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
   await act(async()=>button(d,'保存记忆设置').click());
   assert.equal(writes[0].revision,3);assert.equal(writes[0].settings.consolidation.enabled,false);assert.equal(writes[0].settings.extraction.enabled,true);
-  assert.match(d.body.textContent!,/配置或相关操作状态已变化/);assert.equal(d.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,false);
+  assert.match(d.body.textContent!,/配置或操作状态已变/);assert.equal(d.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,false);
   await act(async()=>button(d,'重新读取并还原草稿').click());assert.equal(d.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,true);
 });
 
@@ -154,7 +154,7 @@ test('image settings submit the shared revision and retain their original draft 
   await act(async()=>d.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   revision=8;await act(async()=>resources(api).invalidate(path=>path==='/api/perception'));
   await act(async()=>button(d,'保存图片设置').click());
-  assert.equal(writes[0].revision,7);assert.equal(writes[0].settings.enabled,false);assert.match(d.body.textContent!,/配置或相关操作状态已变化/);
+  assert.equal(writes[0].revision,7);assert.equal(writes[0].settings.enabled,false);assert.match(d.body.textContent!,/配置或操作状态已变/);
 });
 
 const actionView=(revision:number,authorizationRevision:number,enabled=false,reviewDeviceIds:string[]=['generated-phone'])=>({revision,authorizationRevision,items:[],total:0,nextCursor:null,targets:[],settings:{enabled,timeZone:'UTC',reviewDeviceIds},progress:{configured:true,running:false,jobs:[],error:null}});
@@ -184,9 +184,9 @@ test('Actions displays actual permission withdrawal after a failed runtime save 
   const phone=()=>d.querySelectorAll<HTMLInputElement>('.action-discovery-settings input[type="checkbox"]')[1];
   assert.equal(phone().checked,true);await act(async()=>phone().click());await act(async()=>button(d,'保存设置').click());
   assert.equal(writes[0].authorizationRevision,2);assert.deepEqual(writes[0].settings.reviewDeviceIds,[]);
-  assert.equal(phone().checked,false);assert.match(d.body.textContent!,/所选设备授权已撤销/);assert.match(d.body.textContent!,/所需服务暂不可用/);
+  assert.equal(phone().checked,false);assert.match(d.body.textContent!,/设备授权已撤销/);assert.match(d.body.textContent!,/所需服务暂不可用/);
   await act(async()=>button(d,'重新读取并还原草稿').click());
-  assert.equal(phone().checked,false);assert.doesNotMatch(d.body.textContent!,/所选设备授权已撤销/);
+  assert.equal(phone().checked,false);assert.doesNotMatch(d.body.textContent!,/设备授权已撤销/);
 });
 
 test('Actions timezone edits keep their original dual revisions across refresh and preserve the draft on conflict',async t=>{
@@ -201,7 +201,7 @@ test('Actions timezone edits keep their original dual revisions across refresh a
   revision=4;authorizationRevision=3;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/actions?')));
   assert.equal(input.value,'Asia/Tokyo');await act(async()=>input.blur());assert.equal(writes.length,0,'blur does not submit the draft');await act(async()=>button(d,'保存设置').click());
   assert.equal(writes[0].revision,3);assert.equal(writes[0].authorizationRevision,2);assert.equal(writes[0].settings.timeZone,'Asia/Tokyo');
-  assert.match(d.body.textContent!,/配置或相关操作状态已变化/);assert.equal(input.value,'Asia/Tokyo');
+  assert.match(d.body.textContent!,/配置或操作状态已变/);assert.equal(input.value,'Asia/Tokyo');
   await act(async()=>button(d,'重新读取并还原草稿').click());assert.equal(input.value,'UTC');
 });
 
@@ -213,7 +213,7 @@ test('a non-conflict 409 preserves its provider recovery reason and the edited c
  const retention=d.querySelector<HTMLSelectElement>('select[aria-label="检查来源的间隔"]')!;
  await act(async()=>{retention.value='1800';retention.dispatchEvent(new window.Event('change',{bubbles:true}));});
  await act(async()=>button(d,'保存并应用').click());
- assert.match(d.body.textContent!,/额度不足/);assert.doesNotMatch(d.body.textContent!,/PRIVATE|其他会话更新|配置或相关操作状态已变化/);assert.equal(retention.value,'1800');
+ assert.match(d.body.textContent!,/额度不足/);assert.doesNotMatch(d.body.textContent!,/PRIVATE|其他会话更新|配置或操作状态已变/);assert.equal(retention.value,'1800');
 });
 
 
@@ -237,7 +237,7 @@ test('old calendar capabilities and scope drafts are not offered as current auth
  let capability={id:'calendar.create',version:1};
  const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method)writes++;return {...emptyCapabilities(),declarations:[{...declaration,capability}],drafts:[{...draft,capability}]};}} as Api;
  await act(async()=>root.render(React.createElement(ActionCapabilitySettings,{api})));
- assert.match(d.body.textContent!,/行动能力或范围已变化，请刷新后重新保存并确认新的范围/);
+ assert.match(d.body.textContent!,/能力或范围已变/);
  assert.equal(d.querySelectorAll('select option').length,1);assert.doesNotMatch(d.body.textContent!,/继续草稿 ·/);
  assert.equal(button(d,'保存范围草稿').disabled,true);
  capability={id:'calendar.manage',version:1};await act(async()=>button(d,'刷新').click());
@@ -248,5 +248,5 @@ test('old calendar capabilities and scope drafts are not offered as current auth
 test('central storage settings expose retention facts without quota or age-deletion controls',async t=>{
  const {root,d}=await fixture(t);let writes=0;const api={request:async()=>{writes++;throw Error('Storage facts do not submit configuration');}} as Api;
  await act(async()=>root.render(React.createElement(ConfigurationBuilder,{api,config:configuration(7),category:'storage'})));
- assert.match(d.body.textContent!,/持续保留.*不设置资料总量配额.*不按天自动删除/s);assert.match(d.body.textContent!,/原件默认归档.*已有来源/s);assert.equal(d.querySelectorAll('select,input').length,0);assert.equal(button(d,'保存并应用'),undefined);assert.equal(writes,0);
+ assert.match(d.body.textContent!,/长期保留资料.*无总量和天数限制/s);assert.match(d.body.textContent!,/新来源默认归档原件.*可调整各来源/s);assert.equal(d.querySelectorAll('select,input').length,0);assert.equal(button(d,'保存并应用'),undefined);assert.equal(writes,0);
 });

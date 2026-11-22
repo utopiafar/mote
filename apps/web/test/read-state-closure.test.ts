@@ -176,7 +176,7 @@ test('terminal legacy extraction offers an explicit retry without claiming autom
    assert.equal(path,'/api/memory-settings');return {settings,extensions:[{id:'extraction',version:'3.3.0',status,pendingChanges:1,dueAt:Date.now(),failures:status==='failed'?3:0,maxAttempts:3,cursor:0,active:{id:windowId}}]};
  });
  await act(async()=>root.render(React.createElement(MemorySettings,{api})));
- assert.match(d.body.textContent!,/已停止自动重试：失败 3\/3 次/);assert.doesNotMatch(d.body.textContent!,/自动退避重试/);
+ assert.match(d.body.textContent!,/自动重试已停.*失败 3\/3 次/);assert.doesNotMatch(d.body.textContent!,/自动退避重试/);
  await act(async()=>button(d,'重试').click());assert.equal(requests,1);assert.doesNotMatch(d.body.textContent!,/已停止自动重试/);
 });
 test('Memory progress readers share pending reads and fence another selected job',async t=>{

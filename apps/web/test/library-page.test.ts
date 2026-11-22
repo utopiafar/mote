@@ -182,7 +182,7 @@ test('the retired Library Memory hash shows an unavailable collection without mo
  await act(async()=>root.render(workspacePage(api)));
  await settle(()=>Boolean(d.querySelector('.library-content [role="status"], .memories-page')),'the requested collection settles');
  assert.ok(!d.querySelector('.memories-page'),'the retired hash does not mount the Memory page');
- assert.match(d.querySelector('.library-content [role="status"]')?.textContent??'',/当前不可用/);
+ assert.match(d.querySelector('.library-content [role="status"]')?.textContent??'',/分类不可用/);
  assert.equal(paths.some(path=>/^\/api\/(memories|memory-jobs)([/?]|$)/.test(path)),false);
 });
 

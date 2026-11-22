@@ -207,7 +207,7 @@ test('current multi-block Material offers one bounded extraction route; stale an
  current={...current,coverage:{state:'pending'},memorySource:{status:'waiting',evidenceIds:[]}} as typeof current;
  await act(async()=>resources(api).invalidate(key=>key===`/api/materials/${id}`));
  assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null);
- assert.match(d.querySelector('.material-detail')!.textContent!,/暂不能单独提取记忆/);
+ assert.match(d.querySelector('.material-detail')!.textContent!,/无法单独提取记忆/);
  const old={...material,ref:`material:${id}@${'c'.repeat(64)}`,revision:'c'.repeat(64)};
  await act(async()=>root.render(React.createElement(MaterialDetail,{api,material:old,onOpen:()=>{}})));
  assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null,'historical pinned version cannot borrow the current link');
@@ -650,7 +650,7 @@ test('file processing cancellation distinguishes waiting from unknown and requir
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='处理详情')!.click());
  const button=(label:string)=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!;
  assert.equal(button('重新转写 / 提取').disabled,true);
- await act(async()=>button('取消本次处理').click());assert.equal(writes.length,1);assert.match(d.body.textContent!,/不再保存后续结果/);
+ await act(async()=>button('取消本次处理').click());assert.equal(writes.length,1);assert.match(d.body.textContent!,/后续结果不再保存.*原件和已存成果保留/);
  wait='unknown';await act(async()=>button('刷新处理状态').click());window.confirm=()=>{throw Error('A retry must use the accessible application dialog');};
  const retry=button('重新转写 / 提取');retry.focus();
  await act(async()=>retry.click());assert.equal(writes.length,1);

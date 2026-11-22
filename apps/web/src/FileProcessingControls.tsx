@@ -68,7 +68,7 @@ export function FileProcessingControls({api,id,mode='detail',disabled=false,onCh
   {unknownStage!==null&&<UnknownRetryConfirmation onCancel={()=>setUnknownStage(null)} onConfirm={()=>{const stage=unknownStage;setUnknownStage(null);void action('retry',stage.stage,true,stage.scoped);}}/>}
   {waiting&&<p role="status">{moteText('当前调用尚在等待结束；此时不能重试。')}</p>}
   {file.cancellation?.wait==='unknown'&&<p role="status">{moteText('上次处理结果待确认。重试可能重复执行。')}</p>}
-  {(file.job?.state==='cancelled'||file.job?.summary_state==='cancelled')&&<p role="status">{moteText('处理已取消，保留原件和已保存结果。')}</p>}
+  {(file.job?.state==='cancelled'||file.job?.summary_state==='cancelled')&&<p role="status">{moteText('处理已取消，后续结果不再保存。原件和已存成果保留。')}</p>}
   {file.job&&<div className="source-toolbar">
    {file.cancellation?.canCancel&&<button className="button" disabled={locked} onClick={()=>void action('cancel')}>{mode==='import'?moteText('取消处理'):moteText('取消本次处理')}</button>}
    {canRetry&&<button className="button primary" disabled={locked||waiting} onClick={()=>void action('retry')}>{mode==='import'?moteText('重试处理'):moteText('重新转写 / 提取')}</button>}

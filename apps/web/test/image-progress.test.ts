@@ -73,7 +73,7 @@ test('image authorization waits, unavailable workers and invalid outputs explain
     await act(async()=>f.root.render(React.createElement(ImageProgress,{api,id:'generated-image'})));
     assert.match(f.dom.window.document.querySelector('.discovery-step-reason')!.textContent!,/等待开启自动处理/);assert.doesNotMatch(f.dom.window.document.querySelector('.discovery-step-reason')!.textContent!,/校验失败|模型服务未完成/);
     value.jobs[1].error='image_worker_unavailable';await act(async()=>resources(api).invalidate(()=>true));
-    assert.match(f.dom.window.document.querySelector('.discovery-step-reason')!.textContent!,/本机处理未能启动，请重试/);assert.ok(f.dom.window.document.querySelector('a[href="#/system/models?category=images"]'));
+    assert.match(f.dom.window.document.querySelector('.discovery-step-reason')!.textContent!,/本机处理未能启动.*重试/);assert.ok(f.dom.window.document.querySelector('a[href="#/system/models?category=images"]'));
     value.jobs[1].error='invalid_image_region';value.jobs[1].state='failed';await act(async()=>resources(api).invalidate(()=>true));
     assert.match(f.dom.window.document.querySelector('.discovery-step-reason')!.textContent!,/模型返回的结果未通过校验/);assert.equal(f.phase('原件'),'已就绪');assert.equal(f.phase('文字识别'),'已就绪');
 });

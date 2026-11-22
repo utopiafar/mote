@@ -91,7 +91,7 @@ test('image edits use real policy and perception CAS, report a partial save and 
  await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:first.revision,settings:first.settings,policy:first.policy})});f.writes.length=0;
  const authority=structuredClone(f.node.modelAuthorization.view());await act(async()=>f.root.render(view(f.api)));await until(()=>!!f.d.querySelector('.material-processing-form'),'image settings');
  await select(f.d,'OCR 服务','generated-image');f.failedImage=true;await click(f.d,'保存设置');
- await until(()=>f.d.querySelector('.material-processing [data-processing-main] > [role=alert]')?.textContent?.includes('处理方案已保存，图片设置尚未确认')===true,'partial save result');assert.equal(f.writes.filter(value=>value.path==='/api/file-processing').length,1);
+ await until(()=>f.d.querySelector('.material-processing [data-processing-main] > [role=alert]')?.textContent?.includes('方案已保存，图片设置待核实')===true,'partial save result');assert.equal(f.writes.filter(value=>value.path==='/api/file-processing').length,1);
  assert.equal((await f.call('/api/file-processing')).policy.profiles.find((value:any)=>value.id==='central-image').serviceId,'generated-image');
  assert.equal(label(f.d,'OCR 服务').querySelector('select')!.value,'generated-image');assert.equal(button(f.d,'保存设置').disabled,false);
  f.failedImage=false;await click(f.d,'保存设置');await until(()=>f.d.querySelector('.material-processing-form [role=status]')?.textContent?.includes('设置已保存')===true,'complete image settings');assert.equal(f.writes.filter(value=>value.path==='/api/file-processing').length,1,'the completed first save is not blindly repeated');assert.equal(f.writes.filter(value=>value.path==='/api/perception').length,2);

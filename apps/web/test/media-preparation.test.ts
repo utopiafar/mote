@@ -36,7 +36,7 @@ test('missing permission withdraws stale installation controls and a changed nod
  const old={request:async(path:string,init?:RequestInit)=>{oldCalls.push(path);if(init?.method==='POST'){await pending;return {};}if(denied)throw new ApiError('generated revoked',403);return {ocr:{state:'idle',runtimeReady:false,model:{state:'not_installed',bytes:0,totalBytes:1}}};}} as Api;
  await act(async()=>f.root.render(React.createElement(MediaPreparation,{api:old,role:'ocr',title:'图片文字识别'})));
  await act(async()=>f.button('一键安装').click());let nextReads=0;const next={request:async()=>{nextReads++;return {ocr:{state:'unsupported',error:'platform_unsupported',runtimeReady:false,model:{state:'not_installed',bytes:0,totalBytes:1}}};}} as unknown as Api;
- await act(async()=>f.root.render(React.createElement(MediaPreparation,{api:next,role:'ocr',title:'图片文字识别'})));await act(async()=>release());assert.equal(nextReads,1);assert.equal(f.button('一键安装').disabled,true);assert.match(f.dom.window.document.body.textContent!,/暂不支持自动安装/);
+ await act(async()=>f.root.render(React.createElement(MediaPreparation,{api:next,role:'ocr',title:'图片文字识别'})));await act(async()=>release());assert.equal(nextReads,1);assert.equal(f.button('一键安装').disabled,true);assert.match(f.dom.window.document.body.textContent!,/不支持自动安装/);
  denied=true;await act(async()=>f.root.render(React.createElement(MediaPreparation,{api:old,role:'ocr',title:'图片文字识别'})));assert.match(f.dom.window.document.body.textContent!,/generated revoked/);assert.equal(f.button('一键安装').disabled,true);
 });
 test('a ready service exposes explicit verification through preparation while ordinary status reads remain read-only',async t=>{
@@ -60,7 +60,7 @@ test('local-image Web setup prepares actual runtime receipts and verified assets
  assert.deepEqual(writes,[]);
  if(!setup.supported){
   assert.equal((await status()).state,'unsupported');assert.equal((await status()).error,'platform_unsupported');
-  assert.equal(f.button('一键安装').disabled,true);assert.match(f.dom.window.document.body.textContent!,/暂不支持自动安装/);assert.deepEqual(setup.counts,{prepare:0,pip:0,probe:0});return;
+  assert.equal(f.button('一键安装').disabled,true);assert.match(f.dom.window.document.body.textContent!,/不支持自动安装/);assert.deepEqual(setup.counts,{prepare:0,pip:0,probe:0});return;
  }
  const held=setup.holdDependencies();await act(async()=>{f.button('一键安装').click();await drain();});await held.entered;
  const first=await status(),duplicate=await setup.request('/api/media-preparation/local-image',{method:'POST',body:'{}'});

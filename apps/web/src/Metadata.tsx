@@ -40,8 +40,8 @@ export function Metadata({metadata,source,modifiedAt,stateSeries}: {stateSeries?
     {page&&<details><summary>{moteText("页面节点证据")}</summary><p>{moteText("仅为观察时窗内的文字。")}</p><pre>{JSON.stringify(page,null,2)}</pre></details>}
     <dl>{rows.filter(([,value])=>value!==undefined).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
     <p className="field-note">{moteText("上报时的可用状态，缺失项留空。")}</p>
-    {(n||e)&&<p className="field-note">{moteText("系统原始事件，可能缺少敏感通知。熄屏和锁定分别记录，服务中断保留空隙。")}</p>}
-    {f?.accessedAt && <p className="field-note">{moteText("访问时间可由同步或其他进程更新。")}</p>}
-    {f?.deletionObservedAt && <p className="field-note">{moteText("完整扫描首次发现缺失的时间。")}</p>}
+    {(n||e)&&<p className="field-note">{moteText("只记录系统原始事件，无法确认已读通知或正在执行任务。熄屏和锁定分别记录，服务中断留空。系统可能隐藏敏感通知。")}</p>}
+    {f?.accessedAt && <p className="field-note">{moteText("访问时间可由同步或其他进程更新。是否本人查看仍未知。")}</p>}
+    {f?.deletionObservedAt && <p className="field-note">{moteText("记录完整扫描首次发现缺失的时间。实际删除时刻未知。")}</p>}
   </details>;
 }

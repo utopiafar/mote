@@ -40,7 +40,7 @@ test('a bounded second page opens the selected result after fresh membership and
 test('membership changed while initial Memory read is pending never publishes a stale title',async t=>{
  const {root,d}=await fixture(t),c=client([id(1)]),opened:string[]=[],gate=c.block();
  await act(async()=>root.render(React.createElement(View,{api:c.api,opened})));assert.equal(d.querySelectorAll('[data-activity-memory-id]').length,0);c.remove(id(1));
- await act(async()=>gate.resolve({id:id(1),title:'Late private title',status:'published'}));assert.doesNotMatch(d.body.textContent!,/Late private title/);assert.match(d.body.textContent!,/状态已变化/);assert.deepEqual(opened,[]);
+ await act(async()=>gate.resolve({id:id(1),title:'Late private title',status:'published'}));assert.doesNotMatch(d.body.textContent!,/Late private title/);assert.match(d.body.textContent!,/状态已变/);assert.deepEqual(opened,[]);
 });
 test('removing membership or withdrawing permission while a click is pending prevents navigation and removes the old title',async t=>{
  const {root,d}=await fixture(t),c=client([id(1)]),opened:string[]=[];await act(async()=>root.render(React.createElement(View,{api:c.api,opened})));

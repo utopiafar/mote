@@ -53,7 +53,7 @@ test('Vault rejects legacy versions and incomplete v2 files before posting a par
  const api={request:async(path:string,init?:RequestInit)=>{if(path==='/api/storage-statistics'){assert.equal(init?.method,undefined);return storageStatistics([directory]);}assert.equal(path,'/api/import');assert.equal(init?.method,'POST');posts++;return {imported:0,duplicates:0};},setAgentTimeout:()=>{}} as Api;
  await act(async()=>root.render(React.createElement(Vault,{api,status:status(store),refresh:()=>{},disconnect:()=>{}})));
  for(const archive of [{version:1,captures:[]},{version:2,captures:[]},null]){
-  await select(d,new File([JSON.stringify(archive)],'generated-invalid.json',{type:'application/json'}));assert.match(d.body.textContent!,/请选择 Mote v2 JSON 归档文件/);assert.equal(posts,0);
+  await select(d,new File([JSON.stringify(archive)],'generated-invalid.json',{type:'application/json'}));assert.match(d.body.textContent!,/选择 Mote v2 JSON 归档文件/);assert.equal(posts,0);
  }
  assert.match(d.body.textContent!,/合并记录，跳过重复内容/);assert.doesNotMatch(d.body.textContent!,/v1 JSON/);
 });

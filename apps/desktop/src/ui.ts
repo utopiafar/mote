@@ -853,7 +853,7 @@ function refreshSourceTextOptions(): void {
   byId('source-retention-hint').hidden=!fileSource;
   byId('source-retention-hint').textContent=readInput('source-retention')==='snapshot'?moteText('完整文件发往中心解析；处理后删除中心临时原件。'):readInput('source-retention')==='archive'?moteText('完整文件发往中心解析，并保留原件。'):moteText('只记录文件信息，不读取正文，也不上传文件内容。');
   byId('source-content-transfer-note').hidden=!fileSource;
-  byId('source-content-transfer-note').textContent=readInput('source-retention')==='reference'?moteText('只记录文件信息，不读取正文，也不上传文件内容。'):moteText('完整文件会发送到所示中央。未连接时保存在本机，首次连接须确认发送范围。');
+  byId('source-content-transfer-note').textContent=readInput('source-retention')==='reference'?moteText('只记录文件信息，不读取正文，也不上传文件内容。'):moteText('完整文件会发送到所示中央处理。未连接时先保存本机任务，首次连接须确认发送范围。');
 }
 byId('source-retention').addEventListener('change',refreshSourceTextOptions);
 let sourcesReading = false;let sourceReadGeneration=0,sourceConnectGeneration=0;

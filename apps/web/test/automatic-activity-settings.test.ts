@@ -41,7 +41,7 @@ async function submit(container: HTMLElement) {await act(async () => {save(conta
 
 test('owner explicitly selects a model and enables activity without changing Memory; read refresh preserves draft', async t => {
   const fixture = await setup(t);
-  assert.match(fixture.container.textContent!, /自动记忆可单独开启或暂停/);
+  assert.match(fixture.container.textContent!, /自动记忆单独控制/);
   await toggle(fixture.container); assert.equal(save(fixture.container).disabled, true);
   await choose(fixture.container);
   fixture.state = view(2);

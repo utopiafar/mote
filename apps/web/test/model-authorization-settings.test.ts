@@ -76,7 +76,7 @@ test('A2-03 a held command cannot be sent twice by a second switch click',async 
 test('A2-04 a stale revision is rejected once, re-read from Central and never automatically resent',async t=>{
  const f=await fixture(t);await f.render();f.node.modelAuthorization.command({revision:0,operationId:randomUUID(),action:'on'});
  await f.clickSwitch();await f.settle(()=>f.writes.length===1&&f.writes[0].status===409&&switchOf(f.container)!.getAttribute('aria-checked')==='true','stale revision recovery');
- assert.equal(f.node.modelAuthorization.view().state,'on');assert.match(f.container.querySelector('[role=alert]')!.textContent!,/操作未完成，请重试/);assert.match(f.container.textContent!,/资料状态已变化或当前配置不支持此操作，请刷新后重试。/);
+ assert.equal(f.node.modelAuthorization.view().state,'on');assert.match(f.container.querySelector('[role=alert]')!.textContent!,/操作未完成.*重试/);assert.match(f.container.textContent!,/资料状态已变化.*刷新后重试/);
  assert.equal(f.writes.length,1,'a conflict is not retried automatically');
 });
 

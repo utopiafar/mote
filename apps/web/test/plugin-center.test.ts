@@ -52,7 +52,7 @@ test('installation requires an explicit pinned preview, config, verified capabil
  const {element}=await mount(t,api);
  assert.equal(calls.length,0,'mounting does not mutate');
  await click(element,'官方目录');await click(element,'预览并安装');
- const dialog=element.querySelector('[role=dialog]')!;assert.ok(dialog.textContent?.includes(source.digest));assert.ok(dialog.textContent?.includes('不是沙箱隔离'));
+ const dialog=element.querySelector('[role=dialog]')!;assert.ok(dialog.textContent?.includes(source.digest));assert.match(dialog.textContent??'',/中央宿主权限/);assert.match(dialog.textContent??'',/无法提供沙箱隔离/);
  await click(dialog,'安装此版本');assert.ok(element.querySelector('[role=dialog]'),'failed request retains its preview');await click(dialog,'重试同一请求');
  const installs=calls.filter(call=>call.path==='/api/plugins/install');assert.equal(installs.length,2);assert.deepEqual(installs[0].body,installs[1].body);assert.equal(installs[0].body.previewId,preview.id);assert.equal('repository' in installs[0].body,false,'install cannot override the pinned source');
  assert.equal(element.querySelector('[role=dialog]'),null);assert.ok(element.textContent?.includes('尚未配置，也未运行'));
@@ -78,7 +78,7 @@ test('ordinary pause shows authorized task drainage, immediate stop is separate,
  assert.ok(element.textContent?.includes('停用中：仍有 3 个已授权任务'));assert.equal(element.querySelector('[role=switch]')?.getAttribute('aria-checked'),'false');assert.equal(calls[0].path,bindingPath+'/pause');
  assert.equal(calls.some(call=>call.path.endsWith('/stop')),false);
  await click(element,'立即停止');assert.equal(calls.length,1,'opening confirmation does not stop tasks');await click(element.querySelector('[role=dialog]')!,'确认立即停止');
- assert.ok(element.textContent?.includes('停止请求不代表远端工作已结束'));assert.equal(binding.admission.resultUnknown,1);
+ assert.equal(calls.at(-1)!.path,bindingPath+'/stop');assert.match(element.textContent??'',/外部结果仍待确认/);assert.equal(binding.admission.resultUnknown,1);
  await act(async()=>{element.querySelector<HTMLButtonElement>('[role=switch]')!.click();await tick();});
  assert.equal(calls.at(-1)!.path,bindingPath+'/resume');assert.equal('scope' in calls.at(-1)!.body,false,'resume never submits historical scope');assert.ok(element.textContent?.includes('当前准入代次 5'));
 });
@@ -270,7 +270,7 @@ test('plugin feed uses existing plugin/binding matches while no-event remote sto
  f.plugins.packages=[structuredClone(packageFixture)];f.emit(['plugin:generated-install']);await ui.tick(1500);
  assert.equal(ui.element.querySelectorAll('.provider-card').length,1);assert.equal(f.count('/api/plugins'),2);assert.equal(f.count(bindingPath),2);assert.equal(f.count('/api/model-authorization'),1,'existing mapping does not cover global authorization');
  await ui.memory();f.binding.admission={...f.binding.admission,desired:false,state:'stopping',queued:0,running:0,resultUnknown:1};f.binding.allowedActions=['resume','prepare'];f.binding.activePlan.name='Generated remotely changed binding';
- await ui.tick(1500);assert.equal(ui.element.querySelector('[role=switch]')!.getAttribute('aria-checked'),'false');assert.match(ui.element.textContent!,/Generated remotely changed binding/);assert.match(ui.element.textContent!,/停止请求不代表远端工作已结束/);assert.equal(f.writes.length,0);
+ await ui.tick(1500);assert.equal(ui.element.querySelector('[role=switch]')!.getAttribute('aria-checked'),'false');assert.match(ui.element.textContent!,/Generated remotely changed binding/);assert.match(ui.element.textContent!,/外部结果仍待确认/);assert.equal(f.writes.length,0);
 });
 
 test('plugin foreground hint follows a held read once without aborting it or duplicating shared observers',async t=>{

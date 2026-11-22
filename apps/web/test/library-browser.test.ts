@@ -42,7 +42,7 @@ test('an invalid date deep link keeps filters recoverable without widening or cr
   for(const value of ['2026-13-01','2026-02-30','not-a-date']){
     w.location.hash='#/library?view=materials&sourceId=generated-source&after='+value;
     await act(async()=>{root.render(React.createElement(LibraryMaterials,{key:value,api,revision:0,onSelect:()=>{}}));});
-    assert.match(d.querySelector('[role=alert]')!.textContent!,/请选择有效日期/);
+    assert.match(d.querySelector('[role=alert]')!.textContent!,/选择有效日期/);
     assert.equal(reads.filter(path=>path.startsWith('/api/library/browse?')).length,0,'invalid scope must not silently become an unfiltered request');
   }
   await act(async()=>button(d,'清除筛选').click());
@@ -94,7 +94,7 @@ test('the library has no second memory tab and keeps registered specialized view
  assert.equal(d.querySelector('[data-collection-id="coding-status"]')?.textContent,'Coding 同步状态');
  await act(async()=>root.render(view(api,{tab:'generated-removed-collection'})));
  assert.equal(d.querySelector('.library-secondary-views summary')?.textContent,'更多');
- assert.match(d.querySelector('.library-content')?.textContent??'',/当前不可用/);
+ assert.match(d.querySelector('.library-content')?.textContent??'',/分类不可用/);
 });
 
 test('record pagination and explicit device filters keep their request scope while returning from detail',async t=>{
@@ -220,7 +220,7 @@ test('an explicit missing collection shows unavailable and never reads the first
  const {root,d}=await fixture(t),reads:string[]=[];
  const api=apiWith(path=>{reads.push(path);throw Error('Unexpected generated request '+path);});
  await act(async()=>root.render(view(api,{tab:'generated-removed-collection'})));
- assert.match(d.querySelector('.library-content')!.textContent!,/此资料库分类当前不可用/);
+ assert.match(d.querySelector('.library-content')!.textContent!,/分类不可用/);
  assert.equal(d.querySelector('.library-content .library-record'),null);
  assert.deepEqual(reads,[]);
  assert.equal(d.querySelector('.library-type-filters button[aria-current=page]'),null);

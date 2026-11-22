@@ -46,7 +46,7 @@ test('restoring recording source intake shows disabled sync and leads to its exp
  assert.doesNotMatch(dom.window.document.querySelector('aside')!.textContent!,/等待下次同步|已启用/);
  const link=dom.window.document.querySelector<HTMLAnchorElement>('.source-configuration a[href="#/library?recordings=generated"]');assert.ok(link);
  assert.equal(link.textContent,'录音同步设置');
- assert.match(dom.window.document.querySelector('.source-configuration')!.textContent!,/恢复接入仅允许接收资料；录音同步需在录音同步设置中确认范围并启用/);
+ assert.match(dom.window.document.querySelector('.source-configuration')!.textContent!,/恢复后可接收资料.*录音同步需单独启用/);
  assert.deepEqual(writes,[{path:'/api/sources/'+source.id,body:{enabled:true}}]);
  assert.equal(status.selection.enabled,false);assert.equal(status.selection.autoSync,false);
 });
@@ -99,7 +99,7 @@ for(const locale of ['zh-CN','en'] as const)test('recording directory and detail
  assert.equal(dom.window.document.querySelector('.section-heading .badge')?.textContent,binding);
  assert.equal(dom.window.document.querySelector('.section-heading .badge.green'),null);
  assert.equal(dom.window.document.querySelector('.recording-sync-status')?.textContent,sync);
- assert.ok(dom.window.document.body.textContent!.includes(locale==='en'?'does not confirm a valid login or read permissions':'不代表当前登录或读取权限有效'));
+ assert.ok(dom.window.document.body.textContent!.includes(locale==='en'?'does not confirm a valid login or read permissions':'读取权限待核验'));
  assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[type=checkbox]')?.checked,false);
  assert.ok(reads.includes('/api/connectors/generated-recordings'));
 });

@@ -31,7 +31,7 @@ async function request(serverUrl: string, path: string, init: RequestInit, fetch
       throw new ConnectionError(code,httpFailureMessage(response.status,reason),response.status,reason);
     }
     return await responseJson(response);
-  } catch (error) { if (error instanceof ConnectionError) throw error; throw new ConnectionError('NETWORK', moteText("中央连接失败或超时。核对地址、证书和网络。重定向会被拒绝。")); }
+  } catch (error) { if (error instanceof ConnectionError) throw error; throw new ConnectionError('NETWORK', moteText("中央连接失败或超时。核对中央地址、HTTPS 证书和网络。重定向会被拒绝。")); }
 }
 export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>, fetcher: typeof fetch = fetch, enforceDevice = true): Promise<ConnectionIdentity> {
   if (!config.token) throw new ConnectionError('MISSING_TOKEN', moteText("导入连接邀请，或保存访问令牌。"));

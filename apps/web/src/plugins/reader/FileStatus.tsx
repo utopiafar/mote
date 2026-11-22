@@ -14,7 +14,7 @@ import {resolveDiscoveryTarget} from '../../discovery-availability';
 export function fileRetentionLabel(retention:FileView['retention']){
  return retention==='reference'?moteText('仅保存引用'):retention==='archive'?moteText('保留原件'):moteText('内容快照');
 }
-export function FileRetentionNote(){return <p className="fine-print">{moteText('快照和原件归档均上传完整文件供中央解析或转写。快照清理临时原件、保留提取正文。归档长期留原件。仅目录不读取正文。')}</p>;}
+export function FileRetentionNote(){return <p className="fine-print">{moteText('快照和原件归档均上传完整文件，由中央解析或转写。快照处理后清理中央临时原件，保留提取正文。归档长期保留文件。仅目录不读取正文。')}</p>;}
 
 /** FileView is the host projection. Retention, coverage, body text and summary
  * presence never substitute for its original-opening capability. */

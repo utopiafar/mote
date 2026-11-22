@@ -78,7 +78,7 @@ test('a changed history cursor discards older rows and reloads the first page; t
   return {items:[]};
  });
  await act(async()=>root.render(view(api)));await until(()=>!!d.querySelector('.workspace-select'));
- await act(async()=>button(d,'加载更多').click());assert.match(d.body.textContent!,/连接暂时中断，请检查网络/);assert.equal(d.querySelectorAll('.workspace-list .workspace-select').length,1);
+ await act(async()=>button(d,'加载更多').click());assert.match(d.body.textContent!,/连接暂时中断.*检查网络/);assert.equal(d.querySelectorAll('.workspace-list .workspace-select').length,1);
  await act(async()=>button(d,'加载更多').click());assert.equal(d.querySelectorAll('.workspace-list .workspace-select').length,2);
  await act(async()=>button(d,'加载更多').click());await until(()=>d.querySelectorAll('.workspace-list .workspace-select').length===0);assert.ok(firstReads>=2);assert.doesNotMatch(d.querySelector('.workspace-list')!.textContent!,/Generated older finding/);
  await until(()=>!d.querySelector('.insight-report'));assert.match(d.body.textContent!,/这份发现当前不可用/,'cursor invalidation also revalidates the explicitly selected report');

@@ -123,7 +123,7 @@ for(const view of ['sources','files'] as const){
 test('an empty file archive keeps its settled explanation during background operation refresh',async t=>{
  const f=await fixture(t,'files'),refresh=deferred();let refreshing=false;
  const api=apiWith('files',()=>refreshing?refresh.promise:{items:[],nextCursor:null});
- await f.render(api);const explanation=f.d.querySelector('p.muted')!;assert.match(explanation.textContent!,/尚无匹配文件/);
+ await f.render(api);const explanation=f.d.querySelector('p.muted')!;assert.match(explanation.textContent!,/无匹配文件/);
  refreshing=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/files?')));
  assert.equal(f.d.querySelector('p.muted'),explanation);assert.equal(f.rows().length,0);
  await act(async()=>refresh.resolve({items:[],nextCursor:null}));assert.equal(f.d.querySelector('p.muted'),explanation);

@@ -253,7 +253,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
           <div className="preference-grid">
             {draft.protocol === 'codex-app-server' && <label className="preference-field">{moteText("速度模式")}<select aria-label={moteText("速度模式")} value={draft.serviceTier} onChange={e => change({ serviceTier: e.target.value as ModelSettingsDraft['serviceTier'] })}>
               <option value="default">Standard</option><option value="fast" disabled={!fastSupported}>Fast{!fastSupported ? moteText(" · {0}", moteText("当前模型不支持")) : ''}</option>
-            </select><small>{moteText("Fast 加快响应并保持推理强度，可能增加额度或费用消耗。能否启用取决于账号、模型和工作区。")}{!selectedCatalogModel?.serviceTiers && ' ' + moteText("尚未取得速度档位，可使用测试连接验证。")}</small></label>}
+            </select><small>{moteText("Fast 加快支持的模型响应，保持所选推理强度，会增加额度或费用消耗。可用性取决于账号、模型和工作区设置。")}{!selectedCatalogModel?.serviceTiers && ' ' + moteText("尚未取得速度档位，可使用测试连接验证。")}</small></label>}
             <label className="preference-field">{moteText("推理强度")}<select aria-label={moteText("推理强度")} value={draft.reasoningEffort} onChange={e => change({ reasoningEffort: e.target.value as ModelSettingsDraft['reasoningEffort'] })}>
               {draft.protocol === 'codex-app-server' && codexChoices.known ? <>
                 <option value="auto">{moteText(reasoningNames.auto)}{selectedCatalogModel?.defaultReasoningEffort ? moteText(" · {0}: {1}", moteText("目录建议默认"), selectedCatalogModel.defaultReasoningEffort) : ''}</option>

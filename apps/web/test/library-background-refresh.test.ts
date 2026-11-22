@@ -155,7 +155,7 @@ test('work issue guidance stays mounted while its known empty reason is refreshe
     const api = apiWith(() => ++reads === 1 ? { steps: [], nextCursor: null } : pending.promise);
     const work = { id: 'generated-work', state: 'needs_input', technical: { operationIds: ['generated-operation'] } } as WorkActivity;
     await act(async () => root.render(React.createElement(WorkIssueNotice, { api, work })));
-    const guidance = Array.from(d.querySelectorAll('.fine-print')).find(item => item.textContent?.includes('可继续查看下方补充问题'))!;
+    const guidance = Array.from(d.querySelectorAll('.fine-print')).find(item => item.textContent?.includes('技术详情'))!;
     assert.ok(guidance);
     await act(async () => resources(api).get('/api/operations/generated-operation?limit=100').refresh());
     assert.ok(guidance.isConnected);

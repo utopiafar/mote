@@ -20,7 +20,7 @@ export function ContentStorage({api,onChange}:{api:Api;onChange?:()=>void}) {
       <button className="button primary" disabled={!state||state.enabled||busy||running} onClick={()=>void controller.decrypt(onChange)}>{moteText("一次性批量解密")}</button>
       {running&&<button className="button subtle" disabled={busy} onClick={()=>void controller.cancelDecrypt(onChange)}>{moteText("取消解密")}</button>}
     </div>
-    <p className="fine-print">{moteText("关闭加密后可逐项转为明文，后台任务可取消或续跑。保留完成结果，凭据不转换。")}</p>
+    <p className="fine-print">{moteText("关闭上方加密后，可将已有图片、原件和待上传分片逐项转换为明文。任务在后台运行，离开页面仍会继续；取消后保留已完成结果，可再次运行。连接凭据不参与转换。")}</p>
     </details>
     {!state&&!error&&<Loading label={moteText('正在读取存储设置…')}/>}
     {state&&state.job.state!=='idle'&&<div role="status" aria-live="polite">

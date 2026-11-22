@@ -11,5 +11,5 @@ test('structured evidence keeps named values, repeated text and source distincti
   assert.match(html, /message visible body/);
   assert.equal((html.match(/&lt;script&gt;generated&lt;\/script&gt;/g) ?? []).length, 2);
   assert.match(html, /无障碍描述/); assert.match(html, /显示文字/);
-  assert.match(html, /不代表阅读过全文/); assert.ok(!html.includes('<script>'));
+  assert.match(html, /仅为观察时窗内的文字/); assert.ok(!html.includes('<script>'));
 });

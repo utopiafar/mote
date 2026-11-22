@@ -19,7 +19,7 @@ export function MediaSnapshot({media,observedAt,screenLocked,collection,compact=
     {media?.sessions.map(session=><MediaSessionDetail key={session.sessionId} session={session} compact={compact} collection={collection}/>)}
     {!media?.sessions.length&&<p className="field-note">{state.description}</p>}
     {collection==='activity'&&<p className="field-note">{moteText("仅保留应用与播放状态；标题、作者、专辑等内容不采集。")}</p>}
-    {!compact&&<p className="field-note">{moteText("仅采集应用公开的媒体状态。通知使用权只用于发现会话，不保存通知正文或音频。")}</p>}
+    {!compact&&<p className="field-note">{moteText("这是应用公开的状态。媒体采集在客户端单独开启；通知使用权用于发现媒体会话，不保存通知正文或音频。音乐、有声书等内容类型由分析时结合证据判断。")}</p>}
   </section>;
 }
 function MediaSessionDetail({session,compact,collection}:{session:MediaSession;compact:boolean;collection?:string}) {
@@ -49,7 +49,7 @@ export function MediaActivitySummary({api,range,onOpen,compact=false,onExpand,re
   </section>;
 }
 export function MediaActivityContent({value,onOpen,compact=false}:{value:MediaActivity;onOpen:(id:string)=>void;compact?:boolean}) {
-  if (!value.observations) return <div className="media-empty"><Headphones size={25}/><div><strong>{moteText("这段时间还没有媒体观察记录")}</strong><p>{moteText("可在 Android 开启媒体采集和通知使用权。")}</p></div></div>;
+  if (!value.observations) return <div className="media-empty"><Headphones size={25}/><div><strong>{moteText("这段时间还没有媒体观察记录")}</strong><p>{moteText("当前播放情况未知。在 Android 开启媒体采集和通知使用权，同步后可查看记录。")}</p></div></div>;
   const stats=<div className="media-stats"><div><span>{moteText("媒体播放采样时长")}</span><strong>{duration(value.totalDurationMs)}</strong><small>{value.observations.toLocaleString(getLocale())}{' '}{moteText("次状态观察")}</small></div><div><span><LockKeyhole size={13}/>{moteText("其中锁屏播放")}</span><strong>{duration(value.screenLock.locked)}</strong><small>{moteText("锁屏状态未知")}{' '}{duration(value.screenLock.unknown)}</small></div><div><span>{moteText("其中后台播放")}</span><strong>{duration(value.visibility.background)}</strong><small>{moteText("前后台未知")}{' '}{duration(value.visibility.unknown)}</small></div></div>;
   const measurement=moteText("播放与应用分别计时。设备内重叠合并，设备间分别累计。");
   return <>

@@ -71,7 +71,7 @@ test('scope edits and calendar choice are saved explicitly; dirty scope prevents
 });
 
 test('disconnect explains retained history and requires its own explicit click',async t=>{
- const f=await mount(t,base());await click('断开连接');assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,0);assert.match(document.body.textContent!,/保留已归档资料/);
+ const f=await mount(t,base());await click('断开连接');assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,0);assert.match(document.body.textContent!,/已归档.*保留|保留.*归档/);
  await click('返回');assert.equal(document.querySelector('.back-link'),null);assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,0);
  await click('断开连接');await click('确认断开');assert.equal(f.calls.filter(c=>c.init?.method==='DELETE').length,1);assert.equal(document.querySelector('fieldset')?.disabled,true);
 });
@@ -79,7 +79,7 @@ test('disconnect explains retained history and requires its own explicit click',
 test('request failure and expired authorization have actionable visible error states',async t=>{
  await mount(t,base(),true);assert.match(document.querySelector('[role=alert]')!.textContent!,/fixture network unavailable/);
  const container=document.createElement('div');document.body.appendChild(container);const root=createRoot(container);t.after(async()=>{await act(async()=>root.unmount());container.remove();});
- await act(async()=>{root.render(React.createElement(LarkJobStatus,{job:{id:'fixture',kind:'login',state:'failed',error:'lark_authorization_expired'}}));await tick();});assert.match(container.textContent!,/授权链接已过期，请重新发起登录/);assert.equal(container.querySelector('a'),null);
+ await act(async()=>{root.render(React.createElement(LarkJobStatus,{job:{id:'fixture',kind:'login',state:'failed',error:'lark_authorization_expired'}}));await tick();});assert.match(container.textContent!,/授权链接已过期.*重新发起登录/);assert.equal(container.querySelector('a'),null);
 });
 
 test('new activity scope previews metadata before archive confirmation even after a prior calendar sync',async t=>{
@@ -98,7 +98,7 @@ test('new activity scope previews metadata before archive confirmation even afte
  assert.deepEqual(saved.documentDiscovery,{created:true,edited:true,opened:true,firstSyncDays:30});assert.deepEqual(saved.folders,['folder-generated']);assert.deepEqual(saved.wikiRoots,['wiki-generated']);assert.deepEqual(saved.excludedDocuments,['excluded-generated']);assert.equal(saved.autoSync,true);
  assert.equal(f.calls.some(call=>call.path.endsWith('/sync')),false,'saving never invokes content sync from the UI');
  await click('预览文档范围');
- assert.match(f.container.textContent!,/合成日记/);assert.match(f.container.textContent!,/尚未因预览读取正文/);
+ assert.match(f.container.textContent!,/合成日记/);assert.match(f.container.textContent!,/预览只读标题与引用/);
  assert.equal(button('确认并开始归档').disabled,false);
  await click('确认并开始归档');assert.equal(f.calls.filter(call=>call.path.endsWith('/sync')).length,1);
  assert.match(f.container.textContent!,/保存 1 条文档活动线索/);
@@ -117,7 +117,7 @@ test('legacy connection keeps discovery opted out; partial failure can retry one
 
 test('a legacy snapshot source asks explicitly to retain full Markdown before retrying a large document',async t=>{
  const status=base();status.selection.documents=['DocFixture123'];status.documentSync={confirmed:true,sourceId:'generated-documents',documents:0,activities:0,failed:1,pending:1,errors:[{reference:'LargeFixture123',code:'lark_document_archive_required'}]};
- const f=await mount(t,status);assert.match(f.container.textContent!,/图片和附件仍只保留引用/);
+ const f=await mount(t,status);assert.match(f.container.textContent!,/图片和附件仍留引用/);
  await click('为此来源保留完整正文并重试');
  const mutation=f.calls.findIndex(call=>call.path==='/api/sources/generated-documents'&&call.init?.method==='PATCH'),sync=f.calls.findIndex(call=>call.path.endsWith('/sync'));
  assert.ok(mutation>=0&&sync>mutation);assert.deepEqual(JSON.parse(String(f.calls[mutation].init?.body)),{retention:'archive'});assert.deepEqual(JSON.parse(String(f.calls[sync].init?.body)),{document:'LargeFixture123'});

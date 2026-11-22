@@ -121,7 +121,7 @@ test('a lost control reply retries exactly the same operation and a revision con
     assert.equal(ui.toggle().getAttribute('aria-checked'),'false','no optimistic enable');assert.equal(ui.toggle().disabled,true);
     assert.ok(ui.button('重试同一请求'));await act(async()=>ui.button('重试同一请求').click());
     assert.equal(f.calls.length,2);assert.equal(f.calls[0].init.body,f.calls[1].init.body);
-    assert.match(ui.text(),/配置或方案已变化/);assert.equal(ui.dom.window.document.querySelectorAll('button').length,2);
+    assert.match(ui.text(),/配置或方案已变/);assert.equal(ui.dom.window.document.querySelectorAll('button').length,2);
     f.value.build.revision=9;f.onCommand(async input=>{assert.equal(input.expectedRevision,9);return {};});await f.refresh();await act(async()=>ui.toggle().click());
     assert.notEqual(JSON.parse(String(f.calls[0].init.body)).operationId,JSON.parse(String(f.calls[2].init.body)).operationId);
 });

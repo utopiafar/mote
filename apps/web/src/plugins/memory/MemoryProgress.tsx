@@ -71,7 +71,7 @@ export function MemoryProgress({job,onRetry,onView,onOpen,busy=false,onAction}:{
     {job.skippedChunks>0&&<p className="muted">{moteText("有")}{' '}{job.skippedChunks}{' '}{moteText("个片段已处理或无正文。原始资料仍可查看。")}</p>}
     {job.status==='waiting_for_model'&&<p className="muted">{moteText("在设置中配置模型后，可从这里继续。")}</p>}
     <div className="source-toolbar">{canRetry&&onRetry&&<button className="button" disabled={busy} onClick={onRetry}><RefreshCw size={14}/>{moteText('重新检查未完成方案')}</button>}{job.memoryIds.length>0&&onView&&<button className="button subtle" onClick={onView}>{moteText("查看记忆")}</button>}</div>
-    {canRetry&&onRetry&&<p className="muted">{moteText('重试复用有效结果。资料或配置变化时重新处理，历史用量保留。')}</p>}
+    {canRetry&&onRetry&&<p className="muted">{moteText('重试会复用仍有效的提取结果；结果不可用或资料、设置变化时，可能重新提取。历史用量会保留。')}</p>}
     {job.status!=='waiting_for_input'&&job.availableAt&&job.availableAt>Date.now()&&<p>{moteText('下次可运行时间')} · {new Date(job.availableAt).toLocaleString()}</p>}
     {showJobError&&<p role="status">{failureMessage(job.execution?.failure??job.errorCode)}</p>}
     {showJobError&&<details className="run-details"><summary>{moteText("处理详情")}</summary><code>{job.errorCode}</code></details>}
