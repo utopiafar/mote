@@ -4,14 +4,15 @@ require('../../../scripts/fixture-background.cjs');
 require('../../../scripts/fixture-language.cjs');
 
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const { once } = require('node:events');
-const { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } = require('node:fs');
+const { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } = require('node:fs');
 const { readFile, realpath } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
 const { extname, join, resolve, sep } = require('node:path');
 const { app, BrowserWindow, nativeImage, nativeTheme } = require('electron');
-const { pageRulesInBase, preConsolidationChatBytes } = require('./pf5-css-policy.cjs');
+const { pageRulesInBase, retiredPageRules, preConsolidationChatBytes } = require('./pf5-css-policy.cjs');
 
 const web = resolve(__dirname, '..');
 const wide = { width: 1440, height: 1050 };
@@ -77,7 +78,7 @@ function fixtureServer(dist, api, report, stylesheetResponses) {
       const bytes = await readFile(file);
       const extension = extname(file);
       if (stylesheetResponses && extension === '.css') {
-        response.once('finish', () => stylesheetResponses.push({ path: pathname, bytes: bytes.length }));
+        response.once('finish', () => stylesheetResponses.push({ path: pathname, body: bytes }));
       }
       response.writeHead(200, { 'Content-Type': mimeTypes[extension] ?? 'application/octet-stream', 'Content-Length': bytes.length });
       response.end(bytes);
@@ -121,7 +122,7 @@ async function waitForPaint(contents, selector) {
   }
 }
 
-async function checkChatStylesheets(contents, dist, responses, file, results) {
+async function checkChatStylesheets(contents, responses, file, results) {
   const { mounted, resources } = await contents.executeJavaScript(`({
     mounted: Array.from(document.styleSheets, sheet => sheet.href)
       .filter(Boolean).map(href => new URL(href).pathname).sort(),
@@ -130,18 +131,33 @@ async function checkChatStylesheets(contents, dist, responses, file, results) {
       .map(entry => ({ path: new URL(entry.name).pathname, bytes: entry.decodedBodySize })),
   })`);
   const byPath = (a, b) => a.path.localeCompare(b.path);
-  const served = [...responses].sort(byPath);
+  const served = responses.map(({ path, body }) => ({ path, bytes: body.length })).sort(byPath);
   const bytes = served.reduce((total, response) => total + response.bytes, 0);
-  results.push({ file, served, mounted, resources, bytes });
+  const sha256 = Object.fromEntries(responses.map(({ path, body }) => [path, createHash('sha256').update(body).digest('hex')]));
+  results.push({ file, served, mounted, resources, bytes, sha256 });
 
   assert.deepEqual(resources.sort(byPath), served, `Stylesheet response sizes for ${file}`);
   assert.deepEqual(mounted, served.map(response => response.path).sort(), `Mounted stylesheets for ${file}`);
   assert.equal(served.length, 2, `External stylesheets for ${file}`);
-  const base = served.find(response => /^\/assets\/main-[\w-]+\.css$/.test(response.path));
+  const base = responses.find(response => /^\/assets\/main-[\w-]+\.css$/.test(response.path));
   assert.ok(base, `Base stylesheet for ${file}`);
   assert.ok(served.some(response => /^\/assets\/chat-page-[\w-]+\.css$/.test(response.path)), `Chat stylesheet for ${file}`);
-  assert.deepEqual(pageRulesInBase(await readFile(resolve(dist, `.${base.path}`), 'utf8')), [], `Page rules in ${base.path}`);
+  assert.deepEqual(pageRulesInBase(base.body.toString('utf8')), [], `Page rules in HTTP response ${base.path}`);
   assert.ok(bytes < preConsolidationChatBytes, `Chat stylesheet bytes for ${file}: ${bytes} < ${preConsolidationChatBytes}`);
+}
+
+function checkBuiltStylesheets(dist) {
+  const files = readdirSync(dist, { recursive: true }).filter(file => file.endsWith('.css'));
+  assert.ok(files.length, 'Expected built stylesheets');
+  const found = files.flatMap(file => retiredPageRules(readFileSync(join(dist, file), 'utf8'))
+    .map(rule => `${file}: ${rule}`));
+  assert.deepEqual(found, [], 'Retired page selectors in built stylesheets');
+  return files.length;
+}
+
+async function checkInlineStyles(contents, file) {
+  const css = await contents.executeJavaScript(`Array.from(document.querySelectorAll('style'), style => style.textContent)`);
+  assert.deepEqual(css.flatMap(retiredPageRules), [], `Retired page selectors in inline styles for ${file}`);
 }
 
 async function run(name) {
@@ -157,6 +173,7 @@ async function run(name) {
     for (const { file } of variants) rmSync(join(out, file), { force: true });
     const fixture = loadFixture(name);
     const dist = realpathSync(join(web, 'dist'));
+    if (stylesheetResponses) report.builtStylesheetsChecked = checkBuiltStylesheets(dist);
     profile = mkdtempSync(join(tmpdir(), 'mote-page-snapshots-'));
     app.setPath('userData', profile);
     app.setPath('sessionData', profile);
@@ -223,7 +240,8 @@ async function run(name) {
       assert.deepEqual(nativeImage.createFromBuffer(png).getSize(), { width, height }, `PNG size for ${file}`);
       writeFileSync(join(out, file), png);
       report.screenshots.push({ file, theme, ...state });
-      if (stylesheetResponses) await checkChatStylesheets(contents, dist, stylesheetResponses, file, report.stylesheets);
+      if (stylesheetResponses) await checkChatStylesheets(contents, stylesheetResponses, file, report.stylesheets);
+      await checkInlineStyles(contents, file);
     }
   } catch (error) {
     report.error ??= error.message;

@@ -377,8 +377,6 @@
 .preference-menu-row>svg {color:var(--mote-accent);}
 .preference-menu-icon {width:42px;height:42px;display:grid;place-items:center;flex-shrink:0;background:var(--mote-tint);border-radius:var(--mote-radius-container);color:var(--mote-accent);}
 .preference-menu-icon.neutral {background:var(--mote-background);color:var(--mote-muted);}
-.model-selector {display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;color:var(--mote-muted);font-size:var(--mote-font-action);}
-.model-selector select {max-width:min(460px,100%);padding:9px 12px;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-container);background:var(--mote-surface);color:var(--mote-ink);}
 .software-update {padding:28px;margin-bottom:24px;}
 .software-update>p {font-size:var(--mote-font-action);line-height:1.85;margin:13px 0;}
 @media (max-width:1000px){
@@ -504,7 +502,6 @@
 .preference-menu-row { background:var(--mote-surface); border-radius:var(--mote-radius-control); padding:var(--mote-space-panel); gap:var(--mote-space-item); }
 .preference-menu-row:hover { background:var(--mote-tint); }
 .preference-menu-icon { color:var(--mote-accent); background:var(--mote-tint); border-radius:var(--mote-radius-control); }
-.model-selector-selection { display:none; }
 .storage-panel h2 { color:var(--mote-ink); }
 .preference-menu-row { border-radius:0; }
 .preference-menu-row+.preference-menu-row { border-color:var(--mote-divider); }
@@ -513,11 +510,6 @@
 .badge.neutral { background:var(--mote-background); color:var(--mote-muted); border-color:var(--mote-hair); border-radius:var(--mote-radius-indicator); }
 .language-selector { color:var(--mote-muted); }
 .language-selector select { color:var(--mote-ink); background:var(--mote-surface); border-color:var(--mote-control-border); }
-@media (max-width:760px){
-.model-selector select { width:100%; max-width:100%; min-width:0; }
-.model-selector-selection { display:block; flex-basis:100%; min-width:0; width:100%; white-space:normal; overflow-wrap:anywhere; font-size:var(--mote-font-support); }
-}
-.model-selector { font-size:var(--mote-font-support); line-height:1.6; }
 .memory-integration select { border-color:var(--mote-control-border); background:var(--mote-surface); border-radius:var(--mote-radius-control); }
 .usage-bar i { accent-color:var(--mote-accent); }
 .memory-integration { padding:var(--mote-space-panel); }
@@ -532,18 +524,6 @@
 .file-processing-settings fieldset { grid-template-columns:minmax(0,1fr); border-radius:var(--mote-radius-container); }
 .file-processing-settings details { min-width:0; }
 .file-processing-settings .text-button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
-.file-diarization-fields { min-width:0; display:flex; flex-direction:column; gap:var(--mote-space-item); margin-block:var(--mote-space-item); padding:var(--mote-space-item); border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); }
-.file-diarization-fields label { display:grid; gap:var(--mote-space-inline); min-width:0; container-type:inline-size; }
-.file-diarization-fields input,.file-diarization-fields select { width:100%; min-width:0; }
-.file-diarization-fields button { align-self:flex-start; }
-.file-diarization-selection { display:none; color:var(--mote-muted); font-size:var(--mote-font-support); line-height:1.6; overflow-wrap:anywhere; min-width:0; }
-@media (max-width:760px){
-.file-diarization-settings { padding:var(--mote-space-item); }
-.file-diarization-fields { padding:var(--mote-space-inline); }
-.file-diarization-selection { display:block; }
-.file-diarization-fields>.button { max-width:100%; overflow-wrap:normal; word-break:normal; }
-}
-.model-selector { container-type:inline-size; container-name:model-selector; flex:1 1 460px; min-width:0; }
 .memory-integration { container-type:inline-size; container-name:memory-integration; }
 .memory-integration-selection { display:none; }
 
@@ -633,3 +613,14 @@
 .settings-destinations p { color:var(--mote-muted); font-size:var(--mote-font-action); }
 .settings-destinations h2 { font-size:var(--mote-font-section); font-weight:600; letter-spacing:0; }
 .settings-destinations { margin-block:var(--mote-space-panel); }
+
+.preference-toggle {display:flex;gap:18px;align-items:center;justify-content:space-between;padding:22px 0;border-bottom:1px solid var(--mote-hair);}
+.preference-toggle strong {font-size:var(--mote-font-body);color:var(--mote-ink);}
+.preference-toggle small {display:block;font-size:var(--mote-font-meta);color:var(--mote-muted);line-height:1.7;margin-top:6px;}
+.preference-toggle input {appearance:none;width:40px;height:24px;min-width:40px;border-radius:var(--mote-radius-container);padding:0;background:var(--mote-border);position:relative;cursor:pointer;}
+.preference-toggle input:after {content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;background:var(--mote-surface);border-radius:50%;box-shadow:none;transition:transform .15s;}
+.preference-toggle input:checked {background:var(--mote-accent);border-color:var(--mote-accent);}
+.preference-toggle input:checked:after {transform:translateX(16px);}
+@media (prefers-reduced-motion:reduce){
+.preference-toggle input:after{transition:none;}
+}

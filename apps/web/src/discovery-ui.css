@@ -27,3 +27,4 @@
 .execution-queue-details summary:focus-visible { outline:3px solid var(--mote-accent); outline-offset:3px; }
 @media(max-width:760px) {.archive-welcome { padding:20px; }.welcome-archive-flow { gap:10px; font-size:var(--mote-font-meta); }.execution-queue-details summary span { display:block; margin-left:16px; } }
 @media(max-width:380px) { .welcome-archive-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.welcome-archive-flow>svg { display:none; }.welcome-archive-flow span { flex-direction:column; align-items:flex-start; gap:7px; overflow-wrap:anywhere; } }
+.discovery-inline-guidance .text-button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }

@@ -13,14 +13,6 @@
 .final-insights .report-top-tools{margin:0;min-height:32px}.final-insights .discovery-reading-tools:empty{display:none}.final-insights .report-evidence .evidence-card p{display:block;-webkit-line-clamp:unset;overflow:visible;white-space:pre-wrap}.final-insights .report-frame{height:450px;min-height:0}.final-insights .report-controls{border:0;margin-bottom:27px}.final-insights .report-coverage{background:transparent}@media(max-width:600px){.final-insights .report-top-tools{margin:0}.final-insights .discovery-navigation{flex-wrap:wrap}.final-insights .report-frame{height:500px}}
 
 /* Consolidated page styles: moved from the shared base so they load with this page. */
-.insight-source {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--mote-font-meta);
-  color: var(--mote-muted);
-  margin-bottom: 18px;
-}
 .report-evidence h3{font-size:var(--mote-font-section)}
 .insight-compose .compose-mark{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;color:var(--mote-accent);border-radius:var(--mote-radius-container);background:var(--mote-tint);margin:3px 0 15px}
 .insight-compose h2{font-size:var(--mote-font-title);line-height:1.6;margin-bottom:9px}
@@ -31,6 +23,17 @@
 .report-controls h2{font-size:var(--mote-font-section);line-height:1.6;margin:0}
 .report-controls p{font-size:var(--mote-font-meta);color:var(--mote-muted);margin:6px 0 0}
 .insight-report .report-more>.button{min-height:34px;font-size:12px;padding:6px 10px;gap:6px;background:var(--mote-fill);box-shadow:none}
+.report-top-tools .report-more-menu{width:180px}
+.report-more-menu>[role=menuitemradio]{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:var(--mote-radius-control);background:transparent;color:var(--mote-ink);font-size:12px;text-align:left}
+.report-more-menu>[role=menuitemradio]:hover,.report-more-menu>[role=menuitemradio]:focus-visible{background:var(--mote-background)}
+.report-more-menu>[role=menuitemradio]:before{content:'';width:14px;color:var(--mote-accent)}
+.report-more-menu>[aria-checked=true]:before{content:'✓'}
+@media (max-width:560px){
+  .report-top-tools .report-more-menu{width:170px}
+}
+@media (pointer:coarse){
+.report-more-menu>[role=menuitemradio]{min-height:44px}
+}
 .report-menu-label{font-size:10px;color:var(--mote-muted);padding:6px 10px}
 @media (max-width:560px){
 .insight-report .report-more>.button{font-size:11px;padding:6px 9px}
