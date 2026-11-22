@@ -113,12 +113,13 @@ test('PF5-02 selectors in the base belong to the shell and shared components', (
 test('PF5-02 shared classes cannot bring page-only variants or conditions into the base', () => {
   const reportChoice = '.report-more-menu > [role = "menuitemradio"]';
   const checkedMark = '.report-more-menu>:is([aria-checked=true], [role=menuitemradio])::before';
+  const reportIcon = '.report-more-menu>[aria-checked=true]>.report-view-check';
   const pageLayout = '.content[data-page=about]';
   const questionSelected = '.conversation-item.active';
   const unscopedMenu = '.report-more-menu [role=menuitem]';
   assert.deepEqual(pageRulesInBase(`
     .reader-menu [role="menuitem"]:focus-visible, .app-shell[data-navigation] .sidebar [aria-current=page] { color:red }
-    .topbar, ${reportChoice}, ${checkedMark} { color:red }
+    .topbar, ${reportChoice}, ${checkedMark}, ${reportIcon} { color:red }
     @media (pointer:coarse) { ${reportChoice} { min-height:44px } }
     ${pageLayout}, ${questionSelected}, ${unscopedMenu} { color:red }
     @container (max-width:260px) { .button { white-space:normal } }
@@ -130,6 +131,7 @@ test('PF5-02 shared classes cannot bring page-only variants or conditions into t
   `), [
     '.report-more-menu>[role=menuitemradio]',
     '.report-more-menu>:is([aria-checked=true],[role=menuitemradio]):before',
+    reportIcon,
     '@media (pointer:coarse) | .report-more-menu>[role=menuitemradio]',
     pageLayout, questionSelected, unscopedMenu,
     '@container (max-width:260px) | .button',
@@ -150,8 +152,8 @@ test('PF5-02 page selectors live with the stylesheet loaded by their surfaces', 
     'discovery-final.css': ['.insight-automatic-dialog .conversation-dialog', '.report-top-tools .report-more-menu',
       ':where(.insight-report) .run-details pre', ':where(.final-insights) .field-label>select',
       '.report-more-menu>[role=menuitemradio]', '.report-more-menu>[role=menuitemradio]:hover',
-      '.report-more-menu>[role=menuitemradio]:focus-visible', '.report-more-menu>[role=menuitemradio]:before',
-      '.report-more-menu>[aria-checked=true]:before'],
+      '.report-more-menu>[role=menuitemradio]:focus-visible', '.report-view-check',
+      '.report-more-menu>[aria-checked=true]>.report-view-check'],
     'discovery-ui.css': ['.discovery-inline-guidance .text-button'],
     'home-search-questions.css': ['.search-workspace .library-record'],
     'imports-final.css': [':where(.final-imports) .workflow-line>svg', ':where(.final-imports) .file-row>svg',

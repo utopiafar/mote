@@ -507,6 +507,10 @@
 ::selection
 :root
 :root[data-color-scheme=dark]
+:where(details[open]>summary>svg.disclosure-icon)
+:where(summary:has(>svg.disclosure-icon))
+:where(summary:has(>svg.disclosure-icon))::-webkit-details-marker
+:where(summary>svg.disclosure-icon)
 @container model-selector (max-width:520px) | .model-selector-selection
 @media (max-height:800px)and (min-width:761px) | .sidebar
 @media (max-height:800px)and (min-width:761px) | .sidebar nav button

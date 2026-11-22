@@ -160,6 +160,22 @@ async function checkInlineStyles(contents, file) {
   assert.deepEqual(css.flatMap(retiredPageRules), [], `Retired page selectors in inline styles for ${file}`);
 }
 
+async function checkDisclosureIcons(contents, file) {
+  const invalid = await contents.executeJavaScript(`Array.from(
+    document.querySelectorAll('summary > svg:is(.disclosure-icon, .connector-chevron)'), icon => {
+      const summary = icon.parentElement;
+      const disclosure = summary.parentElement;
+      const { display, listStyleType } = getComputedStyle(summary);
+      return {
+        control: disclosure.className,
+        nativeMarker: display === 'list-item' && listStyleType.startsWith('disclosure-'),
+        unrotated: disclosure.open && getComputedStyle(icon).transform === 'none',
+      };
+    },
+  ).filter(({ nativeMarker, unrotated }) => nativeMarker || unrotated)`);
+  assert.deepEqual(invalid, [], `Disclosure icons for ${file}`);
+}
+
 async function checkBaseStylesheetOrder(contents, file) {
   const paths = await contents.executeJavaScript(`Array.from(document.styleSheets, sheet => sheet.href)
     .filter(Boolean).map(href => new URL(href).pathname)`);
@@ -236,6 +252,20 @@ async function run(name) {
         width, height, deviceScaleFactor: 1, mobile: width === narrow.width,
       });
       await window.loadURL(url);
+      if (fixture.openDisclosures) {
+        await waitForPaint(contents, fixture.waitFor);
+        await checkDisclosureIcons(contents, file);
+        for (const selector of fixture.openDisclosures) {
+          await waitForPaint(contents, selector);
+          const opened = await contents.executeJavaScript(`(async () => {
+            const summary = document.querySelector(${JSON.stringify(selector)});
+            summary.click();
+            await new Promise(requestAnimationFrame);
+            return summary.parentElement.open;
+          })()`);
+          assert.equal(opened, true, `Open disclosure ${selector} for ${file}`);
+        }
+      }
       const state = await waitForPaint(contents, fixture.waitFor);
       assert.deepEqual([state.width, state.height], [width, height], `Viewport for ${file}`);
       // Capture the emulated pixels, independent of the host display scale.
@@ -248,6 +278,7 @@ async function run(name) {
       report.screenshots.push({ file, theme, ...state });
       if (stylesheetResponses) await checkChatStylesheets(contents, stylesheetResponses, file, report.stylesheets);
       await checkBaseStylesheetOrder(contents, file);
+      await checkDisclosureIcons(contents, file);
       await checkInlineStyles(contents, file);
     }
   } catch (error) {
