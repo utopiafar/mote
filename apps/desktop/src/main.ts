@@ -31,7 +31,11 @@ import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplicat
 import { ConnectionError, testConnection } from './connection';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { centralNavigationDecision, CentralWindowFallback, centralWindowOpenLocalChannel, centralWindowUrl, centralWindowWebPreferences, installCentralSessionGuards, pairedCentralOrigin, openCentralBrowser,trustedCentralWindowSender,validateCentralWorkId } from './central-browser';
+import {
+  centralConnectionIdentity, CentralWindowLoader, centralWindowLoginTicketChannel, centralWindowOpenLocalChannel,
+  centralWindowWebPreferences, installCentralNavigationGuards, installCentralSessionGuards, openCentralBrowser,
+  pairedCentralOrigin, trustedCentralWindowSender, validateCentralWorkId,
+} from './central-browser';
 import { showCentral as navigateCentral, prepareBrowserSession, pollBrowserLogin, type BrowserLogin } from './central-navigation';
 import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -118,11 +122,6 @@ let localSources: SourcesPlugin['manager'] | undefined;
 let quitting = false;
 let notesSettledForQuit = false;
 let settings: Config;
-/** A full credential identity, so a token rotation or expiry reloads the page
- * even when the origin and the has-token flag stay the same. */
-function centralConnectionIdentity(config: Config): string {
-  return [config.serverUrl, connectionToken(config) ?? '', config.authExpiresAt ?? '', config.authSignedOut ? 'signed-out' : 'signed-in', config.authSessionOnly ? 'session' : 'persistent'].join('\u0000');
-}
 let assistantNotifications: DesktopAssistantNotifications | undefined;
 let recoveryRequired: string | undefined;
 let prepareForUpdateInstall: (() => Promise<void>) | undefined;
@@ -614,53 +613,6 @@ else {
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
     const allowedCentralOrigin = () => pairedCentralOrigin(settings.serverUrl, connectionToken(settings));
-    const centralFallback = new CentralWindowFallback();
-    const restoreCentralOffline = (): Promise<void> => {
-      const target = centralWindow;
-      if (!target || target.isDestroyed()) return Promise.resolve();
-      return centralFallback.restore(() => target.loadURL(centralWindowOfflineUrl));
-    };
-    let centralLoad: Promise<void> | undefined;
-    loadCentralWindow = async () => {
-      if (!centralWindow || centralWindow.isDestroyed()) return;
-      if (centralLoad) return centralLoad;
-      const run = (async () => {
-        // A connection change during ticket exchange or load must not leave the
-        // window on the previous Central page; take a fresh snapshot and retry.
-        for (;;) {
-          const selected = { ...settings };
-          const key = centralConnectionIdentity(selected);
-          const origin = pairedCentralOrigin(selected.serverUrl, connectionToken(selected));
-          if (!origin) {
-            await restoreCentralOffline();
-            return;
-          }
-          try {
-            const token = connectionToken(selected);
-            let ticket: string | undefined;
-            if (token) {
-              const grant = await loginRequest(selected, '/api/login/ticket', { expiresAt: selected.authExpiresAt }, token);
-              if (typeof grant?.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(grant.code)) throw Error('Invalid login ticket');
-              ticket = grant.code;
-            }
-            if (!centralWindow || centralWindow.isDestroyed()) return;
-            if (centralConnectionIdentity(settings) !== key) continue;
-            await centralWindow.loadURL(centralWindowUrl(origin, ticket));
-            centralFallback.markOnline();
-          } catch {
-            if (!centralWindow || centralWindow.isDestroyed()) return;
-            if (centralConnectionIdentity(settings) !== key) continue;
-            await restoreCentralOffline();
-            return;
-          }
-          if (!centralWindow || centralWindow.isDestroyed() || centralConnectionIdentity(settings) === key) return;
-        }
-      })().finally(() => { centralLoad = undefined; });
-      centralLoad = run;
-      return run;
-    };
-    retryCentralWindow = () => { if (centralFallback.offline) void loadCentralWindow?.(); };
-
     centralWindow = new BrowserWindow({
       width: 1140, height: 840, minWidth: 820, minHeight: 620, show: false, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
       webPreferences: {
@@ -670,32 +622,23 @@ else {
         additionalArguments: ['--mote-device-id=' + settings.deviceId],
       },
     });
-    const centralSenderId = centralWindow.webContents.id;
-    const decideCentralNavigation = (target: string) => centralNavigationDecision(target, allowedCentralOrigin());
-    const navigateCentral = (event: {preventDefault(): void}, target: string) => {
-      const decision = decideCentralNavigation(target);
-      if (decision === 'allow') return;
-      event.preventDefault();
-      if (decision === 'external') void shell.openExternal(target);
-    };
-    centralWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (decideCentralNavigation(url) === 'external') void shell.openExternal(url);
-      return { action: 'deny' };
+    const centralContents = centralWindow.webContents;
+    const centralSenderId = centralContents.id;
+    const centralLoader = new CentralWindowLoader(centralWindow, () => settings, centralWindowOfflineUrl);
+    loadCentralWindow = () => centralLoader.load();
+    retryCentralWindow = () => { if (centralLoader.offline) void centralLoader.load(); };
+
+    installCentralNavigationGuards(centralContents, allowedCentralOrigin, url => shell.openExternal(url));
+    installCentralSessionGuards(centralContents.session, allowedCentralOrigin);
+    centralContents.ipc.handle(centralWindowLoginTicketChannel, (event, attempt: unknown) => {
+      const frame = event.senderFrame;
+      if (frame && frame === centralContents.mainFrame) return centralLoader.takeLoginTicket(frame, attempt);
     });
-    centralWindow.webContents.on('will-navigate', (event, target) => navigateCentral(event, target));
-    // Subframe redirects must never reach the external-browser path; only the
-    // Central main frame decides where this window goes.
-    centralWindow.webContents.on('will-redirect', (event, target, _isInPlace, isMainFrame) => {
-      if (!isMainFrame) return;
-      navigateCentral(event, target);
-    });
-    centralWindow.webContents.on('will-attach-webview', event => event.preventDefault());
-    installCentralSessionGuards(centralWindow.webContents.session, allowedCentralOrigin);
-    centralWindow.webContents.on('did-fail-load', (_event, code, _description, failedUrl, isMainFrame) => {
-      if (!isMainFrame || code === -3) return;
+    centralContents.on('did-fail-load', (_event, code, _description, failedUrl, isMainFrame) => {
+      if (!isMainFrame || code === -3 || centralLoader.loading) return;
       const origin = allowedCentralOrigin();
       if (!origin || (failedUrl !== origin && !failedUrl.startsWith(origin + '/'))) return;
-      void restoreCentralOffline();
+      void centralLoader.restoreOffline();
     });
     centralWindow.on('close', event => { if (!quitting) { event.preventDefault(); centralWindow?.hide(); } });
     centralWindow.once('closed', () => { centralWindow = undefined; });

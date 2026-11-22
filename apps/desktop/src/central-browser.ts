@@ -1,5 +1,8 @@
-import type { Session } from 'electron';
+import type { BrowserWindow, Session, WebContents, WebFrameMain } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { validateServerUrl } from './config';
+import type { Config } from './contracts';
+import { connectionToken, loginRequest } from './login-session';
 import { deepLinkHash, formatEvidenceRef, pageHash, parseEvidenceRef, type PageRouteKey } from '@mote/shared';
 
 /** Mac page ids that open a page from the shared route table. Legacy pages
@@ -37,8 +40,8 @@ export function pairedCentralOrigin(serverUrl: string | undefined, credential: s
 /** The Central session denies every permission except sanitized clipboard
  * writes from the paired Central origin. Clipboard reads, media, geolocation,
  * notifications, fullscreen, devices and display capture stay closed. */
-export function centralPermissionAllowed(permission: string, requestingOrigin: string | undefined, allowedOrigin: string | undefined): boolean {
-  return permission === 'clipboard-sanitized-write' && allowedOrigin !== undefined && requestingOrigin === allowedOrigin;
+export function centralPermissionAllowed(permission: string, requestingUrl: string | undefined, allowedOrigin: string | undefined): boolean {
+  return permission === 'clipboard-sanitized-write' && allowedOrigin !== undefined && webUrl(requestingUrl)?.origin === allowedOrigin;
 }
 
 type CentralSession = Pick<Session,
@@ -51,9 +54,7 @@ export function installCentralSessionGuards(session: CentralSession, allowedOrig
   session.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
     centralPermissionAllowed(permission, requestingOrigin, allowedOrigin()));
   session.setPermissionRequestHandler((_contents, permission, callback, details) => {
-    let requestingOrigin: string | undefined;
-    try { requestingOrigin = details?.requestingUrl ? new URL(details.requestingUrl).origin : undefined; } catch { requestingOrigin = undefined; }
-    callback(centralPermissionAllowed(permission, requestingOrigin, allowedOrigin()));
+    callback(centralPermissionAllowed(permission, details?.requestingUrl, allowedOrigin()));
   });
   session.setDevicePermissionHandler(() => false);
   session.setDisplayMediaRequestHandler((_request, callback) => callback({}));
@@ -62,25 +63,64 @@ export function installCentralSessionGuards(session: CentralSession, allowedOrig
 /** Keep in sync with central-window-preload.ts; the sandboxed preload cannot
  * import this module without pulling Node-only configuration code with it. */
 export const centralWindowOpenLocalChannel = 'mote:central:open-local-window';
+export const centralWindowLoginTicketChannel = 'mote:central:login-ticket';
+const centralWindowLoginParameter = 'desktopLogin';
+
+function webUrl(target: string | undefined): URL | undefined {
+  if (!target) return undefined;
+  try {
+    const url = new URL(target);
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password) return url;
+  } catch { /* Invalid addresses have no web origin. */ }
+}
+
+function hasLoginTicket(url: URL): boolean {
+  const fragment = url.hash.slice(1);
+  return url.searchParams.has('loginTicket') || new URLSearchParams(fragment.slice(fragment.indexOf('?') + 1)).has('loginTicket');
+}
 
 /** Same-origin navigation stays in the window. Other HTTP(S) destinations go
  * to the system browser. File, data, javascript and credential-bearing URLs
  * are denied without being handed to any external handler. */
 export type CentralNavigationDecision = 'allow' | 'external' | 'deny';
 export function centralNavigationDecision(target: string, allowedOrigin: string | undefined): CentralNavigationDecision {
-  let url: URL;
-  try { url = new URL(target); } catch { return 'deny'; }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return 'deny';
-  if (allowedOrigin !== undefined && url.origin === allowedOrigin) return 'allow';
-  return 'external';
+  const url = webUrl(target);
+  if (!url || hasLoginTicket(url)) return 'deny';
+  return url.origin === allowedOrigin ? 'allow' : 'external';
 }
 
-/** The initial main-window address. A login ticket is short-lived address data
- * inside the hash query; the bearer token never enters the URL. */
-export function centralWindowUrl(serverUrl: string, loginTicket?: string, route: PageRouteKey = 'chat'): string {
-  const origin = validateServerUrl(serverUrl);
-  if (loginTicket !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(loginTicket)) throw Error('Invalid login ticket');
-  return origin + '/' + pageHash(route, loginTicket ? { loginTicket } : undefined);
+export function installCentralNavigationGuards(
+  contents: Pick<WebContents, 'on' | 'mainFrame' | 'setWindowOpenHandler'>,
+  allowedOrigin: () => string | undefined,
+  openExternal: (url: string) => Promise<unknown>,
+): void {
+  // Electron's window-open callback cannot identify the initiating frame.
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const navigate = (event: {
+    url: string; isMainFrame: boolean; initiator?: WebFrameMain | null; preventDefault(): void;
+  }): void => {
+    if (!event.isMainFrame) {
+      const url = webUrl(event.url);
+      if (url && hasLoginTicket(url)) event.preventDefault();
+      return;
+    }
+    const origin = allowedOrigin();
+    const decision = centralNavigationDecision(event.url, origin);
+    if (decision === 'allow') return;
+    event.preventDefault();
+    const initiator = event.initiator;
+    if (decision === 'external' && origin && initiator === contents.mainFrame && initiator?.origin === origin) {
+      void openExternal(event.url).catch(() => {});
+    }
+  };
+  contents.on('will-frame-navigate', navigate);
+  contents.on('will-redirect', navigate);
+  contents.on('will-attach-webview', event => event.preventDefault());
+}
+
+/** The initial main-window address contains no credentials. */
+export function centralWindowUrl(serverUrl: string, route: PageRouteKey = 'chat'): string {
+  return validateServerUrl(serverUrl) + '/' + pageHash(route);
 }
 
 /** Tracks whether the main window is on the local offline page and owns the
@@ -103,6 +143,91 @@ export class CentralWindowFallback {
       .finally(() => { if (this.pending === pending) this.pending = undefined; });
     this.pending = pending;
     return pending;
+  }
+}
+
+type CentralWindowSettings = Pick<Config, 'serverUrl' | 'token' | 'authExpiresAt' | 'authSignedOut' | 'authSessionOnly'>;
+
+/** Reload on changes to any part of the login, even when the origin is unchanged. */
+export function centralConnectionIdentity(config: CentralWindowSettings): string {
+  return [config.serverUrl, connectionToken(config) ?? '', config.authExpiresAt ?? '',
+    config.authSignedOut ? 'signed-out' : 'signed-in', config.authSessionOnly ? 'session' : 'persistent'].join('\u0000');
+}
+
+export class CentralWindowLoader {
+  private readonly fallback = new CentralWindowFallback();
+  private pendingLoad: Promise<void> | undefined;
+  private pendingTicket: { code: string; attempt: string; origin: string; identity: string } | undefined;
+
+  constructor(
+    private readonly window: Pick<BrowserWindow, 'loadURL' | 'isDestroyed'>,
+    private readonly settings: () => CentralWindowSettings,
+    private readonly offlineUrl: string,
+  ) {}
+
+  get offline(): boolean { return this.fallback.offline; }
+  get loading(): boolean { return this.pendingLoad !== undefined; }
+
+  restoreOffline(): Promise<void> {
+    this.pendingTicket = undefined;
+    if (this.window.isDestroyed()) return Promise.resolve();
+    return this.fallback.restore(() => this.window.loadURL(this.offlineUrl));
+  }
+
+  takeLoginTicket(frame: Pick<WebFrameMain, 'origin' | 'url'>, attempt: unknown): string | undefined {
+    const ticket = this.pendingTicket;
+    if (!ticket || attempt !== ticket.attempt || this.window.isDestroyed() || frame.origin !== ticket.origin ||
+        centralConnectionIdentity(this.settings()) !== ticket.identity) return undefined;
+    const url = webUrl(frame.url);
+    if (url?.origin !== ticket.origin ||
+        new URLSearchParams(url.hash.split('?')[1] ?? '').get(centralWindowLoginParameter) !== attempt) return undefined;
+    this.pendingTicket = undefined;
+    return ticket.code;
+  }
+
+  load(): Promise<void> {
+    return this.pendingLoad ??= Promise.resolve().then(() => this.loadCurrent());
+  }
+
+  private async loadCurrent(): Promise<void> {
+    try {
+      while (!this.window.isDestroyed()) {
+        this.pendingTicket = undefined;
+        const selected = { ...this.settings() };
+        const identity = centralConnectionIdentity(selected);
+        const token = connectionToken(selected);
+        const origin = pairedCentralOrigin(selected.serverUrl, token);
+        if (origin && token) {
+          try {
+            const grant = await loginRequest(selected, '/api/login/ticket', { expiresAt: selected.authExpiresAt }, token);
+            if (typeof grant?.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(grant.code)) throw Error('Invalid login ticket');
+            if (this.window.isDestroyed()) return;
+            if (centralConnectionIdentity(this.settings()) !== identity) continue;
+
+            // The query forces a fresh document. The non-secret fragment
+            // marker follows same-origin redirects that drop the query.
+            // The main frame obtains the ticket separately over IPC.
+            const attempt = randomUUID();
+            const url = new URL(centralWindowUrl(origin));
+            url.searchParams.set(centralWindowLoginParameter, attempt);
+            url.hash = pageHash('chat', { [centralWindowLoginParameter]: attempt });
+            this.pendingTicket = { code: grant.code, attempt, origin, identity };
+            await this.window.loadURL(url.href);
+            this.fallback.markOnline();
+          } catch {
+            this.pendingTicket = undefined;
+            if (this.window.isDestroyed()) return;
+            if (centralConnectionIdentity(this.settings()) !== identity) continue;
+            await this.restoreOffline();
+          }
+        } else {
+          await this.restoreOffline();
+        }
+        if (centralConnectionIdentity(this.settings()) === identity) return;
+      }
+    } finally {
+      this.pendingLoad = undefined;
+    }
   }
 }
 
