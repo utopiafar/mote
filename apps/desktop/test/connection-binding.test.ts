@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { JSDOM } from 'jsdom';
 import { DurableQueue } from '../src/queue';
 import { defaultConfig } from '../src/config';
 import { connectionBinding } from '../src/connection-binding';
@@ -13,6 +14,16 @@ it('binds a local backlog only after confirmation, preserves the binding after r
   const local = { ...defaultConfig(), serverUrl: '', token: undefined };
   let queue = new DurableQueue(directory, local); await queue.initialize(); await queue.enqueue(event(), image);
   const initial = { ...local, serverUrl: 'https://first.example', token: 'synthetic-initial-token' };
+  expect(queue.binding.unbound()).toBe(true);
+  const { window } = new JSDOM(await readFile(new URL('../src/index.html', import.meta.url), 'utf8'));
+  try {
+    const confirmation = window.document.querySelector<HTMLInputElement>('#confirm-local-backlog');
+    const boundNotice = window.document.querySelector('#local-backlog-confirmation + .note [data-i18n]');
+    expect(confirmation?.checked).toBe(false);
+    expect(boundNotice?.textContent).toMatch(/已绑定.*待传记录/);
+  } finally {
+    window.close();
+  }
   await expect(queue.binding.commit(initial, true)).rejects.toThrow('节点');
   await queue.binding.commit(initial, true, true);
   queue = new DurableQueue(directory, local); await queue.initialize();

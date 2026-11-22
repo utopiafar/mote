@@ -1075,7 +1075,7 @@ function clearConnectionPreview(): void { connectionPreview = undefined; byId('c
 function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
   connectionPreview = value; byId<HTMLTextAreaElement>('connection-input').value = ''; byId<HTMLInputElement>('connection-confirm-origin').checked = false;
   byId('connection-origin').textContent = value.serverUrl; byId('connection-expiry').textContent = moteText("邀请到期：") + new Date(value.expiresAt).toLocaleString(getLocale());
-  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? moteText("待传截图、记录和来源版本会继续发往此地址。节点以地址和 HTTPS 证书识别。确认它仍由你控制。") : moteText("更换中央前须处理完待传截图、记录和来源版本。保留设备 ID、隐私设置和本地模型。");
+  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? moteText("同一中央重新授权后，待传截图、记录和来源版本继续发往此地址。以地址和 HTTPS 证书核对中央身份。确认它仍由你控制。") : moteText("更换中央时须无待传截图、记录和来源版本。保留设备 ID、隐私设置和本地模型。");
   byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
 }
 byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
@@ -1145,7 +1145,7 @@ function updateSyncOptions(): void {
     realtime: moteText("保存后尽快发送。断网或失败时在本机保留并重试。"),
     interval: moteText("每 {0} 分钟检查并上传待传记录。休眠期间顺延，唤醒后继续。", readInput('sync-interval')),
     batch: moteText("满 {0} 条或等 {1} 分钟即发送，逐条确认接收。", readInput('sync-batch'), readInput('sync-interval')),
-    manual: moteText("上传和设备状态都须手动触发。到来源点「立即检查并上传」，或点「立即上传」。"),
+    manual: moteText("上传记录和发送设备状态每次都须手动触发。点概览的「立即上传」，或来源里的「立即检查并上传」。"),
   };
   byId('sync-policy-help').textContent = descriptions[mode];
   byId('sync-save-hint').textContent=currentStatus?.config.syncPaused?moteText('保存后仍保持发送暂停'):moteText('保存后应用于后续发送');

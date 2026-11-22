@@ -111,7 +111,7 @@ export function MemorySettings({ api, onPlans, compact = false }: {
         <div className="memory-rhythm-footer"><span>{moteText('保存后续处理设置')}</span><button className="button" type="submit" disabled={busy}>{busy?moteText('正在保存…'):moteText('保存设置')}</button></div>{error&&<button className="text-button" type="button" disabled={busy} onClick={()=>{setEditor(undefined);setError('');read.refresh();}}>{moteText('重新读取并还原草稿')}</button>}
       </form>}
     </section>;
-    return <section className="panel memory-settings"><div className="section-heading"><div><h2>{moteText("记忆与洞察的节奏")}</h2><p>{moteText("提取、整理和工作记忆按增量或等待上限运行。洞察同时检查周期和增量。在途窗口沿用旧设置，每分钟检查。")}</p></div></div>
+    return <section className="panel memory-settings"><div className="section-heading"><div><h2>{moteText("记忆与洞察的节奏")}</h2><p>{moteText("历史资料提取、长期整理和工作记忆达到增量门槛或等待上限时运行。洞察须同时满足周期和增量。每分钟检查，在途窗口沿用原设置。")}</p></div></div>
     <div className="discovery-inline-guidance"><p>{moteText('自动记忆的开关、当前方案和处理节奏在同一设置中管理。')}</p>{onPlans && <a className="text-button" href="#/system/models?category=memory">{moteText("管理自动记忆与当前方案")}</a>}</div>
     {Boolean(error || read.error) && <p className="notice error" role="alert">{error || errorMessage(read.error)}</p>}{saved && <p role="status">{moteText("设置已保存。")}</p>}
     {draft && <form onSubmit={e => { e.preventDefault(); void save(); }}>
