@@ -99,6 +99,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     }
     private fun codingStatus() {
         ui.text(MoteI18n.text("上传与处理"), NativeFontRole.TITLE_MOBILE)
+        ui.text(MoteI18n.text("接收成功表示原件已保留；正文发布、索引和记忆整理分别显示状态。"))
         paged("/api/coding/uploads?limit=20", ui.card()) { row, card ->
             val source = row.getJSONObject("source")
             ui.text(source.getString("name"), NativeFontRole.ROW, card)
@@ -437,8 +438,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             else if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
             if (fileView == null) ui.text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, processing)
             when (cancellation?.optString("wait")) {
-                "running" -> ui.text(MoteI18n.text("结果尚未确认"), parent = processing)
-                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续"), parent = processing)
+                "running" -> ui.text(MoteI18n.text("外部结果尚未确认，停止请求不代表远端工作已结束。"), parent = processing)
+                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), parent = processing)
             }
             if (job != null) ui.disclosure(MoteI18n.text("处理详情")) { target -> ui.text(job.toString(2), parent = target) }
             if (fileView != null && fileView.hasOriginal && fileView.canOpenOriginal) {
@@ -480,7 +481,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     val retry = {
                         ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset) }
                     }
-                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续"), retry) else retry()
+                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), retry) else retry()
                 }
             }
             ui.button(MoteI18n.text("删除文件")) { screens.confirm(MoteI18n.text("删除中央文件"), MoteI18n.text("删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。")) {
@@ -524,6 +525,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         onboardingVisible = true
         body.removeAllViews()
         ui.text(MoteI18n.text("初次认识"), NativeFontRole.TITLE_MOBILE)
+        ui.text(MoteI18n.text("只处理你勾选的已同步资料；不会重新上传本机文件，也不会自动扩大来源范围。"), NativeFontRole.SUPPORT)
         ui.text(MoteI18n.text("初次认识会使用你已连接的模型处理所选资料。"), NativeFontRole.META)
         val progress = onboardingProgress
         if (progress != null) {
@@ -682,6 +684,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         ui.button(MoteI18n.text("本机来源")) { ui.startActivity(android.content.Intent(ui, SourcesActivity::class.java)) }
         ui.button(MoteI18n.text("连接更多来源")) { CentralAdmin(screens).connectors() }
         ui.button(MoteI18n.text("初次认识已同步资料")) { onboarding() }.tag = "assistant-onboarding"
+        ui.text(MoteI18n.text("只处理你勾选的已同步资料；不会重新上传本机文件，也不会自动扩大来源范围。"), NativeFontRole.META)
         paged("/api/sources", ui.card()) { row, card ->
             ui.text(row.optString("name"), NativeFontRole.SECTION, card); ui.text(row.optString("kind") + " · " + row.optString("deviceId"), parent = card)
             ui.button(MoteI18n.text("编辑来源"), parent = card) {

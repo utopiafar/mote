@@ -17,7 +17,7 @@ class UploadHistorySettingsActivity : MoteActivity() {
         choice = Spinner(this).apply { tag = "history-retention-choice"; adapter = MoteUi.choiceAdapter(this@UploadHistorySettingsActivity, UploadHistoryRetention.choices.map { MoteI18n.text("{0} 天", it) }) }.also(body::addView)
         val notice = SecondaryUi.column(body, card = true).apply { background = MoteUi.shape(context, fill = NativeColorRole.TINT, outline = true) }
         SecondaryUi.text(notice, MoteI18n.text("只清理上传历史"), heading = true)
-        SecondaryUi.text(notice, MoteI18n.text("上传历史保留 30 天"), muted = true)
+        SecondaryUi.text(notice, MoteI18n.text("默认保存30天。到期只清理上传历史，不删除资料、待传原件或草稿。"), muted = true)
         status = TextView(this).also(body::addView)
         save = Button(this).apply { text = MoteI18n.text("保存设置"); setTag(R.id.mote_primary, true); isEnabled = false; tag = "history-retention-save"; setOnClickListener {
             val days = UploadHistoryRetention.choices[choice.selectedItemPosition]

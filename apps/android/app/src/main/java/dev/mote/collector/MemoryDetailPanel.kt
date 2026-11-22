@@ -28,7 +28,7 @@ internal object MemoryDetailPanel {
     fun deletionNotice(receipt: JSONObject): String = when {
         receipt.optString("externalErase") == "pending" -> MoteI18n.text("记忆已禁止使用；外部清除仍待确认。")
         receipt.optString("externalErase") == "acknowledged" && !receipt.optBoolean("physicalEraseVerified") ->
-            MoteI18n.text("记录已移除，物理擦除未核验")
+            MoteI18n.text("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。")
         else -> MoteI18n.text("记忆已禁止使用。")
     }
     fun correctionRequest(title: String, statement: String, uncertainty: String, validFrom: String, validUntil: String, version: Int): JSONObject {

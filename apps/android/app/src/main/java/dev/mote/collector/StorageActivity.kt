@@ -29,8 +29,8 @@ class StorageActivity : MoteActivity() {
         inventory = SecondaryUi.text(body, MoteI18n.text("正在读取本机同步状态…"), muted = true).also { MoteComponents.reading(it, it.text.toString()) }
         content = SecondaryUi.column(body)
         val details = SecondaryUi.disclosure(body, MoteI18n.text("迁移时会发生什么"), "storage-migration-details")
-        text(details, MoteI18n.text("迁移会暂停处理并验证记录"))
-        text(details, MoteI18n.text("本应用专用目录，非共享相册"))
+        text(details, MoteI18n.text("选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。草稿、设置及来源缓存保留在内部空间。"))
+        text(details, MoteI18n.text("记录和索引为 JSON，图片保留原始格式。这些是本应用专用目录，不是共享相册；卸载应用会删除本机文件。移除存储卡后不会自动改到空目录。"))
         MoteUi.styleTree(body)
     }
     override fun onResume() { super.onResume(); localStateJob = observeLocalState { if (it.active == null && it.imagesReading) MoteComponents.reading(inventory, it.imageLabel()) else inventory.text = it.active?.let { count -> MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", count.records, count.pending) } ?: it.imageLabel() }; handler.post(poll); refresh() }

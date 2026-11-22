@@ -113,9 +113,9 @@ class SourcesActivity : MoteActivity() {
                     val fileProgress = snapshot.progress
                     val transferring = fileProgress != null && fileProgress.count(FileSyncPhase.UPLOADING) + fileProgress.count(FileSyncPhase.PREPARING) > 0
                     val status = if (transferring) MoteI18n.text("正在同步来源记录") else when (state.optString("status")) {
-                        "permission" -> MoteI18n.text("权限丢失，重新授权"); "paused" -> MoteI18n.text("中央已暂停，恢复后重试"); "provider" -> MoteI18n.text("提供者不可用或缓存已满；保留旧快照，稍后重试")
-                        "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；打开设置处理，文件保留待发"); "context-http" -> MoteI18n.text("说明未获中央确认");
-                        "consent" -> MoteI18n.text("编辑来源并确认完整上传"); "offline" -> MoteI18n.text("等待网络/节点恢复"); "http", "ack" -> MoteI18n.text("节点未确认，原版本保留待发"); "synced" -> if (source.kind == "local-files" && source.retention != "archive") MoteI18n.text("文件已接收；中央处理与可搜索状态在资料库查看") else MoteI18n.text("已同步"); "partial" -> MoteI18n.text("扫描不完整"); "scanned" -> MoteI18n.text("已扫描，等待发送"); else -> MoteI18n.text("等待首次扫描")
+                        "permission" -> MoteI18n.text("权限丢失，请重新授权"); "paused" -> MoteI18n.text("中央已暂停；请在中央恢复后重试"); "provider" -> MoteI18n.text("提供者不可用或缓存已满；保留旧快照，稍后重试")
+                        "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；请打开设置处理，文件保留待发。"); "context-http" -> MoteI18n.text("资料说明尚未获中央确认；请检查连接或升级中央，文件保留待发。");
+                        "consent" -> MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。"); "offline" -> MoteI18n.text("等待网络/节点恢复"); "http", "ack" -> MoteI18n.text("节点未确认，原版本保留待发"); "synced" -> if (source.kind == "local-files" && source.retention != "archive") MoteI18n.text("文件已接收；中央处理与可搜索状态请在资料库查看") else MoteI18n.text("已同步"); "partial" -> MoteI18n.text("扫描不完整"); "scanned" -> MoteI18n.text("已扫描，等待发送"); else -> MoteI18n.text("等待首次扫描")
                     }
                     val syncState = when { !source.enabled -> "paused"; !Settings(this).read().hasSyncConnection() -> "unconfigured"; state.optString("status") in setOf("permission", "consent", "context-conflict") -> "blocked"; state.optString("status") == "paused" -> "paused"; transferring -> "uploading"; state.optString("status") in setOf("offline", "http", "ack", "provider", "context-http") -> "error"; pending > 0 || source.contextDirty -> "waiting"; else -> "idle" }
                     val facts = NativeStatus.project(org.json.JSONObject().put("pending", pending).put("lastAcknowledgedAt", state.opt("lastAcknowledgedAt") ?: org.json.JSONObject.NULL).put("syncState", syncState)
@@ -624,7 +624,7 @@ class SourcesActivity : MoteActivity() {
         val retention = Spinner(this).apply { adapter = ArrayAdapter(this@SourcesActivity, android.R.layout.simple_spinner_dropdown_item, modes.map { when(it) { "archive" -> MoteI18n.text("原件归档 · 中央保留文件"); "reference" -> MoteI18n.text("仅引用 · 不读取正文"); else -> if (source.kind == "local-files") MoteI18n.text("中央提取正文，不保留原件") else MoteI18n.text("内容快照") } }); setSelection(modes.indexOf(source.retention).coerceAtLeast(0)) }; form.addView(retention); draftControls["retention"] = retention
         form.addView(TextView(this).apply { text = MoteI18n.text("首次同步范围") })
         val allowRead = CheckBox(this).apply { text = MoteI18n.text("中央保留完整提取正文，供离线读取片段"); isChecked = source.allowRead }; draftControls["allowRead"] = allowRead; if (source.kind == "local-files") form.addView(allowRead)
-        if (source.kind == "local-files") form.addView(TextView(this).apply { text = MoteI18n.text("快照与原件归档都上传完整文件") })
+        if (source.kind == "local-files") form.addView(TextView(this).apply { text = MoteI18n.text("文件快照和原件归档都会上传完整文件，由中央解析或转写。快照处理后删除中央临时原件，保留提取正文；原件归档长期保留文件。仅文件目录不读取正文。") })
         fun refreshReadOption() { allowRead.visibility = if (source.kind == "local-files" && modes[retention.selectedItemPosition] == "snapshot") android.view.View.VISIBLE else android.view.View.GONE }
         retention.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) = refreshReadOption()
@@ -632,7 +632,7 @@ class SourcesActivity : MoteActivity() {
         }
         refreshReadOption()
         val initial = Spinner(this).apply { adapter = ArrayAdapter(this@SourcesActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("已有内容分批导入（默认）"), MoteI18n.text("首次清点后仅同步新条目"))); setSelection(if (source.initialSync == "new_only") 1 else 0) }; draftControls["initial"] = initial; if (source.tree || source.kind == "local-calendar") form.addView(initial)
-        form.addView(TextView(this).apply { text = MoteI18n.text("本机删除不影响中央原件") })
+        form.addView(TextView(this).apply { text = MoteI18n.text("本地删除不影响中央原件；上传后仅清理 Mote 暂存，保留手机原文件。仅同步新增以首次完整清单为基线，重启不会重置。") })
         val advanced = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
         form.addView(Button(this).apply { text = MoteI18n.text("高级选项"); setOnClickListener { advanced.visibility = if (advanced.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE } })
         form.addView(advanced)
@@ -643,7 +643,7 @@ class SourcesActivity : MoteActivity() {
         val maxFileMiB = if (source.kind == "local-files") EditText(this).apply { setText(source.maxFileMiB.toString()); inputType = InputType.TYPE_CLASS_NUMBER }.also { advanced.addView(TextView(this).apply { text = MoteI18n.text("单文件上限（MiB，0 为不限）") }); advanced.addView(it); draftControls["maxFileMiB"] = it } else null
         val extensions = if (source.kind == "local-files") field(MoteI18n.text("允许扩展名，逗号分隔"), source.extensions) else null
         val excludes = if (source.kind == "local-files") field(MoteI18n.text("排除相对路径：每行一项，* 表示任意字符；区分大小写"), source.excluded) else null
-        form.addView(TextView(this).apply { text = MoteI18n.text("更改设置会重建本机待发缓存") })
+        form.addView(TextView(this).apply { text = MoteI18n.text("更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。") })
         restoringDraft?.takeIf { it.source.id == source.id }?.let { draft ->
             draftControls.forEach { (key, view) -> draft.values[key]?.let { value -> when (view) { is CheckBox -> view.isChecked = value.toBoolean(); is Spinner -> view.setSelection(value.toInt()); is EditText -> view.setText(value) } } }
             restoringDraft = null

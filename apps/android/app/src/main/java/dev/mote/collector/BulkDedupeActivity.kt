@@ -89,8 +89,8 @@ class BulkDedupeActivity : MoteActivity() {
             adapter = ArrayAdapter(this@BulkDedupeActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("精确"), MoteI18n.text("保守"), MoteI18n.text("均衡"), MoteI18n.text("激进")))
             isEnabled = false
         }; details.addView(modes, LinearLayout.LayoutParams(-1, -2)); controls += modes
-        SecondaryUi.text(details, MoteI18n.text("扫描本机图片并按保留图比较"), muted = true)
-        SecondaryUi.text(details, MoteI18n.text("后台处理，可离开本页"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("扫描开始时本机保存的全部采集图片，按时间从早到晚扫描，与上一张保留图比较；相似则标记为重复，否则更新保留图。应用或尺寸变化时重新开始比较，不限制时间间隔。只处理本机副本；已上传中央的记录仍然保留。待决定区独立保存在本机，不参与同步和自动清理，仍占用磁盘空间。"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("扫描和处理均在后台执行，可以离开本页。取消后已完成的处理保留，剩余记录留在原处。"), muted = true)
         MoteUi.styleTree(body)
         render()
         executor.execute {
@@ -150,7 +150,7 @@ class BulkDedupeActivity : MoteActivity() {
             stamp = key
             val data = info?.progress ?: Data.EMPTY
             val message = if (active) MoteI18n.text("{0} · {1}/{2} · 命中/成功 {3} · 跳过/失败 {4}", data.getString("stage") ?: MoteI18n.text("等待后台执行"), data.getInt("done", 0), data.getInt("total", 0), data.getInt("found", 0), data.getInt("errors", 0)) else when (info?.state) {
-                WorkInfo.State.CANCELLED -> MoteI18n.text("任务已取消，已完成保留")
+                WorkInfo.State.CANCELLED -> MoteI18n.text("任务已取消，已完成的处理保留；可重新扫描或查看待决定区。")
                 else -> info?.outputData?.getString("message") ?: MoteI18n.text("就绪")
             }
             runOnUiThread {

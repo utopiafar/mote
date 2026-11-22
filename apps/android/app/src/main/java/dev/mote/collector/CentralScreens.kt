@@ -478,7 +478,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             val selected=CentralAccess.resolve(ui);val expected=selected.server to selected.generation
             fun current():Boolean=CentralAccess.resolve(ui).let { (it.server to it.generation)==expected } && (!fromIntent || ui.requestedAskConversation()==id)
             MoteDialogBuilder(ui).setTitle(MoteI18n.text("还有未发送的内容"))
-                .setMessage(MoteI18n.text("切换会舍弃当前输入和图片"))
+                .setMessage(MoteI18n.text("切换对话会舍弃当前输入和图片。你也可以留在这里继续编辑。"))
                 .setNegativeButton(MoteI18n.text("继续编辑")) { _,_->if(current()&&fromIntent){ui.clearAskConversationIntent();controlsAsk()} }
                 .setPositiveButton(MoteI18n.text("舍弃并切换")) { _, _ -> if(current())selectConversation(id, true,fromIntent,then) }.show()
             return

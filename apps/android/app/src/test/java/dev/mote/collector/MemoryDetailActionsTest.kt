@@ -47,7 +47,7 @@ class MemoryDetailActionsTest {
 
     @Test fun `deletion notices use the same pending acknowledged and default text as web`() {
         assertEquals("记忆已禁止使用；外部清除仍待确认。", MemoryDetailPanel.deletionNotice(JSONObject().put("externalErase", "pending")))
-        assertEquals("记录已移除，物理擦除未核验",
+        assertEquals("记忆已禁止使用；外部已确认移除当前记录，物理擦除尚未核验。",
             MemoryDetailPanel.deletionNotice(JSONObject().put("externalErase", "acknowledged").put("physicalEraseVerified", false)))
         assertEquals("记忆已禁止使用。", MemoryDetailPanel.deletionNotice(JSONObject()))
     }

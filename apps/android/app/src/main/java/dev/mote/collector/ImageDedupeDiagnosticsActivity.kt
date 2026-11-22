@@ -35,8 +35,8 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
         refresh = SecondaryUi.action(actions, MoteI18n.text("刷新诊断")) { load() }
         clear = SecondaryUi.action(actions, MoteI18n.text("清空诊断副本")) { mutate { imageDedupeDiagnostics().clear() } }
         val details = SecondaryUi.disclosure(body, MoteI18n.text("诊断范围与保留"), "dedupe-diagnostic-scope")
-        SecondaryUi.text(details, MoteI18n.text("仅保留命中的对比图片"), muted = true)
-        SecondaryUi.text(details, MoteI18n.text("最多 20 组，24 小时过期"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("仅保留开启诊断后命中的图片对。图片已完成隐私检查和遮罩，仅在本机保存，不会同步。"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("最多 20 组、32 MiB，保存期限 24 小时。读取时清理过期记录；系统休眠可能延后后台清理。关闭诊断后清空。"), muted = true)
         MoteUi.styleTree(body)
     }
     override fun onResume() { super.onResume(); if (::list.isInitialized) load() }

@@ -39,7 +39,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                 SyncSchedule.waitingReason(applicationContext, config)?.let { report(it); return Result.retry() }
                 val ids = applicationContext.queue().syncIds(cursor)
                 if (ids.isEmpty()) {
-                    report(MoteI18n.text("检查完成：可见 {0}，不可见 {1}", present, unavailable))
+                    report(MoteI18n.text("检查完成：中央可见 {0} 条，不可见 {1} 条。检查范围为手机仍保留的采集记录；不可见可能是缺失、删除或无权限，不会自动恢复。来源快照由全量补传时核验。", present, unavailable))
                     return Result.success()
                 }
                 SyncSchedule.requireConditions(applicationContext, config)
@@ -65,7 +65,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
             report(error.waitingReason)
             return Result.retry()
         } catch (_: Exception) {
-            report(MoteI18n.text("操作未完成，已完成的保留"))
+            report(MoteI18n.text("操作未完成，已完成的步骤保留；请检查网络或存储。本次手动操作可再次点击继续，未删除任何副本。"))
             return Result.failure()
         }
     }

@@ -12,7 +12,7 @@ internal object CentralLarkSelection {
         "lark_partial_failure" -> "部分文档未完成读取，成功归档已保留。逐篇重试失败项"
         "lark_document_scope_changed" -> "文档范围已变化，保存后重新预览"
         "lark_document_not_selected" -> "此文档已不在同步范围内，检查范围后重试"
-        "lark_document_archive_required" -> "确认后此来源保留正文原件"
+        "lark_document_archive_required" -> "此来源当前不保留完整原件。确认后，此来源的后续归档也会保留文档正文原件；图片和附件仍只保留引用。"
         else -> "飞书操作失败，重新检测连接后重试"
     })
     fun references(value: String) = JSONArray(value.lines().map(String::trim).filter(String::isNotEmpty))

@@ -142,7 +142,7 @@ class FileTaskActivity : MoteActivity() {
         }
         hint(if (source.tree) "适用于这个文件夹的已有与后续资料。" else "仅适用于这份文件。")
         metadataStatus = TextView(this).apply { MoteUi.type(this, NativeFontRole.SUPPORT); body.addView(this) }
-        if (savedSource != null) hint("修改适用于已有与未来资料")
+        if (savedSource != null) hint("修改说明适用于已有和未来资料；不会自动重新转写或重算历史记忆。")
         if (source.tree) {
             label("同步哪些文件")
             val choices = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; body.addView(choices)
@@ -184,6 +184,7 @@ class FileTaskActivity : MoteActivity() {
         allowRead = CheckBox(this).apply { text = MoteI18n.text("中央保留完整提取正文，供离线读取片段"); isChecked = source.allowRead; advanced.addView(this) }
         enabled = CheckBox(this).apply { text = MoteI18n.text("允许读取并按所选策略发送这个来源"); isChecked = source.enabled; if (savedSource != null) advanced.addView(this) }
         continuous = CheckBox(this).apply { text = MoteI18n.text("以后修改，也自动同步"); isChecked = source.syncContinuously; tag = "file-task:continuous"; if (savedSource != null && !source.tree) advanced.addView(this) }
+        hint("更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。", advanced)
         confirm = Button(this).apply { text = MoteI18n.text(if (savedSource != null) "保存修改" else if (source.tree) "添加同步文件夹" else "导入这份文件"); tag = "file-task:confirm"; setTag(R.id.mote_primary, true); setOnClickListener { save() }; body.addView(this) }
         if (hasContextConflict) body.addView(Button(this).apply { text = MoteI18n.text("解决资料说明冲突"); tag = "file-task:context-conflict"; setOnClickListener { resolveConflict() } })
         if (savedSource != null) body.addView(Button(this).apply { text = MoteI18n.text("移除连接"); setOnClickListener { remove() } })
@@ -224,12 +225,12 @@ class FileTaskActivity : MoteActivity() {
         if (preset == "custom") advanced.visibility = View.VISIBLE
     }
     private fun updateRetention() {
-        retentionHelp.text = MoteI18n.text(when (retention.selectedItemPosition) { 1 -> "完整文件会保留中央原件"; 2 -> "不读取或上传正文，也不会转写。"; else -> "完整文件处理后不保留中央原件" })
+        retentionHelp.text = MoteI18n.text(when (retention.selectedItemPosition) { 1 -> "完整文件会发送到中央解析或转写，并保留中央原件；手机原文件保留。"; 2 -> "不读取或上传正文，也不会转写。"; else -> "完整文件会发送到中央解析或转写；处理后不保留中央原件，手机原文件保留。" })
         allowRead.visibility = if (retention.selectedItemPosition == 0) View.VISIBLE else View.GONE
     }
     private fun updateMetadataStatus() {
         metadataStatus.visibility = if (hasContextConflict || source.contextDirty || source.contextVersion > 0) View.VISIBLE else View.GONE
-        metadataStatus.text = MoteI18n.text(if (hasContextConflict) "资料说明与中央版本冲突；打开设置处理，文件保留待发" else if (source.contextDirty) "资料说明保存在本机，等待中央确认。" else if (source.contextVersion > 0) "资料说明已获中央确认，版本 {0}。" else "资料说明会作为这个来源的背景保存。", source.contextVersion)
+        metadataStatus.text = MoteI18n.text(if (hasContextConflict) "资料说明与中央版本冲突；请打开设置处理，文件保留待发。" else if (source.contextDirty) "资料说明保存在本机，等待中央确认。" else if (source.contextVersion > 0) "资料说明已获中央确认，版本 {0}。" else "资料说明会作为这个来源的背景保存。", source.contextVersion)
     }
     private fun pick() {
         if (task.busy) return
