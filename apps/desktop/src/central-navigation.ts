@@ -42,7 +42,7 @@ export function centralRoute(evidenceId?: string, workId?: string, conversationI
   return undefined;
 }
 
-const changed = () => Error(moteText('登录会话已变更，请重新打开中央页面。'));
+const changed = () => Error(moteText('登录会话已变更，重新打开中央页面。'));
 const sameLocation = (a: Config, b: Config) => {
   try { return centralScope(a).origin === centralScope(b).origin && a.deviceId === b.deviceId; }
   catch { return false; }

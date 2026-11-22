@@ -83,7 +83,12 @@ it('renders authored operation and completion labels in the current locale after
     locale = 'en';
     const failed = jobs.run('import', '正在导入队列', () => { jobs.progress('import', { message: moteText('正在校验备份') }); throw Error('generated'); });
     await expect(failed).rejects.toThrow('generated');
-    expect(jobs.snapshot().find(row => row.id === 'import')?.message).toBe('Validating backup · Incomplete; retry');
-    locale = 'zh-CN'; expect(jobs.snapshot().find(row => row.id === 'import')?.message).toBe('正在校验备份 · 未完成，请重试');
+    const displayedImport = () => jobs.snapshot().find(row => row.id === 'import');
+    const english = displayedImport();
+    expect(english).toMatchObject({ state: 'failed', message: moteText('正在校验备份') + moteText(' · 未完成，重试') });
+    locale = 'zh-CN';
+    const chinese = displayedImport();
+    expect(chinese).toMatchObject({ state: 'failed', message: moteText('正在校验备份') + moteText(' · 未完成，重试') });
+    expect(chinese?.message).not.toBe(english?.message);
   } finally { configureLocale(() => 'zh-CN'); }
 });

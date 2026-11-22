@@ -121,10 +121,10 @@ function MemoryPageOwner({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
         client:'web',id:noteId,deviceId:'mote-web',deviceName:'Mote Web',platform:'import',capturedAt:at,text:value,
         metadata:{version:1,observedAt:at,collector:{method:'manual'},noteOrigin:{kind:'manual',text:value}},
       })});
-      if(saved?.id!==noteId)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+      if(saved?.id!==noteId)throw Error(moteText('中央响应格式无效，刷新后重试。'));
       setManualEvidence(ids=>[...new Set([...ids,noteId])]);
       const created=await api.request<{id?:string}>(`/api/memory-jobs`,{method:'POST',signal:controller.signal,body:JSON.stringify({evidenceIds:[noteId],timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
-      if(!created?.id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+      if(!created?.id)throw Error(moteText('中央响应格式无效，刷新后重试。'));
       if(!alive.current||controller.signal.aborted)return;
       setDraft('');
       setCursor(undefined);

@@ -6,7 +6,7 @@ import type {Config} from './contracts';
 import {validateServerUrl} from './config';
 import {ConnectionError} from './connection';
 
-const invalid=()=>new ConnectionError('INVALID_RESPONSE',moteText('中央响应格式无效，请刷新后重试。'));
+const invalid=()=>new ConnectionError('INVALID_RESPONSE',moteText('中央响应格式无效，刷新后重试。'));
 const LIMIT=512*1024;
 async function responseJson(response:Response):Promise<unknown>{
   if(Number(response.headers.get('content-length'))>LIMIT||!response.body){await response.body?.cancel();throw invalid();}
@@ -19,7 +19,7 @@ async function responseJson(response:Response):Promise<unknown>{
 export async function readAgentRuntimeStatus(config:Pick<Config,'serverUrl'|'token'>,fetcher:typeof fetch=fetch):Promise<AgentRuntimeStatusReceipt>{
   let response:Response;
   try{response=await fetcher(validateServerUrl(config.serverUrl)+'/api/agent-runtime-settings',{headers:{...MOTE_PROTOCOL_HEADERS,'Accept-Language':getLocale(),Authorization:'Bearer '+config.token},redirect:'error',signal:AbortSignal.timeout(15000)});}
-  catch{throw new ConnectionError('NETWORK',moteText('连接失败或超时；请检查中央地址、HTTPS 证书和网络，不接受重定向'));}
+  catch{throw new ConnectionError('NETWORK',moteText('中央连接失败或超时。核对中央地址、HTTPS 证书和网络。重定向会被拒绝。'));}
   if(!response.ok){let reason:string|undefined;try{reason=responseFailureCode(await responseJson(response));}catch{}throw new ConnectionError([401,403].includes(response.status)?'AUTH':'HTTP',httpFailureMessage(response.status,reason),response.status,reason);}
   const parsed=agentRuntimeStatusReceiptSchema.safeParse(await responseJson(response));
   if(!parsed.success)throw invalid();

@@ -80,7 +80,7 @@ export function createCaptureSyncUi(api:Pick<DesktopApi,'permissionSettings'|'st
     const button=el<HTMLButtonElement>('capture-sync-screen-settings');if(button.disabled)return;
     button.disabled=true;
     try{await api.permissionSettings(kind);}
-    catch{actions.failure(moteText('无法打开权限授权，请重试。'));}
+    catch{actions.failure(moteText('权限窗口打不开。重试。'));}
     finally{if(!disposed)button.disabled=false;}
   }
 

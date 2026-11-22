@@ -29,6 +29,6 @@ it('disables an actually empty queue but preserves source-only and captured pend
 
 it('shows a readable failure first, discloses exact diagnostics only on request, and never retries the send',async()=>{
   const cause=Object.assign(Error('HTTP 503 generated protocol detail <literal>'),{httpStatus:503}),show=vi.fn(async()=>({response:0}));
-  await showTraySendFailure(cause,show);expect(show).toHaveBeenCalledTimes(1);expect(show.mock.calls[0][0]).toMatchObject({title:'立即发送',message:'未能确认发送完成，请检查同步与活动后重试。',cancelId:0});expect(JSON.stringify(show.mock.calls[0])).not.toContain(cause.message);
+  await showTraySendFailure(cause,show);expect(show).toHaveBeenCalledTimes(1);expect(show.mock.calls[0][0]).toMatchObject({title:'立即发送',message:'发送待确认。查看同步状态再重试。',cancelId:0});expect(JSON.stringify(show.mock.calls[0])).not.toContain(cause.message);
   const explicit=vi.fn().mockResolvedValueOnce({response:1}).mockResolvedValueOnce({response:0});await showTraySendFailure(cause,explicit);expect(explicit).toHaveBeenCalledTimes(2);expect(explicit.mock.calls[1][0]).toMatchObject({title:'技术详情',message:cause.message});
 });

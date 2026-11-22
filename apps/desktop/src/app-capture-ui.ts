@@ -76,7 +76,7 @@ export function createAppCaptureUi(options:AppCaptureUiOptions) {
       list.append(control);
     }
     if(!shown.length)list.append(loaded?element('p',moteText('没有符合此范围的应用'),'helper'):skeleton(list,moteText('正在读取已安装应用…')));
-    hint.textContent=loadError||(parsedRules()===undefined?moteText('页面规则格式有误，请在高级规则中修正。'):moteText('{0} 个应用 · 修改后保存生效',shown.length));
+    hint.textContent=loadError||(parsedRules()===undefined?moteText('页面规则格式有误，在高级规则中修正。'):moteText('{0} 个应用 · 修改后保存生效',shown.length));
   }
   function renderDetail(){
     const row=rows().find(row=>row.appId===selected);detail.replaceChildren();
@@ -99,7 +99,7 @@ export function createAppCaptureUi(options:AppCaptureUiOptions) {
       input.addEventListener('change',()=>{commitSelected();options.changed();render();detail.querySelector<HTMLInputElement>(`[data-channel=${key}]`)?.focus();});
     }
     if(!captureChannelKeys.some(key=>row.selection[key]))detail.append(element('p',moteText('此应用不产生时长、截图或结构化记录。'),'helper'));
-    if(row.selection.structured&&!row.rules.some(rule=>rule.applicability==='available'))detail.append(element('p',moteText('已选择结构化内容，但当前没有可用的字段规则。截图仍按独立选择执行。'),'app-capture-warning'));
+    if(row.selection.structured&&!row.rules.some(rule=>rule.applicability==='available'))detail.append(element('p',moteText('缺少结构化字段规则。截图按原设置采集。'),'app-capture-warning'));
     if(row.selection.screenshots&&screenPermission!=='granted')detail.append(button(moteText('查看系统权限'),options.permissions));
     const visibleDetail=detail;detail=capabilityDetails;detail.append(element('h4',moteText('结构化规则')));
     if(!row.rules.length)detail.append(element('p',moteText('没有为此应用配置字段规则。'),'helper'));
@@ -113,7 +113,7 @@ export function createAppCaptureUi(options:AppCaptureUiOptions) {
       details.append(element('p',moteText('来源：{0} · 规则版本：{1}',source,rule.version),'helper'));
       if(rule.appVersion)details.append(element('p',moteText('限定应用版本：{0}',rule.appVersion),'helper'));
       if(rule.source==='browser')details.append(element('p',origins.length?moteText('已配置 {0} 个站点来源；仍需扩展连接与站点授权。',origins.length):moteText('尚未配置允许采集的站点来源。'),'helper'));
-      details.append(element('p',moteText('有规则不代表真机验证或已采到内容，实际页面仍需匹配。'),'helper'));item.append(details);detail.append(item);
+      details.append(element('p',moteText('字段规则须匹配实际页面。'),'helper'));item.append(details);detail.append(item);
     }
     detail=visibleDetail;detail.append(capabilityDetails);
     detail.append(button(row.appId==='com.google.Chrome'?moteText('配置站点与扩展'):moteText('查看或编辑页面规则'),()=>options.editRules(row.appId)));

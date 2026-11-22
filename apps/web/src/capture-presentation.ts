@@ -18,18 +18,18 @@ export function evidencePresentation(capture: Pick<Capture, 'id' | 'source' | 'p
     : imported ? moteText("原始文本") : moteText("捕获文本");
   const deleteDescription = nativeFile
     ? moteText("删除中央文件原件和解析正文；仍有效的记忆保留，原文将无法回看或引用。来源设备上的原文件保留。")
-    : moteText("删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。") + (capture.provenance?.document?.fileId ? moteText("导入仍保留原始文件与解析资料；如需一并删除，请到导入页删除整次导入。") : '');
+    : moteText("删除这条原始记录及不再被引用的影像；仍有效的记忆保留，原文将无法回看或引用。") + (capture.provenance?.document?.fileId ? moteText("导入保留原件及正文。在导入页删除整次导入。") : '');
   return {nativeFile, textLabel, deleteDescription};
 }
 
 export function ocrPresentation(state: CapturePreview['ocr'], text: string, duplicate = false, jobs?: Capture['perceptionJobs']) {
-  if (duplicate) return {label: moteText("图片去重 · 仅元数据"), description: moteText("画面命中所选去重档位，只保留时间、应用和采样元数据，未保存图片或 OCR 文本。"), tone: 'muted'};
+  if (duplicate) return {label: moteText("图片去重 · 仅元数据"), description: moteText("重复画面只留应用、时间和采样元数据。"), tone: 'muted'};
   const central=jobs?.find(job=>job.kind==='ocr');
   if(central&&state.status!=='completed'){
     if(state.status==='disabled')return central.state==='cancelled'
-      ? {label:moteText("OCR 已取消"),description:moteText("中央文字识别已取消，截图已保留；当前没有正在处理的识别任务。"),tone:'muted'}
+      ? {label:moteText("OCR 已取消"),description:moteText("文字识别已取消，截图保留。"),tone:'muted'}
       : {label:moteText("OCR 未启用"),description:moteText("中央文字识别未启用，截图已保留；当前不会自动识别文字。"),tone:'muted'};
-    if(central.state==='blocked')return {label:moteText("OCR 暂不可用"),description:central.error==='model_missing'||central.error==='not_installed'?moteText("中央文字识别模型尚未安装，截图已保留。"):moteText("中央文字识别被阻止，请检查中央感知配置与处理状态。截图已保留。"),tone:'amber'};
+    if(central.state==='blocked')return {label:moteText("OCR 暂不可用"),description:central.error==='model_missing'||central.error==='not_installed'?moteText("中央文字识别模型尚未安装，截图已保留。"):moteText("文字识别受阻，截图保留。查看处理状态。"),tone:'amber'};
   }
   switch (state.status) {
     case 'pending': return {label: moteText("OCR 待处理"), description: moteText("截图已保存，文字识别任务正在排队或处理。"), tone: 'amber'};

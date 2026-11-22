@@ -29,7 +29,7 @@ it('enables development diagnostics only for a dev profile or a development buil
 });
 it('never seeds dev with the daily local node or credentials from an overridden profile', () => {
   const dev = resolveProfile([], { MOTE_PROFILE: 'dev' }, directory);
-  for (const host of ['127.0.0.1', 'localhost', '[::1]']) expect(() => profileDefaults(dev, { MOTE_PROFILE: 'dev', MOTE_URL: `http://${host}:47832` })).toThrow('不能自动连接');
+  for (const host of ['127.0.0.1', 'localhost', '[::1]']) expect(() => profileDefaults(dev, { MOTE_PROFILE: 'dev', MOTE_URL: `http://${host}:47832` })).toThrow('独立中央');
   const fresh = profileDefaults(dev, { MOTE_PROFILE: 'prod', MOTE_URL: 'https://formal.example', MOTE_TOKEN: 'synthetic formal secret' });
   expect(fresh.serverUrl).toBe(dev.defaultServerUrl); expect(fresh.token).toBeUndefined();
   const ambient = profileDefaults(dev, { MOTE_URL: 'https://formal.example', MOTE_TOKEN: 'synthetic remote token 1234567890123456789' });

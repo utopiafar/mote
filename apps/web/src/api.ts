@@ -179,7 +179,7 @@ export async function readApiError(response:Response):Promise<ApiError> {
 }
 export async function readApiJson<T>(response:Response):Promise<T> {
   try{return await response.json() as T;}
-  catch(error){if(error instanceof SyntaxError)throw new ApiError(moteText('中央响应格式无效，请刷新后重试。'),response.status,undefined,'invalid_response');throw error;}
+  catch(error){if(error instanceof SyntaxError)throw new ApiError(moteText('中央响应格式无效，刷新后重试。'),response.status,undefined,'invalid_response');throw error;}
 }
 export function createApi(connection: Connection, onUnauthorized?: () => void, isCurrentConnection: () => boolean = () => true) {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -285,6 +285,6 @@ export const deviceLabels: Record<string, string> = {
   stale: moteText("状态待更新"),
 };
 export function errorMessage(error: unknown) {
-  const message=error instanceof ApiError&&error.code?failureMessage(error.code,error.status):error instanceof DOMException&&error.name==='TimeoutError'?moteText('请求等待超时，请检查节点和网络状态后重试。'):error instanceof TypeError?failureMessage('network'):error instanceof Error?error.message:moteText("请求未完成，请稍后重试。");
+  const message=error instanceof ApiError&&error.code?failureMessage(error.code,error.status):error instanceof DOMException&&error.name==='TimeoutError'?moteText('请求等待超时，检查节点和网络状态后重试。'):error instanceof TypeError?failureMessage('network'):error instanceof Error?error.message:moteText("请求未完成，稍后重试。");
   return error instanceof ApiError&&error.requestId?moteText("{0} 请求编号：{1}",message,error.requestId):message;
 }

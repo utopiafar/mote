@@ -16,11 +16,11 @@ export async function readImportDrop(data:DataTransfer,signal?:AbortSignal):Prom
  };
  const visit=async(entry:FileSystemEntry,path:string,depth:number):Promise<void>=>{
   signal?.throwIfAborted();
-  if(depth>128||++visited>10000)throw Error(moteText('文件夹层级或条目数超过上限，请拆分后导入。'));
+  if(depth>128||++visited>10000)throw Error(moteText('文件夹层级或条目数超过上限，拆分后导入。'));
   if(entry.isFile){
    const file=await new Promise<File>((resolve,reject)=>(entry as FileSystemFileEntry).file(resolve,reject));accept(file,path);return;
   }
-  if(!entry.isDirectory)throw Error(moteText('无法读取文件夹中的条目，请重新选择文件夹。'));
+  if(!entry.isDirectory)throw Error(moteText('无法读取文件夹中的条目，重新选择文件夹。'));
   const reader=(entry as FileSystemDirectoryEntry).createReader();
   // Chromium readers return batches (usually at most 100). An empty batch is
   // the only completion marker; a short batch may still have more siblings.
@@ -32,11 +32,11 @@ export async function readImportDrop(data:DataTransfer,signal?:AbortSignal):Prom
   }
  };
  try{
- if(roots.length){for(const root of roots){if(root.entry)await visit(root.entry,root.entry.name,0);else if(root.file)accept(root.file);else throw Error(moteText('无法读取文件夹中的条目，请重新选择文件夹。'));}}
+ if(roots.length){for(const root of roots){if(root.entry)await visit(root.entry,root.entry.name,0);else if(root.file)accept(root.file);else throw Error(moteText('无法读取文件夹中的条目，重新选择文件夹。'));}}
  else for(const file of fallback)accept(file);
  }catch(error){
   signal?.throwIfAborted();
-  if(error instanceof Error&&['NotReadableError','NotFoundError','SecurityError'].includes(error.name))throw Error(moteText('无法读取文件夹中的条目，请重新选择文件夹。'),{cause:error});
+  if(error instanceof Error&&['NotReadableError','NotFoundError','SecurityError'].includes(error.name))throw Error(moteText('无法读取文件夹中的条目，重新选择文件夹。'),{cause:error});
   throw error;
  }
  signal?.throwIfAborted();

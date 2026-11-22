@@ -37,7 +37,7 @@ export interface MeetingRecordingStatus {
 
 export class MeetingNoticeRequiredError extends Error {
   readonly code = 'meeting_notice_required';
-  constructor() { super(moteText('开始前请先确认已告知在场的人。')); }
+  constructor() { super(moteText('开始前确认已告知在场者。')); }
 }
 
 export interface MeetingRecordingManagerOptions {
@@ -155,11 +155,11 @@ export class MeetingRecordingManager {
 
   async start(): Promise<MeetingRecordingStatus> {
     await this.ensureInitialized();
-    if (this.handle || this.active) throw new Error(moteText('一场会议录音正在进行。请先结束当前会议。'));
+    if (this.handle || this.active) throw new Error(moteText('一场会议录音正在进行。先结束当前会议。'));
     if (!this.state.noticeAcknowledgedAt) throw new MeetingNoticeRequiredError();
     const permissions = this.options.permissions();
-    if (permissions.microphone !== 'granted') throw new Error(moteText('麦克风权限未授予，会议录音没有开始。请在系统设置中允许麦克风后重试。'));
-    if (permissions.systemAudio !== 'granted') throw new Error(moteText('系统音频权限未授予，会议录音没有开始。请允许屏幕与系统音频录制后重试；不会在缺少系统声时只录麦克风。'));
+    if (permissions.microphone !== 'granted') throw new Error(moteText('录音未开始。授权麦克风后重试。'));
+    if (permissions.systemAudio !== 'granted') throw new Error(moteText('录音未开始。需要屏幕与系统音频权限。'));
     if(this.closed)throw Error('Meeting recordings are closed');
     const id = randomUUID(), directory = join(this.options.directory, id);
     const startedAt = this.now();
@@ -196,7 +196,7 @@ export class MeetingRecordingManager {
     try {
       const result = await handle.stop();
       const file = await stat(result.filePath).catch(() => undefined);
-      if (!file?.isFile() || file.size < 1) throw new Error(moteText('会议录音没有生成可上传的音频，请检查麦克风与系统音频权限。'));
+      if (!file?.isFile() || file.size < 1) throw new Error(moteText('录音未生成音频。检查麦克风和系统音频权限。'));
       const endedAt = this.now();
       session.endedAt = endedAt.toISOString();
       session.durationMs = Math.max(0, Math.min(Math.round(result.durationMs), this.maxDurationMs));
@@ -253,7 +253,7 @@ export class MeetingRecordingManager {
   private async uploadSession(connection: MeetingRecordingConnection, session: StoredSession): Promise<void> {
     if (!session.audioFile || !session.endedAt) throw new Error(moteText('会议录音缺少本地音频或结束时间。'));
     this.current(connection);
-    if(session.uploadOrigin&&session.uploadOrigin!==connection.serverUrl)throw Error(moteText('本地待上传记录已绑定原节点或凭据，不能重新归属；请恢复原连接完成同步'));
+    if(session.uploadOrigin&&session.uploadOrigin!==connection.serverUrl)throw Error(moteText('待传记录只归原节点和凭据。恢复原连接。'));
     if(!session.uploadOrigin){session.uploadOrigin=connection.serverUrl;await this.persist(()=>this.current(connection));}
     await this.registerSource(connection);
     const directory = join(this.options.directory, session.id), path = join(directory, session.audioFile);
@@ -372,7 +372,7 @@ export class MeetingRecordingManager {
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(response.status === 401 ? moteText('中央认证失败，请重新连接后再上传会议录音。') : moteText('中央未接收会议录音（HTTP {0}），原音频保留在本机。', String(response.status)));
+      throw new Error(response.status === 401 ? moteText('中央认证失败。重新连接后上传录音。') : moteText('中央未接收会议录音（HTTP {0}），原音频保留在本机。', String(response.status)));
     }
     const text = await response.text();
     if (text.length > 1024 * 1024) throw new Error(moteText('中央响应超过大小限制。'));

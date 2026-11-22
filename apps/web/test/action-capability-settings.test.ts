@@ -32,7 +32,18 @@ async function fixture(t:any){
 const findButton=(d:Document,label:string)=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent===label);
 const button=(d:Document,label:string)=>{const found=findButton(d,label);assert.ok(found,label);return found;};
 async function select(d:Document,index:number,value:string){await act(async()=>{const field=d.querySelectorAll<HTMLSelectElement>('fieldset select')[index];assert.ok(field);field.value=value;field.dispatchEvent(new d.defaultView!.Event('change',{bubbles:true}));});}
-const ack=(d:Document)=>Array.from(d.querySelectorAll<HTMLLabelElement>('label')).find(label=>label.textContent?.startsWith('我允许此插件'))?.querySelector<HTMLInputElement>('input');
+function ack(d:Document){
+ const label=[...d.querySelectorAll<HTMLLabelElement>('fieldset label')]
+  .find(item=>item.querySelector('input[type="checkbox"]')&&item.textContent?.includes('以上资料范围'));
+ if(!label)return;
+ const disclosure=label.textContent??'';
+ if(disclosure.includes('发送消息'))assert.match(disclosure,/所选中央连接器/);
+ else{
+  assert.match(disclosure,/指定设备和日历|所选中央连接器/);
+  for(const condition of ['创建日程','更新或取消原事件','标记完成'])assert.ok(disclosure.includes(condition),condition);
+ }
+ return label.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+}
 async function review(d:Document){await act(async()=>{const item=Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(item=>item.textContent?.startsWith('继续草稿 ·'));assert.ok(item);item.click();});await select(d,1,JSON.stringify(identity));await act(async()=>ack(d)!.click());assert.equal(button(d,'确认范围授权').disabled,false);}
 function noGrant(d:Document){assert.ok(!findButton(d,'确认范围授权')||button(d,'确认范围授权').disabled,'stale scope/consent cannot authorize');}
 

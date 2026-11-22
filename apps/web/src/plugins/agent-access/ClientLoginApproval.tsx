@@ -14,7 +14,7 @@ export function ClientLoginApproval({id,api,done}:{id:string;api:ReturnType<type
   const [detail,setDetail]=useState<{binding:typeof binding;name:string}>(),[failure,setFailure]=useState<{binding:typeof binding;message:string}>(),[pending,setPending]=useState<typeof binding>();
   const ready=detail?.binding===binding?detail:undefined,error=failure?.binding===binding?failure.message:'',busy=pending===binding;
   useEffect(()=>{let active=true;const controller=new AbortController();void api.request<{deviceName:string}>(`/api/login/requests/${id}`,{signal:controller.signal}).then(value=>{
-    if(typeof value.deviceName!=='string'||!value.deviceName.trim())throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+    if(typeof value.deviceName!=='string'||!value.deviceName.trim())throw Error(moteText('中央响应格式无效，刷新后重试。'));
     if(active&&current.current===binding)setDetail({binding,name:value.deviceName});
   }).catch(e=>{if(active&&current.current===binding)setFailure({binding,message:errorMessage(e)});});return()=>{active=false;controller.abort();};},[binding,api,id]);
   const resolve=(action:'approve'|'reject')=>{

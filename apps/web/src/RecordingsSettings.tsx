@@ -26,19 +26,19 @@ const errors: Record<string, string> = {
     lark_not_connected: '先在中央完成飞书账号授权，再连接录音',
     dingtalk_cli_missing: '中央需要安装 DWS CLI 并完成钉钉账号授权。',
     dingtalk_not_connected: '先在中央完成钉钉账号授权，再连接录音',
-    recording_account_changed: '账号已变化，请重新连接并确认同步范围。',
-    recording_authorization_required: '读取权限不足或授权已失效，请重新连接后重试。',
+    recording_account_changed: '账号已变。重新连接并确认范围。',
+    recording_authorization_required: '权限不足或授权失效。重新连接。',
     recording_transcript_not_ready: '厂商转写尚未就绪。',
-    recording_transcript_format_unsupported: '厂商转写格式尚不支持。音频备份是独立步骤，请分别核对转写与音频的状态。',
-    unsupported_format: '厂商转写格式尚不支持。音频备份是独立步骤，请分别核对转写与音频的状态。',
+    recording_transcript_format_unsupported: '转写格式不支持。音频备份状态单独查看。',
+    unsupported_format: '转写格式不支持。音频备份状态单独查看。',
 };
-const problem = (code: string,phase?:string) => errors[code]&&(code!=='unsupported_format'||phase==='transcript')?moteText(errors[code]):moteText('同步未完成（原因代码：{0}）。请查看同步步骤，核对实际原因后再重试。',code);
+const problem = (code: string,phase?:string) => errors[code]&&(code!=='unsupported_format'||phase==='transcript')?moteText(errors[code]):moteText('同步未完成（{0}）。查看同步步骤。',code);
 function RecordingSteps({api,path}:{api:Api;path:string}){
     const paging=useCursorPages(),read=useResource<{items:RecordingStatus['steps'];nextCursor:number|null}>(api,path+'/steps?limit=20'+(paging.cursor?'&cursor='+paging.cursor:''),3000);
     return <>{read.error&&<p role="alert">{connectorFailure(read.error)}</p>}<div className="discovery-bounded-list" role="region" aria-label={moteText("同步步骤与状态明细")} tabIndex={0}>{read.data?.items.map(step=><Step key={step.id} step={step}/>)}</div><ListPagination label={moteText('步骤分页')} paging={paging} nextCursor={read.data?.nextCursor} count={read.data?.items.length??0} loading={read.loading}/></>;
 }
 function Step({step}:{step:RecordingStatus['steps'][number]}){
-    return <p>{step.title&&<strong>{step.title} · </strong>}{phases[step.phase]?moteText(phases[step.phase]):step.phase} · {states[step.state]?moteText(states[step.state]):step.state} · {moteText('尝试 {0} 次',step.attempts)}{step.error&&<> · {problem(step.error,step.phase)} <code className="discovery-technical-id">{step.error}</code></>}{step.state==='waiting'&&Boolean(step.availableAt)&&step.availableAt!>Date.now()&&<> · {moteText('下次可运行时间')} {new Date(step.availableAt!).toLocaleString()}</>}{step.state==='failed'&&<> · {moteText('自动重试已停止，请核对原因后手动重试')}</>}</p>;
+    return <p>{step.title&&<strong>{step.title} · </strong>}{phases[step.phase]?moteText(phases[step.phase]):step.phase} · {states[step.state]?moteText(states[step.state]):step.state} · {moteText('尝试 {0} 次',step.attempts)}{step.error&&<> · {problem(step.error,step.phase)} <code className="discovery-technical-id">{step.error}</code></>}{step.state==='waiting'&&Boolean(step.availableAt)&&step.availableAt!>Date.now()&&<> · {moteText('下次可运行时间')} {new Date(step.availableAt!).toLocaleString()}</>}{step.state==='failed'&&<> · {moteText('自动重试已停止，核对原因后手动重试')}</>}</p>;
 }
 const inputTime = (value?: string) => {
     if (!value) return '';
@@ -138,9 +138,9 @@ function RecordingConnectionContent({ api, provider, onOpen }: {
     return <section className="connector-recording-connection"><section className="connector-section"><div className="section-heading"><h2>{moteText('连接')}</h2>{status?<span className="badge muted">{recordingBindingText(status)}</span>:<LoadingText/>}</div>
  {Boolean(error || read.error) && <p role="alert" className="notice error">{error || connectorFailure(read.error)}</p>}
  {status && <p className="recording-sync-status">{recordingSyncText(status)}</p>}
- {status?.accountName&&<strong>{status.accountName}</strong>}{!status?.connected&&<button className="button" disabled={busy||!status} onClick={()=>{if(preparation.current)preparation.current.open=true;}}>{moteText('连接账号')}</button>}<details ref={preparation} className="connector-details connector-preparation"><summary><ChevronRight aria-hidden="true" className="connector-chevron" size={12}/>{moteText('接入准备')}</summary><RecordingSetupHelp/>{status?.connected && <p className="muted">{moteText('已保存账号绑定不代表当前登录或读取权限有效。“重新检测”检查中央运行环境；请结合授权结果与同步步骤确认账号权限。')}</p>}
+ {status?.accountName&&<strong>{status.accountName}</strong>}{!status?.connected&&<button className="button" disabled={busy||!status} onClick={()=>{if(preparation.current)preparation.current.open=true;}}>{moteText('连接账号')}</button>}<details ref={preparation} className="connector-details connector-preparation"><summary><ChevronRight aria-hidden="true" className="connector-chevron" size={12}/>{moteText('接入准备')}</summary><RecordingSetupHelp/>{status?.connected && <p className="muted">{moteText('账号绑定已保存，当前登录和读取权限待核验。重新检测中央运行环境，结合授权结果和同步步骤核对。')}</p>}
  {status?.authorization&&<RecordingAuthorization key={provider} api={api} provider={provider}/>}
- {status?.accountName && <p>{status.accountName}</p>}{!status?.connected && !status?.authorization && <div className="discovery-inline-guidance"><p>{moteText("先在中央授权厂商账号，确认所需读取权限，再选择历史范围并启用同步。飞书文档与日历的授权另在自己的页面管理。")}</p></div>}
+ {status?.accountName && <p>{status.accountName}</p>}{!status?.connected && !status?.authorization && <div className="discovery-inline-guidance"><p>{moteText("在中央授权厂商，再选择历史范围并启用同步。")}</p></div>}
  {!status?.connected && <><p>{status?.authorization?moteText('授权完成后，确认历史范围并启用同步。'):moteText('连接中央已经授权的厂商账号，然后选择首次导入时间。')}</p><button className="button" disabled={busy || !status} onClick={() => void run('POST', '/connect')}>{moteText('连接已授权账号')}</button>
 {status?.setup && <details><summary>{moteText('首次授权帮助')}</summary><p>{status.setup.description}</p>{status.setup.command && <code>{status.setup.command}</code>}{status.setup.documentationUrl?.startsWith('https://') && <p><a href={status.setup.documentationUrl} target="_blank" rel="noreferrer">{status.label ?? provider}</a></p>}</details>}</>}
  </details><div className="connector-actions"><button className="text-button" disabled={busy} onClick={read.refresh}>{moteText('刷新状态')}</button></div></section>
@@ -155,13 +155,13 @@ function RecordingConnectionContent({ api, provider, onOpen }: {
  {status?.connected && selection && <section className="connector-section"><h2>{moteText('同步与归档')}</h2><div className="lark-buttons"><button className="button subtle" type="button" disabled={busy || !selection.enabled || changed} onClick={() => void run('POST', '/sync')}><RefreshCw size={15}/>{moteText('立即同步')}</button><button className="button subtle" type="button" disabled={!status.counts.failed} onClick={() => void run('POST', '/retry')}>{moteText('重试失败步骤')}</button><button className="button subtle" type="button" onClick={() => setDisconnecting(true)}>{moteText('断开连接')}</button></div></section>}
  {status && <><p role="status">{moteText('已归档转写 {0} 条，音频 {1} 条；等待 {2} 步，需处理 {3} 步。', status.counts.transcripts, status.counts.audio, status.counts.pending, status.counts.failed)}</p>
  {Boolean(status.counts.empty)&&<p role="status">{moteText('采集完成，暂无文字：{0} 条',status.counts.empty!)}</p>}
- {status.counts.failed > 0 && <div className="notice error" role="alert"><p>{status.counts.failed}{' '}{moteText("个步骤需要处理。")}{' '}{moteText("核对原因后，可使用上方「重试失败步骤」。转写与音频状态分别核对。")}</p>{status.steps.filter(step=>['failed','blocked'].includes(step.state)).map(step=><Step key={step.id} step={step}/>)}</div>}<details className="discovery-bounded-details" onToggle={e=>setStepsOpen(e.currentTarget.open)}><summary>{moteText('同步步骤与状态')} · {status.stepsTotal??status.steps.length}{' '}{moteText("项")}</summary>{stepsOpen&&<RecordingSteps api={api} path={path}/>}</details></>}
+ {status.counts.failed > 0 && <div className="notice error" role="alert"><p>{status.counts.failed}{' '}{moteText("个步骤需要处理。")}{' '}{moteText("分别核对转写和音频，再重试失败步骤。")}</p>{status.steps.filter(step=>['failed','blocked'].includes(step.state)).map(step=><Step key={step.id} step={step}/>)}</div>}<details className="discovery-bounded-details" onToggle={e=>setStepsOpen(e.currentTarget.open)}><summary>{moteText('同步步骤与状态')} · {status.stepsTotal??status.steps.length}{' '}{moteText("项")}</summary>{stepsOpen&&<RecordingSteps api={api} path={path}/>}</details></>}
 
- {disconnecting&&<SourceDisconnectReview items={[moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')]} busy={busy} cancel={()=>setDisconnecting(false)} confirm={()=>{void run('DELETE').then(saved=>{if(saved)setDisconnecting(false);});}}/>}
+ {disconnecting&&<SourceDisconnectReview items={[moteText('默认由转写生成洞察，原音后台归档。厂商删除、停止同步或断开连接后，已归档资料保留。')]} busy={busy} cancel={()=>setDisconnecting(false)} confirm={()=>{void run('DELETE').then(saved=>{if(saved)setDisconnecting(false);});}}/>}
  {Boolean(archive.data?.items.length) && <details className="discovery-bounded-details"><summary>{moteText('最近归档的录音')} · {archive.data!.items.length}{' '}{moteText("条")}</summary><div className="discovery-bounded-list" role="region" aria-label={moteText("最近归档的录音列表")} tabIndex={0}>{archive.data!.items.map(item => <div className="source-item" key={item.id}>{item.captureId?<button className="text-button" onClick={() => onOpen(formatEvidenceRef('capture', item.captureId!))}>{item.title || moteText('原始录音')}</button>:<strong>{item.title || moteText('原始录音')}</strong>}{item.empty&&<p>{moteText('采集完成，暂无文字')}</p>}{item.unsupported&&<p>{moteText('厂商转写格式尚不支持')}</p>}{item.export&&<ArchivedFileButton api={api} id={item.export.id} name={item.export.name}/>}{item.audio && <ArchivedAudio api={api} id={item.audio.id} name={item.audio.name} mimeType={item.audio.mimeType}/>}</div>)}</div></details>}
  </section>;
 }
-function RecordingSetupHelp(){return <><div className="lark-boundary"><p>{moteText('默认用转写生成洞察，原始音频在后台备份。厂商端删除后，Mote 归档继续保留。停止同步或断开连接会保留历史资料。')}</p></div><div className="discovery-recorder-steps"><span><b>1</b>{moteText("准备厂商账号与读取授权")}</span><span><b>2</b>{moteText("确认历史范围并启用同步")}</span><span><b>3</b>{moteText("查看转写归档与音频备份状态")}</span></div></>;}
+function RecordingSetupHelp(){return <><div className="lark-boundary"><p>{moteText('默认由转写生成洞察，原音后台归档。厂商删除、停止同步或断开连接后，已归档资料保留。')}</p></div><div className="discovery-recorder-steps"><span><b>1</b>{moteText("准备厂商账号与读取授权")}</span><span><b>2</b>{moteText("确认历史范围并启用同步")}</span><span><b>3</b>{moteText("查看转写归档与音频备份状态")}</span></div></>;}
 export function RecordingsSettings({ api, onSources, onOpen, onAdd, embedded = false, selected: controlled, onSelect }: {
     api: Api;
     onSources: () => void;
@@ -180,12 +180,12 @@ export function RecordingsSettings({ api, onSources, onOpen, onAdd, embedded = f
     const chosen = providers.find(status => status.provider === selected);
     const chooseProvider = onSelect ?? choose;
     const card = (status: RecordingStatus) => {
-        const content = <><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源 →")}</span></>;
+        const content = <><h2>{names[status.provider]?moteText(names[status.provider]):status.label ?? status.provider}</h2><p>{recordingBindingText(status)}</p><p className="recording-sync-status">{recordingSyncText(status)}</p><span className="discovery-card-action">{moteText("打开此录音来源")}</span></>;
         return onSelect
             ? <button type="button" className="panel discovery-source-card" key={status.provider} onClick={() => onSelect(status.provider)}>{content}</button>
             : <a className="panel discovery-source-card" key={status.provider} href={'#/connections/recordings?provider=' + encodeURIComponent(status.provider)}>{content}</a>;
     };
-    return <div className="lark-settings final-source-connector">{!embedded && onAdd && <button className="back-link" onClick={onAdd}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回数据源目录')}</button>}{!embedded && <div className="page-heading"><h1>{chosen ? names[chosen.provider]?moteText(names[chosen.provider]):chosen.label ?? chosen.provider : moteText('录音归档')}</h1><p className="connector-help">{moteText('转写归档与音频备份分别显示状态；记忆整理按已有设置执行。')}</p></div>}{Boolean(registry.error) && <p role="alert">{connectorFailure(registry.error)}</p>}
- {chosen ? <>{embedded && <button className="text-button" onClick={() => chooseProvider('')}>{moteText('返回录音来源')}</button>}<RecordingConnection key={chosen.provider} api={api} provider={chosen.provider} onOpen={onOpen}/></> : <><div className="discovery-source-grid">{providers.map(status => card(status))}</div>{selected && registry.data && <p role="status">{moteText("该录音来源当前未注册。请重新选择可用来源；已归档资料仍可从资料库查看。")}</p>}</>}
+    return <div className="lark-settings final-source-connector">{!embedded && onAdd && <button className="back-link" onClick={onAdd}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回数据源目录')}</button>}{!embedded && <div className="page-heading"><h1>{chosen ? names[chosen.provider]?moteText(names[chosen.provider]):chosen.label ?? chosen.provider : moteText('录音归档')}</h1><p className="connector-help">{moteText('转写与音频状态分别显示。记忆按现有设置处理。')}</p></div>}{Boolean(registry.error) && <p role="alert">{connectorFailure(registry.error)}</p>}
+ {chosen ? <>{embedded && <button className="text-button" onClick={() => chooseProvider('')}>{moteText('返回录音来源')}</button>}<RecordingConnection key={chosen.provider} api={api} provider={chosen.provider} onOpen={onOpen}/></> : <><div className="discovery-source-grid">{providers.map(status => card(status))}</div>{selected && registry.data && <p role="status">{moteText("录音来源未注册。重选来源，历史资料在资料库。")}</p>}</>}
  {!chosen&&<details className="connector-details connector-preparation"><summary><ChevronRight aria-hidden="true" className="connector-chevron" size={12}/>{moteText('接入准备')}</summary><RecordingSetupHelp/></details>}{!embedded && <button className="text-button connector-back" onClick={onSources}>{moteText('查看来源与归档')}</button>}</div>;
 }

@@ -61,7 +61,7 @@ test('saved origin formats only an exact authorized answer and keeps the literal
   await mount();const origin=dom.window.document.querySelector('.note-origin')!;
   assert.equal(origin.querySelector('strong')?.textContent,'Answer');assert.doesNotMatch(origin.textContent!,/##|\*\*|bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/);assert.match(origin.textContent!,/\[authored label\]/);
   await React.act(async()=>origin.querySelector<HTMLButtonElement>('nav button')!.click());assert.deepEqual(opened,['capture:'+citation]);assert.equal(capture.metadata!.noteOrigin!.text,snapshot);
-  await React.act(async()=>root.render(null));mode='changed';await mount();assert.match(dom.window.document.querySelector('[role=status]')!.textContent!,/不同/);assert.equal(dom.window.document.querySelector('pre')!.textContent,snapshot);assert.equal(dom.window.document.querySelector('nav'),null);
+  await React.act(async()=>root.render(null));mode='changed';await mount();assert.match(dom.window.document.querySelector('[role=status]')!.textContent!,/原轮次已变化/);assert.equal(dom.window.document.querySelector('pre')!.textContent,snapshot);assert.equal(dom.window.document.querySelector('nav'),null);
   await React.act(async()=>root.render(null));mode='unavailable';await mount();assert.match(dom.window.document.querySelector('[role=status]')!.textContent!,/暂不可读/);assert.equal(dom.window.document.querySelector('pre')!.textContent,snapshot);assert.equal(dom.window.document.querySelector('nav'),null);
  }finally{
   await React.act(async()=>root.unmount());dom.window.close();configureLocale(()=>locale);

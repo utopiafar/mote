@@ -76,8 +76,8 @@ export function DeveloperAccess({ api }: { api: Api }) {
         await inventory.refresh();
     }
     async function copy(value: string) {
-        try { await navigator.clipboard.writeText(value); setMessage(moteText('已复制，请只粘贴到你信任的客户端。')); }
-        catch { setError(moteText('当前环境无法访问剪贴板，请手动选择文本复制。')); }
+        try { await navigator.clipboard.writeText(value); setMessage(moteText('已复制，只粘贴到你信任的客户端。')); }
+        catch { setError(moteText('当前环境无法访问剪贴板，手动选择文本复制。')); }
     }
     function createCredential() {
         void action('credential', async () => {
@@ -131,7 +131,7 @@ export function DeveloperAccess({ api }: { api: Api }) {
         });
     }
     return <section id="developer-access" className="panel developer-access" aria-labelledby="developer-access-title">
-        <div className="section-heading"><div><h2 id="developer-access-title">{moteText('Webhook 与 Developer API')}</h2><p>{moteText('宿主能力，不是安装包。资料归档后按声明的来源推送；Developer API 读取同一事件流。')}</p></div><button className="button subtle" disabled={!!busy} onClick={() => void action('refresh', refresh)}><RefreshCw size={15}/>{moteText('刷新')}</button></div>
+        <div className="section-heading"><div><h2 id="developer-access-title">{moteText('Webhook 与 Developer API')}</h2><p>{moteText('宿主能力按来源推送归档事件，Developer API 读取同一流。')}</p></div><button className="button subtle" disabled={!!busy} onClick={() => void action('refresh', refresh)}><RefreshCw size={15}/>{moteText('刷新')}</button></div>
         {Boolean(error || inventory.error) && <div className="notice error" role="alert">{error || errorMessage(inventory.error)}</div>}
         {message && <div className="notice" role="status"><ShieldCheck size={16}/>{message}</div>}
         {revealed && <div className="connection-mcp" aria-label={moteText('一次性密钥')}><h3>{revealed.kind === 'token' ? moteText('开发者令牌') : moteText('Webhook 签名密钥')} · {revealed.label}</h3><p>{moteText('完整值只显示一次。关闭后只能撤销或轮换，不能再次查看。')}</p><code>{revealed.value}</code><div className="connection-actions"><button className="button" onClick={() => void copy(revealed.value)}><Copy size={15}/>{moteText('复制完整值')}</button><button className="button subtle" onClick={() => setRevealed(undefined)}>{moteText('已保存，隐藏')}</button></div></div>}
@@ -142,7 +142,7 @@ export function DeveloperAccess({ api }: { api: Api }) {
         </form></details>
         <details className="connection-help" open={editing ? true : undefined}><summary>{editing ? moteText('更新 Webhook') : moteText('新建 Webhook')}</summary><form className="access-create-form" onSubmit={event => { event.preventDefault(); saveWebhook(); }}>
             <label>{moteText('端点名称')}<input aria-label={moteText('Webhook 端点名称')} value={webhookLabel} maxLength={120} required onChange={event => setWebhookLabel(event.target.value)} /></label>
-            <label>{moteText('目标 URL')}<input aria-label={moteText('Webhook 目标 URL')} type="url" value={webhookUrl} placeholder="http://127.0.0.1:5678/webhook/mote" maxLength={2048} required onChange={event => setWebhookUrl(event.target.value)} /><small>{moteText('只允许 http(s)。本机或局域网目标可以填写；云元数据地址、账号密码和重定向会被拒绝。')}</small></label>
+            <label>{moteText('目标 URL')}<input aria-label={moteText('Webhook 目标 URL')} type="url" value={webhookUrl} placeholder="http://127.0.0.1:5678/webhook/mote" maxLength={2048} required onChange={event => setWebhookUrl(event.target.value)} /><small>{moteText('仅 HTTP(S) 本机或局域网。拒绝云元数据、凭据及重定向。')}</small></label>
             <label>{moteText('来源范围')}<input aria-label={moteText('Webhook 来源范围')} value={webhookSources} placeholder="source-a, source-b" required onChange={event => setWebhookSources(event.target.value)} /><small>{moteText('必须列出明确来源 ID；空范围或 * 不会投递。')}</small></label>
             <label className="plugin-confirm"><input type="checkbox" checked={webhookEnabled} onChange={event => setWebhookEnabled(event.target.checked)} /><span>{moteText('启用此端点')}</span></label>
             <div className="access-form-actions">{editing && <button type="button" className="button subtle" disabled={!!busy} onClick={() => { setEditing(''); setWebhookLabel(''); setWebhookUrl(''); setWebhookSources(''); setWebhookEnabled(true); }}>{moteText('取消编辑')}</button>}<button className="button primary" disabled={!!busy || !webhookLabel.trim() || !webhookUrl.trim() || !splitSources(webhookSources).length}>{busy === 'webhook' ? moteText('正在保存…') : editing ? moteText('保存 Webhook') : moteText('创建 Webhook')}</button></div>
@@ -153,6 +153,6 @@ export function DeveloperAccess({ api }: { api: Api }) {
         {!data ? null : <>{data.endpoints.length ? <ul className="connection-list access-list">{data.endpoints.map(endpoint => <li key={endpoint.id}><div><strong>{endpoint.label}</strong><p><code>{endpoint.url}</code></p><small>{endpoint.enabled ? moteText('已启用') : moteText('已停用')} · {moteText('来源：{0}', endpoint.sourceIds.join('、'))} · {moteText('最多尝试 {0} 次', endpoint.maxAttempts)}</small></div><div className="connection-actions"><button className="button subtle" disabled={!!busy} onClick={() => editEndpoint(endpoint)}>{moteText('编辑')}</button><button className="button subtle" disabled={!!busy} onClick={() => toggleEndpoint(endpoint)}>{endpoint.enabled ? moteText('停用') : moteText('启用')}</button><button className="button subtle" disabled={!!busy} onClick={() => rotateEndpoint(endpoint)}>{moteText('轮换密钥')}</button>{endpoint.enabled && <button className="text-button danger" disabled={!!busy} onClick={() => disableEndpoint(endpoint)}>{moteText('撤销')}</button>}</div></li>)}</ul> : <p className="fine-print">{moteText('还没有 Webhook。空目标、空范围或未启用的端点都不会投递。')}</p>}</>}
         <div className="access-list-heading"><h3>{moteText('最近投递')}</h3></div>
         {!data ? null : data.deliveries.length ? <ul className="connection-list access-list">{data.deliveries.map(delivery => <li key={delivery.id}><div><strong>{delivery.endpointLabel}</strong><p>{delivery.eventType} · {delivery.materialId ?? delivery.eventId}</p><small>{moteText('尝试 {0} 次', delivery.attempts)}{delivery.httpStatus ? ` · HTTP ${delivery.httpStatus}` : ''} · {dateTime(delivery.createdAt)}{delivery.lastError ? ` · ${delivery.lastError}` : ''}</small></div><span className={'badge ' + (delivery.status === 'success' ? 'green' : delivery.status === 'failed' ? 'muted' : '')}>{deliveryState(delivery)}</span></li>)}</ul> : <p className="fine-print">{moteText('还没有投递记录。')}</p>}
-        <details className="connection-help"><summary>{moteText('接收方验真与 Developer API')}</summary><p>{moteText('请求头包含 X-Mote-Delivery-Id、X-Mote-Event、X-Mote-Timestamp 与 X-Mote-Signature。签名值为 sha256=HMAC(secret, timestamp.deliveryId.body)。')}</p><p>{moteText('Developer API 使用独立开发者令牌读取 GET /api/developer/v1/events?after=游标&limit=50，只返回凭据声明来源的 material.archived 事件。')}</p><p>{moteText('事件只含身份、修订、来源与时间，不含正文、屏幕记录或 Coding Agent 原件。')}</p></details>
+        <details className="connection-help"><summary>{moteText('接收方验真与 Developer API')}</summary><p>{moteText('请求头包含 X-Mote-Delivery-Id、X-Mote-Event、X-Mote-Timestamp 与 X-Mote-Signature。签名值为 sha256=HMAC(secret, timestamp.deliveryId.body)。')}</p><p>{moteText('开发者令牌用 GET /api/developer/v1/events?after=游标&limit=50 读取授权来源的 material.archived。')}</p><p>{moteText('事件只含身份、修订、来源与时间，不含正文、屏幕记录或 Coding Agent 原件。')}</p></details>
     </section>;
 }

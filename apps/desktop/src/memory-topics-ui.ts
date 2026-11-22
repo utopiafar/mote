@@ -17,9 +17,9 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  function clear(){generation++;if(timer)clearTimeout(timer);if(detailTimer)clearTimeout(detailTimer);root.replaceChildren();}
  function heading(){root.append(text('h2',moteText('记忆主题')));button(moteText('关闭详情'),close);}
  function close(){clear();root.close();originButton?.focus();}
- function unavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('此主题已不可用，请返回全部记忆。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
+ function unavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('此主题已不可用，返回全部记忆。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
  function failed(error:unknown){clear();heading();const message=text('p',error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''):moteText('操作失败'));message.setAttribute('role','alert');root.append(message);button(moteText('重试'),()=>void show());button(moteText('全部记忆'),()=>{nodeId=undefined;selected=undefined;cursors=[undefined];void show();});schedule();}
- function detailUnavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('所选记忆已变化，请刷新后重新选择。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
+ function detailUnavailable(){selected=undefined;detailSnapshot=undefined;clear();heading();root.append(text('p',moteText('所选记忆已变化，刷新后重新选择。')));button(moteText('全部记忆'),()=>{nodeId=undefined;cursors=[undefined];void show();});schedule();}
  async function poll(){
   if(document.hidden)return;
   const stamp=generation,id=selected;
@@ -50,7 +50,7 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
  async function list(){
   if(!catalog)return;clear();heading();const stamp=generation;
   const directory=catalog;const state=directory.classification?.state;
-  root.append(text('p',moteText(state==='running'?'正在整理自动主题…':state==='failed'?'自动主题整理未完成；已有记忆仍可浏览。':state==='unavailable'?'自动主题服务尚未就绪；已有记忆仍可浏览。':directory.items.some(t=>t.id.startsWith('auto.'))?'主题是模型整理的浏览视图，不代表新的用户事实。':'尚无自动主题；仍可浏览全部记忆和已有维度。')));
+  root.append(text('p',moteText(state==='running'?'正在整理自动主题…':state==='failed'?'自动主题整理未完成；已有记忆仍可浏览。':state==='unavailable'?'自动主题服务尚未就绪；已有记忆仍可浏览。':directory.items.some(t=>t.id.startsWith('auto.'))?'模型整理的主题':'尚无自动主题；仍可浏览全部记忆和已有维度。')));
   const tree=directory.items.find(t=>t.id===treeId)??directory.items[0];treeId=tree?.id??'';
   const select=document.createElement('select');select.id='memory-topic-tree';select.setAttribute('aria-label',moteText('浏览维度'));
   for(const entry of directory.items){const option=document.createElement('option');option.value=entry.id;option.textContent=entry.label;select.append(option);}select.value=treeId;select.onchange=()=>{treeId=select.value;nodeId=undefined;cursors=[undefined];void show();};root.append(select);
@@ -59,7 +59,7 @@ export function createMemoryTopicsUi(api:DesktopApi,root:HTMLDialogElement){
   button(moteText('刷新'),()=>void show());
   const members=document.createElement('div');members.className='content-feed';members.id='memory-topic-members';root.append(members);
   try{const page=await api.memoryTopicPage({...nodeId?{treeId,nodeId}:{},cursor:cursors.at(-1)});if(stamp!==generation||!root.open)return;
-   if(!page.items.length)members.append(text('p',moteText('当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。')));
+   if(!page.items.length)members.append(text('p',moteText('暂无匹配记忆。')));
    for(const memory of page.items){const b=document.createElement('button');b.className='content-row';b.dataset.memory=memory.id;b.style.gridTemplateColumns='minmax(0,1fr)';const copy=text('span',memory.title);copy.className='content-row-copy';b.append(copy);b.onclick=()=>{detailSnapshot=undefined;selected=memory.id;void show();};members.append(b);}
    if(cursors.length>1)button(moteText('上一页'),()=>{cursors.pop();void show();});
    if(page.nextCursor)button(moteText('下一页'),()=>{cursors.push(page.nextCursor!);void show();});

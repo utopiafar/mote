@@ -60,7 +60,7 @@ const readConversation = (hash: string) => new URLSearchParams(hash.split('?')[1
 export function Conversations({api, onOpen = doNothing, ...props}: Props) {
   const [ownerQuestion] = useHashChoice('question', readOwnerQuestion);
   if (ownerQuestion !== null) return <FeaturePanels api={api} onOpen={onOpen}
-    unavailable={<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>}
+    unavailable={<p role="status">{moteText('专用视图暂不可用，查看资料库或重试。')}</p>}
     value={{kind: ownerQuestion ? 'mote.ask.question' : 'mote.ask.history', schemaVersion: 1, representation: 'standalone',
       ref: ownerQuestion, revision: '1', title: '', text: ''}}/>;
   if (!sessions.has(api)) sessions.set(api, ++nextSession);

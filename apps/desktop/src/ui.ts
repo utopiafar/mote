@@ -42,7 +42,7 @@ document.getElementById('ui-page-builtins')!.addEventListener('click',()=>void(a
     const {builtinUiRules}=await import('@mote/shared/ui-builtins');
     if(!current())return;
     editor.value=JSON.stringify(builtinUiRules,null,2);appCaptureUi.refreshRules();markSettingsDirty();
-  }catch(error){if(current())renderReadableFailure(byId('feedback'),moteText('操作未完成，请检查权限与配置后重试'),error instanceof Error?error.message:String(error));}
+  }catch(error){if(current())renderReadableFailure(byId('feedback'),moteText('操作未完成。检查权限和配置后重试。'),error instanceof Error?error.message:String(error));}
 })());
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 let currentStatus: import('./contracts').Status;
@@ -261,7 +261,7 @@ const recordsDate = new Date();
 byId<HTMLInputElement>('records-day').value = `${recordsDate.getFullYear()}-${String(recordsDate.getMonth() + 1).padStart(2, '0')}-${String(recordsDate.getDate()).padStart(2, '0')}`;
 function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
   if(value.source==='ui_page')return moteText("页面内容采集");
-  return value.localContentRelease?moteText(value.localContentRelease.pending?'本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。':'本机副本已清理'):moteText("本机截图 · 完整内容由中央识别");
+  return value.localContentRelease?moteText(value.localContentRelease.pending?'副本清理未完成。重试清理，剩余输入不会重新上传。':'本机副本已清理'):moteText("本机截图 · 完整内容由中央识别");
 }
 function resetRecords(): void { selectedSession = undefined; recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
 async function openRecord(item: import('./capture-browser').BrowserCapture, revision: number): Promise<void> {
@@ -285,7 +285,7 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, revi
     const image = await desktopApi.captureImage('local', id, false);
     if (revision === recordsRevision && panel.dataset.recordId === id && !panel.hidden) { byId<HTMLImageElement>('record-detail-image').src = image; byId<HTMLImageElement>('record-detail-image').alt = moteText("当前选择的采集截图"); }
   } catch (error) { if (revision === recordsRevision && panel.dataset.recordId === id) {
-    const message = error instanceof Error ? error.message : moteText("读取记录失败，请刷新后重试");
+    const message = error instanceof Error ? error.message : moteText("读取记录失败，刷新后重试");
     if (detailRead) byId<HTMLImageElement>('record-detail-image').alt = moteText("原图加载失败：{0}；可重新打开详情重试", message);
     else byId('record-detail-text').textContent = message;
   } }
@@ -316,7 +316,7 @@ async function loadRecords(): Promise<void> {
         const card=document.createElement('button');card.type='button';card.className='record-session';
         const title=document.createElement('strong');title.textContent=session.appName||moteText("应用未知");
         const span=document.createElement('span');span.textContent=`${new Date(session.firstAt).toLocaleTimeString(getLocale())} — ${new Date(session.capturedAt).toLocaleTimeString(getLocale())}`;
-        const count=document.createElement('small');count.textContent=moteText("{0} 条记录 · {1} 张图片 · 展开 →", session.count, session.imageCount);
+        const count=document.createElement('small');count.textContent=moteText("{0} 条记录 · {1} 张图片 · 展开", session.count, session.imageCount);
         card.append(title,span,count);card.addEventListener('click',()=>{selectedSession=session;recordsPage=0;recordsCursors=[undefined];void loadRecords();});byId('records-grid').append(card);
       }
       return;
@@ -348,7 +348,7 @@ async function loadRecords(): Promise<void> {
       }
     }));
     if (revision === recordsRevision && page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 当天共 {1} 张截图 · 缩略图成功 {2}/{3}{4}", moteText("本机保留"), page.totalCount, completed - failed, images.length, failed ? moteText(" · {0} 张失败，可刷新重试", failed) : '');
-  } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : moteText("读取采集记录失败，请重试"); byId('records-page').textContent = ''; } }
+  } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : moteText("读取采集记录失败，重试"); byId('records-page').textContent = ''; } }
   finally { if (revision === recordsRevision) {
     byId('records-status').setAttribute('aria-busy', 'false');
     byId('records-grid').classList.toggle('record-list',readInput('records-source')==='ui_page'||readInput('records-layout')==='list');
@@ -421,7 +421,7 @@ function renderOperations(jobs:NonNullable<import('./contracts').Status['operati
   // Completed work belongs to the page where it began; active work and failures remain global.
   const operations=jobs.filter(job=>job.state!=='completed'||job.startedAt>=pageEnteredAt);
   byId('background-progress').hidden = !operations.length;
-  byId('background-progress').textContent = operations.map(job => job.state === 'running' ? `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${moteText(" · 已用 {0} 秒", Math.floor((Date.now() - job.startedAt) / 1000))}` : job.state === 'failed' ? moteText('操作未完成，请检查权限与配置后重试') : moteText('处理结束')).join('；');
+  byId('background-progress').textContent = operations.map(job => job.state === 'running' ? `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${moteText(" · 已用 {0} 秒", Math.floor((Date.now() - job.startedAt) / 1000))}` : job.state === 'failed' ? moteText('操作未完成。检查权限和配置后重试。') : moteText('处理结束')).join('；');
 }
 function render(status: import('./contracts').Status): void {
   syncHistoryUi.update(status);libraryUi.update(status);memoryTopicsUi.update(status);workActivityUi.update(status);
@@ -431,7 +431,7 @@ function render(status: import('./contracts').Status): void {
   currentStatus = status;sourceSyncPreview?.revalidate();workPendingUi.update(status);chromeCaptureUi.update(status);captureContextUi.update(status);renderSettingsWorkspace(status);sourceWorkspace.status(status);captureSyncUi.update(status,localSourceRows);renderStorage();appCaptureUi.setStatus(status);
   updateTokenField();
   renderOperations(status.operations??[]);
-  byId('connection-device').textContent = moteText("设备：{0} · ID {1}。迁移已有设备时，请在中央邀请中选择此 ID。", status.config.deviceName, status.config.deviceId);
+  byId('connection-device').textContent = moteText("设备：{0} · ID {1}。迁移已有设备时，在中央邀请中选择此 ID。", status.config.deviceName, status.config.deviceId);
   byId('environment').textContent = status.environment ? moteText("环境：{0}{1} · {2}", status.environment.profile, status.environment.defaultProfile ? moteText("（原日常目录）") : moteText(" · 独立数据"), status.environment.dataDirectory) : '';
   const names = { stopped: moteText("采集已停止"), capturing: moteText("正在采集"), paused: moteText("采集已暂停"), permission_required: moteText("需要屏幕录制权限"), error: moteText("采集已停止 · 需要处理") };
   setText('state', names[status.state]);
@@ -465,11 +465,11 @@ function render(status: import('./contracts').Status): void {
   setText('central-status-action', hasCentralConnection ? moteText("连接详情") : moteText("连接节点"));
   byId('settings-connection-summary').textContent = status.config.tokenConfigured ? moteText("{0} · 已保存连接", status.config.deviceName) : moteText("连接你的中央，让记录开始同步");
   byId<HTMLInputElement>('login').disabled = status.environment?.defaultProfile === false;
-  byId('login-hint').textContent = status.environment?.defaultProfile === false ? moteText("命名环境使用带 --profile 的启动命令；不会注册可能丢失环境参数的系统登录项。") : moteText("应用启动后保持停止状态，需手动开始采集；已有记录按上传策略处理。");
+  byId('login-hint').textContent = status.environment?.defaultProfile === false ? moteText("命名环境使用带 --profile 的启动命令。") : moteText("应用启动后须手动开始采集。旧队列按上传策略处理。");
   setText('message', status.message);
   byId('status-dot').className = `dot ${status.state === 'capturing' ? 'active' : status.state === 'error' || status.state === 'permission_required' ? 'error' : ''}`;
   setText('permission', status.platform !== 'macos' ? moteText("此平台尚不支持采集") : status.screenPermission === 'granted' ? moteText("屏幕权限已授权") : moteText("屏幕权限未授权"));
-  setText('permissions', status.screenPermission === 'granted' ? moteText("屏幕录制已授权 · 管理 ↗") : moteText("屏幕录制未授权 · 去授权 ↗"));
+  setText('permissions', status.screenPermission === 'granted' ? moteText("屏幕录制已授权 · 管理") : moteText("屏幕录制未授权 · 去授权"));
   byId('message').setAttribute('aria-busy', String(status.running && status.state === 'capturing'));
   setText('queue-count', status.queueDepth.toLocaleString(getLocale()));
   setText('queue-size', `${(status.queueBytes / 1024 / 1024).toFixed(1)} MiB`);
@@ -498,13 +498,14 @@ function render(status: import('./contracts').Status): void {
   setText('sync-upload-speed', byId('upload-speed').textContent ?? '0 KiB/s');
   setText('sync-message', moteText("{0} · 共 {1} 条待传（含本地来源）", status.sync.message, status.sync.pendingRecords.toLocaleString(getLocale())) + (status.facts ? `\n${nativeStatusSummary(status.facts)}` : ''));
   updateLocalBacklog();
+  if (connectionPreview) updateInvitationBacklog(connectionPreview.serverUrl);
   const uploadInfo = [];
   if (status.sync.nextUploadAt) uploadInfo.push(`${status.sync.state === 'error' ? moteText("计划重试") : moteText("计划上传")} ${new Date(status.sync.nextUploadAt).toLocaleString(getLocale(), { hour12: false })}`);
   if (status.lastUploadError) uploadInfo.push(status.lastUploadError);
   if (status.lastUploadAt) uploadInfo.push(moteText("最近上传 {0}", new Date(status.lastUploadAt).toLocaleTimeString(getLocale(), { hour12: false })));
   setText('upload-info', uploadInfo.join(' · '));
   byId('token-hint').textContent = status.credentialStorage === 'json'
-    ? moteText("开发环境使用权限受限的本机 JSON 保存凭据，不使用系统密钥存储。")
+    ? moteText("开发环境凭据存入受权限保护的本机 JSON。")
     : status.encryptedTokenStorage ? moteText("使用系统密钥存储加密；不会展示已有令牌。") : moteText("系统加密存储不可用，无法保存令牌。");
 
   byId<HTMLButtonElement>('diagnostics-sample').disabled=busy||!status.diagnostics?.enabled;
@@ -520,23 +521,23 @@ function render(status: import('./contracts').Status): void {
     moteText("待上传 {0} 条",status.queueDepth.toLocaleString(getLocale()))+' · '+moteText("本机")+' '+(status.queueBytes/1048576).toFixed(2)+' MiB',
     moteText("采样间隔 {0} 秒 · 图像最大边 {1} px · JPEG 质量 {2}", status.config.intervalMs / 1000, status.config.captureMaxSide, status.config.jpegQuality),
   ];
-  if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 截图文字隐私审查 {3} s", c.saved, c.blocked, c.failed, (c.ocrMs / 1000).toFixed(1)), moteText("累计上传请求体约 {0} MiB；不代表远端存储量。", (c.uploadedBytes / 1048576).toFixed(2))); }
-  else statistics.push(moteText("数值诊断未开启；如需持续处理计数、资源与耗时，请在开发者设置中启用。"));
+  if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(moteText("诊断累计：保存 {0} · 过滤 {1} · 失败 {2} · 截图文字隐私审查 {3} s", c.saved, c.blocked, c.failed, (c.ocrMs / 1000).toFixed(1)), moteText("累计传输约 {0} MiB", (c.uploadedBytes / 1048576).toFixed(2))); }
+  else statistics.push(moteText("数值诊断关闭。可在开发者设置开启。"));
   byId('collection-statistics').replaceChildren(...statistics.map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
   if (!initialized) { fillConfig(status.config); initialized = true;void refreshContent(); }
 }
 async function perform(action: () => Promise<unknown>,localFailure=false): Promise<void> {
   if (busy) return;
-  statusReadEpoch++; busy = true; if(!localFailure)feedback(moteText("正在处理，请稍候…")); byId('feedback').setAttribute('aria-busy', 'true'); if (currentStatus) render(currentStatus);
+  statusReadEpoch++; busy = true; if(!localFailure)feedback(moteText("正在处理，稍候…")); byId('feedback').setAttribute('aria-busy', 'true'); if (currentStatus) render(currentStatus);
   try { await action(); } catch (error) {
     const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("操作失败");
-    if(!localFailure)renderReadableFailure(byId('feedback'),moteText('操作未完成，请检查权限与配置后重试'),message);
+    if(!localFailure)renderReadableFailure(byId('feedback'),moteText('操作未完成。检查权限和配置后重试。'),message);
   } finally {
     // Read the operation's settled state before enabling a subsequent mutation.
     let settled: import('./contracts').Status | undefined;
     try { settled = await desktopApi.status(); } catch { /* Keep the last confirmed status on a read failure. */ }
     busy = false; byId('feedback').setAttribute('aria-busy', 'false');
-    if (byId('feedback').textContent === moteText("正在处理，请稍候…")) feedback('');
+    if (byId('feedback').textContent === moteText("正在处理，稍候…")) feedback('');
     statusReadEpoch++;
     if (settled ?? currentStatus) render(settled ?? currentStatus);
   }
@@ -553,7 +554,7 @@ byId('settings').addEventListener('submit', event => {
   let masks: import('./contracts').Rectangle[];
   let appCollectionRules: Record<string, import('./contracts').CollectionMode>;
   try { masks = masksForEditor(); }
-  catch { revealField(byId('masks')); feedback(moteText("遮挡区域格式无效，或超出了屏幕范围。请检查高级 JSON。")); return; }
+  catch { revealField(byId('masks')); feedback(moteText("遮挡区域格式无效，或超出了屏幕范围。检查高级 JSON。")); return; }
   try { appCollectionRules = appCaptureUi.readRules(); }
   catch (error) { feedback((error as Error).message); return; }
   void perform(async () => {
@@ -594,7 +595,7 @@ function showCaptureConfirmation():void {
   captureConfirmation.showModal();
 }
 byId('start').addEventListener('click', () => {
-  if (settingsDirty) { feedback(moteText("请先保存或还原修改，再开始采集。")); return; }
+  if (settingsDirty) { feedback(moteText("先保存或还原修改，再开始采集。")); return; }
   showCaptureConfirmation();
 });
 byId('capture-confirm-cancel').addEventListener('click',()=>{captureConfirmation.close();byId('start').focus();});
@@ -617,19 +618,19 @@ byId('export-central').addEventListener('click',()=>void perform(()=>desktopApi.
 byId('restore-pause').addEventListener('click',()=>void perform(async()=>render(await desktopApi.setSyncPaused(true))));
 byId('export').addEventListener('click',()=>void perform(async()=>{
   showPage('export-result');
-  const visit=backupOperationUi.begin('export',moteText('正在处理，请稍候…'),currentStatus.operations);
+  const visit=backupOperationUi.begin('export',moteText('正在处理，稍候…'),currentStatus.operations);
   try {const result=await desktopApi.exportQueue();backupOperationUi.finish(visit,result.canceled?'canceled':'complete',result.canceled?moteText('已取消'):moteText('队列备份已保存至 {0}',result.path),result.canceled?undefined:result.file);}
-  catch(error){backupOperationUi.finish(visit,'error',moteText('导出未完成，请重试'),undefined,error instanceof Error?error.message:String(error));throw error;}
+  catch(error){backupOperationUi.finish(visit,'error',moteText('导出未完成，重试'),undefined,error instanceof Error?error.message:String(error));throw error;}
 }));
 byId('import').addEventListener('click',()=>void perform(async()=>{
   showPage('restore');
-  const visit=backupOperationUi.begin('import',moteText('正在处理，请稍候…'),currentStatus.operations);
+  const visit=backupOperationUi.begin('import',moteText('正在处理，稍候…'),currentStatus.operations);
   if(!window.confirm(moteText('恢复到当前本机队列，继续按当前发送设置处理。是否继续？'))){backupOperationUi.finish(visit,'canceled',moteText('已取消'));return;}
   try {const outcome=await desktopApi.importQueue(),result=queueImportPresentation(outcome);backupOperationUi.finish(visit,result.phase,result.message,outcome.canceled?undefined:outcome.file,!outcome.canceled&&outcome.state==='incomplete'?outcome.error:undefined);}
-  catch(error){backupOperationUi.finish(visit,'error',moteText('导入未完成，可能已有记录保存在本机。请检查本机内容后重试所选备份。'),undefined,error instanceof Error?error.message:String(error));throw error;}
+  catch(error){backupOperationUi.finish(visit,'error',moteText('导入未完成。查看本机内容后重试。'),undefined,error instanceof Error?error.message:String(error));throw error;}
 }));
 desktopApi.onStatus(render);
-void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，请重新打开 Mote。")));
+void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，重新打开 Mote。")));
 
 byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
 function openCentral(page: string): void {
@@ -652,7 +653,7 @@ function renderDraft(value: import('./note-draft').NoteDraft): void {
   draft = value; byId<HTMLTextAreaElement>('note-text').value = value.text;byId<HTMLTextAreaElement>('note-description').value=value.description;byId<HTMLDetailsElement>('note-description-panel').open=Boolean(value.description);
   for(const id of ['note-text','note-description'])byId<HTMLTextAreaElement>(id).readOnly=Boolean(value.prepared);
 }
-void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) {byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。");} }).catch(() => feedback(moteText("无法恢复记录草稿，请重启应用。")));
+void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) {byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。");} }).catch(() => feedback(moteText("无法恢复记录草稿，重启应用。")));
 for (const id of ['note-text','note-description']) {
   byId(id).addEventListener('compositionstart', () => { noteComposing = true; });
   byId(id).addEventListener('compositionend', () => { noteComposing = false; });
@@ -662,7 +663,7 @@ for (const id of ['note-text','note-description']) byId(id).addEventListener('in
   if (!draft || noteSaving) return;
   draft = { ...draft, text: readInput('note-text'), description:readInput('note-description'), mood: draft?.mood??'', revision: draft.revision + 1 };
   const changed = draft;
-  void desktopApi.updateNoteDraft(changed).then(() => { if (draft?.id === changed.id && draft.revision === changed.revision) {byId('note-feedback').classList.add('visually-hidden');byId('note-feedback').textContent = moteText("草稿已保存到本机。");} }).catch(() => { byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("草稿暂未保存，请保留正文并重试；如上次保存未完成，请重新打开窗口恢复原稿。"); });
+  void desktopApi.updateNoteDraft(changed).then(() => { if (draft?.id === changed.id && draft.revision === changed.revision) {byId('note-feedback').classList.add('visually-hidden');byId('note-feedback').textContent = moteText("草稿已保存到本机。");} }).catch(() => { byId('note-feedback').classList.remove('visually-hidden');byId('note-feedback').textContent = moteText("草稿未保存。保留正文，重开窗口恢复上次保存。"); });
 });
 for(const id of ['note-dismiss','note-collapse'])byId(id).addEventListener('click',()=>{if(quickNote)window.close();else showPage(navigation.backTarget);});
 byId('note-form').addEventListener('submit', event => {
@@ -677,8 +678,8 @@ byId('note-form').addEventListener('submit', event => {
       if (quickNote) window.close();
       byId('note-feedback').textContent = currentStatus.sync.state === 'unconfigured' ? moteText("已保存到本机。连接节点并确认后，再按你的策略同步。") : moteText("已保存到本机 · {0}上传。中央确认后清理待传记录。", syncModeLabels[currentStatus.config.syncMode]);
     } catch (error) {
-      const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("保存未完成，请重试");
-      renderReadableFailure(byId('note-feedback'),moteText('保存未完成，请重试'),message);
+      const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : moteText("保存未完成，重试");
+      renderReadableFailure(byId('note-feedback'),moteText('保存未完成，重试'),message);
       document.body.classList.add('note-save-failed');
       const persisted = await desktopApi.noteDraft();
       if (persisted.prepared || persisted.id !== input.id) renderDraft(persisted);
@@ -713,7 +714,7 @@ function renderLogs(): void {
     }
     if (label === moteText("复制全部")) {
       button.disabled = !logText;
-      button.onclick = () => { void navigator.clipboard.writeText(logText).then(() => { notice.textContent = moteText("已复制全部原始日志。"); }, () => { output.focus(); output.select(); notice.textContent = moteText("剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。"); }); };
+      button.onclick = () => { void navigator.clipboard.writeText(logText).then(() => { notice.textContent = moteText("已复制全部原始日志。"); }, () => { output.focus(); output.select(); notice.textContent = moteText("剪贴板不可用，已全选，按 ⌘/Ctrl+C 复制。"); }); };
     }
     actions.append(button);
   }
@@ -725,7 +726,7 @@ async function loadLogs(): Promise<void> {
   logLoading = true;
   const viewer = byId('events-viewer'); viewer.hidden = false;
   try { logText = await desktopApi.readRawEvents(); renderLogs(); }
-  catch { let notice = viewer.querySelector('[role="status"]'); if (!notice) { notice = document.createElement('p'); notice.setAttribute('role', 'status'); viewer.append(notice); } notice.textContent = moteText("日志读取失败，请点击查看本地日志重试。"); }
+  catch { let notice = viewer.querySelector('[role="status"]'); if (!notice) { notice = document.createElement('p'); notice.setAttribute('role', 'status'); viewer.append(notice); } notice.textContent = moteText("日志读取失败，点击查看本地日志重试。"); }
   finally { logLoading = false; }
 }
 byId('events-open').addEventListener('click', () => void loadLogs());
@@ -737,7 +738,7 @@ async function loadLogSettings(): Promise<void> {
   byId('runtime-log-directory').textContent = `${moteText('日志目录')}: ${settings.directory}`;
   for (const id of ['runtime-log-enabled','runtime-log-level','runtime-log-save','runtime-log-open','runtime-log-export']) byId<HTMLInputElement>(id).disabled = false;
 }
-void loadLogSettings().catch(() => feedback(moteText('日志读取失败，请重试；原文件保留。')));
+void loadLogSettings().catch(() => feedback(moteText('日志读取失败，重试。原文件保留。')));
 byId('runtime-log-save').addEventListener('click', () => void perform(async () => {
   await desktopApi.saveLogSettings({enabled:byId<HTMLInputElement>('runtime-log-enabled').checked,level:byId<HTMLSelectElement>('runtime-log-level').value as import('./contracts/settings').RuntimeLogLevel});
   feedback(moteText('已保存，立即生效。'), true);
@@ -770,7 +771,7 @@ refreshSourcePolicySummaries();
 byId('source-continuous').addEventListener('change',updateSourceHistoryChoice);
 let sourceMode:'files'|'directory'='directory';
 function sourceDescriptionPlaceholder(kind:'files'|'agent'|'calendar'):string{
-  return kind==='agent'?moteText('例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。'):kind==='calendar'?moteText('例如：这是我的工作日历，日程不代表实际参加。'):moteText('例如：这是我的日记，文件名是日期。');
+  return kind==='agent'?moteText('例如：这是我与 Coding Agent 的项目开发对话，包含工具执行记录。'):kind==='calendar'?moteText('例如：工作日历，日程可能未参加。'):moteText('例如：这是我的日记，文件名是日期。');
 }
 let sourceEditingContext:import('./source-context-outbox').SourceContextState|undefined;
 const sourceAddDialog=byId<HTMLDialogElement>('source-add-dialog');
@@ -840,7 +841,7 @@ async function editSource(id?: string): Promise<void> {
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
   refreshSourceTextOptions();refreshSourceMaintenancePreview();
-  try{const value=await desktopApi.sourceContext(id!);if(sourceEditorCurrent(request)){sourceEditingContext=value;byId<HTMLTextAreaElement>('source-initial-description').value=value.pending?.description??value.snapshot.description;byId<HTMLTextAreaElement>('source-initial-description').disabled=value.error==='denied'||Boolean(value.error)&&!value.pending;byId('source-description-scope').textContent=value.error?moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。'):value.conflict?moteText('中央说明已改变，请核对后保存。'):moteText('适用于这个来源的已有与后续资料。');}}catch{/* Local rules remain editable when Central is unavailable. */}
+  try{const value=await desktopApi.sourceContext(id!);if(sourceEditorCurrent(request)){sourceEditingContext=value;byId<HTMLTextAreaElement>('source-initial-description').value=value.pending?.description??value.snapshot.description;byId<HTMLTextAreaElement>('source-initial-description').disabled=value.error==='denied'||Boolean(value.error)&&!value.pending;byId('source-description-scope').textContent=value.error?moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。'):value.conflict?moteText('中央说明已改变，核对后保存。'):moteText('适用于这个来源的已有与后续资料。');}}catch{/* Local rules remain editable when Central is unavailable. */}
 }
 function sourceWorkspaceDescription(id:string):string{const row=localSourceRows.find(row=>row.source.id===id);return row?.context?.pending?.description??row?.context?.snapshot.description??'';}
 function refreshSourceTextOptions(): void {
@@ -853,7 +854,7 @@ function refreshSourceTextOptions(): void {
   byId('source-retention-hint').hidden=!fileSource;
   byId('source-retention-hint').textContent=readInput('source-retention')==='snapshot'?moteText('完整文件发往中心解析；处理后删除中心临时原件。'):readInput('source-retention')==='archive'?moteText('完整文件发往中心解析，并保留原件。'):moteText('只记录文件信息，不读取正文，也不上传文件内容。');
   byId('source-content-transfer-note').hidden=!fileSource;
-  byId('source-content-transfer-note').textContent=readInput('source-retention')==='reference'?moteText('只记录文件信息，不读取正文，也不上传文件内容。'):moteText('完整文件会发送到所示中央进行处理；提取正文不代表只上传摘要。未连接时先保存本机任务，首次连接须确认发送范围。');
+  byId('source-content-transfer-note').textContent=readInput('source-retention')==='reference'?moteText('只记录文件信息，不读取正文，也不上传文件内容。'):moteText('完整文件会发送到所示中央处理。未连接时先保存本机任务，首次连接须确认发送范围。');
 }
 byId('source-retention').addEventListener('change',refreshSourceTextOptions);
 let sourcesReading = false;let sourceReadGeneration=0,sourceConnectGeneration=0;
@@ -866,23 +867,23 @@ async function refreshSources(): Promise<void> {
   } finally { sourcesReading = false; }
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
-  if (sourceBusy) return; sourceBusy = true;byId('source-feedback').hidden=false; byId('source-feedback').textContent = moteText("正在处理，请稍候…");
+  if (sourceBusy) return; sourceBusy = true;byId('source-feedback').hidden=false; byId('source-feedback').textContent = moteText("正在处理，稍候…");
   for (const id of ['calendar-actions-connect', 'source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-calendar-cancel', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = true;
   try { await action(); byId('source-feedback').textContent='';byId('source-feedback').hidden=true; }
-  catch (error) { renderReadableFailure(byId('source-feedback'),moteText('操作未完成，请检查权限与配置后重试'),error instanceof Error?error.message:String(error)); }
+  catch (error) { renderReadableFailure(byId('source-feedback'),moteText('操作未完成。检查权限和配置后重试。'),error instanceof Error?error.message:String(error)); }
   finally { sourceBusy = false; for (const id of ['calendar-actions-connect', 'source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-calendar-cancel', 'source-save-edit', 'source-sync', 'source-confirm']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {});byId<HTMLButtonElement>('source-confirm').disabled=!sourceSelection;byId<HTMLButtonElement>('source-calendar-add').disabled=!readInput('source-calendar-choice');byId<HTMLButtonElement>('source-agent-add').disabled=!readInput('source-agent-choice'); }
 }
-for(const kind of ['agent','calendar'] as const)byId('source-'+kind+'-choice-open').addEventListener('click',()=>{sourceConnectGeneration++;byId<HTMLSelectElement>('source-agent-choice').replaceChildren();byId<HTMLSelectElement>('source-calendar-choice').replaceChildren();byId('source-agent-choice').hidden=true;byId('source-agent-add').hidden=true;byId('source-calendars').hidden=true;byId<HTMLButtonElement>('source-calendar-add').disabled=true;byId<HTMLButtonElement>('source-agent-add').disabled=true;sourceAddDialog.close();invalidateSourceEditor();if(sourceSelection)void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId<HTMLInputElement>('source-name').value='';byId('source-edit-footer').hidden=true;byId('source-continuous-row').hidden=true;byId('source-edit-continuous-row').hidden=true;byId('source-initial-sync-row').hidden=false;byId('source-once-row').hidden=true;byId<HTMLSelectElement>('source-initial-sync').disabled=false;renderSourceDestination();byId('source-agent-panel').hidden=kind!=='agent';byId('source-calendar-panel').hidden=kind!=='calendar';byId('source-calendar-footer').hidden=kind!=='calendar';byId('source-calendar-connect').hidden=false;byId('source-calendar-permission').textContent=moteText('无法确认，请检查系统设置');byId('source-agent-statuses').replaceChildren();byId<HTMLTextAreaElement>('source-initial-description').placeholder=sourceDescriptionPlaceholder(kind);byId('source-connect-title').textContent=kind==='agent'?moteText('本机 Coding Agent'):moteText('本机日历');byId('source-editor-title').textContent=moteText('同步详情');byId('source-connect-rules').append(byId('source-initial-description-row'),byId('source-destination').closest('label')!,sourceRules);sourceRules.open=false;byId('source-initial-description-row').hidden=false;byId<HTMLTextAreaElement>('source-initial-description').disabled=false;byId('source-save-edit').hidden=true;byId('source-cancel-edit').hidden=true;byId<HTMLSelectElement>('source-retention').value='snapshot';showPage('source-connect');refreshSourceTextOptions();});
+for(const kind of ['agent','calendar'] as const)byId('source-'+kind+'-choice-open').addEventListener('click',()=>{sourceConnectGeneration++;byId<HTMLSelectElement>('source-agent-choice').replaceChildren();byId<HTMLSelectElement>('source-calendar-choice').replaceChildren();byId('source-agent-choice').hidden=true;byId('source-agent-add').hidden=true;byId('source-calendars').hidden=true;byId<HTMLButtonElement>('source-calendar-add').disabled=true;byId<HTMLButtonElement>('source-agent-add').disabled=true;sourceAddDialog.close();invalidateSourceEditor();if(sourceSelection)void desktopApi.cancelSourceFiles(sourceSelection.id);sourceSelection=undefined;byId<HTMLInputElement>('source-name').value='';byId('source-edit-footer').hidden=true;byId('source-continuous-row').hidden=true;byId('source-edit-continuous-row').hidden=true;byId('source-initial-sync-row').hidden=false;byId('source-once-row').hidden=true;byId<HTMLSelectElement>('source-initial-sync').disabled=false;renderSourceDestination();byId('source-agent-panel').hidden=kind!=='agent';byId('source-calendar-panel').hidden=kind!=='calendar';byId('source-calendar-footer').hidden=kind!=='calendar';byId('source-calendar-connect').hidden=false;byId('source-calendar-permission').textContent=moteText('权限状态未知。查看系统设置。');byId('source-agent-statuses').replaceChildren();byId<HTMLTextAreaElement>('source-initial-description').placeholder=sourceDescriptionPlaceholder(kind);byId('source-connect-title').textContent=kind==='agent'?moteText('本机 Coding Agent'):moteText('本机日历');byId('source-editor-title').textContent=moteText('同步详情');byId('source-connect-rules').append(byId('source-initial-description-row'),byId('source-destination').closest('label')!,sourceRules);sourceRules.open=false;byId('source-initial-description-row').hidden=false;byId<HTMLTextAreaElement>('source-initial-description').disabled=false;byId('source-save-edit').hidden=true;byId('source-cancel-edit').hidden=true;byId<HTMLSelectElement>('source-retention').value='snapshot';showPage('source-connect');refreshSourceTextOptions();});
 for (const mode of ['files','directory'] as const)byId('source-'+mode).addEventListener('click',()=>void beginSourceSelection(mode));
 byId('source-calendar-connect').addEventListener('click', () => void sourceAction(async () => {
   const current=sourceConnectRequest();
   const permissions = await desktopApi.permissionStatus();if(!current())return;
-  byId('source-calendar-permission').textContent=permissions.calendar==='granted'?moteText('已允许'):permissions.calendar==='denied'?moteText('未授权'):moteText('无法确认，请检查系统设置');
-  if (permissions.calendar === 'denied') { window.alert(moteText("日历访问尚未授权，请在权限管理中开启。")); showPage('permissions'); return; }
+  byId('source-calendar-permission').textContent=permissions.calendar==='granted'?moteText('已允许'):permissions.calendar==='denied'?moteText('未授权'):moteText('权限状态未知。查看系统设置。');
+  if (permissions.calendar === 'denied') { window.alert(moteText("日历未授权。在权限管理中开启。")); showPage('permissions'); return; }
   const calendars = await desktopApi.authorizeCalendar();if(!current())return; const select = byId<HTMLSelectElement>('source-calendar-choice'); select.replaceChildren();
   for (const calendar of calendars) { const option = document.createElement('option'); option.value = calendar.id; option.textContent = calendar.title; select.append(option); }
   byId('source-calendars').hidden = !calendars.length;byId('source-calendar-connect').hidden=calendars.length>0;byId('source-calendar-permission').textContent=moteText('已允许');
-  if (!calendars.length) throw new Error(moteText("已授权，但系统中没有可选日历；请在系统日历中添加后重试"));
+  if (!calendars.length) throw new Error(moteText("系统里暂无可选日历。添加日历后重试。"));
 }));
 byId('source-agent-discover').addEventListener('click', () => void sourceAction(async () => {
   const current=sourceConnectRequest(),agents = await desktopApi.codingAgents();if(!current())return; const select = byId<HTMLSelectElement>('source-agent-choice'); select.replaceChildren();
@@ -915,13 +916,13 @@ byId('calendar-actions-connect').addEventListener('click', () => void sourceActi
 byId('source-calendar-permissions').addEventListener('click', () => void sourceAction(() => desktopApi.openCalendarPermissions()));
 byId('source-cancel-edit').addEventListener('click',()=>{if(sourceEditingId)sourceWorkspace.open(sourceEditingId);else showPage('sources');});
 byId('source-save-edit').addEventListener('click', () => void sourceAction(async () => {
-  const source = localSourceRows.find(s => s.source.id === sourceEditingId)?.source; if (!source) throw new Error(moteText("请先选择要编辑的来源"));
+  const source = localSourceRows.find(s => s.source.id === sourceEditingId)?.source; if (!source) throw new Error(moteText("先选择要编辑的来源"));
   const request=sourceEditorRequest(),options=sourceOptions(),description=readInput('source-initial-description');
   if(sourceEditingContext&&!byId<HTMLTextAreaElement>('source-initial-description').disabled&&description!==(sourceEditingContext.pending?.description??sourceEditingContext.snapshot.description))await desktopApi.saveSourceContext(source.id,{expectedVersion:sourceEditingContext.snapshot.version,description});
   if(!sourceEditorCurrent(request))return;
   await desktopApi.updateSource(source.id, { ...options, enabled: source.enabled });if(!sourceEditorCurrent(request))return;await refreshSources();if(!sourceEditorCurrent(request))return;sourceWorkspace.open(source.id);invalidateSourceEditor();
 }));
-void refreshSources().catch(() => { byId('source-feedback').textContent = moteText("来源状态暂不可用，请重新打开应用"); });
+void refreshSources().catch(() => { byId('source-feedback').textContent = moteText("来源状态暂不可用，重新打开应用"); });
 setInterval(() => { void refreshSources().catch(() => {}); }, 3000);
 
 let meetingStatus: import('./contracts/sources').MeetingRecordingStatus | undefined;
@@ -1014,8 +1015,8 @@ let updateState: import('./updater').UpdateStatus | undefined;
 const updateInstallUi=createUpdateInstallUi(document,{
   status:()=>desktopApi.updateStatus(),
   allowed(){
-    if(settingsDirty){feedback(moteText('请先保存或还原设置修改，再安装更新。'));return false;}
-    if(noteSaving||noteComposing){feedback(moteText('请先完成当前记录输入，再安装更新。'));return false;}
+    if(settingsDirty){feedback(moteText('先保存或还原设置修改，再安装更新。'));return false;}
+    if(noteSaving||noteComposing){feedback(moteText('先完成当前记录输入，再安装更新。'));return false;}
     return true;
   },
   async install(){await perform(async()=>{
@@ -1025,7 +1026,7 @@ const updateInstallUi=createUpdateInstallUi(document,{
       await desktopApi.installUpdate();
     }finally{lockNote(false);byId('local-sources').inert=false;}
   });},
-  failed(){feedback(moteText('更新未完成，现有 App 与资料保持不变。请检查网络、磁盘空间后重试。'));},
+  failed(){feedback(moteText('更新未完成，原 App 与资料保留。核对网络和磁盘。'));},
 });
 function renderUpdate(value: import('./updater').UpdateStatus): void {
   updateState = value;updateInstallUi.update(value);
@@ -1051,7 +1052,7 @@ function renderUpdate(value: import('./updater').UpdateStatus): void {
   byId<HTMLButtonElement>('update-notes').disabled = !value.notesUrl;
 }
 byId('update-channel').addEventListener('change', () => void perform(async () => renderUpdate(await desktopApi.updateChannel(readInput('update-channel') as 'stable' | 'preview'))));
-byId('update-check').addEventListener('click', () => { void desktopApi.checkUpdate().then(renderUpdate).catch(() => feedback(moteText("更新检查未完成，请重试。"))); });
+byId('update-check').addEventListener('click', () => { void desktopApi.checkUpdate().then(renderUpdate).catch(() => feedback(moteText("更新检查未完成，重试。"))); });
 byId('update-download').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.downloadUpdate())));
 byId('update-cancel').addEventListener('click', () => { void desktopApi.cancelUpdate().then(renderUpdate).catch(error => feedback(String(error))); });
 byId('update-reveal').addEventListener('click', () => void perform(() => desktopApi.revealUpdate()));
@@ -1072,10 +1073,25 @@ function renderConnection(value: import('./connection').ConnectionStatus): void 
   byId('connection-capabilities').textContent = value.identity ? moteText("权限：{0} · 中央 {1} · 环境 {2}", moteText("管理员"), value.identity.node.version, value.identity.node.profile) : currentStatus?.config.credentialScope === 'owner' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : '';
 }
 function clearConnectionPreview(): void { connectionPreview = undefined; byId('connection-confirmation').hidden = true; byId<HTMLInputElement>('connection-confirm-origin').checked = false; }
+function updateInvitationBacklog(destination: string): void {
+  if (!currentStatus) return;
+  const {config, sync} = currentStatus;
+  let copy: string;
+  if (sync.localBacklogUnbound) {
+    copy = unboundBacklogCopy(sync.pendingRecords, destination);
+  } else if (destination === config.serverUrl) {
+    copy = moteText("同一中央重新授权后，待传截图、记录和来源版本继续发往此地址。以地址和 HTTPS 证书核对中央身份。确认它仍由你控制。");
+  } else if (config.serverUrl || sync.pendingRecords) {
+    copy = moteText("更换中央时须无待传截图、记录和来源版本。保留设备 ID、隐私设置和本地模型。");
+  } else {
+    copy = moteText("确认后，未绑定的待传资料归属此中央，按上传策略发送。");
+  }
+  byId('connection-resume').textContent = copy;
+}
 function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
   connectionPreview = value; byId<HTMLTextAreaElement>('connection-input').value = ''; byId<HTMLInputElement>('connection-confirm-origin').checked = false;
   byId('connection-origin').textContent = value.serverUrl; byId('connection-expiry').textContent = moteText("邀请到期：") + new Date(value.expiresAt).toLocaleString(getLocale());
-  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? moteText("同一节点重新授权后，现有待传截图、记录和来源版本将继续发往此地址。节点身份以此地址和 HTTPS 证书为准；请确认它仍由你控制。") : moteText("更换节点时，本机必须没有待传截图、记录或来源版本；设备 ID、隐私设置和本地模型将保留。");
+  updateInvitationBacklog(value.serverUrl);
   byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
 }
 byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
@@ -1094,8 +1110,8 @@ for (const kind of ['json', 'qr'] as const) byId('connection-' + kind).addEventL
 byId('connection-confirm-origin').addEventListener('change', () => { if (currentStatus) render(currentStatus); });
 byId('connection-cancel').addEventListener('click', () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; void desktopApi.cancelConnection(); });
 byId('connection-connect').addEventListener('click', () => void perform(async () => {
-  if (!connectionPreview || !byId<HTMLInputElement>('connection-confirm-origin').checked) throw new Error(moteText("请先确认中央地址"));
-  feedback(moteText("正在连接并验证新凭据，此过程无法取消；原配置在确认成功前保持不变。"));
+  if (!connectionPreview || !byId<HTMLInputElement>('connection-confirm-origin').checked) throw new Error(moteText("先确认中央地址。"));
+  feedback(moteText("正在验证新凭据。成功后才替换原设置。"));
   settingsApplying = true; wasRunningBeforeSave = currentStatus.running; render(currentStatus);
   let status: import('./contracts').Status;
   try { status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl, readInput('device-name')); }
@@ -1126,7 +1142,7 @@ function readChannels(target:Element):import('./contracts').CollectionMode{retur
 byId('add-custom-app-rule').addEventListener('click', () => {
   const input=byId<HTMLInputElement>('custom-app-id'),id=input.value.trim();
   try{normalizeAppCollectionRules({[id]:{duration:true,screenshots:false,structured:false}});}
-  catch{feedback(moteText('请输入有效的应用 Bundle ID'));input.focus();return;}
+  catch{feedback(moteText('输入有效的应用 Bundle ID'));input.focus();return;}
   const existing=appCaptureUi.readRules()[id];appCaptureUi.addOverride(id,existing??{duration:true,screenshots:false,structured:false});input.value='';
 });
 byId('chrome-origins').addEventListener('input',()=>appCaptureUi.setOrigins(readInput('chrome-origins').split('\n').map(value=>value.trim()).filter(Boolean)));
@@ -1142,22 +1158,25 @@ function updateSyncOptions(): void {
   byId('sync-batch-field').hidden = mode !== 'batch';
   byId('sync-interval-label').textContent = mode === 'batch' ? moteText("最长等待（分钟）") : moteText("发送间隔（分钟）");
   const descriptions = {
-    realtime: moteText("记录保存后尽快发送。断网或失败时仍留在本机，稍后自动重试。"),
+    realtime: moteText("保存后尽快发送。断网或失败时在本机保留并重试。"),
     interval: moteText("每 {0} 分钟检查并上传待传记录。休眠期间顺延，唤醒后继续。", readInput('sync-interval')),
-    batch: moteText("攒够 {0} 条，或最早记录等待 {1} 分钟后发送，以先达到的条件为准。每条记录单独确认接收。", readInput('sync-batch'), readInput('sync-interval')),
-    manual: moteText("不自动上传记录或发送设备状态。点击概览的“立即上传”或来源页的“立即检查并上传”时发送；下次仍由你手动触发。"),
+    batch: moteText("满 {0} 条或等 {1} 分钟即发送，逐条确认接收。", readInput('sync-batch'), readInput('sync-interval')),
+    manual: moteText("记录和设备状态每次都须手动发送。在「发送详情」点「立即上传」，或在来源点「立即检查并上传」。"),
   };
   byId('sync-policy-help').textContent = descriptions[mode];
   byId('sync-save-hint').textContent=currentStatus?.config.syncPaused?moteText('保存后仍保持发送暂停'):moteText('保存后应用于后续发送');
 }
 for (const input of Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('#sync-mode, #sync-interval, #sync-batch'))) {input.addEventListener('input', updateSyncOptions);input.addEventListener('change',updateSyncOptions);}
 byId('sync-cancel').addEventListener('click',()=>{if(busy)return;fillConfig(currentStatus.config);showPage('work');});
+function unboundBacklogCopy(count: number, destination: string): string {
+  return moteText("尚有 {0} 条未绑定的待传记录，另可能有尚未保存完的记录。确认后归属 {1}，按上传策略发送。", count, destination);
+}
 function updateLocalBacklog(): void {
   if (!currentStatus) return;
   byId('local-backlog-confirmation').hidden = !currentStatus.sync.localBacklogUnbound;
   let destination = moteText("你填写的节点");
   try { destination = new URL(readInput('server-url')).origin; } catch { /* Blank means local-only. */ }
-  byId('local-backlog-copy').textContent = moteText("本机有 {0} 条尚未绑定节点的待传记录，及可能尚未完成保存的记录。确认后将归属 {1}，按上传策略发送。", currentStatus.sync.pendingRecords, destination);
+  byId('local-backlog-copy').textContent = unboundBacklogCopy(currentStatus.sync.pendingRecords, destination);
 }
 function updateTokenField(): void {
   byId('node-token-field').hidden = Boolean(currentStatus?.config.tokenConfigured && readInput('server-url').trim().replace(/\/$/, '') === currentStatus.config.serverUrl.replace(/\/$/, ''));
@@ -1209,7 +1228,7 @@ byId('add-app-rule').addEventListener('click', () => void perform(async () => {
   installedApps = appCaptureUi.installedApplications();
   const select = byId<HTMLSelectElement>('installed-app-choice');
   select.replaceChildren(...installedApps.map(app => new Option(`${app.appName} · ${app.appId}`, app.appId)));
-  byId('app-picker-hint').textContent = installedApps.length ? moteText("找到 {0} 个应用；选择后可调整采集级别。应用列表仅用于本机设置。", installedApps.length) : moteText("暂未找到应用，可在下方“手动输入 ID”中添加。");
+  byId('app-picker-hint').textContent = installedApps.length ? moteText("找到 {0} 个应用，列表只在本机设置中使用。", installedApps.length) : moteText("暂未找到应用，可在下方“手动输入 ID”中添加。");
   byId<HTMLButtonElement>('use-installed-app').disabled = !installedApps.length;
   byId<HTMLButtonElement>('exclude-installed-app').disabled = !installedApps.length;
   select.focus();
@@ -1218,7 +1237,7 @@ function useInstalledApp(exclude: boolean): void {
   const id = readInput('installed-app-choice'); if (!id) return;
   const existing=appCaptureUi.readRules()[id];
   appCaptureUi.addOverride(id,exclude?{duration:false,screenshots:false,structured:false}:existing??{duration:true,screenshots:false,structured:false});
-  byId('app-picker-hint').textContent = exclude ? moteText("{0} 已加入完全排除列表，保存设置后生效。",installedApps.find(app=>app.appId===id)?.appName||id) : moteText("已添加为仅记录时长。可在规则中分别选择截图与结构化，保存设置后生效。");
+  byId('app-picker-hint').textContent = exclude ? moteText("{0} 已加入完全排除列表，保存设置后生效。",installedApps.find(app=>app.appId===id)?.appName||id) : moteText("已设为仅记录时长。截图和结构化可单独设置。");
   markSettingsDirty();
 }
 byId('use-installed-app').addEventListener('click', () => useInstalledApp(false));
@@ -1227,7 +1246,7 @@ byId('exclude-installed-app').addEventListener('click', () => useInstalledApp(tr
 type Mask = import('./contracts').Rectangle;
 function masksForEditor(): Mask[] {
   const masks: unknown = JSON.parse(readInput('masks') || '[]');
-  if (!Array.isArray(masks) || masks.length > 100 || masks.some(mask => !mask || ['x', 'y', 'width', 'height'].some(key => typeof mask[key] !== 'number' || !Number.isFinite(mask[key])) || mask.x < 0 || mask.y < 0 || mask.width <= 0 || mask.height <= 0 || mask.x + mask.width > 1 || mask.y + mask.height > 1)) throw new Error(moteText("最多 100 个遮挡区域，需要位于屏幕以内，宽高大于 0。请检查高级 JSON。"));
+  if (!Array.isArray(masks) || masks.length > 100 || masks.some(mask => !mask || ['x', 'y', 'width', 'height'].some(key => typeof mask[key] !== 'number' || !Number.isFinite(mask[key])) || mask.x < 0 || mask.y < 0 || mask.width <= 0 || mask.height <= 0 || mask.x + mask.width > 1 || mask.y + mask.height > 1)) throw new Error(moteText("最多 100 个遮挡区域，需要位于屏幕以内，宽高大于 0。检查高级 JSON。"));
   return masks;
 }
 function renderMaskPreview(masks: Mask[]): void {
@@ -1273,7 +1292,7 @@ function renderMaskEditor(): void {
 }
 const maskPresets: Record<string, Mask> = { notification: { x: .7, y: 0, width: .3, height: .2 }, menubar: { x: 0, y: 0, width: 1, height: .04 }, sidebar: { x: 0, y: 0, width: .22, height: 1 }, custom: { x: .25, y: .25, width: .25, height: .25 } };
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-mask]'))) button.addEventListener('click', () => {
-  try { const masks = masksForEditor(); if (masks.length >= 100) { feedback(moteText("最多可设置 100 个遮挡区域，请先移除不需要的区域。")); return; } masks.push({ ...maskPresets[button.dataset.mask!] }); writeMasks(masks); renderMaskEditor(); }
+  try { const masks = masksForEditor(); if (masks.length >= 100) { feedback(moteText("遮挡区域最多 100 个。移除后再添加。")); return; } masks.push({ ...maskPresets[button.dataset.mask!] }); writeMasks(masks); renderMaskEditor(); }
   catch (error) { revealField(byId('masks')); feedback((error as Error).message); }
 });
 byId('masks').addEventListener('change', renderMaskEditor);
@@ -1312,7 +1331,7 @@ async function refreshCompression():Promise<void>{
     const ratio=result.compressedBytes/result.originalBytes;
     byId('compression-stats').textContent='';byId('compression-result-caption').textContent='JPEG · '+quality+' · '+numberInput('compression-side')+' px · '+result.compressedBytes.toLocaleString(getLocale())+' bytes';byId('compression-metrics').textContent=moteText("{0} × {1} → {2} × {3} · 边长缩放 {4}% · PNG {5} KB → JPEG {6} KB · 文件大小为原图的 {7}%（{8} {9}%）", result.originalWidth, result.originalHeight, result.width, result.height, (result.width/result.originalWidth*100).toFixed(1), (result.originalBytes/1024).toFixed(1), (result.compressedBytes/1024).toFixed(1), (ratio*100).toFixed(1), ratio<=1?moteText("减少"):moteText("增加"), (Math.abs(1-ratio)*100).toFixed(1));
     byId<HTMLButtonElement>('compression-apply').disabled=false;
-  }catch(error){if(revision===compressionRevision&&currentPage==='compression')renderReadableFailure(byId('compression-stats'),moteText('预览失败，请调整参数重试'),error instanceof Error?error.message:String(error));}
+  }catch(error){if(revision===compressionRevision&&currentPage==='compression')renderReadableFailure(byId('compression-stats'),moteText('预览失败，调整参数重试'),error instanceof Error?error.message:String(error));}
   finally{compressionBusy=false;byId<HTMLButtonElement>('compression-refresh').disabled=false;}
 }
 function invalidateCompression():void{compressionRevision++;byId('compression-metrics').textContent='';byId('compression-result-caption').textContent='JPEG';byId<HTMLButtonElement>('compression-apply').disabled=true;byId<HTMLButtonElement>('compression-refresh').disabled=compressionBusy;for(const id of ['compression-before','compression-after']){const image=byId<HTMLImageElement>(id);image.hidden=true;image.removeAttribute('src');}byId('compression-stats').textContent=moteText('调整参数后比较清晰度。');}
@@ -1320,7 +1339,7 @@ for(const id of ['compression-quality','compression-side']){byId(id).addEventLis
 byId('compression-refresh').addEventListener('click',()=>{if(!compressionBusy)void refreshCompression();});
 byId('compression-zoom').addEventListener('change',compressionZoom);
 for(const [source,target] of [['compression-before-pane','compression-after-pane'],['compression-after-pane','compression-before-pane']])byId(source).addEventListener('scroll',()=>{const a=byId(source),b=byId(target);if(b.scrollLeft!==a.scrollLeft)b.scrollLeft=a.scrollLeft;if(b.scrollTop!==a.scrollTop)b.scrollTop=a.scrollTop;});
-byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('capture');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback(moteText("压缩参数已带回设置，请点击保存后应用。"),true);});
+byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('capture');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback(moteText("压缩参数已带回设置，点击保存后应用。"),true);});
 
 async function loadStorageStatistics(): Promise<void> {
  const target=byId('storage-statistics');showSkeleton(target,undefined,2);
@@ -1329,15 +1348,15 @@ async function loadStorageStatistics(): Promise<void> {
  if(report.skipped){const warning=document.createElement('p');warning.textContent=moteText("部分文件无法读取，统计可能不完整。");target.append(warning);}
  for(const [title,rows] of [[moteText("按文件类型"),report.types],[moteText("按日期"),report.days]] as const){const section=document.createElement('section');section.className='panel';const heading=document.createElement('h2');heading.textContent=title;section.append(heading);const max=Math.max(1,...rows.map(r=>r.bytes));
  for(const row of rows){const line=document.createElement('div');line.className='storage-bar';const label=document.createElement('span');label.textContent=row.key;const bar=document.createElement('meter');bar.min=0;bar.max=max;bar.value=row.bytes;const value=document.createElement('span');value.textContent=(row.bytes/1048576).toFixed(2)+' MiB';line.append(label,bar,value);section.append(line);}target.append(section);}
- }catch{target.textContent=moteText("统计读取失败，请重试。");}
+ }catch{target.textContent=moteText("统计读取失败，重试。");}
 }
 byId('storage-refresh').addEventListener('click',()=>void loadStorageStatistics());
 
 byId('notification-collection').addEventListener('change', () => {
   if (!byId<HTMLInputElement>('notification-collection').checked) return;
   void desktopApi.permissionStatus().then(status => {
-    if (status.accessibility !== 'granted') { byId<HTMLInputElement>('notification-collection').checked = false; window.alert(moteText("读取通知需要辅助功能权限，请先授权后再启用。")); showPage('permissions'); }
-  }).catch(() => feedback(moteText("权限检查失败，请重试。")));
+    if (status.accessibility !== 'granted') { byId<HTMLInputElement>('notification-collection').checked = false; window.alert(moteText("通知未获授权。开启辅助功能权限。")); showPage('permissions'); }
+  }).catch(() => feedback(moteText("权限检查失败。重试。")));
 });
 
 byId('review-refresh').addEventListener('click', async()=>{

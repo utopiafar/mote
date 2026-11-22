@@ -26,7 +26,7 @@ export function AssistantActionResults({api,taskId,scope,canCreate=true}:{api:Ap
  };
  if(read.error!==undefined)return <p role="alert">{errorMessage(read.error)} <button className="button subtle" onClick={read.refresh}>{moteText('重新读取')}</button></p>;
  if(!read.data)return <p role="status">{moteText('正在读取行动结果…')}</p>;
- if(!Array.isArray(read.data.drafts))return <p role="alert">{moteText('中央响应格式无效，请刷新后重试。')}</p>;
+ if(!Array.isArray(read.data.drafts))return <p role="alert">{moteText('中央响应格式无效，刷新后重试。')}</p>;
  return <section className="related-action-results" aria-label={moteText('相关行动与结果')}>
   <h3>{moteText('相关行动与结果')}</h3>
   <button className="button subtle" onClick={read.refresh}>{moteText('重新读取')}</button>

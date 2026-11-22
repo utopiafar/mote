@@ -14,10 +14,10 @@ const PAGE_SIZE = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function captureDayRange(day: string): { after: string; before: string } {
-  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(moteText("请选择有效日期"));
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(moteText("选择有效日期"));
   const [year, month, date] = day.split('-').map(Number);
   const start = new Date(year, month - 1, date);
-  if (year < 2000 || year > 2100 || start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== date) throw new Error(moteText("请选择有效日期"));
+  if (year < 2000 || year > 2100 || start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== date) throw new Error(moteText("选择有效日期"));
   const end = new Date(year, month - 1, date + 1);
   return { after: start.toISOString(), before: end.toISOString() };
 }
@@ -39,7 +39,7 @@ async function request(config: Config, path: string,authorize:()=>void=()=>{}): 
   try{authorize();}catch(error){await response.body?.cancel().catch(()=>{});throw error;}if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 404) throw new Error(moteText("记录不存在，或中央需要升级才能浏览采集记录"));
-    if (response.status === 401 || response.status === 403) throw new Error(moteText("无法访问采集记录，请检查中央连接权限"));
+    if (response.status === 401 || response.status === 403) throw new Error(moteText("采集记录不可访问。检查中央连接权限。"));
     throw new Error(moteText("中央返回 HTTP {0}。稍后重试", response.status));
   }
   return response;
@@ -81,7 +81,7 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
       return {items:[],sessions:page.slice(0,PAGE_SIZE),sessionCount:sessions.length,totalCount:samples.length,nextCursor:page.length>PAGE_SIZE&&last?Buffer.from(JSON.stringify({at:last.firstAt,id:last.id})).toString('base64url'):undefined};
     }
     const selected = sessions.find(s=>s.id===input.sessionId);
-    if (!selected) throw new Error(moteText("Session 已变化或被清理，请返回并刷新分组"));
+    if (!selected) throw new Error(moteText("采集时段已变化。返回并刷新分组。"));
     // The first/last IDs disambiguate switches sharing the same millisecond.
     const ordered = samples.filter(s=>s.deviceId===selected.deviceId).sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||a.id.localeCompare(b.id));
     const members=ordered.slice(ordered.findIndex(s=>s.id===selected.id),ordered.findIndex(s=>s.id===selected.id)+selected.count).reverse();
@@ -103,7 +103,7 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
 export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string,authorize:()=>void=()=>{}): Promise<BrowserDetail> {
   location(source); validId(id);
   if (source === 'local') {
-    const record = queue.recordForBrowser(id); if (!record) throw new Error(moteText("该记录已完成同步，请切换到中央已归档查看"));
+    const record = queue.recordForBrowser(id); if (!record) throw new Error(moteText("该记录已完成同步，切换到中央已归档查看"));
     if(record.localContentRelease){requireOrigin(record,config);const value=await remoteDetail(config,id,authorize);authorize();return {...preview({...value,hasImage:Boolean(value.imageMime)}),localContentRelease:record.localContentRelease,ocrText:String(value.ocrText??'').slice(0,100000),deviceName:record.event.deviceName};}
     return { ...preview(record.event, record), ocrText: record.event.ocrText ?? '', deviceName: record.event.deviceName };
   }
@@ -118,7 +118,7 @@ export async function captureImage(queue: DurableQueue, config: Config, source: 
   current();if(local?.localContentRelease)requireOrigin(local,config);
   if(source==='local'&&!local?.localContentRelease)bytes=await queue.imageForBrowser(id);
   else { await remoteDetail(config,id,authorize); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`,authorize), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES,current); }
-  if (!bytes) throw new Error(moteText("图片已同步，请切换到中央已归档查看"));
+  if (!bytes) throw new Error(moteText("图片已同步，切换到中央已归档查看"));
   current();const result=await previewWork.run<string>({ kind: 'preview', bytes, thumbnail });current();return result;
 }
 

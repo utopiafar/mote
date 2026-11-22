@@ -21,7 +21,7 @@ export function FileRetentionSettings({api,source}:{api:Api;source:SourceConnect
   try{
    const result=await api.request<SourceConnection>('/api/sources/'+encodeURIComponent(source.id),{method:'PATCH',body:JSON.stringify({retention}),signal:controller.signal});
    if(controller.signal.aborted||request.current!==controller)return;
-   if(result.id!==source.id||result.retention!==retention)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+   if(result.id!==source.id||result.retention!==retention)throw Error(moteText('中央响应格式无效，刷新后重试。'));
    setDraft(undefined);resources(api).invalidate(key=>/^\/api\/(sources|source-items|files|capture-browser|materials|library)([/?]|$)/.test(key));
   }catch(error){if(!controller.signal.aborted&&request.current===controller)setError(errorMessage(error));}
   finally{if(request.current===controller){request.current=null;setBusy(false);}}
@@ -29,7 +29,7 @@ export function FileRetentionSettings({api,source}:{api:Api;source:SourceConnect
  return <form className="file-retention-settings" onSubmit={event=>{event.preventDefault();void save();}}>
   <label>{moteText('保存方式')}<select value={retention} disabled={busy||!available} onChange={event=>setDraft({api,sourceId:source.id,retention:event.target.value as SourceConnection['retention']})}><option value="archive">{fileRetentionLabel('archive')}</option><optgroup label={moteText('高级选项')}>{(['snapshot','reference'] as const).map(mode=><option key={mode} value={mode}>{fileRetentionLabel(mode)}</option>)}</optgroup></select></label>
   <FileRetentionNote/>
-  <p className="fine-print">{moteText('保存方式只提交当前选择，不更改其他来源设置。已有文件的实际能力以文件状态为准。')}</p>
+  <p className="fine-print">{moteText('只更改此来源的保存方式。已有文件以实际状态为准。')}</p>
   <div className="source-toolbar"><button className="button" type="submit" disabled={busy||!available||retention===source.retention}>{moteText('保存设置')}</button>{draft?.api===api&&draft.sourceId===source.id&&<button className="button subtle" type="button" disabled={busy} onClick={()=>setDraft(undefined)}>{moteText('取消')}</button>}</div>
   {!available&&<p role="status">{moteText('当前支持情况暂无法确认')}</p>}{error&&<p role="alert">{error}</p>}
  </form>;

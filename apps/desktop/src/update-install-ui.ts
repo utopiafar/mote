@@ -5,7 +5,7 @@ const readyKey=(value:UpdateStatus|undefined)=>value?.state==='ready'&&value.can
 export function createUpdateInstallUi(root:Document,options:{status():Promise<UpdateStatus>;allowed():boolean;install():Promise<unknown>;failed(error:unknown):void}){
  const dialog=root.createElement('dialog');dialog.id='update-install-dialog';dialog.setAttribute('aria-labelledby','update-install-title');
  const title=root.createElement('h2');title.id='update-install-title';title.textContent=moteText('安装并重启');
- const text=root.createElement('p');text.className='spaced';text.textContent=moteText('先结束当前输入。安装时停止本机采集与上传，保留已有资料。');
+ const text=root.createElement('p');text.className='spaced';text.textContent=moteText('先结束输入。安装时暂停采集和上传，资料保留。');
  const actions=root.createElement('div');actions.className='actions spaced';
  const cancel=root.createElement('button');cancel.type='button';cancel.className='secondary';cancel.id='update-install-cancel';cancel.textContent=moteText('取消');
  const confirm=root.createElement('button');confirm.type='button';confirm.className='primary';confirm.id='update-install-confirm';confirm.textContent=moteText('继续安装');

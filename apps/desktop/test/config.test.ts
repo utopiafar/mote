@@ -43,7 +43,7 @@ describe('configuration security', () => {
   it('never reuses a token or moves queued notes/screens to a different central origin during configure', () => {
     const current = { ...defaultConfig(), token: 'old-node-only-token' };
     expect(() => updateConfig(current, { ...current, serverUrl: 'http://127.0.0.1:47999', token: undefined })).toThrow('新节点令牌');
-    expect(() => updateConfig(current, { ...current, serverUrl: 'http://127.0.0.1:47999', token: 'explicit-new-node-token' }, 1)).toThrow('待上传记录');
+    expect(() => updateConfig(current, { ...current, serverUrl: 'http://127.0.0.1:47999', token: 'explicit-new-node-token' }, 1)).toThrow('待传记录');
     expect(updateConfig(current, { ...current, serverUrl: 'http://127.0.0.1:47999', token: 'explicit-new-node-token' }, 0).token).toBe('explicit-new-node-token');
     expect(updateConfig(current, { ...current, token: undefined }, 2).token).toBe(current.token);
   });

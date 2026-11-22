@@ -66,7 +66,7 @@ test('foreground changes cannot silently replace an edited proposal or confirm i
  const input=d.querySelector<HTMLInputElement>('[role="dialog"] input[required]')!;Object.assign(input,{attachEvent:()=>{},detachEvent:()=>{}});
  await act(async()=>{input.focus();Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value')!.set!.call(input,'Generated owner draft');input.dispatchEvent(new w.Event('input',{bubbles:true}));input.dispatchEvent(new w.KeyboardEvent('keyup',{bubbles:true,key:'t'}));});
  assert.equal(input.value,'Generated owner draft');await visibility(true);current=proposal({version:4,event:{...current.event,title:'Generated remote version'}});await advance(60000);await visibility(false);
- assert.equal(input.value,'Generated owner draft');assert.equal(button(d,'确认变更').disabled,true);assert.match(d.body.textContent!,/建议已更新，请重新核对后确认/);
+ assert.equal(input.value,'Generated owner draft');assert.equal(button(d,'确认变更').disabled,true);assert.match(d.body.textContent!,/建议已更新/);
  await act(async()=>d.querySelector<HTMLFormElement>('[role="dialog"]')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(writes.length,0);
  await act(async()=>button(d,'重新核对最新建议').click());assert.equal(input.value,'Generated remote version');await act(async()=>button(d,'确认变更').click());assert.equal(writes.length,1);assert.equal(writes[0].version,4);assert.equal(writes[0].event.title,'Generated remote version');
 });

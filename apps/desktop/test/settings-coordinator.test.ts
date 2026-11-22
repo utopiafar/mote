@@ -83,7 +83,7 @@ it('preserves both real queue copies and enters recovery when config rename comm
     const save = f.store.save.bind(f.store);
     vi.spyOn(f.store, 'save').mockImplementationOnce(async config => { await save(config); throw Error('Generated failure after durable config rename'); });
     await expect(f.coordinator.paused(() => f.coordinator.apply(updated))).rejects.toThrow('恢复');
-    expect((await f.store.load()).captureStorageDirectory).toBe(target); expect(f.recovery()).toContain('恢复'); expect(f.recovery()).toContain('新旧副本均已保留');
+    expect((await f.store.load()).captureStorageDirectory).toBe(target); expect(f.recovery()).toContain('恢复'); expect(f.recovery()).toContain('新旧副本保留');
     expect((await stat(source)).isDirectory()).toBe(true); expect((await stat(target)).isDirectory()).toBe(true);
     expect(await f.queue.exportArchive()).toEqual(archive); expect(f.notes.hasPrepared()).toBe(true);
     expect(f.collector.status().state).toBe('error'); expect(f.dependencies.clearStorageSelection).not.toHaveBeenCalled();
@@ -99,7 +99,7 @@ it('keeps exact pending source bodies, capture identity and prepared note throug
     expect(f.queue.binding.matches(updated)).toBe(true); expect(f.sources.nodeBinding.matches(updated)).toBe(true);
     expect(f.sources.pendingContent()).toEqual(pending); expect(f.queue.recordForHistory(capture.id)?.event).toEqual(capture);
     expect(f.queue.recordForHistory(capture.id)?.nextAttemptAt).toBe(0); expect(f.notes.get()).toMatchObject({ ...draft, prepared: true });
-    await expect(f.coordinator.connectionChange(() => f.coordinator.commitConnection({ ...updated, serverUrl: 'https://other.invalid' }))).rejects.toThrow('不能更换');
+    await expect(f.coordinator.connectionChange(() => f.coordinator.commitConnection({ ...updated, serverUrl: 'https://other.invalid' }))).rejects.toThrow('待传');
     expect(f.settings()).toBe(updated); expect(await f.store.load()).toEqual(updated);
     // A newly created note window/store sees the same durable prepared draft, then finishes it once.
     const reopened = new NoteDraftStore(join(f.profile, 'notes')); await reopened.initialize();
@@ -166,7 +166,7 @@ it('confirms an invitation through the actual onboarding consumer and settings t
     expect(f.settings().token).toBe(token); expect((await f.store.load()).deviceName).toBe('Generated renamed Mac');
     expect(f.queue.binding.matches(f.settings())).toBe(true); expect(f.sources.nodeBinding.matches(f.settings())).toBe(true);
     expect(f.sources.pendingContent()).toEqual(pending); expect(f.notes.get()).toMatchObject({ ...draft, prepared: true }); expect(entry.status().state).toBe('connected');
-    await expect(entry.controller.confirm(preview.id, preview.serverUrl, 'Generated repeated click')).rejects.toThrow('确认');
+    await expect(entry.controller.confirm(preview.id, preview.serverUrl, 'Generated repeated click')).rejects.toThrow('预览邀请');
     expect(fetcher).toHaveBeenCalledTimes(2); expect(f.settings().deviceName).toBe('Generated renamed Mac');
   } finally { await f.close(); }
 });
@@ -177,7 +177,7 @@ it('leaves the saved connection untouched after invitation identity mismatch or 
     const previous = f.settings(), entry = connectionEntry(f), preview = entry.preview();
     const fetcher = vi.fn(async (url: string) => Response.json(url.endsWith('/redeem') ? { serverUrl: preview.serverUrl, token: 'generated-rejected-owner-token-123456789', credentialId: 'generated-granted-credential', scope: 'owner' } : entry.identity('generated-other-credential')));
     vi.stubGlobal('fetch', fetcher);
-    await expect(entry.controller.confirm(preview.id, preview.serverUrl, 'Generated failed name')).rejects.toThrow('身份确认不一致');
+    await expect(entry.controller.confirm(preview.id, preview.serverUrl, 'Generated failed name')).rejects.toThrow('中央身份不匹配');
     expect(f.settings()).toBe(previous); expect(await f.store.load()).toEqual(previous); expect(f.queue.binding.matches(previous)).toBe(true);
     entry.dependencies.secretStorageAvailable = () => false;
     const next = entry.preview();

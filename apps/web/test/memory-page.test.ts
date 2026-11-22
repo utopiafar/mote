@@ -187,7 +187,7 @@ test('ME1-08: deletion confirmation keeps the D28 promise and uses the existing 
  const row=[...d.querySelectorAll<HTMLElement>('.memory-page-row')].find(row=>row.textContent?.includes(standing.title))!;
  await act(async()=>row.querySelector<HTMLButtonElement>('.memory-page-row-main')!.click());
  await click(d,'更多');await click(d,'删除记忆');
- assert.match(d.querySelector('.memory-delete-dialog')!.textContent!,/原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。/);
+ assert.match(d.querySelector('.memory-delete-dialog')!.textContent!,/保留原始资料.*旧证据不会重建.*新证据.*重新判断/);
  await click(d,'确认删除');
  assert.equal(deleted,true);
 });

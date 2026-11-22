@@ -12,7 +12,7 @@ export function resolveProfile(argv: readonly string[], env: NodeJS.ProcessEnv, 
   const selected: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--profile') {
-      if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(moteText("请为 --profile 指定环境短名"));
+      if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(moteText("为 --profile 指定环境短名"));
       selected.push(argv[++i]);
     } else if (argv[i].startsWith('--profile=')) selected.push(argv[i].slice('--profile='.length));
   }
@@ -32,7 +32,7 @@ export function profileDefaults(profile: DesktopProfile, env: NodeJS.ProcessEnv,
   config.serverUrl = validateServerUrl((sameProfile && env.MOTE_URL) || profile.defaultServerUrl);
   const origin = new URL(config.serverUrl);
   if (!profile.defaultProfile && profile.name !== 'prod' && isLoopback(origin.hostname) && origin.port === '47832') {
-    throw new Error(moteText("开发或测试环境不能自动连接日常节点 47832；请使用独立节点，或在应用设置中明确配置"));
+    throw new Error(moteText("开发或测试环境需指定独立中央。"));
   }
   // A command-line profile override must not inherit the previous profile's credentials.
   config.token = sameProfile && env.MOTE_URL && env.MOTE_TOKEN ? env.MOTE_TOKEN : undefined;

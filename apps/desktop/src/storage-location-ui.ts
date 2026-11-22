@@ -9,5 +9,5 @@ export function renderStorageLocation(root:Document,status:Status|undefined,draf
   id('storage-location-count').textContent=moteText('待同步 {0} 条',status?.queueDepth??0);
   id('storage-restart').hidden=!recovery;
   (id('capture-directory') as HTMLInputElement).value=selected||moteText('默认位置（当前环境目录）');
-  id('capture-directory-state').textContent=recovery|| (status?.storage?.cleanupPending?moteText('新目录已生效；旧副本尚未清理，请连接原磁盘后重新打开 Mote。'):draftDirectory!==(status?.config.captureStorageDirectory||'')?moteText('保存设置后迁移本机已有记录，过程中会自动暂停并恢复。'):moteText('本机采集内容长期保留，上传确认后不自动删除。'));
+  id('capture-directory-state').textContent=recovery|| (status?.storage?.cleanupPending?moteText('新目录生效，旧副本待清理。连接原磁盘后重开。'):draftDirectory!==(status?.config.captureStorageDirectory||'')?moteText('保存设置后迁移本机已有记录，过程中会自动暂停并恢复。'):moteText('本机采集内容长期保留，上传确认后不自动删除。'));
 }

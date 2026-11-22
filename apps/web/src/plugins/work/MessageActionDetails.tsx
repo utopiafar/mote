@@ -15,8 +15,8 @@ export function MessageActionDetails({action,targetName,busy,onConfirm,onDismiss
   <p>{targetName}</p>
   {action.message&&<><strong>{action.message.conversationName??action.message.conversationId}</strong><p>{action.message.conversationId}</p>
    <p style={{whiteSpace:'pre-wrap'}}>{action.message.text}</p></>}
-  {action.status==='uncertain'&&<p className="notice">{moteText('请刷新检查结果，避免重复发送。')}</p>}
-  {action.status==='stale'&&<p className="notice">{moteText('这份建议暂不能确认，请查看当前原文。')}</p>}
+  {action.status==='uncertain'&&<p className="notice">{moteText('先刷新结果，避免重复发送。')}</p>}
+  {action.status==='stale'&&<p className="notice">{moteText('建议暂不可确认。查看原文。')}</p>}
   {action.status==='succeeded'&&<p>{moteText('已收到执行回执。')}</p>}
   {action.status==='proposed'&&action.message&&<div className="action-final-buttons">
    <button className="button primary" disabled={busy} onClick={onConfirm}>{moteText('确认')} · {moteText('发送')}</button>

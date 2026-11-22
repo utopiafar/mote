@@ -37,13 +37,13 @@ export function Vault({ api, status, refresh, disconnect, embedded = false, chil
             const archive = JSON.parse(raw);
             const sections = ['captures', 'sources', 'sourceHeads', 'sourceVersions', 'memories', 'memoryDeletions', 'files', 'captureFiles', 'perceptionResults', 'todos'];
             if (!archive || archive.version !== 2 || !sections.every(key => Array.isArray(archive[key])))
-                throw new Error(moteText("请选择 Mote v2 JSON 归档文件。"));
+                throw new Error(moteText("选择 Mote v2 JSON 归档文件。"));
             const result = await api.request<{
                 imported: number;
                 duplicates: number;
             }>("/api/import", { method: "POST", body: raw });
             if(!Number.isSafeInteger(result.imported)||result.imported<0||!Number.isSafeInteger(result.duplicates)||result.duplicates<0)
-                throw new ApiError(moteText('中央响应格式无效，请刷新后重试。'),200,undefined,'invalid_response');
+                throw new ApiError(moteText('中央响应格式无效，刷新后重试。'),200,undefined,'invalid_response');
             return moteText("已导入 {0} 条记录，跳过 {1} 条重复记录。", result.imported, result.duplicates);
         });
         if (canClear()&&input.current)
@@ -62,7 +62,7 @@ export function Vault({ api, status, refresh, disconnect, embedded = false, chil
       <section className="owner-section transfer-panel"><h2>{moteText('备份与迁移')}</h2>
         <div className="owner-row"><div><h3>{moteText('导出资料')}</h3><p>{moteText('记录、影像和校验信息')}</p></div><button className="button" disabled={!!busy} onClick={()=>void action('export',current=>exportArchive(current))}>{busy==='export'?<LoaderCircle size={16} className="spin"/>:moteText('导出')}</button></div>
         <div className="owner-row"><div><h3>{moteText('导入 Mote 归档')}</h3><p>{moteText('合并记录，跳过重复内容')}</p></div><button className="button" disabled={!!busy} onClick={()=>input.current?.click()}>{busy==='import'?<LoaderCircle size={16} className="spin"/>:moteText('选择归档')}</button><input ref={input} className="hidden" type="file" accept="application/json,.json" aria-label={moteText('导入 Mote 归档')} onChange={event=>void importFile(event.target.files?.[0])}/></div>
-        <details className="owner-disclosure"><summary><ChevronRight className="disclosure-icon" size={14} aria-hidden="true"/>{moteText('大资料库与完整运行备份')}</summary><p className="fine-print">{moteText('网页导出受中央归档大小限制。需要完整备份或迁移加密数据时，在中央运行：')}</p><code>npm run backup -- --help</code><div className="diagnostics-actions"><button className="button" disabled={!!busy} onClick={()=>void action('export',current=>exportArchive(current,'metadata'))}>{moteText('导出元数据')}</button><button className="button" disabled={!!busy} onClick={()=>void action('export',current=>exportArchive(current,'data'))}>{moteText('导出资料与附件')}</button></div></details>
+        <details className="owner-disclosure"><summary><ChevronRight className="disclosure-icon" size={14} aria-hidden="true"/>{moteText('大资料库与完整运行备份')}</summary><p className="fine-print">{moteText('网页导出有大小限制。完整备份或加密迁移需在中央执行。')}</p><code>npm run backup -- --help</code><div className="diagnostics-actions"><button className="button" disabled={!!busy} onClick={()=>void action('export',current=>exportArchive(current,'metadata'))}>{moteText('导出元数据')}</button><button className="button" disabled={!!busy} onClick={()=>void action('export',current=>exportArchive(current,'data'))}>{moteText('导出资料与附件')}</button></div></details>
       </section>
       {children}
       <details className="owner-disclosure"><summary><ChevronRight className="disclosure-icon" size={14} aria-hidden="true"/>{moteText('存储空间明细')}</summary>

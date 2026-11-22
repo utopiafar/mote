@@ -18,7 +18,7 @@ export const processingServiceSchema=z.object({
 }).strict().superRefine((s,c)=>{
   try{const u=new URL(s.endpoint),local=['127.0.0.1','localhost','[::1]'].includes(u.hostname);
     if(u.username||u.password||u.hash||u.search||!['http:','https:'].includes(u.protocol)||(s.execution==='local'?!local:u.protocol!=='https:'))throw Error();
-  }catch{c.addIssue({code:'custom',message:moteText("本地服务必须使用回环地址，远程服务必须使用 HTTPS，地址不可包含凭据或查询参数")});}
+  }catch{c.addIssue({code:'custom',message:moteText("本地使用回环地址，远程使用 HTTPS。地址不得含凭据或查询参数。")});}
   if(s.kind==='model'&&!s.model.trim())c.addIssue({code:'custom',message:moteText("语言模型服务需要填写模型名称")});
 });
 export const processingProfileSchema=z.object({

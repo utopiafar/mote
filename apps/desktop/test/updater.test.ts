@@ -61,5 +61,5 @@ it('detects archive mutation during extraction even when the replacement bundle 
 
 it('an update access refusal does not claim GitHub is rate limiting or expose remote details',async()=>{
  const value=await updater(deps({check:async()=>{throw new ReleaseError('release_access_denied');}}));
- try{const status=await value.check();expect(status.state).toBe('error');expect(status.message).toContain('拒绝访问');expect(status.message).not.toContain('限流');expect(status.canInstall).toBe(false);}finally{await value.close();}
+ try{const status=await value.check();expect(status.state).toBe('error');expect(status.message).toContain('访问被拒绝');expect(status.message).not.toContain('限流');expect(status.canInstall).toBe(false);}finally{await value.close();}
 });

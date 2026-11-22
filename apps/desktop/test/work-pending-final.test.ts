@@ -18,6 +18,9 @@ it('keeps the exact row reader and both paging layers while making Central contr
  row.click();expect(open).toHaveBeenCalledWith(item);document.getElementById('work-receipts')!.click();expect(receipts).toHaveBeenCalledOnce();document.getElementById('work-pending-more')!.click();await flush();expect(api.localContent).toHaveBeenLastCalledWith(1,undefined,true);expect(document.querySelectorAll('#work-pending-list button')).toHaveLength(2);
 });
 it('keeps already readable rows on a page error, folds the exact diagnostic, and rejects an old owner reply',async()=>{
- ui.show();await flush();vi.mocked(api.localContent).mockRejectedValueOnce(Error('HTTP 503 Generated raw failure'));document.getElementById('work-pending-more')!.click();await flush();expect(document.querySelectorAll('#work-pending-list button')).toHaveLength(1);const state=document.getElementById('work-pending-state')!;expect(state.firstChild!.textContent).toBe('内容暂不可完整读取，请重试。');expect(state.querySelector<HTMLDetailsElement>('details')!.open).toBe(false);
+ ui.show();await flush();vi.mocked(api.localContent).mockRejectedValueOnce(Error('HTTP 503 Generated raw failure'));document.getElementById('work-pending-more')!.click();await flush();expect(document.querySelectorAll('#work-pending-list button')).toHaveLength(1);const state=document.getElementById('work-pending-state')!;const details=state.querySelector<HTMLDetailsElement>('details')!;
+ expect(state.firstChild!.textContent).toContain('暂不可完整读取');
+ expect(details.open).toBe(false);
+ expect(details.querySelector('pre')!.textContent).toBe('HTTP 503 Generated raw failure');
  let release!:(value:any)=>void;vi.mocked(api.localContent).mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));document.getElementById('work-refresh')!.click();await flush();ui.update(scope(2));release({items:[{...item,title:'OLD OWNER BODY'}],total:1});await flush();expect(document.getElementById('work-pending-list')!.textContent).not.toContain('OLD OWNER BODY');
 });

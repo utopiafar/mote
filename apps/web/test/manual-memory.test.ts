@@ -75,7 +75,7 @@ test('a legacy attribution task without published Material retains reviewed resu
  const render=(value:MemoryJob)=>act(async()=>root.render(React.createElement(MemoryProgress,{job:value,onAction:action=>actions.push(action),onOpen:()=>{},onView:()=>viewed++,onRetry:()=>retried++})));
  await render(blocked);
  assert.match(d.querySelector('.workflow-line strong')!.textContent!,/需要正式资料确认归属/);
- assert.match(d.querySelector('.notice')!.textContent!,/不能自动继续.*已审核结果保留.*取消未完成任务/);
+ assert.match(d.querySelector('.notice')!.textContent!,/无法自动继续.*保留已审核结果.*取消未完成任务/);
  assert.doesNotMatch(d.body.textContent!,/等待资料处理|就绪后会自动继续|已就绪的方案已继续处理|下次可运行时间/);
  await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='重新检查未完成方案')!.click());assert.equal(retried,1,'explicit manual recheck remains available');
  await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看记忆')!.click());
@@ -118,7 +118,7 @@ test('Memory deletion retains accurate external clearing status after the card d
  const other={...api,request:api.request.bind(api)} as Api;await render(other);
  assert.equal(d.querySelector('.notice[role=status]'),null,'a previous node receipt does not appear under a new connection');
  deleted=false;receipt={deleted:1,externalErase:'acknowledged',physicalEraseVerified:false};await render(api);await click(memory.title);await click('更多');await click('删除记忆');await click('确认删除');
- assert.match(d.querySelector('.notice[role=status]')!.textContent!,/已确认移除当前记录，物理擦除尚未核验/);
+ assert.match(d.querySelector('.notice[role=status]')!.textContent!,/外部确认移除.*物理擦除待核验/);
 });
 
 test('search remains available with filters collapsed and returning from a memory preserves the exact list and opener',async t=>{
@@ -186,7 +186,7 @@ test('proposed status filters the current server page and resets its previous cu
  await click('下一页');assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.get('cursor'),'generated-cursor');
  await click('筛选');await click('待重新处理');
  const selected=new URL('http://localhost'+paths.at(-1)).searchParams;assert.equal(selected.get('status'),'proposed');assert.equal(selected.has('cursor'),false);
- assert.equal(d.querySelector('.workspace-list-heading h2')?.textContent,'待重新处理');assert.match(d.body.textContent!,/当前筛选下没有匹配/);assert.equal(d.querySelector('#memory-search')!.closest('[hidden]'),null);
+ assert.equal(d.querySelector('.workspace-list-heading h2')?.textContent,'待重新处理');assert.match(d.body.textContent!,/无匹配记忆/);assert.equal(d.querySelector('#memory-search')!.closest('[hidden]'),null);
  await act(async()=>d.querySelector<HTMLButtonElement>('.memory-active-filters .memory-filter-chip')!.click());
  assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.has('status'),false);
 });

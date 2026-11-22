@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { imageFeatures, duplicateImage, type ImageDedupeMode } from '../src/image-dedupe';
 import { UploadMeter, meteredBody } from '../src/upload-meter';
 import { uploadCaptureBatch } from '../src/transport';
-import { AskClient } from '../src/ask';
+import {loginRequest,requireConnectionToken} from '../src/login-session';
 import { defaultConfig } from '../src/config';
 import { captureAck,event, image } from './fixtures';
 
@@ -49,11 +49,15 @@ it('keeps queued captures when a v2 batch route is unavailable', async () => {
   await expect(uploadCaptureBatch({...defaultConfig(), token:'fixture'}, [{event: capture}])).rejects.toMatchObject({httpStatus:404});
   expect(urls.map(url => new URL(url).pathname)).toEqual(['/api/captures/batch']);
 });
-it('uses the canonical node login including legacy paired credentials and stops after logout or expiry', async () => {
-  const client = new AskClient(), config = {...defaultConfig(), credentialScope:'owner' as const, token:'device'.repeat(8)};
-  const fetcher = vi.fn(async () => Response.json({items:[]})); vi.stubGlobal('fetch', fetcher);
-  await client.request(config, 'history');expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer '+config.token);
-  await expect(client.request(config, 'run', {id:'../configuration'})).rejects.toThrow('Invalid ID');
-  for(const closed of [{...config,authSignedOut:true},{...config,authExpiresAt:1},{...config,token:undefined}])await expect(client.request(closed,'history')).rejects.toThrow('登录');
+it('forwards the owner credential to Central only while the login is usable', async () => {
+  const config = {...defaultConfig(), credentialScope:'owner' as const, token:'generated-owner-token'};
+  const fetcher = vi.fn(async (_url: string, _init: RequestInit) => Response.json({code:'generated-ticket'}));
+  vi.stubGlobal('fetch',fetcher);
+  await loginRequest(config,'/api/login/ticket',{},requireConnectionToken(config));
+  expect(fetcher.mock.calls[0][0]).toBe(config.serverUrl+'/api/login/ticket');
+  expect(fetcher.mock.calls[0][1].headers).toMatchObject({Authorization:'Bearer '+config.token});
+  for(const closed of [{...config,authSignedOut:true},{...config,authExpiresAt:1},{...config,token:undefined}]){
+    expect(()=>requireConnectionToken(closed)).toThrow();
+  }
   expect(fetcher).toHaveBeenCalledTimes(1);
 });

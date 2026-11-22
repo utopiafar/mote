@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-background.cjs');
 const {app, BrowserWindow} = require('electron');
 const child = require('node:child_process');
 const {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} = require('node:fs');

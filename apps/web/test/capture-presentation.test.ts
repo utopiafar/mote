@@ -34,7 +34,7 @@ test('day filters use local midnight across both daylight-saving boundaries', ()
 test('deduplicated records explain that no image or OCR text was saved', () => {
   const display = ocrPresentation({status:'disabled'}, '', true);
   assert.equal(display.label, '图片去重 · 仅元数据');
-  assert.match(display.description, /未保存图片或 OCR 文本/);
+  assert.match(display.description, /只留应用、时间和采样元数据/);
   assert.doesNotMatch(display.description, /截图仍可查看/);
 });
 
@@ -42,7 +42,7 @@ test('imported file records keep their archived-original controls separate from 
   const imported = evidencePresentation({id:'import-record',source:'file',platform:'import',provenance:{sourceId:'import-source',externalId:'note-1',revision:'1',layer:'snapshot',deleted:false,document:{fileId:'archived-original',path:'export/note.md'}}});
   assert.equal(imported.nativeFile, undefined);
   assert.equal(imported.textLabel, '原始文本');
-  assert.match(imported.deleteDescription, /导入仍保留原始文件/);
+  assert.match(imported.deleteDescription, /导入保留原件/);
   assert.doesNotMatch(imported.deleteDescription, /删除中央文件归档/);
   const metadata = evidencePresentation({id:'device-file',source:'file',platform:'android',fileArchive:{captureId:'device-file'}});
   assert.deepEqual(metadata.nativeFile, {captureId:'device-file'});

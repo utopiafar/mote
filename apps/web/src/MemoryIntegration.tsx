@@ -56,7 +56,7 @@ export function MemoryIntegration({api,candidate,verificationPending=false,prese
         const latest=currentCandidate.current;
         if(!latest||!currentIntegrationCandidate(latest)||latest.id!==candidate.id||latest.version!==candidate.version||latest.fingerprint!==candidate.fingerprint||
            !currentIntegrationCandidate(fresh)||fresh.id!==candidate.id||fresh.version!==candidate.version||fresh.fingerprint!==candidate.fingerprint){
-          setError(moteText('所选记忆已变化，请刷新后重新选择。'));return;
+          setError(moteText('所选记忆已变化，刷新后重新选择。'));return;
         }
         const result=await api.request<{id:string}>('/api/memory-integrations',{method:'POST',body:JSON.stringify({recipe:{id:chosen.id,version:chosen.version},inputs:[{id:candidate.id,version:candidate.version!,fingerprint:candidate.fingerprint!}]}),signal:controller.signal});
         if(controller.signal.aborted||activeApi.current!==api)return;
@@ -73,24 +73,24 @@ export function MemoryIntegration({api,candidate,verificationPending=false,prese
   return <section id="manual-memory-integration" className={'memory-integration '+(presentation==='workspace'?'memory-integration-workspace':'panel panel-pad')}>
     {presentation!=='workspace'&&<h2>{moteText('整理所选记忆')}</h2>}
     <div hidden={presentation==='workspace'&&Boolean(manual&&activeRun||completed)}>
-    {eligible?<>{presentation!=='workspace'&&<p>{moteText('从当前精选记忆开始，模型会按需检索你仍可读取的相关资料和原文；结果可能为空，也可能产生经独立审核的新记忆。')}</p>}
+    {eligible?<>{presentation!=='workspace'&&<p>{moteText('从当前精选记忆出发，按需查找可读资料和原文。结果可能为空，新记忆须独立审核。')}</p>}
     {presentation==='workspace'?<div className="memory-work-scope-notice"><strong>{candidate!.title}</strong><p>{moteText('从这条当前记忆继续整理。')}</p></div>:<p><strong>{candidate!.title}</strong> · {moteText('仅选择此卡作为整合起点')}</p>}
     <details className="run-details memory-processing-options"><summary>{moteText('处理选项')}</summary>
-    {presentation==='workspace'&&<p>{moteText('仅选择此卡作为整合起点')} · {moteText('从当前精选记忆开始，模型会按需检索你仍可读取的相关资料和原文；结果可能为空，也可能产生经独立审核的新记忆。')}</p>}
+    {presentation==='workspace'&&<p>{moteText('仅选择此卡作为整合起点')} · {moteText('从当前精选记忆出发，按需查找可读资料和原文。结果可能为空，新记忆须独立审核。')}</p>}
     <label>{moteText('整理方案')}<select aria-label={moteText('整理方案')} value={chosen?chosen.id+'@'+chosen.version:''} disabled={busy||!!activeRun&&state?.status!=='cancelled'} onChange={event=>setRecipeKey(event.target.value)}>{available.length?available.map(item=><option key={item.id+'@'+item.version} value={item.id+'@'+item.version}>{recipeLabel(item)} · {moteText('版本 {0}',item.version)}</option>):<option value="">{moteText('没有可用的整理方案')}</option>}</select><span className="memory-integration-selection" aria-hidden="true">{chosen?<>{recipeLabel(chosen)} · {moteText('版本 {0}',chosen.version)}</>:moteText('没有可用的整理方案')}</span></label>
     <p>{moteText('使用 Memory 功能默认模型：{0}',configured?(profile!.name+' · '+model):moteText('未配置'))}{' · '}{timeout===null?moteText('未设 Agent 总时限'):typeof timeout==='number'?moteText('Agent 总时限 {0} 秒',Math.round(timeout/1000)):moteText('时限未提供')}</p>
     <p className="muted">{moteText('单次最多 {0} 条；自动整理当前{1}。手动运行不会开启自动整理。',limit??'—',lifecycle.data?.settings?.consolidation?.enabled?moteText('已开启'):moteText('已关闭'))}</p>
     {presentation==='workspace'&&<a className="text-button" href="#/system/models">{moteText('前往模型与服务配置')}</a>}
     </details>
-    {presentation!=='workspace'&&<a className="button subtle" href="#/system/models">{moteText('前往模型与服务配置')}</a>}</>:<p className="muted">{moteText('请先选择一条当前有效的精选记忆。')}</p>}
+    {presentation!=='workspace'&&<a className="button subtle" href="#/system/models">{moteText('前往模型与服务配置')}</a>}</>:<p className="muted">{moteText('先选择一条当前有效的精选记忆。')}</p>}
     {eligible&&!configured&&!models.loading&&<p role="status">{moteText('先配置 Memory 功能默认模型，再开始手动整理。')}</p>}
     {eligible&&<div className="memory-actions"><button className="button primary" disabled={!canSubmit} onClick={()=>void act('start')}>{busy?moteText('正在提交…'):presentation==='workspace'?moteText('开始整理'):moteText('整理这条记忆')}</button></div>}
     </div>
     {(lifecycle.error||recipes.error||models.error||error)&&<p role="alert" className="notice error">{error||errorMessage(lifecycle.error||recipes.error||models.error)}</p>}
     {activeRun&&manual&&<div className="review-notes" role="status"><p>{local?moteText('本次所选：{0}',local.title):moteText('手动整理任务；当前卡片不是其已确认的输入。')}{' · '}{statusLabels[state!.status]??state!.status}{' · '}{moteText('{0} 条输入',activeRun.items)}</p>{state?.status!=='cancelled'&&state?.error&&<p>{state.error}</p>}{state?.retryAt&&state.status==='retry_wait'&&<p>{moteText('预计重试时间：{0}',dateTime(new Date(state.retryAt).toISOString()))}</p>}<div className="memory-actions">{state?.status!=='cancelled'&&<button className="button subtle" disabled={busy} onClick={()=>void act('cancel')}>{moteText('取消整理')}</button>}{['failed','cancelled'].includes(state?.status??'')&&<button className="button subtle" disabled={busy} onClick={()=>void act('retry')}>{moteText('显式重试整理')}</button>}</div></div>}
-    {activeRun&&!manual&&state?.status!=='cancelled'&&<p className="muted" role="status">{moteText('自动整理窗口正在运行；请等待它结束后再提交手动整理。')}</p>}
+    {activeRun&&!manual&&state?.status!=='cancelled'&&<p className="muted" role="status">{moteText('自动整理窗口正在运行。等待它结束后再提交手动整理。')}</p>}
     {presentation==='workspace'&&!eligible&&!manual&&!completed&&state?.lastRun&&<details><summary>{moteText('查看最近的处理')}</summary><p>{moteText('已完成')} · {dateTime(new Date(state.lastRun.completedAt).toISOString())}</p><code>{state.lastRun.id}</code></details>}
     {presentation==='workspace'&&(manual||completed)&&<details className="memory-work-scope-details"><summary>{moteText('本次范围')}</summary><p>{local?.title||(completed?run?.title:undefined)||moteText('手动整理任务；当前卡片不是其已确认的输入。')}</p></details>}
-    {completed&&<p role="status">{moteText('本次手动整理已完成；请刷新记忆列表查看结果，零条新记忆也是有效结果。')}</p>}
+    {completed&&<p role="status">{moteText('手动整理已完成。零条新记忆也是有效结果。刷新列表查看。')}</p>}
   </section>;
 }

@@ -25,7 +25,7 @@ export function MemoryWorkChoices({api,kind,deviceId,disabled,onMaterial,onMemor
  const materialItems=kind==='extract'?(data as OwnerBrowsePage|undefined)?.items:undefined;
  const reset=()=>{const first=new URLSearchParams(params);first.delete('cursor');const resource=resources(api).get((kind==='extract'?'/api/library/browse?':'/api/memories?')+first);setDiscarded(resource.getSnapshot().data);setPaging({api,identity,cursors:[undefined]});resource.refresh();};
  return <section className="memory-work-choices"><h2>{kind==='extract'?moteText('选择资料'):moteText('选择当前有效的记忆')}</h2>
- {page.error!==undefined&&<div role="alert"><p>{stale?moteText('分页内容已变化或游标无效，请返回第一页重新读取。'):errorMessage(page.error)}</p><button className="text-button" onClick={stale?reset:page.refresh}>{moteText('重新读取')}</button></div>}
+ {page.error!==undefined&&<div role="alert"><p>{stale?moteText('分页内容已变化或游标无效，返回第一页重新读取。'):errorMessage(page.error)}</p><button className="text-button" onClick={stale?reset:page.refresh}>{moteText('重新读取')}</button></div>}
  {page.loading&&!data&&<Loading/>}
  {!page.loading&&!page.error&&!items?.length&&!materialItems?.length&&<p>{kind==='extract'?moteText('本页没有可选资料。'):moteText('本页没有可选的有效记忆。')}</p>}
  <div className="memory-work-choice-list">{items?.map(memory=><button type="button" key={memory.id} disabled={disabled} onClick={()=>onMemory(memory)}><span><strong>{memory.title}</strong><small>{moteText('以这条记忆作为整理起点')}</small></span><span aria-hidden="true"><ChevronRight size={14} aria-hidden="true"/></span></button>)}

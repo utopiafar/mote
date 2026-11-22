@@ -66,7 +66,7 @@ test('refresh preserves edited prose and CAS version; conflicts retain the draft
  await edit(d,w,'Generated local draft');value=snapshot(sourceId,2,'Generated other page');
  await act(async()=>{await draft.refresh();});assert.equal(d.querySelector('textarea')?.value,'Generated local draft');assert.equal(draft.version,1);
  await act(async()=>{await assert.rejects(draft.save(),/Generated version changed/);});
- assert.deepEqual(writes,[{expectedVersion:1,description:'Generated local draft'}]);assert.equal(reads,2,'CAS failure does not silently obtain a new expected version');assert.equal(draft.dirty,true);assert.equal(draft.saved,false);assert.match(d.querySelector('[role=alert]')!.textContent!,/草稿已保留/);
+ assert.deepEqual(writes,[{expectedVersion:1,description:'Generated local draft'}]);assert.equal(reads,2,'CAS failure does not silently obtain a new expected version');assert.equal(draft.dirty,true);assert.equal(draft.saved,false);assert.match(d.querySelector('[role=alert]')!.textContent!,/草稿保留/);
  await act(async()=>button(d,'放弃修改并重新加载').click());assert.equal(d.querySelector('textarea')?.value,'Generated other page');assert.equal(draft.version,2);assert.equal(draft.error,'');assert.equal(draft.dirty,false);
  await edit(d,w,'Generated reconciled draft');await act(async()=>{await draft.save();});assert.deepEqual(writes[1],{expectedVersion:2,description:'Generated reconciled draft'});assert.equal(draft.saved,true);
 });

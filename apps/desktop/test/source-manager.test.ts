@@ -110,7 +110,7 @@ it('shows a degraded file root without claiming the scan completed', async () =>
   await app.sync(true);
   const row = app.status().find(value => value.source.id === id)!;
   expect(row.scanComplete).toBe(false); expect(row.degraded).toBe('root_unavailable'); expect(row.state).toBe('error');
-  expect(row.message).toContain('来源根不可用或已变化'); expect(row.message).toContain('未判断删除');
+  expect(row.message).toContain('来源目录不可用'); expect(row.message).toContain('暂停判断删除');
 });
 
 it('connects the discovered Kimi Code home and queues its main conversation',async()=>{

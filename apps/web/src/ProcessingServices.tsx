@@ -25,14 +25,14 @@ export function ProcessingServices({api,onDetailChange,onProcessing,initialServi
  useEffect(()=>{
   if(!initialServiceId||!view||withdrawn||busy||request.current||selectedIntent.current?.owner===api&&selectedIntent.current.id===initialServiceId&&selectedIntent.current.sequence===selectionSequence)return;
   const service=view.policy.services.find(value=>value.id===initialServiceId);selectedIntent.current={owner:api,id:initialServiceId,sequence:selectionSequence};
-  if(service)open(service);else {setWorkspace(value=>({...value,selected:null}));setNotice('');setDeleting(false);setError(moteText('所选服务已不可用，请返回后重新选择。'));}
+  if(service)open(service);else {setWorkspace(value=>({...value,selected:null}));setNotice('');setDeleting(false);setError(moteText('所选服务已不可用，返回后重新选择。'));}
  },[api,initialServiceId,selectionSequence,view,withdrawn,busy]);
  function open(value:PublicProcessingService){if(!view||busy)return;setWorkspace(current=>({api,selected:value.id,drafts:{...current.drafts,[value.id]:current.drafts[value.id]?.changed?current.drafts[value.id]:draftFor(view,value)}}));setError('');setNotice('');setDeleting(false);}
  function change(patch:Partial<PublicProcessingService>,extra:Partial<Draft>={}){if(!selected||!draft)return;setWorkspace(current=>({...current,drafts:{...current.drafts,[selected]:{...draft,value:{...draft.value,...patch},...extra,changed:true}}}));setError('');setNotice('');setDeleting(false);}
  async function save(remove=false){
   if(!draft||!selected||request.current)return;
   if(remove&&uses(selected).length)return;
-  if(draft.keyAction==='replace'&&!draft.key.trim()){setError(moteText('请填写新的服务密钥。'));return;}
+  if(draft.keyAction==='replace'&&!draft.key.trim()){setError(moteText('填写新的服务密钥。'));return;}
   const controller=new AbortController();request.current=controller;const current=()=>active.current===api&&request.current===controller&&!controller.signal.aborted;
   const value={...draft.value,apiKey:draft.keyAction==='replace'?draft.key:draft.keyAction==='clear'?null:undefined},policy=structuredClone(draft.base.policy);
   policy.services=policy.services.filter(service=>service.id!==selected);if(!remove)policy.services.push(value);

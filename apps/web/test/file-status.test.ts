@@ -104,7 +104,7 @@ test('file work handoff preserves the exact capture and guards existing drafts w
  w.location.hash='#/library?view=files';unsentDrafts.set(api,{question:'Generated unsent question',attachments:[]});w.confirm=()=>false;
  await act(async()=>button(d,'用于事项').click());assert.equal(w.location.hash,'#/library?view=files');
  w.confirm=()=>true;await act(async()=>button(d,'用于事项').click());
- const query=new URLSearchParams(w.location.hash.split('?')[1]);assert.equal(query.get('fromCapture'),id);assert.match(query.get('questionDraft')!,/可编辑的工作草稿/);
+ const query=new URLSearchParams(w.location.hash.split('?')[1]);assert.equal(query.get('fromCapture'),id);assert.match(query.get('questionDraft')!,/可编辑草稿/);
  assert.deepEqual(writes,[],'only the existing Ask draft is prepared; host-validated start remains a later owner operation');
  await act(async()=>root.render(React.createElement(FileDetail,{api,id,historical:true,onOpen:()=>{}})));
  assert.equal(button(d,'问文件').disabled,true);assert.equal(button(d,'用于事项').disabled,true);

@@ -137,7 +137,7 @@ test('the recording page discovers third-party providers from the connector regi
 });
 
 for(const [locale,code,expected] of [
- ['zh-CN','unsupported_format','厂商转写格式尚不支持'],
+ ['zh-CN','unsupported_format','转写格式不支持'],
  ['en','unsupported_format',"provider's transcript format is not supported"],
  ['zh-CN','generated_unknown_failure','generated_unknown_failure'],
  ['en','generated_unknown_failure','generated_unknown_failure'],

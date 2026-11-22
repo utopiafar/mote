@@ -74,13 +74,13 @@ function validReceipt(value:unknown,input:ConversationMessageInput):value is Con
  * the exact same bytes; a malformed positive response stays unconfirmed. */
 export async function admitConversationMessage(api:Api,input:ConversationMessageInput,signal:AbortSignal):Promise<ConversationMessage>{
   const body=JSON.stringify(input),accepted=await api.request<unknown>('/api/conversations/messages',{method:'POST',body,signal});
-  if(!validReceipt(accepted,input))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+  if(!validReceipt(accepted,input))throw Error(moteText('中央响应格式无效，刷新后重试。'));
   return accepted;
 }
 
 export async function readConversationMessage(api:Api,conversationId:string,id:string,signal:AbortSignal):Promise<ConversationMessage>{
   const value=await api.request<ConversationMessage>(`/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(id)}`,{signal});
-  if(!value||value.conversationId!==conversationId)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+  if(!value||value.conversationId!==conversationId)throw Error(moteText('中央响应格式无效，刷新后重试。'));
   return value;
 }
 

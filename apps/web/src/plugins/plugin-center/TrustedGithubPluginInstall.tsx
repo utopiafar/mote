@@ -66,7 +66,7 @@ export function TrustedGithubPluginInstall({api}:{api:Api}){
  }
  return <section className="plugin-advanced plugin-discovery trusted-github-plugin-install" aria-label={moteText('从 GitHub 添加其他可信插件')}>
   <h2>{moteText('从 GitHub 添加其他可信插件')}</h2>
-  <p>{moteText('读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。')}{' '}{moteText('官方目录在「自动记忆与插件」。')}</p>
+  <p>{moteText('预览兼容版本、能力与范围后安装。')}{' '}{moteText('官方目录在「自动记忆与插件」。')}</p>
   {!supported&&<p className="notice">{moteText('当前节点不支持在线安装。')}</p>}
   {error&&<p className="notice error" role="alert">{error}</p>}
   <form className="plugin-fields" onSubmit={event=>{event.preventDefault();void resolve();}}>
@@ -86,7 +86,7 @@ export function TrustedGithubPluginInstall({api}:{api:Api}){
    </dl>
    <ul className="plugin-capabilities">{preview.capabilities.map(item=><li key={item.id}><span>{item.id}</span><span className={'badge '+(item.state==='verified'?'green':'muted')}>{capabilityLabel(item.state)}</span>{item.reason&&<small>{blockerLabel(item.reason)}</small>}</li>)}</ul>
    {hasRequiresBuild(preview.capabilities.map(item=>item.reason??''))&&<p className="notice" role="status">{moteText('需要重新构建（requires-build）')}</p>}
-   <p className="notice">{moteText('可信插件代码拥有中央宿主权限；访问声明不是沙箱隔离。安装完成后仍需配置、启用与绑定。')}</p>
+   <p className="notice">{moteText('可信插件代码拥有中央宿主权限。访问声明无法提供沙箱隔离。安装后仍须配置、启用和绑定。')}</p>
    {preview.issues.map((issue,index)=><p className="notice" key={index}>{issue}</p>)}
    <div className="plugin-footer">
     <button className="button primary" disabled={busy||!preview.installable||!supported} onClick={()=>void install()}>{busy?moteText('正在安装…'):moteText('安装此版本')}</button>

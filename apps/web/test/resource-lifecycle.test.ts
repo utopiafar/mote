@@ -116,7 +116,7 @@ test('record timeline fences filters and late reads and withdraws revoked data b
  assert.equal(reads[1].signal.aborted,true);assert.doesNotMatch(d.body.textContent!,/Generated old scope/);assert.match(d.body.textContent!,/正在读取…/);
  await act(async()=>reads[1].reply.resolve(page('LATE OLD SCOPE')));assert.doesNotMatch(d.body.textContent!,/LATE OLD SCOPE/);
  await act(async()=>reads[2].reply.resolve(page('Generated selected scope')));await render(2);
- await act(async()=>reads[3].reply.reject(new ApiError('Generated permission revoked',403)));assert.doesNotMatch(d.body.textContent!,/Generated selected scope/);assert.match(d.querySelector('[role=alert]')!.textContent!,/请求被拒绝/);assert.match(d.querySelector('.library-time-failure details')!.textContent!,/Generated permission revoked/);
+ await act(async()=>reads[3].reply.reject(new ApiError('Generated permission revoked',403)));assert.doesNotMatch(d.body.textContent!,/Generated selected scope/);assert.match(d.querySelector('[role=alert]')!.textContent!,/访问被拒绝/);assert.match(d.querySelector('.library-time-failure details')!.textContent!,/Generated permission revoked/);
  await act(async()=>d.querySelector<HTMLButtonElement>('[aria-label="刷新记录"]')!.click());assert.doesNotMatch(d.body.textContent!,/Generated selected scope/);assert.match(d.body.textContent!,/正在读取…/);
  await act(async()=>reads[4].reply.resolve(page()));assert.ok(d.querySelector('.empty'));
 });

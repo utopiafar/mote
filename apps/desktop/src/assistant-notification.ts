@@ -13,7 +13,7 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export class AssistantNotificationError extends Error {
   constructor(message: string, readonly status?: number) { super(message); }
 }
-const invalid = () => new AssistantNotificationError(moteText('中央响应格式无效，请刷新后重试。'));
+const invalid = () => new AssistantNotificationError(moteText('中央响应格式无效，刷新后重试。'));
 const object = (value: unknown): Record<string, any> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
   return value as Record<string, any>;
@@ -99,7 +99,7 @@ export class AssistantNotificationReader {
     const response = await this.request(origin + path, { method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
       headers: { Authorization: 'Bearer ' + token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const raw = await readResponseText(response, 4 * 1024 * 1024);
-    if (this.settings() !== config || this.generation() !== generation || connectionToken(this.settings()) !== token) throw new AssistantNotificationError(moteText('登录会话已变更，请重新打开中央页面。'));
+    if (this.settings() !== config || this.generation() !== generation || connectionToken(this.settings()) !== token) throw new AssistantNotificationError(moteText('登录会话已变更，重新打开中央页面。'));
     let value: unknown;
     try { value = JSON.parse(raw); } catch { if (response.ok) throw invalid(); }
     if (!response.ok) throw new AssistantNotificationError(httpFailureMessage(response.status, responseFailureCode(value)), response.status);

@@ -25,7 +25,7 @@ export function MatterDetail({api,id,scope,onOpen}:{api:Api;id:string;scope:Quer
  };
  return <article className="assistant-matter-detail"><header><h2>{matter.goal}</h2><p role="status">{matterLabel(matter.state)}</p><p>{moteText('更新时间')} · {dateTime(matter.updatedAt)}</p></header>
   <button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button>
-  {matter.state==='paused'&&<p>{moteText('暂停事项仅停止新的自动工作；已接收任务仍按原规则处理。')}</p>}
+  {matter.state==='paused'&&<p>{moteText('暂停后不新增自动工作。已接收任务按原规则处理。')}</p>}
   {editable&&!edit&&<div className="processing-actions"><button className="button" disabled={disabled} onClick={()=>setEdit({revision:matter.revision,goal:matter.goal,correction:matter.correction??''})}>{moteText('编辑')}</button>
    <button className="button" disabled={disabled} onClick={()=>void transition(matter.state==='paused'?'resume':'pause')}>{moteText(matter.state==='paused'?'恢复事项':'暂停事项')}</button>
    <button className="button subtle" disabled={disabled} onClick={()=>void transition('archive')}>{moteText('归档')}</button></div>}

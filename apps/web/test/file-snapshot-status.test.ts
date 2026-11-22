@@ -17,7 +17,7 @@ test('snapshot privacy blocks and expired temporary inputs remain visible in the
  await act(async()=>root.render(React.createElement(Files,{api,onOpen:()=>{}})));
  assert.match(dom.window.document.body.textContent!,/隐私规则无法应用，输入未上传/);assert.doesNotMatch(dom.window.document.body.textContent!,/已登记目录/);
  await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
- assert.match(dom.window.document.body.textContent!,/中央索引待处理，原件不归档/);assert.match(dom.window.document.body.textContent!,/快照的临时输入已清理，请重新同步来源文件后重试/);
+ assert.match(dom.window.document.body.textContent!,/中央索引待处理，原件不归档/);assert.match(dom.window.document.body.textContent!,/快照临时原件已清理.*重新同步来源文件/);
 });
 
 test('summary capacity waiting and its canonical retry time remain separate from completed file processing',async t=>{
@@ -37,5 +37,5 @@ test('summary capacity waiting and its canonical retry time remain separate from
  row.job.summary_state='failed';row.job.summaryExecution=executionEnvelope({state:'failed',attempts:1,errorCode:'storage_full'});
  await act(async()=>root.render(React.createElement(FileDetail,{api:{...api},id,onOpen:()=>{}})));
  await act(async()=>Array.from(dom.window.document.querySelectorAll('button')).find(b=>b.textContent==='处理详情')!.click());
- assert.match(dom.window.document.body.textContent!,/整体处理：已完成；摘要：处理失败/);assert.match(dom.window.document.body.textContent!,/存储容量已满/);
+ assert.match(dom.window.document.body.textContent!,/整体处理：已完成；摘要：处理失败/);assert.match(dom.window.document.body.textContent!,/存储已满/);
 });

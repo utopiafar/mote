@@ -26,10 +26,10 @@ export function ActivityMemoryResults({api,workId,cursors,onCursors,onOpen,revis
   setSnapshot(value=>value?.api===api&&value.workId===workId&&value.cursor===cursor&&value.revision===revision&&value.page?{...value,error:undefined,rows:value.rows.map(row=>({id:row.id})),loading:true}:{api,workId,cursor,revision,rows:[],loading:true});
   void (async()=>{try{
    const page=await api.request<ResultPage>(path,{signal:controller.signal});
-   if(!Array.isArray(page.ids)||new Set(page.ids).size!==page.ids.length||!page.ids.every(id=>typeof id==='string')||!Number.isSafeInteger(page.total)||page.total<0||!(page.nextCursor===null||typeof page.nextCursor==='string'))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
+   if(!Array.isArray(page.ids)||new Set(page.ids).size!==page.ids.length||!page.ids.every(id=>typeof id==='string')||!Number.isSafeInteger(page.total)||page.total<0||!(page.nextCursor===null||typeof page.nextCursor==='string'))throw Error(moteText('中央响应格式无效，刷新后重试。'));
    const rows=await Promise.all(page.ids.map(async id=>{try{const memory=await api.request<Memory>('/api/memories/'+encodeURIComponent(id),{signal:controller.signal});if(memory.id!==id)throw Error('Memory identity mismatch');return {id,memory};}catch(error){return {id,error};}}));
    const verified=await api.request<ResultPage>(path,{signal:controller.signal});
-   if(JSON.stringify(verified)!==JSON.stringify(page))throw Error(moteText('操作状态已变化，请重新读取后再确认。'));
+   if(JSON.stringify(verified)!==JSON.stringify(page))throw Error(moteText('操作状态已变。刷新后确认。'));
    if(current()){const focused=document.activeElement;if(focused instanceof HTMLElement&&focused.dataset.activityResultId&&!page.ids.includes(focused.dataset.activityResultId))errorFocus.current=focused;setSnapshot({api,workId,cursor,revision,page,rows,loading:false});}
   }catch(error){if(current()){const focused=document.activeElement;if(focused instanceof HTMLElement&&focused.hasAttribute('data-activity-result-id'))errorFocus.current=focused;setSnapshot({api,workId,cursor,revision,rows:[],error,loading:false});}}})();
   return()=>{controller.abort();openingRead.current?.abort();++sequence.current;};
@@ -47,9 +47,9 @@ export function ActivityMemoryResults({api,workId,cursors,onCursors,onOpen,revis
   openingRead.current?.abort();const controller=new AbortController();openingRead.current=controller;const serial=sequence.current,origin={api,workId,cursor,revision,version};setOpening(id);
   const current=()=>!controller.signal.aborted&&serial===sequence.current&&identity.current.api===origin.api&&identity.current.workId===origin.workId&&identity.current.cursor===origin.cursor&&identity.current.revision===origin.revision&&identity.current.version===origin.version;
   try{
-   const page=await api.request<ResultPage>(path,{signal:controller.signal});if(!Array.isArray(page.ids)||!page.ids.includes(id))throw Error(moteText('请求的操作或资源已失效，请重新读取后再确认。'));
+   const page=await api.request<ResultPage>(path,{signal:controller.signal});if(!Array.isArray(page.ids)||!page.ids.includes(id))throw Error(moteText('操作或资源已失效。刷新后确认。'));
    const memory=await api.request<Memory>('/api/memories/'+encodeURIComponent(id),{signal:controller.signal});if(memory.id!==id)throw Error('Memory identity mismatch');
-   const verified=await api.request<ResultPage>(path,{signal:controller.signal});if(!Array.isArray(verified.ids)||!verified.ids.includes(id))throw Error(moteText('请求的操作或资源已失效，请重新读取后再确认。'));
+   const verified=await api.request<ResultPage>(path,{signal:controller.signal});if(!Array.isArray(verified.ids)||!verified.ids.includes(id))throw Error(moteText('操作或资源已失效。刷新后确认。'));
    if(current())onOpen(id);
   }catch(error){if(current())setSnapshot(value=>value&&value.api===api&&value.workId===workId&&value.cursor===cursor&&value.revision===revision?{...value,rows:value.rows.map(row=>row.id===id?{id,error}:row)}:value);}
   finally{if(openingRead.current===controller)openingRead.current=undefined;if(current())setOpening(undefined);}

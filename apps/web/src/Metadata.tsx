@@ -3,7 +3,7 @@ import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 import {bytes, dateTime} from './api';
 
 export const sourceLabels: Record<string,string> = {ui_page:moteText("页面内容采集"),screen:moteText("屏幕采样"),activity:moteText("应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("记录"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
-export const activityExplanation = moteText("这条记录仅包含前台应用与采样时长。截图和结构化内容按该应用的独立选项保存。时长存在采样空隙，不代表完整使用历史。");
+export const activityExplanation = moteText("应用活动只含前台应用和采样时长。");
 type Row = [string, string | number | boolean | undefined];
 const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? moteText("是") : moteText("否");
 const time = (value: string | undefined) => value === undefined ? undefined : dateTime(value);
@@ -36,12 +36,12 @@ export function Metadata({metadata,source,modifiedAt,stateSeries}: {stateSeries?
     [moteText("提供方创建时间"),time(source?.provider?.createdAt)],[moteText("提供方更新时间"),time(source?.provider?.updatedAt)],
   ];
   return <details className="metadata-details"><summary>{moteText("采集与来源元数据")}</summary>
-    <>{stateSeries&&<p className="field-note">{moteText("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",stateSeries.samples.length,dateTime(stateSeries.samples.at(-1)!.at))}</p>}</>
-    {page&&<details><summary>{moteText("页面节点证据")}</summary><p>{moteText("仅表示当时窗口内观察到的文字，不代表阅读过全文。")}</p><pre>{JSON.stringify(page,null,2)}</pre></details>}
+    <>{stateSeries&&<p className="field-note">{moteText("合并 {0} 次观察。最近 {1}，间隙不计。",stateSeries.samples.length,dateTime(stateSeries.samples.at(-1)!.at))}</p>}</>
+    {page&&<details><summary>{moteText("页面节点证据")}</summary><p>{moteText("仅为观察时窗内的文字。")}</p><pre>{JSON.stringify(page,null,2)}</pre></details>}
     <dl>{rows.filter(([,value])=>value!==undefined).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
-    <p className="field-note">{moteText("仅显示上报时可获取的字段。状态是当时的观察值；缺失不代表否或零。")}</p>
-    {(n||e)&&<p className="field-note">{moteText("原始系统事件，不表示你已阅读通知或正在执行某项任务。熄屏不等于锁定；服务中断期间不补造事件。系统可能隐藏敏感通知。")}</p>}
-    {f?.accessedAt && <p className="field-note">{moteText("文件访问时间也可能由同步程序或其他进程读取更新，不能据此断定你查看过文件。")}</p>}
-    {f?.deletionObservedAt && <p className="field-note">{moteText("这是完整扫描发现来源消失的时间，无法确认实际删除时刻或原因，也可能是移动或重命名。")}</p>}
+    <p className="field-note">{moteText("上报时的可用状态，缺失项留空。")}</p>
+    {(n||e)&&<p className="field-note">{moteText("只记录系统原始事件，无法确认已读通知或正在执行任务。熄屏和锁定分别记录，服务中断留空。系统可能隐藏敏感通知。")}</p>}
+    {f?.accessedAt && <p className="field-note">{moteText("访问时间可由同步或其他进程更新。是否本人查看仍未知。")}</p>}
+    {f?.deletionObservedAt && <p className="field-note">{moteText("记录完整扫描首次发现缺失的时间。实际删除时刻未知。")}</p>}
   </details>;
 }

@@ -38,7 +38,7 @@ export function sourceDefinition(source: LocalSource): SourceDefinition {
 }
 export function sourcePolicy(options: SourceOptions): string { return sourceHash(sourcePolicySignature(options)); }
 const rootDegraded=(reason:FileScanDegraded|undefined)=>reason==='root_unavailable'||reason==='root_changed';
-const degradedMessage=(reason:FileScanDegraded|undefined)=>rootDegraded(reason)?moteText("来源根不可用或已变化；已保留本机清单，未判断删除（已降级）"):moteText("已同步可读取项；扫描不完整，未判断删除");
+const degradedMessage=(reason:FileScanDegraded|undefined)=>rootDegraded(reason)?moteText("来源目录不可用。保留本机清单，暂停判断删除。"):moteText("已同步可读取项；扫描不完整，未判断删除");
 export class LocalSourceManager {
   private sources: LocalSource[] = [];
   private metadataDirty = new Set<string>();
@@ -116,7 +116,7 @@ export class LocalSourceManager {
     return this.readContext(id);
   }
   private async readContext(id:string):Promise<SourceContextState>{
-    if(this.stopped||this.connectionHeld)throw Error(moteText('操作未完成，请检查权限与配置后重试'));
+    if(this.stopped||this.connectionHeld)throw Error(moteText('操作未完成。检查权限和配置后重试。'));
     if(this.contextTask)await this.contextTask.catch(()=>{});
     const controller=new AbortController();this.contextController=controller;
     const task=this.contextTask=this.contexts.read(id,this.request(controller.signal),controller.signal);
@@ -127,7 +127,7 @@ export class LocalSourceManager {
     return this.saveContext(id,input);
   }
   private async saveContext(id:string,input:unknown):Promise<SourceContextState>{
-    if(this.stopped||this.connectionHeld)throw Error(moteText('操作未完成，请检查权限与配置后重试'));
+    if(this.stopped||this.connectionHeld)throw Error(moteText('操作未完成。检查权限和配置后重试。'));
     await this.interrupt();
     this.markMetadataDirty(id);
     const task=this.contextTask=this.contexts.stage(id,input);
@@ -154,7 +154,7 @@ export class LocalSourceManager {
   connectionActivity(): { pending: number; inFlight: boolean } { const recorded=this.recordedActivity?.();return { pending: (recorded?.pending??0)+[...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending+engine.status().blocked, 0)+this.sources.filter(source=>this.contexts?.pending(source.id)).length+this.captureContextIds().filter(id=>this.contexts?.pending(id)).length, inFlight: Boolean(recorded?.inFlight||this.task || this.uploadTask || this.permissionTask || this.contextTask) }; }
   async holdConnection(): Promise<() => void> {
     this.connectionEpoch++;
-    if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
+    if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，稍后重试连接"));
     this.connectionHeld = true;
     try { await this.interrupt(); return () => { this.connectionHeld = false; }; }
     catch (error) { this.connectionHeld = false; throw error; }
@@ -195,7 +195,7 @@ export class LocalSourceManager {
   }
   async addCalendar(id: string, input: unknown): Promise<string> {
     const calendar = this.choices.find(c => c.id === id);
-    if (!calendar) throw new Error(moteText("请先连接日历，再从已授权列表中选择"));
+    if (!calendar) throw new Error(moteText("先连接日历，再从已授权列表中选择"));
     return this.add({ calendarId: calendar.id, name: calendar.title.slice(0, 200) || moteText("本地日历"), kind: 'local-calendar' }, input);
   }
   async addFiles(path: string, input: unknown): Promise<string> { return this.add({ path, name: basename(path).slice(0, 200) || moteText("本地文件"), kind: 'local-files' }, input); }
@@ -213,7 +213,7 @@ export class LocalSourceManager {
     if (this.sources.some(s => s.kind === fields.kind && (
       typeof fields.path === 'string' ? s.path === fields.path :
       typeof fields.calendarId === 'string' ? s.calendarId === fields.calendarId : false
-    ))) throw new Error(moteText("此来源已连接，请在列表中修改"));
+    ))) throw new Error(moteText("此来源已连接，在列表中修改"));
     await this.interrupt();
     const source: LocalSource = { ...fields, ...options, id: 'local-' + randomUUID(), deviceId: this.connection.deviceId, platform: 'macos', enabled: true } as LocalSource;
     this.adapters.get(source.kind).validateConfiguration(source);
@@ -278,7 +278,7 @@ export class LocalSourceManager {
       if (!source.enabled || signal.aborted) continue;
       if(source.kind==='local-files'&&source.retention==='snapshot'&&!source.centralProcessingConsent){
         this.readable.delete(source.id);
-        this.states.set(source.id,{source,state:'paused',message:moteText("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。"),pending:0,items:0,skipped:0});
+        this.states.set(source.id,{source,state:'paused',message:moteText("编辑来源并确认上传完整文件。处理后清理中央临时原件。"),pending:0,items:0,skipped:0});
         continue;
       }
       const last = this.states.get(source.id);
@@ -337,7 +337,7 @@ export class LocalSourceManager {
             Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : scan.degraded?'error':'idle', message: ready === 'paused' ? moteText("中央已暂停该来源；待上传版本保留在本机") : scan.complete ? moteText("已同步；后台定时检查变化") : degradedMessage(scan.degraded) });
           }
         }
-        if (source.kind === 'coding-agent' && !scan.complete) status.message = scan.skipped ? moteText("部分会话无法读取或单条事件超过限制；已保留进度，下次重试") : moteText("已保存当前批次；其余会话或未写完的尾行将在后续扫描继续");
+        if (source.kind === 'coding-agent' && !scan.complete) status.message = scan.skipped ? moteText("部分会话无法读取或超限。进度保留。") : moteText("已保存当前批次。下次扫描继续。");
         // Do not clear a notification that arrived while the reconciliation
         // scan was running; it must trigger another scan after this one.
         if ((this.sourceWakeVersions.get(source.id) ?? 0) === wakeVersion) this.dirtySources.delete(source.id);
@@ -352,7 +352,7 @@ export class LocalSourceManager {
       } catch (e) {
         if (!accessValidated) this.readable.delete(source.id);
         void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started,sourceId:source.id,sourceKind:source.kind,errorName:safeErrorName(e) });
-        Object.assign(status, this.engines.get(source.id)?.status(), { state: e instanceof CalendarPermissionError ? 'permission_required' : 'error', message: signal.aborted ? moteText("同步已取消，待传版本已保留") : e instanceof CalendarPermissionError ? e.message : moteText("同步未完成：检查权限、网络或来源路径后重试；待传版本已保留") });
+        Object.assign(status, this.engines.get(source.id)?.status(), { state: e instanceof CalendarPermissionError ? 'permission_required' : 'error', message: signal.aborted ? moteText("同步已取消，待传版本已保留") : e instanceof CalendarPermissionError ? e.message : moteText("同步未完成，待传版本保留。核对来源和网络。") });
       } finally { if (unqueuedScan) await this.engines.get(source.id)?.discardUnqueuedOriginals(unqueuedScan.items); }
     }
   }
@@ -363,7 +363,7 @@ export class LocalSourceManager {
       current();requestSignal?.throwIfAborted();
       if (!this.connection.serverUrl || !connectionToken(this.connection) || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
       const response = await fetch(this.connection.serverUrl + path, { method, headers: { ...INGRESS_VERSION_HEADERS,Authorization: 'Bearer ' + requireConnectionToken(this.connection), 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body),onBytes), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
-      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败。检查令牌。") : response.status === 409 ? moteText("中央来源已暂停，在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       const result=JSON.parse(await readResponseText(response, 1024 * 1024));current();requestSignal?.throwIfAborted();return result;
     };
   }

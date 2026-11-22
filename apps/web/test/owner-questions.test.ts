@@ -53,7 +53,7 @@ test('authored choice submits one revisioned answer, prevents double submission 
  await act(async()=>{send(d).click();send(d).click();});assert.equal(writes.length,1);
  assert.equal(writes[0].choiceId,'narrator');assert.equal(writes[0].answer,undefined);assert.equal(writes[0].expectedRevision,1);assert.match(writes[0].requestId,/^[a-f0-9-]{36}$/);
  current={...current,state:'answered',revision:2,continuationId:'generated-continuation',outcome:'已继续整理这份资料。',messages:[...current.messages,{role:'user',text:generated.choices[0].answer,createdAt:when}]};
- await act(async()=>pending.resolve(current));assert.equal(d.querySelector('textarea'),null);assert.match(d.body.textContent!,/成果审核完成后才会保存/);assert.doesNotMatch(d.body.textContent!,/已保存.*记忆/);
+ await act(async()=>pending.resolve(current));assert.equal(d.querySelector('textarea'),null);assert.match(d.body.textContent!,/成果通过审核后才会保存/);assert.doesNotMatch(d.body.textContent!,/已保存.*记忆/);
 });
 test('editing an authored choice sends literal free text; provider follow-up keeps dialogue open',async t=>{
  const {root,d,w}=await fixture(t),writes:any[]=[];let current=structuredClone(generated);
@@ -80,7 +80,7 @@ test('assistant task questions explain the unchanged scope and retire the compos
  assert.match(d.body.textContent!,/继续当前任务，资料范围和行动授权保持不变/);assert.equal(send(d).disabled,true,'no default answer is selected');
  current={...current,state:'obsolete',revision:2,prompt:'',evidence:[],messages:[]};
  await clock.tick(3000);
- assert.match(d.body.textContent!,/任务已取消或版本、资料范围已变化/);assert.equal(d.querySelector('textarea'),null);assert.equal(d.querySelector('form'),null);
+ assert.match(d.body.textContent!,/任务已取消或范围已变/);assert.equal(d.querySelector('textarea'),null);assert.equal(d.querySelector('form'),null);
 });
 test('an ambiguous transport failure reuses the same admission UUID; stale revisions refresh instead',async t=>{
  const {root,d}=await fixture(t),writes:any[]=[];let current=structuredClone(generated),failure:unknown=new Error('Generated transport failure');

@@ -70,7 +70,7 @@ export async function recognizeInvitationQr(path: string, image: Buffer): Promis
     const value = await runHelper(path, 'qr', image) as { payloads?: unknown };
     if (!Array.isArray(value?.payloads) || value.payloads.length !== 1 || typeof value.payloads[0] !== 'string' || Buffer.byteLength(value.payloads[0]) > 8192) throw new Error();
     return value.payloads[0];
-  } catch { throw new Error(moteText("未找到唯一有效二维码，请选择清晰的单个连接二维码，或导入 JSON")); }
+  } catch { throw new Error(moteText("二维码无法识别。选择单个清晰二维码或导入 JSON。")); }
 }
 
 export type ForegroundApplication = Pick<ActiveApplication, 'appId' | 'appName' | 'pid'>;

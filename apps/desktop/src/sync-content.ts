@@ -27,7 +27,7 @@ async function request(config: Config, path: string,authorize:()=>void=()=>{}): 
   authorize();
   const response = await fetch(`${validateServerUrl(config.serverUrl)}${path}`, { headers: { 'Accept-Language': getLocale(), Authorization: `Bearer ${requireConnectionToken(config)}` }, credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(20000) });
   try{authorize();}catch(error){await response.body?.cancel().catch(()=>{});throw error;}
-  if (!response.ok) { await response.body?.cancel(); if (response.status === 404 || response.status === 410) throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。')); if (response.status === 401 || response.status === 403) {const error=Error(moteText('无法访问采集记录，请检查中央连接权限'));error.name='ArchiveAuthorizationError';throw error;} throw Error(moteText('中央返回 HTTP {0}。稍后重试', response.status)); }
+  if (!response.ok) { await response.body?.cancel(); if (response.status === 404 || response.status === 410) throw Error(moteText('归档内容不存在或已按保留策略清理；同步凭据仍可查看。')); if (response.status === 401 || response.status === 403) {const error=Error(moteText('采集记录不可访问。检查中央连接权限。'));error.name='ArchiveAuthorizationError';throw error;} throw Error(moteText('中央返回 HTTP {0}。稍后重试', response.status)); }
   return response;
 }
 async function json(config: Config, path: string,authorize:()=>void=()=>{}): Promise<Record<string, unknown>> { const value: unknown = JSON.parse(await readResponseText(await request(config, path,authorize), 4 * 1024 * 1024,authorize));authorize(); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid archive response'); return value as Record<string, unknown>; }

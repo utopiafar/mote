@@ -18,7 +18,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
   const render = () => {
     const labels: Record<string, string> = {
       granted: moteText('已授权'), denied: moteText('未授权'), restricted: moteText('系统限制'),
-      'not-determined': moteText('尚未授权'), unsupported: moteText('当前平台不支持'), unknown: moteText('无法确认，请检查系统设置'),
+      'not-determined': moteText('尚未授权'), unsupported: moteText('当前平台不支持'), unknown: moteText('权限状态未知。查看系统设置。'),
     };
     for (const kind of ['screen', 'accessibility', 'calendar'] as const) {
       const value = status?.[kind] ?? 'unknown';
@@ -27,7 +27,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
       badge.className = 'permission-badge ' + (granted ? 'granted' : unknown ? 'unknown' : 'denied');
       badge.replaceChildren(desktopIcon(document, granted ? 'check' : unknown ? 'circle-help' : 'circle-alert', true), ' ' + (labels[value] ?? labels.unknown));
       const button = root.querySelector<HTMLButtonElement>(`[data-permission-request="${kind}"]`)!;
-      button.textContent = pending.has(kind) ? moteText('正在打开…') : granted ? moteText('管理权限 ↗') : kind === 'calendar' ? moteText('授权日历') : moteText('前往授权 ↗');
+      button.textContent = pending.has(kind) ? moteText('正在打开…') : granted ? moteText('管理权限') : kind === 'calendar' ? moteText('授权日历') : moteText('前往授权');
     }
     for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-permission-request], [data-permission]'))) {
       const kind = (button.dataset.permissionRequest ?? button.dataset.permission) as PermissionKind;
@@ -45,7 +45,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
       status = next; render(); checkError = ''; renderError();
     }).catch(() => {
       if (!active || disposed || revision !== generation) return;
-      status = undefined; render(); checkError = moteText('权限状态读取失败，请重试。'); renderError();
+      status = undefined; render(); checkError = moteText('权限状态读取失败。重试。'); renderError();
     }).finally(() => { if (checking === task) checking = undefined; });
     checking = task;
     return task;
@@ -60,7 +60,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
     } catch { failed = true; }
     finally {
       pending.delete(kind);
-      if (active && !disposed) { render(); await refresh(); if (failed) { actionError = moteText('无法打开权限授权，请重试。'); renderError(); } }
+      if (active && !disposed) { render(); await refresh(); if (failed) { actionError = moteText('权限窗口打不开。重试。'); renderError(); } }
     }
   };
   for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-permission-request], [data-permission]'))) {
@@ -71,7 +71,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
   byId('permission-restart').addEventListener('click', async () => {
     const button = byId<HTMLButtonElement>('permission-restart'); button.disabled = true;
     try { await api.restartForPermissions(); }
-    catch { actionError = moteText('重新启动失败，请完全退出 Mote 后重新打开。'); renderError(); }
+    catch { actionError = moteText('重新启动失败，完全退出 Mote 后重新打开。'); renderError(); }
     finally { button.disabled = false; }
   }, { signal: controller.signal });
   window.addEventListener('focus', () => void refresh(), { signal: controller.signal });

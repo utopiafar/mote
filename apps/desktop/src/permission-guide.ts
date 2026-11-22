@@ -51,7 +51,7 @@ export class PermissionGuide {
       appName: basename(appPath, '.app'), icon: icon.toDataURL(),
       drag: moteText('将此应用拖入系统设置的权限列表'),
       existing: moteText('列表中已有此应用？直接开启它右侧的开关。'),
-      note: kind === 'screen' ? moteText('开启后若仍无法采集，请回到 Mote 重新启动。') : kind === 'files' ? moteText('仅在所选文件夹无法访问时开启；状态请在系统设置中确认。') : moteText('授权状态会自动更新，可随时关闭此浮条。'),
+      note: kind === 'screen' ? moteText('开启后若仍无法采集，回到 Mote 重新启动。') : kind === 'files' ? moteText('无法访问所选目录时，在系统设置中核对权限。') : moteText('授权状态会自动更新，可随时关闭此浮条。'),
       reveal: moteText('在访达中显示'), close: moteText('关闭浮条'),
     };
     const initial = (event: IpcMainInvokeEvent) => { if (!trusted(event)) throw new Error('Untrusted permission guide'); return state; };

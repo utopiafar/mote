@@ -208,11 +208,11 @@ export class DurableQueue {
   private assertReady(): void { if (!this.initialized) throw new Error(moteText("持久队列尚未初始化")); }
   async initialize(): Promise<void> {
     return this.exclusive(async () => {
-      if(this.storageGuard)for(const path of [this.directory,join(this.directory,'events'),join(this.directory,'blobs')]){const info=await lstat(path);if(!info.isDirectory()||info.isSymbolicLink())throw Error(moteText('截图存储目录不完整，请连接原磁盘后重试'));}
+      if(this.storageGuard)for(const path of [this.directory,join(this.directory,'events'),join(this.directory,'blobs')]){const info=await lstat(path);if(!info.isDirectory()||info.isSymbolicLink())throw Error(moteText('截图存储目录不完整，连接原磁盘后重试'));}
       await ensureStorageFormat(this.directory,['events','blobs','capture-ingress-v2.json','capture-stage-checkpoint.json','capture-stage-journal.json','capture-input-journal.json','sync-checkpoint.json']);
       for (const path of [this.directory, join(this.directory, 'events'), join(this.directory, 'blobs')]) {
         if (this.storageGuard) {
-          const info = await lstat(path); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(moteText("截图存储目录不完整，请连接原磁盘后重试"));
+          const info = await lstat(path); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(moteText("截图存储目录不完整，连接原磁盘后重试"));
         } else await mkdir(path, { recursive: true, mode: 0o700 });
         await chmod(path, 0o700);
       }
@@ -492,7 +492,7 @@ export class DurableQueue {
     return this.exclusive(async () => {
       this.assertReady();
       if(Object.values(this.captureCheckpoint?.stages??{}).some(stage=>stage.held))throw new Error('Flush held capture stage inputs before exporting the queue');
-      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
+      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，退出采集器后备份整个 queue 文件夹"));
       await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress, signal);
     });
   }
@@ -542,7 +542,7 @@ export class DurableQueue {
   async exportArchive(): Promise<QueueArchive> {
     return this.exclusive(async () => {
       this.assertReady();
-      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
+      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，退出采集器后备份整个 queue 文件夹"));
       const blobs: Record<string, string> = {};
       for (const record of this.records.values()) if (record.blobHash && !blobs[record.blobHash]) blobs[record.blobHash] = (await readFile(this.blobPath(record.blobHash))).toString('base64');
       return { format: 'mote-desktop-queue', version: DESKTOP_STORAGE_VERSION, records: structuredClone([...this.records.values()]), blobs };

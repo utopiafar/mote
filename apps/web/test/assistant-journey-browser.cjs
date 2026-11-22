@@ -55,7 +55,7 @@ async function run(){
  await js(`[...document.querySelectorAll('a')].find(value=>value.textContent.includes('Generated UI daily review')).click()`);
  await click('暂停规则');await until(async()=>!(await request('/api/assistant/routines/'+fixture.ruleId+'?'+new URLSearchParams({scope:JSON.stringify({kind:'all'})}))).enabled,'pause reaches real rule');
  await shot('paused-rule');report.checks.push('pause updates the persisted rule through its real detail command');
- await click('问一问');await until(()=>js(`Boolean(document.querySelector('textarea[aria-label="向 Mote 提问"]'))`),'Ask return');
+ await click('聊天');await until(()=>js(`Boolean(document.querySelector('textarea[aria-label="向 Mote 提问"]'))`),'Ask return');
  await field('textarea[aria-label="向 Mote 提问"]','Generated UI prepare');await click('发送问题');
  await until(()=>js(`Boolean(document.querySelector('.assistant-draft'))`),'host-issued draft');
  await js(`document.querySelector('.assistant-draft .assistant-draft-actions button').scrollIntoView({block:'center'})`);

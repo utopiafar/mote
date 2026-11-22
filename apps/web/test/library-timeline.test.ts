@@ -211,7 +211,7 @@ test('a second timeline page 409 automatically reads the first page and retains 
  const api=apiWith(path=>{paths.push(path);if(new URL('http://localhost'+path).searchParams.has('cursor'))throw new ApiError('Generated stale timeline cursor',409,'generated-page-conflict');return ++firstReads===1?page([group()],'stale-page-2'):recovery.promise;});
  await act(async()=>root.render(view(api)));await act(async()=>buttons(d,'下一页',d.querySelector('.library-pagination')!)[0]!.click());
  assert.equal(firstReads,2,'a stale later cursor starts a real new first-page request');assert.match(d.querySelector('.library-pagination')!.textContent!,/第 1 页/);
- assert.match(d.querySelector('[role="alert"]')!.textContent!,/时间回看内容已变化，请重新读取当前范围/);
+ assert.match(d.querySelector('[role="alert"]')!.textContent!,/时间回看内容已变化.*重新读取当前范围/);
  assert.equal(d.querySelector('.workspace-empty'),null,'an unresolved recovery is not rendered as an empty successful page');
  await act(async()=>recovery.resolve(page([group({id:'recovered-page',deviceName:'Generated recovered first page'})],'current-page-2')));
  assert.equal(d.querySelector('.library-time-group')!.getAttribute('data-group-id'),'recovered-page');

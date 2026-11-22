@@ -21,8 +21,8 @@ export function AccessRevocation({label, calendar, busy, error, cancel, confirm}
       <header><h2 id={title}>{moteText('撤销 {0}', label)}</h2>
         <button className="icon-button" aria-label={moteText('关闭')} disabled={busy} onClick={cancel}><X size={18}/></button>
       </header>
-      <p>{calendar ? moteText('撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。')
-        : moteText('停止此连接的后续访问，已归档资料保留。再次接入需要生成新配置。')}</p>
+      <p>{calendar ? moteText('此连接将停止创建新日程。已派发的请求以行动回执为准。')
+        : moteText('停止此连接的后续访问。保留已归档资料。重新接入需生成新配置。')}</p>
       {error}
       <footer><button className="button" disabled={busy} onClick={cancel}>{moteText('取消')}</button>
         <button className="button" disabled={busy} onClick={confirm}>{moteText('确认撤销')}</button>

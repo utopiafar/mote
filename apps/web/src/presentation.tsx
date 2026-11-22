@@ -41,7 +41,7 @@ class ShellBoundary extends React.Component<{ renderer: WebShellRenderer; slots:
   static getDerivedStateFromError() { return { failed: true }; }
   render() {
     const Renderer = this.state.failed ? WorkspaceShell : this.props.renderer;
-    return <><Renderer {...this.props.slots}/>{this.state.failed&&<p role="status" className="notice">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>}</>;
+    return <><Renderer {...this.props.slots}/>{this.state.failed&&<p role="status" className="notice">{moteText('专用视图暂不可用，查看资料库或重试。')}</p>}</>;
   }
 }
 
@@ -82,6 +82,6 @@ export function PresentationSurface({ navigation, toolbar, footer, children, hos
   return <>
     <ShellBoundary key={snapshot.layout.id+'@'+snapshot.layout.version} renderer={snapshot.layout.implementation} slots={{layout:snapshot.layout,navigation:navigation(snapshot.layout),toolbar,footer,content:<ContentOutlet container={container}/>}}/>
     {createPortal(children, container)}
-    {snapshot.fallbackReason&&<p role="status" className="notice presentation-notice">{moteText('专用视图暂不可用，请查看资料库或重试。')}{snapshot.fallbackPresentation&&' · '+snapshot.fallbackPresentation.label.text}</p>}
+    {snapshot.fallbackReason&&<p role="status" className="notice presentation-notice">{moteText('专用视图暂不可用，查看资料库或重试。')}{snapshot.fallbackPresentation&&' · '+snapshot.fallbackPresentation.label.text}</p>}
   </>;
 }

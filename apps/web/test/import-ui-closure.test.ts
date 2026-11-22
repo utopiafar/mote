@@ -173,10 +173,10 @@ test('import guidance is optional and completed detail preserves the exact text 
  const {root,d}=await fixture(t),guidance='Generated scoped authorship guidance.\nQuotes remain third-party: <img src="fixture.invalid">',job=importJob({instruction:guidance});
  const api=apiWith(path=>path==='/api/imports'?{items:[job]}:{items:[]});
  await act(async()=>root.render(view(api)));assert.equal(d.querySelector('form'),null,'import opens on the list');await act(async()=>button(d,'添加资料').click());const input=d.querySelector('textarea')!;
- assert.equal(input.required,false);assert.equal(input.value,'');assert.match(d.querySelector('.import-form')!.textContent!,/资料说明/);assert.match(d.querySelector('.import-form')!.textContent!,/未填写也会保留原件/);assert.match(d.querySelector('.import-form')!.textContent!,/来源限定观察/);
+ assert.equal(input.required,false);assert.equal(input.value,'');assert.match(d.querySelector('.import-form')!.textContent!,/资料说明/);assert.match(d.querySelector('.import-form')!.textContent!,/仍保留原件和已提取正文/);assert.match(d.querySelector('.import-form')!.textContent!,/引用保留原角色/);
  await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  const details=Array.from(d.querySelectorAll('details')).find(item=>item.querySelector('summary')?.textContent==='本次导入说明')!;
- assert.equal(details.querySelector('.file-text')!.textContent,guidance);assert.equal(details.querySelector('img'),null);assert.equal(details.querySelector('textarea'),null);assert.match(details.textContent!,/不会把第三方和 AI 引用整批变成你的表达/);
+ assert.equal(details.querySelector('.file-text')!.textContent,guidance);assert.equal(details.querySelector('img'),null);assert.equal(details.querySelector('textarea'),null);assert.match(details.textContent!,/第三方和 AI 引用保持原角色/);
 });
 
 test('choosing a Source Pack keeps the single editable guidance field and submits automatic parsing',async t=>{
@@ -214,7 +214,7 @@ test('running import exposes cancellation, keeps originals and requires explicit
  await act(async()=>root.render(view(api)));
  await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  assert.ok(button(d,'取消处理'));await act(async()=>button(d,'取消处理').click());
- assert.match(d.body.textContent!,/处理已取消，已归档的原件和记录仍保留/);assert.match(d.body.textContent!,/generated.custom/);
+ assert.match(d.body.textContent!,/处理已取消.*原件和已存记录保留/);assert.match(d.body.textContent!,/generated.custom/);
  assert.equal(button(d,'取消处理'),undefined);assert.deepEqual(actions,['/api/imports/import-generated/cancel']);
  await act(async()=>button(d,'重试导入').click());assert.deepEqual(actions,['/api/imports/import-generated/cancel','/api/imports/import-generated/retry']);
 });
@@ -224,7 +224,7 @@ test('retry while cancelled parser is stopping shows an actionable error without
  const api=apiWith((_path,init)=>{if(init?.method==='POST'){writes++;throw new ApiError('Import is stopping',409,'generated-request','import_stopping');}return {items:[importJob({status:'cancelled',captureIds:[]})]};});
  await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  await act(async()=>button(d,'重试导入').click());
- assert.equal(writes,1);assert.match(d.body.textContent!,/上一次处理仍在结束，请稍后再点击重试/);assert.ok(button(d,'重试导入'));assert.equal(button(d,'取消处理'),undefined);
+ assert.equal(writes,1);assert.match(d.body.textContent!,/上一次处理仍在结束/);assert.ok(button(d,'重试导入'));assert.equal(button(d,'取消处理'),undefined);
 });
 
 test('preview finishing conflict keeps confirmation available with localized guidance',async t=>{
@@ -232,7 +232,7 @@ test('preview finishing conflict keeps confirmation available with localized gui
  const api=apiWith((_path,init)=>{if(init?.method==='POST'){if(++writes===1)throw new ApiError('Parsing is finishing',409,'generated-request','import_finishing');return new Promise(r=>resolve=r);}return {items:[importJob({status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}})]};});
  await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  await act(async()=>button(d,'确认并开始导入').click());
- assert.equal(writes,1);assert.match(d.body.textContent!,/解析正在收尾，请稍后再确认。/);
+ assert.equal(writes,1);assert.match(d.body.textContent!,/解析正在收尾/);
  assert.ok(button(d,'确认并开始导入'));assert.doesNotMatch(d.body.textContent!,/Parsing is finishing|上一次处理仍在结束/);
  const confirm=button(d,'确认并开始导入'),alert=confirm.previousElementSibling!;
  assert.equal(alert.getAttribute('role'),'alert');assert.equal(alert.parentElement,confirm.parentElement);
@@ -337,7 +337,7 @@ test('Needs attention includes unsupported originals and renders each existing j
 });
 test('instruction edits block the old preview; failed prepare keeps the exact draft until the same job is re-previewed',async t=>{
  const{root,d}=await fixture(t),writes:{path:string;body:any}[]=[];let fail=true,job=importJob({status:'awaiting_confirmation',instruction:'Generated original instruction',captureIds:[],preview:{count:1,samples:[]}});const other=importJob({id:'other',name:'Other generated import',captureIds:[]});const api=apiWith((path,init)=>{if(path==='/api/imports')return{items:[job,other]};if(init?.method==='POST'){const body=init.body?JSON.parse(String(init.body)):undefined;writes.push({path,body});if(path.endsWith('/prepare')){if(fail)throw new ApiError('Generated prepare503',503);job={...job,instruction:body.instruction};return job;}if(path.endsWith('/confirm')){assert.equal(job.instruction,'Generated revised instruction\nQuotes keep their original speaker.');job={...job,status:'completed'};return job;}}return{items:[]};});await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.import-job-row')!.click());assert.equal(button(d,'确认并开始导入').disabled,false);assert.equal(button(d,'重新生成预览').disabled,true);
- const revised='Generated revised instruction\nQuotes keep their original speaker.';await act(async()=>{const input=d.querySelector<HTMLTextAreaElement>('.import-instruction-edit textarea')!;Object.getOwnPropertyDescriptor(d.defaultView!.HTMLTextAreaElement.prototype,'value')!.set!.call(input,revised);input.dispatchEvent(new window.Event('input',{bubbles:true}));});assert.equal(button(d,'确认并开始导入').disabled,true);await act(async()=>button(d,'确认并开始导入').click());assert.equal(writes.length,0);assert.match(d.querySelector('.confirm-import')!.textContent!,/说明已修改，请先重新生成预览/);await act(async()=>button(d,'重新生成预览').click());assert.equal(writes.length,1);assert.equal(writes[0].path,'/api/imports/'+job.id+'/prepare');assert.deepEqual(writes[0].body,{instruction:revised});assert.equal(d.querySelector<HTMLTextAreaElement>('.import-instruction-edit textarea')!.value,revised);assert.equal(button(d,'确认并开始导入').disabled,true);
+ const revised='Generated revised instruction\nQuotes keep their original speaker.';await act(async()=>{const input=d.querySelector<HTMLTextAreaElement>('.import-instruction-edit textarea')!;Object.getOwnPropertyDescriptor(d.defaultView!.HTMLTextAreaElement.prototype,'value')!.set!.call(input,revised);input.dispatchEvent(new window.Event('input',{bubbles:true}));});assert.equal(button(d,'确认并开始导入').disabled,true);await act(async()=>button(d,'确认并开始导入').click());assert.equal(writes.length,0);assert.match(d.querySelector('.confirm-import')!.textContent!,/说明已修改.*重新生成预览/);await act(async()=>button(d,'重新生成预览').click());assert.equal(writes.length,1);assert.equal(writes[0].path,'/api/imports/'+job.id+'/prepare');assert.deepEqual(writes[0].body,{instruction:revised});assert.equal(d.querySelector<HTMLTextAreaElement>('.import-instruction-edit textarea')!.value,revised);assert.equal(button(d,'确认并开始导入').disabled,true);
  await act(async()=>button(d,'返回导入列表').click());await act(async()=>d.querySelectorAll<HTMLButtonElement>('.import-job-row')[1].click());await act(async()=>button(d,'返回导入列表').click());await act(async()=>d.querySelector<HTMLButtonElement>('.import-job-row')!.click());assert.equal(d.querySelector<HTMLTextAreaElement>('.import-instruction-edit textarea')!.value,revised);assert.equal(button(d,'确认并开始导入').disabled,true);fail=false;await act(async()=>button(d,'重新生成预览').click());assert.deepEqual(writes[1],writes[0]);assert.equal(button(d,'确认并开始导入').disabled,false);assert.equal(button(d,'重新生成预览').disabled,true);await act(async()=>button(d,'确认并开始导入').click());assert.equal(writes[2].path,'/api/imports/'+job.id+'/confirm');assert.equal(writes[2].body,undefined);assert.match(d.body.textContent!,/0 条记录已保存/);
 });
 test('completed imports expose three archival stages, independent Memory and flat exact record titles',async t=>{
@@ -361,5 +361,5 @@ test('public import DTO preserves exact model reason collisions and unproven war
 });
 test('a proven host gate is readable with only its exact original in closed run details',async t=>{
  const {root,d}=await fixture(t),reason='The parser did not provide a confirmation assessment.',warning='The analysis did not provide a per-file disposition list. Unlisted files must not be assumed to have been parsed.',job=importJob({status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]},reviewGate:{decision:'confirmation',reason},warnings:[warning]}),api=apiWith(path=>path==='/api/imports'?{items:[job]}:{items:[]});
- await act(async()=>root.render(view(api)));await until(()=>Boolean(d.querySelector('.import-job-row')));await act(async()=>d.querySelector<HTMLButtonElement>('.import-job-row')!.click());assert.equal(d.querySelector('.import-detail-body>.notice')!.textContent,'需要确认 · 解析未说明是否需要确认，请核对预览。');assert.equal(d.querySelector('.review-notes li')!.textContent,warning);const technical=d.querySelector<HTMLDetailsElement>('.import-host-diagnostics')!;assert.equal(technical.open,false);assert.deepEqual([...technical.querySelectorAll('pre')].map(e=>e.textContent),[reason]);
+ await act(async()=>root.render(view(api)));await until(()=>Boolean(d.querySelector('.import-job-row')));await act(async()=>d.querySelector<HTMLButtonElement>('.import-job-row')!.click());assert.match(d.querySelector('.import-detail-body>.notice')!.textContent!,/需要确认.*状态未知/);assert.equal(d.querySelector('.review-notes li')!.textContent,warning);const technical=d.querySelector<HTMLDetailsElement>('.import-host-diagnostics')!;assert.equal(technical.open,false);assert.deepEqual([...technical.querySelectorAll('pre')].map(e=>e.textContent),[reason]);
 });

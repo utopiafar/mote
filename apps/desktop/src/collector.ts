@@ -55,7 +55,7 @@ export class Collector {
   private lastImageAt?:number;
   private lastMediaSample?:{at:number;identity:string};
   private state: Status['state'] = 'stopped';
-  private message = moteText("尚未开始采集。请确认隐私设置后手动开始。");
+  private message = moteText("采集未开始。确认隐私设置后手动开始。");
   private lastCaptureAt?: string;
   private lastUploadAt?: string;
   private archiveAcknowledgment?:{at:string;origin:string};
@@ -93,7 +93,7 @@ export class Collector {
   private pendingSync() {
     const queue = this.queue.stats(), sources = this.sources?.pendingStats();
     const oldestPendingAt = [queue.oldestPendingAt, (sources?.eligibleRecords === undefined ? sources?.oldestPendingAt : sources.oldestEligibleAt), sources?.oldestUpdateAt].filter((date): date is string => Boolean(date)).sort()[0];
-    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.eligibleDepth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: queue.depth - queue.eligibleDepth + (sources?.heldRecords ?? 0), heldUpdates: sources?.heldUpdates ?? 0, heldReason: queue.blocked ? moteText("部分记录需要处理：中央记录已删除或节点需升级；请在采集记录中查看，处理后手动重试") : sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
+    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.eligibleDepth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: queue.depth - queue.eligibleDepth + (sources?.heldRecords ?? 0), heldUpdates: sources?.heldUpdates ?? 0, heldReason: queue.blocked ? moteText("部分记录待处理。查看采集记录。") : sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
   }
   private syncStatus(): Status['sync'] {
     const pending = this.pendingSync();
@@ -121,7 +121,7 @@ export class Collector {
   }
   connectionActivity(): { inFlight: boolean } { return { inFlight: this.capturing || this.uploading || this.heartbeatInFlight }; }
   async holdConnection(): Promise<() => void> {
-    if (this.running || this.connectionHeld) throw new Error(moteText("请先停止采集，再更换连接"));
+    if (this.running || this.connectionHeld) throw new Error(moteText("停止采集后更换连接。"));
     this.connectionHeld = true;
     this.heartbeatAbort?.abort(); this.captureAbort?.abort(); this.uploadAbort?.abort();
     // Cancel old-credential requests before changing the local binding.
@@ -130,7 +130,7 @@ export class Collector {
   }
   /** Freeze every producer/consumer before applying settings; preserve the user's running intent. */
   async suspendForSettings(): Promise<() => Promise<void>> {
-    if (this.connectionHeld || this.closed) throw new Error(moteText("设置正在应用或应用正在退出，请稍后重试"));
+    if (this.connectionHeld || this.closed) throw new Error(moteText("设置正在应用或应用正在退出，稍后重试"));
     const resume = this.running, intent = this.stopIntent;
     this.connectionHeld = true; this.running = false; this.lastSample = undefined;
     if (this.timer) clearTimeout(this.timer);
@@ -143,7 +143,7 @@ export class Collector {
       if (this.closed) return;
       if (resume && intent === this.stopIntent) {
         try { await this.start(); }
-        catch (error) { this.state = 'error'; this.message = moteText("设置已应用，采集暂未恢复：{0}", error instanceof Error ? error.message : moteText("请检查采集条件")); this.publish(); }
+        catch (error) { this.state = 'error'; this.message = moteText("设置已应用，采集暂未恢复：{0}", error instanceof Error ? error.message : moteText("检查采集条件")); this.publish(); }
       } else { this.state = 'stopped'; this.message = moteText("设置已应用；采集保持停止"); this.publish(); }
       void this.upload();
     };
@@ -155,7 +155,7 @@ export class Collector {
   }
   updateConfig(config: Config): void {
     // Config edits cannot change a privacy policy in the middle of capture.
-    if (this.running || this.capturing) throw new Error(moteText("请先停止采集，再修改配置"));
+    if (this.running || this.capturing) throw new Error(moteText("先停止采集，再修改配置"));
     this.uploadAbort?.abort();
 
     if (config.token !== this.config.token || config.serverUrl !== this.config.serverUrl || config.deviceId !== this.config.deviceId || config.authSignedOut !== this.config.authSignedOut) this.authorizationGeneration++;
@@ -165,9 +165,9 @@ export class Collector {
     this.publish();
   }
   async start(): Promise<void> {
-    if (this.closed || this.connectionHeld) throw new Error(moteText("正在应用设置或退出，请稍后重试"));
+    if (this.closed || this.connectionHeld) throw new Error(moteText("正在应用设置或退出，稍后重试"));
     if (this.running) return;
-    if (this.capturing) throw new Error(moteText("正在结束上一轮采集，请稍后再试"));
+    if (this.capturing) throw new Error(moteText("正在结束上一轮采集，稍后再试"));
     if (currentPlatform !== 'macos') throw new Error(moteText("此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用"));
     void this.events?.record('CAPTURE', 'STARTED');
     this.running = true; this.state = 'capturing'; this.message = moteText("已开启；按应用级别记录，完整内容先经过本地隐私过滤");
@@ -295,10 +295,10 @@ export class Collector {
         if(!valid()||!await sameForeground())return;
         browserIdentity=result?.identity;chromeReady=result?.status==='ok'&&Boolean(browserIdentity);browserScreenshotSafe=result?.screenshotSafe===true;if(!chromeReady||!result?.media)this.lastMediaSample=undefined;
         if (selected.structured && !chromeReady) this.message = !cfg.chromeOrigins.length
-          ? moteText('结构化内容未采集：请先配置允许的 Chrome 站点；应用时长按所选设置记录')
+          ? moteText('页面未采集。添加允许的 Chrome 站点。时长仍按设置记录。')
           : result?.status === 'disconnected' || !this.browserCapture
-            ? moteText('结构化内容未采集：Mote Chrome 扩展尚未连接；应用时长按所选设置记录')
-            : moteText('结构化内容未采集：Chrome 窗口、站点授权或遮挡校验未通过；应用时长按所选设置记录');
+            ? moteText('页面未采集。连接 Chrome 扩展。时长仍按设置记录。')
+            : moteText('页面未采集。检查 Chrome 窗口、站点和遮挡。时长照常记录。');
         if(chromeReady&&result){
           const browserValid=async()=>{const current=Boolean(browserIdentity&&await this.browserCapture?.validate(browserIdentity,abort.signal))&&await sameForeground();if(!current)this.lastMediaSample=undefined;return current;};
           if(selected.structured){
@@ -355,7 +355,7 @@ export class Collector {
       }
       if(!selected.screenshots||!chromeReady){this.state='capturing';this.publish();void this.upload();return;}
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-        this.state = 'permission_required'; this.message = moteText("完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置");
+        this.state = 'permission_required'; this.message = moteText("录屏未授权，仅应用活动可采。打开系统权限设置。");
         void this.events?.record('CAPTURE', 'PERMISSION'); this.publish(); return;
       }
       if (!valid()||!await sameForeground()) return;
@@ -409,7 +409,7 @@ export class Collector {
     const policy = decideSync(this.config, { ...pending, pendingRecords: pending.eligibleRecords }, Date.now(), explicit);
     if (!pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) { this.publish(); return; }
     if (!policy.ready) { this.publish(); return; }
-    if (!this.queue.binding.matches(this.config)) { this.lastUploadError = moteText("本地队列仍绑定原节点，请恢复已确认的连接"); this.publish(); return; }
+    if (!this.queue.binding.matches(this.config)) { this.lastUploadError = moteText("待传队列属于原中央。恢复原连接。"); this.publish(); return; }
     const historyRun = this.history?.begin(this.config, explicit ? 'manual' : 'automatic');
     const onBytes = historyRun ? (bytes: number) => this.history!.addBytes(historyRun, bytes) : undefined;
     this.uploading = true; this.lastUploadError = undefined;

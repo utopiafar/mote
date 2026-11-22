@@ -26,7 +26,7 @@ export function FeaturePage({page,props}:{page:string;props:PageProps}){
   const entry=webFeatures.page(page);
   const remote=entry?.requires?.filter(dep=>typeof dep==='string'||dep.host==='server')??[];
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
-  const unavailable=page==='extensions'?<PluginCenterRescue onPage={props.onPage}/>:<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
+  const unavailable=page==='extensions'?<PluginCenterRescue onPage={props.onPage}/>:<p role="status">{moteText('专用视图暂不可用，查看资料库或重试。')}</p>;
   if(remote.length&&capabilities.error)return page==='extensions'?unavailable:<ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
   if(remote.length&&!capabilities.data)return <Loading/>;
   if(remote.length&&(!capabilities.data||capabilities.data.schemaVersion!==1||!featureRequirementsAvailable(remote,capabilities.data)))return unavailable;
@@ -50,13 +50,13 @@ export function CollectionContent({entry,props}:{entry:import('./types').Collect
   const capabilities=useResource<FeatureInventory>(props.api,remote.length?'/api/features':null,5000);
   if(remote.length&&capabilities.error!==undefined)return <ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
   if(remote.length&&!capabilities.data)return <Loading/>;
-  if(remote.length&&!featureRequirementsAvailable(remote,capabilities.data))return <p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
+  if(remote.length&&!featureRequirementsAvailable(remote,capabilities.data))return <p role="status">{moteText('专用视图暂不可用，查看资料库或重试。')}</p>;
   return entry.render(props);
 }
 export function FeatureCollections({selected,onSelect,props}:{selected:string;onSelect:(id:string)=>void;props:import('./types').CollectionProps}){
   useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
   const entries=webFeatures.collections(),entry=entries.find(e=>e.id===selected);
-  return <><nav className="segmented-nav" aria-label={moteText('资料库分类')}>{entries.map(e=><button key={e.id} aria-current={e.id===selected?'page':undefined} onClick={()=>onSelect(e.id)}>{e.label}</button>)}</nav><ViewBoundary key={selected} fallback={<p>{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>}>{entry&&<CollectionContent entry={entry} props={props}/>}</ViewBoundary></>;
+  return <><nav className="segmented-nav" aria-label={moteText('资料库分类')}>{entries.map(e=><button key={e.id} aria-current={e.id===selected?'page':undefined} onClick={()=>onSelect(e.id)}>{e.label}</button>)}</nav><ViewBoundary key={selected} fallback={<p>{moteText('专用视图暂不可用，查看资料库或重试。')}</p>}>{entry&&<CollectionContent entry={entry} props={props}/>}</ViewBoundary></>;
 }
 
 /** Card and command contributions use the same exact schema and dependency checks as details. */

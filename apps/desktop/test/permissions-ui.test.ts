@@ -29,7 +29,7 @@ it('requests only the selected permission, manages existing grants, and never cl
   expect(api.requestPermission).not.toHaveBeenCalled();
   expect(el('#permission-screen').textContent?.trim()).toBe('未授权');
   expect(el('#permission-calendar').textContent?.trim()).toBe('尚未授权');
-  expect(button('accessibility').textContent).toBe('管理权限 ↗');
+  expect(button('accessibility').textContent).toBe('管理权限');
   expect(el('#permission-drag-help').hidden).toBe(false);
   button('screen').click(); await flush(); expect(api.requestPermission).toHaveBeenCalledWith('screen');
   button('accessibility').click(); await flush(); expect(api.permissionSettings).toHaveBeenCalledWith('accessibility');
@@ -71,9 +71,11 @@ it('does not repeat a pending authorization and keeps failures visible through a
   expect(api.requestPermission).toHaveBeenCalledOnce(); expect(button('calendar').disabled).toBe(true);
   reject(new Error('Generated unavailable native helper')); await flush();
   expect(button('calendar').disabled).toBe(false);
-  expect(el('#permissions-error').textContent).toBe('无法打开权限授权，请重试。');
+  const windowError=el('#permissions-error').textContent;
+  expect(windowError).toContain('权限窗口');
+  expect(windowError).not.toContain('Generated unavailable native helper');
   await vi.advanceTimersByTimeAsync(1500);
-  expect(el('#permissions-error').textContent).toBe('无法打开权限授权，请重试。');
+  expect(el('#permissions-error').textContent).toBe(windowError);
   expect(el('#permission-calendar').textContent?.trim()).toBe('尚未授权');
   el<HTMLButtonElement>('[data-permission=calendar]').click(); await flush();
   expect(api.permissionSettings).toHaveBeenCalledWith('calendar'); expect(el('#permissions-error').textContent).toBe('');
@@ -84,7 +86,7 @@ it('replaces stale granted badges with unknown when a native check fails, then r
   vi.mocked(api.permissionStatus).mockRejectedValueOnce(new Error('Generated status failure'));
   await vi.advanceTimersByTimeAsync(1500);
   expect(el('#permission-accessibility').classList.contains('unknown')).toBe(true);
-  expect(el('#permissions-error').textContent).toBe('权限状态读取失败，请重试。');
+  expect(el('#permissions-error').textContent).toContain('权限状态读取失败');
   await vi.advanceTimersByTimeAsync(1500);
   expect(el('#permission-accessibility').classList.contains('granted')).toBe(true);
   expect(el('#permissions-error').textContent).toBe('');

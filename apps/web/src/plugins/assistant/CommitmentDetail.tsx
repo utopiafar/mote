@@ -19,7 +19,7 @@ export function CommitmentDetail({api,id,scope,onOpen}:{api:Api;id:string;scope:
  return <article className="assistant-commitment-detail"><h2>{item.title}</h2><p role="status">{commitmentLabel(item.status)}</p><button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button>
   <p>{moteText('期限')} · {item.deadline?.at?dateTime(item.deadline.at):moteText('未知')}{item.deadline?.text&&<> · {item.deadline.text}</>}</p>
   {item.dueState==='overdue'&&<p role="status">{moteText('已逾期')}</p>}
-  <p>{moteText('时间经过不代表承诺已履行。')}</p>
+
   {item.matterId&&<a className="text-button" href={assistantHref('matter',item.matterId,undefined,scope)}>{moteText('返回事项')}</a>}
   {item.todoId&&<a className="text-button" href={'#/actions?'+new URLSearchParams({tab:'todos',returnTo:window.location.hash})}>{moteText('查看待办')}</a>}
   <section><h3>{moteText('进展时间线')}</h3>{item.timeline.map(event=><section key={event.eventId} className="assistant-commitment-event"><p>{event.summary}</p>

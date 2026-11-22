@@ -83,7 +83,7 @@ test('late review reads and submissions stop on leaving the panel without cancel
  const ui=await audioDom(t),read=deferred(),write=deferred(),requests:{method?:string;signal:AbortSignal;path:string}[]=[],events:string[]=[];
  const api={request:async(path:string,init?:RequestInit)=>{requests.push({path,signal:init?.signal as AbortSignal,method:init?.method});return init?.method?write.promise:read.promise;}} as Api;
  await ui.render(React.createElement(FileReview,{api,id:fileId,artifacts:speakerArtifacts(),initialSection:'review',onChanged:async()=>{events.push('changed');}}));
- assert.match(ui.d.body.textContent!,/复核使用所选模型/);await ui.click('检查可能的识别错误');await ui.render(null);
+ assert.match(ui.d.body.textContent!,/所选模型辅助复核/);await ui.click('检查可能的识别错误');await ui.render(null);
  assert.ok(requests.every(request=>request.signal?.aborted));await act(async()=>{read.resolve({items:[{id:'late',reason:'STALE REVIEW'}]});write.resolve({queued:true});});assert.deepEqual(events,[]);assert.doesNotMatch(ui.d.body.textContent!,/STALE REVIEW/);assert.ok(requests.every(request=>!request.path.endsWith('/cancel')));
 });
 

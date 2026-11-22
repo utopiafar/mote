@@ -39,7 +39,7 @@ test('related activity uses exact identities and describes incomplete coverage e
  const api={request:async(path:string)=>{reads.push(path);if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});return {items:[],nextCursor:path.includes('sourceId=')?8:null,relation:{coverage:'partial',sourceId:'generated/source'}};},setAgentTimeout:()=>{}} as Api;
  location.hash='#/activity?sourceId=generated%2Fsource';
  await act(async()=>root.render(React.createElement(Activity,{api,onNavigate:()=>{},onOpen:()=>{}})));
- assert.ok(reads.some(path=>path.includes('sourceId=generated%2Fsource')));assert.match(d.body.textContent!,/未找到已关联活动/);assert.match(d.body.textContent!,/历史关联可能不完整/);assert.doesNotMatch(d.body.textContent!,/目前没有正在进行的工作/);
+ assert.ok(reads.some(path=>path.includes('sourceId=generated%2Fsource')));assert.match(d.body.textContent!,/未找到已关联活动/);assert.match(d.body.textContent!,/仅列有稳定回执/);assert.doesNotMatch(d.body.textContent!,/目前没有正在进行的工作/);
  await act(async()=>button(d,'下一页').click());assert.ok(reads.some(path=>path.includes('cursor=8')));
  await act(async()=>{location.hash='#/activity?materialId=mat_generated';window.dispatchEvent(new d.defaultView!.Event('hashchange'));});
  assert.ok(reads.some(path=>path.includes('materialId=mat_generated')&&!path.includes('sourceId=')),'same-page filter changes update the actual read scope');

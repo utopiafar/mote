@@ -12,12 +12,12 @@ it('withdraws the claimed current directory when a committed pointer ACK require
  renderStorageLocation(root,status,'/generated/new');
  expect(root.getElementById('storage-location-name')!.textContent).toBe('暂时无法确认当前目录');
  expect(root.getElementById('capture-directory-state')!.textContent).toBe(status.storage!.recoveryRequired);
- expect(root.getElementById('capture-directory-state')!.textContent).not.toContain('新目录已生效');
+ expect(root.getElementById('capture-directory-state')!.textContent).not.toContain('新目录生效');
  expect(root.getElementById('storage-restart')!.hidden).toBe(false);
  expect((root.getElementById('capture-directory') as HTMLInputElement).value).toBe('/generated/new');
  status.storage!.recoveryRequired=undefined;
  renderStorageLocation(root,status,'/generated/new');
  expect(root.getElementById('storage-restart')!.hidden).toBe(true);
- expect(root.getElementById('capture-directory-state')!.textContent).toContain('新目录已生效');
+ expect(root.getElementById('capture-directory-state')!.textContent).toContain('新目录生效');
  dom.window.close();
 });

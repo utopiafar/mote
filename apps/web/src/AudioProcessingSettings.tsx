@@ -16,7 +16,7 @@ export function AudioModelStatus({api}:{api:Api}){
  const read=useResource<unknown>(api,'/api/media-models',5000);
  const parsed=useMemo(()=>mediaModelsViewSchema.safeParse(read.data),[read.data]);
  const model=parsed.success?parsed.data.dialogue:undefined;
- const error=read.error??(read.data!==undefined&&!model?new Error(moteText('中央响应格式无效，请刷新后重试。')):undefined);
+ const error=read.error??(read.data!==undefined&&!model?new Error(moteText('中央响应格式无效，刷新后重试。')):undefined);
  return <div className="audio-model-status">
   <strong>Fun-ASR-Nano-2512 + fsmn-vad + CAM++ + CT-Punc</strong>
   {error?<p role="alert">{errorMessage(error)} <button type="button" className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></p>:model?<>

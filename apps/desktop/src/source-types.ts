@@ -84,10 +84,10 @@ export function normalizeSourceOptions(input: unknown): SourceOptions {
     return [...new Set(value)] as string[];
   };
   const extensions = list(v.extensions, 20).map(s => s.toLowerCase());
-  if (!extensions.length || extensions.some(x => !/^\.[a-z0-9]+$/.test(x))) throw new Error(moteText("请填写扩展名，例如 .md,.txt"));
+  if (!extensions.length || extensions.some(x => !/^\.[a-z0-9]+$/.test(x))) throw new Error(moteText("填写扩展名，例如 .md,.txt"));
   const excludedPaths = list(v.excludedPaths, 1000).map(s => s.replace(/\\/g, '/').replace(/\/$/, ''));
   if (excludedPaths.some(p => p.startsWith('/') || p.split('/').some(x => !x || x === '.' || x === '..'))) throw new Error(moteText("排除路径必须是所选目录内的相对路径"));
-  if(v.retention==='archive'&&Array.isArray(v.redactLiterals)&&v.redactLiterals.length)throw new Error(moteText("原件归档不能应用文字遮盖，请选择内容索引。"));
+  if(v.retention==='archive'&&Array.isArray(v.redactLiterals)&&v.redactLiterals.length)throw new Error(moteText("原件归档不能应用文字遮盖，选择内容索引。"));
   if(v.allowRead!==undefined&&typeof v.allowRead!=='boolean')throw new Error('Invalid original read authorization');
   return {...(v.name!==undefined?{name:v.name.trim()}:{}),...(v.description!==undefined?{description:v.description}:{}),syncContinuously:v.syncContinuously??true,centralProcessingConsent:v.centralProcessingConsent??false,allowRead:v.retention==='snapshot'&&(v.allowRead??false), initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
 }

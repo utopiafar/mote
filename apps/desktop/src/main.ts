@@ -570,7 +570,7 @@ else {
       try {
         await serialize(()=>{
           // Check after waiting for other settings/logout operations as well as network I/O.
-          if(settings!==requested||expectedGeneration!==loginGeneration)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
+          if(settings!==requested||expectedGeneration!==loginGeneration)throw Error(moteText('登录会话已变更，重新打开中央页面。'));
           return deviceSettings.connectionChange(()=>deviceSettings.commitConnection({...requested,token:credential,credentialScope:'owner',authSignedOut:false,authSessionOnly:durationMs===0,authExpiresAt:expiresAt},true,true),true,true);
         });
       } catch(error) {
@@ -580,14 +580,14 @@ else {
       loginGeneration++;updateUi(clientStatus());
       const installed=settings, installedGeneration=collector.status().authorizationGeneration;
       if(requested.token&&requested.token!==credential)await loginRequest(requested,'/api/login/logout',{},requested.token).catch(()=>{});
-      if(settings!==installed||collector.status().authorizationGeneration!==installedGeneration)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));
+      if(settings!==installed||collector.status().authorizationGeneration!==installedGeneration)throw Error(moteText('登录会话已变更，重新打开中央页面。'));
     };
     ensureBrowserLogin=()=>prepareBrowserSession({settings:()=>settings,authorizationGeneration:()=>collector.status().authorizationGeneration??0,inspect:current=>testConnection(current),install:installLogin});
     browserLogin=async(page,evidenceId,durationMs=2592000000,workId,conversationId)=>{
       if(![0,86400000,604800000,2592000000].includes(durationMs))throw Error('Invalid lifetime');
       const requested=settings,generation=++loginGeneration,{verifier,challenge}=loginVerifier();
       const {id}=await loginRequest(requested,'/api/login/requests',{serverUrl:requested.serverUrl,deviceId:requested.deviceId,deviceName:requested.deviceName,platform:currentPlatform,challenge,durationMs});
-      const ensureCurrent=()=>{if(settings!==requested||generation!==loginGeneration||quitting)throw Error(moteText('登录会话已变更，请重新打开中央页面。'));};
+      const ensureCurrent=()=>{if(settings!==requested||generation!==loginGeneration||quitting)throw Error(moteText('登录会话已变更，重新打开中央页面。'));};
       ensureCurrent();
       await openCentralBrowser(requested.serverUrl,page,process.platform,url=>{ensureCurrent();return promisify(execFile)('/usr/bin/open',['-a','Google Chrome',url]);},url=>{ensureCurrent();return shell.openExternal(url);},evidenceId,undefined,id,workId,conversationId);
       await pollBrowserLogin({
@@ -662,7 +662,7 @@ else {
     capturePlugin!.initialize();
   }).catch(async error => {
     capturePlugin?.shutdown();
-    const result = await dialog.showMessageBox({ type: 'error', title: moteText("Mote 存储或配置需要恢复"), message: moteText("未开启采集，现有数据已保留"), detail: moteText("{0}\n如使用外接磁盘，请连接原磁盘后重试。应用不会创建空队列替代原目录。", error instanceof Error ? error.message : moteText("无法读取配置或持久队列")), buttons: [moteText("重试"), moteText("退出")], defaultId: 0, cancelId: 1 });
+    const result = await dialog.showMessageBox({ type: 'error', title: moteText("Mote 存储或配置需要恢复"), message: moteText("未开启采集，现有数据已保留"), detail: moteText("{0}\n连接原存储盘后重试。不会用空队列替代原目录。", error instanceof Error ? error.message : moteText("无法读取配置或持久队列")), buttons: [moteText("重试"), moteText("退出")], defaultId: 0, cancelId: 1 });
     if (result.response === 0) app.relaunch(); app.quit();
   });
 }

@@ -10,7 +10,7 @@ export function ManualMemoryRecipes({api,value,onChange,disabled=false}:{api:Api
   const choices=new Map((catalog.data?.items??[]).map(choice=>[memoryRecipeKey(choice),choice]));
   for(const ref of value)if(!choices.has(memoryRecipeKey(ref)))choices.set(memoryRecipeKey(ref),{...ref,available:false});
   return <details className="manual-memory-recipes"><summary>{moteText('本次提取方案')} · {value.length?moteText('已选 {0} 项',value.length):moteText('默认提取方式')}</summary>
-    <p className="muted">{moteText('选择仅用于本次提取。各方案会等待自己需要的资料，已完成的结果可立即查看；不选择时使用默认提取方式。')}</p>
+    <p className="muted">{moteText('仅用于本次提取。未选时用默认方案，完成结果可立即查看。')}</p>
     {Boolean(catalog.error)&&<p className="error-banner" role="alert">{errorMessage(catalog.error)} <button className="button subtle" type="button" onClick={catalog.refresh}>{moteText('重新读取')}</button></p>}
     {catalog.loading&&!catalog.data&&<Loading/>}
     <fieldset disabled={disabled}><legend>{moteText('选择本次记忆方案')}</legend>

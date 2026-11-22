@@ -10,7 +10,7 @@ const key=(value:unknown):value is string=>typeof value==='string'&&/^[a-z][a-z0
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 async function read(config:Config,path:string){
  const response=await fetch(validateServerUrl(config.serverUrl)+path,{headers:{Authorization:`Bearer ${requireConnectionToken(config)}`,'Accept-Language':getLocale()},redirect:'error',signal:AbortSignal.timeout(20000)});
- if(!response.ok){await response.body?.cancel();throw Error(response.status===401||response.status===403?moteText('令牌无效或已失效，请检查后重新登录。'):moteText('操作失败'));}
+ if(!response.ok){await response.body?.cancel();throw Error(response.status===401||response.status===403?moteText('令牌失效。重新登录。'):moteText('操作失败'));}
  return JSON.parse(await readResponseText(response,4*1024*1024));
 }
 export async function centralMemoryTopics(config:Config):Promise<TopicDirectory>{

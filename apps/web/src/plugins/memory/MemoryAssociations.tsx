@@ -28,7 +28,7 @@ function PageButtons({cursor,next,onChange}:{cursor?:string;next?:string|null;on
 function Person({api,id,range,selected,commitments,onSelect}:{api:Api;id:string;range:Range;selected?:string|null;commitments:Commitment[];onSelect:(id:string)=>void}){
   const read=useResource<Memory>(api,'/api/memories/'+encodeURIComponent(id)+'?'+new URLSearchParams({...range}));
   const item=read.error===undefined&&read.data?.id===id?read.data:undefined;
-  if(!item)return read.loading?<Loading/>:<p role="alert">{read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，请刷新后重试。')}<button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></p>;
+  if(!item)return read.loading?<Loading/>:<p role="alert">{read.error!==undefined?errorMessage(read.error):moteText('中央响应格式无效，刷新后重试。')}<button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></p>;
   return <button className={'workspace-select '+(selected===id?'active':'')} data-person-memory={id} onClick={()=>onSelect(id)}>
     <span className="memory-row-copy"><strong>{item.title}</strong>{item.statement&&<span className="memory-row-excerpt">{item.statement}</span>}{item.admission?.scope&&<small>{item.admission.scope}</small>}<small>{moteText('本页 {0} 条承诺',commitments.length)} · {moteText('本页关联 {0} 个事项',new Set(commitments.flatMap(item=>item.matterId?[item.matterId]:[])).size)}</small></span>
   </button>;
@@ -81,7 +81,7 @@ function CommitmentList({api,memories,personMemoryId,range,onOpen}:{api:Api;memo
       const latest=await api.request<CommitmentPage>(readPath,{signal:controller.signal});
       const verified=latest.items.find(value=>value.id===item.id&&value.revision===item.revision&&matches(value))?.timeline
         .find(value=>value.eventId===eventId)?.evidence.some(value=>value.id===proof.id&&value.offset===proof.offset&&value.quote===proof.quote);
-      if(!verified)throw Error(moteText('请求的操作或资源已失效，请重新读取后再确认。'));
+      if(!verified)throw Error(moteText('操作或资源已失效。刷新后确认。'));
       if(current())onOpen(formatEvidenceRef('capture',proof.id));
     }catch(error){if(current()){setProofError(errorMessage(error));refreshMemoryResources(api,true);}}
   }

@@ -70,7 +70,7 @@ test('a completed integration opened from Search returns to the selected Memory 
   if(path==='/api/memory-integrations'&&init?.method==='POST'){completed=true;return{id:'generated-integration'};}
   if(path==='/api/memory-settings')return{settings:{consolidation:{enabled:false,maxItems:5}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0,...(completed?{lastRun:{id:'generated-integration',completedAt:Date.parse(at)}}:{})}]};
  },seen);
- await act(async()=>root.render(React.createElement(MemoryDetailPage,{api,id,onOpen:()=>{},onBack:()=>back++})));await click(d,'更多');await click(d,'从这条记忆开始整理');await click(d,'开始整理');assert.match(d.querySelector('.memory-integration-workspace')!.textContent!,/本次手动整理已完成.*零条新记忆也是有效结果/);assert.equal(seen.filter(read=>read.method==='POST').length,1);await click(d,'返回');assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'Generated Memory a');assert.equal(back,0);assert.equal(window.location.hash,'#/search?q=generated');
+ await act(async()=>root.render(React.createElement(MemoryDetailPage,{api,id,onOpen:()=>{},onBack:()=>back++})));await click(d,'更多');await click(d,'从这条记忆开始整理');await click(d,'开始整理');assert.match(d.querySelector('.memory-integration-workspace')!.textContent!,/手动整理已完成.*零条/);assert.equal(seen.filter(read=>read.method==='POST').length,1);await click(d,'返回');assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'Generated Memory a');assert.equal(back,0);assert.equal(window.location.hash,'#/search?q=generated');
 });
 
 test('a selected capture without a current opaque pin stays disabled and cannot admit a request',async t=>{
@@ -174,6 +174,6 @@ test('an admitted integration receipt can arrive while hidden without initiating
  completed=true;await act(async()=>finish({id:'generated-late-admission'}));
  assert.equal(reads(),hidden,'the admitted action completion does not refresh an inactive resource');
  await render(true);assert.equal(reads(),hidden+1);
- assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/本次手动整理已完成/);
+ assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/手动整理已完成/);
  assert.equal(seen.filter(read=>read.method==='POST').length,1);
 });

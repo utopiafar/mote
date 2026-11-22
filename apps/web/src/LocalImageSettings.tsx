@@ -93,7 +93,7 @@ export function LocalImageSettings({api,control,modelName,copy,preparation}:Loca
             if(own.alive&&visit.current===own){
                 const conflict=error instanceof ApiError&&[409,422].includes(error.status);
                 const retry=!(error instanceof ApiError&&[400,401,403,404,409,410,422].includes(error.status));
-                setOperation({owner:own,busy:false,error:conflict?moteText('配置或方案已变化；请读取当前状态后重新确认。'):errorMessage(error),...(retry?{retry:intent,notice:moteText('请求结果尚未确认，请重试同一请求。')}:{})});
+                setOperation({owner:own,busy:false,error:conflict?moteText('配置或方案已变。读取后确认。'):errorMessage(error),...(retry?{retry:intent,notice:moteText('结果待确认。重试同一请求。')}:{})});
             }
         }finally{
             own.busy=false;

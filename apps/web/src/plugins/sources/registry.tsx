@@ -169,7 +169,7 @@ const larkPlugin: SourcePlugin = {
     icon: FileText,
   },
   settings: ({ api, onSources }) => <LarkSettings api={api} onSources={onSources}/>,
-  disconnectReview: () => [moteText('断开会停止读取并暂停这些来源，保留已归档资料。飞书端授权及 CLI 凭据仍保留，可在飞书中单独撤销。')],
+  disconnectReview: () => [moteText('停止读取并暂停这些来源。保留归档、飞书授权和 CLI 凭据。可在飞书单独撤销。')],
 };
 
 const mcpPlugin: SourcePlugin = {
@@ -194,7 +194,7 @@ const mcpPlugin: SourcePlugin = {
 function officialSourcePlugin(provider:OfficialProvider):SourcePlugin{
  const definition=officialConnectorDefinitions[provider];
  const plugin:SourcePlugin={id:definition.packageId,packageId:definition.packageId,kinds:[definition.kind],binding:definition.id,
-  catalog:{title:definition.name,body:()=>moteText('只读归档已选择的内容，按原始身份保留版本。'),note:()=>moteText('安装不等于授权。请先在插件中心完成配置和启用，再连接账号并选择读取范围。'),
+  catalog:{title:definition.name,body:()=>moteText('只读归档已选择的内容，按原始身份保留版本。'),note:()=>moteText('先配置并启用插件，再连接账号和选择读取范围。'),
    state:context=>!context.plugins?moteText('待确认'):!context.plugins.sourceContributions?.some(item=>item.contributionId===definition.id)?moteText('尚未安装'):!context.catalog?.[definition.id]?moteText('已安装，待配置'):sourcePluginStateLabel(plugin,context),
    target:{pageId:'sources',href:'#/connections?setup='+definition.id},icon:provider==='notion'?FileText:Link2,setupChoice:{id:definition.id,title:definition.name}},
   setup:{id:definition.id,render:({api,refresh,requested})=>requested?<OfficialConnectorSettings api={api} provider={provider} refresh={refresh}/>:null},

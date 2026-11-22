@@ -114,7 +114,13 @@ async function run(){
   await checkLabel(box+' fieldset label','包括已归档资料',false);await checkLabel(box+' fieldset label','包括授权后新增资料',true);
   await snap('only-generated-future-scope');await click('保存范围草稿',box+' button');const saved=await receipt('/api/action-capability-drafts','PUT');assert.equal(saved.response.id,saved.body.id);assert.deepEqual(saved.body.inputs,{sources:[scenario.source],existingArchived:false,futureInputs:true});assert.deepEqual(saved.body.target,scenario.target);report.draftId=saved.response.id;
   await until(()=>js(`document.querySelectorAll(${JSON.stringify(box+' fieldset select')}).length===2`),'saved current draft provider choice');await select(box+' fieldset select',JSON.stringify(prepared.provider.identity),1);
-  await checkLabel(box+' fieldset label','我允许此插件按以上资料范围，在指定设备和日历中创建日程、更新或取消原事件，并在 Mote 中标记完成。',true);await snap('explicit-scope-authorization');await click('确认范围授权',box+' button');const granted=await receipt('/api/action-capability-grants','PUT');assert.equal(granted.response.id,granted.body.id);assert.equal(granted.body.draftId,report.draftId);assert.deepEqual(granted.body.plugin,prepared.provider.identity);
+  const requiredDisclosure=['以上资料范围','指定设备和日历','创建日程','更新或取消原事件','在 Mote 标记完成'];
+  const consent=await js(`Array.from(document.querySelectorAll(${JSON.stringify(box+' fieldset label')}))
+    .filter(label=>label.getClientRects().length&&label.querySelector('input[type="checkbox"]'))
+    .map(label=>label.textContent.trim())
+    .find(text=>${JSON.stringify(requiredDisclosure)}.every(term=>text.includes(term)))`);
+  assert.ok(consent,'Calendar write acknowledgement discloses its scope, target and effects');
+  await checkLabel(box+' fieldset label',consent,true);await snap('explicit-scope-authorization');await click('确认范围授权',box+' button');const granted=await receipt('/api/action-capability-grants','PUT');assert.equal(granted.response.id,granted.body.id);assert.equal(granted.body.draftId,report.draftId);assert.deepEqual(granted.body.plugin,prepared.provider.identity);
   const after=await inventory();const matches=after.data.grants.filter(value=>exactGrant(value,prepared.provider));assert.equal(matches.length,1);report.grant=matches[0];await snap('real-grant-confirmed');report.checks.push('Actual owner UI enabled discovery without changing timezone or removing prior review devices, then explicitly granted one real generated source and LOCAL target for future input only');
  }else{
   const grants=prepared.data.grants.filter(value=>exactGrant(value,prepared.provider));assert.equal(grants.length,1,'The one exact prospective grant must already exist');report.grant=grants[0];

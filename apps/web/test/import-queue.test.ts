@@ -82,7 +82,7 @@ test('missing local files and missing directories expose source-specific recover
   queue.enqueue({...draft('missing'),source:{kind:'files',files:[file]}});queue.enqueue({...draft('directory'),source:{kind:'directory',path:'/generated/missing'}});
   await until(()=>queue.getSnapshot().entries.every(entry=>entry.state==='failed'));
   assert.deepEqual(queue.getSnapshot().entries.map(entry=>entry.failure!.recovery),['files','directory']);
-  assert.match(queue.getSnapshot().entries[0].failure!.message,/重新选择文件/);
+  assert.match(queue.getSnapshot().entries[0].failure!.message,/文件无法读取/);
   assert.match(queue.getSnapshot().entries[1].failure!.message,/目录不存在/);
 });
 
@@ -91,7 +91,7 @@ test('discard aborts only its admission; duplicate paths are rejected before upl
   const first=f.queue.enqueue(draft('first'));f.queue.enqueue(draft('second'));f.queue.discard(first);
   hold.resolve({id:f.begins[0].id,fileId:'archive:first',partBytes:4,parts:[]});await until(()=>f.writes.length===1);
   assert.equal(f.writes[0].name,'second');assert.equal(f.queue.getSnapshot().entries.length,1);
-  assert.throws(()=>f.queue.enqueue({...draft('duplicate'),source:{kind:'files',files:[new File(['one'],'same.txt'),new File(['two'],'same.txt')]}}),/文件路径不能重复/);
+  assert.throws(()=>f.queue.enqueue({...draft('duplicate'),source:{kind:'files',files:[new File(['one'],'same.txt'),new File(['two'],'same.txt')]}}),/导入路径重复/);
   assert.equal(f.begins.length,2);
 });
 
