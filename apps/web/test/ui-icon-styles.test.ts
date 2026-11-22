@@ -65,3 +65,22 @@ test('disclosures styled with a chevron keep a Lucide icon in their summary',()=
   assert.ok(summaries>0,'The test checks the actual disclosure components');
   assert.deepEqual(omissions,[]);
 });
+
+test('Web controls do not use literal text for standalone control icons',()=>{
+  const webSource=fileURLToPath(sourceDirectories[0]);
+  const controls=new Set(['button','summary','a']);
+  const icons=new Set([...('▷▶…⋯⋮⇣↥↗←→⌄⌃›‹◇◉▦▧▤⌕✎✧◈×'), '···','...']);
+  const glyphs: string[]=[];
+  for(const file of readdirSync(webSource,{recursive:true}).filter(file=>file.endsWith('.tsx'))){
+    const tree=ts.createSourceFile(file,readFileSync(join(webSource,file),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    function visit(node:ts.Node){
+      if(ts.isJsxText(node)&&ts.isJsxElement(node.parent)&&controls.has(node.parent.openingElement.tagName.getText(tree))){
+        const glyph=node.text.trim().split(/\s+/u).find(text=>icons.has(text));
+        if(glyph)glyphs.push(`${file}:${tree.getLineAndCharacterOfPosition(node.getStart(tree)).line+1} ${glyph}`);
+      }
+      ts.forEachChild(node,visit);
+    }
+    visit(tree);
+  }
+  assert.deepEqual(glyphs,[]);
+});
