@@ -72,8 +72,8 @@
 .owner-maintenance-page .owner-disclosure { margin:23px 0 0; padding:0; border:0; background:transparent; }
 .owner-disclosure>summary { cursor:pointer; font-size:12px; line-height:20px; padding:13px 0; color:var(--mote-muted); list-style:none; }
 .owner-disclosure>summary::-webkit-details-marker { display:none; }
-.owner-disclosure>summary::before { content:'›'; display:inline-block; margin-right:10px; }
-.owner-disclosure[open]>summary::before { transform:rotate(90deg); }
+.owner-disclosure>summary>.disclosure-icon { vertical-align:middle; margin-inline-end:10px; }
+.owner-disclosure[open]>summary>.disclosure-icon { transform:rotate(90deg); }
 .owner-disclosure[open]>summary { margin-bottom:12px; }
 .owner-disclosure .usage-filter { margin:16px 0; }
 .owner-maintenance-page .owner-section { margin-top:28px; }

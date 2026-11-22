@@ -1,3 +1,4 @@
+import {ArrowLeft} from 'lucide-react';
 import {useEffect,useRef,useState} from 'react';
 import {parseEvidenceRef} from '@mote/shared';
 import type {ModelSettingsView} from '@mote/shared/models';
@@ -97,7 +98,7 @@ export function ManualMemoryWorkspace({api,launch,range,onClose,onOpen,onViewMem
  const error=currentActivity?.scopeKey===workKey?currentActivity?.error:undefined;
  const title=work.view==='integration'?moteText('整理这条记忆'):work.view==='integrate-entry'?moteText('手动整理记忆'):moteText('手动提取记忆');
  return <section className="memory-workspace-final" aria-label={title}>
-  <header><h1>{title}</h1><button className="text-button" onClick={()=>work.view==='extract-entry'||work.view==='integrate-entry'||work.view==='integration'&&!!launch.candidate?onClose():change({view:work.view==='integration'?'integrate-entry':'extract-entry'})}>← {moteText('返回')}</button></header>
+  <header><h1>{title}</h1><button className="text-button" onClick={()=>work.view==='extract-entry'||work.view==='integrate-entry'||work.view==='integration'&&!!launch.candidate?onClose():change({view:work.view==='integration'?'integrate-entry':'extract-entry'})}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回')}</button></header>
   {error&&<div role="alert" className="memory-work-error"><p>{error}</p></div>}
   {work.view==='extract-entry'&&<><button className="button" disabled={busy} onClick={()=>change({view:'range',scope:chosenRange})}>{moteText('按时间范围提取')}</button><MemoryWorkChoices api={api} kind="extract" deviceId={range.deviceId} disabled={allBusy} onMaterial={choice=>change({view:'source',scope:{kind:'source',choice}})} onMemory={()=>{}}/><button className="text-button" onClick={()=>change({view:'job',jobId:work.jobId??launch.jobId??recent.data?.items[0]?.id})}>{moteText('查看最近的处理')}</button></>}
   {work.view==='integrate-entry'&&<><MemoryWorkChoices api={api} kind="integrate" deviceId={range.deviceId} disabled={allBusy} onMaterial={()=>{}} onMemory={candidate=>change({view:'integration',candidate})}/><button className="text-button" onClick={()=>change({view:'integration'})}>{moteText('查看最近的处理')}</button></>}

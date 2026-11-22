@@ -48,9 +48,10 @@ test('an advanced route waits for the exact readable recording and drops its pan
 });
 
 test('speaker naming opens the selected row, reads no samples until requested, and shares one scoped player',async t=>{
- const f=await fixture(t);await f.render();assert.equal(f.d.querySelectorAll('.recording-speaker-row').length,2);assert.equal(f.d.activeElement?.getAttribute('data-recording-name'),'SPEAKER_1');assert.deepEqual(f.reads,[]);assert.equal(f.d.querySelector('audio'),null);
- await f.click('▷ 试听片段',0);assert.equal(f.reads.length,1);assert.equal(new URL(f.reads[0],'http://localhost').searchParams.get('name'),'speaker_samples/SPEAKER_0.wav');assert.equal(new URL(f.reads[0],'http://localhost').searchParams.get('artifactId'),diarization);assert.equal(f.d.querySelectorAll('audio').length,1);
- await f.click('▷ 试听片段',0);assert.equal(f.reads.length,1,'replaying the selected sample does not fetch every sample');await f.click('▷ 试听片段',1);assert.equal(f.d.querySelectorAll('audio').length,1);assert.equal(f.reads.length,2);assert.deepEqual(f.revoked,['blob:generated-0']);
+ const f=await fixture(t);await f.render();assert.equal(f.d.querySelectorAll('.recording-speaker-row').length,2);
+ assert.equal(f.d.querySelectorAll('.recording-speaker-row button svg.lucide-play[aria-hidden="true"]').length,2);assert.equal(f.d.activeElement?.getAttribute('data-recording-name'),'SPEAKER_1');assert.deepEqual(f.reads,[]);assert.equal(f.d.querySelector('audio'),null);
+ await f.click('试听片段',0);assert.equal(f.reads.length,1);assert.equal(new URL(f.reads[0],'http://localhost').searchParams.get('name'),'speaker_samples/SPEAKER_0.wav');assert.equal(new URL(f.reads[0],'http://localhost').searchParams.get('artifactId'),diarization);assert.equal(f.d.querySelectorAll('audio').length,1);
+ await f.click('试听片段',0);assert.equal(f.reads.length,1,'replaying the selected sample does not fetch every sample');await f.click('试听片段',1);assert.equal(f.d.querySelectorAll('audio').length,1);assert.equal(f.reads.length,2);assert.deepEqual(f.revoked,['blob:generated-0']);
  await f.input('SPEAKER_1','  Generated Ada  ');await f.click('保存名称');assert.deepEqual(f.writes,[{path:'/api/files/'+id+'/speakers',body:{artifactId:dialogue,names:{SPEAKER_1:'Generated Ada'}}}]);assert.deepEqual(f.events(),{changed:1,closed:1});await f.unmount();assert.deepEqual(f.revoked,['blob:generated-0','blob:generated-1']);
 });
 
@@ -59,7 +60,7 @@ test('a naming failure keeps the same draft and never closes or silently retries
 });
 
 for(const change of ['owner','close'] as const)test('a late selected sample cannot start audio after '+change,async t=>{
- let accept!:(value:Response)=>void,signal:AbortSignal|undefined;const response=new Promise<Response>(yes=>accept=yes),f=await fixture(t,{raw:async(_path,init)=>{signal=init?.signal as AbortSignal;return response;}});await f.render();await f.click('▷ 试听片段',0);assert.ok(signal);
+ let accept!:(value:Response)=>void,signal:AbortSignal|undefined;const response=new Promise<Response>(yes=>accept=yes),f=await fixture(t,{raw:async(_path,init)=>{signal=init?.signal as AbortSignal;return response;}});await f.render();await f.click('试听片段',0);assert.ok(signal);
  if(change==='close')await f.unmount();else{const nextApi={...f.api,raw:async()=>{throw Error('New owner sample must require a new explicit selection');}} as Api;await f.render({...f.props,api:nextApi});}
  assert.equal(signal!.aborted,true);await act(async()=>accept(new Response(new Blob(['STALE SAMPLE']))));assert.equal(f.d.querySelector('audio'),null);assert.deepEqual(f.urls,[]);assert.equal(f.reads.length,1);
 });
@@ -81,7 +82,7 @@ test('recording header names stay within the current file session and correction
 });
 
 test('a failed sample read retries only on another explicit selection of that sample',async t=>{
- let calls=0;const f=await fixture(t,{raw:async()=>{if(++calls===1)throw Error('Generated sample unavailable');return new Response(new Blob(['Generated retry sample']));}});await f.render();await f.click('▷ 试听片段',0);assert.equal(calls,1);assert.match(f.d.body.textContent!,/Generated sample unavailable/);await act(async()=>{});assert.equal(calls,1);await f.click('▷ 试听片段',0);assert.equal(calls,2);for(let attempt=0;attempt<20&&!f.d.querySelector('audio');attempt++)await act(async()=>new Promise(done=>setTimeout(done,5)));assert.equal(f.d.querySelectorAll('audio').length,1);
+ let calls=0;const f=await fixture(t,{raw:async()=>{if(++calls===1)throw Error('Generated sample unavailable');return new Response(new Blob(['Generated retry sample']));}});await f.render();await f.click('试听片段',0);assert.equal(calls,1);assert.match(f.d.body.textContent!,/Generated sample unavailable/);await act(async()=>{});assert.equal(calls,1);await f.click('试听片段',0);assert.equal(calls,2);for(let attempt=0;attempt<20&&!f.d.querySelector('audio');attempt++)await act(async()=>new Promise(done=>setTimeout(done,5)));assert.equal(f.d.querySelectorAll('audio').length,1);
 });
 
 test('an actual provider-supplied transcript artifact uses the transcript reader without pretending the JSON export is audio',async t=>{

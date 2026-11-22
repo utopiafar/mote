@@ -1,3 +1,4 @@
+import {ArrowLeft} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {pageHash,pageRoutes} from '@mote/shared';
 import React,{useEffect,useState} from 'react';
@@ -22,7 +23,7 @@ function PluginCenterRoute({api,onPage}:Pick<PageProps,'api'|'onPage'>){
   },[]);
   const explicitTab=new URLSearchParams(hash.split('?')[1]??'').has('tab');
   return explicitTab
-    ? <><SkillsStyles/><button className="text-button" onClick={()=>{window.location.hash=pageHash('skills');}}>← {moteText('返回技能')}</button><PluginCenter api={api} onPage={onPage}/></>
+    ? <><SkillsStyles/><button className="text-button" onClick={()=>{window.location.hash=pageHash('skills');}}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回技能')}</button><PluginCenter api={api} onPage={onPage}/></>
     : <><SkillsStyles/><SkillsPage api={api}/></>;
 }
 

@@ -137,16 +137,16 @@ test('a concurrent settings change rejects the original image draft without over
 test('the exact service and feature-model pages return to the same unsaved image draft without publishing it',async t=>{
  const f=await fixture(t);await act(async()=>f.root.render(view(f.api)));await until(()=>!!f.d.querySelector('.material-processing-form'),'image settings');
  const check=f.d.querySelector<HTMLInputElement>('.material-processing-form input[type=checkbox]')!,before=check.checked;await act(async()=>check.click());
- await click(f.d,'管理这个服务 →');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'exact selected service');
+ await click(f.d,'管理这个服务');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'exact selected service');
  assert.equal(f.d.querySelector('[data-processing-main]')!.hasAttribute('hidden'),true);assert.equal([...f.d.querySelectorAll('.processing-services label')].find(value=>value.firstChild?.textContent==='服务名称')!.querySelector('input')!.value,'Central OCR');
  await click(f.d,'图片');assert.equal(f.d.querySelector('[data-processing-main]')!.hasAttribute('hidden'),false);assert.equal(check.checked,!before);assert.equal(f.writes.length,0);
- await click(f.d,'更改功能模型 →');await until(()=>!!f.d.querySelector('.module-assignments'),'feature models');assert.equal(f.d.querySelector('[data-processing-main]')!.hasAttribute('hidden'),true);await click(f.d,'← 图片');assert.equal(check.checked,!before);assert.equal(f.d.querySelector('[data-processing-main]')!.hasAttribute('hidden'),false);assert.equal(f.writes.length,0);
+ await click(f.d,'更改功能模型');await until(()=>!!f.d.querySelector('.module-assignments'),'feature models');assert.equal(f.d.querySelector('[data-processing-main]')!.hasAttribute('hidden'),true);await click(f.d,'图片');assert.equal(check.checked,!before);assert.equal(f.d.querySelector('[data-processing-main]')!.hasAttribute('hidden'),false);assert.equal(f.writes.length,0);
 });
 
 test('a confirmed edit to the same service advances only its known revision and keeps the parent image draft saveable',async t=>{
  const f=await fixture(t);await act(async()=>f.root.render(view(f.api)));await until(()=>!!f.d.querySelector('.material-processing-form'),'image settings');
  const enabled=f.d.querySelector<HTMLInputElement>('.material-processing-form input[type=checkbox]')!;await act(async()=>enabled.click());const expected=enabled.checked;
- await click(f.d,'管理这个服务 →');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'exact selected service');
+ await click(f.d,'管理这个服务');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'exact selected service');
  const name=[...f.d.querySelectorAll('.processing-services label')].find(value=>value.firstChild?.textContent==='服务名称')!.querySelector('input')!;
  await act(async()=>{Object.getOwnPropertyDescriptor(f.d.defaultView!.HTMLInputElement.prototype,'value')!.set!.call(name,'Generated edited local OCR');name.dispatchEvent(new window.Event('input',{bubbles:true}));});
  await act(async()=>f.d.querySelector<HTMLButtonElement>('.processing-services .model-save-footer .primary')!.click());await until(()=>f.d.querySelector('.processing-services [role=status]')?.textContent?.includes('服务已保存')===true,'actual service save');
@@ -156,11 +156,11 @@ test('a confirmed edit to the same service advances only its known revision and 
 
 test('opening a removed exact service never exposes the previous service write target and keeps that separate draft for an explicit return',async t=>{
  const f=await fixture(t),initial=await f.call('/api/file-processing');initial.policy.services.push({id:'generated-b',name:'Generated service B',kind:'image',execution:'remote',endpoint:'https://generated.invalid/b',model:''});await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:initial.revision,settings:initial.settings,policy:initial.policy})});
- await act(async()=>f.root.render(view(f.api)));await until(()=>!!f.d.querySelector('.material-processing-form'),'image settings');await click(f.d,'管理这个服务 →');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'service A');
+ await act(async()=>f.root.render(view(f.api)));await until(()=>!!f.d.querySelector('.material-processing-form'),'image settings');await click(f.d,'管理这个服务');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'service A');
  const name=[...f.d.querySelectorAll('.processing-services label')].find(value=>value.firstChild?.textContent==='服务名称')!.querySelector('input')!;await act(async()=>{Object.getOwnPropertyDescriptor(f.d.defaultView!.HTMLInputElement.prototype,'value')!.set!.call(name,'Unsaved separate A');name.dispatchEvent(new window.Event('input',{bubbles:true}));});await click(f.d,'图片');await select(f.d,'OCR 服务','generated-b');
  const changed=await f.call('/api/file-processing');changed.policy.services=changed.policy.services.filter((value:any)=>value.id!=='generated-b');await f.call('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:changed.revision,settings:changed.settings,policy:changed.policy})});await act(async()=>resources(f.api).invalidate(path=>path==='/api/file-processing'));await until(()=>!resources(f.api).get('/api/file-processing').getSnapshot().loading,'current service catalog');f.writes.length=0;
- await click(f.d,'管理这个服务 →');await until(()=>f.d.querySelector('.processing-services [role=alert]')?.textContent?.includes('所选服务已不可用')===true,'removed exact service');assert.equal(f.d.querySelector('.processing-services.is-detail form'),null);assert.equal(f.writes.length,0);
- await click(f.d,'← 图片');await select(f.d,'OCR 服务','central-image-ocr');await click(f.d,'管理这个服务 →');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'explicit service A return');assert.equal([...f.d.querySelectorAll('.processing-services label')].find(value=>value.firstChild?.textContent==='服务名称')!.querySelector('input')!.value,'Unsaved separate A');assert.equal(f.writes.length,0);
+ await click(f.d,'管理这个服务');await until(()=>f.d.querySelector('.processing-services [role=alert]')?.textContent?.includes('所选服务已不可用')===true,'removed exact service');assert.equal(f.d.querySelector('.processing-services.is-detail form'),null);assert.equal(f.writes.length,0);
+ await click(f.d,'图片');await select(f.d,'OCR 服务','central-image-ocr');await click(f.d,'管理这个服务');await until(()=>!!f.d.querySelector('.processing-services.is-detail form'),'explicit service A return');assert.equal([...f.d.querySelectorAll('.processing-services label')].find(value=>value.firstChild?.textContent==='服务名称')!.querySelector('input')!.value,'Unsaved separate A');assert.equal(f.writes.length,0);
 });
 
 test('an old owner save cannot repaint a different owner or trigger its second image write',async t=>{

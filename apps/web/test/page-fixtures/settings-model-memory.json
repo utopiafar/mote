@@ -1,0 +1,149 @@
+{
+  "route": "#/system/models?category=memory",
+  "waitFor": ".plugin-rhythm > summary > svg.disclosure-icon",
+  "openDisclosures": [
+    ".plugin-current-plan .plugin-advanced > summary",
+    ".plugin-rhythm > summary",
+    ".memory-rhythm-advanced > summary",
+    ".plugin-memory-more > summary",
+    ".plugin-inventory > summary"
+  ],
+  "api": {
+    "GET /api/configuration": {"status": 200, "body": {"domains": []}},
+    "GET /api/devices": {"status": 200, "body": {"items": [], "disconnectedDeviceIds": []}},
+    "GET /api/memory-settings": {
+      "status": 200,
+      "body": {
+        "revision": 1,
+        "settings": {
+          "drainWindows": 4,
+          "batchCharacters": 4000,
+          "recentTurns": 8,
+          "contextCharacters": 4000,
+          "summaryCharacters": 2000,
+          "consolidation": {
+            "enabled": false,
+            "intervalHours": 12,
+            "maxWaitHours": 24,
+            "minChanges": 1,
+            "maxItems": 3
+          },
+          "working": {
+            "enabled": false,
+            "intervalHours": 12,
+            "maxWaitHours": 24,
+            "minChanges": 1,
+            "maxItems": 3
+          },
+          "extraction": {
+            "enabled": false,
+            "intervalHours": 12,
+            "maxWaitHours": 24,
+            "minChanges": 1,
+            "maxItems": 3
+          },
+          "insights": {
+            "enabled": false,
+            "intervalHours": 12,
+            "maxWaitHours": 24,
+            "minChanges": 1,
+            "maxItems": 3
+          }
+        },
+        "extensions": []
+      }
+    },
+    "GET /api/memory-spaces/default/binding": {
+      "status": 200,
+      "body": {
+        "revision": 1,
+        "generation": 4,
+        "mode": "modules",
+        "modules": [],
+        "activePlan": {
+          "id": "builtin",
+          "name": "Generated fixture plan",
+          "mode": "modules",
+          "modules": [],
+          "capabilities": [],
+          "available": true,
+          "allowedActions": []
+        },
+        "plans": [
+          {
+            "id": "builtin",
+            "name": "Generated fixture plan",
+            "mode": "modules",
+            "modules": [],
+            "capabilities": [],
+            "available": true,
+            "allowedActions": []
+          }
+        ],
+        "admission": {
+          "desired": true,
+          "state": "enabled",
+          "generation": 4,
+          "queued": 0,
+          "running": 0,
+          "checkpointed": 0,
+          "resultUnknown": 0
+        },
+        "allowedActions": []
+      }
+    },
+    "GET /api/model-authorization": {
+      "status": 200,
+      "body": {"authorization": {"revision": 2, "state": "on", "excludedSourceIds": []}}
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {"ideas": 3, "connections": true}
+      }
+    },
+    "GET /api/operations/changes": {"status": 200, "body": {"cursor": 0, "ids": [], "hasMore": false, "reset": false}},
+    "GET /api/plugin-builds": {"status": 200, "body": []},
+    "GET /api/plugins": {
+      "status": 200,
+      "body": {
+        "revision": 5,
+        "installation": {"supported": true, "runtime": "worker", "restartRequired": false},
+        "packages": [],
+        "instances": [],
+        "catalog": [],
+        "sourceContributions": []
+      }
+    },
+    "GET /api/plugins/presentation": {"status": 200, "body": {"instances": []}},
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": {"configured": false, "model": null, "provider": ""},
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{"status": "text_ready", "count": 3}]
+        },
+        "index": {"mode": "text", "model": null},
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-21T09:30:00+08:00"
+      }
+    },
+    "POST /api/login/exchange": {"status": 200, "body": {"token": "generated-page-snapshot-session-only"}}
+  }
+}

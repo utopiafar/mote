@@ -1,7 +1,7 @@
 import {FeaturePanels} from '../../features/runtime';
 import {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {moteText} from '@mote/shared/i18n';
-import {ChevronRight,FileText} from 'lucide-react';
+import {ChevronRight,FileText,ArrowRight} from 'lucide-react';
 import type {OperationPage,OperationDetail,OperationState,OperationSummary} from '@mote/shared';
 import {type Api,errorMessage} from '../../api';
 import type {Page} from '../../navigation';
@@ -78,7 +78,7 @@ export function ProcessingStatus({api,onPage}:{api:Api;onPage:(page:Page)=>void}
  return <section className="processing-status" aria-label={moteText('处理状态')} aria-busy={loading}>
   {error!==undefined&&<p role="alert">{errorMessage(error)} <button type="button" className="text-button" onClick={()=>{running.refresh();waiting.refresh();}}>{moteText('重试')}</button></p>}
   {loading&&!items.length?<LoadingText/>:items.length?items.map(operation=><button type="button" key={operation.id} className="processing-entry-row" onClick={()=>onPage('processing')}><span className="model-profile-symbol"><FileText size={18}/></span><span><strong>{moteText(kinds[operation.kind]||'上下文处理')}</strong></span><span className="processing-current"><Badge state={operation.state} reason={operation.waitingReason}/></span><ChevronRight size={15}/></button>):<p>{moteText('目前没有处理任务')}</p>}
-  <button type="button" className="text-button" onClick={()=>onPage('processing')}>{moteText('处理任务')} →</button>
+  <button type="button" className="text-button" onClick={()=>onPage('processing')}>{moteText('处理任务')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></button>
  </section>;
 }
 export function Processing({api,extensions=false,embedded=false,onNavigate}:{api:Api;extensions?:boolean;embedded?:boolean;onNavigate:(page:Page)=>void}){return extensions?<WorkflowProcessing api={api} extensions embedded={embedded} onNavigate={onNavigate}/>:<OperationsCentre api={api} onNavigate={onNavigate}/>;}

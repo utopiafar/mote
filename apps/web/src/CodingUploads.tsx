@@ -1,3 +1,4 @@
+import {ChevronRight} from 'lucide-react';
 import { useState } from 'react';
 import {confirmNavigation} from './unsaved';
 import {useDiscoveryState,discoveryAvailabilityText} from './DiscoveryLink';
@@ -83,7 +84,7 @@ function CodingPublished({api,sourceId,expected,availability,onOpen}:{api:Api;so
  return <section className="coding-published"><h4>{moteText('已发布正文')}</h4>{availability!=='available'?<p>{discoveryAvailabilityText(availability)}</p>:<>
  {page.error!==undefined||mismatched?<div role="alert"><p>{changed?moteText('当前正文列表已变化，请重新读取。'):mismatched?moteText('中央响应格式无效，请刷新后重试。'):moteText('正文暂不可读取，请重试。')}</p><button className="text-button" onClick={changed||mismatched?reset:page.refresh}>{moteText('重新读取')}</button><details><summary>{moteText('技术详情')}</summary><pre>{errorMessage(page.error??new Error('Published source identity mismatch'))}</pre></details></div>:null}
  {page.loading&&!data&&<Loading/>}{!page.loading&&!page.error&&!mismatched&&!items.length&&<p>{expected===0?moteText('尚无已发布正文'):moteText('正文暂不可读取，请重试。')}</p>}
- <div className="coding-published-list">{items.map(item=><a key={item.ref} className="coding-published-row" onClick={event=>{if(onOpen&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){event.preventDefault();if(confirmNavigation())onOpen(item.ref);}}} href={'#/library?'+new URLSearchParams({view:'materials',sourceId,selected:item.ref})}><span><strong>{item.material!.title}</strong><small>{dateTime(item.contentAt)}</small></span><span aria-hidden="true">›</span></a>)}</div>
+ <div className="coding-published-list">{items.map(item=><a key={item.ref} className="coding-published-row" onClick={event=>{if(onOpen&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){event.preventDefault();if(confirmNavigation())onOpen(item.ref);}}} href={'#/library?'+new URLSearchParams({view:'materials',sourceId,selected:item.ref})}><span><strong>{item.material!.title}</strong><small>{dateTime(item.contentAt)}</small></span><span aria-hidden="true"><ChevronRight size={14} aria-hidden="true"/></span></a>)}</div>
  {(cursors.length>1||data?.nextCursor)&&<nav aria-label={moteText('已发布正文')}><button className="text-button" disabled={page.loading||cursors.length===1} onClick={()=>setPaging({owner:api,source:sourceId,cursors:cursors.slice(0,-1)})}>{moteText('上一页')}</button><span>{moteText('第 {0} 页',cursors.length)}</span><button className="text-button" disabled={page.loading||!data?.nextCursor} onClick={()=>{if(data?.nextCursor)setPaging({owner:api,source:sourceId,cursors:[...cursors,data.nextCursor]});}}>{moteText('下一页')}</button></nav>}
  </>}</section>;
 }

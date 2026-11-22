@@ -1,3 +1,4 @@
+import {desktopIcon} from './desktop-icon';
 import {moteText} from '@mote/shared/i18n';
 import {appendDiagnostic} from './ui-diagnostic';
 import type {DesktopApi,Status} from './contracts';
@@ -9,7 +10,7 @@ import {showLoadingText} from './loading-ui';
 export function createCaptureContextUi(api:DesktopApi,root:Document=document,onDraftChange:()=>void=()=>{}){
   const button=root.createElement('button');button.id='capture-context-open';button.type='button';button.className='text-button';button.textContent=moteText('资料说明');root.querySelector('[data-page="screen"] .page-header')!.append(button);
   const dialog=root.createElement('dialog');dialog.id='capture-context-dialog';dialog.className='source-add-dialog capture-context-dialog';
-  const header=root.createElement('header');header.className='capture-context-header';const title=root.createElement('h2');title.textContent=moteText('采集资料说明');const dismiss=root.createElement('button');dismiss.type='button';dismiss.className='text-button';dismiss.textContent='×';dismiss.setAttribute('aria-label',moteText('关闭'));header.append(title,dismiss);const body=root.createElement('div');body.className='capture-context-body';dialog.append(header,body);
+  const header=root.createElement('header');header.className='capture-context-header';const title=root.createElement('h2');title.textContent=moteText('采集资料说明');const dismiss=root.createElement('button');dismiss.type='button';dismiss.className='text-button';dismiss.append(desktopIcon(root,'x',true));dismiss.setAttribute('aria-label',moteText('关闭'));header.append(title,dismiss);const body=root.createElement('div');body.className='capture-context-body';dialog.append(header,body);
   const more=root.createElement('details');more.id='capture-context-more';more.className='capture-context-more';const moreTitle=root.createElement('summary');moreTitle.textContent=moteText('更多');more.append(moreTitle);
   const entries=([['activity',moteText('记录时长')],['screen',moteText('保存截图')],['structured',moteText('结构化解析')],['notifications',moteText('通知')]] as const).map(([channel,label])=>{
     const field=root.createElement('label');field.className='capture-context-field';field.append(root.createTextNode(label));

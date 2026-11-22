@@ -3,6 +3,9 @@ import {JSDOM} from 'jsdom';
 import {readFileSync} from 'node:fs';
 import {desktopUiLayout,linearUiTheme} from '@mote/shared';
 import {createDesktopPresentation,defaultDesktopRenderer,type DesktopLayoutRenderer,type DesktopPresentationScope} from '../src/presentation';
+import {desktopContentIcon,desktopIcon} from '../src/desktop-icon';
+import {mountSettingsWorkspace,showBackupOperation} from '../src/settings-workspace';
+
 
 let dom:JSDOM|undefined;
 afterEach(()=>{dom?.window.close();});
@@ -46,6 +49,31 @@ it('renders the five local sections and removes Home, Ask and Central record fil
   expect(document.getElementById('central')).toBeNull();
   expect(document.querySelector('.sidebar-device, #sidebar-device, #sidebar-state')).toBeNull();
   shell.dispose();
+});
+
+it('resolves local window icons in the shared SVG sprite',()=>{
+  dom=new JSDOM(readFileSync(new URL('../src/index.html',import.meta.url),'utf8'));
+  const document=dom.window.document;
+  mountSettingsWorkspace(document);
+  showBackupOperation('export','working','Generated export',document,{name:'generated.json',path:'/generated.json'});
+  const sources=['note','screen','ui_page','activity','notification','media','file','calendar','coding'] as const;
+  const icons=sources.map(source=>desktopContentIcon(document,source));
+  expect(icons.map(icon=>icon.firstElementChild?.getAttribute('href'))).toEqual([
+    '#icon-pencil','#icon-screen','#icon-file-text','#icon-clock','#icon-bell','#icon-music','#icon-file-text','#icon-calendar','#icon-code',
+  ]);
+  document.body.append(...icons,...['circle-help','circle-alert','check'].map(name=>desktopIcon(document,name)));
+  const symbols=Array.from(document.querySelectorAll('symbol[id]'));
+  expect(new Set(symbols.map(symbol=>symbol.id)).size).toBe(symbols.length);
+  const uses=Array.from(document.querySelectorAll('svg use[href]'));
+  expect(uses.length).toBeGreaterThan(50);
+  for(const use of uses){
+    const target=use.getAttribute('href')!;
+    expect(target).toMatch(/^#icon-/);
+    const symbol=document.getElementById(target.slice(1));
+    expect(symbol?.localName,target).toBe('symbol');
+    expect(symbol?.childElementCount,target).toBeGreaterThan(0);
+    expect(use.closest('svg')?.getAttribute('aria-hidden'),target).toBe('true');
+  }
 });
 
 it('isolates a throwing renderer and restores the default around the same focused editor',()=>{

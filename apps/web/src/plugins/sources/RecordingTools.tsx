@@ -1,3 +1,4 @@
+import {X} from 'lucide-react';
 import {recordingClock} from '../../recording-presentation';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {transcriptSchema,type Transcript} from '@mote/shared';
@@ -29,7 +30,7 @@ export function RecordingTools({title,onClose,children,className='',footer}:{tit
  const panel=useRef<HTMLElement>(null);
  const close=useRef(onClose);close.current=onClose;
  useEffect(()=>{const before=document.activeElement as HTMLElement|null;panel.current?.querySelector<HTMLButtonElement>('button')?.focus();const listener=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();close.current();}if(event.key==='Tab'){const items=[...panel.current!.querySelectorAll<HTMLElement>('button,input,select,textarea,a[href],[tabindex="0"]')].filter(item=>!item.hasAttribute('disabled')&&item.getClientRects().length);const first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};document.addEventListener('keydown',listener);return()=>{document.removeEventListener('keydown',listener);if(before?.isConnected)before.focus();};},[]);
- return <div className="modal-backdrop recording-tools-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><section ref={panel} className={'modal recording-dialog '+className} role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button className="icon-button" aria-label={moteText('关闭')} onClick={onClose}>×</button></header><div className="recording-dialog-body">{children}</div><footer>{footer??<button className="button" onClick={onClose}>{moteText('返回')}</button>}</footer></section></div>;
+ return <div className="modal-backdrop recording-tools-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><section ref={panel} className={'modal recording-dialog '+className} role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button className="icon-button" aria-label={moteText('关闭')} onClick={onClose}><X size={14} aria-hidden="true"/></button></header><div className="recording-dialog-body">{children}</div><footer>{footer??<button className="button" onClick={onClose}>{moteText('返回')}</button>}</footer></section></div>;
 }
 type Artifacts={id:string;kind:string}[];
 const rawId=(artifacts:Artifacts)=>artifacts.find(item=>['transcript','text','image-text'].includes(item.kind))?.id;

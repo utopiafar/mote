@@ -1,7 +1,7 @@
 import { moteText } from '@mote/shared/i18n';
 import React from 'react';
 import type {WorkActivityPage} from '@mote/shared';
-import {Activity as ActivityIcon,ChevronRight} from 'lucide-react';
+import {Activity as ActivityIcon,ChevronRight,ArrowRight} from 'lucide-react';
 import {useResource} from '../../useResource';
 import {errorMessage,type Api} from '../../api';
 import { LoadingText } from '../../Loading';
@@ -30,7 +30,7 @@ export function ActivityOverview({api,onPage}:{api:Api;onPage:(page:Page)=>void}
   return <section className="activity-overview" aria-label={moteText('后台活动')} aria-busy={loading}>
     {error!==undefined&&<p role="alert">{errorMessage(error)} <button type="button" className="text-button" onClick={()=>{attention.refresh();active.refresh();}}>{moteText('重试')}</button></p>}
     {loading&&!items.length?<LoadingText/>:items.length?items.map(work=><button type="button" key={work.id} className="processing-entry-row" onClick={()=>{window.location.hash='#/activity?'+new URLSearchParams({work:work.id});}}><span className="model-profile-symbol"><ActivityIcon size={18}/></span><span><strong>{work.goal}</strong></span><span className="processing-current"><WorkStateBadge state={work.state}/></span><ChevronRight size={15}/></button>):<p>{moteText('目前没有后台活动')}</p>}
-    <button type="button" className="text-button" onClick={()=>onPage('activity')}>{moteText('全部活动')} →</button>
+    <button type="button" className="text-button" onClick={()=>onPage('activity')}>{moteText('全部活动')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></button>
   </section>;
 }
 
