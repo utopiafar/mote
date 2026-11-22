@@ -6,7 +6,7 @@ const root=new URL('../',import.meta.url);
 const tokens=JSON.parse(readFileSync(new URL('packages/shared/design-tokens.json',root),'utf8'));
 const lightTokens=JSON.parse(readFileSync(new URL('packages/shared/design-tokens.light.json',root),'utf8'));
 if(JSON.stringify(Object.keys(tokens))!==JSON.stringify(Object.keys(lightTokens)))throw Error('Light/dark theme roles differ');
-const layout={id:'mote.android',version:'1',primary:['home'],initial:'home',navigation:'home',detail:'stack'};
+const layout={id:'mote.android',version:'1',detail:'stack'};
 const name=key=>key.replace(/-([a-z])/g,(_,c)=>c.toUpperCase());
 const isColor=value=>/^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value);
 // CSS and Swift literals keep the source #rrggbbaa order; Android assets and

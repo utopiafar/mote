@@ -261,11 +261,6 @@
   "layout": {
     "id": "mote.android",
     "version": "1",
-    "primary": [
-      "home"
-    ],
-    "initial": "home",
-    "navigation": "home",
     "detail": "stack"
   }
 }

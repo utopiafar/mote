@@ -112,7 +112,7 @@ export class InstalledWebPlugins {
               owned.defer(this.presentation.registerTheme(scoped));(choices.theme as Choice[]).push({key:instance.instanceId+'/'+contributionId,label:instance.name+' · '+pack.id,reference:scoped});
             }
             for(const {contributionId,pack} of instance.layouts){
-              const profile=validateUiLayoutProfile({...pack,id:`installed.${instance.instanceId}.${pack.id}`},desktopUiLayout.primary);
+              const profile=validateUiLayoutProfile({...pack,id:`installed.${instance.instanceId}.${pack.id}`});
               owned.defer(this.presentation.registerLayout({...profile,implementation:WorkspaceShell}));(choices.layout as Choice[]).push({key:instance.instanceId+'/'+contributionId,label:instance.name+' · '+pack.id,reference:profile});
             }
           }}]]),
