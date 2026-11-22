@@ -1,0 +1,11 @@
+.settings-surface .page-heading h1 { font:var(--mote-weight-title) var(--mote-font-title)/1.35 var(--mote-font-heading); letter-spacing:var(--mote-letter-title); }
+.settings-surface .page-heading { margin-bottom:var(--mote-space-panel); }
+.settings-surface .panel { padding:var(--mote-space-panel); margin-bottom:var(--mote-space-panel); }
+.settings-surface details>summary { font-size:var(--mote-font-support); min-height:var(--mote-control-height); padding-block:var(--mote-space-inline); cursor:pointer; line-height:1.7; }
+.settings-surface details[open]>summary { margin-bottom:16px; }
+.settings-surface input:not([type=checkbox]):not([type=radio]):not([type=range]),.settings-surface select,.settings-surface textarea { border-color:var(--mote-control-border); }
+.settings-surface input:focus-visible,.settings-surface select:focus-visible,.settings-surface textarea:focus-visible { border-color:var(--mote-accent); }
+
+@media (max-width:760px) {
+  .settings-surface .page-heading h1 { font-size:var(--mote-font-title-mobile); }
+}

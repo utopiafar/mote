@@ -5,9 +5,6 @@
 .library-archive .library-heading { margin:0 0 22px; gap:20px; }
 .library-archive .library-heading h1 { margin:0; font-size:26px; line-height:1.45; font-weight:600; }
 .library-archive .library-heading>.button { min-height:33px; padding:5px 12px; font-size:12px; line-height:1.7; border-radius:var(--mote-radius-control); box-shadow:none; }
-.library-archive .library-primary-tabs { display:flex; width:100%; gap:28px; padding:0; margin:0 0 22px; border:0; border-bottom:1px solid var(--mote-hair); border-radius:0; background:none; overflow:visible; }
-.library-archive .library-primary-tabs button { flex:0 0 auto; background:none; box-shadow:none; border:0; border-bottom:2px solid transparent; border-radius:0; min-height:43px; padding:0 0 11px; font-size:13px; color:var(--mote-muted); }
-.library-archive .library-primary-tabs button.active { color:var(--mote-ink); border-bottom-color:var(--mote-accent); }
 .library-archive .library-browser { display:block; min-height:0; border:0; background:none; border-radius:0; overflow:visible; }
 .library-archive .library-master { padding:0; }
 .library-archive .library-detail { border:0; background:none; max-width:740px; margin:0 auto; }
@@ -70,7 +67,6 @@
 @media(max-width:560px) {
  .app-shell[data-navigation] .content[data-page=archive] { padding:27px 20px 60px; }
  .library-archive .library-heading h1 { font-size:23px; }
- .library-archive .library-primary-tabs { gap:26px; }
  .library-archive .library-catalog-filters { gap:10px 12px; }
  .library-archive .library-catalog-filters select { max-width:155px; }
  .library-context-links { gap:20px 26px; margin:28px 0 31px; }
@@ -152,3 +148,6 @@
  .library-time-final .library-time-observation { grid-template-columns:105px minmax(0,1fr); gap:9px; }
 }
 @media(pointer:coarse) { .library-time-final .library-time-daybar>.icon-button { min-width:28px; min-height:42px; } }
+@media (max-width:760px) {
+  :where(.library-archive) .source-toolbar select { max-width:100%; }
+}

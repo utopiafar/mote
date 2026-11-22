@@ -10,6 +10,8 @@ export {NoteOutbox,type NoteDraft,type NoteStorage,type QueuedNote} from './note
 export {uploadNoteAttachment,uploadChatImage} from './note-attachments';
 export {NotesController,createNotesController,type NotesControllerOptions,type NotesState} from './controller';
 
+const notesStyles = new URL('../../notes.css?no-inline', import.meta.url).href;
+
 export const pages: PageEntry[] = [
   {
     id: 'notes',
@@ -18,7 +20,7 @@ export const pages: PageEntry[] = [
     section: 'library',
     order: 5,
     featureId: 'mote.notes',
-    render: ({api,onOpen:setEvidenceId,timelineRevision,refresh}: PageProps) => <Notes key={window.location.origin} api={api} namespace={window.location.origin} revision={timelineRevision} onOpen={setEvidenceId} onSaved={refresh} />,
+    render: ({api,onOpen:setEvidenceId,timelineRevision,refresh}: PageProps) => <><link rel="stylesheet" href={notesStyles} precedence="default"/><Notes key={window.location.origin} api={api} namespace={window.location.origin} revision={timelineRevision} onOpen={setEvidenceId} onSaved={refresh}/></>,
   },
 ];
 

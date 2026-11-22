@@ -1,4 +1,5 @@
 /* Final supplemental questions: explicit replies and a quiet, source-first reading order. */
+.conversation-item.active { background:var(--mote-tint); border-color:var(--mote-hair); }
 .owner-question-final { color:var(--mote-ink); }
 .owner-question-final .owner-question-tabs { display:flex;gap:22px;border-bottom:1px solid var(--mote-divider);margin:12px 0 18px; }
 .owner-question-final .owner-question-tabs button { background:none;border:0;border-radius:0;color:var(--mote-muted);padding:10px 0;cursor:pointer;font:inherit; }

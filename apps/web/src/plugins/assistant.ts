@@ -10,6 +10,12 @@ import {GoalsPage} from './assistant/GoalsPage';
 
 const MemoryPage=lazy(()=>import('./memory/MemoryPage').then(module=>({default:module.MemoryPage})));
 const memory=assistantEntrypoints.find(entry=>entry.pageId==='assistantMemory')!;
+const memoryStyles=[
+  new URL('../memory-presentation.css?no-inline',import.meta.url).href,
+  new URL('../library.css?no-inline',import.meta.url).href,
+  new URL('../settings-ui.css?no-inline',import.meta.url).href,
+];
+const memoryStyleLinks=memoryStyles.map(href=>createElement('link',{key:href,rel:'stylesheet',href,precedence:'default'}));
 /** Ready assistant pages register here; reserved pages stay unavailable until their owners register. */
 export const assistant:BuiltinWebPlugin={id:'mote.assistant',pages:[{
   id:'assistantFeed',route:'feed',navItem:'feed',label:moteText('动态'),featureId:'mote.assistant',
@@ -22,7 +28,7 @@ export const assistant:BuiltinWebPlugin={id:'mote.assistant',pages:[{
 },{
   id:memory.pageId,route:memory.href.slice(2),navItem:'memory',featureId:'mote.assistant',requires:[...memory.requires??[]],
   get label(){return moteText('记忆');},
-  render:({api,onOpen})=>createElement(MemoryPage,{api,onOpen}),
+  render:({api,onOpen})=>createElement(React.Fragment,null,...memoryStyleLinks,createElement(MemoryPage,{api,onOpen})),
 },{
   id:'assistantGoals',route:'goals',navItem:'goals',label:moteText('目标'),featureId:'mote.assistant',
   requires:['http:GET:/api/assistant/goals'],

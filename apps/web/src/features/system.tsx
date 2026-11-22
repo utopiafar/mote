@@ -17,6 +17,9 @@ declare const __MOTE_WEB_VERSION__: string;
 import { Notifications, notificationSummary } from './notifications';
 import type { PageEntry, PageProps } from './types';
 
+const settingsStyles=[new URL('../settings-ui.css?no-inline',import.meta.url).href,new URL('../material-processing.css?no-inline',import.meta.url).href];
+function SettingsStyles(){return <>{settingsStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
+
 type SettingsRow = {icon:typeof Settings2;label:string;value?:string;page?:string;hash?:string};
 const appearanceLabels = {auto:'跟随系统',light:'浅色',dark:'深色'} as const;
 const detailIcons:Record<string,typeof Settings2>={settings:SlidersHorizontal,actions:CalendarCheck,agentView:Bot,help:CircleHelp};
@@ -66,8 +69,8 @@ export function SettingsDirectory({api,status,onPage}:PageProps) {
 }
 
 export const pages: PageEntry[] = [
-    { id: 'help', route: 'help', label: moteText('版本与反馈'), featureId: 'mote.system', render: ({ api,status, onPage }: PageProps) => <section className="version-feedback"><div className="page-heading"><h1>{moteText('版本与反馈')}</h1></div><SoftwareUpdate api={api}/><section className="version-help"><h2>{moteText('遇到问题')}</h2><button className="settings-version-row" onClick={()=>onPage('developer')}><strong>{moteText('运行与诊断')}</strong><small>{moteText('查看日志、导出支持包')}</small></button><Feedback profile={status?.profile}/></section></section> },
-    { id: 'localPreferences',route:'preferences/session',label:moteText('外观、语言与会话'),featureId:'mote.system',render:props=><WebPreferences {...props}/>},
-    { id: 'notifications', route:'preferences/notifications', label:moteText('通知'), featureId:'mote.system', render: ({api,onPage}:PageProps)=><Notifications api={api} onPage={onPage}/> },
-    { id: 'about', route: 'preferences', navItem: 'settings', label: moteText('设置'), featureId: 'mote.system', render: (props:PageProps)=><><div className="page-heading"><h1>{moteText('设置')}</h1></div><SettingsDirectory {...props}/></> },
+    { id: 'help', route: 'help', label: moteText('版本与反馈'), featureId: 'mote.system', render: ({ api,status, onPage }: PageProps) => <><SettingsStyles/><section className="version-feedback"><div className="page-heading"><h1>{moteText('版本与反馈')}</h1></div><SoftwareUpdate api={api}/><section className="version-help"><h2>{moteText('遇到问题')}</h2><button className="settings-version-row" onClick={()=>onPage('developer')}><strong>{moteText('运行与诊断')}</strong><small>{moteText('查看日志、导出支持包')}</small></button><Feedback profile={status?.profile}/></section></section></> },
+    { id: 'localPreferences',route:'preferences/session',label:moteText('外观、语言与会话'),featureId:'mote.system',render:props=><><SettingsStyles/><WebPreferences {...props}/></>},
+    { id: 'notifications', route:'preferences/notifications', label:moteText('通知'), featureId:'mote.system', render: ({api,onPage}:PageProps)=><><SettingsStyles/><Notifications api={api} onPage={onPage}/></> },
+    { id: 'about', route: 'preferences', navItem: 'settings', label: moteText('设置'), featureId: 'mote.system', render: (props:PageProps)=><><SettingsStyles/><div className="page-heading"><h1>{moteText('设置')}</h1></div><SettingsDirectory {...props}/></> },
 ];

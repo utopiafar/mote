@@ -13,6 +13,13 @@ export {MediaSnapshot,MediaActivitySummary,MediaActivityContent} from './Media';
 export {OriginalNoteRow,type OwnerBrowseEntry,type OwnerBrowsePage} from './owner-library-browse';
 export {builtinCollections} from './collections';
 
+const libraryStyles=[
+  new URL('../../library.css?no-inline',import.meta.url).href,
+  new URL('../../library-final.css?no-inline',import.meta.url).href,
+  new URL('../../special-materials-final.css?no-inline',import.meta.url).href,
+];
+function PageStyles(){return <>{libraryStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
+
 /** The library package owns the owner's browse surfaces: the collection tab
  * registry, exact cursor/scope reads, and the list/detail return ticket. */
 export const pages: PageEntry[] = [
@@ -25,7 +32,7 @@ export const pages: PageEntry[] = [
     order: 0,
     featureId: 'mote.library',
     render: ({api,devices,activity,onOpen,onPage,range,rangeSelectionKey,archiveTab,setArchiveTab,timelineRevision,refresh}: PageProps) =>
-      <Archive onChanged={refresh} tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} rangeSelectionKey={rangeSelectionKey} activity={activity} revision={timelineRevision} onOpen={onOpen} onPage={onPage}/>,
+      <><PageStyles/><Archive onChanged={refresh} tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} rangeSelectionKey={rangeSelectionKey} activity={activity} revision={timelineRevision} onOpen={onOpen} onPage={onPage}/></>,
   },
 ];
 

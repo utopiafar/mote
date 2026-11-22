@@ -8,6 +8,13 @@ import {ActivityOverview} from '../plugins/work';
 import {ProcessingStatus} from '../plugins/models-processing';
 
 const Diagnostics = React.lazy(()=>import('../Diagnostics').then(module=>({default:module.Diagnostics})));
+const diagnosticsStyles=[
+  new URL('../owner-maintenance.css?no-inline',import.meta.url).href,
+  new URL('../settings-ui.css?no-inline',import.meta.url).href,
+  new URL('../material-processing.css?no-inline',import.meta.url).href,
+  new URL('../plugin-center.css?no-inline',import.meta.url).href,
+];
+function DiagnosticsStyles(){return <>{diagnosticsStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 import type { PageEntry,PageProps } from './types';
 import type {Page} from '../navigation';
@@ -26,5 +33,5 @@ export function DiagnosticsBackground({api,onPage}:{api:Api;onPage:(page:Page)=>
 }
 
 export const pages:PageEntry[]=[
-{id:'developer',route:'system/diagnostics',label:moteText('运行与诊断'),section:'system',order:7,featureId:'mote.diagnostics',render:({api,status,onPage}:PageProps)=>status?<MaintenanceFrame title={moteText('运行与诊断')}><Diagnostics api={api} profile={status.profile} advanced={<RuntimeSettings api={api} kind="diagnostics"/>} deployment={<AdvancedConfiguration api={api} includeRuntime={false}/>}/><DiagnosticsBackground api={api} onPage={onPage}/><TrustedGithubPluginInstall api={api}/></MaintenanceFrame>:null},
+{id:'developer',route:'system/diagnostics',label:moteText('运行与诊断'),section:'system',order:7,featureId:'mote.diagnostics',render:({api,status,onPage}:PageProps)=>status?<><DiagnosticsStyles/><MaintenanceFrame title={moteText('运行与诊断')}><Diagnostics api={api} profile={status.profile} advanced={<RuntimeSettings api={api} kind="diagnostics"/>} deployment={<AdvancedConfiguration api={api} includeRuntime={false}/>}/><DiagnosticsBackground api={api} onPage={onPage}/><TrustedGithubPluginInstall api={api}/></MaintenanceFrame></>:null},
 ];

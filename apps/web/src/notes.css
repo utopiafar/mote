@@ -1,0 +1,15 @@
+.note-card time { color: var(--mote-muted); font-size: var(--mote-font-meta); display: block; }
+.notes-history { margin-top: 32px; }
+.notes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.note-card { text-align: left; padding: 25px; color: var(--mote-ink); cursor: pointer; transition: border-color .15s; }
+.note-card:hover { border-color: var(--mote-accent); }
+.note-card p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; font-size: var(--mote-font-body); display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; margin: 18px 0 24px; }
+.note-card footer { display: flex; justify-content: space-between; gap: 15px; font-size: var(--mote-font-meta); color: var(--mote-muted); }
+.note-card footer span { color: var(--mote-accent); }
+@media (max-width: 650px){
+.notes-grid { grid-template-columns: 1fr; }
+}
+.note-card footer { font-size:var(--mote-font-meta); letter-spacing:0; }
+.note-card footer span { color:var(--mote-ink); }
+.note-card footer span { color:var(--mote-accent); }
+.note-heading p { margin-top:var(--mote-space-inline); }

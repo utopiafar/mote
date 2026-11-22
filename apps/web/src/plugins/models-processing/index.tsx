@@ -5,6 +5,14 @@ import {ServerSettings} from '../../ServerSettings';
 import type {BuiltinWebPlugin} from '../types';
 
 const LazyProcessing = React.lazy(() => import('./Processing').then(module => ({default: module.Processing})));
+const modelSettingsStyles = new URL('../../model-settings.css?no-inline', import.meta.url).href;
+const processingStyles = new URL('../../processing.css?no-inline', import.meta.url).href;
+const modelStyles=[
+  new URL('../../settings-ui.css?no-inline',import.meta.url).href,
+  new URL('../../material-processing.css?no-inline',import.meta.url).href,
+  new URL('../../discovery-ui.css?no-inline',import.meta.url).href,
+];
+function ModelStyles(){return <>{modelStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 export {ModelAssignments} from './ModelAssignments';
 export {ModelProfiles} from './ModelProfiles';
@@ -33,7 +41,7 @@ export const pages: PageEntry[] = [
     section: 'system',
     order: 4,
     featureId: 'mote.models',
-    render: ({api, onPage, refresh}: PageProps) => <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>,
+    render: ({api, onPage, refresh}: PageProps) => <><link rel="stylesheet" href={modelSettingsStyles} precedence="default"/><ModelStyles/><ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/></>,
   },
 ];
 
@@ -43,7 +51,7 @@ export const processingPages: PageEntry[] = [
     route: 'system/processing',
     label: moteText('技术执行记录'),
     featureId: 'mote.processing',
-    render: ({api, onPage}: PageProps) => <LazyProcessing api={api} onNavigate={onPage}/>,
+    render: ({api, onPage}: PageProps) => <><link rel="stylesheet" href={processingStyles} precedence="default"/><ModelStyles/><LazyProcessing api={api} onNavigate={onPage}/></>,
   },
 ];
 

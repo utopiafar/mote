@@ -1,3 +1,31 @@
+.lark-settings { max-width: 920px; margin: 0 auto; }
+.lark-boundary { display:flex; gap:14px; padding:20px; margin-bottom:20px; border-radius:var(--mote-radius-container); background:var(--mote-tint); color:var(--mote-ink); }
+.lark-boundary p { margin:6px 0 0; }
+.lark-buttons { display:flex; gap:10px; flex-wrap:wrap; margin:14px 0; }
+.recording-save-bar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:24px; padding:20px 0 6px; border-top:1px solid var(--mote-hair); }
+.recording-save-bar .button.primary { min-width:180px; font-size:var(--mote-font-body); padding:12px 20px; }
+.recording-save-bar .muted { font-size:var(--mote-font-action); }
+.lark-check { display:flex; align-items:center; gap:10px; padding:9px 0; overflow-wrap:anywhere; }
+.lark-range { display:grid; grid-template-columns:1fr 1fr 2fr; gap:14px; }
+.lark-authorization img { display:block; margin:16px 0; border-radius:var(--mote-radius-container); }
+.lark-authorization a { max-width:100%; }
+@media (max-width:600px){
+.lark-range { grid-template-columns:1fr 1fr; }
+.lark-range label:last-child { grid-column:1 / -1; }
+}
+.recording-scope-form .lark-range label { min-width:0; }
+.recording-scope-form .lark-range input { width:100%; min-width:0; }
+@media (max-width:760px){
+.recording-scope-form .lark-range { grid-template-columns:minmax(0,1fr); }
+.recording-scope-form .lark-range label:last-child { grid-column:auto; }
+}
+.discovery-source-grid>.discovery-source-card { border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); background:var(--mote-surface); box-shadow:none; }
+.discovery-source-grid>.discovery-source-card { padding:var(--mote-space-panel); transition:border-color .12s ease,background-color .12s ease; }
+.discovery-source-grid>a.discovery-source-card:hover { border-color:var(--mote-control-border); background:var(--mote-surface-hover); }
+.discovery-source-grid { gap:var(--mote-space-item); }
+.discovery-source-grid>.discovery-source-card h3 { margin:var(--mote-space-item) 0 var(--mote-space-inline); }
+.discovery-source-grid>.discovery-source-card p,.discovery-source-grid>.discovery-source-card small { font-size:var(--mote-font-support); color:var(--mote-muted); }
+
 .final-source-connector{max-width:996px;margin-inline:auto}.final-source-connector [hidden],.source-external-setup [hidden]{display:none!important}.final-source-connector .page-heading{margin-bottom:29px}.final-source-connector .page-heading h1{font-size:25px;font-weight:600}.connector-back{display:inline-block;font-size:12px;margin-bottom:25px;color:var(--mote-muted)}
 .final-source-connector .connector-section{max-width:800px;margin-top:27px;padding-top:22px;border:0;border-top:1px solid var(--mote-hair);background:none;border-radius:0}.final-source-connector .connector-section:first-child,.final-source-connector .connector-connection{margin-top:0;padding-top:0;border:0}.final-source-connector h2{font-size:15px;font-weight:550;margin:0 0 17px}.final-source-connector h3{font-size:13px;font-weight:500;margin:20px 0 12px}.final-source-connector .connector-account{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}.final-source-connector .connector-account strong{display:block;font-size:14px;font-weight:500}.final-source-connector .connector-account small{display:block;font-size:11px;color:var(--mote-muted);margin-top:7px}.final-source-connector .connector-actions,.final-source-connector .lark-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:9px}.final-source-connector .button{font-size:12px}.final-source-connector .text-button{font-size:12px}.final-source-connector .connector-help,.final-source-connector .fine-print{font-size:11px;line-height:1.9;color:var(--mote-muted)}
 .final-source-connector fieldset{border:0;padding:0;margin:0;min-width:0}.final-source-connector label:not(:has(input[type=checkbox])){display:block;margin:20px 0;font-size:12px;font-weight:400;color:var(--mote-ink)}.final-source-connector input:not([type=checkbox]),.final-source-connector textarea,.final-source-connector select{display:block;box-sizing:border-box;width:100%;min-width:0;background:var(--mote-surface);border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);padding:9px 11px;font:12px/1.7 var(--mote-font);color:var(--mote-ink);margin-top:7px}.final-source-connector input[type=number]{max-width:130px}.final-source-connector textarea{resize:vertical}.final-source-connector .lark-check,.final-source-connector .connector-check{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.8;margin:11px 0;color:var(--mote-ink)}.final-source-connector input[type=checkbox]{flex:none;accent-color:var(--mote-accent);margin-top:4px}.final-source-connector .lark-discovery-options{display:flex;flex-wrap:wrap;gap:14px 23px}.final-source-connector .lark-range{display:flex;flex-wrap:wrap;gap:17px}.final-source-connector .lark-range>label{flex:1;min-width:100px}

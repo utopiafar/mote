@@ -17,6 +17,7 @@ export {QueryProgress,progressLabel,type QueryRun} from './QueryProgress';
 export {queryRecovery,type AdoptedQuery,type OwnedQuery,type PendingQuery} from './query-recovery';
 export {readOriginTurn,conversationTurnRoute,type OriginTurn} from './conversation-origin';
 export {associateChatScope,clearChatReloadDraft,preserveChatForLanguageReload,unsentDrafts,unsentImages,type ChatAttachment,type ChatImageUpload} from './chat-drafts';
+
 export {AskController,createAskController,useAskController,type AskControllerOptions,type AskRunHandlers} from './controller';
 
 export interface AskPluginOptions {

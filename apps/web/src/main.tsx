@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import {associateChatScope,clearChatReloadDraft} from './plugins/ask/chat-drafts';
 import {initializeBrowserLogging,installGlobalErrorLogging,log} from './logger';
 import { ClientLoginApproval } from './plugins/agent-access/ClientLoginApproval';
@@ -60,30 +62,25 @@ import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessi
 import { ErrorNotice,EvidenceDialog,LoginDialog } from './shell-components';
 import { Loading,LoadingLine,LoadingMark } from './Loading';
 import "./styles.css";
-import './workspace.css';
-import './library.css';
-import './settings-ui.css';
-import './plugin-center.css';
-import './discovery-ui.css';
-import './art-direction.css';
-import './memory-presentation.css';
-import './presentation.css';
-import './final-web.css';
-import './library-final.css';
-import './recording-reader.css';
-import './device-workspace.css';
-import './agent-final.css';
-import './special-materials-final.css';
-import './activity-final.css';
-import './actions-final.css';
-import './discovery-final.css';
-import './conversation-final.css';
-import './imports-final.css';
 import {QuickNoteDialog} from './plugins/notes';
 import {QuickNoteContext} from './quick-note-context';
 import { confirmNavigation,hasUnsavedChanges } from './unsaved';
 import {ImportNavigationContext,clearImportReturn,importOrigin,importOriginOpener,markImportReturn,refreshImportOrigin,rememberImportOrigin,type ImportOrigin} from './import-navigation';
 
+const ChatStyles = React.lazy(async () => {
+  await import('./chat-page.css');
+  return {default: () => null};
+});
+// Keep the settings shell rules after the page sheets in the cascade.
+const SettingsSurfaceStyles = React.lazy(async () => {
+  await import('./settings-surface.css');
+  return {default: () => null};
+});
+
+// React inserts its first page stylesheet after an existing precedence group.
+// Vite loads the base before this module, as a link in a build or a style in dev.
+const baseSheet = document.head.querySelector<HTMLElement>('link[rel="stylesheet"], style[data-vite-dev-id]');
+if (baseSheet) baseSheet.dataset.precedence = 'base';
 
 initializeBrowserLogging();
 installGlobalErrorLogging(window);
@@ -431,6 +428,7 @@ function App() {
       footer={null}
     >
         <React.Suspense key={page} fallback={<div data-page-loading={page}><Loading/></div>}><div data-page={page} data-session={!connection?'signed-out':verified?'ready':error||verificationError?'verification-failed':'verifying'} aria-busy={Boolean(connection&&loading)} className={`content ${settingsContext?'settings-surface':''}`}>
+          {settingsContext&&<SettingsSurfaceStyles/>}
           <div className="workspace-tools">
           {connection&&verified&&<WorkspaceNavigation page={page} onPage={onPage}/> }
           <div className="workspace-range">
@@ -512,6 +510,7 @@ function App() {
                   )
                 : api && (
                     <>
+                      {page==='ask'&&status&&<ChatStyles/>}
                       {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <LoadingLine label={moteText("正在读取节点状态…")}/>}
                       <ImportNavigationContext.Provider value={page==='imports'?importNavigation:null}><FeaturePage page={page} props={{api,viewScope:connection.viewScope,status,devices,activity,insights:emptyInsights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision:timelineRevision,refresh,disconnect,sessionLifetime,changeSessionLifetime}}/></ImportNavigationContext.Provider>
                     </>

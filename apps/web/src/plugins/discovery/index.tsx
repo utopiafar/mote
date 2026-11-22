@@ -5,6 +5,11 @@ import type { PageEntry, PageProps } from '../../features/types';
 import type { BuiltinWebPlugin } from '../types';
 
 const Insights = React.lazy(() => import('./Insights').then(module => ({ default: module.Insights })));
+const insightStyles=[
+  new URL('../../discovery-final.css?no-inline',import.meta.url).href,
+  new URL('../../discovery-ui.css?no-inline',import.meta.url).href,
+];
+function InsightStyles(){return <>{insightStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 /** The discovery package owns report history, exact report reading, the
  * sandboxed report frame and the automatic-generation policy editor. */
@@ -14,7 +19,7 @@ export const pages: PageEntry[] = [
     route: 'library/insights',
     label: moteText('发现'),
     featureId: 'mote.insights',
-    render: ({ api, status, onOpen: setEvidenceId, range, timelineRevision, refresh }: PageProps) => <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured ?? false} onOpen={setEvidenceId} onSettings={() => { window.location.hash = modelSetupHref('providers', window.location.hash); }} onChanged={refresh} />,
+    render: ({ api, status, onOpen: setEvidenceId, range, timelineRevision, refresh }: PageProps) => <><InsightStyles/><Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured ?? false} onOpen={setEvidenceId} onSettings={() => { window.location.hash = modelSetupHref('providers', window.location.hash); }} onChanged={refresh} /></>,
   },
 ];
 
