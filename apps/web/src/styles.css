@@ -1880,7 +1880,6 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .conversation-content .ask-form > div > span:first-child { color: var(--mote-muted); }
 .conversation-content .ask-form .chat-attachment-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 10px; }
 .conversation-content .send-button { width: 36px; height: 36px; border-radius: var(--mote-radius-container); box-shadow: none; }
-.conversation-content .suggestions { margin-bottom: 30px; }
 @media (max-width: 1000px){
 .conversation-list { max-height: 200px; }
 }

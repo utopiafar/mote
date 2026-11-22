@@ -56,43 +56,6 @@
 
 .final-imports .import-host-diagnostics pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;font-size:11px}
 
-/* Consolidated page styles: moved from the shared base so they load with this page. */
-.suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin: 22px 0 60px;
-}
-.suggestions > span {
-  font-size: var(--mote-font-meta);
-  color: var(--mote-muted);
-  width: 100%;
-  margin-bottom: 3px;
-}
-.suggestions > button {
-  font-size: var(--mote-font-meta);
-  color: var(--mote-muted);
-  border: 1px solid var(--mote-hair);
-  border-radius: var(--mote-radius-control);
-  padding: 8px 11px;
-  display: flex;
-  gap: 15px;
-  align-items: center;
-}
-.suggestions > button:hover {
-  background: var(--mote-background);
-}
-@media (max-width: 500px){
-.suggestions {
-    gap: 8px;
-  }
-.suggestions > button {
-    font-size: var(--mote-font-meta);
-    padding: 8px 10px;
-    gap: 10px;
-  }
-}
 .status-label{display:inline-flex;align-items:center;gap:5px;font-size:var(--mote-font-meta);color:var(--mote-accent)}
 .status-label.attention{color:var(--mote-warning)}
 .import-form .section-heading h2,.import-detail h2{font-size:var(--mote-font-title)}
@@ -188,9 +151,6 @@
 .preview-sample,.import-queue-item { background:var(--mote-surface); border-color:var(--mote-hair); color:var(--mote-ink); }
 .import-queue-item.active { background:var(--mote-tint); color:var(--mote-accent); border-color:var(--mote-hair); }
 .import-detail progress::-webkit-progress-value,.import-upload-progress progress::-webkit-progress-value { background:var(--mote-accent); }
-.suggestions>span { color:var(--mote-muted); }
-.suggestions>button { font-size:var(--mote-font-support); min-height:var(--mote-control-height); border:var(--mote-border-width) solid var(--mote-control-border); border-radius:var(--mote-radius-control); color:var(--mote-ink); background:var(--mote-surface); }
-.suggestions>button:hover { background:var(--mote-tint); color:var(--mote-accent); }
 .file-drop { border:var(--mote-border-width) dashed var(--mote-control-border); background:var(--mote-surface); color:var(--mote-muted); border-radius:var(--mote-radius-control); }
 .file-drop strong { font-size:var(--mote-font-row); color:var(--mote-ink); }
 .file-drop span { font-size:var(--mote-font-support); }

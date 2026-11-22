@@ -62,7 +62,7 @@ test('secondary buttons are borderless fill controls and shapes come from the de
     for (const {selector, body} of rules(read(name))) {
       for (const declaration of body.match(/border-radius\s*:[^;]+/g) ?? []) {
         const value = declaration.split(':')[1].trim();
-        assert.doesNotMatch(value, /^(?!0$|3px$|8px$|50%$|\.45em$)[0-9.]+px$/, `${name}: ${selector} -> ${declaration}`);
+        assert.doesNotMatch(value, /^(?!0$|50%$|3px$|\.45em$)[0-9.]+px$/, `${name}: ${selector} -> ${declaration}`);
       }
     }
   }
