@@ -112,7 +112,6 @@
 .disposition-row p{grid-column:1/-1;margin:3px 0;font-size:var(--mote-font-meta);line-height:1.7;color:var(--mote-muted)}
 .import-delete{margin-top:25px;padding-top:18px;border-top:1px solid var(--mote-hair)}
 .import-delete>p{font-size:var(--mote-font-meta);line-height:1.8;color:var(--mote-danger)}
-.import-delete>.text-button{font-size:var(--mote-font-meta)}
 .file-card{display:flex;flex-direction:column;gap:8px;text-align:left;width:100%;color:inherit}
 .file-detail{width:100%;min-width:0;padding:24px 28px;box-sizing:border-box}
 .file-detail>h3{font-size:var(--mote-font-title);margin:0 0 12px}
