@@ -31,7 +31,7 @@ const copy:LocalImageSettingsCopy={
     title:'本地图片解析',
     scope:'启用后，入库图片解析使用本地 InternVL3-14B-4bit，失败或忙碌时不会自动切换云端。Memory 提取、独立复核与 Ask 看原图仍使用各自所选模型，可以是云端。',
     preparationNote:'准备模型不会开启后台模型授权，也不会重新处理历史图片。',
-    disabled:'关闭后，新图片沿用已配置的图片模型；原图、OCR 与已保存的理解结果继续保留。',
+    disabled:'关闭后沿用图片模型，原图和已有结果保留。',
     ready:'本地解析已开启',waiting:'已选择本地解析，等待模型或服务就绪。',stopping:'正在停止本地解析…',unavailable:'暂时无法确认本地解析状态，请刷新。',
     reasons:{model_missing:'本地图片模型尚未准备，请在下方准备模型。',model_failed:'本地图片模型校验失败，请重新准备模型。',worker_unavailable:'本地图片服务未就绪，请重试。',worker_stop_failed:'尚未确认本地图片服务已停止，请检查运行记录。',busy:'本地图片解析忙碌，等待当前任务完成。'},
 };

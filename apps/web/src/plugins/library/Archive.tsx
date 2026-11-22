@@ -21,7 +21,7 @@ import { pageLabels, sections } from '../../navigation';
 export type ArchiveTab = string;
 export function ActivitySummary({ activity }: {
     activity: Activity;
-}) { return <section className="panel activity-panel special-activity"><div className="section-heading"><h2>{moteText("应用活动概况")}</h2></div><div className="special-measure"><strong>{Number.isFinite(activity.totalDurationMs)&&activity.totalDurationMs>=0?duration(activity.totalDurationMs):moteText('待确认')}</strong><span>{moteText('前台应用采样时长')}</span></div>{activity.apps.length ? <><div className="app-list">{activity.apps.map(app=>{const valid=Number.isFinite(app.durationMs)&&app.durationMs>=0,share=valid&&Number.isFinite(activity.totalDurationMs)&&activity.totalDurationMs>0?Math.max(0,Math.min(100,Math.round(app.durationMs/activity.totalDurationMs*100))):undefined;return <div className="special-activity-row" key={app.appId||app.appName}><strong>{app.appName}</strong><span>{valid?duration(app.durationMs):moteText('待确认')}</span><div className="special-duration-track" aria-label={share===undefined?moteText('待确认'):share+'%'}><i style={{width:share===undefined?'0%':share+'%'}}/></div></div>;})}</div><p className="measurement-note">{moteText("多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。")}</p></> : <Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>; }
+}) { return <section className="panel activity-panel special-activity"><div className="section-heading"><h2>{moteText("应用活动概况")}</h2></div><div className="special-measure"><strong>{Number.isFinite(activity.totalDurationMs)&&activity.totalDurationMs>=0?duration(activity.totalDurationMs):moteText('待确认')}</strong><span>{moteText('前台应用采样时长')}</span></div>{activity.apps.length ? <><div className="app-list">{activity.apps.map(app=>{const valid=Number.isFinite(app.durationMs)&&app.durationMs>=0,share=valid&&Number.isFinite(activity.totalDurationMs)&&activity.totalDurationMs>0?Math.max(0,Math.min(100,Math.round(app.durationMs/activity.totalDurationMs*100))):undefined;return <div className="special-activity-row" key={app.appId||app.appName}><strong>{app.appName}</strong><span>{valid?duration(app.durationMs):moteText('待确认')}</span><div className="special-duration-track" aria-label={share===undefined?moteText('待确认'):share+'%'}><i style={{width:share===undefined?'0%':share+'%'}}/></div></div>;})}</div><p className="measurement-note">{moteText("设备分别计时，采样间隙留空。媒体播放单独统计。")}</p></> : <Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>; }
 
 export function Archive({ api, devices, range, rangeSelectionKey, activity, revision, onOpen, onPage, tab, setTab, onChanged }: {
     onChanged?: () => void;
@@ -78,7 +78,7 @@ export function Archive({ api, devices, range, rangeSelectionKey, activity, revi
     const supports=(path:string)=>availability.inventoryError===undefined&&featureRequirementsAvailable(['http:GET:'+path],availability.inventory);
     const props = { api, devices, range, rangeSelectionKey, activity, revision, onOpen: entry?.layout === 'standalone' ? onOpen : select, onChanged, selectedReference: selected, onBrowseChanged: clearSelection,viewNavigation:tab==='materials'?undefined:viewNavigation,browseNavigation,materialPreview:{read:supports('/api/materials/:id/read'),image:supports('/api/materials/:id/members')&&supports('/api/files/:id')&&supports('/api/files/:id/thumbnail')},sourceBar:true,onImport:(opener:HTMLElement)=>setImportPanel({opener}) };
     if(browseOwner!==api)return <Loading/>;
-    const content = <LibraryCollectionBoundary key={entry?.id}>{entry ? <CollectionContent entry={entry} props={props}/> : <p role="status">{moteText('此资料库分类当前不可用。请从资料库分类中选择可用入口。')}</p>}</LibraryCollectionBoundary>;
+    const content = <LibraryCollectionBoundary key={entry?.id}>{entry ? <CollectionContent entry={entry} props={props}/> : <p role="status">{moteText('此分类不可用。返回资料库选择。')}</p>}</LibraryCollectionBoundary>;
     return <DiscoveryProvider state={availability}><div className={'archive-page library-archive' + (selected ? ' has-selection' : '')}>
    <div ref={listHeading} tabIndex={-1} className="page-heading library-heading" hidden={Boolean(selected)}><h1>{moteText('资料库')}</h1><button type="button" className="button" onClick={event=>setImportPanel({opener:event.currentTarget})}>{moteText('导入')}</button></div>
    {tab!=='materials'&&tab!=='records'&&<div hidden={Boolean(selected)} className="library-view-navigation">{viewNavigation}{browseNavigation}</div>}
@@ -225,7 +225,7 @@ function RawRecordTimeline({api,devices,onOpen,revision,onBrowseChanged}:RecordT
       <div className="page-heading timeline-heading">
         <div className="eyebrow">{moteText("按天回看，保留来处")}</div>
         <h1>{moteText("采集记录")}</h1>
-        <p>{moteText("按日期浏览截图、文字与媒体状态；点击记录查看内容和采样时的上下文。")}</p>
+        <p>{moteText("按日期浏览采集记录。")}</p>
       </div>
       <div className="capture-day-controls">
         <label><span>{moteText("按天查看")}</span><input type="date" aria-label={moteText("查看某天的采集记录")} value={after && after === before ? after : ''} onChange={event => { setAfter(event.target.value); setBefore(event.target.value); }}/></label>
@@ -267,7 +267,7 @@ function RawRecordTimeline({api,devices,onOpen,revision,onBrowseChanged}:RecordT
             {moteText("清除筛选")}</button>)}
         <span className="filter-count">{visibleTotal === undefined ? moteText("已读取") + " " + visibleItems.length : moteText("共 {0} 条 · 本页 {1} 条", visibleTotal, visibleItems.length)}</span>
       </div>
-      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央的记录；可刷新查看文字识别的最新状态与结果。")}</p>
+      <p className="capture-browse-note">{moteText("日期使用浏览器时区。刷新可查看识别进度。")}</p>
       {error && (<ErrorNotice text={error} retry={() => void load(pageCursors[page], requestVersion.current, page)}/>)}
       {groups.map(([day, records]) => (<section className="timeline-group" key={day}>
           <h2>

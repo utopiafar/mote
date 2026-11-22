@@ -29,7 +29,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
    if(!entry){const b=button('',()=>actions.read(item),'source-list-row'),copy=node('span',undefined,'source-list-copy');copy.append(node('strong',item.title),node('small',new Date(item.observedAt).toLocaleString(getLocale())));b.append(node('span','▤','source-symbol'),copy,node('span',moteText('中央已收到'),'source-state'),node('span','›','chevron'));entry={signature,button:b};}
    nodes.set(item.key,entry);children.push(entry.button);
   }
-  if(!children.length)children.push(node('p',view.denied?moteText('无法访问采集记录，请检查中央连接权限'):moteText('暂无中央归档内容'),'helper'));
+  if(!children.length)children.push(node('p',view.denied?moteText('采集记录不可访问。检查中央连接权限。'):moteText('暂无中央归档内容'),'helper'));
   if(view.nextCursor)children.push(button(moteText('加载更多'),()=>void archivedContent(view,true)));
   children.push(...errors);
   view.nodes=nodes;view.root.replaceChildren(...children);
@@ -107,7 +107,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
  document.defaultView?.setInterval(()=>{if(selected&&detailVisible())revalidateArchive();},15000);
  function open(id:string){selected=id;renderedContent='';renderedCard='';renderDetail(true);actions.openDetail();}
  function lockContext(value:boolean){contextBusy=value;for(const id of ['source-context-save','source-context-refresh'])el<HTMLButtonElement>(id).disabled=value;}
- function displayContext(value:SourceContextState,preserveDraft=false){contextState=value;if(!preserveDraft)el<HTMLTextAreaElement>('source-context-description').value=value.pending?.description??value.snapshot.description;el('source-context-message').textContent=value.error?moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。'):value.conflict?moteText('中央说明已改变。你的输入已保留，请核对当前说明后再保存。'):value.pending?moteText('说明已保存在本机，按当前发送设置同步。'):moteText('说明独立于原文，用于理解这个来源的资料。');el('source-context-current').hidden=Boolean(value.error)||!value.conflict;el('source-context-current-text').textContent=value.error?'':value.snapshot.description||moteText('尚未填写');el<HTMLButtonElement>('source-context-save').disabled=contextBusy||Boolean(value.error);}
+ function displayContext(value:SourceContextState,preserveDraft=false){contextState=value;if(!preserveDraft)el<HTMLTextAreaElement>('source-context-description').value=value.pending?.description??value.snapshot.description;el('source-context-message').textContent=value.error?moteText('暂时无法核对中央说明。输入保留在这里，可稍后重试。'):value.conflict?moteText('中央说明已更新。输入已保留，核对后保存。'):value.pending?moteText('说明已保存在本机，按当前发送设置同步。'):moteText('说明独立于原文，用于理解这个来源的资料。');el('source-context-current').hidden=Boolean(value.error)||!value.conflict;el('source-context-current-text').textContent=value.error?'':value.snapshot.description||moteText('尚未填写');el<HTMLButtonElement>('source-context-save').disabled=contextBusy||Boolean(value.error);}
  function invalidateContext(){contextEpoch++;contextId=undefined;contextState=undefined;lockContext(false);el<HTMLTextAreaElement>('source-context-description').value='';el('source-context-current-text').textContent='';dialog.close();}
  function contextRequest(id:string){return {id,epoch:contextEpoch,scope:contextScope};}
  function contextCurrent(request:ReturnType<typeof contextRequest>){return contextId===request.id&&contextEpoch===request.epoch&&contextScope===request.scope;}

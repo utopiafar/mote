@@ -2,7 +2,7 @@ import { moteText } from '@mote/shared/i18n';
 import { spawn } from 'node:child_process';
 import { sourceHash } from './source-sync';
 import { redactSourceText, type CalendarChoice, type SourceOptions, type SourceScan } from './source-types';
-export class CalendarPermissionError extends Error { constructor() { super(moteText("日历未授权或权限已撤销，请点击连接日历并检查系统设置")); } }
+export class CalendarPermissionError extends Error { constructor() { super(moteText("日历未授权。连接日历并检查系统权限。")); } }
 export async function calendarHelper(path: string, command: 'calendar-permission' | 'calendar-list' | 'calendar-scan' | 'calendar-create' | 'calendar-change', input?: unknown, signal?: AbortSignal): Promise<unknown> {
   if (process.platform !== 'darwin') throw new Error(moteText("本地日历当前仅支持 macOS"));
   return new Promise((resolve, reject) => {
@@ -14,7 +14,7 @@ export async function calendarHelper(path: string, command: 'calendar-permission
     signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
     child.stdout.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > 9 * 1024 * 1024) { child.kill('SIGKILL'); finish(new Error(moteText("日历读取超过安全上限"))); } else chunks.push(chunk); });
     child.on('error', () => finish(new Error(moteText("无法启动日历助手，检查应用安装"))));
-    child.on('close', code => { if (done) return; if (code !== 0) return finish(new Error(moteText("日历读取失败，请检查日历权限后重试"))); try { finish(undefined, JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { finish(new Error(moteText("日历助手返回格式无效"))); } });
+    child.on('close', code => { if (done) return; if (code !== 0) return finish(new Error(moteText("无法读取日历。检查权限后重试。"))); try { finish(undefined, JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { finish(new Error(moteText("日历助手返回格式无效"))); } });
     child.stdin.on('error', () => {}); child.stdin.end(input ? JSON.stringify(input) : '');
   });
 }
@@ -27,7 +27,7 @@ export function decodeCalendarChoices(raw: unknown): CalendarChoice[] {
 export function decodeCalendarScan(raw: unknown, options: SourceOptions, scope: { start: string; end: string }): SourceScan {
   const data = raw as { permission?: string; missingCalendar?: boolean; complete?: boolean; events?: Record<string, unknown>[] };
   if (data?.permission !== 'granted') throw new CalendarPermissionError();
-  if (data.missingCalendar) throw new Error(moteText("所选日历已不可用；已暂停删除判断，请重新选择"));
+  if (data.missingCalendar) throw new Error(moteText("所选日历不可用，已暂停删除判断。重新选择。"));
   if (!Array.isArray(data.events) || data.events.length > 2000 || typeof data.complete !== 'boolean') throw new Error(moteText("日历数据格式无效"));
   const result: SourceScan = { items: [], seen: [], complete: data.complete, skipped: 0, scope };
   const iso = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value));

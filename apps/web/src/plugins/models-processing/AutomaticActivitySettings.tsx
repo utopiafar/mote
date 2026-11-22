@@ -45,8 +45,8 @@ export function AutomaticActivitySettings({api}: {api: Api}) {
   const profiles = models.data?.profiles ?? [];
   const missingProfile = Boolean(draft?.modelProfileId && !profiles.some(profile => profile.id === draft.modelProfileId));
   return <section className="panel runtime-settings automatic-activity-settings"><h2>{moteText('自动整理活动')}</h2>
-    <p>{moteText('使用所选模型整理后续接纳的采集内容，生成可查看的活动资料。自动记忆可单独开启或暂停。')}</p>
-    <p className="fine-print">{moteText('原文可能发送给所选模型服务。关闭后停止待处理任务，已保存的活动资料继续保留。')}</p>
+    <p>{moteText('按所选模型整理新资料。自动记忆单独控制。')}</p>
+    <p className="fine-print">{moteText('可能向所选模型发送原文。关闭后停待处理任务，保留已存活动。')}</p>
     {read.loading && !draft && <Loading/>}
     {(error || read.error !== undefined || models.error !== undefined) && <p role="alert">{error || errorMessage(read.error ?? models.error)}</p>}
     {draft && <form onSubmit={event => {event.preventDefault(); void save();}}><fieldset disabled={busy}>

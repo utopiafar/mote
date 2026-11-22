@@ -26,15 +26,15 @@ async function request(serverUrl: string, path: string, init: RequestInit, fetch
     const response = await fetcher(validateServerUrl(serverUrl) + path, { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) });
     if (!response.ok) {
       let reason:string|undefined;try{reason=responseFailureCode(await responseJson(response));}catch{}
-      if(reason==='device_already_registered')throw new ConnectionError('DEVICE_CONFLICT',moteText('设备已在中央登记，或邀请已使用；请在中央选择此设备重新生成邀请'),response.status,reason);
+      if(reason==='device_already_registered')throw new ConnectionError('DEVICE_CONFLICT',moteText('设备已登记或邀请已使用。在中央为此设备生成邀请。'),response.status,reason);
       const code=[401,403].includes(response.status)?'AUTH':response.status===410?'INVITATION_EXPIRED':response.status===426?'PROTOCOL_INCOMPATIBLE':response.status===429?'RATE_LIMIT':'HTTP';
       throw new ConnectionError(code,httpFailureMessage(response.status,reason),response.status,reason);
     }
     return await responseJson(response);
-  } catch (error) { if (error instanceof ConnectionError) throw error; throw new ConnectionError('NETWORK', moteText("连接失败或超时；请检查中央地址、HTTPS 证书和网络，不接受重定向")); }
+  } catch (error) { if (error instanceof ConnectionError) throw error; throw new ConnectionError('NETWORK', moteText("中央连接失败或超时。核对地址、证书和网络。重定向会被拒绝。")); }
 }
 export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>, fetcher: typeof fetch = fetch, enforceDevice = true): Promise<ConnectionIdentity> {
-  if (!config.token) throw new ConnectionError('MISSING_TOKEN', moteText("请先导入连接邀请，或保存访问令牌"));
+  if (!config.token) throw new ConnectionError('MISSING_TOKEN', moteText("导入连接邀请，或保存访问令牌。"));
   const result = object(await request(config.serverUrl, '/api/connections/self', { headers: { ...MOTE_PROTOCOL_HEADERS, 'Accept-Language': getLocale(), Authorization: 'Bearer ' + config.token } }, fetcher), ['credential', 'node', 'capabilities']);
   const credential = object(result.credential, ['id', 'scope', 'label'], ['deviceId', 'deviceName', 'platform', 'serverUrl']);
   if (credential.scope !== 'owner') throw invalid();
@@ -61,7 +61,7 @@ export class ConnectionOnboarding {
   clear(): void { this.pending = undefined; }
   async redeem(id: unknown, confirmedOrigin: unknown, config: Pick<Config, 'deviceId' | 'deviceName'>, platform: Platform): Promise<{ serverUrl: string; token: string; credentialId: string; scope: 'owner' }> {
     const pending = this.pending;
-    if (!pending || pending.preview.id !== id || pending.preview.serverUrl !== confirmedOrigin) throw new ConnectionError('CONFIRMATION', moteText("请先预览邀请并确认显示的中央地址"));
+    if (!pending || pending.preview.id !== id || pending.preview.serverUrl !== confirmedOrigin) throw new ConnectionError('CONFIRMATION', moteText("先预览邀请，再核对中央地址。"));
     const invitation = parseConnectionInvitation(JSON.stringify(pending.invitation), this.now());
     const result = object(await request(invitation.serverUrl, '/api/connections/redeem', { method: 'POST', headers: { 'Accept-Language': getLocale(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code: invitation.code, deviceId: config.deviceId, deviceName: config.deviceName, platform }) }, this.fetcher), ['serverUrl', 'token', 'credentialId', 'scope']);
     const serverUrl = bounded(result.serverUrl, 2048), token = bounded(result.token, 4096), credentialId = bounded(result.credentialId, 128);
@@ -71,7 +71,7 @@ export class ConnectionOnboarding {
   }
 }
 export function assertConnectionChangeSafe(state: { running: boolean; inFlight: boolean; queued: number; preparedNote: boolean; sourcePending: number; sourceInFlight: boolean }, sameNodeInvitation = false): void {
-  if (state.running) throw new Error(moteText("请先停止采集，再更换连接"));
-  if (!sameNodeInvitation && (state.queued || state.preparedNote || state.sourcePending)) throw new Error(moteText("还有待上传截图、记录或来源版本，不能更换节点或凭据；请先完成上传或备份处理旧队列"));
-  if (state.inFlight || state.sourceInFlight) throw new Error(moteText("当前采集、上传或来源同步尚未结束，请稍后重试连接"));
+  if (state.running) throw new Error(moteText("停止采集后更换连接。"));
+  if (!sameNodeInvitation && (state.queued || state.preparedNote || state.sourcePending)) throw new Error(moteText("待传截图、记录或来源版本未处理。上传或备份后更换。"));
+  if (state.inFlight || state.sourceInFlight) throw new Error(moteText("采集或同步尚未结束。稍后重试连接。"));
 }

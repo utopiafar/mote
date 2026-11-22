@@ -293,7 +293,7 @@ it('withdraws the displayed archive when the return-time read reports denied aut
  vi.mocked(api.sourceArchivedContent).mockResolvedValueOnce({items:[],authorizationDenied:true});
  dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
  expect(el('source-detail-body').textContent).not.toContain('Generated private archive');
- expect(el('source-detail-body').textContent).toContain('无法访问采集记录，请检查中央连接权限');
+ expect(el('source-detail-body').textContent).toContain('采集记录不可访问。检查中央连接权限。');
  expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);
 });
 
@@ -308,7 +308,7 @@ it('consumes the deferred Central denial when the reader returns to detail witho
  document.querySelector<HTMLElement>('[data-page=content-reader]')!.hidden=true;detailPage().hidden=false;await flush();
  expect(api.sourceArchivedContent).toHaveBeenCalledTimes(3);expect(api.sourcePendingContent).toHaveBeenCalledTimes(2);
  expect(el('source-detail-body').textContent).not.toContain('Generated reader archive');
- expect(el('source-detail-body').textContent).toContain('无法访问采集记录，请检查中央连接权限');
+ expect(el('source-detail-body').textContent).toContain('采集记录不可访问。检查中央连接权限。');
 });
 
 it('withdraws a remote deletion while Mac stays visible, with four archive-only reads per minute and none hidden',async()=>{

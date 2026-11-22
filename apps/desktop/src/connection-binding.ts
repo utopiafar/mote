@@ -40,7 +40,7 @@ export class ConnectionBindingStore {
     if (!pending || this.matches(config)) return;
     if (this.unbound() && target.kind === 'bound' && confirmedInitial) return;
     if (sameNodeReauthorization && this.value.kind === 'bound' && target.kind === 'bound' && this.value.origin === target.origin) return;
-    throw new Error(moteText("本地待上传记录已绑定原节点或凭据，不能重新归属；请恢复原连接完成同步"));
+    throw new Error(moteText("待传记录只归原节点和凭据。恢复原连接。"));
   }
   async commit(config: Connection, pending: boolean, confirmedInitial = false, sameNodeReauthorization = false): Promise<void> {
     this.assertChange(config, pending, confirmedInitial, sameNodeReauthorization);

@@ -69,7 +69,7 @@ const retiredModelKeys = ['privacyModelUrl','nsfwEnabled','reviewPolicy','review
 export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents = 0, confirmedUnboundBacklog = false): Config {
   if(['excludedAppIds','localContentEncryption','ocrEnabled','ocrOnlyWhileCharging','uiPageMode'].some(key=>input&&Object.hasOwn(input,key)))throw Error(RESET_REQUIRED);
   if ((current.credentialScope!==undefined&&current.credentialScope!=='owner')||(input?.credentialScope!==undefined&&input.credentialScope!=='owner'))throw Error(RESET_REQUIRED);
-  if (retiredModelKeys.some(key => input && Object.hasOwn(input,key))) throw new Error(moteText("配置包含已停用的本机模型设置，请移除后导入"));
+  if (retiredModelKeys.some(key => input && Object.hasOwn(input,key))) throw new Error(moteText("含已停用的本机模型配置。移除后导入。"));
   if (!input || typeof input !== 'object') throw new Error(moteText("配置格式不正确"));
   if (typeof input.deviceName !== 'string' || !input.deviceName.trim() || input.deviceName.length > 128) throw new Error(moteText("设备名需为 1–128 字符"));
   if (input.metadataEnabled !== undefined && typeof input.metadataEnabled !== 'boolean') throw new Error(moteText("设备元数据开关值无效"));
@@ -109,9 +109,9 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     token: input.token === undefined ? current.token : input.token.trim() || undefined,
   };
   if (config.serverUrl === current.serverUrl && config.token === current.token && current.credentialScope === 'owner') config.credentialScope = current.credentialScope;
-  if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列"));
+  if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("待传记录未处理。上传或备份后更换中央或令牌。"));
   if (config.serverUrl !== current.serverUrl) {
-    if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("还有待上传记录，不能切换中央；先完成上传，或导出并移走旧队列后重启"));
+    if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error(moteText("待传记录未处理。上传，或导出并移走队列后重启。"));
     if (config.serverUrl && (typeof input.token !== 'string')) throw new Error(moteText("切换中央必须明确输入新节点令牌，不能复用已有令牌"));
   }
   if (!config.serverUrl) config.token = undefined;
@@ -155,7 +155,7 @@ export class ConfigStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return this.bootstrap();
       if(error instanceof CredentialStorageMismatch || error instanceof Error&&error.message===RESET_REQUIRED)throw error;
-      throw new Error(moteText("无法读取配置：请检查系统密钥存储或备份后修复配置文件"));
+      throw new Error(moteText("配置不可读。检查系统凭据，或备份后修复。"));
     }
   }
   async save(config: Config): Promise<void> {
@@ -185,5 +185,5 @@ export function signedOutConfig(config: Config): Config {
 }
 
 export class CredentialStorageMismatch extends Error {
-  constructor() { super(moteText("凭据存储方式与当前 Profile 不匹配；请保留原目录并使用新的 Profile 重新登录。")); }
+  constructor() { super(moteText("凭据存储与环境不符。保留原目录，换新环境登录。")); }
 }

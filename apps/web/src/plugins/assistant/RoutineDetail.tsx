@@ -22,7 +22,7 @@ export function RoutineDetail({api,id,scope=all}:{api:Api;id:string;scope?:Query
   <dl><dt>{moteText('时区')}</dt><dd>{rule.schedule.timeZone}</dd><dt>{moteText('规则时间')}</dt><dd>
    {trigger.kind==='daily'?<>{moteText('每天')} · {trigger.localTime}</>:trigger.kind==='weekly'?<>{moteText('每周')} · {[moteText('星期一'),moteText('星期二'),moteText('星期三'),moteText('星期四'),moteText('星期五'),moteText('星期六'),moteText('星期日')][trigger.weekday-1]} · {trigger.localTime}</>:<>{moteText('会前 {0} 分钟',trigger.leadMinutes)}</>}
   </dd><dt>{moteText('下次到期')}</dt><dd>{rule.nextDue?dateTime(rule.nextDue,{timeZone:rule.schedule.timeZone,dateStyle:'medium',timeStyle:'short',hour12:false}):moteText('未知')}</dd></dl>
-  <p>{moteText('到期时间是规则预览；是否开始取决于事项、后台开关和当前资料权限。')}</p><ScopePreview scope={rule.scope}/>
+  <p>{moteText('到期为预览。运行取决于事项、开关和权限。')}</p><ScopePreview scope={rule.scope}/>
   {can('http:POST:/api/assistant/routines/:id')&&!edit&&<div className="processing-actions"><button className="button" disabled={editDisabled} onClick={()=>setEdit(structuredClone(rule))}>{moteText('编辑')}</button>
    <button className="button" disabled={disabled||!rule.enabled&&parentPaused} onClick={()=>void command.run('/api/assistant/routines/'+encodeURIComponent(id),{expectedRevision:rule.revision,enabled:!rule.enabled})}>{moteText(rule.enabled?'暂停规则':'恢复规则')}</button></div>}
   {edit&&<form onSubmit={event=>{event.preventDefault();save();}}><label>{moteText('目标')}<textarea maxLength={7600} disabled={command.busy} value={edit.goal} onChange={event=>setEdit({...edit,goal:event.target.value})}/></label>

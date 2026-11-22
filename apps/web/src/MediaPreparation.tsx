@@ -29,7 +29,7 @@ function failureText(code?:string){
  if(code==='worker_auth_missing')return moteText('本机处理连接尚未配置，检查运行设置。');
  if(code==='sidecar_unavailable')return moteText('模型已准备，音频或图片服务尚未就绪。检查服务后重试。');
  if(code==='worker_start_failed'||code==='worker_unavailable')return moteText('本机处理未能启动，重试。');
- if(code==='runtime_unknown'||code==='platform_unsupported')return moteText('此运行方式暂不支持自动安装，可在高级连接中使用已准备的服务。');
+ if(code==='runtime_unknown'||code==='platform_unsupported')return moteText('不支持自动安装。可连接已有服务。');
  return moteText('准备未完成，检查网络和可用空间后重试。');
 }
 /** Preparation never changes automatic processing consent or model selection. */

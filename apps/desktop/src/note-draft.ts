@@ -61,7 +61,7 @@ export class NoteDraftStore {
       validateDraft(input);
       if (input.id !== this.value.draft.id) throw new Error(moteText("草稿已更新，重新载入当前草稿"));
       if (input.revision <= this.value.draft.revision) return this.get();
-      if (this.value.submission) throw new Error(moteText("此草稿已有待完成保存，请先重试保存；不能改写已准备的记录"));
+      if (this.value.submission) throw new Error(moteText("草稿有待完成的保存。先重试保存。"));
       await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, description: input.description, revision: input.revision } });
       return this.get();
     });

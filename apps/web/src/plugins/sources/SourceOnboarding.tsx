@@ -152,7 +152,7 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
  if(features.data===undefined)return <section className="source-onboarding" aria-label={moteText('初次认识')} aria-busy="true"><Loading/></section>;
  return <section className="source-onboarding" aria-label={moteText('初次认识')} data-onboarding-panel data-run-state={run?.state}>
   <header className="source-onboarding-intro"><h2>{moteText('初次认识')}</h2></header>
-  <div className="source-onboarding-boundary"><p>{moteText('这里只决定本次初次认识读取哪些已同步资料，不改变来源授权或保存方式。')}</p></div>
+  <div className="source-onboarding-boundary"><p>{moteText('仅选择本次阅读的资料，来源授权和保存方式沿用。')}</p></div>
   <div className="source-onboarding-progress" aria-label={moteText('处理进度')}>
    <div className="source-onboarding-stage" data-stage="sync" data-state={syncing?'pending':attention?'failed':sources.length?'ready':'empty'}><strong>{moteText('同步')}</strong>
     {run?<><span>{countLabel(run.coverage.sync)}</span><small>{gapLabel(run.coverage.sync)}</small></>:<><span>{sources.length?moteText('已连接')+' '+sources.length:loading?moteText('正在读取来源…'):moteText('未连接')}</span><small data-syncing={syncing} data-revoked={revoked} data-attention={otherAttention}>{syncGaps}</small></>}
@@ -173,7 +173,7 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
     {selectedRefs.length>0&&<p className="fine-print">{moteText('本次仅处理已选的 {0} 份资料。',selectedRefs.length)}</p>}
     {arrived&&<p className="source-onboarding-arrival" role="status">{moteText('有新资料到达，可选择后再次开始初次认识。')}</p>}
     {sources.length===0?<div className="source-onboarding-empty">{loading?<Loading/>:<><p>{moteText('还没有资料。连接来源或导入文件后，它们会出现在这里。')}</p>{onAdd&&<button className="button" type="button" data-onboarding-action="add" onClick={onAdd}>{moteText('添加来源')}</button>}</>}</div>:visibleMaterials.length===0?<div className="source-onboarding-empty">{materialRead.loading?<Loading/>:moteText('此列表暂无原始记录；已有资料可在资料库查看。')}</div>:<ul className="source-onboarding-materials" aria-label={moteText('选择资料')}>{visibleMaterials.map(material=>{const source=sourcesById.get(material.origin.sourceId),extraction=extractionStatus(material),selectable=sourceCanProvideBody(source)&&extraction!=='unsupported'&&extraction!=='failed';return <li key={material.ref} className="source-onboarding-material" data-material-ref={material.ref}><label><input type="checkbox" checked={selectedRefs.includes(material.ref)} disabled={busy||active||!selectedRefs.includes(material.ref)&&(!selectable||selectedRefs.length>=maxSelection)} onChange={()=>toggle(material.ref,selectable)}/><span><strong>{material.title||moteText('未命名记录')}</strong><small>{source?.name??material.origin.sourceId} · {fileRetentionLabel(source?.retention??'snapshot')} · {moteText('正文提取')} {statusLabels[extraction]}</small>{!selectable&&<small>{source?.retention==='reference'?moteText('仅保存引用，未导入正文'):moteText('正文不可用，暂不能用于初次认识')}</small>}</span></label></li>;})}</ul>}
-    <p className="fine-print">{moteText('保存方式沿用来源设置；需要更改时打开该来源的「连接与范围」。')}</p>
+    <p className="fine-print">{moteText('保存方式可在来源的「连接与范围」修改。')}</p>
     <dl className="source-onboarding-retention"><dt>{moteText('保存方式')}</dt>{sources.map(source=><dd key={source.id}><span>{source.name} · {fileRetentionLabel(source.retention)}</span><a href={'#/connections?sourceId='+encodeURIComponent(source.id)}>{moteText('连接与范围')}</a></dd>)}</dl>
     <FileRetentionNote/>
    </div>
@@ -183,7 +183,7 @@ export function SourceOnboarding({api,sources,onAdd,loading=false}:{api:Api;sour
     {!active&&<button className={resumable.length>0?'button subtle':'button primary'} type="button" data-onboarding-action="start" disabled={busy||!selectedRefs.length||selectedInvalid} onClick={startSelected}>{moteText('开始初次认识')}</button>}
    </div>
    {!active&&resumable.length>0&&<p className="fine-print">{moteText('取消后已完成的结果会保留；继续只会处理未完成的资料。')}</p>}
-   {run?.state==='empty'&&<p className="source-onboarding-unavailable" role="status">{moteText('所选资料当前不可读取，请检查来源授权后重新选择。')}</p>}
+   {run?.state==='empty'&&<p className="source-onboarding-unavailable" role="status">{moteText('资料不可读。核对授权后重选。')}</p>}
    {run?.state==='completed'&&<p className="source-onboarding-complete" role="status">{moteText('本次选择的资料已完成；其他资料未包含。')}</p>}
    {run&&run.items.length>0&&<ul className="source-onboarding-items" aria-label={moteText('本次资料')}>{run.items.map(item=><li key={item.material.ref} data-item-state={item.state}>
     <div><strong>{item.material.title}</strong><span>{item.reason==='memory_owner_input_required'?moteText('需要你补充'):itemStateLabel(item.state)}</span></div>

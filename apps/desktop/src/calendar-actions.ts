@@ -52,7 +52,7 @@ export class CalendarActions {
   try{
    if(!externalId){await this.io.write(action.operationId,'attempting');const result=action.kind==='calendar.create'?await this.io.native('calendar-create',{id:action.id,calendarId:target.calendarId,...action.event,description:calendarDescription(action),createAllowed:action.mutationAllowed===true&&!previous}):await this.io.native('calendar-change',{id:action.related!.actionId,operationId:action.operationId,kind:action.kind,externalId:action.related!.externalId,calendarId:target.calendarId,...action.event,description:calendarDescription(action),expected:{...action.related!.event,description:calendarDescription({id:action.related!.actionId,event:action.related!.event,operationId:action.related!.operationId})},mutationAllowed:action.mutationAllowed===true&&!previous});if(typeof result.externalId!=='string'||!result.externalId)throw Error(moteText("保存结果待核实，查看系统日历后重试"));externalId=result.externalId;await this.io.write(action.operationId,externalId!);}
    await this.io.request(`/api/${route}/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'succeeded',externalId});
-  }catch{await this.io.request(`/api/${route}/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'uncertain'}).catch(()=>{});throw Error(moteText("保存结果待核实。请检查日历权限与网络后再次核实；不会重复插入。"));}
+  }catch{await this.io.request(`/api/${route}/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'uncertain'}).catch(()=>{});throw Error(moteText("日历保存待核实。检查权限和网络后再核实，不会重复插入。"));}
  });}
 }
 export function nativeCalendarActions(config:Config,helper:string,directory:string){

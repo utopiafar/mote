@@ -15,10 +15,10 @@ export function createChromeCaptureUi(api:DesktopApi){
  function render(value:ChromePermissionStatus){const list=el('chrome-permission-list');list.replaceChildren();
   if(value.state==='checked'){
    for(const item of value.origins){const row=document.createElement('div');row.className='chrome-permission-row';const origin=document.createElement('span'),state=document.createElement('span');origin.textContent=item.origin;state.textContent=item.allowed?moteText('已获准'):moteText('尚未获准');row.append(origin,state);list.append(row);}
-   message(!value.origins.length?moteText('桥接已连接；尚未配置采集站点。'):value.origins.every(item=>item.allowed)?moteText('最近检查：桥接与站点权限已确认。'):moteText('所选站点尚未全部获准。请在 Chrome 完成授权后重新检查。'));
+   message(!value.origins.length?moteText('桥接已连接；尚未配置采集站点。'):value.origins.every(item=>item.allowed)?moteText('最近检查：桥接与站点权限已确认。'):moteText('站点授权未完成。到 Chrome 继续授权。'));
    el('chrome-checked-at').textContent=moteText('检查时间：{0}',new Date(value.checkedAt).toLocaleString(getLocale()));
   }else{
-   el('chrome-checked-at').textContent='';message(value.state==='canceled'?moteText('检查已取消，状态尚未确认。'):value.state==='ambiguous'?moteText('检测到多个 Chrome 连接，暂不能确认当前浏览器权限。'):value.state==='busy'?moteText('桥接正在处理采集，稍后重新检查。'):value.state==='stale'?moteText('检查期间连接或站点范围已改变，重新检查。'):moteText('桥接尚未完成检查。请确认 Chrome 扩展已连接后重试。'));
+   el('chrome-checked-at').textContent='';message(value.state==='canceled'?moteText('检查已取消，状态尚未确认。'):value.state==='ambiguous'?moteText('检测到多个 Chrome 连接，暂不能确认当前浏览器权限。'):value.state==='busy'?moteText('桥接正在处理采集，稍后重新检查。'):value.state==='stale'?moteText('检查期间连接或站点范围已改变，重新检查。'):moteText('桥接待检查。连接 Chrome 扩展后重试。'));
   }
  }
  async function check(){if(!prepared||requestId||preparing()||!sameOrigins())return;const epoch=++revision,id=crypto.randomUUID(),scope=JSON.stringify(saved);requestId=id;el('chrome-permission-list').replaceChildren();el('chrome-checked-at').textContent='';message(moteText('正在检查桥接与站点权限…'));buttons();

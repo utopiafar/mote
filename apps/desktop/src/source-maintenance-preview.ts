@@ -8,7 +8,7 @@ export function renderSourceMaintenancePreview(element:HTMLElement,row:SourceSta
   // An invalid draft may still alter the scope; keep the warning visible.
   const changed=!options||sourcePolicySignature(row.source)!==sourcePolicySignature(options);
   element.hidden=!changed;
-  element.textContent=changed?moteText('本机当前清单 {0} 项；重新扫描结果可能不同，符合新规则的文件可能再次发送到中央。',row.items):'';
+  element.textContent=changed?moteText('本机清单 {0} 项。重扫可能按新规则再次发送文件。',row.items):'';
 }
 
 /** The existing manual sync also flushes other pending capture records. Preview

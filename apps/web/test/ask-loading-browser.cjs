@@ -183,7 +183,7 @@ async function run(){
  writeFileSync(join(output,'central-search-evidence.png'),(await wc.capturePage()).toPNG());
  await js(`document.querySelector('.library-back').click()`);
  assert.equal(await js(`document.querySelector('.library-browser').classList.contains('has-selection')`),false);
- await js(`[...document.querySelectorAll('.search-options button')].find(node=>node.textContent.startsWith('问一问')).click()`);
+ await js(`[...document.querySelectorAll('.search-options button')].find(node=>node.textContent.startsWith('聊天')).click()`);
  await until(()=>js(`document.querySelector('[data-page="ask"] .chat-page[aria-busy="false"]')`),'search handoff opens the main chat');
  await until(()=>js(`document.querySelector('textarea[aria-label="向 Mote 提问"]')?.value==='generated'`),'search handoff sets the draft without sending');
  assert.equal(await js(`document.querySelector('[role="dialog"]')===null`),true);

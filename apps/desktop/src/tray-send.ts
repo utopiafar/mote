@@ -9,6 +9,6 @@ export function canSendFromTray(status:Pick<Status,'config'|'sync'>):boolean {
 
 /** Keep diagnostics available through an explicit native disclosure, never in the default error. */
 export async function showTraySendFailure(error:unknown,show:(options:MessageBoxOptions)=>Promise<{response:number}>):Promise<void>{
-  const result=await show({type:'error',title:moteText('立即发送'),message:moteText('未能确认发送完成，请检查同步与活动后重试。'),buttons:[moteText('返回'),moteText('技术详情')],defaultId:0,cancelId:0,noLink:true});
+  const result=await show({type:'error',title:moteText('立即发送'),message:moteText('发送待确认。查看同步状态再重试。'),buttons:[moteText('返回'),moteText('技术详情')],defaultId:0,cancelId:0,noLink:true});
   if(result.response===1)await show({type:'error',title:moteText('技术详情'),message:error instanceof Error?error.message:String(error),buttons:[moteText('返回')],defaultId:0,cancelId:0,noLink:true});
 }

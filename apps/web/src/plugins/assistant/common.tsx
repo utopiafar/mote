@@ -58,7 +58,7 @@ export function BackgroundStatus({api}:{api:Api}){
  return <aside className="assistant-background"><strong>{moteText('后台模型处理')}</strong>
   {read.error!==undefined||!read.data?<ReadState read={read}/>:<><p role="status">{moteText(read.data.authorization.state==='on'?'后台模型已开启':'后台模型已关闭')}</p>
    {read.data.authorization.excludedSourceIds.length>0&&<p>{moteText('部分来源已排除在后台模型处理之外。')}</p>}</>}
-  <p>{moteText('后台开关不改变采集设置，也不代表某项任务正在运行。')}</p><a href="#/sources">{moteText('管理来源')}</a>
+  <p>{moteText('后台开关用于自动任务。')}</p><a href="#/sources">{moteText('管理来源')}</a>
  </aside>;
 }
 export const matterLabel=(state:'active'|'paused'|'archived')=>moteText(state==='active'?'事项已启用':state==='paused'?'事项已暂停':'已归档');

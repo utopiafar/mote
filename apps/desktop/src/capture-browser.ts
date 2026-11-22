@@ -39,7 +39,7 @@ async function request(config: Config, path: string,authorize:()=>void=()=>{}): 
   try{authorize();}catch(error){await response.body?.cancel().catch(()=>{});throw error;}if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     if (response.status === 404) throw new Error(moteText("记录不存在，或中央需要升级才能浏览采集记录"));
-    if (response.status === 401 || response.status === 403) throw new Error(moteText("无法访问采集记录，请检查中央连接权限"));
+    if (response.status === 401 || response.status === 403) throw new Error(moteText("采集记录不可访问。检查中央连接权限。"));
     throw new Error(moteText("中央返回 HTTP {0}。稍后重试", response.status));
   }
   return response;
@@ -81,7 +81,7 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
       return {items:[],sessions:page.slice(0,PAGE_SIZE),sessionCount:sessions.length,totalCount:samples.length,nextCursor:page.length>PAGE_SIZE&&last?Buffer.from(JSON.stringify({at:last.firstAt,id:last.id})).toString('base64url'):undefined};
     }
     const selected = sessions.find(s=>s.id===input.sessionId);
-    if (!selected) throw new Error(moteText("Session 已变化或被清理，请返回并刷新分组"));
+    if (!selected) throw new Error(moteText("采集时段已变化。返回并刷新分组。"));
     // The first/last IDs disambiguate switches sharing the same millisecond.
     const ordered = samples.filter(s=>s.deviceId===selected.deviceId).sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||a.id.localeCompare(b.id));
     const members=ordered.slice(ordered.findIndex(s=>s.id===selected.id),ordered.findIndex(s=>s.id===selected.id)+selected.count).reverse();

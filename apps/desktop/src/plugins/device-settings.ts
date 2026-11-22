@@ -278,7 +278,7 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
               const input = kind === 'qr' ? await d.recognizeQr(bytes) : new TextDecoder('utf-8', {fatal: true}).decode(bytes);
               return {canceled: false, preview: onboarding.preview(input)};
             } catch {
-              throw new Error(moteText('无法读取有效邀请，请检查 JSON/二维码格式、有效期和文件大小；原连接未变动'));
+              throw new Error(moteText('邀请无效，原连接保留。核对格式、有效期和大小。'));
             }
           })));
         register(deviceSettingsChannels.connectionConfirm, deviceSettingsWriteCapability, args =>
@@ -293,11 +293,11 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
             const current = requireSettings();
             const confirmedInitial = (args[0] as ConfigUpdate).confirmLocalBacklog === true && coordinator.unboundBacklog();
             let updated = updateConfig(current, args[0] as ConfigUpdate, d.queue.stats().depth + (d.notes.hasPrepared() ? 1 : 0), confirmedInitial);
-            if (!options.defaultProfile && updated.openAtLogin) throw new Error(moteText('命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数'));
+            if (!options.defaultProfile && updated.openAtLogin) throw new Error(moteText('命名环境通过带 --profile 的命令启动。'));
             const relocating = updated.captureStorageDirectory !== current.captureStorageDirectory;
             const changingConnection = updated.serverUrl !== current.serverUrl || updated.token !== current.token;
             if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== d.pendingStorageDirectory()) throw new Error(moteText('通过本机文件夹选择器选择截图位置，再保存设置'));
-            if (relocating && changingConnection) throw new Error(moteText('请先保存截图位置，再单独保存节点连接；每次切换均会自动应用'));
+            if (relocating && changingConnection) throw new Error(moteText('先保存截图位置，再保存中央连接。'));
             if (changingConnection && updated.token) {
               const identity = await testConnection(updated, fetch, false);
               if (!identity.capabilities.archiveRead) throw new Error(moteText('升级中央后再登录'));
@@ -328,7 +328,7 @@ export function createDeviceSettingsPlugin(options: DeviceSettingsPluginOptions)
             } catch (error) {
               const persisted = await requireStore().load().catch(() => undefined);
               if (!persisted || JSON.stringify(persisted) === JSON.stringify(updated)) {
-                d.requireRecovery(moteText('设置提交需要恢复；已停止采集与上传并保留数据，请重新打开 Mote。')); throw error;
+                d.requireRecovery(moteText('设置待恢复。数据已保留，重新打开 Mote。')); throw error;
               }
               await d.collector.setSyncPaused(Boolean(current.syncPaused));
               await d.sources.setSyncPaused(Boolean(current.syncPaused));

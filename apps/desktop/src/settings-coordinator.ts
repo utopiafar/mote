@@ -75,7 +75,7 @@ export class SettingsCoordinator {
       // A failed directory fsync may follow a successful rename. Preserve both copies and stop all IO.
       const persisted = await d.store.load().catch(() => undefined);
       if (error instanceof StorageCommitUncertainError || !persisted || JSON.stringify(persisted) === JSON.stringify(updated)) {
-        d.requireRecovery(error instanceof StorageCommitUncertainError?error.message:moteText('设置提交需要恢复；已停止采集与上传并保留数据，请重新打开 Mote。'));
+        d.requireRecovery(error instanceof StorageCommitUncertainError?error.message:moteText('设置待恢复。数据已保留，重新打开 Mote。'));
         throw new Error(d.recoveryRequired());
       }
       try {
@@ -86,7 +86,7 @@ export class SettingsCoordinator {
           if (d.loginItems.get() !== previous.openAtLogin) throw new Error(moteText('登录项还原失败'));
         }
       } catch {
-        d.requireRecovery(moteText('设置未完成；原持久配置和截图保留，运行状态无法安全还原。请重新打开 Mote 后重试'));
+        d.requireRecovery(moteText('设置未完成，原配置与截图保留。重新打开 Mote。'));
         throw new Error(d.recoveryRequired());
       }
       throw error;

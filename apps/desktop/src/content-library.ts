@@ -48,7 +48,7 @@ export async function centralContentPage(config:import('./contracts').Config,cur
   const needle=contentQuery(search);
   const query=new URLSearchParams({deviceId:config.deviceId,limit:'30',...(cursor?{cursor}:{}),...(needle?{query:needle}:{})});
   const response=await fetch(`${validateServerUrl(config.serverUrl)}${needle?'/api/context/search':'/api/capture-browser'}?${query}`,{headers:{Authorization:`Bearer ${requireConnectionToken(config)}`},redirect:'error',signal:AbortSignal.timeout(20000)});
-  if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)return {items:[],total:0,authorizationDenied:true};throw Error(moteText('无法访问采集记录，请检查中央连接权限'));}
+  if(!response.ok){await response.body?.cancel();if(response.status===401||response.status===403)return {items:[],total:0,authorizationDenied:true};throw Error(moteText('采集记录不可访问。检查中央连接权限。'));}
   const page=JSON.parse(await readResponseText(response,1024*1024)) as {items:Record<string,unknown>[];totalCount:number;nextCursor?:string};
   if(needle){
     if(!Array.isArray(page.items)||page.items.length>30)throw Error(moteText('记录不属于当前设备'));

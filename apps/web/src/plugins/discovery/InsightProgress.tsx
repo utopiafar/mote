@@ -14,6 +14,6 @@ export function InsightProgress({run,pollError,elapsed,onRetry,onResume,onCancel
     <ol className="insight-steps">{run.events.map((event,index)=><li key={index}><Clock3 size={14}/><time>{new Date(event.at).toLocaleTimeString(getLocale())}</time><span>{event.stage==='tool'?`${tools[event.tool??'']??event.tool??moteText("读取资料")}${event.phase==='started'?moteText(" · 正在执行"):moteText(" · 返回 {0} 项", event.count??0)}`:stages[event.stage]}</span></li>)}</ol>
     {running&&onCancel&&<button type="button" className="button secondary" disabled={cancelling} onClick={onCancel}>{cancelling?moteText("正在取消…"):moteText("取消回顾")}</button>}
     {['failed','cancelled'].includes(run.status)&&<button type="button" className="button primary" onClick={onRetry}>{moteText("调整范围后重试")}</button>}
-    <p className="field-note">{moteText("这里展示实际运行阶段与检索操作；报告中的结论附有可打开的原文引用。")}</p>
+    <p className="field-note">{moteText("运行阶段、检索和原文引用")}</p>
   </section>;
 }

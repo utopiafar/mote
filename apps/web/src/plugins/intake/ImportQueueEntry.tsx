@@ -39,11 +39,11 @@ export function ImportQueueDetail({api,entry,queue,onEdit}:{api:Api;entry:Entry;
     <div className="section-heading"><div><div className="eyebrow">{stateLabel(entry)}</div><h2>{entry.name}</h2><p>{moteText('每份资料独立处理，可以继续添加其他资料。')}</p></div></div>
     <Progress entry={entry}/>
     {Boolean(entry.archivedFileIds?.length)&&<p className="notice" role="status">{moteText('原件已保留')}</p>}
-    {entry.state==='paused'&&<p className="notice" role="status">{moteText('上传已暂停，文件和已上传的分片仍保留，点击继续上传即可恢复。')}</p>}
+    {entry.state==='paused'&&<p className="notice" role="status">{moteText('上传暂停，已传分片保留。可继续上传。')}</p>}
     {entry.state==='creating'&&<p role="status">{moteText('正在归档并提交任务，等待服务器返回。')}</p>}
     {entry.failure&&<div className="error-banner" role="alert">{entry.failure.message}</div>}
     <Controls entry={entry} queue={queue} onEdit={onEdit}/>
     {entry.source.kind==='files'?<section className="import-originals"><h3>{moteText('本次提交的文件')}</h3>{entry.source.files.map((file,index)=><div className="file-row" key={file.name}><FileText size={15}/><span>{file.name}</span><small>{bytes(file.size)}</small>{entry.archivedFileIds?.[index]&&<ArchivedFileButton api={api} id={entry.archivedFileIds[index]} name={file.name}/>}</div>)}</section>:<p className="import-source-path">{entry.source.path}</p>}
-    <p className="muted">{moteText('已归档的原件会保留。未上传完的本地文件需保持当前浏览器会话，刷新或关闭后请重新选择。')}</p>
+    <p className="muted">{moteText('原件已归档。刷新或关闭后须重新选择未传完的文件。')}</p>
   </article>;
 }

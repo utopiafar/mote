@@ -14,7 +14,7 @@ import {resolveDiscoveryTarget} from '../../discovery-availability';
 export function fileRetentionLabel(retention:FileView['retention']){
  return retention==='reference'?moteText('仅保存引用'):retention==='archive'?moteText('保留原件'):moteText('内容快照');
 }
-export function FileRetentionNote(){return <p className="fine-print">{moteText('文件快照和原件归档都会上传完整文件，由中央解析或转写。快照处理后删除中央临时原件，保留提取正文；原件归档长期保留文件。仅文件目录不读取正文。')}</p>;}
+export function FileRetentionNote(){return <p className="fine-print">{moteText('快照和原件归档均上传完整文件供中央解析或转写。快照清理临时原件、保留提取正文；归档长期留原件。仅目录不读取正文。')}</p>;}
 
 /** FileView is the host projection. Retention, coverage, body text and summary
  * presence never substitute for its original-opening capability. */
@@ -56,18 +56,18 @@ export function FileStatus({api,status,historical=false}:{api:Api;status:ReturnT
    <Coverage label={moteText('语义理解')} value={view.coverage.semantic}/>
    <Coverage label={moteText('向量索引')} value={view.coverage.embedding}/>
   </dl>
-  <p className="fine-print">{moteText('来源最近一次观察时间不代表设备当前在线。提取、语义理解、向量索引和原件打开分别确认。')}</p>
+  <p className="fine-print">{moteText('最近观察时间。提取、理解、索引和打开原件分别确认。')}</p>
   {view.retention==='reference'&&<p role="status">{moteText('此来源仅保留引用与元数据，未导入正文。')}</p>}
-  {view.retention==='snapshot'&&!view.hasOriginal&&<p role="status">{moteText('快照原件未保留；已提取正文仍按当前覆盖和读取权限提供。')}</p>}
+  {view.retention==='snapshot'&&!view.hasOriginal&&<p role="status">{moteText('快照原件未保留。仍可按当前权限查看提取正文。')}</p>}
   {view.coverage.extraction.status==='partial'&&<p role="status">{moteText('资料尚不完整，可在“来源与处理”中查看缺失情况。')}</p>}
-  {view.coverage.semantic.status!=='ready'&&<p className="fine-print">{moteText('内容提取或生成摘要不代表已完成全文语义理解。')}</p>}
+  {view.coverage.semantic.status!=='ready'&&<p className="fine-print">{moteText('提取和摘要先于全文语义理解。')}</p>}
   {view.retention!=='reference'&&view.coverage.embedding.status!=='ready'&&<p className="fine-print">{moteText('向量索引尚未完整就绪；可用正文仍可通过文本检索查找。')}</p>}
   <FileRetentionNote/>
   <div className="source-toolbar">
    <DiscoveryLink className="button subtle" target={{pageId:'archive',collectionId:'files',href:'#/library?view=files&sourceId='+encodeURIComponent(view.sourceId),requires:['http:GET:/api/files']}}>{moteText('浏览来源资料')}</DiscoveryLink>
    <DiscoveryLink className="button subtle" target={{pageId:'search',href:'#/search?sourceId='+encodeURIComponent(view.sourceId)}}>{moteText('搜索资料')}</DiscoveryLink>
    <button className="button" disabled={!canAsk} onClick={()=>{if(!canAsk||!confirmNavigation())return;rememberOriginalReturn(api,'capture',view.captureId);window.location.hash=originalReferenceRoute('capture',view.captureId);}}>{moteText('问文件')}</button>
-   <button className="button" disabled={!canUse} onClick={()=>{if(canUse)openQuestionDraft(api,moteText('请基于这份文件拟定可编辑的工作草稿，说明目标和资料范围，等我确认后开始。'),view.captureId);}}>{moteText('用于事项')}</button>
+   <button className="button" disabled={!canUse} onClick={()=>{if(canUse)openQuestionDraft(api,moteText('基于此文件拟可编辑草稿，写明目标和范围。确认后开始。'),view.captureId);}}>{moteText('用于事项')}</button>
    <button className="text-button" onClick={status.refresh} disabled={status.loading}>{moteText('刷新')}</button>
   </div>
   {!canAsk&&<p className="fine-print">{historical?moteText('历史证据，仅用于核对当时的内容。'):askAvailability.state==='available'?moteText('当前支持情况暂无法确认'):discoveryAvailabilityText(askAvailability.state)}</p>}

@@ -16,13 +16,13 @@ type Snapshot={entries:readonly ImportQueueEntry[];completedVersion:number};
 
 export function validateImportFiles(files:readonly File[]):string|undefined{
   if(files.length>4000)return moteText('一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。');
-  if(new Set(files.map(file=>file.webkitRelativePath||file.name)).size!==files.length)return moteText('同一次导入中的文件路径不能重复，请移除重复文件或分开提交。');
+  if(new Set(files.map(file=>file.webkitRelativePath||file.name)).size!==files.length)return moteText('导入路径重复。移除重复文件或分开提交。');
 }
 
 function failure(error:unknown,source:ImportSource):NonNullable<ImportQueueEntry['failure']>{
   // Recovery follows browser exception names and server protocol codes, never message matching.
-  if(source.kind==='files'&&error instanceof Error&&['NotFoundError','NotReadableError'].includes(error.name))return {message:moteText('无法读取所选文件，文件可能已移动或访问权限已失效。请重新选择文件。'),recovery:'files'};
-  if(error instanceof Error&&error.name==='TimeoutError')return {message:moteText('上传或提交超时，已上传的分片会保留，请重试这份资料。'),recovery:'retry'};
+  if(source.kind==='files'&&error instanceof Error&&['NotFoundError','NotReadableError'].includes(error.name))return {message:moteText('文件无法读取。重新选择。'),recovery:'files'};
+  if(error instanceof Error&&error.name==='TimeoutError')return {message:moteText('上传超时，已上传分片保留。重试此资料。'),recovery:'retry'};
   if(error instanceof ApiError&&['import_directory_missing','import_directory_unreadable','import_directory_required'].includes(error.code??''))return {message:errorMessage(error),recovery:'directory'};
   return {message:errorMessage(error),recovery:'retry'};
 }

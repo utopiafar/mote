@@ -32,14 +32,14 @@ export function ConversationSettingsView({api,settings,revision,onSaved}:{api:Ap
   }
   return <section className="conversation-settings" aria-label={moteText('上下文设置')}><form onSubmit={event=>{event.preventDefault();void save();}}>
     <fieldset disabled={busy}><legend>{moteText('上下文设置')}</legend>
-      <p className="fine-print">{moteText('服务端按当前模型窗口和完整请求预算计算历史目标；这里只保存比例与窗口偏好，不在浏览器中估算。')}</p>
+      <p className="fine-print">{moteText('只保存比例和窗口偏好。中央按模型窗口和请求预算计算。')}</p>
       <div className="conversation-settings-grid">
         <label>{moteText('历史预算比例')}<input type="number" min={0} max={1} step={0.05} required value={draft.context.historyRatio} onChange={event=>changeContext({historyRatio:Number(event.target.value)})}/></label>
         <label>{moteText('低水位比例')}<input type="number" min={0} max={0.99} step={0.05} required value={draft.context.lowWatermarkRatio} onChange={event=>changeContext({lowWatermarkRatio:Number(event.target.value)})}/></label>
         <label>{moteText('模型窗口')}<select value={draft.context.contextWindowSource} onChange={event=>changeContext(event.target.value==='configured'?{contextWindowSource:'configured',contextWindow:draft.context.contextWindow??8192}:{contextWindowSource:'conservative',contextWindow:null})}><option value="conservative">{moteText('使用服务端标注的保守窗口')}</option><option value="configured">{moteText('指定模型窗口')}</option></select></label>
         {draft.context.contextWindowSource==='configured'&&<label>{moteText('窗口大小（tokens）')}<input type="number" min={1} step={1} required value={draft.context.contextWindow??''} onChange={event=>changeContext({contextWindow:Number(event.target.value)})}/></label>}
       </div>
-      <p className="fine-print">{moteText('缺少可信能力信息时使用保守窗口。历史目标是比例与请求预算的较小值，由服务端在每次请求时计算。')}</p>
+      <p className="fine-print">{moteText('能力未知时用保守窗口。历史目标取比例与预算的较小值。')}</p>
     </fieldset>
     {error&&<p className="notice error" role="alert">{error}</p>}
     {notice&&<p role="status">{notice}</p>}

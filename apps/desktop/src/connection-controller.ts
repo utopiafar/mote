@@ -29,7 +29,7 @@ export class ConnectionController {
       const result = await d.onboarding.redeem(id, origin, named, d.platform);
       const updated = { ...updateConfig(d.settings(), { ...named, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope, authSignedOut: false, authExpiresAt: undefined, authSessionOnly: false };
       const identity = await testConnection(updated);
-      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'owner') throw new Error(moteText('中央凭据身份确认不一致，原连接未修改；请重新生成邀请'));
+      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'owner') throw new Error(moteText('中央身份不匹配，原连接保留。重新生成邀请。'));
       await d.coordinator.commitConnection(updated, origin === d.settings().serverUrl, true);
       d.installStatus({ state: 'connected', message: moteText('登录成功，可使用所有中央功能。'), checkedAt: new Date().toISOString(), identity });
     }, origin === d.settings().serverUrl, true);

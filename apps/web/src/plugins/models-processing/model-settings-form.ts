@@ -72,7 +72,7 @@ export function modelSettingsRequest(snapshot: ModelSettingsView, draft: ModelSe
   if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 128000) throw new Error(moteText("输出 token 上限须为 1–128000 之间的整数。"));
   if (draft.protocol !== 'codex-app-server' && (!draft.modelRequestTimeoutSeconds || !modelRequestTimeoutValid)) throw new Error(moteText("单次模型请求超时须为 5–600 秒。"));
   if (agentTimeoutMs !== null && (!Number.isSafeInteger(agentTimeoutMs) || agentTimeoutMs < 5000 || agentTimeoutMs > MAX_AGENT_TIMEOUT_MS)) throw new Error(moteText("Agent 总运行超时须为空，或为 5–3600 秒。"));
-  if (retainedCredentialsNeedConfirmation(draft, snapshot.settings) && !draft.allowCredentialReuse) throw new Error(moteText("服务或地址已改变。请填写新凭据、清除旧凭据，或明确允许在新地址复用。"));
+  if (retainedCredentialsNeedConfirmation(draft, snapshot.settings) && !draft.allowCredentialReuse) throw new Error(moteText("连接地址已变。填入、清除或明确复用凭据。"));
   const settings: ModelSettingsUpdate['settings'] = {
     provider: draft.provider,
     protocol: draft.protocol,
@@ -85,7 +85,7 @@ export function modelSettingsRequest(snapshot: ModelSettingsView, draft: ModelSe
   };
   if(draft.protocol==='codex-app-server')return {revision:snapshot.revision,settings:{...settings,baseUrl:'',apiKey:null,headers:null,extraBody:null,allowUnauthenticatedLocal:false}};
   if (draft.apiKeyAction === 'replace') {
-    if (!draft.apiKey.trim()) throw new Error(moteText("请填写新 API key，或选择清除已有密钥。"));
+    if (!draft.apiKey.trim()) throw new Error(moteText("填写新 API key，或清除已有密钥。"));
     if (/[\u0000-\u001f\u007f]/.test(draft.apiKey)) throw new Error(moteText("API key 不能包含换行或控制字符。"));
     settings.apiKey = draft.apiKey.trim();
   } else if (draft.apiKeyAction === 'clear') settings.apiKey = null;

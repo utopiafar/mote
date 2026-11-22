@@ -10,7 +10,7 @@ export function rememberOriginalReturn(api:Api,kind:Origin['kind'],id:string){le
 export function originalReferenceRoute(kind:Origin['kind'],id:string){return pageHash('chat',{[kind==='memory'?'fromMemory':kind==='material'?'fromMaterial':kind==='insight'?'fromInsight':'fromCapture']:id});}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function readOrigin():Origin|null{const query=new URLSearchParams(window.location.hash.split('?')[1]);for(const [key,kind] of [['fromMemory','memory'],['fromMaterial','material'],['fromCapture','capture'],['fromInsight','insight']] as const){const id=query.get(key);if(id)return {kind,id,...(kind==='material'&&query.get('materialOnly')==='1'?{materialOnly:true as const}:{})};}return null;}
-const unavailable=()=>moteText('参考原件暂不可用，请清除参考后继续。');
+const unavailable=()=>moteText('参考原件不可用。清除参考后继续。');
 /** Re-read the selected entity and every exact original. A displayed evidence
  * subset never becomes the scope, and a newer Material never replaces a pin. */
 export async function verifiedOriginals(api:Api,origin:Origin,signal:AbortSignal):Promise<{ids:string[];title:string;materialRef?:string;scope?:MaterialSelection}>{

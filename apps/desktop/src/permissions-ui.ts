@@ -17,7 +17,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
   const render = () => {
     const labels: Record<string, string> = {
       granted: moteText('已授权'), denied: moteText('未授权'), restricted: moteText('系统限制'),
-      'not-determined': moteText('尚未授权'), unsupported: moteText('当前平台不支持'), unknown: moteText('无法确认，请检查系统设置'),
+      'not-determined': moteText('尚未授权'), unsupported: moteText('当前平台不支持'), unknown: moteText('权限状态未知。查看系统设置。'),
     };
     for (const kind of ['screen', 'accessibility', 'calendar'] as const) {
       const value = status?.[kind] ?? 'unknown';
@@ -44,7 +44,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
       status = next; render(); checkError = ''; renderError();
     }).catch(() => {
       if (!active || disposed || revision !== generation) return;
-      status = undefined; render(); checkError = moteText('权限状态读取失败，请重试。'); renderError();
+      status = undefined; render(); checkError = moteText('权限状态读取失败。重试。'); renderError();
     }).finally(() => { if (checking === task) checking = undefined; });
     checking = task;
     return task;
@@ -59,7 +59,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
     } catch { failed = true; }
     finally {
       pending.delete(kind);
-      if (active && !disposed) { render(); await refresh(); if (failed) { actionError = moteText('无法打开权限授权，请重试。'); renderError(); } }
+      if (active && !disposed) { render(); await refresh(); if (failed) { actionError = moteText('权限窗口打不开。重试。'); renderError(); } }
     }
   };
   for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-permission-request], [data-permission]'))) {

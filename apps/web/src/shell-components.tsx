@@ -338,7 +338,7 @@ export function LoginDialog({ destination, onConnected, onClose }: {
     const controller = new AbortController(); active.current = controller;
     setBusy(true); setError("");
     try {
-      if (!token.trim()) throw new Error(moteText("请输入管理访问令牌。"));
+      if (!token.trim()) throw new Error(moteText("输入管理访问令牌。"));
       const connection = {token: token.trim()};
       // Every human client uses the same node permissions.
       await createApi(connection).request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])});
@@ -355,12 +355,12 @@ export function LoginDialog({ destination, onConnected, onClose }: {
       <div className="modal-icon"><ShieldCheck size={24}/></div>
       <div className="eyebrow">{moteText("MOTE · 中央管理界面")}</div>
       <h2 id="connect-title">{moteText("登录 Mote")}</h2>
-      <p className="muted-copy">{moteText("此服务就是中央，负责接收和归档客户端采集的数据。验证管理令牌后，进入「")}{destination}{cjkLocale()?'」。':'”.'}</p>
+      <p className="muted-copy">{moteText("验证管理令牌后，进入「")}{destination}{cjkLocale()?'」。':'”.'}</p>
       <form onSubmit={connect}>
         <p className="login-endpoint">{moteText("当前服务")}{' '}<strong>{window.location.origin}</strong></p>
         <label>{moteText("管理访问令牌")}<input ref={tokenInput} aria-label={moteText("管理访问令牌")} autoFocus type="password" autoComplete="off" placeholder={moteText("输入此节点的管理令牌")} value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
         <label className="session-lifetime-control"><span>{moteText("登录会话有效期")}</span><select aria-label={moteText("登录会话有效期")} value={lifetime} onChange={e=>setLifetime(e.target.value as SessionLifetime)} disabled={busy}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label>
-        <div className="field-note"><ShieldCheck size={15}/>{lifetime==='session'?moteText("令牌只保留在当前标签页会话，退出登录后清除。"):moteText("令牌会保存在此浏览器中，并在所选期限后自动清除；退出登录会立即清除。")}</div>
+        <div className="field-note"><ShieldCheck size={15}/>{lifetime==='session'?moteText("令牌只保留在当前标签页会话，退出登录后清除。"):moteText("令牌存在此浏览器，到期或退出登录时清除。")}</div>
         {error && <ErrorNotice text={error}/>}
         <button className="button primary full" disabled={busy}>{busy ? <Spinner label={moteText("正在验证令牌…")}/> : <>{moteText("登录并继续")}<ArrowRight size={16}/></>}</button>
       </form>
@@ -495,7 +495,7 @@ export function EvidenceDialog({
       onDeleted();
       onClose();
     } catch (e) {
-      if(readerAlive.current&&readerVisit.current===visit){setError(moteText('未能确认删除完成。请刷新查看当前状态。'));setDeletionDiagnostic(errorMessage(e));}
+      if(readerAlive.current&&readerVisit.current===visit){setError(moteText('删除待确认。刷新查看状态。'));setDeletionDiagnostic(errorMessage(e));}
     } finally {
       if(readerAlive.current&&readerVisit.current===visit)setBusy(false);
     }

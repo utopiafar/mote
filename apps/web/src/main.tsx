@@ -223,7 +223,7 @@ function App() {
     // A same-node re-login may continue a direct evidence link. Clear the
     // credential and private UI, but keep the URL until the owner logs in.
     clearConnection();
-    setNotice(moteText("登录已失效，请重新输入管理令牌。"));
+    setNotice(moteText("登录已失效。重新输入管理令牌。"));
     setShowConnect(true);
   }, [clearConnection]);
   useEffect(() => {
@@ -250,7 +250,7 @@ function App() {
   apiRef.current=api;
   const navState=useNavStateRead(api);
   useEffect(()=>{if(navState.value)setVerified(true);},[navState.value]);
-  const verificationError=!verified&&navState.error?(navState.error instanceof ApiError&&navState.error.status===403?moteText("此令牌没有管理权限，请退出后使用管理令牌登录。"):errorMessage(navState.error)):"";
+  const verificationError=!verified&&navState.error?(navState.error instanceof ApiError&&navState.error.status===403?moteText("令牌无管理权限。用管理令牌登录。"):errorMessage(navState.error)):"";
   useEffect(()=>api&&verified?installedWebPlugins.connect(api,connection?.viewScope):undefined,[api,verified,connection?.viewScope]);
   useEffect(()=>{
     const update=()=>{const resolved=readWorkspaceRoute(location.hash,readPage,collectionIds(),webViewPage);setPage(resolved.page);};
@@ -470,11 +470,11 @@ function App() {
                   <h1>
                     {page === "ask" ? moteText("把记录留住，在需要时找到。") : moteText("登录后查看{0}", pageLabels[page])}
                   </h1>
-                  <p>{moteText("汇集手机、电脑与文件里的记录。按来源浏览资料，也能直接提问，回到答案的出处。")}</p>
+                  <p>{moteText("按来源浏览设备和文件资料。")}</p>
                   <div className="welcome-archive-flow" aria-label={moteText("采集 · 汇聚 · 理解")}>
                     <span><FileText size={17}/>{moteText("添加资料")}</span><ArrowRight size={14} aria-hidden="true"/>
                     <span><Database size={17}/>{moteText("资料库")}</span><ArrowRight size={14} aria-hidden="true"/>
-                    <span><MessageSquare size={17}/>{moteText("问一问")}</span>
+                    <span><MessageSquare size={17}/>{moteText("聊天")}</span>
                   </div>
                   <button className="button" onClick={() => setShowConnect(true)}>
                     <Link2 size={16} />

@@ -81,7 +81,7 @@ function CommitmentList({api,memories,personMemoryId,range,onOpen}:{api:Api;memo
       const latest=await api.request<CommitmentPage>(readPath,{signal:controller.signal});
       const verified=latest.items.find(value=>value.id===item.id&&value.revision===item.revision&&matches(value))?.timeline
         .find(value=>value.eventId===eventId)?.evidence.some(value=>value.id===proof.id&&value.offset===proof.offset&&value.quote===proof.quote);
-      if(!verified)throw Error(moteText('请求的操作或资源已失效，请重新读取后再确认。'));
+      if(!verified)throw Error(moteText('操作或资源已失效。刷新后确认。'));
       if(current())onOpen(formatEvidenceRef('capture',proof.id));
     }catch(error){if(current()){setProofError(errorMessage(error));refreshMemoryResources(api,true);}}
   }

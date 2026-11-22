@@ -24,7 +24,7 @@ export async function provideMaintenanceDownload(response:Response,name:string,c
  const url=URL.createObjectURL(blob);
  try{const anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.click();}
  finally{setTimeout(()=>URL.revokeObjectURL(url),1000);}
- return moteText('已向浏览器提供下载文件，请在下载列表确认保存结果。');
+ return moteText('文件已交给浏览器。查看下载列表。');
 }
 export function maintenanceFailure(error:unknown){
  if(error instanceof SyntaxError)return moteText('选择 Mote v2 JSON 归档文件。');

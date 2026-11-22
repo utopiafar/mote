@@ -162,7 +162,7 @@ export class NotesController {
       this.#outbox.saveDraft(next);
       this.#emit({draftSaved: true});
     } catch {
-      this.#emit({draftSaved: false, error: moteText('本机存储不可用或已满；草稿目前只在此窗口，请先复制保存。')});
+      this.#emit({draftSaved: false, error: moteText('本机储存不可用。先复制此窗口的草稿。')});
     }
   }
 

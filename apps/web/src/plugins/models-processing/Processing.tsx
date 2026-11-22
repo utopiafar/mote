@@ -65,7 +65,7 @@ function OperationsCentre({api,onNavigate}:{api:Api;onNavigate:(page:Page)=>void
   </section>
   {selected&&<Detail key={selected} api={api} id={selected} opener={opener.current} onNavigate={onNavigate} onClose={()=>setSelected('')}/>}
   <details className="panel processing-advanced" onToggle={e=>setWorkflowsOpen(e.currentTarget.open)}><summary>{moteText('上下文步骤操作')}</summary>{workflowsOpen&&<WorkflowProcessing api={api} embedded onNavigate={onNavigate}/>}</details>
-  <div className="processing-actions">{(['files','imports','memories','ask','actions'] as const).map((page,i)=><button className="text-button" key={page} onClick={()=>onNavigate(page)}>{moteText(['文件与录音','导入','记忆','问一问','行动'][i])}</button>)}</div>
+  <div className="processing-actions">{(['files','imports','memories','ask','actions'] as const).map((page,i)=><button className="text-button" key={page} onClick={()=>onNavigate(page)}>{moteText(['文件与录音','导入','记忆','聊天','行动'][i])}</button>)}</div>
  </div>;
 }
 /** Compact current processing shown inside diagnostics. The processing page
