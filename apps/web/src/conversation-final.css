@@ -152,7 +152,6 @@
 .conversation-heading h2 { margin: 3px 0 0; font-size: var(--mote-font-title); line-height: 1.3; }
 .conversation-heading p { margin: 3px 0 0; font-size: var(--mote-font-meta); }
 .conversation-messages { display: flex; flex-direction: column; min-width: 0; padding: 24px 0 14px; }
-.conversation-turn.failed .asked-question { border-color: color-mix(in srgb,var(--mote-warning) 30%,var(--mote-border)); background: color-mix(in srgb,var(--mote-warning) 8%,var(--mote-surface)); color: var(--mote-warning); }
 .chat-attachment { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 6px 4px 8px; border: 1px solid var(--mote-hair); border-radius: var(--mote-radius-container); background: var(--mote-background); color: var(--mote-muted); font-size: var(--mote-font-meta); }
 .chat-attachment > span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-attachment button,.chat-image-button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--mote-muted); cursor: pointer; }

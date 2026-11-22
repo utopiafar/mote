@@ -274,24 +274,6 @@
 .app-shell[data-detail=stack] .library-browser.has-selection>.library-master { display:none; }
 .app-shell[data-detail=stack] .library-browser.has-selection>.library-detail { display:block; }
 
-.home-material-row { width:100%; display:grid; grid-template-columns:40px minmax(0,1fr) 50px 18px; align-items:start; gap:15px; padding:15px 5px; min-height:88px; border-bottom:1px solid var(--mote-hair); color:var(--mote-ink); text-align:left; }
-.home-material-row:hover { background:var(--mote-surface); }
-.home-material-icon { width:36px; height:40px; display:grid; place-items:center; margin-top:2px; border:1px solid var(--mote-hair); border-radius:var(--mote-radius-thumb); background:var(--mote-surface); color:var(--mote-muted); }
-.home-material-icon img { display:block; width:100%; height:100%; object-fit:cover; border-radius:var(--mote-radius-thumb); }
-.home-material-copy { display:grid; min-width:0; gap:5px; }
-.home-material-copy strong { font-size:14px; font-weight:530; line-height:1.5; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.home-material-copy small { font-size:11px; line-height:1.6; color:var(--mote-muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.home-material-excerpt { font-size:12px; line-height:1.75; color:var(--mote-muted); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.home-material-row>time { font-size:11px; color:var(--mote-muted); padding-top:1px; }
-.home-material-row>svg { color:var(--mote-muted); align-self:center; }
-@media (max-width:560px){
-.home-material-row { grid-template-columns:31px minmax(0,1fr) 40px; gap:11px; padding:15px 0; min-height:90px; }
-.home-material-icon { width:30px; height:35px; }
-.home-material-row>svg { display:none; }
-.home-material-copy strong { font-size:13px; }
-.home-material-copy small,.home-material-row>time { font-size:10px; }
-.home-material-excerpt { font-size:11px; }
-}
 .evidence-reader .reference-detail { padding:0; }
 .evidence-reader .reference-detail .material-detail { padding:0; }
 .library-detail-heading { display:none; }
@@ -300,3 +282,9 @@
 .reference-detail .material-detail .source-material-blocks>.source-item{padding:0;border:0;border-radius:0;background:transparent;margin:25px 0 28px}
 .reference-detail .material-detail .source-material-blocks>.source-item>.file-text{font-size:14px;line-height:2.05;color:var(--mote-ink);margin:0;overflow-wrap:anywhere}
 .reference-detail .material-detail .source-material-tools-target{margin:16px 0}
+
+/* Library rules load with this page instead of the shared base. */
+.library-archive:has(.has-memory-selection)>.library-heading { display:none; }
+.library-archive:has(.final-memories)>.library-heading>.button { display:none; }
+.library-archive .library-detail:has(.recording-view){max-width:980px}
+.material-reader-ask{float:right;font-size:12px;margin-left:18px}

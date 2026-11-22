@@ -522,3 +522,44 @@
 @media (max-width:760px){
 .web-service-facts{grid-template-columns:88px minmax(0,1fr)}
 }
+
+/* Settings page rules load with this page instead of the shared base. */
+.content[data-page=about]>.page-heading>p { display:none; }
+.content[data-page=about]{max-width:1000px!important;padding:34px 42px 70px!important}
+.final-settings-directory .settings-directory-group{margin:32px 0}
+.settings-directory-group>h2{font-size:13px;font-weight:500;margin:0 0 14px}
+.settings-directory-rows{border-top:1px solid var(--mote-hair)}
+.settings-directory-rows>button{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr) 14px;gap:15px;align-items:center;text-align:left;border-bottom:1px solid var(--mote-hair);padding:19px 0;background:transparent;border-radius:0}
+.settings-directory-rows>button>span{display:flex;flex-direction:column;gap:5px}
+.settings-directory-rows strong{font-size:14px;font-weight:500}
+.settings-directory-rows small{font-size:11px;color:var(--mote-muted)}
+.settings-directory-rows>button>svg{color:var(--mote-muted);width:17px}
+.settings-directory-advanced{font-size:12px;color:var(--mote-muted);margin:26px 0}
+.settings-directory-advanced>summary{cursor:pointer}
+.settings-directory-related{display:flex;gap:22px;margin:24px 0}
+.settings-directory-related .text-button{font-size:12px;color:var(--mote-muted)}
+.content[data-page=localPreferences]{max-width:1000px!important;padding:34px 42px 70px!important}
+.web-preference-section{margin-top:32px;padding-bottom:24px;border-bottom:1px solid var(--mote-hair)}
+.web-preference-section h2{font-size:14px;margin-bottom:24px}
+.web-preferences select{width:420px;max-width:100%;height:42px;padding:10px 12px}
+@media (max-width:760px){
+.content[data-page=about],.content[data-page=localPreferences]{padding:27px 20px 60px!important}
+.web-preferences select{width:100%}
+}
+.content[data-page=help]{max-width:1000px!important;padding:34px 42px 70px!important}
+@media (max-width:760px){
+.content[data-page=help]{padding:27px 20px 60px!important}
+}
+.content[data-page=localPreferences]>.workspace-tools,.content[data-page=help]>.workspace-tools{display:none}
+.web-preferences>.page-heading{display:flex;justify-content:space-between;align-items:center}
+.web-preferences>.page-heading>.text-button{font-size:12px}
+.content[data-page=localPreferences],.content[data-page=help]{max-width:964px!important}
+.settings-directory-group>h2{font-size:12px;font-weight:500;color:var(--mote-muted);margin-bottom:9px}
+.settings-directory-rows>button{grid-template-columns:33px minmax(0,1fr) 12px;gap:13px;padding:18px 1px}
+.settings-directory-rows>button>svg:first-child{color:var(--mote-accent)}
+.settings-directory-advanced>summary{list-style:none;padding:13px 0}
+.settings-directory-advanced>summary:before{content:'›';display:inline-block;margin-right:11px}
+.settings-directory-advanced[open]>summary:before{transform:rotate(90deg)}
+.web-preference-section{margin:26px 0;padding:0;border:0}
+.web-preference-section h2{font-size:13px;margin:0 0 14px}
+.web-preferences select{height:44px;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);font-size:12px}

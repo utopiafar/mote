@@ -60,14 +60,6 @@
 
 /* Consolidated page styles: moved from the shared base so they load with this page. */
 .agent-inspector label{display:flex;gap:12px;align-items:center;margin:16px 0}
-.home-agent-view{display:flex;align-items:center;gap:20px;width:100%;text-align:left;padding:23px 26px;margin-bottom:22px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);background:var(--mote-background);color:var(--mote-ink);cursor:pointer;transition:border-color .15s,background .15s;}
-.home-agent-view:hover{border-color:var(--mote-accent);background:var(--mote-tint);}
-.home-agent-icon{display:grid;place-items:center;width:52px;height:52px;flex-shrink:0;border-radius:var(--mote-radius-container);background:var(--mote-tint);color:var(--mote-accent);}
-.home-agent-view>span:nth-child(2){flex:1;min-width:0;}
-.home-agent-view strong{display:block;font-size:var(--mote-font-section);}
-.home-agent-view small{display:block;margin-top:6px;color:var(--mote-muted);line-height:1.6;}
-.home-agent-layers{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px;font:var(--mote-font-meta) ui-monospace,monospace;color:var(--mote-ink);}
-.home-agent-layers span{padding:2px 8px;border:1px solid var(--mote-hair);border-radius:var(--mote-radius-control);background:var(--mote-background);}
 .agent-inspector .eyebrow{display:flex;align-items:center;gap:7px;}
 .agent-scope{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:18px 0 24px;}
 .agent-scope label,.agent-preview-form label,.agent-run-selection label{display:flex;flex-direction:column;gap:7px;font-size:var(--mote-font-action);color:var(--mote-muted);}
@@ -113,9 +105,6 @@
 .agent-inspector .feature-json{max-height:500px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;}
 .agent-inspector .materials-browser{min-width:0;}
 @media (max-width:720px){
-.home-agent-view{padding:18px;gap:12px;}
-.home-agent-view strong{font-size:var(--mote-font-section);}
-.home-agent-icon{width:40px;height:40px;}
 .agent-scope{grid-template-columns:1fr;}
 .agent-browser{grid-template-columns:1fr;gap:15px;}
 .agent-tree{position:static;display:flex;flex-wrap:wrap;gap:5px;}

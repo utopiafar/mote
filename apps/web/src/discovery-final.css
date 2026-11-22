@@ -81,3 +81,13 @@
 @media (max-width:440px){
 .insight-automatic-fields{grid-template-columns:1fr}
 }
+.insight-automatic-dialog .conversation-dialog{width:min(540px,calc(100vw - 32px))}
+.insight-automatic-dialog .conversation-dialog>header{padding:17px 23px}
+.insight-automatic-dialog .conversation-dialog>header h2{font-size:15px;font-weight:550}
+.insight-automatic-dialog .conversation-dialog>footer .button{font-size:12px;min-height:34px;padding:6px 12px;line-height:normal}
+.insight-automatic-dialog .conversation-dialog-body{padding:22px 23px}
+.insight-automatic-dialog .conversation-dialog>footer{padding:15px 23px}
+@media (max-width:440px){
+.insight-automatic-dialog .conversation-dialog-body{padding:20px 19px}
+.insight-automatic-dialog .conversation-dialog>footer{padding:13px 19px}
+}

@@ -218,3 +218,25 @@
 .final-sources .source-list-filters { gap:14px; flex-wrap:wrap; }
 .final-sources .source-heading-actions { flex-wrap:wrap; gap:7px; }
 }
+
+/* Connection setup rules load with the sources pages instead of the shared base. */
+.connections { margin-bottom: 26px; padding: 30px; }
+.connections h2,.connections h3 { display: flex; align-items: center; gap: 9px; }
+.connections h3 { font-size: var(--mote-font-section); }
+.connections p { color: var(--mote-muted); font-size: var(--mote-font-action); line-height: 1.85; }
+.connections code { overflow-wrap: anywhere; word-break: break-word; font-size: var(--mote-font-meta); }
+.connections small { display: block; color: var(--mote-muted); font-size: var(--mote-font-meta); line-height: 1.8; }
+.connections label { display: flex; flex-direction: column; gap: 9px; font-size: var(--mote-font-meta); min-width: 0; }
+.connections input,.connections select,.connections textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 11px 13px; border: 1px solid var(--mote-control-border); background: var(--mote-background); color: var(--mote-ink); border-radius: var(--mote-radius-container); font-size: var(--mote-font-action); }
+.connections input:focus,.connections select:focus,.connections textarea:focus { outline-color: var(--mote-accent); }
+.connections summary { color: var(--mote-muted); font-size: var(--mote-font-meta); cursor: pointer; margin-bottom: 12px; }
+.connections textarea { font: var(--mote-font-meta)/1.7 var(--mote-font-mono); min-height: 180px; resize: vertical; overflow-wrap: anywhere; white-space: pre-wrap; }
+@media (max-width:650px){
+.connections{padding:20px;}
+.connections > .section-heading{flex-direction:column;align-items:flex-start;gap:12px;}
+.connections .notice{overflow-wrap:anywhere;}
+}
+.connections small,.connections label {font-size:var(--mote-font-meta);}
+.connections>.section-heading h2 {font-size:var(--mote-font-title);letter-spacing:-.4px;}
+.connections small,.connections label { font-size:var(--mote-font-support); line-height:1.6; }
+.connections input,.connections select,.connections textarea { border-color:var(--mote-control-border); background:var(--mote-surface); border-radius:var(--mote-radius-control); }
