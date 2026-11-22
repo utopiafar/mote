@@ -6,7 +6,7 @@ import {pageHash} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {resources} from '../src/resource-cache.js';
 import {
-    answer, createNote, experienceApp, generatedGoogle, mountExperience, postQuestion, seedCard, seedCommitment,
+    answer, createNote, experienceApp, generatedGoogle, generatedNotion, mountExperience, postQuestion, seedCard, seedCommitment,
     seedMemory, settledTurn,
 } from './experience-fixtures.js';
 
@@ -303,36 +303,25 @@ test('QA1-06 J6 record one note, find it in the library, then ask for it in chat
     await ui.until(() => ui.d.body.textContent!.includes('Generated answer: ' + dining), 'chat answer finds the note');
 });
 
-test('QA1-07 J7 add Notion: install it from Skills, then the connection catalog gains one card while the sidebar stays the same', {timeout: 120000}, async t => {
+test('QA1-07 J7 add Notion: install from Skills, configure and connect it, then the Connections overview gains one service card while the sidebar stays the same', {timeout: 180000}, async t => {
+    const notion = generatedNotion(t);
     const {api} = await experienceApp(t, {
+        connectorTesting: {fetch: notion.fetch},
         query: input => isDisposition(input) ? answer(JSON.stringify({kind: 'independent'})) : answer('Generated answer'),
     });
     const ui = await mountExperience(t, api, pageHash('skills'));
     await ui.until(() => Boolean(ui.d.querySelector('.skills-page')), 'skills landing page');
     assert.equal(ui.d.querySelector('[data-skill-id="package:mote.official.notion"]'), null, 'Notion is not installed before the journey starts');
     const sidebarBefore = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
+    const overviewCards = () => [...ui.d.querySelectorAll('.connections-overview .connection-card[data-service-id]')]
+        .map(card => card.getAttribute('data-service-id') ?? '');
 
-    // Read the connection catalog before installing so the installed-card
-    // increase is measured. Official connector entries are always listed; an
-    // uninstalled entry is not yet a usable connection card.
+    // The owner-visible connection overview has no Notion service card before
+    // install; the source catalog's pre-listed official slot is not a card.
     await ui.click(ui.d.querySelector('[data-nav-item="connections"]')!);
     await ui.until(() => Boolean(ui.d.querySelector('.connections-overview')), 'Connections landing page');
-    await ui.click(ui.d.querySelector('.connections-heading a')!);
-    await ui.until(() => Boolean(ui.d.querySelector('.discovery-source-catalog')), 'connection catalog before install');
-    const catalogSlots = () => [...ui.d.querySelectorAll('.discovery-source-card h3')].map(heading => heading.textContent ?? '');
-    const notionCard = () => [...ui.d.querySelectorAll('.discovery-source-card')]
-        .find(card => card.querySelector('h3')?.textContent?.includes('Notion'));
-    const notionState = () => notionCard()?.querySelector('.catalog-state')?.textContent ?? '';
-    // Official connector slots are pre-listed; only an installed slot is a
-    // usable connection card. The installed card count is what install grows.
-    const connectionCards = () => [...ui.d.querySelectorAll('.discovery-source-card')]
-        .filter(card => card.querySelector('.catalog-state')?.textContent !== '尚未安装')
-        .map(card => card.querySelector('h3')?.textContent ?? '');
-    const slotsBefore = catalogSlots();
-    const cardsBefore = connectionCards();
-    assert.ok(notionCard(), 'the official catalog lists Notion before install');
-    assert.equal(notionState(), '尚未安装');
-    assert.equal(cardsBefore.includes('Notion'), false, 'Notion is not a usable connection card before install');
+    const cardsBefore = overviewCards();
+    assert.equal(cardsBefore.includes('official-notion'), false, 'Notion has no connection service card before install');
 
     // Back to the landing Skills page, then use its Add surface to install Notion.
     await ui.click(ui.d.querySelector('[data-nav-item="skills"]')!);
@@ -350,13 +339,100 @@ test('QA1-07 J7 add Notion: install it from Skills, then the connection catalog 
     const sidebarAfter = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
     assert.deepEqual(sidebarAfter, sidebarBefore, 'installing Notion adds no sidebar destination');
 
+    // Installation alone is not a connection. Follow the connection page's
+    // own Notion setup entry, then its visible link to the plugin center.
     await ui.click(ui.d.querySelector('[data-nav-item="connections"]')!);
     await ui.until(() => Boolean(ui.d.querySelector('.connections-overview')), 'Connections landing page after install');
+    assert.equal(overviewCards().includes('official-notion'), false, 'installing Notion alone adds no connection service card');
     await ui.click(ui.d.querySelector('.connections-heading a')!);
     await ui.until(() => Boolean(ui.d.querySelector('.discovery-source-catalog')), 'connection catalog after install');
-    await ui.until(() => notionState() === '已安装，待配置', 'installed Notion connection card');
-    const cardsAfter = connectionCards();
-    assert.equal(cardsAfter.length, cardsBefore.length + 1, 'the connection catalog gains exactly one card');
-    assert.deepEqual(cardsAfter.filter(title => !cardsBefore.includes(title)), ['Notion']);
-    assert.deepEqual(catalogSlots(), slotsBefore, 'installing Notion adds no unrelated catalog slot');
+    const notionCard = () => [...ui.d.querySelectorAll<HTMLElement>('.discovery-source-card')]
+        .find(card => card.querySelector('h3')?.textContent?.includes('Notion'));
+    assert.ok(notionCard(), 'the official catalog lists the Notion connector');
+    await ui.click(notionCard()!);
+    await ui.until(() => Boolean(ui.d.querySelector('.sources-page')), 'Notion connection setup');
+    const pluginCenterLink = [...ui.d.querySelectorAll<HTMLAnchorElement>('.sources-page a')]
+        .find(link => link.getAttribute('href')?.startsWith('#/system/plugins'));
+    assert.ok(pluginCenterLink, 'the installed Notion package points to its plugin center configuration');
+    await ui.click(pluginCenterLink!);
+    await ui.until(() => Boolean(ui.d.querySelector('.plugin-center')), 'plugin center from the Notion setup');
+
+    // Configure the generated Notion instance through the plugin center form.
+    const notionProvider = [...ui.d.querySelectorAll<HTMLElement>('.provider-card')]
+        .find(card => card.textContent?.includes('Notion'));
+    assert.ok(notionProvider, 'the installed Notion package is listed');
+    await ui.click(notionProvider!);
+    await ui.until(() => Boolean(ui.d.querySelector('.plugin-package-detail')), 'Notion package detail');
+    const addInstance = [...ui.d.querySelectorAll<HTMLButtonElement>('button')]
+        .find(button => button.textContent?.trim() === '新增实例');
+    assert.ok(addInstance, 'the installed package offers a new instance');
+    await ui.click(addInstance!);
+    await ui.until(() => Boolean(ui.d.querySelector('.plugin-modal form')), 'Notion configuration form');
+    const notionFields = [...ui.d.querySelectorAll<HTMLLabelElement>('.plugin-modal .plugin-fields > label')]
+        .filter(label => label.textContent?.includes('Notion'));
+    assert.equal(notionFields.length, 3, 'the generated Notion configuration has three fields');
+    const notionValues = [notion.configuration.clientId, notion.configuration.clientSecret, notion.configuration.redirectUri];
+    for (const [index, label] of notionFields.entries()) {
+        const input = label.querySelector<HTMLInputElement>('input');
+        assert.ok(input, 'Notion configuration input');
+        await ui.fill(input!, notionValues[index]!);
+    }
+    await ui.submit(ui.d.querySelector<HTMLFormElement>('.plugin-modal form')!);
+    await ui.until(() => !ui.d.querySelector('.plugin-modal'), 'Notion instance saved', 30000);
+
+    const instance = () => ui.d.querySelector('.plugin-instance');
+    const instanceAction = (label: string) => [...(instance()?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+        .find(button => button.textContent?.trim() === label);
+    await ui.until(() => Boolean(instanceAction('核验能力')), 'Notion instance check action', 30000);
+    await ui.click(instanceAction('核验能力')!);
+    await ui.until(() => {const action = instanceAction('启用'); return Boolean(action && !action.disabled);}, 'Notion instance checked and ready to enable', 30000);
+    await ui.click(instanceAction('启用')!);
+    await ui.until(() => Boolean(instanceAction('停用')), 'Notion instance enabled', 30000);
+
+    // Back on the connection page, authorize the generated Notion account,
+    // choose the generated page and save; the source sync is generated.
+    await ui.click(ui.d.querySelector('[data-nav-item="connections"]')!);
+    await ui.until(() => Boolean(ui.d.querySelector('.connections-overview')), 'Connections landing page after Notion configuration');
+    assert.equal(overviewCards().includes('official-notion'), false, 'a configured instance without an authorized source still adds no service card');
+    await ui.click(ui.d.querySelector('.connections-heading a')!);
+    await ui.until(() => Boolean(ui.d.querySelector('.discovery-source-catalog')), 'connection catalog after Notion configuration');
+    await ui.click(notionCard()!);
+    await ui.until(() => Boolean(ui.d.querySelector('.official-source-connector')), 'active Notion connector setup', 60000);
+    const connectAccount = () => [...ui.d.querySelectorAll<HTMLButtonElement>('button')]
+        .find(button => button.textContent?.trim() === '连接账号');
+    await ui.until(() => {const action = connectAccount(); return Boolean(action && !action.disabled);}, 'Notion account authorization', 60000);
+    await ui.click(connectAccount()!);
+    await ui.until(() => Boolean(ui.d.querySelector('a.connector-authorization')), 'Notion authorization link');
+    const authorization = new URL(ui.d.querySelector<HTMLAnchorElement>('a.connector-authorization')!.getAttribute('href')!);
+    assert.equal(authorization.protocol, 'https:');
+    assert.equal(authorization.hostname, 'api.notion.com');
+    await api.raw('/oauth/notion/callback?' + new URLSearchParams({state: authorization.searchParams.get('state')!, code: 'generated-code'}));
+    await ui.click(ui.button('刷新状态'));
+    const candidateButton = () => [...ui.d.querySelectorAll<HTMLButtonElement>('button')]
+        .find(button => button.textContent?.trim() === '加载可选内容');
+    await ui.until(() => Boolean(candidateButton()), 'generated Notion candidates available', 30000);
+    await ui.click(candidateButton()!);
+    await ui.until(() => Boolean(ui.d.querySelector('.connector-check input[type=checkbox]')), 'generated Notion page candidate');
+    await ui.click(ui.d.querySelector('.connector-check input[type=checkbox]')!);
+    const saveSelection = () => [...ui.d.querySelectorAll<HTMLButtonElement>('button')]
+        .find(button => button.textContent?.trim() === '保存并同步');
+    await ui.until(() => {const action = saveSelection(); return Boolean(action && !action.disabled);}, 'generated Notion selection ready to save');
+    await ui.click(saveSelection()!);
+    await ui.until(() => Boolean(ui.d.querySelector('.official-source-connector a[href^="#/connections?sourceId="]')), 'generated Notion source archived', 30000);
+
+    // The owner-facing overview now renders the one new durable service card.
+    await ui.click(ui.d.querySelector('[data-nav-item="connections"]')!);
+    await ui.until(() => Boolean(ui.d.querySelector('.connections-overview')), 'Connections landing page after connecting Notion');
+    await ui.until(() => Boolean(ui.d.querySelector('.connection-card[data-service-id="official-notion"]')), 'Notion service card on the Connections overview', 30000);
+    const cardsAfter = overviewCards();
+    assert.equal(cardsAfter.length, cardsBefore.length + 1, 'the Connections overview gains exactly one service card: ' + JSON.stringify(cardsAfter));
+    assert.deepEqual(cardsAfter.filter(id => !cardsBefore.includes(id)), ['official-notion']);
+    assert.equal(ui.d.querySelector('.connection-card[data-service-id="official-notion"]')!.getAttribute('data-state'), 'connected');
+    const sources = await api.request<{items: {kind: string; enabled: boolean}[]}>('/api/sources');
+    assert.equal(sources.items.filter(source => source.kind === 'mote.official.notion' && source.enabled).length, 1, 'the connected Notion source is durable');
+    assert.ok(notion.calls.includes('/v1/oauth/token'), 'the generated OAuth exchange ran');
+    assert.ok(notion.calls.includes('/v1/search'), 'the generated candidate list ran');
+    assert.ok(notion.calls.some(path => path.endsWith('/children')), 'the generated page body ran');
+    const sidebarFinal = [...ui.d.querySelectorAll('[data-nav-item]')].map(item => [item.getAttribute('data-nav-item'), item.getAttribute('aria-label')]);
+    assert.deepEqual(sidebarFinal, sidebarBefore, 'connecting Notion adds no sidebar destination');
 });

@@ -173,6 +173,46 @@ export function seedCommitment(node: ExperienceNode, input: {
     return commitmentId;
 }
 
+export type GeneratedNotion = ReturnType<typeof generatedNotion>;
+/** Generated Notion provider: OAuth token exchange, one listed page and that
+ * page's body. It never reaches the real Notion API; the owner configures the
+ * same fields the plugin center exposes, and every connection step stays in
+ * the web UI. The secret reference resolves from this process only. */
+export function generatedNotion(t: TestContext) {
+    const secretName = 'MOTE_GENERATED_NOTION_' + randomUUID().replaceAll('-', '_').toUpperCase();
+    const secretValue = 'generated-notion-client-secret-' + randomUUID();
+    process.env[secretName] = secretValue;
+    t.after(() => {delete process.env[secretName];});
+    const configuration = {
+        clientId: 'generated-notion-client-id',
+        clientSecret: '${' + secretName + '}',
+        redirectUri: 'https://central.generated.invalid/oauth/notion/callback',
+    };
+    const page = {
+        object: 'page', id: 'generated-notion-page', url: 'https://www.notion.so/Generated-Notion-Page',
+        created_time: '2026-10-01T00:00:00.000Z', last_edited_time: '2026-11-01T00:00:00.000Z',
+        properties: {Name: {type: 'title', title: [{plain_text: 'Generated Notion page'}]}},
+    };
+    const blocks = [{object: 'block', id: 'generated-notion-block', type: 'paragraph',
+        paragraph: {rich_text: [{plain_text: 'Generated Notion page body'}]}}];
+    const calls: string[] = [];
+    const fetch = (async (input: string | URL | Request) => {
+        const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url);
+        calls.push(url.pathname);
+        if (url.pathname === '/v1/oauth/token') return Response.json({
+            access_token: 'generated-notion-access-token', workspace_id: 'generated-notion-workspace',
+            workspace_name: 'Generated Notion workspace', bot_id: 'generated-notion-bot',
+        });
+        if (url.pathname === '/v1/search') return Response.json({object: 'list', has_more: false, next_cursor: null, results: [page]});
+        if (url.pathname === '/v1/pages/' + page.id) return Response.json(page);
+        if (url.pathname === '/v1/blocks/' + page.id + '/children') return Response.json({
+            object: 'list', has_more: false, next_cursor: null, results: blocks,
+        });
+        throw new Error('Unexpected generated Notion request: ' + url.pathname);
+    }) as typeof globalThis.fetch;
+    return {fetch, configuration, secretName, secretValue, calls};
+}
+
 export type GeneratedGoogle = ReturnType<typeof generatedGoogle>;
 export function generatedGoogle() {
     const calendar = {id: 'generated-calendar', summary: 'Generated calendar', timeZone: 'UTC', primary: true, accessRole: 'owner'};
@@ -297,9 +337,7 @@ export async function mountExperience(t: TestContext, api: Api, hash = pageHash(
         if (!value) throw new Error('Generated button not found: ' + label);
         return value;
     };
-    const field = async (selector: string, value: string) => {
-        const input = d.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
-        if (!input) throw new Error('Generated field not found: ' + selector);
+    const fill = async (input: HTMLInputElement | HTMLTextAreaElement, value: string) => {
         const type = input.tagName === 'TEXTAREA' ? w.HTMLTextAreaElement : w.HTMLInputElement;
         await act(async () => {
             input.focus();
@@ -308,8 +346,13 @@ export async function mountExperience(t: TestContext, api: Api, hash = pageHash(
             input.dispatchEvent(new w.KeyboardEvent('keyup', {bubbles: true, key: 'a'}));
         });
     };
+    const field = async (selector: string, value: string) => {
+        const input = d.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
+        if (!input) throw new Error('Generated field not found: ' + selector);
+        await fill(input, value);
+    };
     const submit = async (form: HTMLFormElement) => {
         await act(async () => {form.dispatchEvent(new w.Event('submit', {bubbles: true, cancelable: true}));});
     };
-    return {root, d, w, opened, tick, settle, until, go, click, button, field, submit, syncHash};
+    return {root, d, w, opened, tick, settle, until, go, click, button, field, fill, submit, syncHash};
 }
