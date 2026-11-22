@@ -207,7 +207,7 @@ class Settings(private val context: Context) {
             if (previous.isNotBlank() && previous != (if (next.hasSyncConnection()) next.server.trim().trimEnd('/') else "")) context.queue().pinRetainedOrigin(previous)
             return if (next.hasSyncConnection()) next.server.trimEnd('/') else ""
         }
-        require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点") }
+        require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
         return previous.ifBlank { if (next.hasSyncConnection()) next.server.trimEnd('/') else "" }
     }
     fun lastSyncDispatch(): Long = prefs.getLong("lastSyncDispatch", 0)

@@ -77,8 +77,8 @@ class CalendarActionsActivity : MoteActivity() {
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(list)
         showAvailability()
         val tools=SecondaryUi.disclosure(body,MoteI18n.text("更多"),"calendar-tools")
-        text(tools,MoteI18n.text("从资料中发现日程"))
-        text(tools,MoteI18n.text("在中央「行动」开启发现"))
+        text(tools,MoteI18n.text("从资料中发现安排。范围授权内的日程交给指定设备，其余逐条确认；结果保留在行动历史。"))
+        text(tools,MoteI18n.text("首次使用：在中央网页「行动」开启发现，并授权此设备查看跨来源的建议及原文片段。"))
         button(tools,MoteI18n.text("连接本机日历")){if(calendarPermissions())connect()else {permissionIdentity=withdrawChangedCalendar();requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR),401)}}
         button(tools,MoteI18n.text("最新建议")){cursor=0;refresh()}
         button(tools,MoteI18n.text("更早建议")){if(nextCursor>0){cursor=nextCursor;refresh()}}

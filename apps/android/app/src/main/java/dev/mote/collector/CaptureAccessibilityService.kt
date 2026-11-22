@@ -284,7 +284,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                 inFlight = false
                 Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
                 runCatching { SupportEvents.runtime(this@CaptureAccessibilityService).screenshotFailure(errorCode) }
-                pipeline?.pause(MoteI18n.text("系统未提供截图（{0}）", errorCode))
+                pipeline?.pause(MoteI18n.text("系统未提供截图（代码 {0}），可能是安全窗口或权限变化；未保存内容", errorCode))
             }
         })
     }

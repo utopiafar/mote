@@ -235,8 +235,8 @@ internal class AppCaptureEditor(
         button(advanced, MoteI18n.text("配置当前版本的文章或商品字段")) { editRule(app.id, app.version) }
         button(advanced, MoteI18n.text("载入当前版本内置字段规则")) { loadRules(app.id, app.version) }
         button(advanced, MoteI18n.text("导入当前版本的字段规则")) { importRules(app.id, app.version) }
-        advanced.addView(label(MoteI18n.text("规则草稿与内容授权分开"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
-        advanced.addView(label(MoteI18n.text("配置未在真机验证"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
+        advanced.addView(label(MoteI18n.text("规则配置与应用内容授权分开。修改只形成草稿，返回后保存生效；保存不会开始采集。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
+        advanced.addView(label(MoteI18n.text("字段配置匹配不代表已经通过真机验证。截图按独立选择执行；隐私拒绝时不采集。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED))
         refreshRuleSummary(current, app)
     }
 

@@ -91,7 +91,7 @@ class CompressionPreviewActivity : MoteActivity() {
             setResult(RESULT_OK, Intent().putExtra("quality", quality).putExtra("maxSide", maxSide)); finish()
         }.apply { isEnabled = false }
         val details = SecondaryUi.disclosure(body, MoteI18n.text("预览与应用说明"), "compression-details")
-        SecondaryUi.text(details, MoteI18n.text("样张用于比较小字与细线"), muted = true)
+        SecondaryUi.text(details, MoteI18n.text("用生成的图文样张比较小字、渐变和细线。只在内存处理，不读取或上传屏幕。"), muted = true)
         SecondaryUi.text(details, MoteI18n.text("双指缩放，双击复位"), muted = true)
         SecondaryUi.text(details, MoteI18n.text("返回采集设置后点击保存，才会应用到后续采集。"), muted = true)
         qualityInput.addTextChangedListener(object : TextWatcher {

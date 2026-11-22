@@ -33,7 +33,7 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
         val draft = read(); require(draft.text.isNotBlank()) { MoteI18n.text("先填写记录") }
         if (draft.prepared != null) {
             if (draft.server.isNullOrBlank() && server.isNotBlank()) return@synchronized draft.copy(server = server).also { write(it) }
-            require(draft.server == server) { MoteI18n.text("记录属于原节点，需先同步") }
+            require(draft.server == server) { MoteI18n.text("这条记录已准备发往原节点，请恢复原节点重试；编辑内容后才能作为新记录提交") }
             return@synchronized draft
         }
         draft.copy(prepared = create(draft), server = server).also { write(it) }

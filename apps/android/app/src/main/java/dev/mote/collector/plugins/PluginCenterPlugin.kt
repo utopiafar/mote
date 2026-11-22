@@ -209,7 +209,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     }
     private fun discover() {
         val data = inventory ?: return
-        ui.text(MoteI18n.text("安装不改变授权或 Memory"))
+        ui.text(MoteI18n.text("只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。"))
         if (!data.installation.optBoolean("supported")) ui.text(data.installation.optString("reason", MoteI18n.text("当前节点不支持在线安装。")))
         if (data.catalog.isEmpty()) ui.text(MoteI18n.text("当前没有可安装的官方制品。"))
         val groups = listOf(
@@ -243,6 +243,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         ui.text(MoteI18n.text("访问声明") + " · " + PluginControlProjection.strings(preview.getJSONArray("access")).joinToString(" · ").ifBlank { MoteI18n.text("没有访问声明") }, parent = target)
         ui.text(MoteI18n.text("依赖") + " · " + PluginControlProjection.strings(preview.getJSONArray("dependencies")).joinToString(" · ").ifBlank { MoteI18n.text("无声明依赖") }, parent = target)
         capabilities(PluginControlProjection.capabilities(preview.getJSONArray("capabilities")), target)
+        ui.text(MoteI18n.text("可信插件代码拥有中央宿主权限；访问声明不是沙箱隔离。安装完成后仍需配置、启用与绑定。"), parent = target)
         PluginControlProjection.strings(preview.getJSONArray("issues")).forEach { ui.text(it, parent = target) }
         val intent = PluginControlClient.install(preview, revision)
         ui.button(MoteI18n.text("安装此版本"), true) { submit(intent) { tab = "installed"; load() } }.isEnabled = preview.getBoolean("installable") && inventory?.installation?.optBoolean("supported") == true
@@ -254,7 +255,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     }
     private fun buildConfiguration(item: PluginPackage, instance: PluginInstance?, models: JSONObject) {
         body.removeAllViews(); listVisible = false; val fields = instance?.fields ?: item.fields; val initial = instance?.configuration ?: JSONObject()
-        ui.text(MoteI18n.text("配置实例"), NativeFontRole.TITLE_MOBILE)
+        ui.text(MoteI18n.text("配置实例"), NativeFontRole.TITLE_MOBILE); ui.text(MoteI18n.text("配置实例与资料范围，再单独启用。启用不会自动替换当前记忆方案。"))
         val name = ui.field(MoteI18n.text("实例名称"), instance?.name ?: item.name); val scope = ui.field(MoteI18n.text("资料范围"), instance?.scope ?: "default")
         ui.text(MoteI18n.text("由中央核验授权范围；填写范围不会授予新的数据权限。"), NativeFontRole.META)
         val reads = linkedMapOf<String, () -> Any?>()

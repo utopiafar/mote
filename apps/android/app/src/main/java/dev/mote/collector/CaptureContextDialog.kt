@@ -65,7 +65,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
                 MoteUi.textColor(this, NativeColorRole.ACCENT); setOnClickListener { resolve(channel) }
             }
         }
-        text("修改适用于已有与未来资料", NativeFontRole.META)
+        text("修改说明适用于已有和未来资料；不会自动重新转写或重算历史记忆。", NativeFontRole.META)
         status = text("正在读取资料说明…").also { MoteComponents.reading(it, it.text.toString()) }
         val heading = LinearLayout(activity).apply {
             gravity = android.view.Gravity.CENTER_VERTICAL; setPadding(activity.moteDp(20),activity.moteDp(10),activity.moteDp(8),activity.moteDp(10))
@@ -115,7 +115,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
         items.forEach { item ->
             fields.getValue(item.channel).apply { setText(item.draft); isEnabled = true }
             statuses.getValue(item.channel).text = when {
-                item.conflict != null -> MoteI18n.text("说明已变化，重新加载")
+                item.conflict != null -> MoteI18n.text("资料说明版本已变化；草稿已保留，请重新加载最新版本后再保存。")
                 item.dirty -> MoteI18n.text("有未保存的修改")
                 item.pending -> MoteI18n.text("资料说明保存在本机，等待中央确认。")
                 item.accepted != null && item.accepted.version > 0 -> MoteI18n.text("资料说明已获中央确认，版本 {0}。", item.accepted.version)

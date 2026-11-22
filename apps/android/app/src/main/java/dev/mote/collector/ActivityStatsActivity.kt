@@ -36,6 +36,7 @@ class ActivityStatsActivity : MoteActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage(title = MoteI18n.text("采集与存储详情"))
+        text(MoteI18n.text("这些统计始终在本机保存，与开发者诊断开关独立。记录固定结果与数字，不记录画面、文字、应用名、邀请或令牌。"))
         inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         warning = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; visibility = android.view.View.GONE
@@ -113,6 +114,7 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("\n生效设置\n实际配置：每 {0} 秒，JPEG {1}，最长边 {2}px\n", config.intervalSeconds, config.jpegQuality, config.captureMaxSide))
                     append(MoteI18n.text("仅非计费 Wi-Fi：{0} · 仅充电采集：{1} · 低于 {2}% 暂停（0 关闭）\n", if (config.wifiOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), if (config.chargingOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), config.batteryPauseBelowPct))
                     append(MoteI18n.text("设备元数据：{0} · 应用规则 {1} 项\n", if (config.metadataEnabled) MoteI18n.text("上传新记录的实际状态") else MoteI18n.text("新记录不附带"), AppCollectionRules.parse(config.appCollectionRules).apps.size))
+                    append(MoteI18n.text("\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。本机副本按中央确认时间和保留天数清理；中央内容识别状态不影响本机保留。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含同步失败和待复核保留的图片。\n"))
                     append(MoteI18n.text("字节不含系统安装占用"))
                 }
                 runOnUiThread {
@@ -121,7 +123,7 @@ class ActivityStatsActivity : MoteActivity() {
                     renderSummary(content); history.removeAllViews()
                     snapshot = state; queueSnapshot = queue; historyPage = historyPage.coerceAtMost(((state.getJSONArray("events").length() - 1) / 10).coerceAtLeast(0)); pendingPage = pendingPage.coerceAtMost(((queue.getJSONArray("pending").length() - 1) / 10).coerceAtLeast(0)); renderHistory()
                 }
-            } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary(MoteI18n.text("统计暂不可读取")) } }
+            } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary(MoteI18n.text("统计或队列暂不可读取，不能按零展示；原始文件保留，请查看支持诊断。")) } }
             finally { runOnUiThread { loading = false; if (!isDestroyed) { progress.visibility = android.view.View.GONE; if (refreshPending) { refreshPending = false; refresh() } } } }
         }
     }
@@ -141,7 +143,7 @@ class ActivityStatsActivity : MoteActivity() {
             val item = pending.getJSONObject(i)
             history.addView(Button(this).apply {
                 text = "${if (item.optBoolean("archiveMissing")) MoteI18n.text("中央不可更新") else if (item.optBoolean("uploaded")) MoteI18n.text("已同步保留") else MoteI18n.text("待确认")} · ${when (item.getString("kind")) { "screen" -> MoteI18n.text("截图"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体状态"); "notification" -> MoteI18n.text("通知事件"); "device_event" -> MoteI18n.text("设备事件"); else -> MoteI18n.text("记录") }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
-                setOnClickListener { MoteDialogBuilder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机记录")).setMessage(MoteI18n.text("ID：{0}\n创建：{1}\n字节：{2}", item.getString("id"), item.getString("createdAt"), item.getLong("bytes"))).setPositiveButton(MoteI18n.text("关闭"), null).show() }
+                setOnClickListener { MoteDialogBuilder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机记录")).setMessage(MoteI18n.text("记录 ID：{0}\n创建：{1}\n条目字节：{2}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。", item.getString("id"), item.getString("createdAt"), item.getLong("bytes"))).setPositiveButton(MoteI18n.text("关闭"), null).show() }
             })
         }
         pager(pendingPage, pending.length()) { pendingPage = it; renderHistory() }
@@ -228,6 +230,6 @@ class ActivityStatsActivity : MoteActivity() {
             OperationReason.WINDOW_CHANGED -> MoteI18n.text("采集或窗口状态变化")
             OperationReason.PIXEL_COPY -> MoteI18n.text("截图像素读取失败")
         }
-        private fun detail(event: JSONObject) = MoteI18n.text("记录：{0}\n{1}\nID：{2}", Instant.ofEpochMilli(event.getLong("atMs")), kind(OperationKind.valueOf(event.getString("kind"))), event.optString("recordId", MoteI18n.text("无关联记录")), reason(OperationReason.valueOf(event.getString("reason"))), event.getLong("bytes"), event.opt("httpStatus") ?: MoteI18n.text("无"), event.opt("elapsedMs") ?: MoteI18n.text("未测量"))
+        private fun detail(event: JSONObject) = MoteI18n.text("{0}\n{1}\n记录 ID：{2}\n原因：{3}\n记录字节：{4}\nHTTP：{5}\n耗时：{6}\n不保存内容预览；待上传记录只有匹配节点 ACK 后删除。", Instant.ofEpochMilli(event.getLong("atMs")), kind(OperationKind.valueOf(event.getString("kind"))), event.optString("recordId", MoteI18n.text("无关联记录")), reason(OperationReason.valueOf(event.getString("reason"))), event.getLong("bytes"), event.opt("httpStatus") ?: MoteI18n.text("无"), event.opt("elapsedMs") ?: MoteI18n.text("未测量"))
     }
 }

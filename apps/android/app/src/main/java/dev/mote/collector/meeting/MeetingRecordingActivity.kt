@@ -175,7 +175,7 @@ class MeetingRecordingActivity : MoteActivity() {
         }
         if (requestCode != REQUEST_SYSTEM_AUDIO) return
         if (resultCode != RESULT_OK || data == null) {
-            summary.text = MoteI18n.text("系统音频权限未授予，录音未开始")
+            summary.text = MoteI18n.text("系统音频权限未授予，会议录音没有开始；不会在缺少系统声时只录麦克风。")
             return
         }
         val notice = meetingRecordings().noticeAcknowledgedAt() ?: return notice()

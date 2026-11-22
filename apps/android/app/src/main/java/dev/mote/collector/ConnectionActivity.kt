@@ -295,7 +295,7 @@ class ConnectionActivity : MoteActivity() {
         }
     }
     private fun refreshCurrentNode() {
-        currentNode.text = MoteI18n.text("当前节点：{0}\n设备 ID：{1}", currentConfig.server.ifBlank { MoteI18n.text("尚未配置") }, deviceId)
+        currentNode.text = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。", currentConfig.server.ifBlank { MoteI18n.text("尚未配置") }, deviceId)
     }
     override fun onResume() { super.onResume(); refreshRequested = true; handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }

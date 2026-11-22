@@ -2592,6 +2592,7 @@ class MainActivity : MoteActivity() {
         val structuredAllowed = config.screenCollectionEnabled && if (appId == null) config.collectionRules.mayCollectStructured() else draftAppMode(appId, config).structured
         if (structuredAllowed) {
             detail(MoteI18n.text("结构化格式示例\n类型：可见内容\n字段：标题、正文、价格或控件状态等实际可见字段\n来源：可见文字、本机 OCR 或安全控件状态"))
+            detail(MoteI18n.text("这些格式示例不代表所有应用已适配。字段仅记录匹配规则取得的可见内容；截图按独立选择执行。"))
             detail(MoteI18n.text("本机 OCR 补充：{0}", if (config.localContentOcr) MoteI18n.text("已选择") else MoteI18n.text("未选择")))
         }
         if (appId == null) detail(MoteI18n.text("通知：{0} · 设备事件：{1} · 媒体：{2}", if (config.notificationCollectionEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择"), if (config.deviceEventCollectionEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择"), if (config.mediaCollectionEnabled && config.metadataEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择")))

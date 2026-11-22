@@ -232,7 +232,7 @@ internal class CalendarActions(
             request("/api/$route/$id/receipt", JSONObject().put("deviceId", settings.deviceId).put("operationId", operation).put("status", "succeeded").put("externalId", externalId))
         } catch (e: Exception) {
             runCatching { request("/api/$route/$id/receipt", JSONObject().put("deviceId", settings.deviceId).put("operationId", operation).put("status", "uncertain")) }
-            throw IllegalStateException(MoteI18n.text("日程结果待核实，避免重复"), e)
+            throw IllegalStateException(MoteI18n.text("日程保存结果待核实。检查日历和网络后再次同步；不会重复插入。"), e)
         }
     } ?: error(MoteI18n.text("连接正在切换")) }
 }
