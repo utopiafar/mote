@@ -7661,7 +7661,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "入口等待超时（524）": "Tiempo de espera de la pasarela (524)",
   "资料库暂不可用": "Biblioteca temporalmente no disponible",
   "仅保留命中的对比图片": "Solo se conservan imágenes comparadas coincidentes",
-  "仅清理已上传的本机副本": "Borra solo las copias locales enviadas",
   "最多 20 组，24 小时过期": "Hasta 20 pares, caducan en 24 horas",
   "空间按现有文件统计": "El espacio refleja los archivos existentes",
   "磁盘占用按类型与日期汇总": "Uso de disco por tipo y fecha",
@@ -7708,9 +7707,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "记录：{0}\n{1}\nID：{2}": "Registro: {0}\n{1}\nID: {2}",
   "历史结果保留；查看当前资料": "Resultado histórico conservado. Ver el material actual.",
   "首次回溯 {0} 天": "Primera revisión: {0} días",
-  "已于 {0} 开始": "Iniciado a las {0}",
-  "需麦克风与系统音频权限": "Se requiere acceso al micrófono y audio del sistema",
-  "录制并上传到中央；需先告知在场的人": "Graba y sube al central; avisa antes a los presentes.",
   "系统音频权限未授予，录音未开始": "Sin acceso al audio del sistema; la grabación no inició.",
   "安装不改变授权或 Memory": "Instalar no cambia el acceso ni Memory",
   "停止请求已发出，结果尚未确认": "Parada solicitada; resultado sin confirmar.",
@@ -7726,5 +7722,9 @@ export const spanish: Readonly<Record<string, string>> = {
   "会重发本机仍保留的截图、页面、应用活动、通知、设备事件、笔记及已启用来源的保留版本。中央核验相同 ID 去重，继续补齐缺失数据。\n\n已从手机清理的数据无法补传。中央已删除或内容冲突的记录不会覆盖或恢复，暂停的来源不会启用。此操作可能产生较多流量，仍遵守网络设置。": "Reenvía las capturas, páginas, actividad de apps, notificaciones, eventos del dispositivo, notas y versiones retenidas localmente de las fuentes activadas. El nodo central verifica los ID coincidentes para deduplicar y completar los datos que faltan.\n\nLos datos ya eliminados del teléfono no pueden reenviarse. Los registros eliminados en el nodo central o en conflicto no se sobrescriben ni se restauran, y las fuentes en pausa permanecen en pausa. Esta operación puede generar bastante tráfico y sigue respetando tu configuración de red.",
   "只检查手机仍保留的采集记录在中央是否可见；不会把“中央存在”直接当作上传确认，也不会删除或恢复记录。": "Comprueba si los registros que aún se conservan en el teléfono son visibles en el nodo central. La presencia central no se considera confirmación de carga; nada se elimina ni se restaura.",
   "需要处理时：\n• 网络或服务暂不可用：自动模式退避重试，手动模式再次点同步。\n• 授权失效：重新连接同一节点后同步。\n• 同 ID 内容冲突 / 中央已删除：保留本机副本，跳过该条继续其他记录，不自动覆盖。\n• 待复核：仅在逐条明确释放后允许上传，更改审查规则不会自动释放。\n\n中央显示的是上次联系时的状态，不是手机实时状态。": "Cuando se requiere atención:\n• Red o servicio no disponible: el modo automático reintenta con espera progresiva; en modo manual, sincroniza de nuevo.\n• Autorización caducada: vuelve a conectarte al mismo nodo y sincroniza.\n• Contenido en conflicto para el mismo ID o eliminación central: conserva la copia local, omite ese registro y continúa con los demás sin sobrescribir.\n• Retenido para revisión: solo se sube tras una liberación individual explícita. Cambiar las reglas no libera registros.\n\nEl nodo central muestra el último estado contactado, no el estado en tiempo real del teléfono.",
-  "{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}": "{0}\nRetenidos localmente {1} · pendientes de carga {2}\nRequieren atención {3}\nFuentes pendientes: {4} versiones / {5} ajustes\n\n{6}\nÚltima confirmación de carga: {7}"
+  "{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}": "{0}\nRetenidos localmente {1} · pendientes de carga {2}\nRequieren atención {3}\nFuentes pendientes: {4} versiones / {5} ajustes\n\n{6}\nÚltima confirmación de carga: {7}",
+  "这场会议将同时录制麦克风与系统音频，结束后上传到你的中央并转写。请确认已告知在场的人并得到同意。该确认只在本机记住一次；取消则不会开始录音。": "This meeting will record the microphone and system audio together, then upload to your Central for transcription when you end it. Confirm that everyone present has been told and agrees. This confirmation is remembered once on this device; cancel does not start recording.",
+  "只有点击开始后才会录音；不会按日历或日程自动开始。第一次开始时先请告知在场的人。结束后音频进入中央已有转写，不会与记录页的语音附件或飞书妙记、钉钉闪记合并。": "Recording starts only when you click start; calendar events never start it. First tell everyone present. When you end it, the audio enters Central's existing transcription and is not merged with audio from the recording page or Feishu/DingTalk recordings.",
+  "已于 {0} 开始。麦克风与系统音频同时采集；仅在你点击结束后生成一场会议的音频。": "Started at {0}. Microphone and system audio are captured together; one meeting audio is produced only after you click end.",
+  "麦克风与系统音频权限将在开始时检查；缺少任一项都不会开始。": "Microphone and system-audio permissions are checked at start; if either is missing, recording does not start."
 };

@@ -604,7 +604,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (!remote && record.has("archiveAcknowledgment") && (release == null || release.optBoolean("pending"))) {
                         button(content, MoteI18n.text("清理本机副本")) {
                             MoteDialogBuilder(this@CaptureRecordsActivity).setTitle(MoteI18n.text("清理本机副本"))
-                                .setMessage(MoteI18n.text("仅清理已上传的本机副本"))
+                                .setMessage(MoteI18n.text("仅清理已确认上传的本机副本；保留时间、来源和上传凭据，不影响中央归档或用户源文件。"))
                                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确认")) { _, _ ->
                                     detailExecutor.execute {
                                         val result = runCatching { libraryOwner.releaseCapture(id, record.getJSONObject("archiveAcknowledgment").getString("version"), ::currentLocal) }

@@ -7661,7 +7661,6 @@ export const english: Readonly<Record<string, string>> = {
   "入口等待超时（524）": "Gateway timed out (524)",
   "资料库暂不可用": "Library temporarily unavailable",
   "仅保留命中的对比图片": "Only matched comparison images are kept",
-  "仅清理已上传的本机副本": "Clears only uploaded local copies",
   "最多 20 组，24 小时过期": "Up to 20 pairs, expiring in 24 hours",
   "空间按现有文件统计": "Space reflects existing files",
   "磁盘占用按类型与日期汇总": "Disk use grouped by type and date",
@@ -7708,9 +7707,6 @@ export const english: Readonly<Record<string, string>> = {
   "记录：{0}\n{1}\nID：{2}": "Record: {0}\n{1}\nID: {2}",
   "历史结果保留；查看当前资料": "Historical result kept. View the current material.",
   "首次回溯 {0} 天": "First lookback: {0} days",
-  "已于 {0} 开始": "Started at {0}",
-  "需麦克风与系统音频权限": "Microphone and system audio access required",
-  "录制并上传到中央；需先告知在场的人": "Record and upload centrally; tell everyone present first.",
   "系统音频权限未授予，录音未开始": "System audio access missing; recording did not start.",
   "安装不改变授权或 Memory": "Installing does not grant access or change Memory",
   "停止请求已发出，结果尚未确认": "Stop requested; the result is unconfirmed.",
@@ -7726,5 +7722,9 @@ export const english: Readonly<Record<string, string>> = {
   "会重发本机仍保留的截图、页面、应用活动、通知、设备事件、笔记及已启用来源的保留版本。中央核验相同 ID 去重，继续补齐缺失数据。\n\n已从手机清理的数据无法补传。中央已删除或内容冲突的记录不会覆盖或恢复，暂停的来源不会启用。此操作可能产生较多流量，仍遵守网络设置。": "Resends locally retained screenshots, pages, app activity, notifications, device events, notes and retained versions from enabled sources. The central node verifies matching IDs to deduplicate and fill missing data.\n\nData already removed from the phone cannot be resent. Centrally deleted or conflicting records will not be overwritten or restored, and paused sources stay paused. This may use substantial data and still follows your network settings.",
   "只检查手机仍保留的采集记录在中央是否可见；不会把“中央存在”直接当作上传确认，也不会删除或恢复记录。": "Checks whether records still retained on the phone are visible centrally. Central presence is not treated as upload acknowledgement; nothing is deleted or restored.",
   "需要处理时：\n• 网络或服务暂不可用：自动模式退避重试，手动模式再次点同步。\n• 授权失效：重新连接同一节点后同步。\n• 同 ID 内容冲突 / 中央已删除：保留本机副本，跳过该条继续其他记录，不自动覆盖。\n• 待复核：仅在逐条明确释放后允许上传，更改审查规则不会自动释放。\n\n中央显示的是上次联系时的状态，不是手机实时状态。": "When attention is needed:\n• Network or service unavailable: automatic mode retries with backoff; in manual mode, sync again.\n• Authorization expired: reconnect to the same node and sync.\n• Conflicting content for the same ID or central deletion: keep the local copy, skip it and continue other records without overwriting.\n• Held for review: upload only after explicit individual release. Changing rules does not release records.\n\nThe central node shows the last contacted state, not the phone’s live state.",
-  "{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}": "{0}\nLocally retained {1} · awaiting upload {2}\nNeeds attention {3}\nSources pending: {4} versions / {5} settings\n\n{6}\nLast upload acknowledgement: {7}"
+  "{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}": "{0}\nLocally retained {1} · awaiting upload {2}\nNeeds attention {3}\nSources pending: {4} versions / {5} settings\n\n{6}\nLast upload acknowledgement: {7}",
+  "这场会议将同时录制麦克风与系统音频，结束后上传到你的中央并转写。请确认已告知在场的人并得到同意。该确认只在本机记住一次；取消则不会开始录音。": "This meeting will record the microphone and system audio together, then upload to your Central for transcription when you end it. Confirm that everyone present has been told and agrees. This confirmation is remembered once on this device; cancel does not start recording.",
+  "只有点击开始后才会录音；不会按日历或日程自动开始。第一次开始时先请告知在场的人。结束后音频进入中央已有转写，不会与记录页的语音附件或飞书妙记、钉钉闪记合并。": "Recording starts only when you click start; calendar events never start it. First tell everyone present. When you end it, the audio enters Central's existing transcription and is not merged with audio from the recording page or Feishu/DingTalk recordings.",
+  "已于 {0} 开始。麦克风与系统音频同时采集；仅在你点击结束后生成一场会议的音频。": "Started at {0}. Microphone and system audio are captured together; one meeting audio is produced only after you click end.",
+  "麦克风与系统音频权限将在开始时检查；缺少任一项都不会开始。": "Microphone and system-audio permissions are checked at start; if either is missing, recording does not start."
 };

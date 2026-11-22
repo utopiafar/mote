@@ -7660,7 +7660,6 @@
   "入口等待超时（524）": "Délai d'attente de la passerelle (524)",
   "资料库暂不可用": "Bibliothèque temporairement indisponible",
   "仅保留命中的对比图片": "Seules les images de comparaison correspondantes sont gardées",
-  "仅清理已上传的本机副本": "Efface seulement les copies locales envoyées",
   "最多 20 组，24 小时过期": "Jusqu'à 20 paires, expiration 24 h",
   "空间按现有文件统计": "L'espace reflète les fichiers existants",
   "磁盘占用按类型与日期汇总": "Occupation disque par type et date",
@@ -7707,9 +7706,6 @@
   "记录：{0}\n{1}\nID：{2}": "Enregistrement : {0}\n{1}\nID : {2}",
   "历史结果保留；查看当前资料": "Résultat historique conservé. Voir le document actuel.",
   "首次回溯 {0} 天": "Premier historique : {0} jours",
-  "已于 {0} 开始": "Démarré à {0}",
-  "需麦克风与系统音频权限": "Accès au micro et à l'audio système requis",
-  "录制并上传到中央；需先告知在场的人": "Enregistrer et envoyer au central ; prévenez les personnes présentes.",
   "系统音频权限未授予，录音未开始": "Accès audio système absent ; l'enregistrement n'a pas démarré.",
   "安装不改变授权或 Memory": "L'installation ne change ni l'accès ni Memory",
   "停止请求已发出，结果尚未确认": "Arrêt demandé ; résultat non confirmé.",
@@ -7725,5 +7721,9 @@
   "会重发本机仍保留的截图、页面、应用活动、通知、设备事件、笔记及已启用来源的保留版本。中央核验相同 ID 去重，继续补齐缺失数据。\n\n已从手机清理的数据无法补传。中央已删除或内容冲突的记录不会覆盖或恢复，暂停的来源不会启用。此操作可能产生较多流量，仍遵守网络设置。": "Renvoie les captures, pages, activités d'applications, notifications, événements d'appareil, notes et versions conservées des sources activées qui sont encore retenus en local. Le nœud central vérifie les ID correspondants pour dédupliquer et compléter les données manquantes.\n\nLes données déjà supprimées du téléphone ne peuvent pas être renvoyées. Les enregistrements supprimés au centre ou en conflit ne sont ni écrasés ni restaurés, et les sources en pause restent en pause. Cette opération peut consommer beaucoup de données et respecte vos paramètres réseau.",
   "只检查手机仍保留的采集记录在中央是否可见；不会把“中央存在”直接当作上传确认，也不会删除或恢复记录。": "Vérifie si les captures encore conservées sur le téléphone sont visibles côté central. La présence centrale n'est pas considérée comme une confirmation d'envoi ; rien n'est supprimé ni restauré.",
   "需要处理时：\n• 网络或服务暂不可用：自动模式退避重试，手动模式再次点同步。\n• 授权失效：重新连接同一节点后同步。\n• 同 ID 内容冲突 / 中央已删除：保留本机副本，跳过该条继续其他记录，不自动覆盖。\n• 待复核：仅在逐条明确释放后允许上传，更改审查规则不会自动释放。\n\n中央显示的是上次联系时的状态，不是手机实时状态。": "Lorsqu'une attention est requise :\n• Réseau ou service indisponible : le mode automatique réessaie avec backoff ; en mode manuel, synchronisez à nouveau.\n• Autorisation expirée : reconnectez-vous au même nœud et synchronisez.\n• Contenu en conflit pour le même ID ou suppression centrale : conservez la copie locale, ignorez l'élément et poursuivez les autres enregistrements sans écraser.\n• Retenu pour révision : n'envoyez qu'après une libération individuelle explicite. Modifier les règles ne libère pas les enregistrements.\n\nLe nœud central affiche l'état du dernier contact, pas l'état en direct du téléphone.",
-  "{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}": "{0}\nConservés localement {1} · en attente d'envoi {2}\nNécessitent attention {3}\nSources en attente : {4} versions / {5} paramètres\n\n{6}\nDernière confirmation d'envoi : {7}"
+  "{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}": "{0}\nConservés localement {1} · en attente d'envoi {2}\nNécessitent attention {3}\nSources en attente : {4} versions / {5} paramètres\n\n{6}\nDernière confirmation d'envoi : {7}",
+  "这场会议将同时录制麦克风与系统音频，结束后上传到你的中央并转写。请确认已告知在场的人并得到同意。该确认只在本机记住一次；取消则不会开始录音。": "This meeting will record the microphone and system audio together, then upload to your Central for transcription when you end it. Confirm that everyone present has been told and agrees. This confirmation is remembered once on this device; cancel does not start recording.",
+  "只有点击开始后才会录音；不会按日历或日程自动开始。第一次开始时先请告知在场的人。结束后音频进入中央已有转写，不会与记录页的语音附件或飞书妙记、钉钉闪记合并。": "Recording starts only when you click start; calendar events never start it. First tell everyone present. When you end it, the audio enters Central's existing transcription and is not merged with audio from the recording page or Feishu/DingTalk recordings.",
+  "已于 {0} 开始。麦克风与系统音频同时采集；仅在你点击结束后生成一场会议的音频。": "Started at {0}. Microphone and system audio are captured together; one meeting audio is produced only after you click end.",
+  "麦克风与系统音频权限将在开始时检查；缺少任一项都不会开始。": "Microphone and system-audio permissions are checked at start; if either is missing, recording does not start."
 }
