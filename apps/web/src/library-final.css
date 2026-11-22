@@ -148,3 +148,6 @@
  .library-time-final .library-time-observation { grid-template-columns:105px minmax(0,1fr); gap:9px; }
 }
 @media(pointer:coarse) { .library-time-final .library-time-daybar>.icon-button { min-width:28px; min-height:42px; } }
+@media (max-width:760px) {
+  :where(.library-archive) .source-toolbar select { max-width:100%; }
+}

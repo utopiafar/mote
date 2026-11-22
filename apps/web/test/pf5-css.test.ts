@@ -123,6 +123,7 @@ test('PF5-02 shared classes cannot bring page-only variants or conditions into t
     ${pageLayout}, ${questionSelected}, ${unscopedMenu} { color:red }
     @container (max-width:260px) { .button { white-space:normal } }
     @media (max-width:760px) { .source-item form { grid-template-columns:1fr } }
+    @media (max-width:760px) { .source-toolbar select { max-width:100% } }
     .file-row > svg, .workflow-line > svg, .policy-card summary { flex-shrink:0 }
     .source-item .metadata-details { margin-top:18px }
     @scope (.source-item) { .button { flex-shrink:0 } }
@@ -133,6 +134,7 @@ test('PF5-02 shared classes cannot bring page-only variants or conditions into t
     pageLayout, questionSelected, unscopedMenu,
     '@container (max-width:260px) | .button',
     '@media (max-width:760px) | .source-item form',
+    '@media (max-width:760px) | .source-toolbar select',
     '.file-row>svg', '.workflow-line>svg', '.policy-card summary',
     '.source-item .metadata-details',
     '@scope (.source-item) | .button',
@@ -156,6 +158,7 @@ test('PF5-02 page selectors live with the stylesheet loaded by their surfaces', 
       ':where(.final-imports) .field-label>input',
       ':where(.final-imports) .file-row>span:not(.archived-download)'],
     'library.css': ['.capture-card', '.library-record', '.material-reader-ask'],
+    'library-final.css': [':where(.library-archive) .source-toolbar select'],
     'material-processing.css': ['.policy-card summary'],
     'memory-presentation.css': ['.memory-actions', '.execution-queue-overview p'],
     'model-settings.css': ['.model-settings-fields', '.model-settings-editor .preference-field textarea'],

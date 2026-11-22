@@ -642,8 +642,6 @@
 @media (max-width:760px) | .filter-bar
 @media (max-width:760px) | .filter-bar input
 @media (max-width:760px) | .filter-bar label
-@media (max-width:760px) | .filter-bar label:nth-child(3)
-@media (max-width:760px) | .filter-bar label:nth-child(3) select
 @media (max-width:760px) | .form-footer
 @media (max-width:760px) | .form-footer .button
 @media (max-width:760px) | .form-footer>.button
@@ -692,7 +690,6 @@
 @media (max-width:760px) | .simple-welcome h1
 @media (max-width:760px) | .simple-welcome p
 @media (max-width:760px) | .source-toolbar
-@media (max-width:760px) | .source-toolbar select
 @media (max-width:760px) | .split-heading
 @media (max-width:760px) | .topbar
 @media (max-width:760px) | .topbar .breadcrumb

@@ -1107,13 +1107,6 @@ strong {
     padding: 7px;
     min-width: 120px;
   }
-.filter-bar label:nth-child(3) {
-    flex: 1;
-  }
-.filter-bar label:nth-child(3) select {
-    width: 100%;
-    font-size: var(--mote-font-meta);
-  }
 .welcome {
     min-height: 315px;
     position: relative;
@@ -1433,7 +1426,6 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .breadcrumb{font-size:var(--mote-font-meta);}
 .split-heading{align-items:flex-start;gap:17px;flex-direction:column;}
 .source-toolbar{align-items:flex-start;}
-.source-toolbar select{max-width:100%;}
 .segmented-nav{width:100%;gap:3px;}
 .segmented-nav button{flex:1;padding:10px 12px;}
 }
