@@ -60,7 +60,7 @@ export class BackgroundLane {
       const failed = () => {
         if (this.worker !== worker) return;
         this.worker = undefined;
-        for (const job of this.pending.values()){job.cleanup();job.reject(cancellationWon(job)?job.signal!.reason:new Error(moteText("后台处理进程已退出，重试；原数据保留")));}
+        for (const job of this.pending.values()){job.cleanup();job.reject(cancellationWon(job)?job.signal!.reason:new Error(moteText("后台处理进程已退出，重试。原数据保留")));}
         this.pending.clear();
       };
       worker.on('error', failed); worker.on('exit', failed);

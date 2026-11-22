@@ -63,7 +63,7 @@ export class QueueStorage {
   }
   private async checkDirectory(path: string): Promise<void> {
     const info = await lstat(path);
-    if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) throw new Error(moteText("截图目录不能是符号链接或其他文件；重新选择"));
+    if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) throw new Error(moteText("截图目录不能是符号链接或其他文件。重新选择"));
   }
   private async readOwner(path: string): Promise<Owner | undefined> {
     try { const info = await lstat(join(path, OWNER)); if (!info.isFile() || info.isSymbolicLink() || info.size > 4096) throw new Error(moteText("存储目录归属标记无效")); return JSON.parse(await readFile(join(path, OWNER), 'utf8')) as Owner; }
@@ -75,9 +75,9 @@ export class QueueStorage {
   }
   async open(configured: string): Promise<string> {
     const selected = configured || this.defaultDirectory;
-    if (configured && !await exists(selected)) throw new Error(moteText("截图目录不可用。连接原磁盘；不会切换存储或创建空队列。"));
+    if (configured && !await exists(selected)) throw new Error(moteText("截图目录不可用。连接原磁盘。不会切换存储或创建空队列。"));
     if (!configured) {
-      if (!await exists(selected) && await exists(this.journalPath)) throw new Error(moteText("迁移原目录不可用。连接原磁盘；不会创建空队列。"));
+      if (!await exists(selected) && await exists(this.journalPath)) throw new Error(moteText("迁移原目录不可用。连接原磁盘。不会创建空队列。"));
       await mkdir(selected, { recursive: true, mode: 0o700 }); await this.checkDirectory(selected);
       const owner = await this.readOwner(selected);
       if (!owner) {if((await readdir(selected)).length)throw Error(RESET_REQUIRED);await writeJson(join(selected, OWNER), this.owner);}
@@ -136,7 +136,7 @@ export class QueueStorage {
     if (target !== this.defaultDirectory && this.protectedRoots.some(root => inside(target, resolve(root)))) throw new Error(moteText("目标位置与应用环境目录冲突"));
     if (await exists(target)) throw new Error(moteText("新位置已存在文件，迁移不会覆盖或合并已有记录"));
     const files = await filesIn(source), totalBytes = files.reduce((total, file) => total + file.bytes, 0), capacity = await statfs(dirname(target));
-    if (capacity.bavail * capacity.bsize < totalBytes + 1024 * 1024) throw new Error(moteText("新位置空间不足；释放空间或选择其他位置"));
+    if (capacity.bavail * capacity.bsize < totalBytes + 1024 * 1024) throw new Error(moteText("新位置空间不足。释放空间或选择其他位置"));
     const id = randomUUID(), staging = `${target}.migrating-${id}`, journal: Journal = { version: 1, profile: this.owner.profile, deviceId: this.owner.deviceId, id, source, target, staging };
     await writeJson(this.journalPath, journal);
     let committed = false;

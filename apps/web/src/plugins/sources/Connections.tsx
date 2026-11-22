@@ -177,7 +177,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     useEffect(() => { if (expired) {
         setInvite(undefined);
         setQr('');
-        setMessage(moteText("连接邀请已到期，重新生成；已经连接的设备不受影响。"));
+        setMessage(moteText("连接邀请已到期，重新生成。已经连接的设备不受影响。"));
     } }, [expired]);
     async function refresh(signal: AbortSignal) {
         resources(api).invalidate(key => key === '/api/connections' || key === servicesPath);

@@ -37,7 +37,7 @@ function validate(value: unknown, now: number): ConnectionInvitation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(moteText("连接邀请格式无效"));
   const v = value as Record<string, unknown>;
   const keys = Object.keys(v).sort().join(',');
-  if ((keys !== 'code,expiresAt,format,serverUrl,version' && keys !== 'code,expiresAt,format,platforms,serverUrl,version') || v.format !== 'mote.connection' || v.version !== 1 || typeof v.serverUrl !== 'string' || typeof v.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(v.code) || typeof v.expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(v.expiresAt)) throw new Error(moteText("请导入有效的 Mote v1 连接邀请"));
+  if ((keys !== 'code,expiresAt,format,serverUrl,version' && keys !== 'code,expiresAt,format,platforms,serverUrl,version') || v.format !== 'mote.connection' || v.version !== 1 || typeof v.serverUrl !== 'string' || typeof v.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(v.code) || typeof v.expiresAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(v.expiresAt)) throw new Error(moteText("导入有效的 Mote v1 连接邀请。"));
   const expires = Date.parse(v.expiresAt);
   if (!Number.isFinite(expires) || !Number.isFinite(now) || expires <= now) throw new Error(moteText("连接邀请已过期。在中央重新生成"));
   const serverUrl = connectionServerUrl(v.serverUrl);
@@ -62,7 +62,7 @@ export function parseConnectionInvitation(input: string, now = Date.now()): Conn
     } catch { throw new Error(moteText("Mote 连接链接编码无效")); }
   }
   let value: unknown;
-  try { value = JSON.parse(json); } catch { throw new Error(moteText("请粘贴连接邀请 JSON 或 mote://connect 链接")); }
+  try { value = JSON.parse(json); } catch { throw new Error(moteText("粘贴连接邀请 JSON 或 mote://connect 链接。")); }
   return validate(value, now);
 }
 

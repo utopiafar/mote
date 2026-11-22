@@ -38,7 +38,7 @@ it('refuses to mutate or retarget a prepared submission after a failed queue wri
   const config = { ...defaultConfig(), token: 'synthetic-bound-note-token' };
   const store = new NoteDraftStore(directory); await store.initialize(); const input = { ...store.get(), text: 'generated', mood: '', revision: 1 };
   await expect(store.submit(input, config, 'macos', { enqueue: async () => { throw new Error('full'); } })).rejects.toThrow('full');
-  await expect(store.update({ ...input, text: 'changed', revision: 2 })).rejects.toThrow('不能改写');
+  await expect(store.update({ ...input, text: 'changed', revision: 2 })).rejects.toThrow('重试保存');
   await expect(store.submit(input, { ...config, serverUrl: 'https://other.example' }, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央');
 });
 

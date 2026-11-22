@@ -85,7 +85,7 @@ describe('capture storage transactions with generated queue data', () => {
     const link = join(root, 'linked'); await symlink(f.external, link);
     await expect(f.storage.candidate(link, f.source)).rejects.toThrow('符号链接');
     const foreign = new QueueStorage(join(root, 'other-profile'), 'other', f.config.deviceId);
-    await expect(foreign.open(f.source)).rejects.toThrow('不属于');
+    await expect(foreign.open(f.source)).rejects.toThrow('不匹配');
     await symlink(join(f.profile, 'config.json'), join(f.source, 'events', 'unsafe.json'));
     await expect(f.queue.relocate(join(f.external, 'another'), f.storage, f.commit, f.selected)).rejects.toThrow('符号链接');
   });

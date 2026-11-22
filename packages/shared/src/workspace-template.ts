@@ -58,7 +58,7 @@ export const workspaceLabels:Readonly<Record<string,string>>={
   reason:'原因',
   pause:'暂停',resume:'恢复',archive:'归档事项',refresh:'刷新',submit:'保存',
   empty:'当前范围内没有可用资料。',unavailable:'资料已撤回或超出当前范围。',
-  pending:'待处理',error:'部分资料读取失败，请刷新后重试。',
-  failed:'部分资料读取失败，请刷新后重试。',limited:'每个列表最多显示当前范围内的 20 项。',
-  changed:'操作已失效，请刷新后重试。',
+  pending:'待处理',error:'部分资料读取失败。刷新后重试。',
+  failed:'部分资料读取失败。刷新后重试。',limited:'每个列表最多显示当前范围内的 20 项。',
+  changed:'操作已失效。刷新后重试。',
 };

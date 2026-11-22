@@ -736,7 +736,7 @@ async function loadLogSettings(): Promise<void> {
   byId('runtime-log-directory').textContent = `${moteText('日志目录')}: ${settings.directory}`;
   for (const id of ['runtime-log-enabled','runtime-log-level','runtime-log-save','runtime-log-open','runtime-log-export']) byId<HTMLInputElement>(id).disabled = false;
 }
-void loadLogSettings().catch(() => feedback(moteText('日志读取失败，重试；原文件保留。')));
+void loadLogSettings().catch(() => feedback(moteText('日志读取失败，重试。原文件保留。')));
 byId('runtime-log-save').addEventListener('click', () => void perform(async () => {
   await desktopApi.saveLogSettings({enabled:byId<HTMLInputElement>('runtime-log-enabled').checked,level:byId<HTMLSelectElement>('runtime-log-level').value as import('./contracts/settings').RuntimeLogLevel});
   feedback(moteText('已保存，立即生效。'), true);

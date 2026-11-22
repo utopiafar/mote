@@ -579,7 +579,7 @@ describe.skipIf(process.platform!=='darwin')('independent collection channel jou
   const config={...fixtureConfig(),syncMode:'manual' as const,defaultCollection:{...activity,structured:true},chromeOrigins:failure==='unconfigured'?[]:['https://fixture.example']};
   const queue=new DurableQueue(directory,config);await queue.initialize();collector=new Collector(config,queue,'/fixture',()=>true,()=>undefined,undefined,undefined,undefined,undefined,provider);
   await collector.start();await collector.settleCapture();
-  expect(collector.status().message).toContain(failure==='unconfigured'?'允许的 Chrome 站点':failure==='disconnected'?'扩展尚未连接':'遮挡校验未通过');
+  expect(collector.status().message).toContain(failure==='unconfigured'?'允许的 Chrome 站点':failure==='disconnected'?'连接 Chrome 扩展':'检查 Chrome 窗口、站点和遮挡');
   expect((await queue.exportArchive()).records.map(r=>r.event.source)).toEqual(['activity']);expect(mocks.capture).not.toHaveBeenCalled();
  });
  it('measures media only across valid matching playing observations and resets on pause, stale binding and restart',async()=>{

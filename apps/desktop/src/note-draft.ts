@@ -37,7 +37,7 @@ export class NoteDraftStore {
       if (value.completed && (!uuid.test(value.completed.draftId) || !uuid.test(value.completed.eventId))) throw new Error('invalid completion');
       if (value.submission && (value.submission.id !== value.draft.id || value.submission.source !== 'note' || value.submission.ocrText !== value.draft.text || (value.submission.metadata?.ownerDescription??'')!==(value.draft.description.trim()?value.draft.description:'') || typeof value.targetOrigin !== 'string')) throw new Error('invalid prepared note');
       this.value = value;
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("记录草稿无法读取；先备份草稿文件再修复")); await this.persist(this.value); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(moteText("记录草稿无法读取。先备份草稿文件再修复")); await this.persist(this.value); }
     for (const name of await readdir(this.directory)) if (name.endsWith('.tmp') && uuid.test(name.slice(0, -4))) await unlink(join(this.directory, name));
   }
   get(): NoteDraft { return { ...this.value.draft, prepared: Boolean(this.value.submission) }; }

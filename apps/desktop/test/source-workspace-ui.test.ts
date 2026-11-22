@@ -44,7 +44,7 @@ it('previews the affected local inventory before saving rules that trigger a res
  const element=el('source-maintenance-preview');
  renderSourceMaintenancePreview(element,source,{...source.source,name:'Renamed source'});expect(element.hidden).toBe(true);
  renderSourceMaintenancePreview(element,source,{...source.source,retention:'archive'});
- expect(element.hidden).toBe(false);expect(element.textContent).toContain('1 项');expect(element.textContent).toContain('可能再次发送到中央');
+ expect(element.hidden).toBe(false);expect(element.textContent).toContain('1 项');expect(element.textContent).toContain('可能按新规则再次发送');
  renderSourceMaintenancePreview(element,source,{...source.source,excludedPaths:['private']});expect(element.hidden).toBe(false);
  renderSourceMaintenancePreview(element,undefined,undefined);expect(element.hidden).toBe(true);expect(element.textContent).toBe('');
 });

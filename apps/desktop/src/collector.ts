@@ -295,10 +295,10 @@ export class Collector {
         if(!valid()||!await sameForeground())return;
         browserIdentity=result?.identity;chromeReady=result?.status==='ok'&&Boolean(browserIdentity);browserScreenshotSafe=result?.screenshotSafe===true;if(!chromeReady||!result?.media)this.lastMediaSample=undefined;
         if (selected.structured && !chromeReady) this.message = !cfg.chromeOrigins.length
-          ? moteText('页面未采集。添加允许的 Chrome 站点；时长仍按设置记录。')
+          ? moteText('页面未采集。添加允许的 Chrome 站点。时长仍按设置记录。')
           : result?.status === 'disconnected' || !this.browserCapture
-            ? moteText('页面未采集。连接 Chrome 扩展；时长仍按设置记录。')
-            : moteText('页面未采集。检查 Chrome 窗口、站点和遮挡；时长照常记录。');
+            ? moteText('页面未采集。连接 Chrome 扩展。时长仍按设置记录。')
+            : moteText('页面未采集。检查 Chrome 窗口、站点和遮挡。时长照常记录。');
         if(chromeReady&&result){
           const browserValid=async()=>{const current=Boolean(browserIdentity&&await this.browserCapture?.validate(browserIdentity,abort.signal))&&await sameForeground();if(!current)this.lastMediaSample=undefined;return current;};
           if(selected.structured){
