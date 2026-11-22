@@ -2,8 +2,6 @@ import {navigationFor,pageRoutes,type NavItem,type NavItemId} from '@mote/shared
 import {webFeatures} from './features/registry';
 /** Navigation is contributed by installed, trusted UI entries; never inferred from content. */
 export type Page=string;
-/** Shared destination identities map to the web workspace routes that render them. */
-export const destinationPages={home:'ask',library:'archive',sources:'sources',connections:'connections',ask:'ask',activity:'activity'};
 
 export type WorkspaceNavItem=NavItem&{page:Page};
 

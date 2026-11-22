@@ -16,7 +16,7 @@ export type WebShellProps = {
 export type WebShellRenderer = React.ComponentType<WebShellProps>;
 
 export function WorkspaceShell({ layout, navigation, toolbar, content, footer }: WebShellProps) {
-  return <div className="app-shell" data-navigation={layout.navigation} data-detail={layout.detail}>
+  return <div className="app-shell" data-navigation="sidebar" data-detail={layout.detail}>
     {navigation}
     <main className="main" onFocusCapture={event => revealWorkspaceFocus(event.target)}>
       {toolbar}{content}{footer}

@@ -5,17 +5,9 @@ import {getLocale,type Locale} from './i18n.js';
 import type {PluginPlatform,ScopedContribution,UiAvailabilityFacts} from './plugin-ui.js';
 
 /** Presentation identities describe explicit owner-selected UI, never captured content. */
-export type UiDestination='home'|'library'|'ask'|'sources'|'connections'|'activity';
 export type UiReference={id:string;version:string};
 export type UiThemePack=UiReference & {tokens:Readonly<Record<string,string>>;schemes?:Readonly<Record<'light'|'dark',Readonly<Record<string,string>>>>};
-export type UiLayoutProfile=UiReference & {
-  primary:readonly UiDestination[];
-  /** Destinations placed in the shell's lower navigation region. */
-  secondary?:readonly UiDestination[];
-  initial:UiDestination;
-  navigation:'sidebar'|'top'|'bottom'|'adaptive'|'home';
-  detail:'split'|'stack';
-};
+export type UiLayoutProfile=UiReference & {detail:'split'|'stack'};
 export type UiLayoutPack<T>=UiLayoutProfile & {implementation:T};
 export type UiPresentationSnapshot<T>={
   theme:UiThemePack;layout:UiLayoutPack<T>;
@@ -25,20 +17,9 @@ export type UiPresentationSnapshot<T>={
   fallbackPresentation?:ResolvedUiPresentation;
 };
 export const linearUiTheme:UiThemePack=Object.freeze({id:'mote.linear',version:'1',tokens:Object.freeze({...linearThemeTokens}),schemes:Object.freeze({light:Object.freeze({...linearLightThemeTokens}),dark:Object.freeze({...linearThemeTokens})})});
-export const defaultUiLayout:UiLayoutProfile=Object.freeze({id:'mote.central',version:'1',primary:Object.freeze(['home','library','sources','connections'] as UiDestination[]),initial:'home',navigation:'adaptive',detail:'split'});
-export const desktopUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.desktop',primary:Object.freeze(['home','library','sources','ask'] as UiDestination[]),secondary:Object.freeze(['connections','activity'] as UiDestination[])});
-export const androidUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.android',primary:Object.freeze(['home'] as UiDestination[]),navigation:'home',detail:'stack'});
-/** Semantic glyph roles; each client maps them to its own icon set. */
-export type UiDestinationIcon='home'|'library'|'ask'|'sources'|'agent'|'activity';
-/** One owner-facing name and glyph per destination, so every client uses the same words. */
-export const uiDestinationPresentation:Readonly<Record<UiDestination,Readonly<{label:string;icon:UiDestinationIcon}>>>=Object.freeze({
-  home:Object.freeze({label:'首页',icon:'home'}),
-  library:Object.freeze({label:'资料库',icon:'library'}),
-  ask:Object.freeze({label:'问一问',icon:'ask'}),
-  sources:Object.freeze({label:'来源',icon:'sources'}),
-  connections:Object.freeze({label:'AI 接入',icon:'agent'}),
-  activity:Object.freeze({label:'活动',icon:'activity'}),
-});
+export const defaultUiLayout:UiLayoutProfile=Object.freeze({id:'mote.central',version:'1',detail:'split'});
+export const desktopUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.desktop'});
+export const androidUiLayout:UiLayoutProfile=Object.freeze({...defaultUiLayout,id:'mote.android',detail:'stack'});
 export const moteBrand=Object.freeze({name:'Mote',tagline:'你的个人上下文'});
 
 function reference(value:UiReference){if(!/^[a-z][a-z0-9.-]*$/.test(value.id)||!/^\d+(?:\.\d+)*$/.test(value.version))throw Error('Invalid presentation identity');return value.id+'@'+value.version;}
@@ -57,20 +38,16 @@ export function validateUiTheme(pack:UiThemePack):UiThemePack {
   const schemes=pack.schemes ? Object.freeze({light:validateUiTheme({id:pack.id,version:pack.version,tokens:pack.schemes.light}).tokens,dark:validateUiTheme({id:pack.id,version:pack.version,tokens:pack.schemes.dark}).tokens}) : undefined;
   return Object.freeze({id:pack.id,version:pack.version,tokens:Object.freeze({...pack.tokens}),...(schemes?{schemes}:{})});
 }
-function layout<T>(pack:UiLayoutPack<T>,required:readonly UiDestination[]=pack.primary):UiLayoutPack<T>{
+function layout<T>(pack:UiLayoutPack<T>):UiLayoutPack<T>{
   reference(pack);
-  const destinations:UiDestination[]=['home','library','ask','sources','connections','activity'];
-  const secondary=pack.secondary??[];
-  if(required.length<1||pack.primary.length!==required.length||new Set(pack.primary).size!==required.length||!pack.primary.every(id=>destinations.includes(id))||!required.every(id=>pack.primary.includes(id))||!required.includes(pack.initial)||!['sidebar','top','bottom','adaptive','home'].includes(pack.navigation)||!['split','stack'].includes(pack.detail)||pack.implementation==null)throw Error('Incompatible layout contract');
-  if(new Set(secondary).size!==secondary.length||!secondary.every(id=>destinations.includes(id))||secondary.some(id=>pack.primary.includes(id)))throw Error('Incompatible layout contract');
-  if((pack.navigation==='home')!==(pack.primary.length===1)||pack.navigation==='home'&&(pack.initial!=='home'||pack.primary[0]!=='home'||pack.detail!=='stack'))throw Error('Incompatible home layout contract');
-  return Object.freeze({...pack,primary:Object.freeze([...pack.primary]),...(pack.secondary?{secondary:Object.freeze([...pack.secondary])}:{})});
+  if(JSON.stringify(Object.keys(pack).sort())!==JSON.stringify(['detail','id','implementation','version'])||!['split','stack'].includes(pack.detail)||pack.implementation==null)throw Error('Incompatible layout contract');
+  return Object.freeze({id:pack.id,version:pack.version,detail:pack.detail,implementation:pack.implementation});
 }
 
-/** Portable layout data is validated against the compiled shell's required
- * destinations. A package can never supply its own renderer. */
-export function validateUiLayoutProfile(profile:UiLayoutProfile,required:readonly UiDestination[]):UiLayoutProfile {
-  const {implementation:_,...validated}=layout({...profile,implementation:true},required);
+/** Portable layout data is validated against the compiled shell's detail
+ * contract. A package can never supply its own renderer or navigation. */
+export function validateUiLayoutProfile(profile:UiLayoutProfile):UiLayoutProfile {
+  const {implementation:_,...validated}=layout({...profile,implementation:true});
   return validated;
 }
 
@@ -139,7 +116,7 @@ export class UiPresentationHost<T> {
     };
   }
   registerTheme(pack:UiThemePack,source?:PresentationSource){return this.register('theme',validateUiTheme(pack),false,source);}
-  registerLayout(pack:UiLayoutPack<T>,source?:PresentationSource){return this.register('layout',layout(pack,this.defaults.layout.primary),false,source);}
+  registerLayout(pack:UiLayoutPack<T>,source?:PresentationSource){return this.register('layout',layout(pack),false,source);}
   private presentation(surface:'theme'|'layout',value:UiReference){
     const key=surface+':'+reference(value),source=this.sources.get(key);
     if(!source)return undefined;

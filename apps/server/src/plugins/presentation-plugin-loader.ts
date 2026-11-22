@@ -1,7 +1,7 @@
 import {readFileSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {z} from 'zod';
-import {desktopUiLayout,validateUiLayoutProfile,validateUiTheme,type UiLayoutProfile,type UiThemePack} from '@mote/shared';
+import {validateUiLayoutProfile,validateUiTheme,type UiLayoutProfile,type UiThemePack} from '@mote/shared';
 import type {ManifestContribution} from '@mote/plugin-api';
 import type {PluginManifest} from '../plugin-release.js';
 import {StoreError} from '../evidence-store.js';
@@ -12,8 +12,7 @@ export const presentationDependencies=(manifest:PluginManifest)=>[...manifest.de
 export const PLUGIN_PAGE_CSP="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; sandbox allow-scripts";
 const identity={id:z.string(),version:z.string()};
 const themeSchema=z.object({...identity,tokens:z.record(z.string()),schemes:z.object({light:z.record(z.string()),dark:z.record(z.string())}).strict().optional()}).strict();
-const destination=z.enum(['home','library','ask','sources','connections','activity']);
-const layoutSchema=z.object({...identity,primary:z.array(destination),secondary:z.array(destination).optional(),initial:destination,navigation:z.enum(['sidebar','adaptive','top']),detail:z.enum(['split','stack'])}).strict();
+const layoutSchema=z.object({...identity,detail:z.enum(['split','stack'])}).strict();
 export type LoadedPresentation={
   declarations:readonly ManifestContribution[];
   pages:{declaration:ManifestContribution;html:string}[];
@@ -49,8 +48,7 @@ export function loadPresentationPackage(directory:string,manifest:PluginManifest
         result.themes.push({contributionId:declaration.id,pack});
       }
       else{
-        const pack=validateUiLayoutProfile(layoutSchema.parse(value),desktopUiLayout.primary);
-        if(JSON.stringify([...(pack.secondary??[])].sort())!==JSON.stringify([...(desktopUiLayout.secondary??[])].sort()))throw new StoreError('unsupported_layout_destinations:'+declaration.id,422);
+        const pack=validateUiLayoutProfile(layoutSchema.parse(value));
         if(result.layouts.some(entry=>entry.pack.id===pack.id&&entry.pack.version===pack.version))throw new StoreError('duplicate_layout_identity:'+declaration.id,422);
         result.layouts.push({contributionId:declaration.id,pack});
       }

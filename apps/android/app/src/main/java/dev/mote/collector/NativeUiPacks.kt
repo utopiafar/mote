@@ -199,8 +199,9 @@ internal object NativeUiPacks {
         listOf("background", "surface", "ink", "muted", "accent", "primary-background", "primary-ink", "surface-raised", "success-tint", "warning-tint", "danger-tint").forEach { Color.parseColor(snapshot.value(it)) }
         listOf("font-body", "space-page", "control-height-mobile", "radius-control", "radius-control-mobile", "radius-container-mobile", "radius-thumb-mobile", "radius-panel-mobile", "radius-pill").forEach { require(snapshot.number(it) > 0) }
         registry.register(object : NativeThemeProvider { override val snapshot = snapshot })
-        val primary = layout.getJSONArray("primary")
-        val layoutSnapshot = NativeLayoutSnapshot(identity(layout), (0 until primary.length()).map(primary::getString), layout.getString("initial"), layout.getString("navigation"), layout.getString("detail"))
+        // The generated layout supplies presentation detail only. Android's own
+        // authored navigation comes from ui-navigation.json, never the layout asset.
+        val layoutSnapshot = NativeLayoutSnapshot(identity(layout), listOf("home"), "home", "home", layout.getString("detail"))
         registry.register(object : NativeLayoutProvider { override val snapshot = layoutSnapshot })
         registry.setBuiltin(NativeUiBinding(snapshot.identity, layoutSnapshot.identity))
     }

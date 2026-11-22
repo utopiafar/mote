@@ -5,7 +5,7 @@ import {pluginPresentationFixture,packedPresentationTemplate,presentationRelease
 const webRoot=process.argv[2];if(!webRoot)throw Error('A built Web directory is required');
 const fixture=await pluginPresentationFixture(webRoot);
 try{
-  const complete=await packedPresentationTemplate(fixture.directory),theme={...linearUiTheme,id:'generated.browser.theme',schemes:undefined,tokens:{...linearUiTheme.tokens,accent:'#aabbcc'}},layout={...desktopUiLayout,id:'generated.browser.layout',primary:[...desktopUiLayout.primary].reverse(),navigation:'top' as const,detail:'stack' as const};
+  const complete=await packedPresentationTemplate(fixture.directory),theme={...linearUiTheme,id:'generated.browser.theme',schemes:undefined,tokens:{...linearUiTheme.tokens,accent:'#aabbcc'}},layout={...desktopUiLayout,id:'generated.browser.layout',detail:'stack' as const};
   const manifest={...complete.manifest,contributions:[...complete.manifest.contributions!,{id:'generated.browser.theme',version:'1',surface:'theme' as const,runtime:'host' as const,entry:'theme.json',capabilities:['generated.theme']},{id:'generated.browser.layout',version:'1',surface:'layout' as const,runtime:'host' as const,entry:'layout.json',capabilities:['generated.layout']}],capabilities:[...complete.manifest.capabilities,'generated.theme','generated.layout']};
   const templatePackage=await fixture.install(presentationRelease(manifest,{...unzipSync(complete.archive),'theme.json':JSON.stringify(theme),'layout.json':JSON.stringify(layout)})),template=await fixture.configure(templatePackage);
   if((await fixture.check(template.id)).observed!=='ready'||(await fixture.enable(template.id)).observed!=='ready')throw Error('Complete presentation template did not enable');

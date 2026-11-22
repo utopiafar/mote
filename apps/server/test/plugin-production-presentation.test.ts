@@ -74,7 +74,7 @@ test('complete template instances bind local page dependencies to their own live
 
 test('owner inventory drives actual Web registry, scoped themes/layouts, navigation rendering and removal fallback',async t=>{
   const f=await pluginPresentationFixture();t.after(()=>f.close());
-  const base=presentationManifest('generated.presentation'),theme={...linearUiTheme,id:'generated.studio',schemes:undefined,tokens:{...linearUiTheme.tokens,accent:'#aabbcc'}},layout={...desktopUiLayout,id:'generated.workspace',primary:[...desktopUiLayout.primary].reverse(),navigation:'top' as const};
+  const base=presentationManifest('generated.presentation'),theme={...linearUiTheme,id:'generated.studio',schemes:undefined,tokens:{...linearUiTheme.tokens,accent:'#aabbcc'}},layout={...desktopUiLayout,id:'generated.workspace',detail:'stack' as const};
   const manifest={...base,contributions:[...base.contributions!,{id:'generated.theme',version:'1',surface:'theme' as const,runtime:'host' as const,entry:'theme.json',capabilities:['generated.theme']},{id:'generated.layout',version:'1',surface:'layout' as const,runtime:'host' as const,entry:'layout.json',capabilities:['generated.layout']}],capabilities:[...base.capabilities,'generated.theme','generated.layout']};
   const pkg=await f.install(presentationRelease(manifest,{'page.html':'<h1>Generated installed page</h1>','theme.json':JSON.stringify(theme),'layout.json':JSON.stringify(layout)})),one=await f.configure(pkg),two=await f.configure(pkg);
   for(const instance of [one,two]){assert.equal((await f.check(instance.id)).observed,'ready');assert.equal((await f.enable(instance.id)).observed,'ready');}
@@ -88,11 +88,11 @@ test('owner inventory drives actual Web registry, scoped themes/layouts, navigat
   const inventory=await f.request('GET','/api/plugins/presentation');await consumer.reconcile(inventory,f.api);
   assert.equal(host.pages().length,2,'two instances never overwrite a page route');
   const route=host.page(one.id+'/'+base.contributions![0]!.id)!;assert.ok(route.route?.includes(encodeURIComponent(one.id)));
-  await act(async()=>root.render(React.createElement(PresentationSurface,{host:presentation,navigation:profile=>React.createElement('nav',null,...profile.primary.map(value=>React.createElement('button',{key:value},value))),toolbar:null,footer:null},React.createElement('input',{defaultValue:'Generated unsaved draft'}),route.render({} as never))));
+  await act(async()=>root.render(React.createElement(PresentationSurface,{host:presentation,navigation:()=>React.createElement('nav',null,...['generated.nav.a','generated.nav.b'].map(value=>React.createElement('button',{key:value},value))),toolbar:null,footer:null},React.createElement('input',{defaultValue:'Generated unsaved draft'}),route.render({} as never))));
   const input=document.querySelector('input')!;input.focus();input.setSelectionRange(2,8);
   assert.equal(document.querySelector('iframe')?.getAttribute('sandbox'),'allow-scripts');assert.equal(document.querySelector('iframe')?.getAttribute('src'),inventory.instances.find((value:any)=>value.instanceId===one.id).pages[0].entryUrl);
   const choices=consumer.getSnapshot();await act(async()=>{consumer.select('theme',choices.theme.find(value=>value.key.startsWith(one.id))!.key);consumer.select('layout',choices.layout.find(value=>value.key.startsWith(one.id))!.key);});
-  assert.equal(document.documentElement.style.getPropertyValue('--mote-accent'),'#aabbcc');assert.equal(document.querySelector('.app-shell')?.getAttribute('data-navigation'),'top');assert.deepEqual([...document.querySelectorAll('nav button')].map(value=>value.textContent),layout.primary);
+  assert.equal(document.documentElement.style.getPropertyValue('--mote-accent'),'#aabbcc');assert.equal(document.querySelector('.app-shell')?.getAttribute('data-detail'),'stack');assert.deepEqual([...document.querySelectorAll('nav button')].map(value=>value.textContent),['generated.nav.a','generated.nav.b']);
   assert.equal(document.querySelector('input'),input);assert.equal(input.value,'Generated unsaved draft');assert.equal(document.activeElement,input);assert.equal(input.selectionStart,2);
   const oldScope=consumer.scopes.get(one.id)!;await f.action(one.id,'disable');await act(async()=>{await consumer.reconcile(await f.request('GET','/api/plugins/presentation'),f.api);});
   assert.equal(oldScope.lifetime.state,'disposed');assert.ok(oldScope.customPages?.mounts.values().next().value?.revoked);assert.equal(host.pages().length,1);assert.ok(host.page(two.id+'/'+base.contributions![0]!.id));assert.equal(presentation.getSnapshot().theme.id,linearUiTheme.id);assert.equal(presentation.getSnapshot().layout.id,desktopUiLayout.id);assert.equal(document.querySelector('input'),input);
@@ -110,6 +110,18 @@ test('unsupported declarations, missing exact dependencies and invalid theme/lay
   ];
   for(const item of cases){const manifest={...presentationManifest('generated.invalid.'+item.name),...item.change},instance=await f.configure(await f.install(presentationRelease(manifest,item.files as Record<string,string>)));const checked=await f.check(instance.id);assert.equal(checked.observed,'blocked',item.name);assert.ok(checked.issues.length,item.name);assert.ok(!checked.allowedActions.includes('enable'),item.name);}
   assert.deepEqual((await f.request('GET','/api/plugins/presentation')).instances,[]);
+});
+
+test('a layout package that still carries primary is rejected with the field while another plugin stays ready',async t=>{
+  const f=await pluginPresentationFixture();t.after(()=>f.close());
+  const manifest=presentationManifest('generated.primary-layout'),layoutContribution={id:'generated.layout',version:'1',surface:'layout' as const,runtime:'host' as const,entry:'layout.json',capabilities:['generated.page']};
+  const invalidManifest={...manifest,contributions:[...manifest.contributions!,layoutContribution]};
+  const invalid=await f.configure(await f.install(presentationRelease(invalidManifest,{'page.html':'<h1>Generated primary page</h1>','layout.json':JSON.stringify({id:'generated.primary',version:'1',detail:'stack',primary:['generated']})})));
+  const blocked=await f.check(invalid.id);assert.equal(blocked.observed,'blocked');assert.match(blocked.issues.join(','),/primary/);assert.ok(!blocked.allowedActions.includes('enable'));
+  const valid=await f.configure(await f.install(presentationRelease(presentationManifest('generated.valid-layout'),{'page.html':'<h1>Generated valid page</h1>'})));
+  assert.equal((await f.check(valid.id)).observed,'ready');assert.equal((await f.enable(valid.id)).observed,'ready');
+  const inventory=await f.request('GET','/api/plugins/presentation') as PluginPresentationInventory;
+  assert.deepEqual(inventory.instances.map(value=>value.instanceId),[valid.id]);
 });
 
 test('required live dependencies restore before pages and their withdrawal revokes the display scope',async t=>{

@@ -39,10 +39,10 @@ const desktopIconSymbols: Record<DesktopSection, string> = {sources:'plug',permi
 export const defaultDesktopRenderer:DesktopLayoutRenderer={
   mount(slots,layout){
     const nav=slots.sidebar.querySelector<HTMLElement>('.main-nav')!;
-    const previous=Array.from(nav.childNodes),oldNavigation=slots.root.dataset.navigation,oldDetail=slots.root.dataset.detail;
+    const previous=Array.from(nav.childNodes),oldDetail=slots.root.dataset.detail;
     const locations=[slots.sidebar,slots.toolbar,slots.main].map(node=>({node,parent:node.parentNode!,next:node.nextSibling}));
-    slots.scope.effect(()=>{nav.replaceChildren(...previous);for(const {node,parent,next} of [...locations].reverse())parent.insertBefore(node,next?.parentNode===parent?next:null);if(oldNavigation===undefined)delete slots.root.dataset.navigation;else slots.root.dataset.navigation=oldNavigation;if(oldDetail===undefined)delete slots.root.dataset.detail;else slots.root.dataset.detail=oldDetail;});
-    slots.root.dataset.navigation=layout.navigation;slots.root.dataset.detail=layout.detail;
+    slots.scope.effect(()=>{nav.replaceChildren(...previous);for(const {node,parent,next} of [...locations].reverse())parent.insertBefore(node,next?.parentNode===parent?next:null);if(oldDetail===undefined)delete slots.root.dataset.detail;else slots.root.dataset.detail=oldDetail;});
+    slots.root.dataset.detail=layout.detail;
     const buttons=desktopSections.map(page=>{
       const button=nav.ownerDocument.createElement('button');button.type='button';button.className='nav-item';button.dataset.nav=page;button.dataset.presentationNav='';
       const icon=nav.ownerDocument.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('class','icon');icon.setAttribute('aria-hidden','true');
@@ -50,8 +50,6 @@ export const defaultDesktopRenderer:DesktopLayoutRenderer={
       const label=nav.ownerDocument.createElement('span');label.textContent=moteText(labels[page]);button.append(icon,label);return button;
     });
     nav.replaceChildren(...buttons);
-    // The slots are real nodes, moved rather than cloned so all host-owned state survives.
-    if(layout.navigation==='top')slots.root.insertBefore(slots.toolbar,slots.sidebar);
     const click=(event:Event)=>{const button=(event.target as Element).closest<HTMLButtonElement>('[data-presentation-nav]');if(button?.dataset.nav)slots.navigate(button.dataset.nav as DesktopPage);};
     slots.scope.listen(nav,'click',click);
     return {
