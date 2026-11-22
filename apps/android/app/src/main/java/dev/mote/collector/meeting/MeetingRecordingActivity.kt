@@ -75,7 +75,7 @@ class MeetingRecordingActivity : MoteActivity() {
         val latest = store.sessions().maxByOrNull { it.startedAt }
         last.text = when {
             latest == null -> MoteI18n.text("尚无会议录音。")
-            latest.localContentRelease != null -> MoteI18n.text(if (latest.localContentRelease.pending) "本机副本清理未完成，重试" else "本机副本已清理")
+            latest.localContentRelease != null -> MoteI18n.text(if (latest.localContentRelease.pending) "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。" else "本机副本已清理")
             latest.quarantined -> MoteI18n.text("当前本机来源范围已变更，旧待传版本已隔离，原输入保留。")
             latest.state == "uploaded" -> MoteI18n.text("已收到上传确认") + " · " + latest.startedAt.take(16).replace('T', ' ') + "\n" + MoteI18n.text("本机采集内容长期保留，上传确认后不自动删除。")
             latest.state == "completed" -> MoteI18n.text("最近一场 {0} 保存在本机，连接中央后上传。", latest.startedAt.take(16).replace('T', ' '))
@@ -101,7 +101,7 @@ class MeetingRecordingActivity : MoteActivity() {
         val release = session.localContentRelease
         val view = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         SecondaryUi.text(view, session.startedAt + "\n" + (session.origin ?: "") + "\n" + (session.uploadedAt ?: MoteI18n.text("尚未上传")))
-        if (release?.pending == true) SecondaryUi.text(view, MoteI18n.text("本机副本清理未完成，重试"))
+        if (release?.pending == true) SecondaryUi.text(view, MoteI18n.text("本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。"))
         if (session.state == "uploaded" && !session.quarantined && (release == null || release.pending)) {
             SecondaryUi.action(view, MoteI18n.text("清理本机副本")) {
                 dev.mote.collector.MoteDialogBuilder(this).setTitle(MoteI18n.text("清理本机副本"))
@@ -111,7 +111,7 @@ class MeetingRecordingActivity : MoteActivity() {
                             val result = runCatching { owner.releaseMeeting(id, ::current) }
                             runOnUiThread { if (pageActive && !isDestroyed) {
                                 result.onSuccess { render(); original(id) }.onFailure { error ->
-                                    dev.mote.collector.MoteDialogBuilder(this).setMessage(MoteI18n.text("本机副本清理未完成，重试") + "\n" + error.message).setPositiveButton(MoteI18n.text("关闭"), null).show()
+                                    dev.mote.collector.MoteDialogBuilder(this).setMessage(MoteI18n.text("本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。") + "\n" + error.message).setPositiveButton(MoteI18n.text("关闭"), null).show()
                                 }
                             } }
                         }

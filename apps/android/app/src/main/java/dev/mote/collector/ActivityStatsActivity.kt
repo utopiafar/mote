@@ -57,7 +57,7 @@ class ActivityStatsActivity : MoteActivity() {
         button(MoteI18n.text("查看采集记录")) { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         button(MoteI18n.text("导出无正文统计 JSON")) { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-activity-stats.json"), 1) }
         button(MoteI18n.text("重置统计起点（保留队列和数据）")) {
-            MoteDialogBuilder(this).setTitle(MoteI18n.text("重置本机统计")).setMessage(MoteI18n.text("仅清空累计数字与最近事件"))
+            MoteDialogBuilder(this).setTitle(MoteI18n.text("重置本机统计")).setMessage(MoteI18n.text("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("重置")) { _, _ ->
                     task.start(MoteI18n.text("正在重置统计…"), MoteComponents.progress(operationStatus, read = false), {
                         Operations.ledger(applicationContext).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit()

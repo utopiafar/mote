@@ -74,7 +74,7 @@ class StorageActivity : MoteActivity() {
     private fun confirm(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移本机保存位置"))
-            .setMessage(MoteI18n.text("迁移到{0}，验证后切换", choice.title, choice.base.absolutePath))
+            .setMessage(MoteI18n.text("迁移到{0}：\n{1}\n\n已有图片和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。", choice.title, choice.base.absolutePath))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("迁移并应用")) { _, _ -> migrate(choice) }.show()
     }
     private fun migrate(choice: QueueStorageChoice) {

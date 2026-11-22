@@ -611,7 +611,7 @@ class CaptureRecordsActivity : MoteActivity() {
                                         runOnUiThread {
                                             if (reading()) {
                                                 clearReader(); thumbnails.evictAll()
-                                                result.onSuccess { detail(id, false, null, generation, version) }.onFailure { notice(MoteI18n.text("本机副本清理未完成，重试") + "\n" + (it.message ?: "")); button(content, MoteI18n.text("重试")) { detail(id, false, null, generation, version) } }
+                                                result.onSuccess { detail(id, false, null, generation, version) }.onFailure { notice(MoteI18n.text("本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。") + "\n" + (it.message ?: "")); button(content, MoteI18n.text("重试")) { detail(id, false, null, generation, version) } }
                                             }
                                         }
                                     }
@@ -621,7 +621,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (!remote && release != null && (release.optBoolean("pending") || readbackError != null)) {
                         quiet("$capturedAt · $origin")
                         quiet(MoteI18n.text("已收到上传确认") + " · " + record.getJSONObject("archiveAcknowledgment").getString("origin"))
-                        text(content, MoteI18n.text(if (release.optBoolean("pending")) "本机副本清理未完成，重试" else "本机副本已清理"), MoteTheme.fontBody.toFloat())
+                        text(content, MoteI18n.text(if (release.optBoolean("pending")) "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。" else "本机副本已清理"), MoteTheme.fontBody.toFloat())
                         if (!release.optBoolean("pending")) quiet(MoteI18n.text("本机原件不在此设备，连接原中央后可按当前权限读取。"))
                         readbackError?.let { alert(errorMessage(it, true)) }
                         button(content, MoteI18n.text("重试")) { detail(id, false, null, generation, version) }

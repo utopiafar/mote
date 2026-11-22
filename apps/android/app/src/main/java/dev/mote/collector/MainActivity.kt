@@ -1601,7 +1601,7 @@ class MainActivity : MoteActivity() {
                 updateSaveBar()
                 result.onSuccess { needsBinding ->
                     if (needsBinding) MoteDialogBuilder(this).setTitle(MoteI18n.text("将本机资料绑定到此节点？"))
-                        .setMessage(MoteI18n.text("{0}\n\n本机资料将绑定此节点。", c.server))
+                        .setMessage(MoteI18n.text("{0}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。请核对这是你自己的节点。", c.server))
                         .setNegativeButton(MoteI18n.text("继续保存在本机"), null).setPositiveButton(MoteI18n.text("确认绑定并保存")) { _, _ -> applySettings(c, true, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after) }.show()
                     else applySettings(c, bindLocal, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after)
                 }.onFailure { toast(it.message ?: MoteI18n.text("无法检查设置，重试")); refreshStatus() }
@@ -1943,7 +1943,7 @@ class MainActivity : MoteActivity() {
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
-            .setMessage(MoteI18n.text("通知与媒体会话经通知使用权读取。"))
+            .setMessage(MoteI18n.text("Android 通过通知使用权开放通知与媒体会话。开启通知采集后，Mote 会保存应用公开的标题、正文、持续状态以及发布和更新事件，并按同步策略上传。设备事件单独记录亮屏、熄屏和锁定状态。各来源需单独开启并点击开始；应用的“不记录”和“仅活动”规则仍适用。系统可能隐藏敏感通知；Mote 不回复通知、不控制播放。"))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("打开系统设置")) { _, _ ->
                 safeOpen(Intent(SystemSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }.show()
