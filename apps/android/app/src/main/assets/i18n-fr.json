@@ -411,7 +411,7 @@
   "设备权限": "Autorisations de l'appareil",
   "本人客户端 · 完整权限": "Client personnel · accès complet",
   "独立采集器 · 仅同步": "Collecteur autonome · synchronisation uniquement",
-  "独立采集程序只能同步当前绑定设备的资料和来源。浏览归档或管理中央时，Mac 和 Android 须选「本人客户端」。": "Réservé aux programmes de collecte autonomes : synchronise le contenu et les sources de l'appareil associé, sans navigation dans l'archive ni gestion du central. Choisissez Client personnel pour l'application complète Mac ou Android.",
+  "独立采集程序仅同步其绑定设备的资料和来源，无权浏览归档或管理中央。Mac 和 Android 完整客户端须选「本人客户端」。": "Réservé aux programmes de collecte autonomes : synchronise le contenu et les sources de l'appareil associé, sans navigation dans l'archive ni gestion du central. Choisissez Client personnel pour l'application complète Mac ou Android.",
   "重新配对选择原设备。成功后替换同类型凭据。": "Lors d'un nouvel appairage, sélectionnez l'appareil d'origine pour conserver son identité. Un appairage réussi remplace ses anciens identifiants du même type d'autorisation.",
   "将邀请交给独立采集程序": "Remettre cette invitation au collecteur autonome",
   "采集程序兑换后核对 collector 身份和采集协议。完整 App 使用本人邀请。": "Après l'échange, le collecteur doit vérifier son identité de collecteur et le protocole de collecte. Cette invitation ne permet pas de se connecter à l'application complète Mac ou Android.",

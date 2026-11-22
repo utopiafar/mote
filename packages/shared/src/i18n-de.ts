@@ -412,7 +412,7 @@ export const german: Readonly<Record<string, string>> = {
   "设备权限": "Geräteberechtigungen",
   "本人客户端 · 完整权限": "Persönlicher Client · Vollzugriff",
   "独立采集器 · 仅同步": "Eigenständiger Kollektor · nur Synchronisierung",
-  "独立采集程序只能同步当前绑定设备的资料和来源。浏览归档或管理中央时，Mac 和 Android 须选「本人客户端」。": "Nur für eigenständige Erfassungsprogramme: synchronisiert Inhalte und Quellen des gebundenen Geräts, ohne Archivzugriff oder zentrale Verwaltung. Wählen Sie für die vollständige Mac- oder Android-App „Persönlicher Client“.",
+  "独立采集程序仅同步其绑定设备的资料和来源，无权浏览归档或管理中央。Mac 和 Android 完整客户端须选「本人客户端」。": "Nur für eigenständige Erfassungsprogramme: synchronisiert Inhalte und Quellen des gebundenen Geräts, ohne Archivzugriff oder zentrale Verwaltung. Wählen Sie für die vollständige Mac- oder Android-App „Persönlicher Client“.",
   "重新配对选择原设备。成功后替换同类型凭据。": "Wählen Sie beim erneuten Koppeln das ursprüngliche Gerät, um seine Identität zu behalten. Eine erfolgreiche Kopplung ersetzt die bisherigen Anmeldedaten desselben Berechtigungstyps.",
   "将邀请交给独立采集程序": "Diese Einladung an den eigenständigen Kollektor weitergeben",
   "采集程序兑换后核对 collector 身份和采集协议。完整 App 使用本人邀请。": "Nach dem Einlösen muss der Kollektor seine Kollektor-Identität und das Erfassungsprotokoll prüfen. Diese Einladung kann sich nicht bei der vollständigen Mac- oder Android-App anmelden.",

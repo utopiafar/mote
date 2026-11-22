@@ -412,7 +412,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "设备权限": "Permisos del dispositivo",
   "本人客户端 · 完整权限": "Cliente personal · acceso completo",
   "独立采集器 · 仅同步": "Recolector independiente · solo sincronización",
-  "独立采集程序只能同步当前绑定设备的资料和来源。浏览归档或管理中央时，Mac 和 Android 须选「本人客户端」。": "Solo para programas de recolección independientes: sincroniza el contenido y las fuentes del dispositivo vinculado, sin explorar el archivo ni administrar Central. Elige Cliente personal para la app completa de Mac o Android.",
+  "独立采集程序仅同步其绑定设备的资料和来源，无权浏览归档或管理中央。Mac 和 Android 完整客户端须选「本人客户端」。": "Solo para programas de recolección independientes: sincroniza el contenido y las fuentes del dispositivo vinculado, sin explorar el archivo ni administrar Central. Elige Cliente personal para la app completa de Mac o Android.",
   "重新配对选择原设备。成功后替换同类型凭据。": "Al volver a vincular, elige el dispositivo original para conservar su identidad. Una vinculación correcta reemplaza sus credenciales anteriores del mismo tipo de permiso.",
   "将邀请交给独立采集程序": "Entrega esta invitación al recolector independiente",
   "采集程序兑换后核对 collector 身份和采集协议。完整 App 使用本人邀请。": "Tras el canje, el recolector debe verificar su identidad de collector y el protocolo de recolección. Esta invitación no permite iniciar sesión en la app completa de Mac o Android.",
