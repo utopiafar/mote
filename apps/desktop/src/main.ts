@@ -93,7 +93,7 @@ function refreshApplicationMenu() {
       ] },
       { role: 'editMenu', label: moteText("编辑") },
       { label: moteText("前往"), submenu: [
-        { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showWindow() },
+        { label: moteText("打开 Mote"), accelerator: 'CmdOrCtrl+1', click: () => showWindow() },
         { label: moteText("记录"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
         { label: moteText('通知'), click: () => { void assistantNotifications?.openInbox(); } },

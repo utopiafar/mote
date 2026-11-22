@@ -6,6 +6,7 @@ import {JSDOM} from 'jsdom';
 import {configureLocale, getLocale} from '@mote/shared/i18n';
 import {deepLinkHash,pageHash} from '@mote/shared';
 import {Insights} from '../src/plugins/discovery/Insights';
+import { SourceBar } from '../src/plugins/library/SourceBar';
 import {Conversations} from '../src/plugins/ask/Conversations';
 import {Connections} from '../src/plugins/sources/Connections';
 import {webFeatures} from '../src/features/registry';
@@ -124,7 +125,7 @@ test('reusing the connection component for device and AI modes clears prior form
   assert.ok(button(d, '撤销'));
 });
 
-test('source device pairing and AI access use distinct routes and inventories without changing issued authority', async t => {
+test('Library device pairing and Connections AI access keep their permissions separate', async t => {
   const {root, d, tick} = await fixture(t, '#/connections/add');
   const credentials = [
     {id: 'owner-device', label: 'Generated owner Mac', scope: 'owner', deviceId: 'mac'},
@@ -141,7 +142,8 @@ test('source device pairing and AI access use distinct routes and inventories wi
     if (path === '/api/configuration') return {groups: []};
     if (path === '/api/connections/mcp/calendar' && !init?.method) return {items: []};
     if (path === '/api/connections') return {items: credentials, mcp: {enabled: true, writeEnabled: true, writeSourceIds: ['generated-source']}};
-    writes.push({path, ...(init?.body ? {body: JSON.parse(String(init.body))} : {})});
+    if (!init?.method || init.method === 'GET') return {items: [], nextCursor: null};
+    writes.push({path, ...(init.body ? {body: JSON.parse(String(init.body))} : {})});
     return {revoked: true};
   });
   const props = {api, devices: [], onPage: (page: string) => { location.hash = '#/' + webFeatures.page(page)!.route; }} as PageProps;
@@ -152,21 +154,26 @@ test('source device pairing and AI access use distinct routes and inventories wi
     for (let i = 0; i < 40 && !d.querySelector(selector); i++) await tick();
   };
   await renderRoute('.discovery-source-catalog');
-  const deviceCard = [...d.querySelectorAll<HTMLAnchorElement>('.discovery-source-card')].find(card => card.querySelector('h3')?.textContent === '手机与电脑')!;
-  assert.equal(deviceCard.getAttribute('href'), '#/connections/pair');
-  await act(async () => deviceCard.click()); await tick();
-  assert.equal(readPage(location.hash), 'deviceConnections');
-  assert.equal(primaryDestination('deviceConnections'), 'sources');
-  await renderRoute();
-  assert.equal(d.querySelector('.device-pair-workspace h1')!.textContent, '连接设备');
-  assert.ok(d.querySelector('[aria-label="设备权限"]'));
-  assert.equal(d.querySelector('[aria-label="MCP 访问权限"]'), null);
-  assert.match(d.querySelector('.connection-list')!.textContent!, /Generated owner Mac/);
-  assert.match(d.querySelector('.connection-list')!.textContent!, /Generated collector/);
-  assert.doesNotMatch(d.querySelector('.connection-list')!.textContent!, /Generated read Agent|Generated write Agent/);
+  assert.equal(d.querySelector('a[href="#/connections/pair"]'), null);
+  const accessLink = [...d.querySelectorAll<HTMLAnchorElement>('a')].find(link => link.textContent?.trim() === 'AI 接入');
+  assert.ok(accessLink);
+  assert.equal(accessLink.hash, '#/connections/access');
+  await act(async () => { location.hash = pageHash('library'); });
+  await act(async () => root.render(React.createElement(SourceBar, {
+    api, serverUrl: 'http://localhost', onFilterChange: () => {},
+  })));
+  await act(async () => button(d, '添加设备').click());
+  const pairing = d.querySelector('[role="dialog"] .device-pair-workspace');
+  assert.ok(pairing, 'device pairing opens in the Library sheet');
+  assert.equal(primaryDestination(readPage(location.hash)), 'archive');
+  const permission = pairing.querySelector<HTMLSelectElement>('[aria-label="设备权限"]');
+  assert.ok(permission);
+  assert.deepEqual([...permission.options].map(option => option.value), ['owner', 'collector']);
+  assert.equal(pairing.querySelector('[aria-label="MCP 访问权限"]'), null);
+  assert.doesNotMatch(pairing.textContent!, /Generated read Agent|Generated write Agent/);
   assert.deepEqual(writes, []);
 
-  await act(async () => { location.hash = '#/connections/access'; }); await renderRoute();
+  await act(async () => { location.hash = accessLink.hash; }); await renderRoute();
   assert.equal(primaryDestination('connections'), 'sources');
   assert.equal(d.querySelector('h1')!.textContent, 'AI 接入');
   assert.equal(d.querySelector('[aria-label="设备权限"]'), null);

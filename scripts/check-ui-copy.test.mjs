@@ -11,7 +11,7 @@ const cli=fileURLToPath(new URL('./check-ui-copy.mjs',import.meta.url));
 const repoRoot=fileURLToPath(new URL('..',import.meta.url));
 
 /** Generates an isolated current-format tree; every fixture starts from generated copy only. */
-function fixture(t,{keys=[],translations={},web='',desktopScript='',html='',server='',baseline=[],promises=[]}={}){
+function fixture(t,{keys=[],translations={},web='',desktopScript='',html='',server='',promises=[]}={}){
  const root=mkdtempSync(join(tmpdir(),'mote-ui-copy-'));
  t.after(()=>rmSync(root,{recursive:true,force:true}));
  for(const dir of ['packages/shared/src','apps/web/src','apps/desktop/src','apps/server/src','scripts'])mkdirSync(join(root,dir),{recursive:true});
@@ -21,7 +21,6 @@ function fixture(t,{keys=[],translations={},web='',desktopScript='',html='',serv
  writeFileSync(join(root,'apps/desktop/src/fixture.ts'),desktopScript);
  writeFileSync(join(root,'apps/desktop/src/fixture.html'),html||'<!doctype html><title>Fixture</title>');
  writeFileSync(join(root,'apps/server/src/fixture.ts'),server);
- writeFileSync(join(root,'scripts/ui-copy-baseline.json'),JSON.stringify(baseline));
  writeFileSync(join(root,'scripts/ui-copy-promises.json'),JSON.stringify(promises));
  return root;
 }
@@ -63,15 +62,15 @@ test('X1-03 an allowlisted deletion promise may exceed the length limit',t=>{
  assert.deepEqual(result.violations.map(violation=>violation.rule),['too-long']);
 });
 
-test('X1-04 a baselined violation passes until its source text changes',t=>{
- const key='这'.repeat(25),changed='那'.repeat(25);
- const baseline=[{rule:'too-long',location:'message',text:key}];
- const root=fixture(t,{keys:[key],baseline});
- assert.equal(checkUiCopy({root,stdout:()=>{},stderr:()=>{}}).exitCode,0);
- writeCatalog(root,[changed]);
+test('X1-04 a stale baseline file cannot suppress a violation',t=>{
+ const key='这'.repeat(25);
+ const root=fixture(t,{keys:[key]});
+ writeFileSync(join(root,'scripts/ui-copy-baseline.json'),JSON.stringify([
+  {rule:'too-long',location:'message',text:key},
+ ]));
  const result=checkUiCopy({root,stdout:()=>{},stderr:()=>{}});
  assert.equal(result.exitCode,1);
- assert.deepEqual(result.violations.map(violation=>violation.text),[changed]);
+ assert.deepEqual(result.violations.map(violation=>violation.text),[key]);
 });
 
 test('X1-05 central Chinese copy passes only as the first moteText argument',t=>{
@@ -115,18 +114,18 @@ test('X1-08 a lone character icon inside aria-hidden fails while an icon compone
  ]);
 });
 
-test('X1-09 deleting a baseline entry re-enables that violation',t=>{
- const key='打开文件 →';
- const baseline=[{rule:'trailing-arrow',location:'message',text:key}];
- const root=fixture(t,{keys:[key],baseline});
- assert.equal(checkUiCopy({root,stdout:()=>{},stderr:()=>{}}).exitCode,0);
- writeFileSync(join(root,'scripts/ui-copy-baseline.json'),'[]');
+test('X1-09 fixing one rule still reports the remaining violation',t=>{
+ const root=fixture(t,{keys:['请打开文件 →']});
+ const initial=checkUiCopy({root,stdout:()=>{},stderr:()=>{}});
+ assert.equal(initial.exitCode,1);
+ assert.deepEqual(initial.violations.map(violation=>violation.rule),['polite','trailing-arrow']);
+ writeCatalog(root,['打开文件 →']);
  const result=checkUiCopy({root,stdout:()=>{},stderr:()=>{}});
  assert.equal(result.exitCode,1);
  assert.deepEqual(result.violations.map(violation=>violation.rule),['trailing-arrow']);
 });
 
-test('X1-10 the repository passes with its frozen baseline',()=>{
+test('X1-10 the repository passes the full copy check',()=>{
  const result=runCli(repoRoot);
  assert.equal(result.status,0,result.stdout+result.stderr);
  assert.match(result.stdout,/UI copy violations: 0/);
