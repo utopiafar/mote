@@ -182,7 +182,7 @@ class LocalContentReadbackHostTest {
         settings.saveConnection(origin, token, "Generated readback phone", true); client().delete("/api/captures/$id")
         val deleted = openCapture(event); await("Deleted remote body remains unavailable") { text(deleted).contains("本机副本已清理") && text(deleted).contains("本机原件不在此设备") }
         val unavailable = runCatching { NativeLibraryPlugin.owner(app).localCapture(id, null) {} }.exceptionOrNull()
-        assertTrue("The exact original is unavailable, never a replacement body", unavailable is CentralFailure && unavailable.status in setOf(404, 410) || unavailable?.message == MoteI18n.text("此版本已变化，请返回资料列表重新选择。"))
+        assertTrue("The exact original is unavailable, never a replacement body", unavailable is CentralFailure && unavailable.status in setOf(404, 410) || unavailable?.message == MoteI18n.text("此版本已变化，返回资料列表重新选择"))
         assertFalse(text(deleted).contains("GENERATED_EXACT_OWNER_BODY")); assertTrue(app.queue().peekBatch().isEmpty())
     }
 

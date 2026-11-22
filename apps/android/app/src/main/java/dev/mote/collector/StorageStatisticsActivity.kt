@@ -25,7 +25,7 @@ class StorageStatisticsActivity : MoteActivity() {
                 if (isFinishing || isDestroyed) return@statistics
                 refresh.isEnabled = true; result.removeAllViews()
                 report.onSuccess { value -> render(result, value) }
-                    .onFailure { result.addView(TextView(this).apply { text = MoteI18n.text("统计读取失败，请重试。") }) }
+                    .onFailure { result.addView(TextView(this).apply { text = MoteI18n.text("统计读取失败，重试") }) }
                 MoteUi.styleTree(body)
             }
         }

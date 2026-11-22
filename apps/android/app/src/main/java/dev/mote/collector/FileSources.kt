@@ -56,7 +56,7 @@ internal class FileTransportFailure(val httpStatus: Int, message: String) : Ille
 object FileUpload {
     internal fun requireAccepted(status: Int) {
         if (status in setOf(409, 410, 426)) throw FileIngressRejection(status)
-        if (status !in 200..299) throw FileTransportFailure(status, if (status == 404) MoteI18n.text("中央未支持文件同步，请先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", status))
+        if (status !in 200..299) throw FileTransportFailure(status, if (status == 404) MoteI18n.text("中央未支持文件同步，先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", status))
     }
     internal fun requireCurrentHead(head: JSONObject) {
         if (head.optBoolean("forgotten")) throw FileIngressRejection(410)

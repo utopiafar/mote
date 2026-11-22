@@ -61,7 +61,7 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
             require(root.keys().asSequence().toSet() == setOf("default", "apps")) { MoteI18n.text("应用规则结构无效") }
             val entries = root.getJSONObject("apps"); require(entries.length() <= 200) { MoteI18n.text("最多200项应用规则") }
             val apps = entries.keys().asSequence().associateWith { id ->
-                require(id.length <= 255 && packagePattern.matches(id)) { MoteI18n.text("请输入完整应用包名") }
+                require(id.length <= 255 && packagePattern.matches(id)) { MoteI18n.text("输入完整应用包名") }
                 AppCollectionMode.from(entries.getString(id))
             }
             return AppCollectionRules(AppCollectionMode.from(root.getString("default")), apps)

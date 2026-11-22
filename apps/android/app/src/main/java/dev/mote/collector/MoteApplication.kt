@@ -103,7 +103,7 @@ class MoteApplication : Application() {
                     SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
                     if (QueueStorage.recovering) {
                         QueueStorage.recoveryFailure = error.message ?: MoteI18n.text("本机存储恢复失败")
-                        settings.status("error", MoteI18n.text("本地队列无法读取：{0}", error.message ?: MoteI18n.text("请检查所选存储介质，保留应用数据")))
+                        settings.status("error", MoteI18n.text("本地队列无法读取：{0}", error.message ?: MoteI18n.text("检查所选存储介质，保留应用数据")))
                     }
                 }
                 finally { QueueStorage.recovering = false; QueueStorage.maintaining = false; LocalStateChanges.changed(records = true, immediate = true) }

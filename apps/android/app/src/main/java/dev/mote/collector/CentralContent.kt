@@ -120,7 +120,7 @@ internal class CentralContent(
         val expected=activity.intent.getStringExtra("evidenceOrigin")
         val label=activity.intent.getStringExtra("evidenceLabel")
         activity.intent.removeExtra("evidenceId"); activity.intent.removeExtra("evidenceOrigin"); activity.intent.removeExtra("evidenceLabel")
-        if (expected != null && expected != server) { notice(MoteI18n.text("访问凭据已失效，请重新连接。")); return null }
+        if (expected != null && expected != server) { notice(MoteI18n.text("访问凭据已失效，重新连接")); return null }
         return AskEvidence(evidence,label?.takeIf { it.isNotBlank() })
     }
 
@@ -626,8 +626,8 @@ internal class CentralContent(
             val duration = listOf(0L, 86400000L, 7 * 86400000L, 30 * 86400000L)[lifetime.selectedItemPosition]
             val origin = server; val generation = accessGeneration; credential.setText("")
             work(MoteI18n.text("正在验证令牌…"), {
-                check(session.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-                require(token.length in 32..8192 && token.none { it == '\r' || it == '\n' }) { MoteI18n.text("请输入有效的中央所有者令牌") }
+                check(session.generation == generation) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
+                require(token.length in 32..8192 && token.none { it == '\r' || it == '\n' }) { MoteI18n.text("输入有效的中央所有者令牌") }
                 CentralClient(origin, token).get("/api/configuration")
                 val config = Settings(this).read()
                 val grant = CentralClient(origin, token).post("/api/login/session", org.json.JSONObject().put("serverUrl", origin).put("deviceId", Settings(this).deviceId)
@@ -638,7 +638,7 @@ internal class CentralContent(
         }
         button(MoteI18n.text("使用浏览器登录")) { beginBrowserLogin(listOf(0L, 86400000L, 604800000L, 2592000000L)[lifetime.selectedItemPosition]) }
         advancedWeb.login?.let { pending -> button(advancedWebLabel(pending.target)) {
-            check(advancedWeb.login === pending && webAccess() == pending.access) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(advancedWeb.login === pending && webAccess() == pending.access) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
             advancedWeb.cancel(); openAdvancedWeb(pending.target)
         } }
         connectionButton()
@@ -661,16 +661,16 @@ internal class CentralContent(
     private fun pollBrowserLogin() {
         val id = browserLoginId ?: return; val verifier = browserVerifier ?: return; val origin = server; val expected = browserGeneration
         work(MoteI18n.text("正在验证令牌…"), {
-            check(session.generation == expected) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(session.generation == expected) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
             val (code, value) = HttpJson.post(origin + "/api/login/poll", org.json.JSONObject().put("id", id).put("verifier", verifier))
-            if (code !in 200..299) { browserLoginId = null; browserVerifier = null; error(MoteI18n.text("登录会话已变更，请重新打开中央页面。")) }
+            if (code !in 200..299) { browserLoginId = null; browserVerifier = null; error(MoteI18n.text("登录会话已变更，重新打开中央页面")) }
             val result = requireNotNull(value)
             if (result.optBoolean("ready")) {
                 session.signIn(origin, result.getString("token"), browserDurationMs, expected)
                 runCatching { HttpJson.post(origin + "/api/login/ack", org.json.JSONObject().put("id", id).put("verifier", verifier)) }
             }
             if (result.optBoolean("ready")) CentralAccess.resolve(this)
-            else { check(session.generation == expected) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }; null }
+            else { check(session.generation == expected) { MoteI18n.text("登录会话已变更，重新打开中央页面") }; null }
         }, allowSessionChange = true) { selected ->
             if (selected != null) { browserLoginId = null; browserVerifier = null; completeLogin(selected, origin, expected) }
             else if (resumed) handler.postDelayed({ if (resumed && browserLoginId == id) pollBrowserLogin() }, 1500)
@@ -690,7 +690,7 @@ internal class CentralContent(
         is AdvancedWebTarget.ChatAbout -> MoteI18n.text("回答")
     } + " · Web"
     internal fun openAdvancedWeb(target: AdvancedWebTarget) {
-        val selected = CentralAccess.resolve(this); check(selected.server == server && server.isNotBlank()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+        val selected = CentralAccess.resolve(this); check(selected.server == server && server.isNotBlank()) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
         val access = webAccess(selected); val visit = advancedWeb.begin(access, target, readVisit())
         work(MoteI18n.text("正在连接中央…"), {
             AdvancedWebNavigation.prepare(target, access, { webAccess() }, visit) {
@@ -700,7 +700,7 @@ internal class CentralContent(
         }, allowSessionChange = true) { result -> when(result) {
             is AdvancedWebResult.Ready -> result.launch({ webAccess() }, visit) { url -> advancedWeb.cancel(); startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
             is AdvancedWebResult.LoginRequired -> {
-                check(visit() && webAccess() == result.access) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                check(visit() && webAccess() == result.access) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                 advancedWeb.retain(result, visit); applyAccess(CentralAccess.resolve(this))
             }
         } }
@@ -838,13 +838,13 @@ internal class CentralContent(
             if (line != null && worded && foreground == foregroundRevision && resumed) notice(message)
         }, { progress ->
             val before = CentralAccess.resolve(this)
-            check(allowSessionChange || generation < 0 || before.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-            check(allowSessionChange || !authenticated || before.client != null && before.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(allowSessionChange || generation < 0 || before.generation == generation) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
+            check(allowSessionChange || !authenticated || before.client != null && before.server == origin) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
             val value = job(progress)
             val after = CentralAccess.resolve(this)
-            check(allowSessionChange || after.generation == before.generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-            check(allowSessionChange || !authenticated || after.client != null && after.server == origin) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
-            check(value !is CentralAccess.Selection || value.generation == after.generation && (value.client == null) == (after.client == null)) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(allowSessionChange || after.generation == before.generation) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
+            check(allowSessionChange || !authenticated || after.client != null && after.server == origin) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
+            check(value !is CentralAccess.Selection || value.generation == after.generation && (value.client == null) == (after.client == null)) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
             WorkValue(value, after.generation)
         }) { result ->
             placeholder?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
@@ -948,7 +948,7 @@ internal class CentralContent(
             val origin = downloadOrigin; val generation = downloadGeneration; downloadPath = null
             work(MoteI18n.text("正在导出中央资料…"), {
                 val selected = CentralAccess.resolve(this)
-                check(selected.server == origin && session.generation == generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                check(selected.server == origin && session.generation == generation) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                 val api = requireNotNull(selected.client)
                 requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { api.download(path, it) }
             }) { notice(MoteI18n.text("资料已导出")) }; return
@@ -956,7 +956,7 @@ internal class CentralContent(
         if (request !in setOf(71, 73)) return
         val origin = pickerOrigin; val chat = pickerChat; pickerOrigin = null
         val uris = data.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } } ?: listOfNotNull(data.data)
-        if (origin != server || client == null || pickerGeneration != accessGeneration) { notice(MoteI18n.text("登录会话已变更，请重新打开中央页面。")); return }
+        if (origin != server || client == null || pickerGeneration != accessGeneration) { notice(MoteI18n.text("登录会话已变更，重新打开中央页面")); return }
         if (request == 73) uris.firstOrNull()?.let { screens?.importInstruction = pickerInstruction; screens?.importFile(it) }
         else screens?.addAttachments(uris, chat)
     }

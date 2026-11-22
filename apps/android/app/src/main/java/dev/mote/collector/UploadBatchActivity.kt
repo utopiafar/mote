@@ -39,7 +39,7 @@ class UploadBatchActivity : MoteActivity() {
                     text = java.time.Instant.ofEpochMilli(attempt.startedAt).toString() + "\n" + kind + " · " + phase + " · " + state + " · HTTP " + (attempt.status.takeIf { it > 0 }?.toString() ?: "—") + "\n" + MoteI18n.text("请求体字节：{0}", attempt.bodyBytes)
                 }) }
                 MoteUi.styleTree(rows)
-            }.onFailure { status.text = MoteI18n.text("上传历史暂不可读取，请刷新重试。") }
+            }.onFailure { status.text = MoteI18n.text("上传历史暂不可读取，刷新重试") }
         } }
         body.addView(Button(this).apply { text = MoteI18n.text("刷新"); setOnClickListener { load() } })
         MoteUi.styleTree(body); load()

@@ -129,7 +129,7 @@ class ConversationRecordOriginInstrumentedTest {
                 until("Answer panel ready") { var found = false; scenario.onActivity { activity -> found = views(activity.window.decorView).any { it.tag == "share-save" && it.isEnabled } }; found }
                 ConnectionGuard.change(context, other, bindLocal = true) { settings.save(original.copy(server = other), confirmCentralEndpoint = true) }
                 scenario.onActivity { activity -> views(activity.window.decorView).single { it.tag == "share-save" }.performClick() }
-                until("Node change is visible") { var shown = false; scenario.onActivity { activity -> shown = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("访问凭据已失效，请重新连接。") } }; shown }
+                until("Node change is visible") { var shown = false; scenario.onActivity { activity -> shown = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("访问凭据已失效，重新连接") } }; shown }
                 assertEquals(before, store.draft().toString())
             }
         } finally { ConnectionGuard.change(context, source, bindLocal = true) { settings.save(original, confirmCentralEndpoint = true) } }

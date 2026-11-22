@@ -29,7 +29,7 @@ object PrivacyRules {
 
     fun validateEndpoint(value: String, debugHttp: Boolean, isDebug: Boolean): String {
         val uri = URI(value.trim())
-        require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null) { MoteI18n.text("请输入不含账号、参数或片段的节点 URL") }
+        require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null) { MoteI18n.text("输入不含账号、参数或片段的节点 URL") }
         require(uri.path.isNullOrEmpty() || uri.path == "/") { MoteI18n.text("节点 URL 不应含路径") }
         require(uri.port == -1 || uri.port in 1..65535) { MoteI18n.text("端口必须为 1..65535") }
         val privateHost = uri.host.lowercase().let { host ->

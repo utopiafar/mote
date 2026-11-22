@@ -13,7 +13,7 @@ internal class CentralImports(private val directory: File, private val cipher: B
     private val state = CentralStateFile(directory, "import", cipher)
     fun pending(): JSONObject = state.read()
     fun stage(context: Context, uri: Uri, instruction: String): JSONObject {
-        check(!pending().has("manifest")) { MoteI18n.text("请先重试或放弃待导入文件。") }
+        check(!pending().has("manifest")) { MoteI18n.text("先重试或放弃待导入文件") }
         directory.mkdirs(); directory.listFiles()?.filter { it.name.startsWith("part-") }?.forEach { it.delete() }
         val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
             if (it.moveToFirst()) it.getString(0) else null

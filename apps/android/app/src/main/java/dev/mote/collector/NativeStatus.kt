@@ -27,5 +27,5 @@ internal object NativeStatus {
         "partial" -> MoteI18n.text("部分资料已确认，仍有本机待发")
         "local" -> MoteI18n.text("资料保存在本机，等待中央确认")
         else -> MoteI18n.text("资料确认状态待查询")
-    } + " · " + MoteI18n.text("中央处理状态待查询，请在中央任务中心查看")
+    } + " · " + MoteI18n.text("中央处理状态待查询，在中央任务中心查看")
 }

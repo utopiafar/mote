@@ -75,6 +75,6 @@ internal object CentralConversationSettings {
     }
 
     private fun invalid() = IllegalArgumentException(invalidMessage())
-    private fun invalidMessage() = MoteI18n.text("配置内容无效，请检查必填项和取值范围。")
+    private fun invalidMessage() = MoteI18n.text("配置内容无效，检查必填项和取值范围")
     private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 }

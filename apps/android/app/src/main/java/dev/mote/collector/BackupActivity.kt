@@ -246,7 +246,7 @@ class BackupActivity : MoteActivity() {
         val success = failure == null
         status.text = if (success) MoteI18n.text("记录已导入 · 手动同步") else MoteI18n.text("导入未完成：{0}。已导入记录保留，可重试同一备份。", failure)
         operation.show(MoteI18n.text("从备份恢复"), MoteI18n.text(if (success) "已导入本机" else "导入尚未完成"),
-            MoteI18n.text(if (success) "记录已回来" else "请检查本机内容后重试"), status.text.toString(),
+            MoteI18n.text(if (success) "记录已回来" else "检查本机内容后重试"), status.text.toString(),
             content = { card -> (name ?: preview?.displayName)?.let { SecondaryUi.text(card, it) } },
             actions = (if (!success && preview != null) listOf(Triple(MoteI18n.text("重试同一备份"), true) { previewRestore(preview) }) else emptyList()) + listOf(
                 Triple(MoteI18n.text("查看本机内容"), success) { startActivity(Intent(this, CaptureRecordsActivity::class.java)) },

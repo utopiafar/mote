@@ -106,7 +106,7 @@ internal class CentralWorkMemoryResults(
                 ui.restoreContentScroll(pendingScroll ?: previousScroll);pendingScroll=null
             }.onFailure { error ->
                 target.removeAllViews()
-                ui.text(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("中央响应格式无效，请刷新后重试。"),parent=target)
+                ui.text(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("中央响应格式无效，刷新后重试"),parent=target)
                 ui.button(MoteI18n.text("重试"),parent=target){refreshWork(work)}
             }
             WorkPolling.rearmResults(live, ui::scheduleActivityPoll)
@@ -167,10 +167,10 @@ internal class CentralWorkMemoryResults(
                 if(error.status==401)ui.requestFailure(error)
             }
             else -> {
-                if(restoringSelection) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"),true);return }
-                if(retryingReader) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"),true);return }
+                if(restoringSelection) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，检查网络"),true);return }
+                if(retryingReader) { unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，检查网络"),true);return }
                 if(identity==null)selected=null
-                ui.notice(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"))
+                ui.notice(if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，检查网络"))
                 ui.scheduleActivityPoll()
             }
         }
@@ -188,7 +188,7 @@ internal class CentralWorkMemoryResults(
             }
                 .onFailure { error ->
                     if(afterReaderScroll!=null && error !is WorkMemoryUnavailable && !(error is CentralFailure && error.status in setOf(401,403,404,410)))
-                        unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，请检查网络。"),true)
+                        unavailable(work,if(error is CentralFailure) error.message.orEmpty() else MoteI18n.text("连接暂时中断，检查网络"),true)
                     else failure(work,error)
                 }
             if(afterReaderScroll!=null)screens.body.visibility=View.VISIBLE

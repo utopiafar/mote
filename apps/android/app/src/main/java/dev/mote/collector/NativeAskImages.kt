@@ -26,7 +26,7 @@ internal object NativeAskImages {
         require(count(state)+references.size<=4) { MoteI18n.text("最多添加 4 张图片") }
         val rows=JSONArray(pending(state).toString())
         val selected=references.map { reference ->
-            require(java.net.URI(reference).scheme=="content") { MoteI18n.text("请选择 PNG、JPEG 或 WebP 图片。") }
+            require(java.net.URI(reference).scheme=="content") { MoteI18n.text("选择 PNG、JPEG 或 WebP 图片") }
             JSONObject().put("selectionId",UUID.randomUUID().toString()).put("uri",reference).put("name",MoteI18n.text("图片")).put("status","uploading")
         }
         selected.forEach(rows::put)
@@ -48,7 +48,7 @@ internal object NativeAskImages {
         val spool=File(directory,"attachment-"+UUID.randomUUID()+".tmp")
         try {
             val uri=Uri.parse(selection.getString("uri"));val mime=resolver.getType(uri).orEmpty()
-            require(mime in listOf("image/png","image/jpeg","image/webp")) { MoteI18n.text("请选择 PNG、JPEG 或 WebP 图片。") }
+            require(mime in listOf("image/png","image/jpeg","image/webp")) { MoteI18n.text("选择 PNG、JPEG 或 WebP 图片") }
             val name=resolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { if(it.moveToFirst())it.getString(0) else null } ?: MoteI18n.text("图片")
             result.put("name",name)
             directory.mkdirs()
@@ -57,7 +57,7 @@ internal object NativeAskImages {
                 while(true){val n=input.read(buffer);if(n<0)break;total+=n;require(total<=8*1024*1024) { MoteI18n.text("聊天图片仅支持 PNG、JPEG、WebP，每张不超过 8 MiB。") };output.write(buffer,0,n)}
             } }
             val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true };BitmapFactory.decodeFile(spool.path,bounds)
-            require(bounds.outWidth>0 && bounds.outHeight>0) { MoteI18n.text("请选择 PNG、JPEG 或 WebP 图片。") }
+            require(bounds.outWidth>0 && bounds.outHeight>0) { MoteI18n.text("选择 PNG、JPEG 或 WebP 图片") }
             var sample=1;while(maxOf(bounds.outWidth,bounds.outHeight)/sample>160)sample*=2
             BitmapFactory.decodeFile(spool.path,BitmapFactory.Options().apply { inSampleSize=sample })?.let { bitmap ->
                 try { val bytes=ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG,75,it) }.toByteArray();result.put("preview",Base64.encodeToString(bytes,Base64.NO_WRAP)) } finally { bitmap.recycle() }

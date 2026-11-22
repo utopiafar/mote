@@ -107,7 +107,7 @@ class UploadHistoryUiInstrumentedTest {
             check(database.renameTo(backup)); check(database.mkdir())
             try {
                 click("refresh unavailable history") { it is Button && it.text.toString()==MoteI18n.text("刷新") }
-                until("history error visible") { text(MoteI18n.text("上传历史暂不可读取，请刷新重试。")) }
+                until("history error visible") { text(MoteI18n.text("上传历史暂不可读取，刷新重试")) }
                 assertNotNull(context.queue().capture(event.getString("id")))
             } finally { check(database.delete()); check(backup.renameTo(database)) }
             click("retry restored history") { it is Button && it.text.toString()==MoteI18n.text("刷新") }

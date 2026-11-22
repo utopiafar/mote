@@ -84,7 +84,7 @@ class FileTaskActivity : MoteActivity() {
                 preset = when (source.extensions) { ALL_EXTENSIONS -> "all"; AUDIO_EXTENSIONS -> "audio"; else -> "custom" }
                 if (draft != null) { restoredValues = draft.optJSONObject("values"); preset = draft.optString("preset", preset); retentionEdited = draft.optBoolean("retentionEdited") }
                 showForm(); refreshCentralContext()
-            }.onFailure { status.text = MoteI18n.text("来源配置不可读；请保留应用数据，检查存储状态。") }
+            }.onFailure { status.text = MoteI18n.text("来源配置不可读；保留应用数据，检查存储状态") }
         }
     }
     private fun values() = JSONObject().put("description", description.text.toString()).put("name", name.text.toString())
@@ -96,7 +96,7 @@ class FileTaskActivity : MoteActivity() {
         // The private persisted draft contains no URI permission; reopening requires explicit selection.
         worker.execute { runCatching {
             owner.saveDraft(draftKey, values(), preset, retentionEdited)
-        }.onFailure { runOnUiThread { if (!isDestroyed && !isFinishing) status.text = MoteI18n.text("无法保存本机草稿，请检查存储后重试。") } } }
+        }.onFailure { runOnUiThread { if (!isDestroyed && !isFinishing) status.text = MoteI18n.text("无法保存本机草稿，检查存储后重试") } } }
     }
     override fun onSaveInstanceState(state: Bundle) {
         if (::description.isInitialized) {
@@ -221,7 +221,7 @@ class FileTaskActivity : MoteActivity() {
     }
     private fun updatePreset() {
         presetButtons.forEach { (key, button) -> button.isSelected = key == preset; button.background = MoteUi.clickable(this, if (key == preset) MoteUi.tint else MoteTheme.surface, MoteUi.actionRadius, strokeColor = if (key == preset) MoteUi.accent else MoteUi.controlBorder) }
-        presetHelp.text = MoteI18n.text(when (preset) { "audio" -> "音频预设默认保留中央原件，保存方式可修改。"; "custom" -> "只收集你指定扩展名的文件；请在高级设置中填写。"; else -> "文本、音频、图片和文档。" })
+        presetHelp.text = MoteI18n.text(when (preset) { "audio" -> "音频预设默认保留中央原件，保存方式可修改。"; "custom" -> "只收集你指定扩展名的文件；在高级设置中填写"; else -> "文本、音频、图片和文档。" })
         if (preset == "custom") advanced.visibility = View.VISIBLE
     }
     private fun updateRetention() {
@@ -265,8 +265,8 @@ class FileTaskActivity : MoteActivity() {
                     source = source.copy(uri = selectedSource.uri, name = if (savedSource == null) selectedSource.displayName else source.name); selected = true
                 }
                 if (previousUri != selectedSource.uri && previousUri != UNSELECTED) worker.execute { previousUri?.let { owner.releaseUnused(it) } }
-                status.text = MoteI18n.text("文件已读取，请确认来源设置"); updateSelection(); persistDraft()
-            }.onFailure { status.text = MoteI18n.text("无法读取文件或持久授权，请重新选择") }
+                status.text = MoteI18n.text("文件已读取，确认来源设置"); updateSelection(); persistDraft()
+            }.onFailure { status.text = MoteI18n.text("无法读取文件或持久授权，重新选择") }
         }
     }
     private fun releaseUnused(uri: String) = owner.releaseUnused(uri)
@@ -286,9 +286,9 @@ class FileTaskActivity : MoteActivity() {
             }) { result ->
                 confirm.isEnabled = true; pickButton.isEnabled = true
                 result.onSuccess { source = it; savedSource = it; status.text = MoteI18n.text("来源已保存，正在等待后台扫描"); updateMetadataStatus(); finish() }
-                    .onFailure { status.text = it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失") }
+                    .onFailure { status.text = it.message ?: MoteI18n.text("保存或调度失败，重试；已保存内容不会丢失") }
             }
-        } catch (e: Exception) { status.text = e.message ?: MoteI18n.text("请检查来源设置") }
+        } catch (e: Exception) { status.text = e.message ?: MoteI18n.text("检查来源设置") }
     }
     private fun refreshCentralContext() {
         val current = savedSource ?: return
@@ -324,12 +324,12 @@ class FileTaskActivity : MoteActivity() {
                     .setMessage(MoteI18n.text("中央说明（版本 {0}）：\n{1}\n\n本机说明：\n{2}", remote.version, remote.description, description.text.toString()))
                     .setPositiveButton(MoteI18n.text("以本机说明更新")) { _, _ ->
                         source = owner.applyContextChoice(source, remote, useRemote = false)
-                        status.text = MoteI18n.text("请保存设置以确认本机说明。")
+                        status.text = MoteI18n.text("保存设置以确认本机说明")
                     }.setNeutralButton(MoteI18n.text("使用中央说明")) { _, _ ->
                         source = owner.applyContextChoice(source, remote, useRemote = true)
-                        description.setText(remote.description); status.text = MoteI18n.text("请保存设置以确认中央说明。")
+                        description.setText(remote.description); status.text = MoteI18n.text("保存设置以确认中央说明")
                     }.setNegativeButton(MoteI18n.text("取消"), null).show()
-            }.onFailure { status.text = MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
+            }.onFailure { status.text = MoteI18n.text("无法读取中央资料说明；本机草稿保留，重试") }
         }
     }
     private fun remove() {
@@ -338,7 +338,7 @@ class FileTaskActivity : MoteActivity() {
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("移除连接")) { _, _ ->
                 task.start(MoteI18n.text("正在移除来源连接…"), MoteComponents.progress(status, read = false), {
                     owner.remove(source.id)
-                }) { result -> result.onSuccess { finish() }.onFailure { status.text = MoteI18n.text("操作失败，请重试") } }
+                }) { result -> result.onSuccess { finish() }.onFailure { status.text = MoteI18n.text("操作失败，重试") } }
             }.show()
     }
 }

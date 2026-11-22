@@ -61,7 +61,7 @@ class ConnectionActivity : MoteActivity() {
                 }) { result ->
                     if (applying) return@start
                     result.onSuccess { (config, id) -> currentConfig = config; deviceId = id; refreshCurrentNode() }
-                        .onFailure { currentNode.text = MoteI18n.text("读取当前连接失败，请重新打开此页重试") }
+                        .onFailure { currentNode.text = MoteI18n.text("读取当前连接失败，重新打开此页重试") }
                 }
             }
             handler.postDelayed(this, 500)
@@ -79,7 +79,7 @@ class ConnectionActivity : MoteActivity() {
             administration.initialConnection(applicationContext)
         }) { result ->
             result.onSuccess { initial -> currentConfig = initial.config; deviceId = initial.deviceId; buildUi(initial) }
-                .onFailure { label.text = MoteI18n.text("无法读取已保存连接，请检查本机存储后重试") }
+                .onFailure { label.text = MoteI18n.text("无法读取已保存连接，检查本机存储后重试") }
         }
     }
     private fun buildUi(initial: AdministrationConnection.Initial) {
@@ -368,7 +368,7 @@ class ConnectionActivity : MoteActivity() {
                 if (SourceRules.hash(currentConfig.toString()) != expected.stamp) { showFailure(SettingsChangedFailure()); return@onSuccess }
                 input.setText(raw); parsed = invite
                 preview.visibility = View.VISIBLE; confirmAction.visibility = View.VISIBLE
-                preview.text = MoteI18n.text("将连接：{0}\n有效至：{1}\n请确认后连接。", invite.serverUrl, invite.expiresAt)
+                preview.text = MoteI18n.text("将连接：{0}\n有效至：{1}\n确认后连接", invite.serverUrl, invite.expiresAt)
                 status.text = MoteI18n.text("连接文件已解析，尚未联网。")
                 showReview()
             }.onFailure(::showFailure)

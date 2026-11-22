@@ -386,7 +386,7 @@ internal class SourceOwner internal constructor(
         val config = Settings(app).read()
         check(config.hasSyncConnection()) { MoteI18n.text("等待网络/节点恢复") }
         val (code, body) = HttpJson.get(config.server.trimEnd('/') + "/api/sources/${source.id}/context", config.connectionToken())
-        check(code in 200..299 && body != null) { MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。") }
+        check(code in 200..299 && body != null) { MoteI18n.text("无法读取中央资料说明；本机草稿保留，重试") }
         return SourceContextSnapshot.from(body!!, source.id)
     }
 
@@ -437,7 +437,7 @@ internal class SourceOwner internal constructor(
         val latest = store.sources().find { it.id == next.id }
         val acknowledgedOnly = original != null && latest != null &&
             latest.copy(contextVersion = original.contextVersion, contextDirty = original.contextDirty, contextTarget = original.contextTarget) == original
-        check(latest == original || acknowledgedOnly) { MoteI18n.text("来源已在后台更新，请重新打开设置；当前草稿仍在页面中。") }
+        check(latest == original || acknowledgedOnly) { MoteI18n.text("来源已在后台更新，重新打开设置；当前草稿仍在页面中") }
         val saved = if (acknowledgedOnly &&
             next.contextVersion == original!!.contextVersion && next.contextTarget == original.contextTarget)
             next.copy(contextVersion = latest.contextVersion, contextTarget = latest.contextTarget, contextDirty = latest.contextDirty || descriptionText != latest.description)
@@ -516,7 +516,7 @@ internal class SourceOwner internal constructor(
             val actual = row.optJSONObject("pending")?.optJSONObject("manifest")?.optJSONObject("item")?.optString("revision")
                 ?: if (LocalContentPresentation.currentReceipt(row) != null) row.optString("revision")
                 else "candidate:" + SourceRules.fileSignature(row.getJSONObject("candidate"))
-            check(selected == actual) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+            check(selected == actual) { MoteI18n.text("此版本已变化，返回资料列表重新选择") }
         }
         val local = if (row.has("pending")) runCatching { queue.pendingPreview(sourceId, external, item.getString("revision")) }.getOrNull() else null
         val access = CentralAccess.resolve(app)
@@ -531,7 +531,7 @@ internal class SourceOwner internal constructor(
         // A pending newer version must not be represented by the previous version's receipt.
         val id = LocalContentPresentation.currentReceipt(row).orEmpty()
         var selectedReader = pinnedReader
-        if (pinnedReader != null) check(id == pinnedCapture && access.server == pinnedOrigin) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+        if (pinnedReader != null) check(id == pinnedCapture && access.server == pinnedOrigin) { MoteI18n.text("此版本已变化，返回资料列表重新选择") }
         if (id.isNotBlank() && access.client != null) {
             runCatching {
                 val record = access.client.get("/api/capture-browser/" + android.net.Uri.encode(id))

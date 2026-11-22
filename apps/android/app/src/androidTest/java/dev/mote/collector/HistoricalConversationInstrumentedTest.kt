@@ -198,7 +198,7 @@ class HistoricalConversationInstrumentedTest {
         reset(); open(false).use { scenario ->
             login(scenario); conversation(scenario,false); assertCurrent(scenario)
             CentralSession.get(context).signIn(fixture.getString("address"),fixture.getString("restrictedToken"))
-            waitFor(scenario,"Changed access scope must withdraw cached answers") { !labels(it).contains(fixture.getString("answer")) && labels(it).any { text -> text.contains(MoteI18n.text("当前连接没有执行此操作的权限，请检查连接权限。")) } }
+            waitFor(scenario,"Changed access scope must withdraw cached answers") { !labels(it).contains(fixture.getString("answer")) && labels(it).any { text -> text.contains(MoteI18n.text("当前连接没有执行此操作的权限，检查连接权限")) } }
             scenario.onActivity { assertFalse(labels(it).contains(fixture.getString("olderAnswer"))) }; capture(scenario,"history-restricted")
         }
     }

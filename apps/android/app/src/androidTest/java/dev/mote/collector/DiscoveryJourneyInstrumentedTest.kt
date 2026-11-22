@@ -188,14 +188,14 @@ class DiscoveryJourneyInstrumentedTest {
             click("下一页"); until("final history page") { main { settled() && shown().count { it.tag?.toString()?.startsWith("insight:") == true } == 7 } }
             capture("history-last-page"); clickTag("insight:" + fixture.getString("oldId")); until("selected old report") { main { settled() && text("Generated native discovery 66") } }
             api.delete("/api/notes/" + fixture.getString("noteId"), JSONObject())
-            until("deleted report withdrawn without manual reload") { main { text("这份洞察当前不可用，请从历史选择其他洞察。") && !text("Generated native discovery 66") } }
+            until("deleted report withdrawn without manual reload") { main { text("这份洞察当前不可用，从历史选择其他洞察") && !text("Generated native discovery 66") } }
             capture("deleted-report-unavailable"); click("发现历史"); until("old history cursor restarted") { main { settled() && text("第一份洞察会保存在这里，之后可以随时回看。") } }
         }
         fixture = api.post("/api/__fixture/reset", JSONObject())
         open(fixture.getString("oldId")).use {
             until("owner report before revocation") { main { settled() && text("Generated native discovery 66") } }
             CentralSession.get(context).signIn(origin, fixture.getString("restrictedToken"))
-            until("restricted credential cannot retain owner content") { main { !text("Generated native discovery 66") && text("当前连接没有执行此操作的权限，请检查连接权限。") } }
+            until("restricted credential cannot retain owner content") { main { !text("Generated native discovery 66") && text("当前连接没有执行此操作的权限，检查连接权限") } }
         }
     }
     @Test fun uncertainGenerationRetriesOneRequestKeepsTheDraftAndCancellationFencesLatePublication() {

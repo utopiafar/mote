@@ -444,7 +444,7 @@ class WorkMemoryJourneyInstrumentedTest {
             openResults(fake,scenario);val id=fake.ids[3];tag("work-memory:$id");until("Exact Memory opens"){has(fake.statement(id))};click("查看原文依据 1")
             assertTrue("The independent reader's actual note GET is held",fake.captureEntered.await(10,TimeUnit.SECONDS))
             val settings=Settings(context);settings.signOut();CentralAccess.resolve(context);settings.saveConnection(fake.origin,fake.token,"Generated activity memory",true);CentralAccess.resolve(context);fake.captureRelease.countDown()
-            until("A new same-node session rejects the old click"){has("登录会话已变更，请重新打开中央页面。")} ;assertFalse(has("Generated exact Memory evidence"))
+            until("A new same-node session rejects the old click"){has("登录会话已变更，重新打开中央页面")} ;assertFalse(has("Generated exact Memory evidence"))
             instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
             until("The new session does not re-open the old Memory"){has(fake.goal)&&!has(fake.statement(id))};assertFalse(has(fake.title(id)))
         }
@@ -488,7 +488,8 @@ class WorkMemoryJourneyInstrumentedTest {
             assertTrue("More contains deletion",hasExact("删除记忆"))
             tag("memory-more-correct")
             for(field in listOf("标题","纠正后的内容","判断的边界","生效时间","失效时间"))assertTrue("Correction field $field",hasExact(field))
-            assertTrue("Correction action replaces the old label",hasExact("纠正")&&!hasExact("保存校正"))
+            assertTrue("Memory correction can be submitted",hasExact("纠正"))
+            assertTrue("Memory correction can be cancelled",hasExact("取消"))
             tag("memory-more-history");until("History and validity shows the current version"){has("当前版本")};idle(scenario)
             tag("memory-more-generation");until("Generation details shows the generated time"){has("生成时间")}
             tag("memory-more-delete");until("Delete confirmation"){has(memoryDeletePromise)}

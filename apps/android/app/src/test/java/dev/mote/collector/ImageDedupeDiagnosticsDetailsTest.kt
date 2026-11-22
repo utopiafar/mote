@@ -15,8 +15,11 @@ class ImageDedupeDiagnosticsDetailsTest {
         assertEquals(100.0, exactSample.getDouble("hashSimilarityPercent"), 0.0)
         assertEquals(8, exactSample.getJSONObject("thresholds").getInt("maxHashDistance"))
         assertEquals(4, exactSample.getJSONObject("thresholds").getInt("maxChangedRowsCols"))
-        assertTrue(ImageDedupeDiagnosticsDetails.reason(exactSample).contains("不表示原尺寸图片逐像素相同"))
-        assertTrue(ImageDedupeDiagnosticsDetails.reason(metadata(ScreenshotDedupeHelper.Mode.EXACT, identical)).contains("全部像素"))
+        val sampleReason = ImageDedupeDiagnosticsDetails.reason(exactSample)
+        val fullReason = ImageDedupeDiagnosticsDetails.reason(metadata(ScreenshotDedupeHelper.Mode.EXACT, identical))
+        assertTrue(sampleReason.contains("缩略采样像素哈希完全一致"))
+        assertTrue(sampleReason.contains("不表示原尺寸图片逐像素相同"))
+        assertTrue(fullReason.contains("全部像素"))
         pixels[0]++
         val changed = helper.shouldSkip(reference.toSignature(), helper.buildFeatures(96, 96, pixels), ScreenshotDedupeHelper.Mode.CONSERVATIVE)
         assertTrue(changed.duplicate); assertEquals("perceptual_match", changed.reason)

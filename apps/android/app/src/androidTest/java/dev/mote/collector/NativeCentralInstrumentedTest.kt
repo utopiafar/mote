@@ -377,7 +377,7 @@ class NativeCentralInstrumentedTest {
         ActivityScenario.launch(CalendarActionsActivity::class.java).use {
             until("Real validated generated proposal"){shown().filterIsInstance<TextView>().any{it.text.toString()=="Generated appointment"}};capture("calendar-proposed")
             click("查看原文依据");until("Real original evidence dialog"){shown().filterIsInstance<TextView>().any{it.text.toString().contains("Generated appointment on 18 September 2099.")}};capture("calendar-original");click("关闭")
-            click("核对并添加到日历");until("Permission boundary remains actual"){shown().filterIsInstance<TextView>().any{it.text.toString()=="请先连接本机日历"}};capture("calendar-needs-permission")
+            click("核对并添加到日历");until("Permission boundary remains actual"){shown().filterIsInstance<TextView>().any{it.text.toString()=="先连接本机日历"}};capture("calendar-needs-permission")
             assertEquals("proposed",fixtureRequest("/fixture/action/"+action.getString("id")).getString("status"));click("忽略这条建议")
             until("Actual ignored receipt"){shown().filterIsInstance<TextView>().any{it.text.toString().startsWith("已忽略")} && shown().filterIsInstance<TextView>().none{it.text.toString()=="忽略这条建议"}};capture("calendar-dismissed")
             assertEquals("dismissed",fixtureRequest("/fixture/action/"+action.getString("id")).getString("status"))

@@ -13,7 +13,7 @@ internal object CentralDeletion {
     fun requireCompleted(receipt: JSONObject): JSONObject {
         val count=receipt.opt("deleted") as? Number
         val value=count?.toDouble()
-        check(value != null && value.isFinite() && value > 0 && value <= 9_007_199_254_740_991.0 && value % 1.0 == 0.0) { MoteI18n.text("未能确认删除完成。请刷新查看当前状态。") }
+        check(value != null && value.isFinite() && value > 0 && value <= 9_007_199_254_740_991.0 && value % 1.0 == 0.0) { MoteI18n.text("未能确认删除完成。刷新查看当前状态") }
         return receipt
     }
     fun evidence(api: CentralClient, id: String, expectedKind: String): JSONObject {
@@ -25,5 +25,5 @@ internal object CentralDeletion {
     }
     fun delete(api: CentralClient, path: String): JSONObject = try { requireCompleted(api.delete(path)) }
     catch(error: CentralFailure) { throw error }
-    catch(error: Exception) { throw IllegalStateException(MoteI18n.text("未能确认删除完成。请刷新查看当前状态。"),error) }
+    catch(error: Exception) { throw IllegalStateException(MoteI18n.text("未能确认删除完成。刷新查看当前状态"),error) }
 }

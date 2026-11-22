@@ -56,7 +56,7 @@ class StorageActivity : MoteActivity() {
                     val path = SecondaryUi.disclosure(currentCard, MoteI18n.text("查看实际目录"), "storage-current-path")
                     text(path, location.path)
                 }
-                status.current.exceptionOrNull()?.let { text(content, MoteI18n.text("位置不可用：{0}\n已保留原位置，请重新连接原介质后重试。", it.message)) }
+                status.current.exceptionOrNull()?.let { text(content, MoteI18n.text("位置不可用：{0}\n已保留原位置，重新连接原介质后重试", it.message)) }
                 status.choices.onSuccess { entries ->
                     for (choice in entries) {
                         val chosen = selected?.baseId == choice.id
@@ -80,13 +80,13 @@ class StorageActivity : MoteActivity() {
     private fun migrate(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         working = true; content.removeAllViews()
-        migrationLabel = SecondaryUi.text(content, MoteI18n.text("正在迁移并验证记录，请保持存储介质连接…")).apply { MoteComponents.working(this, text.toString()); tag="storage-migration-progress"; accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        migrationLabel = SecondaryUi.text(content, MoteI18n.text("正在迁移并验证记录，保持存储介质连接…")).apply { MoteComponents.working(this, text.toString()); tag="storage-migration-progress"; accessibilityLiveRegion=android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE }
         owner.migrate(this, choice) { result ->
             migrationLabel = null; working = false; if (isDestroyed) return@migrate
             result.onSuccess {
                 android.widget.Toast.makeText(this, MoteI18n.text("保存位置已生效"), android.widget.Toast.LENGTH_LONG).show()
                 if (it.projectionConsentRequired) startActivity(Intent(this, MainActivity::class.java))
-            }.onFailure { MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移未完成")).setMessage(it.message ?: MoteI18n.text("请检查存储位置后重试，保留应用数据。")) .setPositiveButton(MoteI18n.text("关闭"), null).show() }
+            }.onFailure { MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移未完成")).setMessage(it.message ?: MoteI18n.text("检查存储位置后重试，保留应用数据")) .setPositiveButton(MoteI18n.text("关闭"), null).show() }
             refresh()
         }
     }

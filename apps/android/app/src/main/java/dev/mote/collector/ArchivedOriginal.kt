@@ -11,12 +11,12 @@ internal object ArchivedOriginal {
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     fun capture(client: CentralClient, local: JSONObject, current: () -> Unit): Pair<JSONObject, ByteArray?> = TransferRequestGuard.within(current) {
         val release = local.getJSONObject(ReleasedCapture.FIELD)
-        check(!release.getBoolean("pending")) { MoteI18n.text("操作状态已变化，请重新读取后再确认。") }
+        check(!release.getBoolean("pending")) { MoteI18n.text("操作状态已变化，重新读取后再确认") }
         check(client.server == local.getJSONObject("_archiveAcknowledgment").getString("origin")) { MoteI18n.text("原中央与当前连接不一致，未发送读取请求。") }
         val id = local.getString("id")
         fun detail(): JSONObject = client.get("/api/capture-browser/$id").also {
             current(); check(it.getString("id") == id && it.getString("deviceId") == local.getString("deviceId") &&
-                it.getString("source") == local.getString("source") && it.getString("libraryVersion") == release.getString("libraryVersion")) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+                it.getString("source") == local.getString("source") && it.getString("libraryVersion") == release.getString("libraryVersion")) { MoteI18n.text("此版本已变化，返回资料列表重新选择") }
         }
         val record = detail()
         val image = if (release.has("imageSha256")) client.image("/api/capture-browser/$id/image").also {
@@ -34,7 +34,7 @@ internal object ArchivedOriginal {
             val item = file.getJSONObject("item")
             check(file.getString("captureId") == id && file.getString("sourceId") == release.sourceId &&
                 item.getString("externalId") == "meeting:${session.id}" && item.getString("revision") == session.archiveSha256 &&
-                file.getString("sha256") == session.archiveSha256 && file.getLong("sizeBytes") == session.archiveSizeBytes) { MoteI18n.text("此版本已变化，请返回资料列表重新选择。") }
+                file.getString("sha256") == session.archiveSha256 && file.getLong("sizeBytes") == session.archiveSizeBytes) { MoteI18n.text("此版本已变化，返回资料列表重新选择") }
         }
         metadata(); cache.mkdirs()
         val temporary = File.createTempFile("meeting-original-", ".wav", cache)

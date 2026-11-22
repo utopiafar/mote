@@ -63,7 +63,7 @@ class ActivityStatsActivity : MoteActivity() {
                     task.start(MoteI18n.text("正在重置统计…"), MoteComponents.progress(operationStatus, read = false), {
                         Operations.ledger(applicationContext).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit()
                         LocalStateChanges.changed(immediate = true)
-                    }) { result -> operationStatus.text = if (result.isSuccess) MoteI18n.text("统计起点已重置") else MoteI18n.text("重置失败，请重试"); refresh() }
+                    }) { result -> operationStatus.text = if (result.isSuccess) MoteI18n.text("统计起点已重置") else MoteI18n.text("重置失败，重试"); refresh() }
                 }.show()
         }
         text(MoteI18n.text("最近结果"), 20f)
@@ -110,7 +110,7 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("历史模型及下载断点：{0}\n{1}\n", size(directoryBytes(models)), models.absolutePath))
                     append(MoteI18n.text("临时缓存：{0}\n{1}\n", size(directoryBytes(cacheDir)), cacheDir.absolutePath))
                     append(MoteI18n.text("应用私有文件合计：{0}\n设备此分区可用：{1}\n", size(directoryBytes(File(applicationInfo.dataDir))), size(noBackupFilesDir.usableSpace)))
-                    append(MoteI18n.text("目录大小为最近测量值，最多缓存 30 秒；可点击上方刷新重新测量。\n"))
+                    append(MoteI18n.text("目录大小缓存 30 秒\n"))
                     append(MoteI18n.text("\n生效设置\n实际配置：每 {0} 秒，JPEG {1}，最长边 {2}px\n", config.intervalSeconds, config.jpegQuality, config.captureMaxSide))
                     append(MoteI18n.text("仅非计费 Wi-Fi：{0} · 仅充电采集：{1} · 低于 {2}% 暂停（0 关闭）\n", if (config.wifiOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), if (config.chargingOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), config.batteryPauseBelowPct))
                     append(MoteI18n.text("设备元数据：{0} · 应用规则 {1} 项\n", if (config.metadataEnabled) MoteI18n.text("上传新记录的实际状态") else MoteI18n.text("新记录不附带"), AppCollectionRules.parse(config.appCollectionRules).apps.size))
@@ -137,7 +137,7 @@ class ActivityStatsActivity : MoteActivity() {
         val state = snapshot ?: return
         val queue = queueSnapshot ?: return
         history.removeAllViews()
-        history.addView(TextView(this).apply { text = MoteI18n.text("本机保留记录（第 {0} 页，每页 10 条；图片与文字请打开采集记录）", pendingPage + 1) })
+        history.addView(TextView(this).apply { text = MoteI18n.text("本机保留记录（第 {0} 页，每页 10 条；图片与文字打开采集记录）", pendingPage + 1) })
         val pending = queue.getJSONArray("pending")
         for (i in pendingPage * 10 until minOf((pendingPage + 1) * 10, pending.length())) {
             val item = pending.getJSONObject(i)

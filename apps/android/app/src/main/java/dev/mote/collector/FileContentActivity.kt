@@ -163,7 +163,7 @@ class FileContentActivity : MoteActivity() {
         val destination = data?.data ?: return; val selected = exportVersion ?: return; exportVersion = null
         task.start(MoteI18n.text("正在导出原件…"), {}, {
             contentResolver.openOutputStream(destination)?.use { output -> owner.exportPending(selected.first, selected.second, selected.third, output) } ?: error("Destination unavailable")
-        }) { result -> Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，请重新打开内容后重试"), Toast.LENGTH_LONG).show(); load() }
+        }) { result -> Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，重新打开内容后重试"), Toast.LENGTH_LONG).show(); load() }
     }
     private fun text(value: String, size: Float = MoteTheme.fontBody.toFloat()) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setTextIsSelectable(true); setPadding(0, moteDp(8), 0, moteDp(8)) }.also(content::addView)
     private fun button(value: String, action: () -> Unit) = content.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } }))

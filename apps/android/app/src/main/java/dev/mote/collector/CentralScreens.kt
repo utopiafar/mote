@@ -111,7 +111,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             "overview" -> overview()
             "activity" -> activity.show()
             "files" -> ui.requestedFileId()?.let { id ->
-                if (ui.requestedFileOriginMatches()) library.openFile(id) else ui.text(MoteI18n.text("访问凭据已失效，请重新连接。"))
+                if (ui.requestedFileOriginMatches()) library.openFile(id) else ui.text(MoteI18n.text("访问凭据已失效，重新连接"))
             } ?: library.show(page)
             "archive", "timeline", "materials", "coding", "memories", "insights", "sources", MoteNavigation.SEARCH -> library.show(page)
             in AssistantPlugin.PAGE_ROUTES -> if (!ui.pluginRoute(page, body)) {
@@ -176,14 +176,14 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     fun insightAccepted() = CentralDraftWrites.barrier { insightStore.write(JSONObject()) }
     fun askAbout(id: String, label: String? = null) {
         UUID.fromString(id)
-        if (!ask.beginEvidence(id, label)) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
+        if (!ask.beginEvidence(id, label)) { ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答")); return }
         persistAsk(); ui.navigate("ask")
     }
     fun askAboutMaterial(reference: String, label: String? = null) {
-        if(ask.busy()) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return }
+        if(ask.busy()) { ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答")); return }
         verifyMaterial(reference,loadDraft=true) { state ->
             ask.replace(state)
-            if(!ask.beginMaterial(reference,label)) { ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return@verifyMaterial }
+            if(!ask.beginMaterial(reference,label)) { ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答")); return@verifyMaterial }
             persistAsk(); ui.navigate("ask")
         }
     }
@@ -221,7 +221,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             val status = data[0]
             ui.text(MoteI18n.text("中央工作台"), NativeFontRole.TITLE_MOBILE, target)
             val agent = status.getJSONObject("agent")
-            ui.text(if (agent.optBoolean("configured")) MoteI18n.text("模型已配置") else MoteI18n.text("请先配置模型服务"), parent = target)
+            ui.text(if (agent.optBoolean("configured")) MoteI18n.text("模型已配置") else MoteI18n.text("先配置模型服务"), parent = target)
             ui.text(agent.optString("model"), parent = target)
             admin.values(status.optJSONObject("storage") ?: JSONObject(), target)
             ui.text(MoteI18n.text("设备"), NativeFontRole.SECTION, target)
@@ -266,7 +266,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             }
             persistAsk()
             buildAsk()
-            if (scopeRefused) ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
+            if (scopeRefused) ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答"))
             val conversationId = askState.optString("conversationId")
             if (conversationId.isNotBlank()) {
                 val cached = lastConversation?.takeIf { it.optString("id") == conversationId }
@@ -278,7 +278,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             load.failure?.let { error ->
                 // A page-level settings/main read must never be recorded as a
                 // failure of the owner's already accepted message.
-                if (askBusy()) ui.notice(error.message ?: MoteI18n.text("对话暂不可读取，请稍后重试。"))
+                if (askBusy()) ui.notice(error.message ?: MoteI18n.text("对话暂不可读取，稍后重试"))
                 else ui.requestFailure(error)
             }
         }
@@ -315,7 +315,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 ask.material()?.let { reference ->
                     MoteDialogBuilder(ui).setTitle(MoteI18n.text("调整参考范围")).setItems(arrayOf(MoteI18n.text("查看所选资料版本"),MoteI18n.text("清除范围"))) { _,index ->
                         if(index==0)library.evidence(reference)
-                        else if(ask.clearScope()) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
+                        else if(ask.clearScope()) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答"))
                     }.show(); return@setOnClickListener
                 }
                 val id = (askState.optJSONArray("anchorEvidenceIds") ?: askState.optJSONArray("evidenceIds"))?.optString(0)
@@ -323,13 +323,13 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 val labels = listOf("参考这条记录，自动查找相关上下文", "仅查这条记录", "清除范围")
                 MoteDialogBuilder(ui).setTitle(MoteI18n.text("调整参考范围")).setItems(labels.map { MoteI18n.text(it) }.toTypedArray()) { _, index ->
                     val accepted = when (index) { 0 -> ask.selectEvidence(id, label = ask.scopeLabel()); 1 -> ask.selectEvidence(id, only = true, label = ask.scopeLabel()); else -> ask.clearScope() }
-                    if (accepted) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
+                    if (accepted) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答"))
                 }.show()
             }
         }.also { scopeChip!!.addView(it, LinearLayout.LayoutParams(-2,-2)) }
         scopeClear = MoteComponents.iconButton(ui, MoteGlyph.CLOSE, "清除范围", MoteIconButtonStyle.MUTED) {
             if(ui.isWorking)return@iconButton
-            if(ask.clearScope()) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。"))
+            if(ask.clearScope()) { persistAsk(); updateScope() } else ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答"))
         }.apply {
             tag="scope-clear"
             minimumWidth=ui.moteDp(26); minimumHeight=ui.moteDp(30); scaleType=android.widget.ImageView.ScaleType.CENTER
@@ -472,7 +472,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         if (runCatching { UUID.fromString(id) }.isFailure) { ui.notice(MoteI18n.text("请求的资源不存在或已删除。")); return }
         if (askState.optString("conversationId") == id) { ui.acceptAskConversation(id); if (then != null) then() else refresh(); return }
         if (ask.busy()) {
-            ui.notice(MoteI18n.text("请先等待当前回答完成，或停止回答。")); return
+            ui.notice(MoteI18n.text("先等待当前回答完成，或停止回答")); return
         }
         if (!discardConfirmed && ask.hasDraft()) {
             val selected=CentralAccess.resolve(ui);val expected=selected.server to selected.generation
@@ -502,7 +502,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         val errors=details.optJSONArray("errors") ?: JSONArray()
         for(index in 0 until chain.length())errors.put(chain.getJSONObject(index))
         askState.put("failureDetails",details.put("errors",errors));persistAsk();updateAskFailureAction()
-        return MoteI18n.text(if(askBusy()) "结果尚未确认，请检查或重试原请求。" else "回答未完成")
+        return MoteI18n.text(if(askBusy()) "结果尚未确认，检查或重试原请求" else "回答未完成")
     }
     private fun updateAskFailureAction() {
         val target=messages ?: return
@@ -593,20 +593,20 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             }
             return
         }
-        if(!askState.has("pending") && ask.pendingImages().length()>0) { ui.notice(MoteI18n.text("请先重试或移除尚未上传完成的图片。"));return }
+        if(!askState.has("pending") && ask.pendingImages().length()>0) { ui.notice(MoteI18n.text("先重试或移除尚未上传完成的图片"));return }
         val reference=ask.material()
         if(!askState.has("pending") && reference!=null && validatedMaterial!=reference) {
             val draft=askState.toString()
             verifyMaterial(reference) {
                 if(askState.toString()==draft)submitAsk(reference)
-                else ui.notice(MoteI18n.text("草稿已保留，请确认当前内容后重新发送。"))
+                else ui.notice(MoteI18n.text("草稿已保留，确认当前内容后重新发送"))
             }; return
         }
         val request = askState.optJSONObject("pending") ?: run {
             val text = question?.text?.toString()?.trim().orEmpty()
-            if (text.isBlank()) { ui.notice(MoteI18n.text("请输入问题（最多 8000 字）")); return }
+            if (text.isBlank()) { ui.notice(MoteI18n.text("输入问题（最多 8000 字）")); return }
             ask.admission(text, java.time.ZoneId.systemDefault().id) ?: run {
-                ui.notice(MoteI18n.text(if (askState.optString("conversationId").isBlank()) "对话暂不可读取，请稍后重试。" else "请先等待当前回答完成，或停止回答。"))
+                ui.notice(MoteI18n.text(if (askState.optString("conversationId").isBlank()) "对话暂不可读取，稍后重试" else "先等待当前回答完成，或停止回答"))
                 return
             }
         }
@@ -684,7 +684,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
         }) { message ->
             if (message.optString("status") == "missing") {
                 val retryable=ask.missingRun()
-                persistAsk(); controlsAsk(); ui.notice(MoteI18n.text(if(retryable) "请求尚未确认，可重试同一请求。" else "请刷新检查结果，避免重复发送。"))
+                persistAsk(); controlsAsk(); ui.notice(MoteI18n.text(if(retryable) "请求尚未确认，可重试同一请求。" else "刷新检查结果，避免重复发送"))
             } else receiveRun(message)
         }
     }
@@ -753,7 +753,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             lastConversationCursor = if (conflict) null else cursor
             chatDetails = details
             renderConversation(conversation, label)
-            if (conflict) ui.notice(MoteI18n.text("对话状态已变化，请重新读取后继续。"))
+            if (conflict) ui.notice(MoteI18n.text("对话状态已变化，重新读取后继续"))
             afterLoad?.invoke()
         }
     }
@@ -1394,7 +1394,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             }) { done,total -> progress.message=MoteI18n.text("正在上传附件 {0}/{1}",done,total) } }
         }) { results ->
             results.forEach { ask.mergeImage(it) };persistAsk();renderAskImages();controlsAsk()
-            if(ask.pendingImages().length()>0 && results.any { it.optString("status")!="ready" })ui.notice(MoteI18n.text("请先重试或移除尚未上传完成的图片。"))
+            if(ask.pendingImages().length()>0 && results.any { it.optString("status")!="ready" })ui.notice(MoteI18n.text("先重试或移除尚未上传完成的图片"))
         }
     }
     fun addAttachments(uris: List<Uri>, chat: Boolean) {

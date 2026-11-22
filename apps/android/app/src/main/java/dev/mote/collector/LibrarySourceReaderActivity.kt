@@ -189,7 +189,7 @@ class LibrarySourceReaderActivity : MoteActivity() {
         if (resultCode != RESULT_OK) return
         val destination = data?.data ?: return
         task.start("", {}, { reader.export(this, request(), generation, origin, destination) }) { result ->
-            Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，请重新打开内容后重试"), Toast.LENGTH_LONG).show()
+            Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，重新打开内容后重试"), Toast.LENGTH_LONG).show()
             if (!isFinishing && !isDestroyed) load()
         }
     }

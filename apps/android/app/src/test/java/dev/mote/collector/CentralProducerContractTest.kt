@@ -389,7 +389,7 @@ class CentralProducerContractTest {
         val unauthorized = assertThrows(CentralFailure::class.java) { upload(invalid, file(), UUID.randomUUID().toString()) }
         assertEquals(401, unauthorized.status); assertEquals("unauthorized", unauthorized.code)
         assertEquals(1, signedOut)
-        assertEquals(MoteI18n.text("访问凭据已失效，请重新连接。"), unauthorized.message)
+        assertEquals(MoteI18n.text("访问凭据已失效，重新连接"), unauthorized.message)
     }
 
     @Test fun missingCurrentIngressCapabilityFailsBeforePartsOrFallback() {
@@ -422,7 +422,7 @@ class CentralProducerContractTest {
             http(method, url, body, credential, mime).also { if (url.endsWith("/api/file-sync/v1/uploads")) active = false }
         }, active = { active })
         val failure = assertThrows(IllegalStateException::class.java) { upload(api, file(), UUID.randomUUID().toString()) }
-        assertEquals(MoteI18n.text("登录会话已变更，请重新打开中央页面。"), failure.message)
+        assertEquals(MoteI18n.text("登录会话已变更，重新打开中央页面"), failure.message)
         assertEquals(200, begins().single().status)
         assertEquals(0, exchanges.count { it.path.contains("/parts/") || it.path.endsWith("/commit") })
     }

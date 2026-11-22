@@ -51,9 +51,9 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
                         val draft = s.toString()
                         io.execute { runCatching {
                             ConnectionGuard.sync { checkSelection(); store.edit(origin, deviceId, channel, draft) }
-                                ?: error(MoteI18n.text("正在调整连接，请稍后重试"))
+                                ?: error(MoteI18n.text("正在调整连接，稍后重试"))
                         }.onFailure {
-                            activity.runOnUiThread { if (dialog.isShowing && verifyUiSelection()) status.text = MoteI18n.text("无法保存本机草稿，请检查存储后重试。") }
+                            activity.runOnUiThread { if (dialog.isShowing && verifyUiSelection()) status.text = MoteI18n.text("无法保存本机草稿，检查存储后重试") }
                         } }
                     }
                 })
@@ -83,7 +83,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
     private fun checkSelection() {
         val current = settings.read()
         check(settings.deviceId == deviceId && settings.dataOrigin() == origin && current.server == config.server && current.connectionToken() == config.connectionToken()) {
-            MoteI18n.text("登录会话已变更，请重新打开中央页面。")
+            MoteI18n.text("登录会话已变更，重新打开中央页面")
         }
     }
     private fun entries() = CaptureContextChannel.entries.map { store.entry(origin, deviceId, it) }
@@ -91,7 +91,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
         if (runCatching { checkSelection() }.isSuccess) return true
         fields.values.forEach { it.isEnabled = false }
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
-        status.text = MoteI18n.text("登录会话已变更，请重新打开中央页面。")
+        status.text = MoteI18n.text("登录会话已变更，重新打开中央页面")
         return false
     }
     private fun load() {
@@ -99,7 +99,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
             ConnectionGuard.sync {
                 checkSelection()
                 if (origin.isNotBlank() && origin == config.server.trimEnd('/')) store.bindLocal(origin, deviceId)
-            } ?: error(MoteI18n.text("正在调整连接，请稍后重试"))
+            } ?: error(MoteI18n.text("正在调整连接，稍后重试"))
             var problem: Throwable? = null
             if (config.hasSyncConnection() && origin == config.server.trimEnd('/') && SyncSchedule.waitingReason(activity, config) == null) {
                 for (entry in entries()) runCatching { CaptureContextSync.read(activity, config, entry) }.onFailure { problem = it }
@@ -107,7 +107,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
             entries() to problem
         }) { result -> result.onSuccess { (items, problem) ->
             if (!verifyUiSelection()) return@onSuccess
-            render(items); status.text = if (problem == null) commonStatus else MoteI18n.text("无法读取中央资料说明；本机草稿保留，请重试。")
+            render(items); status.text = if (problem == null) commonStatus else MoteI18n.text("无法读取中央资料说明；本机草稿保留，重试")
         }.onFailure { if (verifyUiSelection()) status.text = it.message } }
     }
     private fun render(items: List<CaptureContextEntry>) {
@@ -140,14 +140,14 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
                     val entry = store.edit(origin, deviceId, channel, draft)
                     if (entry.dirty) store.saveDraft(origin, deviceId, channel)
                 }
-            } ?: error(MoteI18n.text("正在调整连接，请稍后重试"))
+            } ?: error(MoteI18n.text("正在调整连接，稍后重试"))
             var problem: Throwable? = null
             if (config.hasSyncConnection() && origin == config.server.trimEnd('/')) runCatching {
                 ConnectionGuard.sync {
                     checkSelection(); SyncSchedule.requireConditions(activity, config)
                     SyncHeartbeat.send(activity, settings, config, activity.queue())
                     CaptureContextSync.syncPending(activity, config)
-                } ?: error(MoteI18n.text("正在调整连接，请稍后重试"))
+                } ?: error(MoteI18n.text("正在调整连接，稍后重试"))
             }.onFailure { problem = it }
             entries() to problem
         }) { outcome -> outcome.onSuccess { (items, problem) ->
@@ -176,7 +176,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
     private fun resolved(item: CaptureContextEntry, keepLocal: Boolean) {
         task.start("", {}, {
             ConnectionGuard.sync { checkSelection(); store.resolve(item, keepLocal); entries() }
-                ?: error(MoteI18n.text("正在调整连接，请稍后重试"))
+                ?: error(MoteI18n.text("正在调整连接，稍后重试"))
         }) { result -> result.onSuccess { if (verifyUiSelection()) { render(it); if (keepLocal) save() } }.onFailure { if (verifyUiSelection()) status.text = it.message } }
     }
 }

@@ -21,7 +21,7 @@ internal object AppPageSetup {
         val replace = incoming.map { it.getString("id") }.toSet()
         val previous = UiPageRules.parse(current)
         require(previous.none { it.optString("appId") != appId && it.getString("id") in replace }) {
-            MoteI18n.text("规则 ID 与其他应用冲突，请为导入规则使用独立 ID")
+            MoteI18n.text("规则 ID 与其他应用冲突，为导入规则使用独立 ID")
         }
         val retained = previous.filterNot { it.getString("id") in replace }
         return JSONArray(retained + incoming).toString(2).also { UiPageRules.parse(it) }
@@ -29,7 +29,7 @@ internal object AppPageSetup {
 
     fun fieldRule(appId: String, appVersion: String, kind: String, selectors: Map<String, String>,
         activity: String = "", region: String = "", repeat: String = ""): String {
-        require(appVersion.isNotBlank()) { MoteI18n.text("无法读取应用版本，请重新选择已安装应用") }
+        require(appVersion.isNotBlank()) { MoteI18n.text("无法读取应用版本，重新选择已安装应用") }
         require(kind in setOf("article", "product"))
         require(!selectors["title"].isNullOrBlank() && (kind != "article" || !selectors["body"].isNullOrBlank())) {
             MoteI18n.text("标题控件 ID 必填；文章还需要正文控件 ID")

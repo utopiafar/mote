@@ -139,7 +139,7 @@ class MaterialAskInstrumentedTest {
             click(s,"Send"){it.contentDescription=="发送"};until("Actual pinned read held"){control("state").getBoolean("materialReadHeld")}
             s.onActivity { a -> val field=shown(a).filterIsInstance<EditText>().single { it.contentDescription=="你的问题" };assertTrue(field.isEnabled);field.setText("Generated later private draft while checking") }
             control("release-material-read")
-            ready(s,"Later draft is preserved without implicit send"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="草稿已保留，请确认当前内容后重新发送。" }}
+            ready(s,"Later draft is preserved without implicit send"){a -> !a.isWorking && shown(a).filterIsInstance<TextView>().any { it.text.toString()=="草稿已保留，确认当前内容后重新发送" }}
             assertEquals("Generated later private draft while checking",saved().getString("question"));assertEquals(ref,NativeAskEvidenceScope.material(saved()));assertFalse(saved().has("pending"));assertEquals(0,control("state").getJSONArray("seenAskRequests").length());screenshot(s,"later-draft-during-reference-check")
             click(s,"Explicitly send the later draft"){it.contentDescription=="发送"};until("Only explicit later question completes"){saved().optString("runStatus")=="completed"}
             assertEquals("Generated later private draft while checking",control("state").getJSONObject("lastQuery").getString("question"));assertEquals(1,control("state").getInt("queryCalls"))

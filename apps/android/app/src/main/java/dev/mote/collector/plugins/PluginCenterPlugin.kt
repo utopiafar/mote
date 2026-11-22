@@ -43,7 +43,6 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     fun showTrustedGithubInstall() {
         clearPrivateState(); memoryOnly = false; memoryBack = null; listVisible = false; body.removeAllViews(); screens.clearBack()
         ui.text(MoteI18n.text("从 GitHub 添加其他可信插件"), NativeFontRole.TITLE_MOBILE)
-        ui.text(MoteI18n.text("读取兼容发布包，预览版本、能力与访问范围后安装。GitHub 数据连接器仍在资料来源中管理。"))
         val control = api
         ui.work(MoteI18n.text("正在读取…"), { runCatching { control.inventory() } }) { result ->
             result.onSuccess { packages ->
@@ -52,7 +51,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
                 val tag = ui.field(MoteI18n.text("发布标签（可选）"))
                 ui.button(MoteI18n.text("预览发布包"), true) {
                     val selectedRepository = repository.text.toString().trim(); val selectedTag = tag.text.toString().trim()
-                    require(selectedRepository.isNotBlank()) { MoteI18n.text("请填写 GitHub 仓库。") }
+                    require(selectedRepository.isNotBlank()) { MoteI18n.text("填写 GitHub 仓库") }
                     ui.work(MoteI18n.text("正在解析…"), { control.resolve(selectedRepository, selectedTag) }) { preview ->
                         installation(preview, packages.revision)
                     }
@@ -87,11 +86,11 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
                     if (failure is CentralFailure && failure.status in setOf(409, 422)) {
                         pending = null
                         val card = ui.card(); retryPanel = card
-                        ui.text(MoteI18n.text("配置或方案已变化；请读取当前状态后重新确认。"), parent = card)
+                        ui.text(MoteI18n.text("配置或方案已变化；读取当前状态后重新确认"), parent = card)
                         ui.button(MoteI18n.text("重新读取配置并丢弃草稿"), parent = card) { screens.confirm(MoteI18n.text("重新读取"), MoteI18n.text("有未保存的修改。离开并丢弃修改？")) { load() } }
                     } else {
                         val card = ui.card(); retryPanel = card
-                        ui.text(MoteI18n.text("请求结果尚未确认，请重试同一请求。"), parent = card)
+                        ui.text(MoteI18n.text("请求结果尚未确认，重试同一请求"), parent = card)
                         ui.button(MoteI18n.text("重试同一请求"), parent = card) { submit(request, done) }
                     }
                 }
@@ -265,7 +264,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
                 "boolean" -> { val toggle = CheckBox(ui).apply { text = field.label; isChecked = initial.optBoolean(field.id) }; body.addView(toggle); MoteUi.styleTree(toggle); reads[field.id] = { toggle.isChecked } }
                 "select", "model-profile" -> {
                     val options = if (field.type == "model-profile") PluginControlProjection.objects(models.optJSONArray("profiles")).map { it.getString("id") to it.getString("name") } else field.options
-                    val choices = listOf("" to MoteI18n.text("请选择")) + options
+                    val choices = listOf("" to MoteI18n.text("选择")) + options
                     ui.text(field.label, NativeFontRole.SUPPORT)
                     val select = Spinner(ui).apply { contentDescription = field.label; adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, choices.map { it.second }); setSelection(choices.indexOfFirst { it.first == initial.optString(field.id) }.coerceAtLeast(0)) }; body.addView(select, LinearLayout.LayoutParams(-1, ui.moteDp(52))); reads[field.id] = { choices[select.selectedItemPosition].first }
                 }
@@ -286,7 +285,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         screens.setBack { back() }
         ui.button(if (instance == null) MoteI18n.text("创建实例") else MoteI18n.text("保存配置"), true) {
             val selectedConfiguration = collect(); val selectedName = name.text.toString().trim(); val selectedScope = scope.text.toString().trim()
-            require(selectedName.isNotBlank() && selectedScope.isNotBlank() && PluginControlProjection.configured(fields, selectedConfiguration)) { MoteI18n.text("请检查必填字段与配置值。") }
+            require(selectedName.isNotBlank() && selectedScope.isNotBlank() && PluginControlProjection.configured(fields, selectedConfiguration)) { MoteI18n.text("检查必填字段与配置值") }
             val intent = PluginControlClient.configure(item.id, instance?.id, instance?.revision ?: requireNotNull(inventory).revision, selectedName, selectedScope, selectedConfiguration)
             submit(intent) { result -> if (instance == null && item.fields.isEmpty()) configuration(item, PluginControlProjection.instance(result)) else load() }
         }

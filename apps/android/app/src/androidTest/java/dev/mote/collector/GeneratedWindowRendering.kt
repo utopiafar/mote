@@ -198,7 +198,7 @@ internal object GeneratedWindowRendering {
             "p27-notification-granted-return-dark", "p27-usage-granted-return-dark" -> Triple("permissions", "actual-grant-return", "采集权限")
             "p11-central-unconnected-dark" -> Triple("materials", "disconnected", "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。")
             "p11-empty-materials-dark", "p11-empty-materials-light", "p11-empty-materials-message-dark" -> Triple("central-library", "actual-empty", "当前范围内暂无条目。没有列出不代表不存在。")
-            "p11-empty-memories-dark", "p11-empty-memories-light", "p11-empty-memories-message-dark", "p11-memory-return-dark" -> Triple("memories", "actual-empty", "当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。")
+            "p11-empty-memories-dark", "p11-empty-memories-light", "p11-empty-memories-message-dark", "p11-memory-return-dark" -> Triple("memories", "actual-empty", "当前筛选没有记忆")
             "p11-memory-management-more-dark" -> Triple("memories", "explicit-more", "记忆主题")
             "p11-existing-extraction-entry-dark" -> Triple("memories", "existing-extraction-entry", "开始提取")
             "gap-library-local-light", "gap-library-local-dark", "gap-library-central-unavailable-dark" -> Triple("library","real-location-choice","资料与记忆")

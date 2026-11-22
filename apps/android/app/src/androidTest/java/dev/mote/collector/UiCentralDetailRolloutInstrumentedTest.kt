@@ -155,7 +155,7 @@ class UiCentralDetailRolloutInstrumentedTest {
                 assertTrue("Original/correction controls remain available when detail opens", labels(activity).containsAll(listOf(MoteI18n.text("保存原件"), MoteI18n.text("纠正此段"))))
             }
             disclosure("处理详情")
-            click("纠正此段"); save("files", "file-correction", "保存校正")
+            click("纠正此段"); save("files", "file-correction", "保存纠正")
             click("删除文件"); save("files", "file-delete-confirmation", "删除文件", dialog = true); cancelDialog()
             navigate("memories"); save("memories", "memories-populated", "Generated detail memory", translated = false)
             scenario.onActivity { assertTrue("Actual metadata title remains in the native list", labels(it).contains("Generated detail memory")) }
@@ -176,7 +176,7 @@ class UiCentralDetailRolloutInstrumentedTest {
             clickTag("memory-more-delete"); save("memories", "memory-delete-confirmation", "删除这条记忆？", dialog = true); cancelDialog()
             navigate("memories"); click("提取记忆"); save("memories", "memory-extraction-jobs", "开始提取")
             navigate("imports"); click("查看预览"); save("imports", "import-preview", "确认导入")
-            click("确认导入"); save("imports", "import-confirmation", "请核对预览后再确认。", dialog = true); cancelDialog()
+            click("确认导入"); save("imports", "import-confirmation", "核对预览后再确认", dialog = true); cancelDialog()
             navigate("processing")
             var fileOperation = false
             repeat(20) {

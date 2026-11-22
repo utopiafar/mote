@@ -52,7 +52,7 @@ class SyncRecoveryActivity : MoteActivity() {
     }
     private fun runAction(action: () -> Unit) {
         task.start(MoteI18n.text("正在提交后台任务…"), MoteComponents.progress(result, read = false), { action() }) { outcome ->
-            outcome.onSuccess { refreshStatus() }.onFailure { result.text = it.message ?: MoteI18n.text("请先配置连接") }
+            outcome.onSuccess { refreshStatus() }.onFailure { result.text = it.message ?: MoteI18n.text("先配置连接") }
         }
     }
     private fun refreshStatus() {
@@ -64,9 +64,9 @@ class SyncRecoveryActivity : MoteActivity() {
                 val config = settings.read(); val status = settings.storedSyncStatus()
                 val translations = if (status.state in setOf("unconfigured", "paused")) MoteI18n.translations(SyncReadiness.obsoleteMessages) else emptyMap()
                 val visible = SyncReadiness.visible(config, status, SyncSchedule.waitingReason(this, config), c, local.sourceIssues, local.pending, inventoryUnavailable = local.error != null, sourceUnavailable = local.sourceError || sources == null) { source, value -> source == value || translations[source]?.contains(value) == true }
-                val notice = if (settings.syncRequestRejected()) "\n" + MoteI18n.text("配置已发生变化，请刷新后重试。") else ""
+                val notice = if (settings.syncRequestRejected()) "\n" + MoteI18n.text("配置已发生变化，刷新后重试") else ""
                 MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", c.records, local.pending ?: "—") to MoteI18n.text("{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}", local.imageLabel(), c.records, local.pending ?: "—", c.blocked, local.sourcePending ?: "—", sources?.pendingUpdates ?: "—", SyncReadiness.text(visible) + notice, settings.lastUploadAt() ?: MoteI18n.text("尚无"))
-            }.getOrElse { MoteI18n.text("本机状态暂不可读：{0}", it.message ?: MoteI18n.text("请检查存储")) to "" }
+            }.getOrElse { MoteI18n.text("本机状态暂不可读：{0}", it.message ?: MoteI18n.text("检查存储")) to "" }
             val failures = runCatching { queue().syncIssues() }.getOrDefault(emptyList())
             val report = getSharedPreferences("sync-recovery", MODE_PRIVATE).getString("message", "")
             runOnUiThread { reading = false; if (!isDestroyed) { summary.text = value.first; stateDetails.text = value.second; if (!task.busy) result.text = report
@@ -84,8 +84,8 @@ class SyncRecoveryActivity : MoteActivity() {
                                 val retried = runCatching { ConnectionGuard.sync {
                                     val config = Settings(this@SyncRecoveryActivity).read(); config.validateConnection()
                                     if (queue().retryConflict(item.getString("id"))) UploadWorker.schedule(this@SyncRecoveryActivity, config, true)
-                                } ?: error(MoteI18n.text("正在调整连接，请稍后重试")) }
-                                runOnUiThread { if (!isDestroyed) { result.text = if (retried.isSuccess) MoteI18n.text("已请求核验；相同内容会确认，不同内容仍保留冲突") else MoteI18n.text("核验未启动，请检查连接"); refreshStatus() } }
+                                } ?: error(MoteI18n.text("正在调整连接，稍后重试")) }
+                                runOnUiThread { if (!isDestroyed) { result.text = if (retried.isSuccess) MoteI18n.text("已请求核验；相同内容会确认，不同内容仍保留冲突") else MoteI18n.text("核验未启动，检查连接"); refreshStatus() } }
                             }
                         }
                     }), LinearLayout.LayoutParams(-1,-2))
