@@ -1,0 +1,8 @@
+.processing-list { display:grid; gap:12px; }
+.processing-row { padding:20px; border:1px solid var(--mote-hair); border-radius:var(--mote-radius); background:var(--mote-surface); }
+.processing-row header { display:flex; justify-content:space-between; gap:16px; align-items:center; }
+.processing-row p { margin:12px 0; color:var(--mote-muted); }
+.processing-row code { overflow-wrap:anywhere; }
+@media (max-width:700px){
+.processing-row header { align-items:flex-start; flex-direction:column; }
+}

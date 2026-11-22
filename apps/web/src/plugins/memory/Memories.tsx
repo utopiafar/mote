@@ -206,8 +206,9 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
 }
 
 const detailApiKeys=new WeakMap<Api,number>();let nextDetailApiKey=0;
+const memoryDetailStyles = new URL('../../memory-presentation.css?no-inline', import.meta.url).href;
 /** The same Memory detail/More/correction/history reader for exact external selections. */
 export function MemoryDetailPage({api,id,scope={},onOpen,onBack,isolatedSelection=false}:{api:Api;id:string;scope?:Range;onOpen:(ref:string)=>void;onBack:()=>void;isolatedSelection?:boolean}){
  let owner=detailApiKeys.get(api);if(owner===undefined){owner=++nextDetailApiKey;detailApiKeys.set(api,owner);}
- return <Memories key={JSON.stringify([owner,id,scope.deviceId,scope.after,scope.before])} api={api} range={scope} onOpen={onOpen} initialMemoryId={id} standaloneDetail isolatedSelection={isolatedSelection} onBack={onBack}/>;
+ return <><link rel="stylesheet" href={memoryDetailStyles} precedence="default"/><Memories key={JSON.stringify([owner,id,scope.deviceId,scope.after,scope.before])} api={api} range={scope} onOpen={onOpen} initialMemoryId={id} standaloneDetail isolatedSelection={isolatedSelection} onBack={onBack}/></>;
 }

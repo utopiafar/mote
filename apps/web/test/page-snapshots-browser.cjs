@@ -11,6 +11,7 @@ const { createServer } = require('node:http');
 const { tmpdir } = require('node:os');
 const { extname, join, resolve, sep } = require('node:path');
 const { app, BrowserWindow, nativeImage, nativeTheme } = require('electron');
+const { pageRulesInBase, preConsolidationChatBytes } = require('./pf5-css-policy.cjs');
 
 const web = resolve(__dirname, '..');
 const wide = { width: 1440, height: 1050 };
@@ -51,7 +52,7 @@ function loadFixture(name) {
   return fixture;
 }
 
-function fixtureServer(dist, api, report) {
+function fixtureServer(dist, api, report, stylesheetResponses) {
   return createServer(async (request, response) => {
     request.resume();
     response.setHeader('Cache-Control', 'no-store');
@@ -74,7 +75,11 @@ function fixtureServer(dist, api, report) {
         return;
       }
       const bytes = await readFile(file);
-      response.writeHead(200, { 'Content-Type': mimeTypes[extname(file)] ?? 'application/octet-stream' });
+      const extension = extname(file);
+      if (stylesheetResponses && extension === '.css') {
+        response.once('finish', () => stylesheetResponses.push({ path: pathname, bytes: bytes.length }));
+      }
+      response.writeHead(200, { 'Content-Type': mimeTypes[extension] ?? 'application/octet-stream', 'Content-Length': bytes.length });
       response.end(bytes);
     } catch (error) {
       if (error instanceof URIError || ['ENOENT', 'ENOTDIR', 'EISDIR'].includes(error.code)) {
@@ -116,11 +121,36 @@ async function waitForPaint(contents, selector) {
   }
 }
 
+async function checkChatStylesheets(contents, dist, responses, file, results) {
+  const { mounted, resources } = await contents.executeJavaScript(`({
+    mounted: Array.from(document.styleSheets, sheet => sheet.href)
+      .filter(Boolean).map(href => new URL(href).pathname).sort(),
+    resources: performance.getEntriesByType('resource')
+      .filter(entry => new URL(entry.name).pathname.endsWith('.css'))
+      .map(entry => ({ path: new URL(entry.name).pathname, bytes: entry.decodedBodySize })),
+  })`);
+  const byPath = (a, b) => a.path.localeCompare(b.path);
+  const served = [...responses].sort(byPath);
+  const bytes = served.reduce((total, response) => total + response.bytes, 0);
+  results.push({ file, served, mounted, resources, bytes });
+
+  assert.deepEqual(resources.sort(byPath), served, `Stylesheet response sizes for ${file}`);
+  assert.deepEqual(mounted, served.map(response => response.path).sort(), `Mounted stylesheets for ${file}`);
+  assert.equal(served.length, 2, `External stylesheets for ${file}`);
+  const base = served.find(response => /^\/assets\/main-[\w-]+\.css$/.test(response.path));
+  assert.ok(base, `Base stylesheet for ${file}`);
+  assert.ok(served.some(response => /^\/assets\/chat-page-[\w-]+\.css$/.test(response.path)), `Chat stylesheet for ${file}`);
+  assert.deepEqual(pageRulesInBase(await readFile(resolve(dist, `.${base.path}`), 'utf8')), [], `Page rules in ${base.path}`);
+  assert.ok(bytes < preConsolidationChatBytes, `Chat stylesheet bytes for ${file}: ${bytes} < ${preConsolidationChatBytes}`);
+}
+
 async function run(name) {
   assert(name && /^[\p{L}\p{N}_-]+$/u.test(name),
     'Usage: node_modules/.bin/electron apps/web/test/page-snapshots-browser.cjs <fixture>');
   const out = resolve(web, '../../.mote/page-snapshots', name);
   const report = { screenshots: [], unmatchedRequests: [], consoleErrors: [], blockedRequests: [], windowShown: false };
+  const stylesheetResponses = name === 'chat' ? [] : null;
+  if (stylesheetResponses) report.stylesheets = [];
   let profile, server, window;
   mkdirSync(out, { recursive: true });
   try {
@@ -132,7 +162,7 @@ async function run(name) {
     app.setPath('sessionData', profile);
     await app.whenReady();
 
-    server = fixtureServer(dist, fixture.api, report);
+    server = fixtureServer(dist, fixture.api, report, stylesheetResponses);
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -176,6 +206,7 @@ async function run(name) {
     for (const { file, theme, width, height } of variants) {
       // Start a renderer before emulating metrics, and load a fresh page for each variant.
       await window.loadURL('about:blank');
+      if (stylesheetResponses) stylesheetResponses.length = 0;
       nativeTheme.themeSource = theme;
       window.setContentSize(width, height);
       await contents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -192,6 +223,7 @@ async function run(name) {
       assert.deepEqual(nativeImage.createFromBuffer(png).getSize(), { width, height }, `PNG size for ${file}`);
       writeFileSync(join(out, file), png);
       report.screenshots.push({ file, theme, ...state });
+      if (stylesheetResponses) await checkChatStylesheets(contents, dist, stylesheetResponses, file, report.stylesheets);
     }
   } catch (error) {
     report.error ??= error.message;

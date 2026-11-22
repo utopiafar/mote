@@ -1,3 +1,55 @@
+.effective-settings,.deployment-details {padding:28px;margin-bottom:24px;}
+.preference-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 22px;}
+.preference-field {display:flex;flex-direction:column;gap:9px;font-size:var(--mote-font-action);font-weight:500;color:var(--mote-ink);min-width:0;}
+.preference-field input,.preference-field select {width:100%;font-size:var(--mote-font-body);background:var(--mote-surface);min-height:43px;color:var(--mote-ink);}
+.preference-field small {font-weight:400;font-size:var(--mote-font-meta);color:var(--mote-muted);line-height:1.75;}
+.deployment-details>summary {cursor:pointer;font-size:var(--mote-font-action);color:var(--mote-accent);line-height:1.8;}
+.config-draft-footer {display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:1px solid var(--mote-hair);margin-top:26px;padding-top:22px;}
+.config-draft-footer>span {font-size:var(--mote-font-meta);color:var(--mote-muted);}
+.config-draft-footer>div {display:flex;gap:10px;flex-wrap:wrap;}
+.effective-field {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.65fr);gap:24px;padding:18px 0;border-top:1px solid var(--mote-hair);}
+.effective-field strong {font-size:var(--mote-font-action);}
+.effective-field small {display:block;font-size:var(--mote-font-meta);color:var(--mote-muted);line-height:1.8;margin-top:7px;}
+.effective-field>div:last-child {text-align:right;font-size:var(--mote-font-action);overflow-wrap:anywhere;}
+.deployment-details>summary {display:flex;align-items:center;gap:10px;font-size:var(--mote-font-section);font-weight:600;}
+.deployment-details[open]>summary {margin-bottom:20px;}
+.deployment-details>p {font-size:var(--mote-font-action);line-height:1.8;color:var(--mote-muted);}
+.advanced-config-group {margin-top:26px;}
+@media (max-width:1000px){
+.config-draft-footer{align-items:flex-start;flex-direction:column;}
+}
+@media (max-width:760px){
+.preference-grid{grid-template-columns:1fr;gap:20px;}
+.effective-settings,.deployment-details{padding:21px;}
+.effective-field{grid-template-columns:1fr;gap:10px;}
+.effective-field>div:last-child{text-align:left;}
+}
+.deployment-details code {overflow-wrap:anywhere;white-space:pre-wrap;word-break:break-word;}
+.deployment-details,.effective-field>div {min-width:0;}
+.memory-settings fieldset{border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container);margin:16px 0;padding:16px}
+.memory-settings input[type=number]{padding:10px;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-container);background:var(--mote-surface);color:inherit}
+.memory-settings{padding:28px;min-width:0}
+.memory-settings fieldset{min-width:0}
+@media (max-width:760px){
+.memory-settings{padding:18px}
+}
+.advanced-config-group pre{max-width:100%;overflow:auto;font-size:var(--mote-font-meta)}
+.advanced-config-group>div>small{display:block;color:var(--mote-muted)}
+.preference-grid { gap:var(--mote-space-panel); }
+.preference-field { gap:var(--mote-space-inline); }
+.preference-field small,.preference-field>span,.effective-field small { font-size:var(--mote-font-support); line-height:1.6; }
+.runtime-settings fieldset { min-inline-size:0; margin:0; padding:var(--mote-space-panel); border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); display:grid; grid-template-columns:minmax(0,1fr); gap:var(--mote-space-item); }
+.runtime-settings .preference-grid label { display:grid; gap:var(--mote-space-inline); min-inline-size:0; }
+.runtime-settings input:not([type=checkbox]),.runtime-settings select { width:100%; min-inline-size:0; }
+.runtime-settings fieldset>.button { justify-self:start; }
+.memory-settings fieldset { border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); padding:var(--mote-space-panel); }
+.memory-settings fieldset>label { display:flex; align-items:flex-start; gap:var(--mote-space-inline); }
+.memory-settings fieldset>label>input[type=checkbox] { flex-shrink:0; margin-inline:0; margin-block-start:3px; }
+.memory-settings form>p { margin-block:var(--mote-space-item); }
+@container memory-integration (max-width:320px) {
+ .memory-integration-selection { display:block; white-space:normal; overflow-wrap:anywhere; font-size:var(--mote-font-support); color:var(--mote-muted); }
+}
+
 /* Settings share the workspace palette and hierarchy on every screen size. */
 .back-link { color:var(--mote-accent); min-height:var(--mote-control-height); }
 .settings-surface { max-width:1280px; --border:var(--mote-hair); --surface-soft:var(--mote-background); --surface-muted:var(--mote-background); --text-secondary:var(--mote-muted); --forest:var(--mote-accent); }

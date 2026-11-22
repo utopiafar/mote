@@ -13,6 +13,7 @@ import {useImportReturnRead} from '../../useImportReturnRead';
 import type { Page } from '../../navigation';
 import {sourcePlugins,type SourcePlugin} from './registry';
 import { Loading } from '../../Loading';
+import {useSourceConnectorStyle} from '../../source-connectors-ui';
 import {aiAccessHref, connectionsHref} from '../agent-access/routes';
 const recorderNames: Record<string, string> = { feishu: "飞书录音 / 妙记", dingtalk: "钉钉录音 / 闪记" };
 const contributionIcons: Record<string, LucideIcon> = { link: Link2, mail: Mail, calendar: CalendarDays, file: FileText, package: Package, monitor: Monitor };
@@ -27,6 +28,7 @@ export function SourceCatalog({ api, onPage }: {
     api: Api;
     onPage: (page: Page) => void;
 }) {
+    useSourceConnectorStyle();
     useEffect(()=>{if(document.head.querySelector('link[data-mote-source-final]'))return;const link=document.createElement('link');link.rel='stylesheet';link.href=new URL('../../source-final.css',import.meta.url).href;link.dataset.moteSourceFinal='true';document.head.append(link);},[]);
     const discovery = useDiscoveryState(api),returnReadReady=useImportReturnRead(api,'/api/features');
     const [choice,setChoice]=useState<{api:Api;recordings:boolean}>();

@@ -1,3 +1,6 @@
+.feature-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin:20px 0}
+.feature-cards .source-item{text-align:left;min-width:0;overflow-wrap:anywhere;padding:18px}
+
 .content[data-page=agentView]>.workspace-tools{display:none}
 .agent-final{max-width:1000px;margin:0 auto}
 .agent-final.agent-trace-page{max-width:880px}

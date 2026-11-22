@@ -1,3 +1,5 @@
+.search-workspace .library-record{width:100%;text-align:left}
+
 .final-search .page-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}
 .final-search .workspace-search{display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid var(--mote-divider);border-radius:var(--mote-radius-control);background:var(--mote-surface)}
 .final-search .workspace-search input{min-width:0;flex:1;border:0;outline:0;background:none;color:var(--mote-ink);font:inherit;font-size:13px;line-height:1.7}

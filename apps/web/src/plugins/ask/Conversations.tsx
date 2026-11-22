@@ -25,7 +25,6 @@ import {admitConversationMessage, definiteAdmissionFailure, pendingMessageStatus
 import {readOriginTurn} from './conversation-origin';
 import {queryRecovery, type OwnedQuery} from './query-recovery';
 import type {AskController} from './controller';
-const chatStyles = new URL('./chat.css?no-inline', import.meta.url).href;
 
 function admissionScope(scope: ChatScope | undefined, choice: SourceScopeChoice | undefined): ConversationMessageScope {
   const range = {
@@ -69,14 +68,6 @@ export function Conversations({api, onOpen = doNothing, ...props}: Props) {
 }
 
 function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, 'onOpen'> & {onOpen: (ref: string) => void}) {
-  useLayoutEffect(() => {
-    if (document.head.querySelector('link[data-mote-chat]')) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = chatStyles;
-    link.dataset.moteChat = '';
-    document.head.append(link);
-  }, []);
   const main = useResource<{id: string}>(api, '/api/conversations/main');
   const path = main.data ? chatPath(main.data.id) : null;
   const detail = useResource<ChatPage>(api, path);

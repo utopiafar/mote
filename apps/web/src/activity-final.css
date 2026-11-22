@@ -1,3 +1,9 @@
+.activity-detail .page-heading h1{overflow-wrap:anywhere}
+.activity-detail .page-heading>.badge{margin-bottom:10px}
+@media (max-width:700px){
+.activity-detail .section-tabs{flex-wrap:wrap}
+}
+
 .activity-detail{max-width:996px;margin-inline:auto}
 .activity-detail-toolbar{padding-top:4px;display:flex;justify-content:space-between;align-items:center;gap:16px}.activity-detail-toolbar .back-link{margin:0;font-size:12px}.activity-detail-toolbar>.text-button{font-size:12px;color:var(--mote-muted)}
 .activity-detail-header{margin:31px 0 28px}.activity-detail-kind{font-size:11px;color:var(--mote-muted);margin-bottom:10px}.activity-detail-title{display:flex;justify-content:space-between;align-items:flex-start;gap:23px}.activity-detail-title h1{font-size:26px;line-height:1.6;overflow-wrap:anywhere;margin:0}.activity-detail-title>.badge{margin-top:8px;flex-shrink:0}.activity-detail-header>p{margin:13px 0 0;font-size:11px;color:var(--mote-muted)}

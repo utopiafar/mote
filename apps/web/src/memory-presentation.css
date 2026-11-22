@@ -1,3 +1,13 @@
+.memory-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:28px;padding-top:20px;border-top:1px solid var(--mote-hair)}
+.memory-actions>.muted{font-size:var(--mote-font-meta)}
+.execution-queue-overview.notice{display:block;overflow-wrap:anywhere}
+.execution-queue-overview p{margin:8px 0}
+@container memory-detail (max-width:320px) {
+ .section-heading { align-items:flex-start; flex-direction:column; }
+ .section-heading>.button { max-width:100%; overflow-wrap:normal; word-break:normal; }
+ .status-label { overflow-wrap:normal; word-break:normal; }
+}
+
 .memory-correction {
  display:grid;
  gap:var(--mote-space-item);

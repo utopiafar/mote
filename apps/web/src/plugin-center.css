@@ -1,3 +1,12 @@
+.provider-list {display:grid;gap:8px;margin-top:12px;}
+@media (max-width:760px){
+.provider-list {grid-template-columns:repeat(auto-fit,minmax(180px,1fr));}
+}
+.feature-inventory .panel{margin:16px 0;overflow-wrap:anywhere}
+.feature-inventory code{overflow-wrap:anywhere}
+.provider-list { margin-top:var(--mote-space-inline); }
+.provider-list { scrollbar-gutter:stable; }
+
 .plugin-center {min-width:0;}
 .plugin-tabs {margin-bottom:24px;}
 .plugin-workspace {align-items:start;}
