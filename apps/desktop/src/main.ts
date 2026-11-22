@@ -31,7 +31,11 @@ import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplicat
 import { ConnectionError, testConnection } from './connection';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { openCentralBrowser,validateCentralWorkId } from './central-browser';
+import {
+  centralConnectionIdentity, CentralWindowLoader, centralWindowLoginTicketChannel, centralWindowOpenLocalChannel,
+  centralWindowWebPreferences, installCentralNavigationGuards, installCentralSessionGuards, openCentralBrowser,
+  pairedCentralOrigin, trustedCentralWindowSender, validateCentralWorkId,
+} from './central-browser';
 import { showCentral as navigateCentral, prepareBrowserSession, pollBrowserLogin, type BrowserLogin } from './central-navigation';
 import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -43,7 +47,7 @@ import { readFile, realpath, stat, writeFile, mkdir } from 'node:fs/promises';
 import { currentPlatform, type Collector } from './collector';
 import { CaptureNeedsActionNotifier, captureStatusRowFor, type CaptureNotification } from './capture-notification';
 import { DesktopAssistantNotifications } from './assistant-notification-native';
-import { signedOutConfig } from './config';
+import { signedOutConfig, validateServerUrl } from './config';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
 import type { Config, Status } from './contracts';
@@ -89,7 +93,7 @@ function refreshApplicationMenu() {
       ] },
       { role: 'editMenu', label: moteText("编辑") },
       { label: moteText("前往"), submenu: [
-        { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
+        { label: moteText("首页"), accelerator: 'CmdOrCtrl+1', click: () => showWindow() },
         { label: moteText("记录"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
         { label: moteText('通知'), click: () => { void assistantNotifications?.openInbox(); } },
@@ -99,7 +103,15 @@ function refreshApplicationMenu() {
     ]));
 }
 const profileLabel = profile.name;
+/** The local collector window. It owns the existing trusted local UI and
+ * preload; the Central main window never receives either. */
 let window: BrowserWindow | undefined;
+/** The product's main window: the paired Central web app, or offline.html. */
+let centralWindow: BrowserWindow | undefined;
+let centralConnectionKey: string | undefined;
+let loadCentralWindow: (()=>Promise<void>) | undefined;
+let retryCentralWindow: (()=>void) | undefined;
+const centralWindowOfflineUrl = pathToFileURL(join(__dirname, 'offline.html')).href;
 let tray: Tray | undefined;
 let quickNoteWindow: BrowserWindow | undefined;
 let openQuickNote: (()=>Promise<void>) | undefined;
@@ -173,10 +185,12 @@ async function showCentral(page?: string, evidenceId?: string,workId?:string,con
     openDefault: url => shell.openExternal(url),
   }, page, evidenceId, workId,conversationId);
 }
-function showWindow(): void { window?.show(); window?.focus(); }
+function showWindow(): void { centralWindow?.show(); centralWindow?.focus(); retryCentralWindow?.(); }
+function showLocalWindow(): void { window?.show(); window?.focus(); }
 function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start' | 'permissions' | 'storage' | 'sync' | 'connection'): void {
+  if (page === 'central') { showWindow(); return; }
   if (page === 'notes') { void openQuickNote?.(); return; }
-  showWindow(); window?.webContents.send(pushChannels.navigate, page);
+  showLocalWindow(); window?.webContents.send(pushChannels.navigate, page);
 }
 const captureNotifications = new CaptureNeedsActionNotifier();
 function showCaptureNotification(notice: CaptureNotification): void {
@@ -215,8 +229,7 @@ function updateUi(status: Status): void {
   const menuClicks: Partial<Record<TrayMenuItemId, () => void>> = {
     'system-settings': () => { if (process.platform === 'darwin') void shell.openExternal(permissionSettingsUrl('screen')); },
     note: () => showClientPage('notes'),
-    open: () => showClientPage('overview'),
-    central: () => showClientPage('central'),
+    open: () => showWindow(),
     toggle: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); },
     send: () => { void systemTools.sendNow(); },
     settings: () => showClientPage('settings'),
@@ -233,6 +246,14 @@ function updateUi(status: Status): void {
     const icon = item.icon === 'caution' && process.platform === 'darwin' ? nativeImage.createFromNamedImage('NSCaution') : undefined;
     return { label: item.label, enabled: item.enabled, click: menuClicks[item.id], ...(icon && !icon.isEmpty() ? { icon } : {}) };
   })));
+  // A connection or sign-in change is the only reason to rebuild the main
+  // window's address; ordinary status ticks never reload the Central page.
+  const connectionKey = settings ? centralConnectionIdentity(settings) : '';
+  if (centralConnectionKey === undefined) centralConnectionKey = connectionKey;
+  else if (centralWindow && connectionKey !== centralConnectionKey) {
+    centralConnectionKey = connectionKey;
+    void loadCentralWindow?.();
+  }
 }
 
 /** Shell/window/status transport is an explicit host primitive, but it still
@@ -424,8 +445,10 @@ else {
     });
     pluginHost = new DesktopPluginHost({ router: electronIpcRouter(ipcMain, () => pluginHost!.windowFacts), native: new NativeProviderRegistry('mac') });
     const host: DesktopPluginHost = pluginHost;
+    // The local collector is a small companion window opened from the Library
+    // or tray. It keeps the trusted local preload and is never the main window.
     window = new BrowserWindow({
-      width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
+      width: 760, height: 820, minWidth: 620, minHeight: 600, show: false, title: moteText('这台 Mac'), backgroundColor: appearanceBackground(),
       // The sidebar reserves the traffic-light strip, so the title bar is hidden on macOS.
       ...process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 14, y: 22 } } : {},
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: developmentProfile },
@@ -589,13 +612,54 @@ else {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
       if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
     });
+    const allowedCentralOrigin = () => pairedCentralOrigin(settings.serverUrl, connectionToken(settings));
+    centralWindow = new BrowserWindow({
+      width: 1140, height: 840, minWidth: 820, minHeight: 620, show: false, title: `Mote [${profileLabel}]`, backgroundColor: appearanceBackground(),
+      webPreferences: {
+        ...centralWindowWebPreferences,
+        preload: join(__dirname, 'central-window-preload.js'),
+        devTools: developmentProfile,
+        additionalArguments: ['--mote-device-id=' + settings.deviceId],
+      },
+    });
+    const centralContents = centralWindow.webContents;
+    const centralSenderId = centralContents.id;
+    const centralLoader = new CentralWindowLoader(centralWindow, () => settings, centralWindowOfflineUrl);
+    loadCentralWindow = () => centralLoader.load();
+    retryCentralWindow = () => { if (centralLoader.offline) void centralLoader.load(); };
+
+    installCentralNavigationGuards(centralContents, allowedCentralOrigin, url => shell.openExternal(url));
+    installCentralSessionGuards(centralContents.session, allowedCentralOrigin);
+    centralContents.ipc.handle(centralWindowLoginTicketChannel, (event, attempt: unknown) => {
+      const frame = event.senderFrame;
+      if (frame && frame === centralContents.mainFrame) return centralLoader.takeLoginTicket(frame, attempt);
+    });
+    centralContents.on('did-fail-load', (_event, code, _description, failedUrl, isMainFrame) => {
+      if (!isMainFrame || code === -3 || centralLoader.loading) return;
+      const origin = allowedCentralOrigin();
+      if (!origin || (failedUrl !== origin && !failedUrl.startsWith(origin + '/'))) return;
+      void centralLoader.restoreOffline();
+    });
+    centralWindow.on('close', event => { if (!quitting) { event.preventDefault(); centralWindow?.hide(); } });
+    centralWindow.once('closed', () => { centralWindow = undefined; });
+    ipcMain.on(centralWindowOpenLocalChannel, event => {
+      if (!centralWindow || centralWindow.isDestroyed()) return;
+      if (!trustedCentralWindowSender({
+        senderId: event.sender.id, mainSenderId: centralSenderId,
+        frameIsMain: event.senderFrame === event.sender.mainFrame, frameUrl: event.senderFrame?.url,
+      }, allowedCentralOrigin(), centralWindowOfflineUrl)) return;
+      showLocalWindow();
+      if (event.senderFrame?.url === centralWindowOfflineUrl) window?.webContents.send(pushChannels.navigate, 'connection');
+    });
+
+    await window.loadURL(pageUrl);
     tray = new Tray(trayIcon(clientStatus()));
     tray.on('click', showWindow);
     updateUi(clientStatus());
-    await window.loadURL(pageUrl);
+    await loadCentralWindow();
+    if (!app.getLoginItemSettings().wasOpenedAtLogin) centralWindow?.show();
     await systemTools.acknowledgeStartup();
     capturePlugin!.initialize();
-    if (app.getLoginItemSettings().wasOpenedAtLogin) window.hide();
   }).catch(async error => {
     capturePlugin?.shutdown();
     const result = await dialog.showMessageBox({ type: 'error', title: moteText("Mote 存储或配置需要恢复"), message: moteText("未开启采集，现有数据已保留"), detail: moteText("{0}\n如使用外接磁盘，请连接原磁盘后重试。应用不会创建空队列替代原目录。", error instanceof Error ? error.message : moteText("无法读取配置或持久队列")), buttons: [moteText("重试"), moteText("退出")], defaultId: 0, cancelId: 1 });

@@ -5,7 +5,7 @@ import { captureNotification } from './capture-notification';
 export const localWindowSettings = 'settings';
 
 /** Stable identities let the host wire clicks and tests assert the template without Electron. */
-export type TrayMenuItemId = 'status' | 'system-settings' | 'pending' | 'note' | 'open' | 'central' | 'toggle' | 'send' | 'settings' | 'quit';
+export type TrayMenuItemId = 'status' | 'system-settings' | 'pending' | 'note' | 'open' | 'toggle' | 'send' | 'settings' | 'quit';
 export type TrayMenuItem =
   | { type: 'separator' }
   | { type: 'normal'; id: TrayMenuItemId; label: string; enabled: boolean; icon?: 'caution' };
@@ -44,7 +44,6 @@ export function trayMenuTemplate(input: TrayMenuInput): TrayMenuItem[] {
     { type: 'separator' },
     { type: 'normal', id: 'note', label: moteText('记录…'), enabled: true },
     { type: 'normal', id: 'open', label: moteText('打开 Mote'), enabled: true },
-    { type: 'normal', id: 'central', label: moteText('打开中央工作台'), enabled: true },
     { type: 'separator' },
     { type: 'normal', id: 'toggle', label: input.running ? moteText('停止采集') : moteText('开始采集…'), enabled: true },
     { type: 'normal', id: 'send', label: moteText('立即发送'), enabled: input.canSend },

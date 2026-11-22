@@ -36,13 +36,13 @@ describe('Mac tray menu template', () => {
     const items = menu({ row: captureStatusRowFor(status), running: status.running });
     expect(ids(items)).toEqual([
       'status', 'system-settings', 'pending', '-',
-      'note', 'open', 'central', '-',
+      'note', 'open', '-',
       'toggle', 'send', '-',
       'settings', 'quit',
     ]);
     expect(labels(items)).toEqual([
       '等待采集权限 · 屏幕录制', '打开系统设置…', '待发送 12 条', '---',
-      '记录…', '打开 Mote', '打开中央工作台', '---',
+      '记录…', '打开 Mote', '---',
       '停止采集', '立即发送', '---',
       '设置…', '退出 Mote',
     ]);
@@ -52,17 +52,24 @@ describe('Mac tray menu template', () => {
     expect(byId['system-settings']).toMatchObject({ enabled: true, icon: 'caution' });
   });
 
+  it('uses one Mote entry for the Central main window and no separate workbench item', () => {
+    const items = menu();
+    expect(ids(items)).not.toContain('central');
+    expect(labels(items)).not.toContain('打开中央工作台');
+    expect(labels(items)).toEqual(expect.arrayContaining(['记录…', '打开 Mote', '设置…']));
+  });
+
   it('keeps the same order without the permission fix while capturing', () => {
     const items = menu({ row: captureStatusRowFor(desktopStatus()) });
     expect(ids(items)).toEqual([
       'status', 'pending', '-',
-      'note', 'open', 'central', '-',
+      'note', 'open', '-',
       'toggle', 'send', '-',
       'settings', 'quit',
     ]);
     expect(labels(items)).toEqual([
       '采集中', '待发送 12 条', '---',
-      '记录…', '打开 Mote', '打开中央工作台', '---',
+      '记录…', '打开 Mote', '---',
       '停止采集', '立即发送', '---',
       '设置…', '退出 Mote',
     ]);
@@ -73,13 +80,13 @@ describe('Mac tray menu template', () => {
     const items = menu({ row: captureStatusRowFor(status), running: false, pending: 5 });
     expect(ids(items)).toEqual([
       'status', '-',
-      'note', 'open', 'central', '-',
+      'note', 'open', '-',
       'toggle', 'send', '-',
       'settings', 'quit',
     ]);
     expect(labels(items)).toEqual([
       '采集已停止', '---',
-      '记录…', '打开 Mote', '打开中央工作台', '---',
+      '记录…', '打开 Mote', '---',
       '开始采集…', '立即发送', '---',
       '设置…', '退出 Mote',
     ]);
