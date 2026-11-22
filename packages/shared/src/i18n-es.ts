@@ -2583,7 +2583,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "保存后尽快发送。断网或失败时在本机保留并重试。": "Enviar registros poco después de guardar. Los registros sin conexión o con error permanecen localmente para reintento automático.",
   "每 {0} 分钟检查并上传待传记录。休眠期间顺延，唤醒后继续。": "Comprobar y cargar registros pendientes cada {0} minutos. Se retrasa durante el reposo; se reanuda al despertar.",
   "满 {0} 条或等 {1} 分钟即发送，逐条确认接收。": "Enviar al llegar a {0} registros o cuando el más antiguo lleve {1} minutos esperando, lo que ocurra primero. Cada registro se confirma por separado.",
-  "上传记录和发送设备状态每次都须手动触发。点概览的「立即上传」，或来源里的「立即检查并上传」。": "Sin cargas automáticas ni informes de dispositivo. Usa Cargar ahora en Resumen o Comprobar y cargar ahora en Fuentes. Las cargas futuras también requieren acción manual.",
+  "记录和设备状态每次都须手动发送。在「发送详情」点「立即上传」，或在来源点「立即检查并上传」。": "Envía manualmente los registros y el estado del dispositivo cada vez. Elige «Cargar ahora» en «Detalles de envío» o «Comprobar y subir ahora» en la fuente.",
   "你填写的节点": "Tu nodo introducido",
   "尚有 {0} 条未绑定的待传记录，另可能有尚未保存完的记录。确认后归属 {1}，按上传策略发送。": "Hay {0} registros pendientes sin vincular y posiblemente guardados de notas sin terminar. La confirmación los asigna a {1}, luego las cargas siguen tu política.",
   "1 天": "1 día",
@@ -7793,5 +7793,6 @@ export const spanish: Readonly<Record<string, string>> = {
   "已有部分结果": "Hay resultados parciales.",
   "返回接收凭据": "Volver al recibo de sincronización",
   "自定义区域": "Región personalizada",
-  "返回数据源目录": "Volver al catálogo de fuentes de datos"
+  "返回数据源目录": "Volver al catálogo de fuentes de datos",
+  "确认后，未绑定的待传资料归属此中央，按上传策略发送。": "Tras confirmar, los datos pendientes sin vincular quedan asociados a este nodo central y se envían según la política de carga."
 };

@@ -2582,7 +2582,7 @@
   "保存后尽快发送。断网或失败时在本机保留并重试。": "Send records shortly after saving. Offline or failed records remain locally for automatic retry.",
   "每 {0} 分钟检查并上传待传记录。休眠期间顺延，唤醒后继续。": "Check and upload pending records every {0} minutes. Delayed during sleep; resumes on wake.",
   "满 {0} 条或等 {1} 分钟即发送，逐条确认接收。": "Send at {0} records or when the oldest waits {1} minutes, whichever comes first. Each record is acknowledged separately.",
-  "上传记录和发送设备状态每次都须手动触发。点概览的「立即上传」，或来源里的「立即检查并上传」。": "No automatic uploads or device reports. Use Upload now on Overview or Check and upload now on Sources. Future uploads also require manual action.",
+  "记录和设备状态每次都须手动发送。在「发送详情」点「立即上传」，或在来源点「立即检查并上传」。": "Records and device status require manual sending each time. Select “Upload now” in “Sending details” or “Check and upload now” in the source.",
   "你填写的节点": "Your entered node",
   "尚有 {0} 条未绑定的待传记录，另可能有尚未保存完的记录。确认后归属 {1}，按上传策略发送。": "There are {0} unbound pending records and possibly unfinished note saves. Confirmation assigns them to {1}, then uploads follow your policy.",
   "1 天": "1 day",
@@ -7792,5 +7792,6 @@
   "已有部分结果": "Partial results available.",
   "返回接收凭据": "Back to sync receipt",
   "自定义区域": "Custom region",
-  "返回数据源目录": "Back to the data source catalog"
+  "返回数据源目录": "Back to the data source catalog",
+  "确认后，未绑定的待传资料归属此中央，按上传策略发送。": "After confirmation, unbound pending material belongs to this Central and is sent according to your upload policy."
 }

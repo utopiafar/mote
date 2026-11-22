@@ -498,6 +498,7 @@ function render(status: import('./contracts').Status): void {
   setText('sync-upload-speed', byId('upload-speed').textContent ?? '0 KiB/s');
   setText('sync-message', moteText("{0} · 共 {1} 条待传（含本地来源）", status.sync.message, status.sync.pendingRecords.toLocaleString(getLocale())) + (status.facts ? `\n${nativeStatusSummary(status.facts)}` : ''));
   updateLocalBacklog();
+  if (connectionPreview) updateInvitationBacklog(connectionPreview.serverUrl);
   const uploadInfo = [];
   if (status.sync.nextUploadAt) uploadInfo.push(`${status.sync.state === 'error' ? moteText("计划重试") : moteText("计划上传")} ${new Date(status.sync.nextUploadAt).toLocaleString(getLocale(), { hour12: false })}`);
   if (status.lastUploadError) uploadInfo.push(status.lastUploadError);
@@ -1072,10 +1073,25 @@ function renderConnection(value: import('./connection').ConnectionStatus): void 
   byId('connection-capabilities').textContent = value.identity ? moteText("权限：{0} · 中央 {1} · 环境 {2}", moteText("管理员"), value.identity.node.version, value.identity.node.profile) : currentStatus?.config.credentialScope === 'owner' ? moteText("登录凭据已安全保存，所有中央功能共用此登录。") : '';
 }
 function clearConnectionPreview(): void { connectionPreview = undefined; byId('connection-confirmation').hidden = true; byId<HTMLInputElement>('connection-confirm-origin').checked = false; }
+function updateInvitationBacklog(destination: string): void {
+  if (!currentStatus) return;
+  const {config, sync} = currentStatus;
+  let copy: string;
+  if (sync.localBacklogUnbound) {
+    copy = unboundBacklogCopy(sync.pendingRecords, destination);
+  } else if (destination === config.serverUrl) {
+    copy = moteText("同一中央重新授权后，待传截图、记录和来源版本继续发往此地址。以地址和 HTTPS 证书核对中央身份。确认它仍由你控制。");
+  } else if (config.serverUrl || sync.pendingRecords) {
+    copy = moteText("更换中央时须无待传截图、记录和来源版本。保留设备 ID、隐私设置和本地模型。");
+  } else {
+    copy = moteText("确认后，未绑定的待传资料归属此中央，按上传策略发送。");
+  }
+  byId('connection-resume').textContent = copy;
+}
 function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
   connectionPreview = value; byId<HTMLTextAreaElement>('connection-input').value = ''; byId<HTMLInputElement>('connection-confirm-origin').checked = false;
   byId('connection-origin').textContent = value.serverUrl; byId('connection-expiry').textContent = moteText("邀请到期：") + new Date(value.expiresAt).toLocaleString(getLocale());
-  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? moteText("同一中央重新授权后，待传截图、记录和来源版本继续发往此地址。以地址和 HTTPS 证书核对中央身份。确认它仍由你控制。") : moteText("更换中央时须无待传截图、记录和来源版本。保留设备 ID、隐私设置和本地模型。");
+  updateInvitationBacklog(value.serverUrl);
   byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
 }
 byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
@@ -1145,19 +1161,22 @@ function updateSyncOptions(): void {
     realtime: moteText("保存后尽快发送。断网或失败时在本机保留并重试。"),
     interval: moteText("每 {0} 分钟检查并上传待传记录。休眠期间顺延，唤醒后继续。", readInput('sync-interval')),
     batch: moteText("满 {0} 条或等 {1} 分钟即发送，逐条确认接收。", readInput('sync-batch'), readInput('sync-interval')),
-    manual: moteText("上传记录和发送设备状态每次都须手动触发。点概览的「立即上传」，或来源里的「立即检查并上传」。"),
+    manual: moteText("记录和设备状态每次都须手动发送。在「发送详情」点「立即上传」，或在来源点「立即检查并上传」。"),
   };
   byId('sync-policy-help').textContent = descriptions[mode];
   byId('sync-save-hint').textContent=currentStatus?.config.syncPaused?moteText('保存后仍保持发送暂停'):moteText('保存后应用于后续发送');
 }
 for (const input of Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement>('#sync-mode, #sync-interval, #sync-batch'))) {input.addEventListener('input', updateSyncOptions);input.addEventListener('change',updateSyncOptions);}
 byId('sync-cancel').addEventListener('click',()=>{if(busy)return;fillConfig(currentStatus.config);showPage('work');});
+function unboundBacklogCopy(count: number, destination: string): string {
+  return moteText("尚有 {0} 条未绑定的待传记录，另可能有尚未保存完的记录。确认后归属 {1}，按上传策略发送。", count, destination);
+}
 function updateLocalBacklog(): void {
   if (!currentStatus) return;
   byId('local-backlog-confirmation').hidden = !currentStatus.sync.localBacklogUnbound;
   let destination = moteText("你填写的节点");
   try { destination = new URL(readInput('server-url')).origin; } catch { /* Blank means local-only. */ }
-  byId('local-backlog-copy').textContent = moteText("尚有 {0} 条未绑定的待传记录，另可能有尚未保存完的记录。确认后归属 {1}，按上传策略发送。", currentStatus.sync.pendingRecords, destination);
+  byId('local-backlog-copy').textContent = unboundBacklogCopy(currentStatus.sync.pendingRecords, destination);
 }
 function updateTokenField(): void {
   byId('node-token-field').hidden = Boolean(currentStatus?.config.tokenConfigured && readInput('server-url').trim().replace(/\/$/, '') === currentStatus.config.serverUrl.replace(/\/$/, ''));

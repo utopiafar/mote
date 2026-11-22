@@ -2583,7 +2583,7 @@ export const german: Readonly<Record<string, string>> = {
   "保存后尽快发送。断网或失败时在本机保留并重试。": "Aufzeichnungen kurz nach dem Speichern senden. Offline oder fehlgeschlagene Aufzeichnungen bleiben lokal für automatische erneute Versuche.",
   "每 {0} 分钟检查并上传待传记录。休眠期间顺延，唤醒后继续。": "Ausstehende Aufzeichnungen alle {0} Minuten prüfen und hochladen. Verzögert im Ruhezustand; wird beim Aufwachen fortgesetzt.",
   "满 {0} 条或等 {1} 分钟即发送，逐条确认接收。": "Bei {0} Aufzeichnungen senden oder wenn die älteste {1} Minuten wartet, je nachdem, was zuerst eintritt. Jede Aufzeichnung wird separat bestätigt.",
-  "上传记录和发送设备状态每次都须手动触发。点概览的「立即上传」，或来源里的「立即检查并上传」。": "Keine automatischen Uploads oder Geräteberichte. Verwenden Sie „Jetzt hochladen“ in der Übersicht oder „Jetzt prüfen und hochladen“ unter Quellen. Zukünftige Uploads erfordern ebenfalls manuelle Aktion.",
+  "记录和设备状态每次都须手动发送。在「发送详情」点「立即上传」，或在来源点「立即检查并上传」。": "Aufzeichnungen und Gerätestatus werden jedes Mal manuell gesendet. Wähle „Jetzt hochladen“ unter „Sendedetails“ oder „Jetzt prüfen und hochladen“ in der Quelle.",
   "你填写的节点": "Ihr eingegebener Knoten",
   "尚有 {0} 条未绑定的待传记录，另可能有尚未保存完的记录。确认后归属 {1}，按上传策略发送。": "Es gibt {0} ungebundene ausstehende Aufzeichnungen und möglicherweise unvollständig gespeicherte Kurznotizen. Die Bestätigung ordnet sie {1} zu; Uploads folgen dann Ihrer Richtlinie.",
   "1 天": "1 Tag",
@@ -7793,5 +7793,6 @@ export const german: Readonly<Record<string, string>> = {
   "已有部分结果": "Teilergebnisse liegen vor.",
   "返回接收凭据": "Zurück zur Synchronisierungsquittung",
   "自定义区域": "Benutzerdefinierter Bereich",
-  "返回数据源目录": "Zurück zum Datenquellenkatalog"
+  "返回数据源目录": "Zurück zum Datenquellenkatalog",
+  "确认后，未绑定的待传资料归属此中央，按上传策略发送。": "Nach der Bestätigung werden noch nicht zugeordnete lokale Daten an diesen zentralen Knoten gebunden und gemäß der Upload-Strategie gesendet."
 };
