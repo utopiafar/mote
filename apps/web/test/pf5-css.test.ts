@@ -53,14 +53,19 @@ test('PF5-02 page-specific rules stay out of the base package', () => {
   const base = read('styles.css');
   const retiredPageSelectors = /\[data-page=(?:about|localPreferences|help|overview|ask)\]/;
   assert.doesNotMatch(base, retiredPageSelectors);
-  for (const marker of ['.final-settings-directory','.settings-directory-','.web-preference','.connections {','.connections{','.library-archive','.material-reader-ask','.insight-automatic-dialog']) {
+  for (const marker of ['.final-settings-directory','.settings-directory-','.settings-heading','.settings-locations','.settings-destinations','.web-preference','.connections {','.connections{','.library-archive','.material-reader-ask','.insight-automatic-dialog']) {
     assert.equal(base.includes(marker), false, marker);
   }
   const settings = read('settings-ui.css');
   assert.match(settings, /\.content\[data-page=about\]/);
   assert.match(settings, /\.final-settings-directory \.settings-directory-group/);
   assert.match(settings, /\.settings-directory-rows>button/);
+  assert.match(settings, /\.settings-heading/);
+  assert.match(settings, /\.settings-locations/);
+  assert.match(settings, /\.settings-destinations/);
   assert.match(settings, /\.web-preferences select/);
+  const activity = read('activity-final.css');
+  assert.match(activity, /\.settings-heading/);
   const library = read('library.css');
   assert.match(library, /\.library-archive:has\(/);
   assert.match(library, /\.material-reader-ask/);
