@@ -160,6 +160,12 @@ async function checkInlineStyles(contents, file) {
   assert.deepEqual(css.flatMap(retiredPageRules), [], `Retired page selectors in inline styles for ${file}`);
 }
 
+async function checkBaseStylesheetOrder(contents, file) {
+  const paths = await contents.executeJavaScript(`Array.from(document.styleSheets, sheet => sheet.href)
+    .filter(Boolean).map(href => new URL(href).pathname)`);
+  assert.match(paths[0] ?? '', /^\/assets\/main-[\w-]+\.css$/, `Base stylesheet precedes page styles for ${file}`);
+}
+
 async function run(name) {
   assert(name && /^[\p{L}\p{N}_-]+$/u.test(name),
     'Usage: node_modules/.bin/electron apps/web/test/page-snapshots-browser.cjs <fixture>');
@@ -241,6 +247,7 @@ async function run(name) {
       writeFileSync(join(out, file), png);
       report.screenshots.push({ file, theme, ...state });
       if (stylesheetResponses) await checkChatStylesheets(contents, stylesheetResponses, file, report.stylesheets);
+      await checkBaseStylesheetOrder(contents, file);
       await checkInlineStyles(contents, file);
     }
   } catch (error) {

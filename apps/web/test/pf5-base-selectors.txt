@@ -432,7 +432,6 @@
 .skeleton-row i:last-child
 .skeleton-row:nth-child(2n) i:first-child
 .source-item
-.source-item .metadata-details
 .source-item code
 .source-item input:not([type=checkbox])
 .source-item label

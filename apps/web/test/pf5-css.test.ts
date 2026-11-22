@@ -76,13 +76,17 @@ test('PF5-01 retired classes are detected in selector lists, CSS escapes and sco
     [class~="MODEL-USED" i] { color:red }
     .button[data-message=".insight-source"] { color:red }
     @scope (.utility-nav) to (:is(.open, .orbit-mark)) { .button { color:red } }
+    .answer-label > .small { color:red }
+    @scope (.source-item) to (.guide-grid) { .button { color:red } }
     @supports selector(.brand-dot) { .button { color:red } }
   `), [
     '.tabs in :is(.tabs, .\\69 nsight-source)',
     '.insight-source in :is(.tabs, .\\69 nsight-source)',
     '.model-used in [class~="MODEL-USED" i]',
+    '.small in .answer-label > .small',
     '.utility-nav in (.utility-nav) to (:is(.open, .orbit-mark))',
     '.orbit-mark in (.utility-nav) to (:is(.open, .orbit-mark))',
+    '.guide-grid in (.source-item) to (.guide-grid)',
     '.brand-dot in selector(.brand-dot)',
   ]);
 });
@@ -120,6 +124,7 @@ test('PF5-02 shared classes cannot bring page-only variants or conditions into t
     @container (max-width:260px) { .button { white-space:normal } }
     @media (max-width:760px) { .source-item form { grid-template-columns:1fr } }
     .file-row > svg, .workflow-line > svg, .policy-card summary { flex-shrink:0 }
+    .source-item .metadata-details { margin-top:18px }
     @scope (.source-item) { .button { flex-shrink:0 } }
   `), [
     '.report-more-menu>[role=menuitemradio]',
@@ -129,11 +134,15 @@ test('PF5-02 shared classes cannot bring page-only variants or conditions into t
     '@container (max-width:260px) | .button',
     '@media (max-width:760px) | .source-item form',
     '.file-row>svg', '.workflow-line>svg', '.policy-card summary',
+    '.source-item .metadata-details',
     '@scope (.source-item) | .button',
   ]);
 });
 
 test('PF5-02 page selectors live with the stylesheet loaded by their surfaces', () => {
+  const sources = read('plugins/sources/Sources.tsx');
+  assert.match(sources, /sourceWorkspaceStyleHref=new URL\('\.\.\/\.\.\/source-workspace\.css\?no-inline'/);
+  assert.match(sources, /mode==='library'&&<link rel="stylesheet" href=\{sourceWorkspaceStyleHref\}/);
   const pageStyles = {
     'activity-final.css': ['.activity-detail .page-heading h1', '.settings-heading'],
     'discovery-final.css': ['.insight-automatic-dialog .conversation-dialog', '.report-top-tools .report-more-menu',
@@ -159,7 +168,8 @@ test('PF5-02 page selectors live with the stylesheet loaded by their surfaces', 
     'settings-surface.css': ['.settings-surface .panel'],
     'settings-ui.css': ['.content[data-page=about]', '.final-settings-directory .settings-directory-group', '.settings-directory-rows>button', '.settings-heading', '.settings-locations', '.settings-destinations', '.web-preferences select', '.preference-toggle input:checked'],
     'source-connectors-final.css': ['.lark-settings', '.lark-range'],
-    'source-final.css': ['.source-final-originals .source-item .badge'],
+    'source-final.css': ['.source-final-originals .source-item .badge',
+      '.source-final-originals .source-item .metadata-details'],
     'source-workspace.css': ['.connections', '.sources-page .source-item form'],
   };
   for (const [file, required] of Object.entries(pageStyles)) {

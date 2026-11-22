@@ -77,6 +77,11 @@ const SettingsSurfaceStyles = React.lazy(async () => {
   return {default: () => null};
 });
 
+// React inserts its first page stylesheet after an existing precedence group.
+// Vite loads the base before this module, as a link in a build or a style in dev.
+const baseSheet = document.head.querySelector<HTMLElement>('link[rel="stylesheet"], style[data-vite-dev-id]');
+if (baseSheet) baseSheet.dataset.precedence = 'base';
+
 initializeBrowserLogging();
 installGlobalErrorLogging(window);
 

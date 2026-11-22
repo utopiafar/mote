@@ -1411,7 +1411,6 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .source-item p {font-size:var(--mote-font-action);margin-top:11px;color:var(--mote-muted);}
 .source-item label {display:flex;flex-direction:column;gap:8px;font-size:var(--mote-font-action);color:var(--mote-ink);}
 .source-item input:not([type=checkbox]) {width:100%;font-size:var(--mote-font-body);}
-.source-item .metadata-details {margin-top:18px;}
 .source-toolbar>span {font-size:var(--mote-font-meta);color:var(--mote-muted);line-height:1.8;}
 .capture-image.media-image {background:var(--mote-tint);color:var(--mote-muted);gap:15px;}
 .capture-image.media-image p {font-size:var(--mote-font-action);line-height:1.8;overflow-wrap:anywhere;}

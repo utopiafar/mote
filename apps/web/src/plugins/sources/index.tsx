@@ -8,7 +8,7 @@ import {aiAccessRoute} from '../agent-access/routes';
 import { Connections, DevicePairing } from './Connections';
 import {connectionCatalogRoute, ConnectionsPage} from './ConnectionsPage';
 import { SourceCatalog } from './SourceCatalog';
-import {readSource, readSetup, Sources} from './Sources';
+import {readSource, readSetup, Sources, sourceWorkspaceStyleHref} from './Sources';
 
 const LarkSettings = React.lazy(() => import('./LarkSettings').then(module => ({ default: module.LarkSettings })));
 
@@ -47,7 +47,7 @@ function ConnectionWorkspace({api, onOpen, onPage}: PageProps) {
 }
 
 const connectionStyles=[
-  new URL('../../source-workspace.css?no-inline',import.meta.url).href,
+  sourceWorkspaceStyleHref,
   new URL('../../settings-ui.css?no-inline',import.meta.url).href,
   new URL('../../discovery-ui.css?no-inline',import.meta.url).href,
   new URL('../../device-workspace.css?no-inline',import.meta.url).href,

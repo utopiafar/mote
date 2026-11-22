@@ -52,6 +52,10 @@ const retiredPageClasses = new Set([
   mobile-menu mobile-settings nav-glyph nav-group-label nav-spark orbit-mark private-label
   reader-top-actions session-settings settings-link-grid settings-scope settings-toolbar
   sidebar-scrim utility-nav version workspace-label workspace-tool-select`,
+  // Earlier main.tsx renderers and the former login and status variants.
+  `add-device-card backup-note connection-guide device-card device-grid device-note device-platform
+  device-top guide-grid index-grid index-panel login-advanced node-avatar node-settings note-mood-tag
+  online red small storage-note storage-number storage-track transfer-action transfer-icon vault-columns`,
 ].flatMap(group => group.split(/\s+/)));
 
 
