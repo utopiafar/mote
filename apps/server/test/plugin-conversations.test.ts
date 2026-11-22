@@ -27,7 +27,7 @@ async function install(host:PluginHost,store:Store,routes:ReturnType<typeof crea
 }
 
 test('conversation writes quiesce, routes survive a fresh activation, and history survives host restart',async t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-conversation-plugin-')),store=new Store(directory),app=Fastify({logger:false}),routes=createConversationRoutes(()=>true);
+  const directory=mkdtempSync(join(tmpdir(),'mote-conversation-plugin-')),store=new Store(directory),app=Fastify({logger:false}),routes=createConversationRoutes();
   let host=new PluginHost({kind:'central',id:'generated-conversation-host'});
   t.after(async()=>{await host.close();await app.close();store.close();rmSync(directory,{recursive:true,force:true});});
   let current=await install(host,store,routes);routes.mount(app);
@@ -38,11 +38,11 @@ test('conversation writes quiesce, routes survive a fresh activation, and histor
   assert.throws(()=>current.conversations.append(undefined,{question:'Rejected during quiesce'},result()),{statusCode:503});
   assert.throws(()=>current.platform.start(),{statusCode:503},'a quiesced activation cannot reopen its write admission');
   assert.equal((await app.inject({url:`/api/conversations/${saved.conversationId}`})).statusCode,200);
-  assert.equal((await app.inject({method:'POST',url:'/api/conversations',payload:{}})).statusCode,503);
+  assert.equal((await app.inject({url:'/api/conversations'})).statusCode,404);
   await current.close();
   assert.throws(()=>current.platform.conversations.append(undefined,{question:'Rejected after stop'},result()),{statusCode:503});
   assert.equal((await app.inject({url:`/api/conversations/${saved.conversationId}`})).statusCode,503);
-  assert.equal((await app.inject({method:'POST',url:'/api/conversations',payload:{}})).statusCode,503);
+  assert.equal((await app.inject({url:'/api/conversations'})).statusCode,404);
 
   current=await install(host,store,routes);
   assert.equal((await app.inject({url:`/api/conversations/${saved.conversationId}`})).statusCode,200);
@@ -73,7 +73,7 @@ test('a failed prepare preserves the borrowed store and an already-active siblin
     contributions:[conversationsDeclaration],factory:createConversationsFactory(failed),
   }),/Generated conversation prepare failure/);
   fail=false;
-  assert.throws(()=>failed.conversations.list(),{statusCode:503});
+  assert.throws(()=>failed.conversations.get(randomUUID()),{statusCode:503});
   await assert.rejects(failed.prepare(),{statusCode:503},'a failed initialization cannot be retried on the same activation');
   assert.equal(store.db.isOpen,true);
   assert.equal(sibling.conversations.get(saved.conversationId).turnCount,1);
@@ -90,7 +90,7 @@ test('a failed prepare publishes no usable repository and close remains idempote
   const platform=createConversations(broken,authorization);
   await assert.rejects(platform.prepare(),failure);
   const conversations:ConversationRepository=platform.conversations;
-  assert.throws(()=>conversations.list(),{statusCode:503});
+  assert.throws(()=>conversations.get(randomUUID()),{statusCode:503});
   const closing=platform.close();assert.equal(platform.close(),closing);await closing;
   assert.deepEqual(conversationsDeclaration,{id:'conversations',apiVersion:'1'});
 });

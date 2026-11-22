@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useState} from 'react';
-import {workspaceRequestSchema,workspaceTemplateSchema,workspaceCommandReferenceSchema,workspaceLabels,
-  type QueryScope,type WorkspaceRequest,type WorkspaceView} from '@mote/shared';
+import {matterTemplateSchema,workspaceRequestSchema,workspaceTemplateSchema,workspaceCommandReferenceSchema,workspaceLabels,
+  type MatterDetail,type QueryScope,type WorkspaceRequest,type WorkspaceView} from '@mote/shared';
 import {parseUiContribution,strictDataObject} from '@mote/shared/plugin-ui';
 import {moteText} from '@mote/shared/i18n';
 import {DeclarativeView,DeclarativeViewSession,parseDeclarativeView} from '../plugin-host/declarative-view';
@@ -9,6 +9,7 @@ import type {PageProps} from '../features/types';
 import {useResource} from '../useResource';
 import {Loading} from '../Loading';
 import {ErrorNotice} from '../shell-components';
+import {all,scoped} from './assistant/common';
 
 /** Consume the producer's descriptor and spec through the existing strict
  * decoders. Command references must match the descriptor's directory exactly. */
@@ -25,6 +26,24 @@ export function decodeWorkspaceView(raw:unknown):WorkspaceView{
 
 export const workspacePath=(request:WorkspaceRequest)=>'/api/assistant/workbench?'+new URLSearchParams({request:JSON.stringify(workspaceRequestSchema.parse(request))});
 export const workspaceTranslate=(key:string)=>moteText(workspaceLabels[key]??key);
+
+const targetIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export type WorkbenchTarget={template?:WorkspaceRequest['template'];target:string};
+/** A matter link can carry the saved template or leave it for the workbench
+ * to read by ID. Memory links select the person layout with a Memory ID. */
+export function workbenchTarget(hash:string):WorkbenchTarget|undefined{
+  const params=new URLSearchParams(hash.split('?')[1]??''),person=params.get('person');
+  if(person&&targetIdPattern.test(person))return {template:'person',target:person};
+  const matter=params.get('matter');
+  if(!matter||!targetIdPattern.test(matter))return;
+  const template=matterTemplateSchema.safeParse(params.get('template')).data;
+  return {template,target:matter};
+}
+/** The matter-only projection retained for existing routes and tests. */
+export function workbenchMatterTarget(hash:string):string|undefined{
+  const value=workbenchTarget(hash);
+  return value&&value.template!=='person'?value.target:undefined;
+}
 
 const stateLabels:Readonly<Record<string,string>>={active:'进行中',paused:'已暂停',archived:'已归档',published:'有效',
   pending_confirmation:'待确认',confirmed:'已确认',completed:'已完成',cancelled:'已取消',
@@ -65,20 +84,34 @@ export function WorkspaceSurface({value,api,onResult}:{value:unknown;api:Pick<Ap
 /** The Web wrapper supplies only navigation and the existing generic
  * container. All four layouts and their data come from Central. */
 export function AssistantWorkbenchPage({api,range}:Pick<PageProps,'api'|'range'>){
-  const [template,setTemplate]=useState<WorkspaceRequest['template']>('project');
-  const [target,setTarget]=useState<string>();
+  const [selection,setSelection]=useState<Partial<WorkbenchTarget>>(()=>workbenchTarget(window.location.hash)??{template:'project'});
   const [commandFailed,setCommandFailed]=useState(false);
+  useEffect(()=>{
+    const sync=()=>{const next=workbenchTarget(window.location.hash);if(!next)return;setSelection(next);setCommandFailed(false);};
+    window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);
+  },[]);
+  const {target,template:requestedTemplate}=selection;
+  // Match the Goals matter scope for this lookup. The workbench view below
+  // applies its own range when it reads and renders evidence.
+  const matterPath=target&&!requestedTemplate?scoped('/api/assistant/matters/'+encodeURIComponent(target),all):null;
+  const savedMatter=useResource<MatterDetail>(api,matterPath,undefined,undefined,undefined,true);
+  const matter=savedMatter.error===undefined?savedMatter.data?.matter:undefined;
+  const template=requestedTemplate??(matter&&matter.id===target?matterTemplateSchema.safeParse(matter.template).data:undefined);
   const scope:QueryScope={kind:'all',...range};
-  const request:WorkspaceRequest={template,scope,...(target?template==='person'?{personMemoryId:target}:{matterId:target}:{})};
-  const path=workspacePath(request),read=useResource<unknown>(api,path,5000,undefined,undefined,true);
+  const request:WorkspaceRequest|undefined=template?{template,scope,...(target?template==='person'?{personMemoryId:target}:{matterId:target}:{})}:undefined;
+  const read=useResource<unknown>(api,request?workspacePath(request):null,5000,undefined,undefined,true);
+  if(!template)return <section className="card">
+    <h2>{moteText('工作台')}</h2>
+    {savedMatter.loading?<Loading/>:<ErrorNotice text={workspaceTranslate('failed')} retry={savedMatter.refresh}/>}
+  </section>;
   let view:WorkspaceView|undefined,invalid=false;
   if(read.data!==undefined&&read.error===undefined)try{view=decodeWorkspaceView(read.data);}catch{invalid=true;}
   const choices=(view?.data[template==='person'?'memories':'matters']??[]) as {id:string;title:string}[];
   return <section className="card">
     <h2>{moteText('工作台')}</h2>
     <nav className="segmented-nav" aria-label={moteText('工作台')}>{workspaceTemplateSchema.options.map(name=>
-      <button key={name} aria-current={template===name?'page':undefined} onClick={()=>{setTemplate(name);setTarget(undefined);setCommandFailed(false);}}>{workspaceTranslate(name)}</button>)}</nav>
-    <select aria-label={workspaceTranslate(template)} value={target??''} onChange={event=>{setTarget(event.target.value||undefined);setCommandFailed(false);}}>
+      <button key={name} aria-current={template===name?'page':undefined} onClick={()=>{setSelection({template:name});setCommandFailed(false);}}>{workspaceTranslate(name)}</button>)}</nav>
+    <select aria-label={workspaceTranslate(template)} value={target??''} onChange={event=>{setSelection({template,target:event.target.value||undefined});setCommandFailed(false);}}>
       <option value="">{moteText('当前范围')}</option>
       {target&&!choices.some(item=>item.id===target)&&<option value={target}>{moteText('当前选择')}</option>}
       {choices.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}
@@ -87,7 +120,7 @@ export function AssistantWorkbenchPage({api,range}:Pick<PageProps,'api'|'range'>
     {commandFailed&&<p role="status">{workspaceTranslate('changed')}</p>}
     {read.loading&&read.data===undefined?<Loading/>:read.error!==undefined||invalid?<ErrorNotice text={workspaceTranslate('failed')} retry={read.refresh}/>:
       view&&<WorkspaceSurface value={view} api={api} onResult={(ok,next)=>{
-        setCommandFailed(!ok);if(ok&&next)setTarget(next.personMemoryId??next.matterId);read.refresh();
+        setCommandFailed(!ok);if(ok&&next)setSelection({template,target:next.personMemoryId??next.matterId});read.refresh();
       }}/>}
   </section>;
 }

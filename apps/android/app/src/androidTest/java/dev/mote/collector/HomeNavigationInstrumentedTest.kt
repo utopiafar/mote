@@ -61,66 +61,53 @@ class HomeNavigationInstrumentedTest {
         MoteAppearance.select(context, AppearancePreference.LIGHT)
     }
 
-    /** The home no longer lists conversations; the Ask entry opens the conversation list. */
-    private fun openGeneratedConversation(scenario: ActivityScenario<MainActivity>) {
-        scenario.onActivity { activity -> shown(activity).single { it.tag == "home-ask-action" }.performClick() }
-        waitFor(scenario, "The history lists the generated conversation") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
-        scenario.onActivity { activity -> shown(activity).single { it.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true }.performClick() }
-        waitFor(scenario, "The selected conversation loads its answer") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString().contains("这是已提交的生成回答。") } }
+    private fun openMainConversation(scenario: ActivityScenario<MainActivity>) {
+        scenario.onActivity { activity -> assertTrue(shown(activity).single { it.tag == "local-tab:chat" }.performClick()) }
+        waitFor(scenario, "Ask opens the main conversation and loads its answer") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString().contains("这是已提交的生成回答。") } }
     }
 
-    @Test fun recentConversationAndDraftSurviveMenuAndBackWithoutPersistentTabs() {
+    @Test fun mainConversationAndDraftSurviveMenuTabChangeAndRecreation() {
         ConversationFixture().use { fixture ->
             val settings = Settings(context)
-            settings.save(settings.read().copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", syncPaused = true, authSignedOut = false), confirmCentralEndpoint = true)
-            File(context.noBackupFilesDir, "central-native/" + SourceRules.hash(fixture.origin)).deleteRecursively()
-            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                waitFor(scenario, "The grouped originals must load from the selected Central") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
-                screenshot(scenario, "home-recent")
-                scenario.onActivity { activity ->
-                    assertTrue(shown(activity).any { it.tag == "home-record-action" })
-                    assertTrue(shown(activity).any { it.tag == "home-ask-action" })
-                    assertFalse(shown(activity).any { it.tag?.toString()?.startsWith("primary:") == true })
-                    assertFalse("An intentional capture pause is not a home error", shown(activity).any { it.tag == "home-notice-needs-action" })
-                    activity.openGeneratedMenu()
-                    for (label in listOf("资料与记忆", "发现历史", "日程与待办", "采集与同步", "设置", "中央工作台"))
-                        assertTrue("Secondary capability remains reachable: $label", shown(activity).any { it.tag == "menu:$label" })
-                    assertFalse(shown(activity).any { it.tag == "home-record-action" })
+            val before = settings.read()
+            settings.save(before.copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", syncPaused = true, authSignedOut = false), confirmCentralEndpoint = true)
+            try {
+                ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+                    openMainConversation(scenario)
+                    assertEquals(conversation, fixture.openedId)
+                    scenario.onActivity { activity ->
+                        shown(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("生成的未发送草稿")
+                        assertTrue(shown(activity).single { it.tag == "manage-m-action" }.performClick())
+                    }
+                    instrumentation.waitForIdleSync()
+                    scenario.onActivity {
+                        val menu = android.view.inspector.WindowInspector.getGlobalWindowViews()
+                            .mapNotNull { it.findViewWithTag<View>("mote-manage-menu") }.single { it.isShown }
+                        assertTrue(views(menu).single { it.tag == "menu:设置" }.performClick())
+                    }
+                    waitFor(scenario, "Management opens settings over the Chat tab") { shown(it).any { row -> row.tag == "local-back:SETTINGS" } }
+                    instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                    waitFor(scenario, "Back from Settings restores main chat and its draft") {
+                        shown(it).filterIsInstance<EditText>().any { field -> field.contentDescription == "你的问题" && field.text.toString() == "生成的未发送草稿" }
+                    }
+                    scenario.onActivity { activity -> assertTrue(shown(activity).single { it.tag == "local-tab:library" }.performClick()) }
+                    waitFor(scenario, "Library opens before returning to Chat") { shown(it).any { row -> row.tag == "library-primary-views" } }
+                    openMainConversation(scenario)
+                    waitFor(scenario, "Switching tabs preserves the native draft") { shown(it).filterIsInstance<EditText>().any { field -> field.text.toString() == "生成的未发送草稿" } }
+                    scenario.onActivity { assertFalse(Settings(it).enabled) }
+                    screenshot(scenario, "ask-retained-draft")
+                    scenario.recreate(); scenario.awaitMainUi()
+                    waitFor(scenario, "Recreation shows the main answer and retained draft without opening a list") {
+                        val visible = shown(it)
+                        visible.filterIsInstance<EditText>().any { field -> field.text.toString() == "生成的未发送草稿" } &&
+                            visible.filterIsInstance<TextView>().any { row -> row.text.toString().contains("这是已提交的生成回答。") }
+                    }
                 }
-                screenshot(scenario, "home-menu")
-                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-                waitFor(scenario, "Back from the initial menu returns home") { shown(it).any { row -> row.tag == "home-ask-action" } }
-                openGeneratedConversation(scenario)
-                assertEquals(conversation, fixture.openedId)
-                scenario.onActivity { activity ->
-                    shown(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("生成的未发送草稿")
-                }
-                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-                waitFor(scenario, "Back from a conversation returns to its history") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
-                scenario.onActivity { activity -> assertTrue(shown(activity).single { it.contentDescription == "返回上级" }.performClick()) }
-                waitFor(scenario, "The history back button returns home") { shown(it).any { row -> row.tag == "home-ask-action" } }
-                scenario.onActivity { activity ->
-                    activity.openGeneratedMenu()
-                    assertTrue(shown(activity).any { it.tag == "menu:设置" })
-                }
-                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-                waitFor(scenario, "Back from the menu returns home") { shown(it).any { row -> row.tag == "home-ask-action" } }
-                openGeneratedConversation(scenario)
-                waitFor(scenario, "Menu and home transitions preserve the existing native draft") { shown(it).filterIsInstance<EditText>().any { field -> field.contentDescription == "你的问题" && field.text.toString() == "生成的未发送草稿" } }
-                scenario.onActivity { assertFalse(Settings(it).enabled) }
-                screenshot(scenario, "ask-retained-draft")
-                scenario.recreate(); scenario.awaitMainUi()
-                waitFor(scenario, "Recreation preserves draft and secondary back path") { shown(it).filterIsInstance<EditText>().any { field -> field.text.toString() == "生成的未发送草稿" } }
-                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-                waitFor(scenario, "Back after recreation returns to conversation history") { shown(it).any { row -> row.contentDescription?.toString()?.startsWith("周五评审需要准备什么？") == true } }
-                instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-                waitFor(scenario, "Back from history after recreation returns home") { shown(it).any { row -> row.tag == "home-record-action" } }
-            }
-            settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
+            } finally { settings.save(before, confirmCentralEndpoint = true) }
         }
     }
 
-    @Test fun failedHistoryIsDistinctFromEmptyAndUnconnectedFirstUseKeepsLocalRecording() {
+    @Test fun failedReadsAreDistinctFromEmptyAndUnconnectedFirstUseKeepsLocalRecording() {
         ConversationFixture().use { fixture ->
             val settings = Settings(context)
             settings.save(settings.read().copy(server = fixture.origin, token = "generated-home-owner-token-1234567890", debugHttp = true, syncMode = "manual", authSignedOut = false), confirmCentralEndpoint = true)
@@ -130,16 +117,17 @@ class HomeNavigationInstrumentedTest {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario, "A feed read failure is reported, not an empty day list") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂不可读取" } }
                     scenario.onActivity { assertFalse(shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂无记录。" }) }
-                    if (failure == "http") screenshot(scenario, "home-history-error")
+                    if (failure == "http") screenshot(scenario, "home-feed-error")
                 }
             }
             fixture.feedFailure = ""
-            // The conversation history page keeps its own failure surface.
             fixture.failure = "http"
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                scenario.onActivity { activity -> shown(activity).single { it.tag == "home-ask-action" }.performClick() }
-                waitFor(scenario, "A failed history read is reported on its own page") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "对话暂不可读取，请稍后重试。" } }
-                scenario.onActivity { assertFalse(shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "还没有对话。" }) }
+                waitFor(scenario, "A failed main conversation read is reported in Ask") {
+                    shown(it).filterIsInstance<TextView>().any { row -> row.tag == "central-status" && row.text.isNotBlank() }
+                }
+                assertTrue(fixture.mainRead)
+                assertEquals(null, fixture.openedId)
             }
             fixture.failure = ""
             settings.save(settings.read().copy(server = "", token = "", debugHttp = false), confirmCentralEndpoint = true)
@@ -219,7 +207,7 @@ class HomeNavigationInstrumentedTest {
                 }
                 fixture.archiveFailure = true
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-                    waitFor(scenario,"History read completed") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂无记录。" } }
+                    waitFor(scenario,"Feed read completed") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "暂无记录。" } }
                     scenario.onActivity { activity ->
                         assertFalse("An unavailable inventory must not be declared empty",shown(activity).any { it.tag == "home-notice-connect" })
                         assertFalse(settings.enabled)
@@ -238,7 +226,7 @@ class HomeNavigationInstrumentedTest {
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario,"The grouped feed is available") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
-                    openGeneratedConversation(scenario)
+                    openMainConversation(scenario)
                     waitFor(scenario,"The completed turn must show its actions") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString() == "更多" } }
                     scenario.onActivity { activity ->
                         shown(activity).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated retained follow-up")
@@ -301,7 +289,7 @@ class HomeNavigationInstrumentedTest {
             try {
                 ActivityScenario.launch<CentralActivity>(android.content.Intent(context,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId","3f4cf6ee-b09b-4fcf-a718-c0944f4b46cc").putExtra("evidenceOrigin","https://generated-other.invalid")).use { scenario ->
                     val end=SystemClock.elapsedRealtime()+15_000; var ready=false
-                    while (!ready && SystemClock.elapsedRealtime()<end) { scenario.onActivity { a -> ready=views(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "访问凭据已失效，请重新连接。" } }; if(!ready) Thread.sleep(40) }
+                    while (!ready && SystemClock.elapsedRealtime()<end) { scenario.onActivity { a -> ready=views(a.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "访问凭据已失效，重新连接" } }; if(!ready) Thread.sleep(40) }
                     assertTrue("The stale origin is explained on the real composer",ready)
                     scenario.onActivity { a ->
                         val labels=views(a.window.decorView).filterIsInstance<TextView>().filter { it.isShown }.map { it.text.toString() }
@@ -321,7 +309,7 @@ class HomeNavigationInstrumentedTest {
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario,"The grouped feed is available") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
-                    openGeneratedConversation(scenario)
+                    openMainConversation(scenario)
                     waitFor(scenario,"Long answer loaded") { shown(it).filterIsInstance<TextView>().any { row -> row.text.toString().contains("Generated original answer paragraph 70") } }
                     var position=0
                     scenario.onActivity { a ->
@@ -349,7 +337,7 @@ class HomeNavigationInstrumentedTest {
             try {
                 ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     waitFor(scenario,"The grouped feed is available") { shown(it).any { row -> row.tag == "home-original:$feedPhoto" } }
-                    openGeneratedConversation(scenario)
+                    openMainConversation(scenario)
                     waitFor(scenario,"Original citation available") { shown(it).any { row -> row.contentDescription == "查看引用 1 · Generated source" } }
                     scenario.onActivity { a -> shown(a).filterIsInstance<EditText>().single { it.contentDescription == "你的问题" }.setText("Generated pin-race draft"); shown(a).single { it.contentDescription == "查看引用 1 · Generated source" }.performClick() }
                     val end=SystemClock.elapsedRealtime()+15_000
@@ -374,6 +362,7 @@ class HomeNavigationInstrumentedTest {
         private val listener = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
         val origin = "http://127.0.0.1:${listener.localPort}"
         @Volatile var failure = ""
+        @Volatile var mainRead = false
         @Volatile var openedId: String? = null
         @Volatile var includeCitations = false
         @Volatile var referenceAvailable = true
@@ -407,9 +396,10 @@ class HomeNavigationInstrumentedTest {
                 val input = socket.getInputStream().bufferedReader()
                 val first = input.readLine().orEmpty(); val path = first.split(' ').getOrElse(1) { "" }
                 while (!input.readLine().isNullOrBlank()) Unit
-                val isHistory = path.startsWith("/api/conversations?")
+                val isMain = path == "/api/conversations/main"
+                if (isMain) mainRead = true
                 val isFeedList = path.startsWith("/api/capture-browser?")
-                val isFailure = failure == "all" || failure == "http" && isHistory || archiveFailure && path == "/api/status" || feedFailure == "http" && isFeedList
+                val isFailure = failure == "all" || failure == "http" && isMain || archiveFailure && path == "/api/status" || feedFailure == "http" && isFeedList
                 if (path.startsWith("/api/capture-browser/") && path.contains("/image")) {
                     val bytes = thumbnail
                     socket.getOutputStream().apply { write("HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(bytes); flush() }
@@ -421,13 +411,11 @@ class HomeNavigationInstrumentedTest {
                     isFeedList && feedFailure == "invalid-id" -> JSONObject().put("items", JSONArray().put(JSONObject()
                         .put("id", "not-a-record-id").put("capturedAt", "2026-10-28T10:00:00Z").put("source", "note").put("deviceId", "generated-device")))
                     isFeedList -> JSONObject().put("items", if (emptyArchive) JSONArray() else feedItems)
-                    isHistory && failure == "missing-items" -> JSONObject().put("unrelated", true)
-                    isHistory && failure == "invalid-id" -> JSONObject().put("items", JSONArray().put(JSONObject().put("id", "not-a-conversation-id")))
-                    path.startsWith("/api/conversations?") -> JSONObject().put("items", JSONArray().apply { if (!emptyArchive) put(JSONObject().put("id", conversation).put("title", "周五评审需要准备什么？").put("updatedAt", "2026-10-28T10:00:00Z").put("turnCount", 1)) })
+                    isMain -> JSONObject().put("id", conversation)
                     path == "/api/status" -> JSONObject().put("storage",JSONObject().put("captures",0))
                     path.contains("/references/") -> JSONObject().put("id",evidence).put("available",referenceAvailable)
                     path.startsWith("/api/capture-browser/") -> { captureReads++; JSONObject().put("id",evidence).put("deviceId","generated-source-device").put("source","note").put("libraryVersion", (if (changeVersionOnSecondRead && captureReads >= 2) "b" else "a").repeat(64)).put("appName","Generated source").put("ocrText","Generated original content").put("capturedAt","2026-10-28T10:00:00Z").put("metadata",JSONObject().put("ownerDescription","Generated separate description")) }
-                    path.startsWith("/api/conversations/") -> { openedId = path.substringAfter("/api/conversations/").substringBefore('?'); JSONObject().put("id", conversation).put("scope", JSONObject()).put("turns", JSONArray().put(JSONObject().put("id", turn).put("question", "周五评审需要准备什么？").put("result", JSONObject().put("answer", "这是已提交的生成回答。" + if (longAnswer) "\n\n" + (1..70).joinToString("\n\n") { "Generated original answer paragraph $it" } else "").put("modelSelection",JSONObject().put("model","generated-model")).put("citations", JSONArray().apply { if (includeCitations) put(JSONObject().put("id",evidence).put("appName","Generated source").put("capturedAt","2026-10-28T10:00:00Z")) })))) }
+                    path.substringBefore('?') == "/api/conversations/$conversation" -> { openedId = conversation; JSONObject().put("id", conversation).put("scope", JSONObject()).put("turns", JSONArray().put(JSONObject().put("id", turn).put("question", "周五评审需要准备什么？").put("status", "completed").put("result", JSONObject().put("answer", "这是已提交的生成回答。" + if (longAnswer) "\n\n" + (1..70).joinToString("\n\n") { "Generated original answer paragraph $it" } else "").put("modelSelection",JSONObject().put("model","generated-model")).put("citations", JSONArray().apply { if (includeCitations) put(JSONObject().put("id",evidence).put("appName","Generated source").put("capturedAt","2026-10-28T10:00:00Z")) })))) }
                     path.startsWith("/api/model-settings") -> JSONObject().put("profiles", JSONArray())
                     else -> JSONObject().put("items", JSONArray())
                 }.toString().toByteArray()

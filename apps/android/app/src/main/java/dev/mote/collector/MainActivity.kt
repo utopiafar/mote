@@ -21,11 +21,19 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
 import dev.mote.collector.plugins.AssistantPlugin
+import dev.mote.collector.plugins.AdministrationConnectionStatus
+import dev.mote.collector.plugins.ConnectionServicesSection
+import dev.mote.collector.plugins.ManageBack
+import dev.mote.collector.plugins.ManageDestination
 import dev.mote.collector.plugins.NativeAdministrationPlugin
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativeLibraryPlugin
 import dev.mote.collector.plugins.NativeSystemToolsPlugin
 import dev.mote.collector.plugins.NativeWorkDiscoveryPlugin
+import dev.mote.collector.plugins.NotificationSettings
+import dev.mote.collector.plugins.NotificationSettingsValue
+import dev.mote.collector.plugins.QuietHours
+import dev.mote.collector.plugins.SettingsAction
 import dev.mote.collector.ui.MoteComponents
 import dev.mote.collector.ui.MoteGlyph
 import dev.mote.collector.ui.MoteIconButtonStyle
@@ -119,11 +127,12 @@ class MainActivity : MoteActivity() {
     private enum class Page(private val titleKey: String, val parent: String? = null) {
         OVERVIEW("首页"), MANAGE("我的 Mote", "OVERVIEW"), LIBRARY("资料库"), ASK("问一问"),
         FEED("动态"), IDEAS("点子"), GOALS("目标"), MEMORY("记忆"), SKILLS("技能"),
+        SERVICES("连接"),
         ACTIVITY("活动", "MANAGE"), NOTES("记录", "LIBRARY"), SOURCES("采集与同步", "MANAGE"), SETTINGS("设置"),
         CONNECTION("连接与设备", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
         PROCESSING("图像质量与去重", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("采集范围", "SETTINGS"), PERMISSIONS("系统权限与后台运行", "SETTINGS"),
-        APPEARANCE("外观与语言", "SETTINGS"),
+        APPEARANCE("外观与语言", "SETTINGS"), NOTIFICATIONS("通知", "SETTINGS"),
         ABOUT("关于、更新与反馈", "SETTINGS"), DEVELOPER("开发者选项", "SETTINGS"),
         DIAGNOSTICS("诊断与支持", "SETTINGS")
     ;
@@ -133,7 +142,6 @@ class MainActivity : MoteActivity() {
     private val centralTabPages = listOf(Page.FEED, Page.IDEAS, Page.GOALS, Page.MEMORY, Page.SKILLS)
     private val dailyTabPages = setOf(Page.ASK, Page.FEED, Page.IDEAS, Page.GOALS, Page.LIBRARY)
     private val placeholderTabs = mutableSetOf<Page>()
-    private val IDEAS_ROUTE = "assistant.ideas"
     private var logExportHours = 24
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig, val appCapture: AppCaptureEditor.State?)
     private lateinit var name: EditText
@@ -189,9 +197,11 @@ class MainActivity : MoteActivity() {
     private var settingsConnectionDetail: TextView? = null
     private var connectionCentralValue: TextView? = null
     private var connectionPermissionValue: TextView? = null
+    private var connectionStateValue: TextView? = null
     private var connectionTimeValue: TextView? = null
     private var connectionConnectAction: View? = null
     private var connectionDisconnectAction: View? = null
+    private var connectionReauthAction: View? = null
     private var localStateJob: kotlinx.coroutines.Job? = null
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connectionTitle: String, val connection: String,
@@ -224,7 +234,7 @@ class MainActivity : MoteActivity() {
             }
                 .onFailure { failure ->
                     loading.removeView(mark)
-                    loading.addView(TextView(this).apply { text = if (failure.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) failure.message else MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") })
+                    loading.addView(TextView(this).apply { text = if (failure.message == MoteI18n.text(LocalDataFormat.RESET_MESSAGE)) failure.message else MoteI18n.text("设置无法读取，原数据保留。退出后检查存储或重试") })
                 }
         }
     }
@@ -374,11 +384,12 @@ class MainActivity : MoteActivity() {
         refreshBadges()
         val items = navigationCatalog.manage { it.packageId in navPackages() }
         MoteManageMenu(this) { item ->
-            when (item.id) {
-                "memory" -> showPage(Page.MEMORY)
-                "skills" -> showPage(Page.SKILLS)
-                "connections" -> showPage(Page.CONNECTION, connectionEntryOrigin = ConnectionOrigin.MANAGE_MENU)
-                "settings" -> showPage(Page.SETTINGS)
+            when (ManageDestination.forNavId(item.id)) {
+                ManageDestination.MEMORY -> showPage(Page.MEMORY)
+                ManageDestination.SKILLS -> showPage(Page.SKILLS)
+                ManageDestination.CONNECTIONS -> showPage(Page.SERVICES)
+                ManageDestination.SETTINGS -> showPage(Page.SETTINGS)
+                null -> Unit
             }
         }.show(items, navBadges)
     }
@@ -405,6 +416,7 @@ class MainActivity : MoteActivity() {
             handler.post {
                 badgeLoading = false
                 if (isDestroyed || isFinishing) return@post
+                if (!badgeGate.current(stamp)) { refreshBadges(); return@post }
                 val end = SystemClock.elapsedRealtime()
                 result.onSuccess { state ->
                     badgeGate.success(end)
@@ -416,6 +428,9 @@ class MainActivity : MoteActivity() {
                                 tabCentrals[Page.GOALS]?.goalsRevisionChanged?.invoke(revisions.optString("matters") to revisions.optString("commitments"))
                             } else if (currentPage == Page.LIBRARY) {
                                 libraryView?.centralRevisions(revisions.optString("library"), revisions.optString("sources"))
+                            } else if (currentPage == Page.FEED || currentPage == Page.IDEAS) {
+                                val ideas = navBadges.ideas.takeIf { currentPage == Page.IDEAS }
+                                tabCentrals[currentPage]?.assistantRevisionChanged?.invoke(revisions.optString("cards") to ideas)
                             }
                         }
                     }
@@ -520,7 +535,7 @@ class MainActivity : MoteActivity() {
         RuntimeSettings.apply(this, next, expected = loadedConfig) { result ->
             applyingSettings = false
             result.onSuccess { loadedConfig = next; commitSettingsSummaries(next); refreshStatus(); loadSourceRows(); onApplied() }
-                .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失")) }
+                .onFailure { toast(it.message ?: MoteI18n.text("保存或调度失败，重试；已保存内容不会丢失")) }
         }
     }
 
@@ -643,7 +658,28 @@ class MainActivity : MoteActivity() {
         page(Page.SETTINGS, null)
         content.setPadding(dp(16), 0, dp(16), dp(28))
         designHeading(MoteI18n.text("设置"))
-        val connectionGroup = menuGroup(0)
+        val groups = linkedMapOf<String, LinearLayout>()
+        fun group(id: String): LinearLayout = groups.getOrPut(id) { menuGroup(if (id == "connection") 0 else 24) }
+        SettingsAction.entries.forEach { entry ->
+            val label = MoteI18n.text(entry.label)
+            when (entry) {
+                SettingsAction.CONNECTION -> addGroupRow(group(entry.group), settingsConnectionCard())
+                SettingsAction.APPEARANCE -> addGroupRow(group(entry.group), settingsOption(label) { showPage(Page.APPEARANCE) })
+                SettingsAction.BACKUP -> addGroupRow(group(entry.group), settingsOption(label) { startActivity(Intent(this, BackupActivity::class.java)) })
+                SettingsAction.DIAGNOSTICS -> addGroupRow(group(entry.group), settingsOption(label) { showPage(Page.DIAGNOSTICS) })
+                SettingsAction.NOTIFICATIONS -> addGroupRow(group(entry.group), settingsOption(label) { showPage(Page.NOTIFICATIONS) })
+                SettingsAction.ABOUT -> addGroupRow(group(entry.group), settingsOption(label, BuildConfig.VERSION_NAME.substringBefore('-')) { showPage(Page.ABOUT) })
+                SettingsAction.CENTRAL_WORKBENCH -> addGroupRow(group(entry.group), MoteComponents.row(
+                    this, MoteGlyph.GLOBE, label,
+                    trailing = MoteComponents.icon(this, MoteGlyph.EXTERNAL, NativeColorRole.MUTED, 16),
+                    onClick = { openCentral("overview") },
+                ).apply { tag = "menu:" + entry.label })
+            }
+        }
+        renderSettingsSummaries()
+    }
+
+    private fun settingsConnectionCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; isBaselineAligned = false
             minimumHeight = dp(64); setPadding(dp(14), dp(9), dp(14), dp(9))
@@ -674,16 +710,7 @@ class MainActivity : MoteActivity() {
         card.addView(MoteComponents.icon(this, MoteGlyph.CHEV, NativeColorRole.MUTED, 16),
             LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginStart = dp(12) })
         settingsConnectionRow = card
-        addGroupRow(connectionGroup, card)
-
-        val choices = menuGroup(24)
-        addGroupRow(choices, settingsOption(MoteI18n.text("外观与语言")) { showPage(Page.APPEARANCE) })
-        addGroupRow(choices, settingsOption(MoteI18n.text("备份与恢复")) { startActivity(Intent(this, BackupActivity::class.java)) })
-        addGroupRow(choices, settingsOption(MoteI18n.text("诊断与支持")) { showPage(Page.DIAGNOSTICS) })
-
-        val about = menuGroup(24)
-        addGroupRow(about, settingsOption(MoteI18n.text("关于与更新"), BuildConfig.VERSION_NAME.substringBefore('-')) { showPage(Page.ABOUT) })
-        renderSettingsSummaries()
+        return card
     }
 
     private fun CollectorConfig.settingsSummary() = SettingsSummaryConfig(server, syncPaused)
@@ -699,9 +726,12 @@ class MainActivity : MoteActivity() {
         val config = (state as? SettingsSummaryState.Current)?.config
         val server = fallback ?: centralHost(config!!.server)
         val detail = loadedConfig.deviceName
+        val connectionStatus = if (loadedConfig.hasSyncConnection())
+            AdministrationConnectionStatus.label(ConnectionClient(applicationContext).status())
+        else MoteI18n.text("未连接")
         settingsConnectionTitle?.let { if (state == SettingsSummaryState.Loading) MoteComponents.reading(it, server) else it.text = server }
-        settingsConnectionDetail?.text = detail
-        settingsConnectionRow?.contentDescription = listOf(MoteI18n.text("连接与设备"), server, detail.takeIf { fallback == null })
+        settingsConnectionDetail?.text = listOf(detail, connectionStatus).filter { it.isNotBlank() }.joinToString(" · ")
+        settingsConnectionRow?.contentDescription = listOf(MoteI18n.text("连接与设备"), server, detail.takeIf { fallback == null }, connectionStatus)
             .filterNotNull().joinToString("，")
     }
 
@@ -739,7 +769,7 @@ class MainActivity : MoteActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (appearances[position] != MoteAppearance.preference()) runCatching { MoteAppearance.select(this@MainActivity,appearances[position]) }
-                    .onFailure { toast(MoteI18n.text("无法保存外观偏好，请重试。")) }
+                    .onFailure { toast(MoteI18n.text("无法保存外观偏好，重试")) }
             }
         }
         text(MoteI18n.text("界面语言"),NativeFontRole.SUPPORT)
@@ -765,8 +795,8 @@ class MainActivity : MoteActivity() {
             .appendQueryParameter("environment", MoteI18n.text("Android 客户端 · {0}", BuildConfig.MOTE_PROFILE))
             .build()
         try { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-        catch (_: ActivityNotFoundException) { toast(MoteI18n.text("无法打开 GitHub，请安装或启用浏览器后重试")) }
-        catch (_: SecurityException) { toast(MoteI18n.text("系统未允许打开 GitHub，请检查浏览器设置后重试")) }
+        catch (_: ActivityNotFoundException) { toast(MoteI18n.text("无法打开 GitHub，安装或启用浏览器后重试")) }
+        catch (_: SecurityException) { toast(MoteI18n.text("系统未允许打开 GitHub，检查浏览器设置后重试")) }
     }
 
     private fun buildSources() {
@@ -788,6 +818,7 @@ class MainActivity : MoteActivity() {
         val facts = menuGroup(0)
         connectionCentralValue = connectionRow(facts, MoteI18n.text("中央"))
         connectionPermissionValue = connectionRow(facts, MoteI18n.text("权限"))
+        connectionStateValue = connectionRow(facts, MoteI18n.text("状态"))
         connectionTimeValue = connectionRow(facts, MoteI18n.text("连接时间"))
 
         text(MoteI18n.text("设备名称"), NativeFontRole.SUPPORT, NativeColorRole.MUTED).apply {
@@ -807,6 +838,11 @@ class MainActivity : MoteActivity() {
 
         val actions = menuGroup(24)
         if (config.hasSyncConnection()) {
+            connectionReauthAction = connectionActionRow(MoteI18n.text("重新连接"), danger = false) {
+                discardPageDraft()
+                startActivity(Intent(this, ConnectionActivity::class.java))
+            }
+            addGroupRow(actions, connectionReauthAction!!)
             connectionDisconnectAction = connectionActionRow(MoteI18n.text("断开连接"), danger = true) { confirmDisconnect() }
             addGroupRow(actions, connectionDisconnectAction!!)
         } else {
@@ -861,8 +897,105 @@ class MainActivity : MoteActivity() {
             else -> MoteI18n.text("采集权限")
         }
         connectionTimeValue?.text = if (!connected) MoteI18n.text("尚未连接") else connectionTimeLabel(ConnectionClient(applicationContext).statusAt())
+        val status = ConnectionClient(applicationContext).status()
+        connectionStateValue?.text = if (connected) AdministrationConnectionStatus.label(status) else MoteI18n.text("未连接")
+        connectionReauthAction?.visibility = if (connected && AdministrationConnectionStatus.needsReauthorization(status)) View.VISIBLE else View.GONE
         connectionConnectAction?.visibility = if (connected) View.GONE else View.VISIBLE
         connectionDisconnectAction?.visibility = if (connected) View.VISIBLE else View.GONE
+    }
+
+    private fun buildConnectionServices() {
+        page(Page.SERVICES, null)
+        content.setPadding(dp(16), 0, dp(16), dp(28))
+        designHeading(MoteI18n.text("连接"))
+        val selection = runCatching { CentralAccess.resolve(this) }.getOrNull()
+        val client = selection?.client
+        if (client == null) {
+            text(MoteI18n.text("尚未连接中央"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+            button(MoteI18n.text("连接"), true) { showPage(Page.CONNECTION) }
+            return
+        }
+        val server = selection.server.trimEnd('/')
+        ConnectionServicesSection(this, content, client) {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(server + "/#/" + CentralPageRoutes.connections))) }
+                .onFailure { toast(MoteI18n.text("无法打开中央页面")) }
+        }.load()
+    }
+
+    private fun buildNotifications() {
+        page(Page.NOTIFICATIONS, null)
+        content.setPadding(dp(16), 0, dp(16), dp(28))
+        designHeading(MoteI18n.text("通知"))
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(body)
+        loadNotifications(body)
+    }
+
+    private fun loadNotifications(body: LinearLayout, active: CentralClient? = null) {
+        body.removeAllViews()
+        val client = active ?: runCatching { CentralAccess.resolve(this) }.getOrNull()?.client
+        if (client == null) {
+            text(MoteI18n.text("尚未连接中央"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = body)
+            button(MoteI18n.text("连接"), true, parent = body) { showPage(Page.CONNECTION) }
+            return
+        }
+        uiTask.start(MoteI18n.text("正在读取…"), {}, { NotificationSettings.read(client) }) { result ->
+            if (isDestroyed || isFinishing) return@start
+            body.removeAllViews()
+            result.onSuccess { renderNotifications(body, client, it) }.onFailure { failure ->
+                text(failure.message ?: MoteI18n.text("需要处理"), NativeFontRole.SUPPORT, NativeColorRole.WARNING, parent = body)
+                button(MoteI18n.text("重试"), parent = body) { loadNotifications(body, client) }
+            }
+        }
+    }
+
+    private fun renderNotifications(body: LinearLayout, client: CentralClient, value: NotificationSettingsValue) {
+        val enabled = MoteComponents.switch(this, value.enabled, MoteI18n.text("助理通知"))
+        val quiet = MoteComponents.switch(this, value.quietHours != null, MoteI18n.text("安静时段")) { on ->
+            body.findViewWithTag<View>("notifications-quiet-hours")?.visibility = if (on) View.VISIBLE else View.GONE
+        }
+        val toggles = MoteComponents.group(this)
+        toggles.addView(MoteComponents.row(this, null, MoteI18n.text("助理通知"), trailing = enabled))
+        toggles.addView(MoteComponents.divider(this))
+        toggles.addView(MoteComponents.row(this, null, MoteI18n.text("安静时段"), trailing = quiet))
+        body.addView(toggles)
+        val hours = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            tag = "notifications-quiet-hours"
+            setPadding(0, dp(12), 0, dp(4))
+            visibility = if (value.quietHours == null) View.GONE else View.VISIBLE
+        }
+        val start = MoteUi.field(EditText(this).apply {
+            setText(value.quietHours?.start ?: "22:00"); hint = "22:00"
+            contentDescription = MoteI18n.text("开始时间"); isSingleLine = true
+            inputType = InputType.TYPE_CLASS_DATETIME
+        })
+        val end = MoteUi.field(EditText(this).apply {
+            setText(value.quietHours?.end ?: "08:00"); hint = "08:00"
+            contentDescription = MoteI18n.text("结束时间"); isSingleLine = true
+            inputType = InputType.TYPE_CLASS_DATETIME
+        })
+        text(MoteI18n.text("开始时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = hours)
+        hours.addView(start, LinearLayout.LayoutParams(-1, dp(MoteTheme.controlHeight)))
+        text(MoteI18n.text("结束时间"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = hours)
+        hours.addView(end, LinearLayout.LayoutParams(-1, dp(MoteTheme.controlHeight)))
+        body.addView(hours)
+        text(MoteI18n.text("时区") + " · " + value.timeZone, NativeFontRole.META, NativeColorRole.MUTED, parent = body)
+        if (value.readOnly) {
+            text(MoteI18n.text("当前服务只读，无法保存。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED, parent = body)
+        }
+        val save = button(MoteI18n.text("保存"), true, parent = body) {
+            if (value.readOnly) { toast(MoteI18n.text("当前服务只读，无法保存。")); return@button }
+            val selected = if (quiet.checked) QuietHours(start.text.toString().trim(), end.text.toString().trim()) else null
+            if (!NotificationSettings.validTime(selected)) { toast(MoteI18n.text("时间格式无法识别。")); return@button }
+            if (!NotificationSettings.validate(selected)) { toast(MoteI18n.text("开始和结束时间不能相同。")); return@button }
+            uiTask.start(MoteI18n.text("正在保存…"), {}, { NotificationSettings.save(client, value, enabled.checked, selected) }) { result ->
+                if (isDestroyed || isFinishing) return@start
+                result.onSuccess { toast(MoteI18n.text("已保存")); loadNotifications(body, client) }
+                    .onFailure { toast(it.message ?: MoteI18n.text("需要处理")) }
+            }
+        }
+        save.isEnabled = !value.readOnly
     }
 
     private fun centralHost(server: String): String {
@@ -908,7 +1041,7 @@ class MainActivity : MoteActivity() {
         button(MoteI18n.text("授权通知、媒体与设备事件")) { mediaPermission() }
         button(MoteI18n.text("重新授权投屏（已开启的媒体可继续）")) {
             val c = loadedConfig
-            if (!c.screenCollectionEnabled || c.effectiveMode() != "projection") toast(MoteI18n.text("请先启用屏幕采集并保存投屏模式"))
+            if (!c.screenCollectionEnabled || c.effectiveMode() != "projection") toast(MoteI18n.text("先启用屏幕采集并保存投屏"))
             else if (ProjectionService.running) toast(MoteI18n.text("投屏会话正在运行"))
             else if (!settings.enabled) startCapture()
             else requestProjectionConsent()
@@ -995,7 +1128,7 @@ class MainActivity : MoteActivity() {
         button(MoteI18n.text("保存日志设置")) {
             if (logSettings.save(RuntimeLogPolicy(logEnabled.isChecked, logLevels[logLevel.selectedItemPosition]))) {
                 toast(MoteI18n.text("已保存，立即生效。"))
-            } else toast(MoteI18n.text("无法持久保存设置，请检查存储空间"))
+            } else toast(MoteI18n.text("无法持久保存设置，检查存储空间"))
         }
         text(MoteI18n.text("日志目录") + ": " + noBackupFilesDir.absolutePath, NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         text(MoteI18n.text("日志位于应用私有空间；关闭后停止新增，已有日志保留。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
@@ -1065,7 +1198,7 @@ class MainActivity : MoteActivity() {
             override fun run() {
                 if (isDestroyed) return
                 if (resumed && !task.busy) controller.persistence()?.let {
-                    progress.text = if (it.succeeded) MoteI18n.text("草稿已保存") else MoteI18n.text("草稿保存失败，请保持页面打开并检查可用空间")
+                    progress.text = if (it.succeeded) MoteI18n.text("草稿已保存") else MoteI18n.text("草稿保存失败，保持页面打开并检查可用空间")
                 }
                 handler.postDelayed(this, 500)
             }
@@ -1161,7 +1294,7 @@ class MainActivity : MoteActivity() {
         section(MoteI18n.text("开启前预览"))
         text(MoteI18n.text("保存范围后开始，系统权限按需申请。拒绝授权不影响文件和记录。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         button(MoteI18n.text("预览当前配置的记录格式")) {
-            val candidate = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("请检查设置")); return@button }
+            val candidate = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("检查设置")); return@button }
             showCapturePreview(candidate)
         }
         button(MoteI18n.text("保存并预览"), true) { saveConfig(after = { showCapturePreview(loadedConfig) }) }
@@ -1188,7 +1321,6 @@ class MainActivity : MoteActivity() {
         content.addView(ruleEditor)
         val pageOwner = content; content = ruleEditor
         uiPageRules=sourceField("页面规则 JSON",config.uiPageRules,"[]",multiline=true)
-        text(MoteI18n.text("字段规则需要匹配实际应用版本与控件 ID；配置匹配不代表已经通过真机验证。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         content = pageOwner
         localContentOcr = sourceCheck("使用本机 OCR 补充结构化内容", config.localContentOcr)
         localContentOcr.setOnCheckedChangeListener { _, _ -> updateSaveBar(); renderAppRules() }
@@ -1202,11 +1334,11 @@ class MainActivity : MoteActivity() {
                 excludes.setText(PrivacyRules.exclusions(excludes.text.toString()).filterNot { it == id }.joinToString("\n"))
                 appPolicies.setText(selected.entries.joinToString("\n") { "${it.key}=${it.value.wire}" })
             },
-            preview = { id -> runCatching { draft().also { it.validate() } }.onSuccess { showCapturePreview(it, appId = id) }.onFailure { toast(it.message ?: MoteI18n.text("请检查设置")) } },
+            preview = { id -> runCatching { draft().also { it.validate() } }.onSuccess { showCapturePreview(it, appId = id) }.onFailure { toast(it.message ?: MoteI18n.text("检查设置")) } },
             editRule = { id, version -> editAppPageRule(id, version) { renderAppRules() } },
             loadRules = { id, version -> loadAppPageRules(id, version) },
             importRules = { id, version ->
-                if (version.isBlank()) toast(MoteI18n.text("无法读取应用版本，请重新选择已安装应用"))
+                if (version.isBlank()) toast(MoteI18n.text("无法读取应用版本，重新选择已安装应用"))
                 else { pageRuleImportTarget = id to version
                     @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 106) }
             }, detailChanged = { detail ->
@@ -1302,7 +1434,7 @@ class MainActivity : MoteActivity() {
             MoteUi.action(dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE),MoteUi.ButtonRole.PRIMARY)
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (applyingSettings || uiTask.busy) return@setOnClickListener
-                if (loadedConfig != expected) { toast(MoteI18n.text("配置或相关操作状态已变化，请重新读取后再确认。")); return@setOnClickListener }
+                if (loadedConfig != expected) { toast(MoteI18n.text("配置或相关操作状态已变化，重新读取后再确认")); return@setOnClickListener }
                 applySettings(expected.copy(notificationCollectionEnabled = notifications.isChecked,deviceEventCollectionEnabled = events.isChecked,mediaCollectionEnabled = media.isChecked),
                     expected = expected,appliedFields = emptySet(),submitted = baseline,saved = { dialog.dismiss() })
             }
@@ -1401,7 +1533,7 @@ class MainActivity : MoteActivity() {
         setPermissionStatus("通知", if (notifications) MoteI18n.text("已允许") else MoteI18n.text("未允许"), notifications)
         setPermissionStatus("使用情况", if (usage) MoteI18n.text("已授权") else MoteI18n.text("未授权"), usage)
         setPermissionStatus("电池优化", if (power) MoteI18n.text("已豁免") else MoteI18n.text("未豁免") + " · " + MoteI18n.text("系统可能限制后台运行"), if (power) true else null)
-        setPermissionStatus("自启动", MoteI18n.text("系统未提供可靠查询，请在系统设置确认。"), null)
+        setPermissionStatus("自启动", MoteI18n.text("系统未提供可靠查询，在系统设置确认"), null)
     }
 
     private fun retrySync() {
@@ -1415,7 +1547,7 @@ class MainActivity : MoteActivity() {
                     else UploadWorker.schedule(app, c, true)
                     true
                 }
-            } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
+            } ?: error(MoteI18n.text("正在应用设置，稍后重试"))
         }) { result ->
             result.onSuccess { connected ->
                 if (!connected) { showPage(Page.CONNECTION); toast(MoteI18n.text("记录已保存在本机；连接节点后才可以同步")) }
@@ -1427,7 +1559,7 @@ class MainActivity : MoteActivity() {
     /** A settings page can only change its own fields in the latest saved snapshot. */
     private fun draft(current: CollectorConfig = loadedConfig): CollectorConfig = when (currentPage) {
         Page.CONNECTION -> current.copy(
-            deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") } } })
+            deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { MoteI18n.text("填写 1..128 字符的设备名称") } } })
         Page.CAPTURE -> current.copy(
             intervalSeconds = number(interval, 5..300), mode = if (projectionMode.isChecked) "projection" else "accessibility",
             uiPageMode = if (projectionMode.isChecked) "screen_only" else current.uiPageMode,
@@ -1450,13 +1582,13 @@ class MainActivity : MoteActivity() {
     }
     private fun number(field: EditText, range: IntRange): Int = checked(field) {
         val value = field.text.toString().trim().toIntOrNull()
-        require(value != null && value in range) { MoteI18n.text("请输入 {0}–{1} 之间的整数", range.first, range.last) }
+        require(value != null && value in range) { MoteI18n.text("输入 {0}–{1} 的整数", range.first, range.last) }
         value
     }
     private fun <T> checked(field: EditText, read: () -> T): T = try {
         read().also { field.error = null }
     } catch (error: Exception) {
-        val message = if (error is java.net.URISyntaxException || error is NumberFormatException) MoteI18n.text("请检查此项的输入格式") else error.message ?: MoteI18n.text("请检查此项设置")
+        val message = if (error is java.net.URISyntaxException || error is NumberFormatException) MoteI18n.text("检查此项的输入格式") else error.message ?: MoteI18n.text("检查此项设置")
         showPage(controlPages.getValue(field))
         var ancestor = field.parent
         while (ancestor is View && ancestor !is ScrollView) { ancestor.visibility = View.VISIBLE; ancestor = ancestor.parent }
@@ -1467,7 +1599,7 @@ class MainActivity : MoteActivity() {
     private fun saveConfig(bindLocal: Boolean = false, after: () -> Unit = {}): Unit {
         if (applyingSettings || uiTask.busy) return
         val current = loadedConfig
-        val c = runCatching { draft(current).let { if (it.token != current.token || it.server != current.server) it.copy(authSignedOut = false, authExpiresAt = 0, authProcess = "") else it }.also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("请检查配置输入")); return }
+        val c = runCatching { draft(current).let { if (it.token != current.token || it.server != current.server) it.copy(authSignedOut = false, authExpiresAt = 0, authProcess = "") else it }.also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("检查配置输入")); return }
         val savedFields = pageControlValues().keys
         val submitted = baseline + controlValues().filterKeys { it in savedFields }; val generation = draftGeneration
         if (c.server == current.server && c.token == current.token) {
@@ -1497,7 +1629,7 @@ class MainActivity : MoteActivity() {
                         .setMessage(MoteI18n.text("{0}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。请核对这是你自己的节点。", c.server))
                         .setNegativeButton(MoteI18n.text("继续保存在本机"), null).setPositiveButton(MoteI18n.text("确认绑定并保存")) { _, _ -> applySettings(c, true, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after) }.show()
                     else applySettings(c, bindLocal, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after)
-                }.onFailure { toast(it.message ?: MoteI18n.text("无法检查设置，请重试")); refreshStatus() }
+                }.onFailure { toast(it.message ?: MoteI18n.text("无法检查设置，重试")); refreshStatus() }
             }
         }) { }
     }
@@ -1522,25 +1654,25 @@ class MainActivity : MoteActivity() {
                 saved(); toast(MoteI18n.text("设置已保存")); resumeProjectionAfterSettings()
             }.onFailure {
                 RuntimeSettings.currentConfiguration?.let { if (it != loadedConfig) { reloadSettings(it); commitSettingsSummaries(it) } }
-                toast(it.message ?: MoteI18n.text("设置未保存，请重试"))
+                toast(it.message ?: MoteI18n.text("设置未保存，重试"))
             }
             updateSaveBar(); refreshStatus()
         }
     }
     private fun startCapture() {
-        if (ConnectionGuard.changing() || RuntimeSettings.stopping) { toast(MoteI18n.text("正在连接节点，请稍后再开始采集")); return }
+        if (ConnectionGuard.changing() || RuntimeSettings.stopping) { toast(MoteI18n.text("正在连接节点，稍后再开始采集")); return }
         if (settings.enabled) { toast(MoteI18n.text("已启用，状态见上方")); return }
-        val next = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("请检查设置")); return }
+        val next = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("检查设置")); return }
         fun previewThenStart() {
             showCapturePreview(loadedConfig, firstStart = true)
         }
         if (next == loadedConfig) previewThenStart() else saveConfig(after = { previewThenStart() })
     }
     private fun startConfiguredCapture() {
-        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast(MoteI18n.text("请先允许通知，然后再次点击开始")); return }
+        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast(MoteI18n.text("先允许通知，然后再次点击开始")); return }
         val c = loadedConfig
         if (!c.screenCollectionEnabled) {
-            if (!c.observesSystem()) { showPage(Page.CAPTURE); toast(MoteI18n.text("请至少启用一种采集来源")); return }
+            if (!c.observesSystem()) { showPage(Page.CAPTURE); toast(MoteI18n.text("至少启用一种采集来源")); return }
             if (!MediaCollection.permissionAllowed(this)) { mediaPermission(); return }
             enableCapture(c, MoteI18n.text("通知、设备事件或媒体采集已启用；等待系统事件")) {
                 MediaCollectionService.refresh()
@@ -1549,8 +1681,8 @@ class MainActivity : MoteActivity() {
             return
         }
         if (c.effectiveMode() == "accessibility") {
-            if (Build.VERSION.SDK_INT < 30 && (c.collectionRules.mayCollectScreenshots() || c.localContentOcr && c.collectionRules.mayCollectStructured())) { toast(MoteI18n.text("Android 10 内容截图请勾选投屏模式；仅活动无需投屏")); return }
-            if (!CaptureAccessibilityService.connected) { showPage(Page.PERMISSIONS); toast(MoteI18n.text("请先启用无障碍截图服务，返回后再开始")); return }
+            if (Build.VERSION.SDK_INT < 30 && (c.collectionRules.mayCollectScreenshots() || c.localContentOcr && c.collectionRules.mayCollectStructured())) { toast(MoteI18n.text("Android 10 内容截图勾选投屏模式；仅活动无需投屏")); return }
+            if (!CaptureAccessibilityService.connected) { showPage(Page.PERMISSIONS); toast(MoteI18n.text("先启用无障碍截图服务，返回后再开始")); return }
             enableCapture(c, MoteI18n.text("采集已启用，等待首帧；配置页受系统安全保护")) {}
         } else {
             if (!CaptureAccessibilityService.connected && AppCollectionRules.parse(c.appCollectionRules).requiresWindowIdentity(PrivacyRules.exclusions(c.excludedPackages))) {
@@ -1566,7 +1698,7 @@ class MainActivity : MoteActivity() {
                 Operations.record(applicationContext, OperationKind.CAPTURE_STARTED); settings.status("capturing", message)
             }
         }) { result ->
-            if (result.getOrDefault(false)) after() else toast(MoteI18n.text("节点或配置已变化，请重新点击开始"))
+            if (result.getOrDefault(false)) after() else toast(MoteI18n.text("节点或配置已变化，重新点击开始"))
             refreshStatus()
         }
     }
@@ -1586,7 +1718,7 @@ class MainActivity : MoteActivity() {
     @Deprecated("Platform consent result API retained for the minimal native Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode in setOf(71, 72, 73)) {
+        if (CentralContent.handlesActivityResult(requestCode)) {
             if (initializing) pendingCentralResult = Triple(requestCode, resultCode, data)
             else { ensurePage(Page.ASK); centralContent?.activityResult(requestCode, resultCode, data) }
             return
@@ -1614,7 +1746,7 @@ class MainActivity : MoteActivity() {
                 updateSaveBar()
                 result.onSuccess { merged ->
                     if (uiPageRules.text.toString() != previousRules || appVersion(target.first) != target.second) {
-                        toast(MoteI18n.text("应用版本或规则草稿已变化，请重新导入"))
+                        toast(MoteI18n.text("应用版本或规则草稿已变化，重新导入"))
                     } else {
                         uiPageRules.setText(merged); uiPageMode.setSelection(uiPageModes.indexOf("ui_preferred"))
                         toast(MoteI18n.text("字段规则已加入草稿；返回后保存生效，应用内容授权未改变"))
@@ -1627,7 +1759,7 @@ class MainActivity : MoteActivity() {
             val quality = data.getIntExtra("quality", 75); val side = data.getIntExtra("maxSide", 1280)
             if (quality in 40..95 && side in 640..2560) {
                 showPage(Page.PROCESSING); jpegQuality.setText(quality.toString()); captureMaxSide.setText(side.toString())
-                toast(MoteI18n.text("参数已带回采集设置，请点击保存后应用"))
+                toast(MoteI18n.text("参数已带回采集设置，点击保存后应用"))
             }
             return
         }
@@ -1660,7 +1792,7 @@ class MainActivity : MoteActivity() {
                     } else false
                 } == true else ConnectionGuard.startCapture(applicationContext, stamp, startProjection)
             }) { result ->
-                if (!result.getOrDefault(false)) settings.status(if (settings.enabled) "capturing" else "permission_required", MoteI18n.text("节点或采集配置已变化，本次授权已丢弃；请重新点击开始"))
+                if (!result.getOrDefault(false)) settings.status(if (settings.enabled) "capturing" else "permission_required", MoteI18n.text("节点或采集配置已变化，本次授权已丢弃；重新点击开始"))
                 refreshStatus()
             }
         } else if (requestCode == 100) settings.status(if (settings.enabled) "capturing" else "permission_required", MoteI18n.text("你未授予投屏权限，未开始截图") + if (settings.enabled) MoteI18n.text("；媒体采集继续运行") else "")
@@ -1679,7 +1811,7 @@ class MainActivity : MoteActivity() {
         startActivity(Intent(this, ConnectionActivity::class.java).putExtra("firstUse", firstUse))
     }
     private fun resumeCapture() {
-        if (ConnectionGuard.changing() || RuntimeSettings.stopping || applyingSettings) { toast(MoteI18n.text("正在应用设置，请稍后重试")); return }
+        if (ConnectionGuard.changing() || RuntimeSettings.stopping || applyingSettings) { toast(MoteI18n.text("正在应用设置，稍后重试")); return }
         if (settings.screenPausedAt() == null || loadedConfig.screenCollectionEnabled) { startCapture(); return }
         val base = loadedConfig
         val next = base.copy(screenCollectionEnabled = true)
@@ -1704,7 +1836,7 @@ class MainActivity : MoteActivity() {
             if (isDestroyed) return@stop
             result.onSuccess {
                 settings.status("paused", MoteI18n.text("你已停止采集，已有记录保留，同步按所选策略运行"))
-            }.onFailure { toast(it.message ?: MoteI18n.text("停止未完成，请重试")) }
+            }.onFailure { toast(it.message ?: MoteI18n.text("停止未完成，重试")) }
             refreshStatus()
         }
         refreshStatus()
@@ -1777,7 +1909,7 @@ class MainActivity : MoteActivity() {
         val systemLive = c?.observesSystem() == true && MediaCollectionService.connected
         val live = screenLive || systemLive
         val missingSource = c != null && (c.screenCollectionEnabled && !screenLive || c.observesSystem() && !systemLive)
-        val state = if (settings.enabled && live && missingSource) MoteI18n.text("部分采集来源未连接，请检查权限") else if (settings.enabled && !live) MoteI18n.text("采集服务未连接：请恢复权限") else if (settings.state() == "capturing") MoteI18n.text("正在采集") else settings.message()
+        val state = if (settings.enabled && live && missingSource) MoteI18n.text("部分采集来源未连接，检查权限") else if (settings.enabled && !live) MoteI18n.text("采集服务未连接：恢复权限") else if (settings.state() == "capturing") MoteI18n.text("正在采集") else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
         val totals = if (stats == null) MoteI18n.text("统计暂不可读取") else MoteI18n.text("本周期累计页面 {0} · 截图 {1} · 应用活动 {2} · 媒体 {3} · 笔记 {4} · 已确认 {5}\n拦截 {6} · 失败 {7} · 重试结果 {8}", stats.optLong("PAGE_QUEUED"), stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"), stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), stats.optLong("PAGE_ACK") + stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK") + stats.optLong("SYSTEM_EVENT_ACK"), stats.optLong("FRAME_BLOCKED"), stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED"), stats.optLong("UPLOAD_RETRY"))
         val queueStats = local.active
@@ -1827,7 +1959,7 @@ class MainActivity : MoteActivity() {
             settings.syncState() == "error" -> settings.uploadStatus()
             pending != null && pending > 0 -> MoteI18n.text("待同步 {0} 条 · 节点：{1}", pending, c.server)
             connectionState == "unchecked" -> MoteI18n.text("节点已保存，但尚未完成最近一次连接验证：{0}", c.server)
-            connectionState != "connected" -> MoteI18n.text("采集连接验证未通过，请检查已保存的地址、凭据和网络后重试。")
+            connectionState != "connected" -> MoteI18n.text("连接验证未通过，检查地址与凭据")
             else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
         }
         val captureState = state + if (c?.screenCollectionEnabled == true && settings.enabled) "\n" + MoteI18n.text("屏幕采集：{0}", settings.screenStatus()) else ""
@@ -1858,7 +1990,7 @@ class MainActivity : MoteActivity() {
     }
     private fun safeOpen(intent: Intent) {
         try { startActivity(intent) }
-        catch (_: Exception) { try { startActivity(detailsIntent()); toast(MoteI18n.text("此系统入口不同，请在应用详情或系统搜索中查找")) } catch (_: Exception) { toast(MoteI18n.text("请手动打开系统设置")) } }
+        catch (_: Exception) { try { startActivity(detailsIntent()); toast(MoteI18n.text("在应用详情或系统搜索中查找")) } catch (_: Exception) { toast(MoteI18n.text("手动打开系统设置")) } }
     }
     override fun onResume() {
         super.onResume()
@@ -1959,10 +2091,11 @@ class MainActivity : MoteActivity() {
                     pagesHost.addView(central.root, FrameLayout.LayoutParams(-1, -1))
                 }
                 Page.FEED -> ensureTabPage(Page.FEED, AssistantPlugin.FEED_ROUTE)
-                Page.IDEAS -> ensureTabPage(Page.IDEAS, IDEAS_ROUTE)
+                Page.IDEAS -> ensureTabPage(Page.IDEAS, AssistantPlugin.IDEAS_ROUTE)
                 Page.GOALS -> ensureTabPage(Page.GOALS, AssistantPlugin.GOALS_ROUTE)
                 Page.MEMORY -> ensureCentralTab(Page.MEMORY, "memories")
                 Page.SKILLS -> ensureCentralTab(Page.SKILLS, "plugins")
+                Page.SERVICES -> buildConnectionServices()
                 Page.ACTIVITY -> {
                     val central = CentralContent(this, activityState, initialPage = "activity", openLocalPage = { next -> showPage(Page.valueOf(next), connectionEntryOrigin = if (next == "CONNECTION") ConnectionOrigin.LOCAL_ACTIVITY else null) })
                     activityContent = central
@@ -1975,6 +2108,7 @@ class MainActivity : MoteActivity() {
                 Page.SOURCES -> buildSources()
                 Page.SETTINGS -> buildSettings()
                 Page.APPEARANCE -> buildAppearance()
+                Page.NOTIFICATIONS -> buildNotifications()
                 Page.PERMISSIONS -> buildPermissions()
                 Page.ABOUT -> buildAbout()
                 else -> buildSettingsPage(page, loadedConfig)
@@ -1997,7 +2131,16 @@ class MainActivity : MoteActivity() {
                 showPage(target, connectionEntryOrigin = if (target == Page.CONNECTION) ConnectionOrigin.LOCAL_ASK else null)
             }
         })
+        if (page == Page.IDEAS) central.ideasCountChanged = { count ->
+            if (resumed && currentPage == Page.IDEAS) {
+                navBadges = navBadges.copy(ideas = count)
+                renderBadges()
+                badgeGate.wake()
+                refreshBadges()
+            }
+        }
         tabCentrals[page] = central
+        if (page == Page.MEMORY || page == Page.SKILLS) central.rootBack = { showLastTab(); true }
         installManageAction(central)
         central.root.visibility = View.GONE
         central.root.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -2058,7 +2201,7 @@ class MainActivity : MoteActivity() {
         MoteNavigation.tabId(page.name)?.let { selectedTabId = it }
         if (::tabBar.isInitialized) tabBar.select(selectedTabId)
         if (::statusStrip.isInitialized) statusStrip.setTab(if (page in dailyTabPages) MoteNavigation.tabId(page.name) else null)
-        val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.LIBRARY)
+        val designHeader = page in setOf(Page.MANAGE, Page.SETTINGS, Page.CONNECTION, Page.SERVICES, Page.LIBRARY)
         val centralOwned = page == Page.ASK || page == Page.ACTIVITY || (page in centralTabPages && page !in placeholderTabs)
         homeHeader.visibility = if (centralOwned) View.GONE else View.VISIBLE
         headerTitle.text = page.title
@@ -2068,7 +2211,7 @@ class MainActivity : MoteActivity() {
         headerMarkAction.visibility = if (homeHeader.visibility == View.VISIBLE) View.VISIBLE else View.GONE
         homeHeader.setPadding(dp(if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0, dp(if (page == Page.LIBRARY) 8 else if (designHeader) 6 else MoteTheme.spacePage), 0)
         homeHeader.minimumHeight = dp(48)
-        val manageEntry = page == Page.SETTINGS || (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU)
+        val manageEntry = page == Page.SETTINGS || page == Page.SERVICES || (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU)
         headerBackAction.tag = "local-back:${page.name}"
         headerBackAction.visibility = if (page.parent != null || manageEntry) View.VISIBLE else View.GONE
         headerBackAction.contentDescription = if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER)
@@ -2123,13 +2266,14 @@ class MainActivity : MoteActivity() {
 
     private fun navigateBack() {
         if (initializing) { finish(); return }
+        val manageBack = ManageBack.target(currentPage.name, lastTabPage.name)
         when {
             currentPage == Page.ASK && centralContent?.back() == true -> Unit
             currentPage == Page.ACTIVITY && activityContent?.back() == true -> Unit
             tabCentrals[currentPage]?.back() == true -> Unit
             currentPage == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU -> showLastTab()
             currentPage.parent != null -> navigatePageBack(currentPage)
-            currentPage == Page.SETTINGS -> showLastTab()
+            manageBack != null -> showPage(Page.valueOf(manageBack))
             currentPage in dailyTabPages -> finish()
             currentPage != Page.OVERVIEW -> showLastTab()
             else -> finish()        }
@@ -2145,7 +2289,7 @@ class MainActivity : MoteActivity() {
         if (page == Page.PRIVACY && ::appCaptureEditor.isInitialized && appCaptureEditor.backToList()) return
         if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.CENTRAL_CALLER) returnConnectionToCaller()
         else if (page == Page.CONNECTION && connectionOrigin == ConnectionOrigin.MANAGE_MENU) showLastTab()
-        else if (page == Page.SETTINGS) showLastTab()
+        else if (page == Page.SETTINGS || page == Page.SERVICES) showLastTab()
         else pageBackTarget(page)?.let { target -> if (target == Page.OVERVIEW) showLastTab() else showPage(target) }
     }
 
@@ -2273,11 +2417,17 @@ class MainActivity : MoteActivity() {
         }
     }
 
-    private fun text(value: String, size: NativeFontRole, color: NativeColorRole = NativeColorRole.INK): TextView = TextView(this).apply {
-        text = value; MoteUi.type(this, size); MoteUi.textColor(this, color)
+    private fun text(
+        value: String,
+        size: NativeFontRole,
+        color: NativeColorRole = NativeColorRole.INK,
+        parent: LinearLayout = content,
+    ): TextView = TextView(this).apply {
+        text = value
+        MoteUi.type(this, size)
+        MoteUi.textColor(this, color)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
-        content.addView(this)
-    }
+    }.also(parent::addView)
     private fun section(value: String) {
         text(value, NativeFontRole.SECTION).apply {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -2394,14 +2544,14 @@ class MainActivity : MoteActivity() {
         runCatching {
             val builtin = UiPageRules.parse(assets.open("ui-page-rules.json").bufferedReader().use { it.readText() })
                 .filter { it.optInt("formatVersion") == 3 && it.optString("platform") == "android" && it.optString("appId") == id && version.isNotBlank() && it.optString("appVersion") == version }
-            require(builtin.isNotEmpty()) { MoteI18n.text("内置规则没有适配当前安装版本，请配置字段或导入规则") }
+            require(builtin.isNotEmpty()) { MoteI18n.text("内置规则没有适配当前安装版本，配置字段或导入规则") }
             uiPageRules.setText(AppPageSetup.merge(uiPageRules.text.toString(), org.json.JSONArray(builtin).toString(), id, version))
             uiPageMode.setSelection(uiPageModes.indexOf("ui_preferred")); renderAppRules()
             toast(MoteI18n.text("字段规则已加入草稿；返回后保存生效，应用内容授权未改变"))
         }.onFailure { toast(it.message ?: MoteI18n.text("字段规则格式无效")) }
     }
     private fun editAppPageRule(id: String, version: String, onChanged: () -> Unit) {
-        if (version.isBlank()) { toast(MoteI18n.text("无法读取应用版本，请重新选择已安装应用")); return }
+        if (version.isBlank()) { toast(MoteI18n.text("无法读取应用版本，重新选择已安装应用")); return }
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(12)) }
         form.addView(TextView(this).apply { text = MoteI18n.text("为 {0} · {1} 映射实际控件 ID。只提取可见文字，不点击、不滚动、不猜测链接。", appLabel(id), version); MoteUi.type(this, NativeFontRole.SUPPORT); MoteUi.textColor(this, NativeColorRole.MUTED) })
         val kind = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("文章"), MoteI18n.text("商品"))) }; form.addView(kind)
@@ -2455,13 +2605,13 @@ class MainActivity : MoteActivity() {
             .setView(ScrollView(this).apply { addView(body) })
             .setNegativeButton(if (firstStart) MoteI18n.text("暂不开始") else MoteI18n.text("关闭预览"), null)
         if (firstStart) builder.setPositiveButton(MoteI18n.text("按此范围开始")) { _, _ ->
-            if (expected != loadedConfig) { toast(MoteI18n.text("配置已变化，请重新预览后开始")); return@setPositiveButton }
-            runCatching { settings.capturePreviewAccepted() }.onSuccess { accept() }.onFailure { toast(it.message ?: MoteI18n.text("无法持久保存设置，请检查存储空间")) }
+            if (expected != loadedConfig) { toast(MoteI18n.text("配置已变化，重新预览后开始")); return@setPositiveButton }
+            runCatching { settings.capturePreviewAccepted() }.onSuccess { accept() }.onFailure { toast(it.message ?: MoteI18n.text("无法持久保存设置，检查存储空间")) }
         }
         builder.show()
     }
     private fun editSelectedMask() {
-        val chosen = maskEditor.value().getOrNull(maskEditor.selectedIndex) ?: run { toast(MoteI18n.text("请先在示意图中点选一个绿色区域")); return }
+        val chosen = maskEditor.value().getOrNull(maskEditor.selectedIndex) ?: run { toast(MoteI18n.text("先在示意图中点选一个绿色区域")); return }
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8)) }
         val sliders = listOf(MoteI18n.text("左边界") to chosen.left, MoteI18n.text("上边界") to chosen.top, MoteI18n.text("右边界") to chosen.right, MoteI18n.text("下边界") to chosen.bottom).map { (name, value) ->
             val label = TextView(this); form.addView(label)
@@ -2504,7 +2654,7 @@ class MainActivity : MoteActivity() {
                         .setView(custom).setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确定"), null).create()
                     customDialog.setOnShowListener { customDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val number = custom.text.toString().toIntOrNull()
-                        if (number == null || number !in range) custom.error = MoteI18n.text("请输入 {0}–{1} 之间的整数", range.first, range.last)
+                        if (number == null || number !in range) custom.error = MoteI18n.text("输入 {0}–{1} 的整数", range.first, range.last)
                         else { result.setText(number.toString()); result.error = null; customDialog.dismiss() }
                     } }; customDialog.show()
                 }
@@ -2529,10 +2679,16 @@ class MainActivity : MoteActivity() {
         buttonTintList = android.content.res.ColorStateList.valueOf(MoteUi.accent)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }; content.addView(this); track(this, label, stableKey)
     }
-    private fun button(label: String, primary: Boolean = false, action: () -> Unit) = MoteUi.button(Button(this), primary).apply {
-        text = label; setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }; content.addView(this)
-    }
+    private fun button(
+        label: String,
+        primary: Boolean = false,
+        parent: LinearLayout = content,
+        action: () -> Unit,
+    ) = MoteUi.button(Button(this), primary).apply {
+        text = label
+        setOnClickListener { action() }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
+    }.also(parent::addView)
     private fun rowButtons(left: String, leftAction: () -> Unit, right: String, rightAction: () -> Unit, leftPrimary: Boolean = false) {
         val compact = resources.configuration.screenWidthDp < 360 || resources.configuration.fontScale > 1.2f
         val row = LinearLayout(this).apply { orientation = if (compact) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }

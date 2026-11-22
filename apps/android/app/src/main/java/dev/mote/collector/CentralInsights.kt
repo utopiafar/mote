@@ -156,7 +156,7 @@ internal class CentralInsights(private val screens: CentralScreens) {
             }.onFailure { error ->
                 if (error is CentralFailure && error.status in setOf(401, 403, 404, 410)) {
                     report = null; body.removeAllViews()
-                    ui.text(MoteI18n.text("这份洞察当前不可用，请从历史选择其他洞察。"))
+                    ui.text(MoteI18n.text("这份洞察当前不可用，从历史选择其他洞察"))
                     ui.button(MoteI18n.text("发现历史")) { backToHistory() }
                 }
                 failure(error)
@@ -202,7 +202,7 @@ internal class CentralInsights(private val screens: CentralScreens) {
                 report = fresh; evidenceRef = null
                 screens.openWorkEvidence(CentralEvidenceReference.capture(evidenceId))
             }.onFailure { error ->
-                if (error is CentralFailure && error.status in setOf(401,403,404,410)) { report = null; body.removeAllViews(); ui.text(MoteI18n.text("这份洞察当前不可用，请从历史选择其他洞察。")); ui.button(MoteI18n.text("发现历史")) { backToHistory() } }
+                if (error is CentralFailure && error.status in setOf(401,403,404,410)) { report = null; body.removeAllViews(); ui.text(MoteI18n.text("这份洞察当前不可用，从历史选择其他洞察")); ui.button(MoteI18n.text("发现历史")) { backToHistory() } }
                 failure(error)
             }
         }
@@ -261,7 +261,7 @@ internal class CentralInsights(private val screens: CentralScreens) {
                     job.optJSONObject("error")?.let { ui.text(it.optString("message")) }
                     val resultId = job.optJSONObject("result")?.let(InsightPresentation::id)
                     if (resultId != null) ui.button(MoteI18n.text("查看发现")) { select(resultId); screens.refresh() }
-                    else if (job.optString("status") == "completed") ui.text(MoteI18n.text("这份报告已因原始资料变化而失效，请重新生成回顾。"))
+                    else if (job.optString("status") == "completed") ui.text(MoteI18n.text("这份报告已因原始资料变化而失效，重新生成回顾"))
                     if (job.optString("status") == "running") ui.button(MoteI18n.text("停止")) {
                         ui.work(MoteI18n.text("正在处理…"), { runCatching { api.post("/api/insight-runs/" + CentralScreens.encode(id) + "/cancel", JSONObject()) } }) { cancelled -> cancelled.onSuccess { lastRun = ""; readRun() }.onFailure { failure(it) } }
                     }

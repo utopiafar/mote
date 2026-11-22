@@ -1,10 +1,10 @@
 import MoteCentral
 import MoteDesign
+import MoteStorage
 import SwiftUI
 
-/// One navigation stack for 问一问: the history list is the root, opened or
-/// sent questions push the conversation page, and citations push the original
-/// record highlighted at the quoted position.
+/// One navigation stack for 问一问: the server's main conversation is the root,
+/// and citations push the original record highlighted at the quoted position.
 enum ConversationRoute: Hashable {
     case conversation(id: String?, question: String?)
     case scoped(OriginalAskScope)
@@ -15,14 +15,6 @@ enum ConversationRoute: Hashable {
 /// model on every body evaluation would drop in-flight run state.
 final class ConversationModelCache {
     private var models: [String: ConversationModel] = [:]
-    private var history: ConversationHistoryModel?
-
-    func historyModel(make: () -> ConversationHistoryModel) -> ConversationHistoryModel {
-        if let history { return history }
-        let model = make()
-        history = model
-        return model
-    }
 
     func model(_ key: String, make: () -> ConversationModel) -> ConversationModel {
         if let model = models[key] { return model }
@@ -34,16 +26,23 @@ final class ConversationModelCache {
 
 struct ConversationFlowView: View {
     /// When set, the stack roots at a fresh scoped conversation instead of
-    /// the history list.
+    /// the main conversation.
     var scope: OriginalAskScope? = nil
     let onDismiss: () -> Void
     let onAddImage: () -> Void
-    var makeHistoryModel: () -> ConversationHistoryModel = { .live() }
+    var makeMainConversation: () async throws -> String = {
+        guard let connection = try MoteStorage.connectionStore().read() else { throw ConversationFlowError.notConnected }
+        let id = try await CentralClient(serverUrl: connection.serverUrl, token: connection.token).mainConversation().id
+        guard UUID(uuidString: id) != nil else { throw ConversationFlowError.invalidIdentity }
+        return id
+    }
     var makeModel: (String?, OriginalAskScope?,
                     @escaping (ConversationCitationTarget) -> Void) -> ConversationModel
         = { id, scope, open in .live(conversationId: id, scope: scope, onOpenOriginal: open) }
 
     @State private var path: [ConversationRoute] = []
+    @State private var mainConversationID: String?
+    @State private var mainLoadFailed = false
     private let cache = ConversationModelCache()
 
     var body: some View {
@@ -51,14 +50,10 @@ struct ConversationFlowView: View {
             Group {
                 if let scope {
                     conversationView(key: "scoped", id: nil, scope: scope, question: nil)
+                } else if let mainConversationID {
+                    conversationView(key: "main", id: mainConversationID, scope: nil, question: nil)
                 } else {
-                    ConversationHistoryView(
-                        model: cache.historyModel(make: makeHistoryModel), now: Date(), calendar: .current,
-                        onBack: onDismiss,
-                        onOpen: { path.append(.conversation(id: $0, question: nil)) },
-                        onSend: { path.append(.conversation(id: nil, question: $0)) },
-                        onAddImage: onAddImage
-                    )
+                    mainLoading
                 }
             }
             .navigationDestination(for: ConversationRoute.self) { route in
@@ -77,6 +72,34 @@ struct ConversationFlowView: View {
         }
     }
 
+    private var mainLoading: some View {
+        VStack(spacing: 12) {
+            if mainLoadFailed {
+                Text("对话暂不可读取，请稍后重试。")
+                    .font(MoteFont.body)
+                    .foregroundStyle(MoteDesignTokens.muted.color)
+                Button("重试") { Task { await loadMainConversation() } }
+                    .font(MoteFont.smallAction)
+                    .frame(minHeight: MoteMetrics.touchTarget)
+            } else {
+                ProgressView()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MoteDesignTokens.background.color)
+        .task { await loadMainConversation() }
+    }
+
+    private func loadMainConversation() async {
+        guard mainConversationID == nil else { return }
+        mainLoadFailed = false
+        do {
+            mainConversationID = try await makeMainConversation()
+        } catch {
+            mainLoadFailed = true
+        }
+    }
+
     private func conversationView(key: String, id: String?, scope: OriginalAskScope?, question: String?) -> some View {
         ConversationView(
             model: cache.model(key) {
@@ -90,4 +113,8 @@ struct ConversationFlowView: View {
             onAddImage: onAddImage
         )
     }
+}
+
+private enum ConversationFlowError: Error {
+    case notConnected, invalidIdentity
 }

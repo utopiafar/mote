@@ -1,0 +1,314 @@
+{
+  "route": "#/assistant/memory",
+  "waitFor": ".content[data-session='ready'][aria-busy='false'] .memory-page[aria-busy='false'] .memory-page-row",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": { "configured": false, "model": null, "provider": "" },
+        "storage": {
+          "captures": 8,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [{ "status": "text_ready", "count": 8 }]
+        },
+        "index": { "mode": "text", "model": null },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 6,
+          "connections": true
+        }
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": { "instances": [] }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": [
+          { "id": "http:GET:/api/memories", "featureId": "mote.memory", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/context-trees", "featureId": "mote.memory", "version": "1", "surface": "data", "state": "active" },
+          { "id": "http:GET:/api/assistant/commitments", "featureId": "mote.assistant", "version": "1", "surface": "data", "state": "active" }
+        ]
+      }
+    },
+    "GET /api/operations/changes": {
+      "status": 200,
+      "body": { "ids": [], "cursor": 0, "hasMore": false, "reset": false }
+    },
+    "GET /api/assistant/commitments": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "20000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "title": "侧栏改版周五冻结",
+            "personMemoryId": "10000000-0000-4000-8000-000000000001",
+            "matterId": null,
+            "status": "confirmed",
+            "deadline": { "text": "周五 18:00", "at": null },
+            "dueState": "upcoming",
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000011"] },
+            "timeline": []
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000002",
+            "revision": 1,
+            "title": "0.1 发布评审",
+            "personMemoryId": null,
+            "matterId": "40000000-0000-4000-8000-000000000001",
+            "status": "confirmed",
+            "deadline": { "text": "周四 10:30", "at": null },
+            "dueState": "upcoming",
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000012"] },
+            "timeline": []
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000003",
+            "revision": 1,
+            "title": "和何西同行",
+            "personMemoryId": "10000000-0000-4000-8000-000000000002",
+            "matterId": null,
+            "status": "pending_confirmation",
+            "deadline": null,
+            "dueState": "none",
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000013"] },
+            "timeline": []
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000004",
+            "revision": 1,
+            "title": "京都出行",
+            "personMemoryId": null,
+            "matterId": "40000000-0000-4000-8000-000000000002",
+            "status": "confirmed",
+            "deadline": { "text": "12 月 6 日", "at": null },
+            "dueState": "upcoming",
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": ["30000000-0000-4000-8000-000000000017"] },
+            "timeline": []
+          },
+          {
+            "id": "20000000-0000-4000-8000-000000000005",
+            "revision": 1,
+            "title": "周末回家吃饭",
+            "personMemoryId": "10000000-0000-4000-8000-000000000003",
+            "matterId": null,
+            "status": "pending_confirmation",
+            "deadline": null,
+            "dueState": "none",
+            "evidenceDependencies": { "version": 1, "complete": true, "ids": [] },
+            "timeline": []
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    "GET /api/memories": {
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "10000000-0000-4000-8000-000000000001",
+            "version": 1,
+            "tier": "episode",
+            "kind": "semantic",
+            "domain": "personal",
+            "title": "周雨",
+            "statement": "设计师，负责侧栏改版，常在晚上发稿。",
+            "uncertainty": "来自工作群与文件署名。",
+            "status": "published",
+            "createdAt": "2026-11-18T21:40:00+08:00",
+            "updatedAt": "2026-11-18T21:40:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000011"],
+            "evidenceCount": 2,
+            "admission": { "layer": "memory", "reason": "发布协作", "scope": "侧栏改版", "attribution": "observed" },
+            "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000004",
+            "version": 1,
+            "tier": "episode",
+            "kind": "episodic",
+            "domain": "personal",
+            "title": "0.1 发布",
+            "statement": "冻结改到周五 18:00，评审周四 10:30，两件事没定。",
+            "uncertainty": "会议记录只写到这一步。",
+            "status": "published",
+            "createdAt": "2026-11-18T18:20:00+08:00",
+            "updatedAt": "2026-11-18T18:20:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000012"],
+            "evidenceCount": 3,
+            "admission": { "layer": "memory", "reason": "发布安排", "scope": "0.1 发布", "attribution": "user" },
+            "fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000005",
+            "version": 1,
+            "tier": "episode",
+            "kind": "semantic",
+            "domain": "personal",
+            "title": "回复短一些，先给结论",
+            "statement": "沟通偏好：先给结论，再补必要背景。",
+            "uncertainty": "来自多次直接说明。",
+            "status": "published",
+            "contextPriority": "standing",
+            "createdAt": "2026-11-17T10:10:00+08:00",
+            "updatedAt": "2026-11-17T10:10:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000014"],
+            "evidenceCount": 4,
+            "admission": { "layer": "memory", "reason": "长期沟通约束", "scope": "所有对话", "attribution": "user" },
+            "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000002",
+            "version": 1,
+            "tier": "episode",
+            "kind": "semantic",
+            "domain": "personal",
+            "title": "林舟",
+            "statement": "产品经理，也是大学同学。",
+            "uncertainty": "身份来自本人说明。",
+            "status": "published",
+            "createdAt": "2026-11-16T16:00:00+08:00",
+            "updatedAt": "2026-11-16T16:00:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000013"],
+            "evidenceCount": 2,
+            "admission": { "layer": "memory", "reason": "人物关系", "scope": "个人关系", "attribution": "user" },
+            "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000006",
+            "version": 1,
+            "tier": "episode",
+            "kind": "episodic",
+            "domain": "personal",
+            "title": "周末通常不看工作消息",
+            "statement": "推断：周末较少处理工作消息。",
+            "uncertainty": "只覆盖有样本的周末。",
+            "status": "proposed",
+            "createdAt": "2026-11-16T09:30:00+08:00",
+            "updatedAt": "2026-11-16T09:30:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000015", "30000000-0000-4000-8000-000000000016"],
+            "evidenceCount": 6,
+            "admission": { "layer": "memory", "reason": "待确认推断", "scope": "周末沟通", "attribution": "inferred" },
+            "fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000007",
+            "version": 1,
+            "tier": "episode",
+            "kind": "episodic",
+            "domain": "personal",
+            "title": "京都出行",
+            "statement": "12 月 6 日出发，和何西同行。",
+            "uncertainty": "行程仍可能调整。",
+            "status": "published",
+            "createdAt": "2026-11-15T20:10:00+08:00",
+            "updatedAt": "2026-11-15T20:10:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000017"],
+            "evidenceCount": 1,
+            "admission": { "layer": "memory", "reason": "出行安排", "scope": "个人行程", "attribution": "user" },
+            "fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000008",
+            "version": 1,
+            "tier": "episode",
+            "kind": "semantic",
+            "domain": "personal",
+            "title": "早上 9 点前不排会",
+            "statement": "上午 9 点前留给自己，不安排会议。",
+            "uncertainty": "工作日适用。",
+            "status": "published",
+            "contextPriority": "standing",
+            "createdAt": "2026-11-14T08:10:00+08:00",
+            "updatedAt": "2026-11-14T08:10:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000018"],
+            "evidenceCount": 3,
+            "admission": { "layer": "memory", "reason": "长期日程约束", "scope": "工作日", "attribution": "user" },
+            "fingerprint": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000003",
+            "version": 1,
+            "tier": "episode",
+            "kind": "semantic",
+            "domain": "personal",
+            "title": "妈妈",
+            "statement": "周末常约回家吃饭。",
+            "uncertainty": "时间不固定。",
+            "status": "published",
+            "createdAt": "2026-11-13T18:40:00+08:00",
+            "updatedAt": "2026-11-13T18:40:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000019"],
+            "evidenceCount": 2,
+            "admission": { "layer": "memory", "reason": "家庭关系", "scope": "个人关系", "attribution": "user" },
+            "fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000009",
+            "version": 1,
+            "tier": "episode",
+            "kind": "procedural",
+            "domain": "coding",
+            "title": "提交信息用中文写",
+            "statement": "代码提交信息使用中文，保留英文标识符。",
+            "uncertainty": "个人项目适用。",
+            "status": "published",
+            "coding": { "kind": "preference", "scope": "shared", "applicability": "个人项目", "validation": "user_confirmed" },
+            "createdAt": "2026-11-12T11:00:00+08:00",
+            "updatedAt": "2026-11-12T11:00:00+08:00",
+            "evidenceIds": ["30000000-0000-4000-8000-000000000020"],
+            "evidenceCount": 1,
+            "admission": { "layer": "memory", "reason": "编码偏好", "scope": "个人项目", "attribution": "user" },
+            "fingerprint": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        ],
+        "nextCursor": null
+      }
+    }
+  }
+}

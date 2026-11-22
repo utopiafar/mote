@@ -233,7 +233,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val projected=NativeDerivedEvidencePresentation.load(row,currentVisit,api::get)
             if(projected!=null) {
                 val current=api.get("/api/capture-browser/"+enc(id))
-                check(current.getString("id")==id && current.optString("deviceId")==row.optString("deviceId") && current.optString("source")==row.optString("source") && current.optString("libraryVersion")==row.optString("libraryVersion") && current.optString("ocrText")==row.optString("ocrText")) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                check(current.getString("id")==id && current.optString("deviceId")==row.optString("deviceId") && current.optString("source")==row.optString("source") && current.optString("libraryVersion")==row.optString("libraryVersion") && current.optString("ocrText")==row.optString("ocrText")) { MoteI18n.text("分页内容已变化或游标无效，返回第一页重新读取") }
             }
             if(conversationId!=null)check(CentralConversationReference.available(api,conversationId,id)) { MoteI18n.text("引用原文已删除，历史问答仍保留。") }
             val memory=topicMemoryId?.let { api.get("/api/memories/" + enc(it)) }
@@ -276,7 +276,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 readable,
             ) {
                 val actions = buildList {
-                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail(api) { NativeOriginalDetail.capture(row, it) } })
+                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.capture(row) } })
                     if (descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(ui.hostActivity(), descriptions) })
                     if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(ui, readable) })
                 }
@@ -336,7 +336,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val descriptions = NativeRecordDescription.read(item, true)
             readerHead(MoteI18n.text("版本 {0}", item.opt("sequence")), item.getString("title"), readable) {
                 val actions = buildList {
-                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail(api) { NativeOriginalDetail.material(item, it) } })
+                    add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.material(item) } })
                     if (descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(ui.hostActivity(), descriptions) })
                     if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(ui, readable) })
                 }
@@ -462,8 +462,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 val fileEvidence = chunk.optJSONObject("fileEvidence")
                 if (fileEvidence != null) ui.button(MoteI18n.text("纠正此段"), parent = card) {
                     val original = if (fileEvidence.optString("speaker").isNotBlank()) chunk.optString("ocrText").removePrefix("[" + fileEvidence.getString("speaker") + "] ") else chunk.optString("ocrText")
-                    val text = ui.field(MoteI18n.text("校正此段文字"), original, multiline = true, parent = card)
-                    ui.button(MoteI18n.text("保存校正"), true, parent = card) {
+                    val text = ui.field(MoteI18n.text("纠正此段文字"), original, multiline = true, parent = card)
+                    ui.button(MoteI18n.text("保存纠正"), true, parent = card) {
                         val value = text.text.toString()
                         ui.work(MoteI18n.text("正在保存…"), {
                             api.post("/api/files/" + enc(id) + "/corrections", JSONObject().put("artifactId", fileEvidence.getString("artifactId"))
@@ -603,7 +603,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         val retry = session?.takeIf { it.canRetryStart && it.refs.toSet() == selected.toSet() }
         val scope = retry?.let { runCatching { AssistantOnboardingPresentation.scopeOf(it) }.getOrNull() }
             ?: runCatching {
-                val chosen = selected.map { ref -> onboardingMaterials[ref] ?: error(MoteI18n.text("资料已变化，请重新选择当前版本。")) }
+                val chosen = selected.map { ref -> onboardingMaterials[ref] ?: error(MoteI18n.text("资料已变化，重新选择当前版本")) }
                 AssistantOnboardingPresentation.scope(chosen)
             }.getOrElse { ui.notice(it.message ?: MoteI18n.text("操作失败")); return }
         val requestId = retry?.requestId ?: AssistantOnboardingPresentation.newRequestId()
@@ -644,10 +644,10 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }.onFailure { error ->
                 if (error is CentralFailure && error.status in setOf(404, 410)) {
                     onboardingSession = session.copy(id = null, revision = null, state = null); onboardingProgress = null; persistOnboarding()
-                    ui.notice(MoteI18n.text("这次认识已结束，请重新选择资料。"))
+                    ui.notice(MoteI18n.text("这次认识已结束，重新选择资料"))
                 } else if (error is CentralFailure && error.status == 409) {
                     onboardingProgress = null
-                    ui.notice(MoteI18n.text("资料已变化，请重新选择当前版本。"))
+                    ui.notice(MoteI18n.text("资料已变化，重新选择当前版本"))
                 } else ui.notice(error.message ?: MoteI18n.text("操作失败"))
                 renderOnboarding()
             }
@@ -861,7 +861,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                         val visit=ui.readVisit()
                         ui.work(MoteI18n.text("正在删除…"), { runCatching {
                             exact?.verify(api,evidenceIds.optString(0))
-                            if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                            if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                             MemoryDetailPanel.delete(api, id)
                         } }) { result ->
                             val receipt=result.getOrElse { error->if(onFailure!=null)onFailure(error) else ui.requestFailure(error);return@work }
@@ -898,7 +898,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     val visit=ui.readVisit()
                     ui.work(MoteI18n.text("正在保存…"), { runCatching {
                         exact?.verify(api,evidenceIds.optString(0))
-                        if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                        if(exact!=null)check(visit()) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                         MemoryDetailPanel.correct(api, id, corrected)
                     } }) { result ->
                         result.onSuccess {
@@ -965,9 +965,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         }
     }
     private fun readerAsk(key: String, action: () -> Unit) = ui.readerDock(NativeOriginalDetail.askBar(ui, key) { action() })
-    /** 详情 counts the conversations that cite this original; a failed count shows —, never 0. */
-    private fun showDetail(api: CentralClient, detail: (List<JSONObject>?) -> OriginalDetailPresentation) {
-        ui.work(MoteI18n.text("正在读取详情…"), { runCatching { NativeOriginalDetail.conversations(api) }.getOrNull() }) { conversations -> screens.showOriginalDetail(detail(conversations)) }
+    private fun showDetail(detail: () -> OriginalDetailPresentation) {
+        screens.showOriginalDetail(detail())
     }
     /** The time the phone reader shows for the same record. */
     private fun readerTime(value: String): String =

@@ -8,7 +8,6 @@ import {StructuredObservation} from './StructuredObservation';
 import {ImageProgress} from './ImageProgress';
 import {Loading,MoteMark} from './Loading';
 import {recordDescriptions} from './note-material-render';
-import {ReferencingConversations} from './ReferencingConversations';
 import {formatEvidenceRef} from '@mote/shared';
 import {memorySourceRoute} from './memory-source-route';
 import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
@@ -523,7 +522,6 @@ export function EvidenceDialog({
   const currentMaterialRef=materialRef&&/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(materialRef)?materialRef:undefined;
   const sourceFact=capture?[capture.appName||sourceLabel,capture.deviceName].filter(Boolean).join(' · '):'';
   const descriptions=recordDescriptions(capture?.attributionContext);
-  const referenceMaterialRef=capture?.memoryMaterialRef&&/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(capture.memoryMaterialRef)?capture.memoryMaterialRef:undefined;
   return (
     <div
       className={embedded?"embedded-evidence":"modal-backdrop evidence-reader-backdrop"}
@@ -590,7 +588,6 @@ export function EvidenceDialog({
                 <div><dt>{moteText("来源")}</dt><dd>{sourceFact}</dd></div>
                 <div><dt>{moteText("状态")}</dt><dd><EvidenceState/>{capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span>{ocr.tone!=='green'&&<p>{ocr.description}</p>}</div>}</dd></div>
                 {descriptions.length>0&&<div><dt>{moteText("资料说明")}</dt><dd>{descriptions.map(text=><p key={text} className="evidence-description">{text}</p>)}</dd></div>}
-                <div><dt>{moteText("引用它的对话")}</dt><dd><ReferencingConversations api={api} captureId={capture.id} materialRef={referenceMaterialRef}/></dd></div>
               </dl>
               <details className="reader-source-details"><summary>{moteText("技术详情")}</summary>{presentation?.nativeFile&&readableText&&<pre>{readableText}</pre>}<dl>
                 <div>

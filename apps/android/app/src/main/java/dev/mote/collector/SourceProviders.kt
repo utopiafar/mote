@@ -35,7 +35,7 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
 
     fun scan(source: LocalSource, now: Instant = Instant.now()): SourceScan = if (source.kind == "local-calendar") calendar(source, now) else files(source, now)
     private fun calendar(source: LocalSource, now: Instant): SourceScan {
-        check(calendars().any { it.id == source.calendarId && it.visible }) { MoteI18n.text("已选择日历不可用，请重新连接；不会把权限丢失视为删除") }
+        check(calendars().any { it.id == source.calendarId && it.visible }) { MoteI18n.text("已选择日历不可用，重新连接；不会把权限丢失视为删除") }
         val from = now.minusSeconds(source.daysBefore * 86400L).toEpochMilli(); val until = now.plusSeconds(source.daysAfter * 86400L).toEpochMilli()
         val uri = instancesUri.buildUpon().also { ContentUris.appendId(it, from); ContentUris.appendId(it, until) }.build()
         val projection = arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN, CalendarContract.Instances.END,

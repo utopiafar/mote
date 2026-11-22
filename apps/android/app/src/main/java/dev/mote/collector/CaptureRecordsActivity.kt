@@ -491,16 +491,16 @@ class CaptureRecordsActivity : MoteActivity() {
                 val connection = Settings(this).connectionGeneration()
                 fun currentLocal() {
                     libraryOwner.requireActive()
-                    check(!readerPaused && !isDestroyed && stamp == generation && reading() && Settings(this).connectionGeneration() == connection) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                    check(!readerPaused && !isDestroyed && stamp == generation && reading() && Settings(this).connectionGeneration() == connection) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                 }
                 val selection = if (remote) CentralAccess.resolve(this) else null
                 val workMemory=WorkMemoryReference.from(intent)
                 if(workMemory!=null) {
-                    check(selection!=null && intent.getStringExtra("workMemoryProcess")==WorkMemoryProcess.nonce && intent.hasExtra("workMemoryGeneration") && selection.generation==intent.getLongExtra("workMemoryGeneration",-1)) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                    check(selection!=null && intent.getStringExtra("workMemoryProcess")==WorkMemoryProcess.nonce && intent.hasExtra("workMemoryGeneration") && selection.generation==intent.getLongExtra("workMemoryGeneration",-1)) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                 }
                 if (selection != null) {
                     val expected = intent.getStringExtra("recordOrigin").orEmpty()
-                    check((workMemory==null && expected.isBlank()) || expected == selection.server) { MoteI18n.text("访问凭据已失效，请重新连接。") }
+                    check((workMemory==null && expected.isBlank()) || expected == selection.server) { MoteI18n.text("访问凭据已失效，重新连接") }
                     intent.getStringExtra("conversationReference")?.let { conversation -> check(CentralConversationReference.available(requireNotNull(selection.client),conversation,id)) { MoteI18n.text("引用原文已删除，历史问答仍保留。") } }
                     workMemory?.verify(requireNotNull(selection.client),id)
                 }
@@ -516,23 +516,23 @@ class CaptureRecordsActivity : MoteActivity() {
                     readbackError = error; light to null
                 } else null
                 val record = exact?.first ?: if (remote) requireNotNull(readerClient).detail(id)
-                    else queue().capture(id) ?: error(MoteI18n.text("本机记录已同步并清理，请切换到中央归档查看"))
+                    else queue().capture(id) ?: error(MoteI18n.text("本机记录已同步并清理，切换到中央归档查看"))
                 runOnUiThread { if (reading() && CapturePreview.hasImage(record)) pending(MoteI18n.text("记录已读取，正在加载图片…"), image = true) }
                 if (remote && intent.getStringExtra("recordDeviceId").orEmpty().isNotBlank())
                     check(record.getString("deviceId") == intent.getStringExtra("recordDeviceId"))
                 if (remote && intent.getStringExtra("recordVersion").orEmpty().isNotBlank())
-                    check(record.optString("libraryVersion") == intent.getStringExtra("recordVersion")) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                    check(record.optString("libraryVersion") == intent.getStringExtra("recordVersion")) { MoteI18n.text("分页内容已变化或游标无效，返回第一页重新读取") }
                 if (remote && intent.hasExtra("recordObservationCount"))
-                    check(dev.mote.collector.plugins.NativeLibraryPlugin.observations(record) == intent.getIntExtra("recordObservationCount", -1)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                    check(dev.mote.collector.plugins.NativeLibraryPlugin.observations(record) == intent.getIntExtra("recordObservationCount", -1)) { MoteI18n.text("分页内容已变化或游标无效，返回第一页重新读取") }
                 require(record.getString("id") == id); Instant.parse(record.getString("capturedAt"))
                 val bytes = if (exact != null) exact.second else if (CapturePreview.hasImage(record)) if (remote) requireNotNull(readerClient).image(id, false) else queue().image(id) else null
                 if (selection != null && bytes != null && intent.getStringExtra("recordVersion").orEmpty().isNotBlank()) {
                     val afterImage=requireNotNull(readerClient).detail(id)
-                    check(afterImage.getString("id") == id && afterImage.optString("libraryVersion") == intent.getStringExtra("recordVersion") && afterImage.getString("deviceId") == record.getString("deviceId") && dev.mote.collector.plugins.NativeLibraryPlugin.observations(afterImage) == dev.mote.collector.plugins.NativeLibraryPlugin.observations(record)) { MoteI18n.text("分页内容已变化或游标无效，请返回第一页重新读取。") }
+                    check(afterImage.getString("id") == id && afterImage.optString("libraryVersion") == intent.getStringExtra("recordVersion") && afterImage.getString("deviceId") == record.getString("deviceId") && dev.mote.collector.plugins.NativeLibraryPlugin.observations(afterImage) == dev.mote.collector.plugins.NativeLibraryPlugin.observations(record)) { MoteI18n.text("分页内容已变化或游标无效，返回第一页重新读取") }
                 }
                 if (selection != null) {
                     val current = CentralAccess.resolve(this)
-                    check(current.server == selection.server && current.generation == selection.generation) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                    check(current.server == selection.server && current.generation == selection.generation) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                     intent.getStringExtra("conversationReference")?.let { conversation -> check(CentralConversationReference.available(requireNotNull(current.client),conversation,id)) { MoteI18n.text("引用原文已删除，历史问答仍保留。") } }
                     workMemory?.verify(requireNotNull(current.client),id)
                 }
@@ -544,19 +544,19 @@ class CaptureRecordsActivity : MoteActivity() {
                 runOnUiThread {
                     if (isDestroyed || stamp != generation || !reading()) { bitmap?.recycle(); if (reading()) closeReader(); return@runOnUiThread }
                     if (!remote && record.has("localContentRelease") && runCatching { currentLocal() }.isFailure) {
-                        bitmap?.recycle(); clearReader(); notice(MoteI18n.text("访问凭据已失效，请重新连接。")); return@runOnUiThread
+                        bitmap?.recycle(); clearReader(); notice(MoteI18n.text("访问凭据已失效，重新连接")); return@runOnUiThread
                     }
                     if (selection != null) {
                         val current=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
                         if (current == null || current.server != selection.server || current.generation != selection.generation) {
-                            bitmap?.recycle(); notice(MoteI18n.text("登录会话已变更，请重新打开中央页面。"))
+                            bitmap?.recycle(); notice(MoteI18n.text("登录会话已变更，重新打开中央页面"))
                             return@runOnUiThread
                         }
                     }
                     content.removeAllViews(); detailBitmap = bitmap
                     if (!remote && record.has("localContentRelease")) {
                         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-                        fun withdraw() { runOnUiThread { if (reading()) { clearReader(); notice(MoteI18n.text("访问凭据已失效，请重新连接。")) } } }
+                        fun withdraw() { runOnUiThread { if (reading()) { clearReader(); notice(MoteI18n.text("访问凭据已失效，重新连接")) } } }
                         val preferences = getSharedPreferences("mote", MODE_PRIVATE)
                         val changed = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                             if ((key == null || key == "connectionGeneration") && runCatching { currentLocal() }.isFailure) withdraw()
@@ -593,13 +593,13 @@ class CaptureRecordsActivity : MoteActivity() {
                     }
                     fun selected(): CentralClient {
                         val access=CentralAccess.resolve(this@CaptureRecordsActivity)
-                        check(access.server == intent.getStringExtra("recordOrigin") && access.generation == selection?.generation) { MoteI18n.text("访问凭据已失效，请重新连接。") }
+                        check(access.server == intent.getStringExtra("recordOrigin") && access.generation == selection?.generation) { MoteI18n.text("访问凭据已失效，重新连接") }
                         return requireNotNull(access.client)
                     }
                     val release = record.optJSONObject("localContentRelease")
                     fun actionCurrent(): Boolean {
                         if (remote || release == null) return true
-                        return runCatching { currentLocal() }.onFailure { clearReader(); notice(MoteI18n.text("访问凭据已失效，请重新连接。")) }.isSuccess
+                        return runCatching { currentLocal() }.onFailure { clearReader(); notice(MoteI18n.text("访问凭据已失效，重新连接")) }.isSuccess
                     }
                     if (!remote && record.has("archiveAcknowledgment") && (release == null || release.optBoolean("pending"))) {
                         button(content, MoteI18n.text("清理本机副本")) {
@@ -632,7 +632,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     fun chrome(describe: Boolean) {
                         val descriptions = if (describe) NativeRecordDescription.read(record,remote) else emptyList()
                         val ask: (() -> Unit)? = when {
-                            centralReader -> { { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin")).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) }.onFailure { alert(it.message ?: MoteI18n.text("操作失败，请重试")) } } }
+                            centralReader -> { { runCatching { selected(); startActivity(Intent(this@CaptureRecordsActivity,CentralActivity::class.java).putExtra("page","ask").putExtra("evidenceId",id).putExtra("evidenceOrigin",intent.getStringExtra("recordOrigin")).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) }.onFailure { alert(it.message ?: MoteI18n.text("操作失败，重试")) } } }
                             // A note carries where it was saved; any other record can be asked about once it is on Central.
                             isNote || remote -> { { startActivity(Intent(this@CaptureRecordsActivity, CentralActivity::class.java).putExtra("page", "ask").putExtra("evidenceId", id).putExtra("evidenceOrigin", if (remote) selection?.server else record.optString("dataOrigin").takeIf(String::isNotBlank)).putExtra("evidenceLabel",NativeOriginalDetail.title(record))) } }
                             else -> null
@@ -655,7 +655,7 @@ class CaptureRecordsActivity : MoteActivity() {
                                             runOnUiThread {
                                                 if (currentDeletion()) {
                                                     deleting=false
-                                                    result.onSuccess { closeReader() }.onFailure { error -> alert(error.message ?: MoteI18n.text("未能确认删除完成。请刷新查看当前状态。")) }
+                                                    result.onSuccess { closeReader() }.onFailure { error -> alert(error.message ?: MoteI18n.text("未能确认删除完成。刷新查看当前状态")) }
                                                 }
                                             }
                                         }
@@ -664,16 +664,7 @@ class CaptureRecordsActivity : MoteActivity() {
                         }
                         fun showDetail() {
                             if (!actionCurrent()) return
-                            if (!centralReader) { NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record)); return }
-                            detailExecutor.execute {
-                                val conversations=runCatching { NativeOriginalDetail.conversations(selected()) }.getOrNull()
-                                runOnUiThread {
-                                    if (isDestroyed || !reading()) return@runOnUiThread
-                                    val access=runCatching { CentralAccess.resolve(this@CaptureRecordsActivity) }.getOrNull()
-                                    if (selection==null || access==null || access.server!=selection.server || access.generation!=selection.generation) return@runOnUiThread
-                                    NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record, conversations))
-                                }
-                            }
+                            NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record))
                         }
                         val inlineDescriptions = !direct
                         fun sheet() {
@@ -776,7 +767,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     else quiet(MoteI18n.text("图片暂不可用。"))
                     label(MoteI18n.text("识别文字"))
                     if (!(remote && record.optJSONObject("ocr")?.optString("status") == "completed")) quiet(CapturePreview.ocrLabel(record, remote))
-                    if (record.optBoolean("centralPreview")) text(content, MoteI18n.text("中央识别预览；完整内容请切换中央记录查看。"), MoteTheme.fontSupport.toFloat())
+                    if (record.optBoolean("centralPreview")) text(content, MoteI18n.text("中央识别预览；完整内容切换中央记录查看"), MoteTheme.fontSupport.toFloat())
                     readable = record.optString("ocrText")
                     text(content, readable.ifBlank { if (record.optJSONObject("ocr")?.optString("status") == "completed") MoteI18n.text("此图片未识别到文字。") else MoteI18n.text("暂无识别文字。") }, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
                     chrome(describe = true)
@@ -784,7 +775,7 @@ class CaptureRecordsActivity : MoteActivity() {
             } catch (error: Exception) { runOnUiThread { if (!isDestroyed && reading()) notice(errorMessage(error, remote)) } }
         }
     }
-    private fun errorMessage(error: Exception, remote: Boolean): String = if (error is IllegalStateException || error is IllegalArgumentException) error.message ?: MoteI18n.text("记录读取失败，请刷新重试") else if (remote) MoteI18n.text("中央记录暂不可读取，请检查网络后重试") else MoteI18n.text("本机记录暂不可读取，请刷新重试；文件已保留")
+    private fun errorMessage(error: Exception, remote: Boolean): String = if (error is IllegalStateException || error is IllegalArgumentException) error.message ?: MoteI18n.text("记录读取失败，刷新重试") else if (remote) MoteI18n.text("中央记录暂不可读取，检查网络后重试") else MoteI18n.text("本机记录暂不可读取，刷新重试；文件已保留")
     private fun time(at: String): String = runCatching { DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.parse(at)) }.getOrDefault(at)
     private fun row(parent: LinearLayout) = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(10) }) }
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply {

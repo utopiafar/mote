@@ -1,0 +1,180 @@
+{
+  "route": "#/chat?about=commitment:10000000-0000-4000-8000-000000000020",
+  "waitFor": ".chat-page:has(.chat-about-reference):has(.chat-about-tag > span):has(.chat-message[data-state=\"completed\"])",
+  "api": {
+    "POST /api/login/exchange": {
+      "status": 200,
+      "body": {
+        "token": "generated-page-snapshot-session-only"
+      }
+    },
+    "GET /api/configuration": {
+      "status": 200,
+      "body": {
+        "domains": []
+      }
+    },
+    "GET /api/status": {
+      "status": 200,
+      "body": {
+        "profile": "fixture",
+        "agent": {
+          "configured": true,
+          "model": "fixture-model",
+          "provider": "fixture"
+        },
+        "storage": {
+          "captures": 3,
+          "blobs": 0,
+          "bytes": 0,
+          "imageBytes": 0,
+          "logicalBytes": 0,
+          "imagesEncrypted": false,
+          "indexing": [
+            {
+              "status": "text_ready",
+              "count": 3
+            }
+          ]
+        },
+        "index": {
+          "mode": "text",
+          "model": null
+        },
+        "insightIntervalHours": 0,
+        "serverTime": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/plugins/presentation": {
+      "status": 200,
+      "body": {
+        "instances": []
+      }
+    },
+    "GET /api/devices": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    },
+    "GET /api/nav-state": {
+      "status": 200,
+      "body": {
+        "revisions": {
+          "library": "fixture-library-1",
+          "cards": "fixture-cards-1",
+          "commitments": "fixture-commitments-1",
+          "matters": "fixture-matters-1",
+          "memory": "fixture-memory-1",
+          "sources": "fixture-sources-1",
+          "plugins": "fixture-plugins-1"
+        },
+        "badges": {
+          "ideas": 3,
+          "connections": true
+        }
+      }
+    },
+    "GET /api/conversations/main": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000001"
+      }
+    },
+    "GET /api/conversations/10000000-0000-4000-8000-000000000001": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000001",
+        "title": "价格与设计稿",
+        "createdAt": "2026-11-20T09:00:00+08:00",
+        "updatedAt": "2026-11-20T09:50:00+08:00",
+        "turnCount": 2,
+        "scope": {},
+        "status": "completed",
+        "revision": 3,
+        "nextCursor": null,
+        "turns": [
+          {
+            "id": "10000000-0000-4000-8000-000000000002",
+            "question": "再查一下上次定价讨论的结论",
+            "createdAt": "2026-11-20T09:46:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "上次定的是按年付费，首年 7 折。学生价还没定。",
+              "runId": "generated-answer-2",
+              "citations": [],
+              "trace": []
+            }
+          },
+          {
+            "id": "10000000-0000-4000-8000-000000000003",
+            "question": "她说今晚出，靠谱吗",
+            "createdAt": "2026-11-20T09:48:00+08:00",
+            "status": "completed",
+            "version": 1,
+            "result": {
+              "answer": "前两稿都比她说的晚一天。设计评审群里最后一条是 26 分钟前的「今晚出第二稿」。明天中午还没收到，要我在群里问一下吗？",
+              "runId": "generated-answer-3",
+              "citations": [],
+              "trace": []
+            }
+          }
+        ]
+      }
+    },
+    "GET /api/assistant/commitments/10000000-0000-4000-8000-000000000020": {
+      "status": 200,
+      "body": {
+        "id": "10000000-0000-4000-8000-000000000020",
+        "revision": 1,
+        "title": "周雨 · 周五前交侧栏第二稿",
+        "status": "confirmed",
+        "deadline": {
+          "text": "周五",
+          "at": null
+        },
+        "dueState": "unknown",
+        "matterId": null,
+        "personMemoryId": null,
+        "todoId": null,
+        "direction": "mine",
+        "timeline": [],
+        "evidenceDependencies": {
+          "version": 1,
+          "complete": true,
+          "ids": [
+            "10000000-0000-4000-8000-000000000031"
+          ]
+        },
+        "sourceContextDependencies": [],
+        "createdAt": "2026-11-20T09:00:00+08:00",
+        "updatedAt": "2026-11-20T09:00:00+08:00"
+      }
+    },
+    "GET /api/operations/changes": {
+      "status": 200,
+      "body": {
+        "ids": [],
+        "cursor": 0,
+        "hasMore": false,
+        "reset": false
+      }
+    },
+    "GET /api/features": {
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "revision": 1,
+        "features": [],
+        "capabilities": []
+      }
+    },
+    "GET /api/model-settings/profiles/env%3Adeployment/models": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
+    }
+  }
+}

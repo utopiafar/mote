@@ -94,7 +94,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 observationClock.accept(now, appId, selected); lastPause = null
                 settings.captured(capturedAt); settings.status("capturing", if (selected == AppCollectionMode.CONTENT) MoteI18n.text("页面采样的应用活动已保存") else MoteI18n.text("仅应用活动已保存；未请求截图、OCR或模型")); settings.screenStatus(settings.message())
                 scheduleUpload(config)
-            } catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause(MoteI18n.text("应用活动未保存，请检查本机队列；未采集内容")) }
+            } catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause(MoteI18n.text("应用活动未保存，检查本机队列；未采集内容")) }
             finally { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
     }

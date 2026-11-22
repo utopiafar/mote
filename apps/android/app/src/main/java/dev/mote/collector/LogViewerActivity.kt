@@ -110,7 +110,7 @@ class LogViewerActivity : MoteActivity() {
                 if (isDestroyed || isFinishing || stamp != revision) return@runOnUiThread
                 refresh.isEnabled = true
                 result.onSuccess { raw -> rawLog = raw; showLog(); status.text = if (raw.isEmpty()) MoteI18n.text("暂无日志。") else MoteI18n.text("原始日志 · 长按选中复制") }
-                    .onFailure { status.text = MoteI18n.text("日志读取失败，请重试；原文件保留。") }
+                    .onFailure { status.text = MoteI18n.text("日志读取失败，重试；原文件保留") }
             }
         }
     }

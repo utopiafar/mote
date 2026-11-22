@@ -15,7 +15,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
         val state = applicationContext.getSharedPreferences("sync-recovery", Context.MODE_PRIVATE)
         fun report(message: String) { state.edit().putString("message", message).putString("at", Instant.now().toString()).commit() }
         try {
-            if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) { report(MoteI18n.text("连接或同步策略已变化，本次操作已停止；请重新发起")); return Result.failure() }
+            if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) { report(MoteI18n.text("连接或同步策略已变化，本次操作已停止；重新发起")); return Result.failure() }
             config.validateConnection()
             SyncSchedule.waitingReason(applicationContext, config)?.let { report(it); return Result.retry() }
             if (inputData.getBoolean("replay", false)) {
@@ -46,7 +46,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                 val (code, response) = CollectorHttp(applicationContext, lease::requireCurrent).post("${config.server}/api/capture-browser/reconcile",
                     JSONObject().put("deviceId", settings.deviceId).put("ids", JSONArray(ids)), config.connectionToken())
                 lease.requireCurrent()
-                if (code == 401 || code == 403) { report(MoteI18n.text("检查失败：连接授权失效，请重新连接同一节点后重试")); return Result.failure() }
+                if (code == 401 || code == 403) { report(MoteI18n.text("检查失败：连接授权失效，重新连接同一节点后重试")); return Result.failure() }
                 if (code == 404) { report(MoteI18n.text("中央尚不支持两端检查。升级中央代码后重试；未修改本机状态")); return Result.failure() }
                 check(code == 200) { MoteI18n.text("检查响应未确认") }
                 val items = response?.getJSONArray("items") ?: error(MoteI18n.text("检查响应缺失"))

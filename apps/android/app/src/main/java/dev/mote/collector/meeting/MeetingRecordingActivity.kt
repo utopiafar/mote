@@ -79,7 +79,7 @@ class MeetingRecordingActivity : MoteActivity() {
             latest.quarantined -> MoteI18n.text("当前本机来源范围已变更，旧待传版本已隔离，原输入保留。")
             latest.state == "uploaded" -> MoteI18n.text("已收到上传确认") + " · " + latest.startedAt.take(16).replace('T', ' ') + "\n" + MoteI18n.text("本机采集内容长期保留，上传确认后不自动删除。")
             latest.state == "completed" -> MoteI18n.text("最近一场 {0} 保存在本机，连接中央后上传。", latest.startedAt.take(16).replace('T', ' '))
-            latest.state == "failed" -> MoteI18n.text("最近一场未完成：{0}", latest.error ?: MoteI18n.text("请重试"))
+            latest.state == "failed" -> MoteI18n.text("最近一场未完成：{0}", latest.error ?: MoteI18n.text("重试"))
             else -> MoteI18n.text("最近一场 {0} 正在进行。", latest.startedAt.take(16).replace('T', ' '))
         }
         val records = store.sessions().filter { it.state != "recording" }.sortedByDescending { it.startedAt }
@@ -97,7 +97,7 @@ class MeetingRecordingActivity : MoteActivity() {
         val session = meetingRecordings().sessions().firstOrNull { it.id == id } ?: return
         val owner = dev.mote.collector.plugins.NativeLibraryPlugin.owner(this)
         val connection = Settings(this).connectionGeneration()
-        fun current() { owner.requireActive(); check(pageActive && !isDestroyed && Settings(this).connectionGeneration() == connection) { MoteI18n.text("访问凭据已失效，请重新连接。") } }
+        fun current() { owner.requireActive(); check(pageActive && !isDestroyed && Settings(this).connectionGeneration() == connection) { MoteI18n.text("访问凭据已失效，重新连接") } }
         val release = session.localContentRelease
         val view = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         SecondaryUi.text(view, session.startedAt + "\n" + (session.origin ?: "") + "\n" + (session.uploadedAt ?: MoteI18n.text("尚未上传")))
@@ -133,11 +133,11 @@ class MeetingRecordingActivity : MoteActivity() {
         val uri = pendingDestination ?: return
         pendingOriginal = null; pendingDestination = null
         val owner = dev.mote.collector.plugins.NativeLibraryPlugin.owner(this)
-        fun current() { owner.requireActive(); check(pageActive && !isDestroyed && Settings(this).connectionGeneration() == selected.second) { MoteI18n.text("访问凭据已失效，请重新连接。") } }
+        fun current() { owner.requireActive(); check(pageActive && !isDestroyed && Settings(this).connectionGeneration() == selected.second) { MoteI18n.text("访问凭据已失效，重新连接") } }
         originals.execute {
             val result = runCatching { owner.saveMeeting(selected.first, { current(); requireNotNull(contentResolver.openOutputStream(uri, "w")) }, ::current) }
             runOnUiThread { if (pageActive && !isDestroyed) dev.mote.collector.MoteDialogBuilder(this)
-                .setMessage(result.fold({ MoteI18n.text("已保存") }, { it.message ?: MoteI18n.text("操作失败，请重试") })).setPositiveButton(MoteI18n.text("关闭"), null).show() }
+                .setMessage(result.fold({ MoteI18n.text("已保存") }, { it.message ?: MoteI18n.text("操作失败，重试") })).setPositiveButton(MoteI18n.text("关闭"), null).show() }
         }
     }
 

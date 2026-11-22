@@ -2,10 +2,13 @@ import { moteText } from '@mote/shared/i18n';
 import { pageRoutes } from '@mote/shared';
 import React from 'react';
 import type { PageEntry, PageProps } from '../../features/types';
+import {useHashChoice} from '../../useHashChoice';
 import type { BuiltinWebPlugin } from '../types';
+import {aiAccessRoute} from '../agent-access/routes';
 import { Connections, DevicePairing } from './Connections';
+import {connectionCatalogRoute, ConnectionsPage} from './ConnectionsPage';
 import { SourceCatalog } from './SourceCatalog';
-import { Sources } from './Sources';
+import {readSource, readSetup, Sources} from './Sources';
 
 const LarkSettings = React.lazy(() => import('./LarkSettings').then(module => ({ default: module.LarkSettings })));
 
@@ -35,11 +38,19 @@ export {
   type SourcePluginStateContext,
 } from './registry';
 
+function ConnectionWorkspace({api, onOpen, onPage}: PageProps) {
+  const [source] = useHashChoice('sourceId', readSource);
+  const [setup] = useHashChoice('setup', readSetup);
+  return source || setup
+    ? <Sources api={api} onOpen={onOpen} onImport={() => onPage('imports')}/>
+    : <ConnectionsPage api={api}/>;
+}
+
 export const pages: PageEntry[] = [
   {
     id: 'sourceCatalog',
-    route: 'connections/add',
-    label: moteText('新增数据源'),
+    route: connectionCatalogRoute,
+    label: moteText('新建'),
     section: 'connections',
     order: 0.5,
     featureId: 'mote.sources',
@@ -48,12 +59,12 @@ export const pages: PageEntry[] = [
   {
     id: 'sources',
     route: pageRoutes.connections,
-    label: moteText('来源'),
+    label: moteText('连接'),
     navItem: 'connections',
     section: 'connections',
     order: 0,
     featureId: 'mote.sources',
-    render: ({ api, onPage, onOpen: setEvidenceId, setArchiveTab }: PageProps) => <Sources onAdd={() => onPage('sourceCatalog')} onBrowse={() => { setArchiveTab('sources'); onPage('archive'); }} api={api} onOpen={setEvidenceId} onImport={() => onPage('imports')}/>,
+    render: (props: PageProps) => <ConnectionWorkspace {...props}/>,
   },
   {
     id: 'lark',
@@ -74,7 +85,7 @@ export const sources: BuiltinWebPlugin = { id: 'mote.sources', pages };
 export const connectionsPages: PageEntry[] = [
   {
     id: 'connections',
-    route: 'connections/access',
+    route: aiAccessRoute,
     label: moteText('AI 接入'),
     section: 'connections',
     order: 2,
@@ -83,9 +94,9 @@ export const connectionsPages: PageEntry[] = [
   },
   {
     id: 'deviceConnections',
-    route: 'connections/pair',
+    route: pageRoutes.connections + '/pair',
     label: moteText('连接设备'),
-    section: 'connections',
+    section: 'library',
     order: 1,
     featureId: 'mote.connections',
     render: ({ api, devices }: PageProps) => <DevicePairing key="device" api={api} serverUrl={window.location.origin} devices={devices}/>,

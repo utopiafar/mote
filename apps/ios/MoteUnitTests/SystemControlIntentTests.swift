@@ -1,8 +1,17 @@
+import AppIntents
 import XCTest
 import MoteCore
 @testable import Mote
 
 final class SystemControlIntentTests: XCTestCase {
+    func testChatIntentAndControlUseTheChatTitle() throws {
+        let target = OpenSystemControlIntent(control: .ask).target
+        let display = try XCTUnwrap(SystemControlTarget.caseDisplayRepresentations[target])
+        XCTAssertEqual(String(localized: display.title), "聊天")
+        XCTAssertEqual(target.entry?.title, "聊天")
+        XCTAssertEqual(String(localized: AskMoteIntent.title), "聊天")
+    }
+
     func testControlIntentOpensTheMatchingUnifiedEntry() throws {
         let controls: [(MoteSystemControl, MoteEntry, MoteEntryAction)] = [
             (.record, .record, .openEditor(.note)),

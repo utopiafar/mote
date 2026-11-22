@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
@@ -50,22 +51,7 @@ internal class AssistantFeedViewModel(
         }
         val links = saved.getJSONObject("tasks")
         for (card in cards) if (card.acceptedTaskId == null) links.remove(card.id) else links.put(card.id, card.acceptedTaskId)
-        // Reconcile a lost response even when its card is on another page.
-        // Withdrawal/staleness also retires the locally frozen owner command.
-        val pending = saved.optJSONObject("pending")
-        if (pending != null) {
-            val reference = pending.getJSONObject("card"); val id = reference.getString("cardId")
-            val current = try { cards.find { it.id == id } ?: api.card(id) } catch (failure: CentralFailure) {
-                if (failure.status !in setOf(404, 410)) throw failure
-                null
-            }
-            if (current?.acceptedTaskId != null) {
-                links.put(id, current.acceptedTaskId); saved.remove("pending")
-            } else if (current == null || current.stale || current.state != "open" || current.revision != reference.getLong("expectedRevision")) {
-                saved.remove("pending")
-                error = MoteI18n.text("操作状态已变化，请重新读取后再确认。")
-            }
-        }
+        reconcilePending { id -> cards.find { it.id == id } ?: api.card(id) }
         persist()
         val visible = mutableMapOf<String, AssistantTask>()
         val unavailable = mutableMapOf<String, String>()
@@ -75,7 +61,7 @@ internal class AssistantFeedViewModel(
                 // A task accepted under a different exact scope, or withdrawn
                 // independently, must not hide other readable cards.
                 if (failure.status !in setOf(404, 409, 410)) throw failure
-                unavailable[card.id] = MoteI18n.text("读取任务状态失败，请刷新重试。")
+                unavailable[card.id] = MoteI18n.text("读取任务状态失败，刷新重试")
             }
         }
         tasks = visible; taskErrors = unavailable
@@ -91,27 +77,79 @@ internal class AssistantFeedViewModel(
                 val task = cardApi(cardId).task(AssistantJson.id(links, cardId))
                 tasks = tasks + (cardId to task); accepted = task.id; return@attempt
             }
-            val domain = requireNotNull(api.domain) { MoteI18n.text("任务服务尚未接通，暂时不能开始。") }
-            val pending = saved.optJSONObject("pending") ?: run {
+            val (id, requestScope) = submitStart(cardId, expectedRevision, goal) {
                 val current = cards.single { it.id == cardId }
-                check(current.revision == expectedRevision && current.startable && canStart(cardId)) { MoteI18n.text("操作状态已变化，请重新读取后再确认。") }
-                require(goal.trim().isNotEmpty() && goal.length <= 8000)
-                JSONObject().put("request", JSONObject().put("requestId", UUID.randomUUID().toString()).put("goal", goal.trim()).put("scope", scope(cardId).json()))
-                    .put("card", JSONObject().put("cardId", cardId).put("expectedRevision", expectedRevision))
-                    .also { saved.put("pending", it) }
+                check(current.revision == expectedRevision && current.startable && canStart(cardId)) { MoteI18n.text("操作状态已变化，重新读取后再确认") }
+                scope(cardId)
             }
-            check(pending.getJSONObject("card").getString("cardId") == cardId) { MoteI18n.text("结果尚未确认，请检查或重试原请求。") }
-            persist()
-            // Copies prevent a host adapter mutating the persisted request.
-            val id = domain.start(JSONObject(pending.getJSONObject("request").toString()), JSONObject(pending.getJSONObject("card").toString()))
-            require(MoteLink.uuidId(id) == id)
-            links.put(cardId, id); saved.remove("pending"); persist()
             accepted = id
             // An admission receipt is not a successful/completed task.
-            val requestApi = CentralAssistant(api.client, AssistantScope(pending.getJSONObject("request").getJSONObject("scope")), api.domain)
+            val requestApi = CentralAssistant(api.client, requestScope, api.domain)
             val task = requestApi.task(id); tasks = tasks + (cardId to task)
         }
         return accepted
+    }
+
+    /** The Ideas projection authorizes the button. Detail supplies the exact
+     * acceptance scope for a fresh command, and a retry uses the saved request. */
+    @Synchronized fun startIdea(cardId: String, revision: Long, title: String) {
+        if (saved.getJSONObject("tasks").has(cardId)) return
+        try {
+            submitStart(cardId, revision, title) {
+                val card = api.card(cardId)
+                if (card.id != cardId || card.revision != revision || card.taskScope == null) throw CentralFailure(409)
+                card.taskScope
+            }
+        } catch (failure: Exception) {
+            clearRejectedStart(failure)
+            throw failure
+        }
+    }
+
+    @Synchronized fun reconcileIdeaAcceptance() {
+        if (pendingCardId == null) return
+        reconcilePending(api::card)
+        if (pendingCardId == null) persist()
+    }
+
+    private fun submitStart(cardId: String, revision: Long, goal: String, prepareScope: () -> AssistantScope): Pair<String, AssistantScope> {
+        val domain = requireNotNull(api.domain) { MoteI18n.text("任务服务尚未接通，暂时不能开始。") }
+        val pending = saved.optJSONObject("pending") ?: run {
+            require(goal.trim().isNotEmpty() && goal.length <= 8000)
+            val request = JSONObject().put("requestId", UUID.randomUUID().toString())
+                .put("goal", goal.trim()).put("scope", prepareScope().json())
+            JSONObject().put("request", request)
+                .put("card", JSONObject().put("cardId", cardId).put("expectedRevision", revision))
+                .also { saved.put("pending", it) }
+        }
+        val card = pending.getJSONObject("card")
+        check(card.getString("cardId") == cardId) { MoteI18n.text("结果尚未确认，检查或重试原请求") }
+        persist()
+        val request = pending.getJSONObject("request")
+        // Copies prevent a host adapter mutating the persisted request.
+        val id = domain.start(JSONObject(request.toString()), JSONObject(card.toString()))
+        require(MoteLink.uuidId(id) == id)
+        saved.getJSONObject("tasks").put(cardId, id)
+        saved.remove("pending")
+        persist()
+        return id to AssistantScope(request.getJSONObject("scope"))
+    }
+
+    /** Reconcile a lost response even when its card is on another page. */
+    private fun reconcilePending(find: (String) -> AssistantCard) {
+        val reference = saved.optJSONObject("pending")?.getJSONObject("card") ?: return
+        val id = reference.getString("cardId")
+        val current = try { find(id) } catch (failure: CentralFailure) {
+            if (failure.status !in setOf(404, 410)) throw failure
+            null
+        }
+        if (current?.acceptedTaskId != null) {
+            saved.getJSONObject("tasks").put(id, current.acceptedTaskId)
+            saved.remove("pending")
+        } else if (current == null || current.stale || current.state != "open" || current.revision != reference.getLong("expectedRevision")) {
+            saved.remove("pending")
+            error = MoteI18n.text("操作状态已变化，重新读取后再确认")
+        }
     }
 
     @Synchronized fun feedback(cardId: String, revision: Long, action: String) = attempt {
@@ -143,10 +181,38 @@ internal class AssistantFeedViewModel(
             error = failure.message ?: MoteI18n.text("操作失败")
             // A rejected stale command must be reviewed against current state;
             // an unknown network result keeps the original durable request.
-            if (failure is CentralFailure && failure.status in setOf(400, 401, 403, 404, 409, 410)) {
-                saved.remove("pending"); persist()
-            }
+            clearRejectedStart(failure)
         }
+    }
+
+    private fun clearRejectedStart(failure: Exception) {
+        if (failure is CentralFailure && failure.status in setOf(400, 401, 403, 404, 409, 410)) {
+            saved.remove("pending"); persist()
+        }
+    }
+}
+
+/** Existing calendar suggestions that still need a time from the owner. */
+internal object CalendarNeeds {
+    const val SHOWN = 2
+    const val PAGES = 5
+
+    fun missingTime(items: JSONArray): List<JSONObject> = (0 until items.length()).map(items::getJSONObject).filter { action ->
+        val event = action.optJSONObject("event")
+        action.optString("status") == "proposed" && !action.has("resolution") && action.optString("kind") in setOf("calendar.create", "calendar.update") &&
+            event != null && listOf("start", "end").any { event.isNull(it) || event.optString(it).isBlank() }
+    }
+
+    fun scan(read: (cursor: Long) -> JSONObject): List<JSONObject> {
+        val found = mutableListOf<JSONObject>()
+        var cursor = 0L
+        repeat(PAGES) {
+            val page = read(cursor)
+            found += missingTime(page.getJSONArray("items"))
+            if (found.size >= SHOWN || page.isNull("nextCursor")) return found.take(SHOWN)
+            cursor = page.getLong("nextCursor")
+        }
+        return found.take(SHOWN)
     }
 }
 
@@ -155,7 +221,6 @@ internal class AssistantFeedViewModel(
 internal sealed interface AssistantOpen {
     val scope: AssistantScope
     data class Evidence(val ref: String, override val scope: AssistantScope) : AssistantOpen
-    data class Matter(val id: String, override val scope: AssistantScope) : AssistantOpen
     data class Task(val id: String, val workId: String?, override val scope: AssistantScope) : AssistantOpen
     data class Question(val id: String, val workId: String, override val scope: AssistantScope) : AssistantOpen
 }

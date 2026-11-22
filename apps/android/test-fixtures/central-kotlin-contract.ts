@@ -30,6 +30,9 @@ checkPageRouteConstants(kotlin);
 const drifted = kotlin.replace(`const val chat = "${pageRoutes.chat}"`, 'const val chat = "drifted-chat"');
 assert.notEqual(drifted, kotlin, 'The drift self-check needs the generated chat constant');
 assert.throws(() => checkPageRouteConstants(drifted), /CentralPageRoutes\.chat/);
+const mainActivity = await readFile(resolve(root, 'apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt'), 'utf8');
+assert.ok(!mainActivity.includes(`/#/${pageRoutes.connections}`),
+  'Android connection management must use CentralPageRoutes.connections');
 const directory = await mkdtemp(join(tmpdir(), 'mote-kotlin-contract-'));
 const token = randomBytes(32).toString('hex');
 const config: ConfigurationPlatformOptions = {path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated-only'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:10_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
@@ -56,6 +59,8 @@ try {
     .run(new Date(Date.now()-3*60*60_000).toISOString(),'generated-contact-contract');
   const history=central.conversations.append(undefined,{question:'Generated saved question',evidenceIds:[historyEvidence]},
     {answer:'Generated saved answer',citations:[{id:historyEvidence,appName:'Generated source',capturedAt:'2026-10-01T00:00:00Z',excerpt:'Generated saved excerpt'}],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[historyEvidence]}});
+  const removedList=await central.app.inject({url:'/api/conversations',headers:{authorization:'Bearer '+token}});
+  assert.equal(removedList.statusCode,404,'Conversation listing is removed');
   const origin = await central.app.listen({host: '127.0.0.1', port: 0});
   // The real workbench route must feed the production Kotlin decoder for all
   // four fixed templates. Empty scopes are valid producer output; the JVM

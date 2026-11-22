@@ -60,7 +60,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
                         SecondaryUi.row(list, MoteI18n.text("当前图与最近保留图"), MoteI18n.text("{0} · {1} · 哈希相似度 {2}", time(item.optString("capturedAt")), ImageDedupeDiagnosticsDetails.modeName(item.optString("mode")), percent(item.optDouble("hashSimilarityPercent")))) { detail(item.getString("id")) }
                             .tag = "dedupe:${item.getString("id")}"
                     }
-                }.onFailure { status.text = MoteI18n.text("诊断读取失败，请重试。采集队列不受影响。") }
+                }.onFailure { status.text = MoteI18n.text("诊断读取失败，重试。采集队列不受影响") }
             }
         }
     }
@@ -71,7 +71,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
             val result = runCatching(action)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                if (result.isSuccess) load() else { refresh.isEnabled = true; clear.isEnabled = true; status.text = MoteI18n.text("临时图片删除失败，请重试。") }
+                if (result.isSuccess) load() else { refresh.isEnabled = true; clear.isEnabled = true; status.text = MoteI18n.text("临时图片删除失败，重试") }
             }
         }
     }
@@ -117,7 +117,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
                     text(details, MoteI18n.text("被去重图片 · 本次未进入图片上传队列\n{0}", time(item.getString("capturedAt"))), 15f)
                     text(details, MoteI18n.text("处理后图片：{0} × {1} px\n去重采样：{2} × {3} px\n缩略比较网格：32 × 32；区块：8 × 8。", item.getInt("width"), item.getInt("height"), item.getInt("sampleWidth"), item.getInt("sampleHeight")), 12f)
                     MoteUi.styleTree(content)
-                }.onFailure { decoded.forEach { it.recycle() }; text(content, MoteI18n.text("图片已过期、已删除或暂时无法读取。请关闭后刷新列表。"), 14f) }
+                }.onFailure { decoded.forEach { it.recycle() }; text(content, MoteI18n.text("图片已过期、已删除或暂时无法读取。关闭后刷新列表"), 14f) }
             }
         }
     }

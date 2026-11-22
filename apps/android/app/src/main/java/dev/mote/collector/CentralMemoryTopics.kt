@@ -244,7 +244,7 @@ internal class CentralMemoryTopics(
                 if (stamp != generation || version != loadVersion) return@work
                 result.onSuccess { page ->
                     target.removeAllViews(); val rows = page.getJSONArray("items")
-                    if (rows.length() == 0) ui.text(MoteI18n.text("当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。"), parent = target)
+                    if (rows.length() == 0) ui.text(MoteI18n.text("当前筛选没有记忆"), parent = target)
                     else {
                         val group = MoteComponents.group(ui); target.addView(group)
                         for (index in 0 until rows.length()) {
@@ -294,7 +294,7 @@ internal class CentralMemoryTopics(
                 "unavailable" -> "自动主题服务尚未就绪；已有记忆仍可浏览。"
                 "running" -> "正在整理自动主题…"
                 "failed" -> "自动主题整理未完成；已有记忆仍可浏览。"
-                else -> if (directory.trees.any { it.id.startsWith("auto.") }) "主题是模型整理的浏览视图，不代表新的用户事实。" else "尚无自动主题；仍可浏览全部记忆和已有维度。"
+                else -> if (directory.trees.any { it.id.startsWith("auto.") }) "模型整理的主题视图" else "尚无自动主题；仍可浏览全部记忆和已有维度。"
             }), parent = management)
             if (directory.trees.isNotEmpty()) {
                 val tree = directory.trees.find { it.id == navigation.treeId } ?: directory.trees.first()
@@ -325,12 +325,12 @@ internal class CentralMemoryTopics(
     private fun unavailable() {
         val drafts = edits(); invalidated = true; generation++; detail.clear(); ui.enterDetail();
         body.removeAllViews(); navigation.returnToList(); screens.clearBack()
-        ui.text(MoteI18n.text("此主题已不可用，请返回全部记忆。")); preserveEdits(drafts)
+        ui.text(MoteI18n.text("此主题已不可用，返回全部记忆")); preserveEdits(drafts)
         ui.button(MoteI18n.text("全部记忆")) { navigation.choose("topics"); screens.refresh() }
     }
     private fun detailUnavailable() {
         val drafts = edits(); invalidated = true; generation++; detail.clear(); navigation.returnToList(); ui.enterDetail(); body.removeAllViews(); screens.clearBack()
-        ui.text(MoteI18n.text("所选记忆已变化，请刷新后重新选择。")); preserveEdits(drafts)
+        ui.text(MoteI18n.text("所选记忆已变化，刷新后重新选择")); preserveEdits(drafts)
         ui.button(MoteI18n.text("全部记忆")) { navigation.choose("topics"); screens.refresh() }
     }
     private fun failure(error: Throwable) {

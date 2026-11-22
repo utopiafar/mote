@@ -89,16 +89,16 @@ export const modelsConfigDomain=Object.freeze({id:'models',schema:modelDomainSch
 export const defaultModelDomain=():ModelDomain=>modelDomainSchema.parse({});
 
 const errors = {
-  model_profile_missing: [400, "所选模型配置不存在，请重新选择。"],
-  model_profile_read_only: [409, "部署配置为只读，请复制为新预设后编辑。"],
-  model_profile_in_use: [409, "该配置仍是某项功能的默认模型，请先修改功能默认值。"],
-  model_settings_invalid: [400, "模型配置无效，请检查填写的参数。"],
-  model_settings_conflict: [409, "模型设置已发生变化，请刷新后重试。"],
-  model_settings_credential_reuse: [409, "服务商、协议或地址已改变，请确认复用已有凭据，或替换、清除已有凭据。"],
-  model_settings_unavailable: [503, "模型设置暂不可用，请检查服务状态后重试。"],
-  model_settings_prepare_failed: [503, "无法准备新的模型配置，原配置保持使用。"],
-  model_settings_save_failed: [503, "模型设置未能保存，原配置保持使用。"],
-  model_settings_commit_uncertain: [503, "模型设置保存结果需要重新确认，请刷新设置后重试。"],
+  model_profile_missing: [400, moteText("所选模型配置不存在，请重新选择。")],
+  model_profile_read_only: [409, moteText("部署配置为只读，请复制为新预设后编辑。")],
+  model_profile_in_use: [409, moteText("该配置仍是某项功能的默认模型，请先修改功能默认值。")],
+  model_settings_invalid: [400, moteText("模型配置无效，请检查填写的参数。")],
+  model_settings_conflict: [409, moteText("模型设置已发生变化，请刷新后重试。")],
+  model_settings_credential_reuse: [409, moteText("服务商、协议或地址已改变，请确认复用已有凭据，或替换、清除已有凭据。")],
+  model_settings_unavailable: [503, moteText("模型设置暂不可用，请检查服务状态后重试。")],
+  model_settings_prepare_failed: [503, moteText("无法准备新的模型配置，原配置保持使用。")],
+  model_settings_save_failed: [503, moteText("模型设置未能保存，原配置保持使用。")],
+  model_settings_commit_uncertain: [503, moteText("模型设置保存结果需要重新确认，请刷新设置后重试。")],
 } as const;
 export class ModelSettingsError extends Error {
   readonly statusCode: 400 | 409 | 503;

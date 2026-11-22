@@ -141,7 +141,7 @@ class BulkDedupeActivity : MoteActivity() {
                     val available = queue.dedupeIds().toHashSet()
                     loaded = if (report.optBoolean("complete")) (0 until pairs.length()).map { pairs.getJSONObject(it) }
                         .filter { id(it) in available } else emptyList()
-                    title = if (report.optBoolean("complete")) MoteI18n.text("扫描结果 · {0} · {1}\n扫描 {2} 张 · 失败 {3} 张 · 候选 {4} 张\n时间 {5}", report.optString("mode"), if (report.optString("comparison") == "last_retained") MoteI18n.text("与上一张保留图比较") else MoteI18n.text("旧规则结果，请重新扫描"), report.optInt("scanned"), report.optInt("errors"), loaded.size, report.optString("at")) else MoteI18n.text("尚无完整扫描结果；取消或中断后请重新扫描。")
+                    title = if (report.optBoolean("complete")) MoteI18n.text("扫描结果 · {0} · {1}\n扫描 {2} 张 · 失败 {3} 张 · 候选 {4} 张\n时间 {5}", report.optString("mode"), if (report.optString("comparison") == "last_retained") MoteI18n.text("与上一张保留图比较") else MoteI18n.text("旧规则结果，重新扫描"), report.optInt("scanned"), report.optInt("errors"), loaded.size, report.optString("at")) else MoteI18n.text("尚无完整扫描结果；取消或中断后重新扫描")
                     rowsKey = "report:${report.optString("at")}:${report.optString("mode")}:${report.optBoolean("complete")}"
                 }
                 rowsKey += loaded.joinToString(separator = "|") { id(it) + ":" + it.getJSONObject("candidate").optString("blob") }
@@ -260,7 +260,7 @@ class BulkDedupeActivity : MoteActivity() {
     }
     private fun confirm(action: String) {
         val items = rows.filter { id(it) in selected }
-        if (items.isEmpty()) { Toast.makeText(this, MoteI18n.text("请先选择图片"), Toast.LENGTH_SHORT).show(); return }
+        if (items.isEmpty()) { Toast.makeText(this, MoteI18n.text("先选择图片"), Toast.LENGTH_SHORT).show(); return }
         val verb = when (action) { "move" -> MoteI18n.text("移入待决定区"); "restore" -> MoteI18n.text("恢复到本机采集队列"); else -> MoteI18n.text("永久删除本机记录及图片") }
         MoteDialogBuilder(this).setTitle(MoteI18n.text("确认{0}？", verb)).setMessage(MoteI18n.text("所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。", items.size, if (action in listOf("delete", "purge")) MoteI18n.text("无法撤销。") else ""))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确认")) { _, _ ->

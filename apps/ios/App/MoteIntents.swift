@@ -73,10 +73,10 @@ struct RecordAudioIntent: AppIntent {
 }
 
 struct AskMoteIntent: AppIntent {
-    static let title: LocalizedStringResource = "问一问"
+    static let title: LocalizedStringResource = "聊天"
 
-    func perform() async throws -> some IntentResult {
-        .result(opensIntent: OpenURLIntent(try openURL(for: .ask)))
+    func perform() async throws -> some IntentResult & OpensIntent {
+        .result(opensIntent: OpenSystemControlIntent(control: .ask))
     }
 }
 
@@ -201,8 +201,8 @@ struct MoteAppShortcuts: AppShortcutsProvider {
         )
         AppShortcut(
             intent: AskMoteIntent(),
-            phrases: ["问 \(.applicationName)"],
-            shortTitle: "问一问",
+            phrases: ["和 \(.applicationName) 聊聊"],
+            shortTitle: "聊天",
             systemImageName: "bubble.left.and.bubble.right"
         )
     }

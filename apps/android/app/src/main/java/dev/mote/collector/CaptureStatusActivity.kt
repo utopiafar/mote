@@ -263,7 +263,7 @@ class CaptureStatusActivity : MoteActivity() {
                 ConnectionGuard.sync {
                     if (localSources().sources().any { it.enabled }) SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
                     else UploadWorker.schedule(applicationContext, config, true)
-                } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
+                } ?: error(MoteI18n.text("正在应用设置，稍后重试"))
             }
             handler.post {
                 result.onSuccess { toast(MoteI18n.text("已请求同步；仍遵守网络约束")) }.onFailure { notice(it) }
@@ -286,7 +286,7 @@ class CaptureStatusActivity : MoteActivity() {
         working = true; facts?.let(::present)
         run { working = false; if (!isDestroyed) render() }
     }
-    private fun notice(error: Throwable) = android.widget.Toast.makeText(this, error.message ?: MoteI18n.text("保存或调度失败，请重试；已保存内容不会丢失"), android.widget.Toast.LENGTH_LONG).show()
+    private fun notice(error: Throwable) = android.widget.Toast.makeText(this, error.message ?: MoteI18n.text("保存或调度失败，重试；已保存内容不会丢失"), android.widget.Toast.LENGTH_LONG).show()
     private fun toast(message: String) = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun showMore() {

@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import dev.mote.collector.plugins.NativeAskController
 import dev.mote.collector.plugins.NativeAskDraftStorage
+import dev.mote.collector.plugins.NativeAskLocalChat
 import dev.mote.collector.plugins.NativeAskPlugin
 import dev.mote.collector.plugins.NativePluginHost
 import dev.mote.collector.plugins.NativePluginRegistry
@@ -70,25 +71,6 @@ class NativeAskPluginTest {
         assertFalse("an accepted message has no pending retry body", restored.has("pending"))
         assertNull("a running message cannot submit a second request", recreated.admission("Generated later question", "UTC"))
         assertEquals("the recreated view did not repeat the admission", conversation, restored.getString("conversationId"))
-    }
-
-    @Test fun aListQuestionStartsANewThreadWithoutDroppingItsStagedImages() = temporary { directory ->
-        val controller = NativeAskController(storage(directory))
-        controller.restore()
-        val selected = UUID.randomUUID().toString()
-        controller.replace(JSONObject()
-            .put("conversationId", UUID.randomUUID().toString())
-            .put("messageId", UUID.randomUUID().toString()).put("runStatus", "running")
-            .put("question", "Generated prior question")
-            .put("attachments", JSONArray().put(JSONObject().put("id", UUID.randomUUID().toString())))
-            .put("imageUploads", JSONObject().put("file:///generated-image", JSONObject().put("status", "pending"))))
-        controller.startConversation("Generated list question", selected)
-        assertEquals("Generated list question", controller.state.getString("question"))
-        assertEquals(1, controller.state.getJSONArray("attachments").length())
-        assertEquals("pending", controller.state.getJSONObject("imageUploads").getJSONObject("file:///generated-image").getString("status"))
-        assertEquals(selected, controller.state.getString("conversationId"))
-        assertFalse(controller.state.has("messageId"))
-        assertFalse(controller.state.has("runStatus"))
     }
 
     @Test fun recreatedActivityRetriesTheExactUnconfirmedAdmissionInsteadOfCreatingANewOne() = temporary { directory ->
@@ -184,17 +166,34 @@ class NativeAskPluginTest {
         assertEquals("Generated second conversation draft", controller.state.getString("question"))
     }
 
-    @Test fun newConversationClearsOnlyTheUnsentDraftAndMessageIdentity() = temporary { directory ->
-        val conversation = UUID.randomUUID().toString()
+    @Test fun localSubmissionBindsOnceAndCannotReplaceAnIdenticalUnsentDraft() = temporary { directory ->
+        val main = UUID.randomUUID().toString()
+        val origin = "https://generated.invalid"
+        val alternate = "https://alternate.invalid"
+        val text = "Generated local message"
+        val local = NativeAskLocalChat(CentralStateFile(directory, "local-chat", cipher))
+        local.save("", text)
+        local.save("", "Generated following message")
+        val first = requireNotNull(local.first(origin, main))
+        assertNull(local.first(alternate, main))
+        assertNull(local.first(origin, UUID.randomUUID().toString()))
+        local.settle(origin, first.id, rejected = true)
+        assertEquals(first.copy(rejected = true), local.first(origin, main))
+
         val controller = NativeAskController(storage(directory))
         controller.restore()
-        controller.selectConversation(conversation)
-        controller.editQuestion("Generated discarded question")
-        controller.state.put("runStatus", "completed").put("messageId", UUID.randomUUID().toString())
-        controller.newConversation()
-        assertFalse(controller.state.has("conversationId"))
-        assertFalse(controller.state.has("messageId"))
-        assertFalse(controller.state.has("runStatus"))
-        assertEquals("", controller.state.getString("question"))
+        controller.attachConversation(main)
+        controller.editQuestion(text)
+        assertTrue(controller.admitLocal(main, first, "UTC"))
+        controller.persistNow()
+        val restored = NativeAskController(storage(directory)).apply { restore() }
+        val request = requireNotNull(restored.admission("Generated alternate text", "UTC"))
+        assertEquals(first.id, request.getString("clientRequestId"))
+        assertEquals(first.text, request.getString("question"))
+        assertFalse(restored.receive(receipt(request, "completed"), request).clearDraft)
+        assertEquals(text, restored.state.getString("question"))
+        local.settle(origin, first.id)
+        assertEquals("Generated following message", local.first(origin, main)?.text)
     }
+
 }

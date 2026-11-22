@@ -91,7 +91,7 @@ class SyncQueueActivity : MoteActivity() {
                 updateTabs()
                 // A restored history tab hides the source spinner, which need not dispatch selection.
                 load()
-            }.onFailure { summary.text = MoteI18n.text("队列暂不可读，请重试"); summary.visibility = android.view.View.VISIBLE }
+            }.onFailure { summary.text = MoteI18n.text("队列暂不可读，重试"); summary.visibility = android.view.View.VISIBLE }
         }
     }
     private fun refreshSendState(state: LocalStateSnapshot) {
@@ -106,7 +106,7 @@ class SyncQueueActivity : MoteActivity() {
             // A part still being read keeps its bar, after the parts that are already known.
             val parts = (visible as? VisibleSyncStatus.Many)?.items ?: listOf(visible)
             val known = (parts.filter { it != VisibleSyncStatus.Loading }.map(SyncReadiness::text) +
-                if (settings.syncRequestRejected()) listOf(MoteI18n.text("配置已发生变化，请刷新后重试。")) else emptyList()).filter { it.isNotEmpty() }.joinToString("\n")
+                if (settings.syncRequestRejected()) listOf(MoteI18n.text("配置已发生变化，刷新后重试")) else emptyList()).filter { it.isNotEmpty() }.joinToString("\n")
             if (VisibleSyncStatus.Loading in parts) MoteComponents.reading(sendStatus, SyncReadiness.text(VisibleSyncStatus.Loading), if (known.isEmpty()) "" else known + "\n")
             else sendStatus.text = known
         }
@@ -124,7 +124,7 @@ class SyncQueueActivity : MoteActivity() {
             SendPauseControl.set(applicationContext, requestedPause)
         }) { outcome ->
             refreshSendState(LocalStatusProducer.get(this).state.value)
-            outcome.onFailure { sendStatus.text = it.message ?: MoteI18n.text("操作失败，请重试") }
+            outcome.onFailure { sendStatus.text = it.message ?: MoteI18n.text("操作失败，重试") }
         }
     }
     private fun requestSync() {
@@ -135,10 +135,10 @@ class SyncQueueActivity : MoteActivity() {
                 val config = Settings(applicationContext).read(); config.validateConnection()
                 if (localSources().sources().any { it.enabled }) dev.mote.collector.plugins.SourceProviderPlugin.owner(applicationContext).schedule(manual = true, syncExplicit = true)
                 else UploadWorker.schedule(applicationContext, config, true)
-            } ?: error(MoteI18n.text("正在应用设置，请稍后重试"))
+            } ?: error(MoteI18n.text("正在应用设置，稍后重试"))
         }) { outcome ->
             refreshSendState(LocalStatusProducer.get(this).state.value)
-            outcome.onFailure { sendStatus.text = it.message ?: MoteI18n.text("操作失败，请重试") }
+            outcome.onFailure { sendStatus.text = it.message ?: MoteI18n.text("操作失败，重试") }
             load()
         }
     }
@@ -211,7 +211,7 @@ class SyncQueueActivity : MoteActivity() {
                         startActivity(if (source == null) Intent(this, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id")) else Intent(this, SourcesActivity::class.java).putExtra("detailSourceId", source.id))
                     }
                 }
-            }.onFailure { summary.text = MoteI18n.text("队列读取失败，记录保留。请刷新重试。"); summary.visibility = android.view.View.VISIBLE }
+            }.onFailure { summary.text = MoteI18n.text("队列读取失败，记录保留。刷新重试"); summary.visibility = android.view.View.VISIBLE }
             if (refreshPending) { refreshPending = false; load() }
         }
     }

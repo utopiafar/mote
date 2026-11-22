@@ -87,7 +87,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         }
     }
     override fun onInterrupt() {
-        if (!destroyed) stateWorker.execute { runCatching { Settings(this).status("permission_required", MoteI18n.text("无障碍服务中断，请检查系统设置")) } }
+        if (!destroyed) stateWorker.execute { runCatching { Settings(this).status("permission_required", MoteI18n.text("无障碍服务中断，检查系统设置")) } }
     }
     fun windowSnapshot(): WindowSnapshot {
         return try {

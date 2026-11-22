@@ -1,604 +1,583 @@
-import type {AssistantTaskResultItem} from './AssistantTaskResults';
-import {SaveConversationRecord} from './SaveConversationRecord';
-import {queryRecovery,type OwnedQuery} from './query-recovery';
-import {unsentDrafts,unsentImages,type ChatAttachment,type ChatImageUpload} from './chat-drafts';
-import {useOriginalReference} from '../../ask-original-reference';
-import {containDialogFocus} from '../../dialog-focus';
-import {conversationFailure,ConversationDialog,ConversationTurnDetails} from './ConversationTurnDetails';
-import {useResource} from '../../useResource';
-import {useOperationUpdates} from '../../useOperationUpdates';
-import {readResource,resources} from '../../resource-cache';
-import {failureMessage} from '../../failure-message';
-import {ModelSelector} from '../../ModelSelector';
-import {pageHash,conversationSettingsSchema, type ConversationSettings as StoredConversationSettings, type ServerConfiguration} from '@mote/shared';
-import {ConversationSettingsView} from './ConversationSettings';
-import {admitConversationMessage, definiteAdmissionFailure, messageStateLabel, pendingMessageStatus, readConversationMessage, type ConversationMessage, type ConversationMessageInput, type ConversationMessageScope, type ConversationMessageState} from './conversation-messages';
-import { moteText } from '@mote/shared/i18n';
-import {QueryProgress,type QueryRun} from './QueryProgress';
-import {uploadChatImage} from '../notes/note-attachments';
-import React,{useCallback,useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
-import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
-import {ApiError,dateTime, type Answer, type Api, type Device, type Range} from '../../api';
-import {ConversationHeading,ConversationComposer} from './ConversationShell';
-import {ConversationSourceScope,type SourceScopeChoice} from './ConversationSourceScope';
-import {AssistantDraftActions} from './AssistantDraftActions';
-import {CurrentActionReceipt} from '../work/ActionResults';
+import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
+import {conversationSettingsSchema, pageHash, type ServerConfiguration} from '@mote/shared';
+import {moteText} from '@mote/shared/i18n';
+import type {Answer, Api, Device} from '../../api';
+import {Loading, LoadingText} from '../../Loading';
 import {FeaturePanels} from '../../features/runtime';
+import {useOriginalReference} from '../../ask-original-reference';
 import {readOwnerQuestion} from '../../owner-question-route';
+import {useHashChoice} from '../../useHashChoice';
+import {useOperationUpdates} from '../../useOperationUpdates';
+import {useResource} from '../../useResource';
+import {ConversationSettingsView} from './ConversationSettings';
+import {ConversationDialog} from './ConversationTurnDetails';
+import {ConversationSourceScope, type SourceScopeChoice} from './ConversationSourceScope';
+import {ChatComposer, createChatDraft} from './ChatComposer';
+import {ChatAboutReference,ChatAboutTag,readChatAbout,useChatAbout,verifyChatAbout} from './ChatAbout';
+import {ChatRevisionChanged, ChatSearch, chatPath, chatRevoked, mergeChatPages, readChatPage, samePage,
+  type ChatPage, type ChatScope, type ChatTurn} from './ChatHistory';
+import {ChatMessage} from './ChatMessage';
+import {unsentDrafts} from './chat-drafts';
+import {useChatAttachments} from './chat-attachments';
+import {OnboardingChatProgress} from '../sources/OnboardingScan';
+import {admitConversationMessage, definiteAdmissionFailure, pendingMessageStatus, readConversationMessage,
+  type ConversationMessage, type ConversationMessageInput, type ConversationMessageScope} from './conversation-messages';
 import {readOriginTurn} from './conversation-origin';
-import {type AskController,useAskController} from './controller';
-import { Loading, LoadingText } from '../../Loading';
+import {queryRecovery, type OwnedQuery} from './query-recovery';
+import type {AskController} from './controller';
+const chatStyles = new URL('./chat.css?no-inline', import.meta.url).href;
 
-const StableModelSelector=React.memo(ModelSelector);
-
-// File objects remain private to this Api session; routes and storage contain no file bytes.
-const localImageFiles=new WeakMap<Api,Map<string,File>>();
-function ChatDraftThumbnail({file}:{file?:File}){
- const [image,setImage]=useState<{file:File;url:string}>();
- useEffect(()=>{if(!file)return;const url=URL.createObjectURL(file);setImage({file,url});return()=>URL.revokeObjectURL(url);},[file]);
- return file&&image?.file===file?<img className="chat-draft-thumbnail" src={image.url} alt=""/>:<ImagePlus size={14}/>;
-}
-interface ConversationSummary {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  turnCount: number;
-  scope: Range & {kind?:'all'|'selection';timeZone?:string;evidenceIds?:string[];sourceIds?:string[];anchorEvidenceIds?:string[];anchorMaterialRef?:string};
-  status: ConversationMessageState;
-}
-interface ConversationTurn extends Pick<ConversationMessage,'steering'|'taskSteering'|'amendedBy'|'supersededBy'> {
-  id: string;
-  seq?: number;
-  version?: number;
-  question: string;
-  result?: Answer;
-  status: ConversationMessageState;
-  error?: {code: string; message: string};
-  createdAt: string;
-  runId?: string;
-  modelProfileId?: string;
-  modelOverride?: string;
-  evidenceDeleted?: boolean;
-  evidenceStale?: boolean;
-  evidenceUnavailable?: boolean;
-  unavailableEvidenceIds?: string[];
-  attachments?: {id:string;name:string;mimeType:string}[];
-}
-interface Conversation extends ConversationSummary {turns: ConversationTurn[];revision?:number;nextCursor?:string|null}
-interface OlderTurns {api:Api;id:string;revision?:number;turns:ConversationTurn[];nextCursor:string|null}
-interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
-
-/** This reads the formal Task using the Host-projected original scope. The
- * amendment receipt is a delivery fact, not the current Task state or a grant. */
-function TaskAmendment({api,receipt,revision,onCancel,cancelling}:{api:Api;receipt:NonNullable<ConversationMessage['taskSteering']>;revision?:number;onCancel:()=>void;cancelling:boolean}){
- const path='/api/assistant/tasks/'+encodeURIComponent(receipt.targetTaskId)+'?'+new URLSearchParams({scope:JSON.stringify(receipt.scope)});
- const read=useResource<AssistantTaskResultItem>(api,path,2000,revision);
- const item=read.error===undefined&&read.data?.task.id===receipt.targetTaskId?read.data:undefined;
- const state=item?.task.state,active=state==='waiting'||state==='running'||state==='needs_input'||state==='failed';
- return <section className="conversation-task-amendment" aria-label={moteText('任务状态')}>
-  <strong>{moteText('任务状态')}</strong>{' · '}<span role="status">{state==='completed'?moteText('已完成'):state==='running'?moteText('正在进行'):state==='waiting'?moteText('排队中'):state==='stale'?moteText('已失效'):state==='cancelled'?moteText('已取消'):state?moteText('未完成'):moteText('正在读取…')}</span>
-  {read.error!==undefined&&<p role="alert">{moteText('读取任务状态失败，请刷新重试。')}</p>}
-  {item&&receipt.origin&&<a className="text-button" href={pageHash('chat',{conversation:receipt.origin.conversationId,turn:receipt.origin.turnId})}>{moteText('查看任务')}</a>}
-  {active&&receipt.state!=='cancelled'&&<button className="text-button" disabled={cancelling||read.loading} onClick={onCancel}>{moteText('停止这条回答')}</button>}
- </section>;
+function admissionScope(scope: ChatScope | undefined, choice: SourceScopeChoice | undefined): ConversationMessageScope {
+  const range = {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ...(scope?.after ? {after: scope.after} : {}),
+    ...(scope?.before ? {before: scope.before} : {}),
+    ...(scope?.deviceId ? {deviceId: scope.deviceId} : {}),
+  };
+  if (choice) return {...range, ...choice};
+  if (scope?.kind === 'selection' || scope?.evidenceIds !== undefined || scope?.sourceIds !== undefined) {
+    return {kind: 'selection', ...range,
+      ...(scope.evidenceIds !== undefined ? {evidenceIds: scope.evidenceIds} : {}),
+      ...(scope.sourceIds !== undefined ? {sourceIds: scope.sourceIds} : {})};
+  }
+  return {kind: 'all', ...range};
 }
 
-function createQuestionDraft(onChange?:(question:string)=>void){
- let value='';const listeners=new Set<()=>void>();
- return {
-  getSnapshot:()=>value,
-  subscribe:(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};},
-  set:(next:string)=>{if(next===value)return;value=next;onChange?.(next);listeners.forEach(listener=>listener());},
- };
-}
-/** Only the controlled composer subscribes to typing. The session still owns
- * draft clear/restore timing, including while supplemental routes hide it. */
-function DraftComposer({draft,children}:{draft:ReturnType<typeof createQuestionDraft>;children:(question:string)=>ReactNode}){
- const question=useSyncExternalStore(draft.subscribe,draft.getSnapshot,draft.getSnapshot);
- return children(question);
-}
-/** An explicit composer choice replaces stored source/evidence restrictions.
- * Without one, keep the stored selection, including an empty intersection. */
-function admissionScope(scope:ConversationSummary['scope']|undefined,choice:SourceScopeChoice|undefined,timeZone:string):ConversationMessageScope{
- const range={timeZone,...(scope?.after?{after:scope.after}:{}),...(scope?.before?{before:scope.before}:{}),...(scope?.deviceId?{deviceId:scope.deviceId}:{})};
- if(choice)return {...range,...choice};
- // A selection can be source-only or an empty intersection. Missing evidenceIds
- // never turns it into "all"; the next turn keeps the stored restriction.
- if(scope?.kind==='selection'||scope?.evidenceIds!==undefined||scope?.sourceIds!==undefined)return {kind:'selection',...(scope?.evidenceIds!==undefined?{evidenceIds:[...scope.evidenceIds]}:{}),...(scope?.sourceIds!==undefined?{sourceIds:[...scope.sourceIds]}:{}),...range};
- return {kind:'all',...range};
-}
-export function Conversations({api, configured, devices, renderAnswer,onOpen=()=>{},controller:provided}: {
+const sessions = new WeakMap<Api, number>();
+let nextSession = 0;
+type Props = {
   api: Api;
   configured: boolean;
   devices: Device[];
-  renderAnswer: (answer: Answer, openReference:(ref:string)=>void) => ReactNode;
-  onOpen?: (ref:string)=>void;
+  renderAnswer: (answer: Answer, openReference: (ref: string) => void) => ReactNode;
+  onOpen?: (ref: string) => void;
+  onSettings?: () => void;
   controller?: AskController;
-}) {
-  const runController=useAskController(api,provided);
-  const reference=useOriginalReference(api);
-  const referenceScope=useRef({api,key:reference.key});
-  useEffect(()=>{if(referenceScope.current.api===api&&referenceScope.current.key!==reference.key)queryRecovery.contextChanged(api);referenceScope.current={api,key:reference.key};},[api,reference.key]);
-  const recovery=useSyncExternalStore(useCallback(listener=>queryRecovery.subscribe(api,listener),[api]),useCallback(()=>queryRecovery.get(api),[api]),useCallback(()=>queryRecovery.get(api),[api]));
-  const [recheck,setRecheck]=useState(0);
-  const [unavailableReference,setUnavailableReference]=useState<{opener:HTMLElement|null}|null>(null);
-  const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
-  const changeModelProfile=useCallback((value:string)=>{queryRecovery.draftEdited(api);setModelProfileId(value);},[api]);
-  const changeModelOverride=useCallback((value:string)=>{queryRecovery.draftEdited(api);setModelOverride(value);},[api]);
-  const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [scopeChoice,setScopeChoice]=useState<{owner:Api;id:string;value:SourceScopeChoice}|null>(null);
-  const [selectedId,setSelectedId]=useState<string|null>(()=>new URLSearchParams(window.location.hash.split('?')[1]??'').get('conversation')),[older,setOlder]=useState<OlderTurns|null>(null),[pageRevoked,setPageRevoked]=useState(false);
-  const [historyOpen,setHistoryOpen]=useState(false),[moreOpen,setMoreOpen]=useState(false),[moreTurn,setMoreTurn]=useState<{owner:Api;conversationId:string;turnId:string}|null>(null),[pendingSwitch,setPendingSwitch]=useState<{owner:Api;id:string|null}|null>(null),[dialogOwner,setDialogOwner]=useState(api);
-  const [settingsOpen,setSettingsOpen]=useState(false);
-  const [targetTurn,setTargetTurn]=useState<string|null>(null);
-  const [selectedOwnerQuestion,setSelectedOwnerQuestion]=useState<string|null>(()=>readOwnerQuestion(window.location.hash));
-  const detail=useResource<Conversation>(api,selectedId?`/api/conversations/${encodeURIComponent(selectedId)}`:null);
-  // An explicitly opened conversation already carries its identity. Read the
-  // server main only when an ordinary Ask entry or the history selector needs it.
-  const main=useResource<{id:string}>(api,!selectedId||historyOpen?'/api/conversations/main':null);
-  const configuration=useResource<ServerConfiguration>(api,'/api/configuration');
-  const storedSettings=useMemo<StoredConversationSettings|undefined>(()=>{
-    const effective=configuration.data?.domains?.find(domain=>domain.id==='conversations')?.effective;
-    const parsed=conversationSettingsSchema.safeParse(effective);
-    return parsed.success?parsed.data:undefined;
-  },[configuration.data]);
-  const mainId=main.data?.id??null,multipleConversations=storedSettings?.multipleConversations===true;
-  const [settingsOwner,setSettingsOwner]=useState(api);
-  useEffect(()=>{setSettingsOwner(api);setSettingsOpen(false);},[api]);
-  const currentOlder=older?.api===api&&older.id===detail.data?.id&&older.revision===detail.data?.revision?older:null;
-  // A newer revision can withdraw prior evidence. Never merge copied pages from
-  // an older revision while their replacement is still being fetched.
-  const conversation=detail.data&&!pageRevoked?{...detail.data,turns:[...(currentOlder?.turns??[]).filter(turn=>!detail.data!.turns.some(next=>next.id===turn.id)),...detail.data.turns],...(currentOlder?{nextCursor:currentOlder.nextCursor}:{})}:null;
-  const threadEmpty=!conversation||conversation.turns.length===0;
-  const historyReferenceRequest=useRef<AbortController|null>(null);
-  const latestDetail=useRef({api,selectedId,data:detail.data,error:detail.error,conversation});
-  latestDetail.current={api,selectedId,data:detail.data,error:detail.error,conversation};
-  const cancelHistoryReference=()=>{historyReferenceRequest.current?.abort();historyReferenceRequest.current=null;};
-  useEffect(()=>{cancelHistoryReference();return cancelHistoryReference;},[api,selectedId]);
-  const openHistoryReference=(ref:string,turnId?:string)=>{
-    if(!conversation||!ref.startsWith('capture:')){onOpen(ref);return;}
-    const id=ref.slice('capture:'.length),opener=document.activeElement instanceof HTMLElement?document.activeElement:null,owner=api,conversationId=conversation.id;
-    const expected=turnId?conversation.turns.find(turn=>turn.id===turnId):undefined;
-    const matches=(turn:Pick<ConversationTurn,'evidenceDeleted'|'result'|'question'>|undefined)=>Boolean(turn&&!turn.evidenceDeleted&&turn.result&&expected?.result&&turn.question===expected.question&&turn.result.answer===expected.result.answer&&turn.result.citations.some(citation=>citation.id===id));
-    if(turnId&&!matches(expected)){setUnavailableReference({opener});return;}
-    historyReferenceRequest.current?.abort();const controller=new AbortController();historyReferenceRequest.current=controller;
-    const current=()=>{const latest=latestDetail.current;return !controller.signal.aborted&&historyReferenceRequest.current===controller&&latest.api===owner&&latest.selectedId===conversationId&&Boolean(latest.conversation)&&(!turnId||matches(latest.conversation?.turns.find(turn=>turn.id===turnId)));};
-    void (async()=>{
-      try{
-        const value=await api.request<{id:string;available:boolean}>(`/api/conversations/${encodeURIComponent(conversationId)}/references/${encodeURIComponent(id)}`,{signal:controller.signal});
-        if(!current())return;
-        if(value.available!==true||value.id!==id){setUnavailableReference({opener});return;}
-        // The conversation-level reference endpoint may be authorized by a
-        // different turn. A turn citation also needs its own fresh exact read.
-        if(turnId){const checked=await readOriginTurn(api,conversationId,turnId,controller.signal);if(!current())return;if(!matches(checked)){setUnavailableReference({opener});return;}}
-        onOpen(ref);
-      }catch(error){if(current())setError(conversationFailure(error));}
-      finally{if(historyReferenceRequest.current===controller)historyReferenceRequest.current=null;}
-    })();
-  };
-  const currentScopeChoice=scopeChoice?.owner===api&&scopeChoice.id===conversation?.id?scopeChoice.value:undefined;
-  const scopeOverridden=currentScopeChoice!==undefined;
-  const messageScope=admissionScope(conversation?.scope??reference.scope,currentScopeChoice,Intl.DateTimeFormat().resolvedOptions().timeZone);
-  function changeSourceScope(value:SourceScopeChoice){
-    if(!conversation)return;
-    queryRecovery.contextChanged(api);setScopeChoice({owner:api,id:conversation.id,value});reference.clear();
-  }
-  useEffect(()=>{setScopeChoice(null);setUnavailableReference(null);setMoreOpen(false);setMoreTurn(null);setConfirmDelete(false);setPendingSwitch(null);setDialogOwner(api);},[api,selectedId]);
-  const draftOwner=useRef(api);
-  const [draft]=useState(()=>createQuestionDraft(question=>{const owner=draftOwner.current;unsentDrafts.set(owner,{question,attachments:unsentDrafts.get(owner)?.attachments??[]});})),setQuestion=draft.set;
-  const [attachments,updateAttachments]=useState<ChatAttachment[]>([]);
-  const setAttachments=(next:React.SetStateAction<ChatAttachment[]>)=>updateAttachments(current=>{const value=typeof next==='function'?next(current):next,owner=draftOwner.current;unsentDrafts.set(owner,{question:draft.getSnapshot(),attachments:value});const files=localImageFiles.get(owner);if(files)for(const id of files.keys())if(!value.some(item=>item.id===id))files.delete(id);return value;});
-  const [uploading,setUploading]=useState(false);
-  const [imageUploadState,setImageUploadState]=useState<{owner:Api;items:ChatImageUpload[]}>({owner:api,items:unsentImages.get(api)??[]});
-  const imageUploads=imageUploadState.owner===api?imageUploadState.items:unsentImages.get(api)??[];
-  const storeImages=(change:(current:ChatImageUpload[])=>ChatImageUpload[])=>{const items=change(unsentImages.get(api)??[]);unsentImages.set(api,items);if(draftOwner.current===api)setImageUploadState({owner:api,items});};
-  const attachmentInput=useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false), [loadingOlder,setLoadingOlder]=useState(false), [loadingPage,setLoadingPage] = useState(false);
-  const [error, setError] = useState(''), [historyError, setHistoryError] = useState('');
-  const [pendingQuestion, setPendingQuestion] = useState(''), [confirmDelete, setConfirmDelete] = useState(false);
-  const operation = useRef<AbortController | null>(null), historyRequest = useRef<AbortController | null>(null);
-  const attachmentRequest=useRef<AbortController|null>(null),cancelRequest=useRef<AbortController|null>(null);
-  const selectionMade=useRef(false),olderRequest=useRef<AbortController|null>(null);
-  const history=useResource<HistoryPage>(api,'/api/conversations?limit=30'),recentRuns=useResource<{items:QueryRun[]}>(api,'/api/query-runs');
-  const feedError=useOperationUpdates(api);
-  // Cached content remains usable while change notifications revalidate it.
-  // Only an unopened/revoked conversation or explicit pagination blocks input.
-  const loading=history.loading||loadingPage,opening=detail.loading&&!conversation||loadingOlder;
-  const end = useRef<HTMLDivElement>(null);
-  const [run,setRun]=useState<QueryRun|null>(null),[pollError,setPollError]=useState(''),[pollReceiptMissing,setPollReceiptMissing]=useState(false),[turnError,setTurnError]=useState('');
-  const pendingTurns=conversation?.turns.filter(turn=>pendingMessageStatus(turn.status))??[];
-  const pendingKey=pendingTurns.map(turn=>turn.id+':'+turn.status).join(',');
-  const settledReceipts=useRef(new Set<string>());
-  const activeRun=useRef<{api:Api;id?:string}>({api});activeRun.current={api,id:run?.id};
+};
+const doNothing = () => {};
+const readTurn = (hash: string) => new URLSearchParams(hash.split('?')[1]).get('turn');
+const readConversation = (hash: string) => new URLSearchParams(hash.split('?')[1]).get('conversation');
 
-  async function loadHistory(next?: string) {
-    historyRequest.current?.abort();
-    if(!next){setLoadingPage(false);setHistoryError('');history.refresh();return;}
-    const controller = new AbortController(); historyRequest.current = controller;
-    setLoadingPage(true); setHistoryError('');
-    try {
-      const page = await readResource<HistoryPage>(api,`/api/conversations?limit=30&cursor=${encodeURIComponent(next)}`,controller.signal);
-      if (controller.signal.aborted) return;
-      setItems(previous => [...previous, ...page.items.filter(item => !previous.some(existing => existing.id === item.id))]);
-      setCursor(page.nextCursor ?? null);
-    } catch (e) { if (!controller.signal.aborted) setHistoryError(conversationFailure(e)); }
-    finally { if (!controller.signal.aborted) setLoadingPage(false); }
-  }
-  useEffect(()=>{if(draftOwner.current!==api){const [route,text]=window.location.hash.split('?'),query=new URLSearchParams(text);query.delete('conversation');query.delete('turn');window.history.replaceState(null,'',route+(query.size?'?'+query:''));reference.clear();}draftOwner.current=api;settledReceipts.current.clear();const saved=unsentDrafts.get(api);selectionMade.current=false;setSelectedId(null);setOlder(null);setItems([]);setCursor(null);const retained=queryRecovery.get(api);selectionMade.current=Boolean(retained);setRun(retained?.run??null);setBusy(false);setQuestion(saved?.question??'');setAttachments(saved?.attachments??[]);setImageUploadState({owner:api,items:unsentImages.get(api)??[]});setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
-    return()=>{operation.current?.abort();cancelRequest.current?.abort();cancelRequest.current=null;const retained=queryRecovery.get(api);if(retained)queryRecovery.set(api,{...retained,unknown:true});attachmentRequest.current?.abort();unsentImages.set(api,(unsentImages.get(api)??[]).map(item=>({...item,status:'failed'})));historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
-  useEffect(()=>{const changed=()=>{const draftQuery=new URLSearchParams(window.location.hash.split('?')[1]??'');if(draftQuery.get('history')==='1'){setHistoryOpen(true);draftQuery.delete('history');window.history.replaceState(null,'',window.location.hash.split('?')[0]+(draftQuery.size?'?'+draftQuery:''));}const incoming=draftQuery.get('questionDraft');if(incoming!==null){
-    // The navigation has explicitly replaced the draft. A late upload from the
-    // discarded draft must not attach itself to the newly prepared question.
-    const nextQuestion=incoming.slice(0,100000);
-    attachmentRequest.current?.abort();attachmentRequest.current=null;
-    // Publish the replacement before React replays the owner-restoration effect
-    // (including in StrictMode); queued state updaters alone are too late.
-    unsentDrafts.set(api,{question:nextQuestion,attachments:[]});unsentImages.delete(api);localImageFiles.delete(api);
-    setUploading(false);setAttachments([]);storeImages(()=>[]);
-    queryRecovery.contextChanged(api);selectionMade.current=true;
-    // A search handoff without an explicit conversation starts a fresh context,
-    // even when Ask was already mounted with a historical conversation.
-    if(!draftQuery.get('conversation')){
-      cancelHistoryReference();olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);
-      setSelectedId(null);setOlder(null);setTargetTurn(null);setScopeChoice(null);setHistoryOpen(false);
-      if(!queryRecovery.get(api)){operation.current?.abort();operation.current=null;setRun(null);setBusy(false);setPendingQuestion('');setPollError('');setPollReceiptMissing(false);}
-    }
-    setQuestion(nextQuestion);draftQuery.delete('questionDraft');const route=window.location.hash.split('?')[0];window.history.replaceState(null,'',route+(draftQuery.size?'?'+draftQuery:''));window.dispatchEvent(new window.Event('mote:workspace-state'));}const questionId=readOwnerQuestion(window.location.hash);setSelectedOwnerQuestion(questionId);if(questionId)selectionMade.current=true;const next=new URLSearchParams(window.location.hash.split('?')[1]).get('conversation');if(next){if(next!==latestDetail.current.selectedId)cancelHistoryReference();const retained=queryRecovery.get(api);if(retained&&next!==retained.conversationId&&next!==retained.run?.conversationId)queryRecovery.contextChanged(api);selectionMade.current=true;setTargetTurn(draftQuery.get('turn'));setSelectedId(next);setRun(null);}};changed();window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[api]);
-  const detailRevoked=detail.error instanceof ApiError&&[401,403,404,410].includes(detail.error.status);
-  useLayoutEffect(()=>{
-    olderRequest.current?.abort();olderRequest.current=null;setLoadingOlder(false);setOlder(null);setPageRevoked(false);
-  },[api,selectedId,detail.data?.revision,detailRevoked]);
-  useEffect(()=>{if(detail.data&&!detail.loading&&!detail.error)setPageRevoked(false);},[detail.data,detail.loading,detail.error]);
-  useEffect(()=>{if(reference.key){selectionMade.current=true;setSelectedId(null);setRun(null);setOlder(null);setSelectedOwnerQuestion(null);}},[api,reference.key]);
-  // An ordinary Ask entry opens the server's current main. An explicit
-  // conversation, question handoff or unsent intent always wins.
-  useEffect(()=>{
-    if(!mainId||selectedId||selectedOwnerQuestion||selectionMade.current||queryRecovery.get(api))return;
-    setSelectedId(mainId);
-  },[api,mainId,selectedId,selectedOwnerQuestion]);
-  useEffect(()=>{if(history.data){setItems(history.data.items);setCursor(history.data.nextCursor??null);}else if(history.error){setItems([]);setCursor(null);}},[history.data,history.error]);
-  useEffect(()=>{if(!recentRuns.data||selectionMade.current||queryRecovery.get(api))return;
-    // Only an in-flight run is recoverable. A completed run stays in history
-    // until the owner explicitly opens it or an incoming receipt selects it.
-    // A product conversation run already appears as its own pending turn.
-    // Only a legacy request without a turn receipt is adopted here.
-    const running=recentRuns.data.items.find(r=>r.status==='running'&&!r.turnId);
-    if(running){selectionMade.current=true;queryRecovery.set(api,{kind:'adopted',id:running.id,contextVersion:queryRecovery.versions(api).contextVersion,conversationId:running.conversationId,run:running,unknown:false});setRun(running);setBusy(true);setSelectedId(running.conversationId??null);}
-  },[recentRuns.data]);
-  useEffect(() => {if (!targetTurn&&conversation?.turns.length) end.current?.scrollIntoView({block: 'nearest'});}, [conversation?.id, conversation?.turns.length,targetTurn]);
-  useEffect(()=>{
-    if(!targetTurn||!conversation||opening||detail.error||error)return;
-    const element=document.getElementById('conversation-turn-'+targetTurn);
-    if(element){element.scrollIntoView({block:'center'});element.focus({preventScroll:true});}
-    else if(conversation.nextCursor)void loadOlderTurns();
-  },[targetTurn,conversation?.id,conversation?.turns.length,conversation?.nextCursor,opening,detail.error,error]);
-  // Pending turns are server facts already persisted before execution. Poll
-  // only their exact receipts; a failed read stays unknown and never turns an
-  // optimistic client state into success, failure or withdrawal by itself.
-  useEffect(()=>{
-    if(!conversation?.id||!pendingKey)return;
-    const conversationId=conversation.id;let stopped=false,timer:ReturnType<typeof setTimeout>|undefined,request:AbortController|undefined;
-    const schedule=()=>{if(!stopped)timer=setTimeout(()=>void poll(),1200);};
-    const poll=async()=>{
-      timer=undefined;if(stopped)return;
-      const current=latestDetail.current.conversation,owner=latestDetail.current.api;
-      if(!current||current.id!==conversationId||owner!==api||latestDetail.current.selectedId!==conversationId){schedule();return;}
-      const pending=current.turns.filter(turn=>pendingMessageStatus(turn.status));
-      if(!pending.length)return;
-      const controller=new AbortController();request=controller;
-      try{
-        let changed=false;
-        for(const turn of pending){
-          const value=await readConversationMessage(api,conversationId,turn.id,controller.signal);
-          if(stopped||latestDetail.current.api!==api||latestDetail.current.selectedId!==conversationId)return;
-          if(value.id!==turn.id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-          if(value.status!==turn.status||turn.version!==undefined&&value.revision!==turn.version)changed=true;
-        }
-        if(changed){setTurnError('');detail.refresh();history.refresh();}
-      }catch(cause){if(!stopped&&!(cause instanceof DOMException&&cause.name==='AbortError'))setTurnError(conversationFailure(cause));}
-      finally{if(request===controller)request=undefined;schedule();}
-    };
-    schedule();
-    return()=>{stopped=true;if(timer)clearTimeout(timer);request?.abort();};
-  },[api,conversation?.id,pendingKey]);
-
-  function receiveRun(current:QueryRun){
-    // Every receipt path obeys the same confirmed-terminal fence. Late running
-    // or duplicate terminal replies cannot revive busy state or repeat navigation.
-    if(settledReceipts.current.has(current.id))return;
-    const retained=queryRecovery.get(api),owned=retained?.id===current.id?retained:undefined;
-    setRun(current);setPollError('');setPollReceiptMissing(false);setError('');
-    if(current.status==='running'){
-      if(owned)queryRecovery.set(api,{...owned,run:current,unknown:false});
-      setBusy(true);return;
-    }
-    settledReceipts.current.add(current.id);
-    const versions=queryRecovery.versions(api),sameContext=!owned||owned.contextVersion===versions.contextVersion,sameDraft=owned?.kind==='owned'&&owned.draftVersion===versions.draftVersion;
-    if((current.status==='completed'||current.status==='failed')&&current.conversationId){
-      if(sameContext){setSelectedId(current.conversationId);window.history.replaceState(null,'',pageHash('chat',{conversation:current.conversationId}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
-      historyRequest.current?.abort();setLoadingPage(false);setHistoryError('');resources(api).invalidate(key=>key.startsWith('/api/conversations'));
-    }
-    if(owned?.kind==='owned'&&sameDraft){if(current.status==='completed'){setQuestion('');setAttachments([]);}else if(current.status==='failed')setQuestion(owned.question);}
-    if(owned)queryRecovery.set(api,undefined);
-    setBusy(false);setPendingQuestion('');operation.current=null;
-  }
-  function unconfirmed(cause:unknown){
-    const retained=queryRecovery.get(api);if(retained)queryRecovery.set(api,{...retained,unknown:true});
-    setBusy(false);setPendingQuestion('');setPollError(conversationFailure(cause));setPollReceiptMissing(cause instanceof ApiError&&cause.status===404);
-  }
-  useEffect(()=>{
-    if(!run||run.status!=='running'&&settledReceipts.current.has(run.id)){runController.stopPolling();return;}
-    const id=run.id;
-    runController.poll(id,{onRun:current=>{if(current.id!==id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));receiveRun(current);},onError:unconfirmed});
-    return()=>runController.stopPolling();
-  },[api,run?.id,run?.status,recheck,runController]);
-  function productAdmission(body:string):ConversationMessageInput|undefined{
-    try{const value=JSON.parse(body) as Partial<ConversationMessageInput>;return value&&typeof value.clientRequestId==='string'&&value.clientRequestId?value as ConversationMessageInput:undefined;}catch{return undefined;}
-  }
-  async function checkOriginal(){
-    const retained=queryRecovery.get(api);if(!retained||operation.current)return;
-    if(retained.kind==='owned'&&productAdmission(retained.body)){await retryOriginal();return;}
-    const id=retained.id??run?.id;if(!id)return;
-    const controller=new AbortController();operation.current=controller;setBusy(true);setPollError('');setPollReceiptMissing(false);
-    try{const current=await api.request<QueryRun>(`/api/query-runs/${id}`,{signal:controller.signal});if(controller.signal.aborted)return;if(current.id!==id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));receiveRun(current);setRecheck(value=>value+1);}
-    catch(cause){if(!controller.signal.aborted)unconfirmed(cause);}
-    finally{if(operation.current===controller)operation.current=null;}
-  }
-  async function postOriginal(retained:OwnedQuery,controller:AbortController){
-    let ambiguous=retained.unknown;
-    for(let attempt=0;attempt<2;attempt++)try{
-      const product=productAdmission(retained.body);
-      if(product){
-        const accepted=await admitConversationMessage(api,product,controller.signal);
-        if(controller.signal.aborted)return;
-        const versions=queryRecovery.versions(api),sameContext=retained.contextVersion===versions.contextVersion,sameDraft=retained.draftVersion===versions.draftVersion&&draft.getSnapshot().trim()===retained.question;
-        queryRecovery.set(api,undefined);
-        if(sameDraft){setQuestion('');setAttachments([]);storeImages(()=>[]);}
-        setPendingQuestion('');setBusy(false);operation.current=null;setError('');setTurnError('');
-        if(sameContext){setSelectedId(accepted.conversationId);selectionMade.current=true;window.history.replaceState(null,'',pageHash('chat',{conversation:accepted.conversationId}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
-        historyRequest.current?.abort();setLoadingPage(false);setHistoryError('');
-        resources(api).invalidate(key=>key.startsWith('/api/conversations'));detail.refresh();
-        return;
-      }
-      const accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body:retained.body});
-      if(controller.signal.aborted)return;
-      if(accepted.id!==retained.id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-      receiveRun(accepted);return;
-    }catch(cause){
-      if(controller.signal.aborted)return;
-      const definite=definiteAdmissionFailure(cause);
-      if(definite&&!ambiguous){queryRecovery.set(api,undefined);setBusy(false);setPendingQuestion('');setError(conversationFailure(cause));return;}
-      ambiguous=true;queryRecovery.set(api,{...retained,unknown:true});
-      if(attempt===1)unconfirmed(cause);
-    }
-  }
-  async function retryOriginal(){
-    const retained=queryRecovery.get(api);if(retained?.kind!=='owned'||operation.current||uploading||opening)return;
-    const controller=new AbortController();operation.current=controller;setBusy(true);setError('');setPollError('');setPollReceiptMissing(false);
-    try{await postOriginal(retained,controller);}finally{if(operation.current===controller)operation.current=null;}
-  }
-
-  async function cancelRunning(){
-    if(!run||run.status!=='running'||cancelRequest.current)return;
-    const controller=new AbortController(),id=run.id;cancelRequest.current=controller;
-    try{const value=await api.request<QueryRun>(`/api/query-runs/${id}/cancel`,{method:'POST',signal:controller.signal});if(!controller.signal.aborted&&activeRun.current.api===api&&activeRun.current.id===id){if(value.id!==id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));receiveRun(value);}}
-    catch(cause){if(!controller.signal.aborted&&activeRun.current.api===api&&activeRun.current.id===id)unconfirmed(cause);}
-    finally{if(cancelRequest.current===controller)cancelRequest.current=null;}
-  }
-  async function cancelTurn(turn:ConversationTurn){
-    if(!conversation||cancelRequest.current)return;
-    const controller=new AbortController(),conversationId=conversation.id;cancelRequest.current=controller;setTurnError('');
-    try{
-      const value=await api.request<ConversationMessage>(`/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(turn.id)}/cancel`,{method:'POST',signal:controller.signal});
-      if(controller.signal.aborted)return;
-      if(value?.id!==turn.id||value.conversationId!==conversationId)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-      detail.refresh();history.refresh();
-    }catch(cause){if(!controller.signal.aborted)setTurnError(conversationFailure(cause));}
-    finally{if(cancelRequest.current===controller)cancelRequest.current=null;}
-  }
-  async function selectMain(id:string){
-    if(busy||operation.current)return;
-    const controller=new AbortController();operation.current=controller;
-    try{
-      const value=await api.request<{id:string}>('/api/conversations/main',{method:'PUT',body:JSON.stringify({id}),signal:controller.signal});
-      if(controller.signal.aborted)return;
-      if(value?.id!==id)throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-      main.refresh();history.refresh();
-    }catch(cause){if(!controller.signal.aborted)setError(conversationFailure(cause));}
-    finally{if(operation.current===controller)operation.current=null;}
-  }
-
-  function open(id: string,force=false) {
-    if (busy) return;
-    if(id===selectedId){selectionMade.current=true;setHistoryOpen(false);return;}
-    if(!force&&id!==selectedId&&(draft.getSnapshot().trim()||attachments.length||imageUploads.length||queryRecovery.get(api))){setPendingSwitch({owner:api,id});return;}
-    cancelHistoryReference();queryRecovery.contextChanged(api);attachmentRequest.current?.abort();attachmentRequest.current=null;setUploading(false);
-    setHistoryOpen(false);
-    setTargetTurn(null);setScopeChoice(null);
-    selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
-    setRun(null);setPollError('');setPollReceiptMissing(false);setError('');setTurnError('');setConfirmDelete(false);setQuestion('');setAttachments([]);storeImages(()=>[]);setPendingQuestion('');
-    setOlder(null);setSelectedId(id);setSelectedOwnerQuestion(null);
-    window.location.hash=pageHash('chat',{conversation:id});
-  }
-  async function loadOlderTurns(){
-    if(!conversation?.nextCursor||opening)return;
-    const id=conversation.id,revision=conversation.revision,cursor=conversation.nextCursor,controller=new AbortController();olderRequest.current?.abort();olderRequest.current=controller;setLoadingOlder(true);setError('');
-    const current=()=>!controller.signal.aborted&&olderRequest.current===controller&&latestDetail.current.api===api&&latestDetail.current.selectedId===id&&latestDetail.current.data?.id===id&&latestDetail.current.data.revision===revision&&!latestDetail.current.error;
-    try{const page=await readResource<Conversation>(api,`/api/conversations/${encodeURIComponent(id)}?cursor=${encodeURIComponent(cursor)}`,controller.signal);
-      if(!current())return;
-      if(page.id!==id||page.revision!==revision){setOlder(null);setPageRevoked(true);detail.refresh();return;}
-      setOlder(previous=>{const turns=previous?.api===api&&previous.id===id&&previous.revision===revision?previous.turns:[];return {api,id,revision,turns:[...page.turns.filter(turn=>!turns.some(old=>old.id===turn.id)),...turns],nextCursor:page.nextCursor??null};});
-    }catch(e){if(current()){if(e instanceof ApiError&&[401,403,404,410].includes(e.status)){setOlder(null);setPageRevoked(true);detail.refresh();}setError(conversationFailure(e));}}
-    finally{if(olderRequest.current===controller){olderRequest.current=null;setLoadingOlder(false);}}
-  }
-  async function startNew(force=false) {
-    if (busy) return;
-    if(!force&&(draft.getSnapshot().trim()||attachments.length||imageUploads.length||queryRecovery.get(api))){setPendingSwitch({owner:api,id:null});return;}
-    if(!multipleConversations){setError(moteText('多对话已关闭。可在对话设置中开启。'));return;}
-    const controller=new AbortController();operation.current=controller;setBusy(true);setError('');
-    try{
-      const created=await api.request<{id:string}>('/api/conversations',{method:'POST',body:'{}',signal:controller.signal});
-      if(controller.signal.aborted)return;
-      if(!created||typeof created.id!=='string'||!/^[a-f0-9-]{36}$/i.test(created.id))throw Error(moteText('中央响应格式无效，请刷新后重试。'));
-      cancelHistoryReference();queryRecovery.contextChanged(api);attachmentRequest.current?.abort();attachmentRequest.current=null;setUploading(false);setHistoryOpen(false);
-      setTargetTurn(null);setScopeChoice(null);
-      selectionMade.current=true;olderRequest.current?.abort();setLoadingOlder(false);
-      setRun(null);setPollError('');setPollReceiptMissing(false);setTurnError('');setOlder(null);setQuestion('');setAttachments([]);storeImages(()=>[]);setPendingQuestion('');setConfirmDelete(false);setSelectedOwnerQuestion(null);
-      setSelectedId(created.id);history.refresh();main.refresh();
-      window.location.hash=pageHash('chat',{conversation:created.id});
-    }catch(cause){if(!controller.signal.aborted)setError(conversationFailure(cause));}
-    finally{if(operation.current===controller)operation.current=null;if(!controller.signal.aborted)setBusy(false);}
-  }
-  function retry(question: string) {
-    if (busy || opening) return;
-    void submit(undefined, question);
-  }
-  async function submit(event?: {preventDefault(): void}, sample?: string) {
-    event?.preventDefault();
-    const text = (sample ?? draft.getSnapshot()).trim();
-    if (!text || busy || uploading || imageUploads.length>0 || opening || operation.current || queryRecovery.get(api) || !configured || !reference.ready) return;
-    const conversationId=conversation?.id??mainId;
-    if(!conversationId){setError(moteText('尚未读取主对话，请刷新后重试。'));return;}
-    selectionMade.current=true;
-    const controller = new AbortController(); operation.current = controller;
-    setRun(null);setBusy(true); setError(''); setTurnError(''); setConfirmDelete(false); setPendingQuestion(text);
-    try {
-      if(!conversation)await reference.verify(controller.signal);
-      if(controller.signal.aborted)return;
-      const scope=messageScope;
-      const anchorMaterialRef=scopeOverridden?undefined:reference.origin&&!conversation&&reference.materialRef?reference.materialRef:conversation?.scope.anchorMaterialRef;
-      const anchorEvidenceIds=scopeOverridden?undefined:reference.origin&&!conversation&&!reference.materialRef&&reference.ids.length?reference.ids:conversation?.scope.anchorEvidenceIds;
-      const id=crypto.randomUUID();
-      const input:ConversationMessageInput={conversationId,clientRequestId:id,question:text,scope,...(anchorMaterialRef?{anchorMaterialRef}:{}),...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(modelProfileId?{modelProfileId}:{}),...(modelOverride?{modelOverride}:{}),...(attachments.length?{attachmentIds:attachments.map(attachment=>attachment.id)}:{})};
-      const retained:OwnedQuery={kind:'owned',id,body:JSON.stringify(input),question:text,attachments:attachments.map(value=>({...value})),...queryRecovery.versions(api),conversationId,unknown:false};
-      queryRecovery.set(api,retained);
-      await postOriginal(retained,controller);
-    } catch (e) {
-      if (!controller.signal.aborted) {setBusy(false);setPendingQuestion(''); setError(moteText("{0} 可刷新历史检查结果后再重试。", conversationFailure(e)));}
-    } finally {if (!controller.signal.aborted) {operation.current = null;}}
-  }
-  async function uploadImages(selected:ChatImageUpload[]) {
-    if(!selected.length||uploading||busy||opening)return;
-    const controller=new AbortController();attachmentRequest.current=controller;setUploading(true);setError('');
-    const current=()=>!controller.signal.aborted&&draftOwner.current===api&&attachmentRequest.current===controller;
-    try{
-      let deviceId=localStorage.getItem('mote.chat.device.v1');
-      if(!deviceId){deviceId=`web:${crypto.randomUUID()}`;localStorage.setItem('mote.chat.device.v1',deviceId);}
-      for(const item of selected){
-        if(!current())return;storeImages(rows=>rows.map(row=>row.key===item.key?{...row,status:'uploading'}:row));
-        try{
-          const id=await uploadChatImage(api,item.file,deviceId,controller.signal);
-          if(!current())return;
-          const files=localImageFiles.get(api)??new Map<string,File>();files.set(id,item.file);localImageFiles.set(api,files);
-          setAttachments(rows=>controller.signal.aborted||draftOwner.current!==api?rows:rows.some(row=>row.id===id)?rows:[...rows,{id,name:item.file.name,mimeType:item.file.type}]);
-          storeImages(rows=>rows.filter(row=>row.key!==item.key));
-        }catch(cause){if(!current())return;storeImages(rows=>rows.map(row=>row.key===item.key?{...row,status:'failed'}:row));setError(conversationFailure(cause));}
-      }
-    }catch(cause){if(current()){storeImages(rows=>rows.map(row=>selected.some(item=>item.key===row.key)?{...row,status:'failed'}:row));setError(conversationFailure(cause));}}finally{if(current()){setUploading(false);if(attachmentInput.current)attachmentInput.current.value='';}if(attachmentRequest.current===controller)attachmentRequest.current=null;}
-  }
-  async function addImages(files:FileList|null){
-    if(!files?.length||uploading||busy||opening)return;
-    if(attachments.length+imageUploads.length+files.length>4){setError(moteText("最多添加 4 张图片"));return;}
-    const selected=Array.from(files);
-    if(selected.some(file=>!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024||file.size===0)){
-      setError(moteText("聊天图片仅支持 PNG、JPEG、WebP，每张不超过 8 MiB。"));return;
-    }
-    queryRecovery.draftEdited(api);const rows=selected.map(file=>({key:crypto.randomUUID(),file,status:'uploading' as const}));storeImages(current=>[...current,...rows]);await uploadImages(rows);
-  }
-  async function remove() {
-    if (!conversation || operation.current) return;
-    const controller = new AbortController(); operation.current = controller;
-    setBusy(true); setError('');
-    try {
-      await api.request(`/api/conversations/${encodeURIComponent(conversation.id)}`, {method: 'DELETE', signal: controller.signal});
-      if (controller.signal.aborted) return;
-      const next=await api.request<{id:string}>('/api/conversations/main',{signal:controller.signal});
-      if (controller.signal.aborted) return;
-      setRun(null);selectionMade.current=true;setOlder(null);resources(api).invalidate(key=>key.startsWith('/api/conversations')||key.startsWith('/api/query-runs'));main.refresh();history.refresh();
-      if(typeof next?.id==='string'){setSelectedId(next.id);window.history.replaceState(null,'',pageHash('chat',{conversation:next.id}));window.dispatchEvent(new window.Event('mote:workspace-state'));}
-      setQuestion(''); setConfirmDelete(false);
-    } catch (e) {if (!controller.signal.aborted) setError(conversationFailure(e));}
-    finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
-  }
-  function turnBody(turn:ConversationTurn,conversationId:string):ReactNode{
-    if(pendingMessageStatus(turn.status))return <div className="conversation-pending" role="status"><LoaderCircle className="spin" size={18}/><div><strong>{messageStateLabel(turn.status)}</strong><p>{turn.status==='running'?moteText('可以离开或刷新，中央会继续执行。'):moteText('消息已保存在中央，等待开始回答。')}</p></div><button className="text-button" disabled={cancelRequest.current!==null} onClick={()=>void cancelTurn(turn)}>{moteText('停止这条回答')}</button></div>;
-    if(turn.status==='cancelled')return <div className="failed-answer" role="status"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText('已停止')}</strong><p>{moteText('这条回答已取消，晚到的结果不会写回。')}</p><button className="button primary" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div>;
-    const result=turn.result;
-    if(turn.status==='failed'||!result)return <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{failureMessage(turn.error)}</p><button className="button primary" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div>;
-    return <>{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : <>{turn.evidenceUnavailable?<p className="notice">{moteText('引用原文已删除，历史问答仍保留。')}</p>:turn.evidenceStale&&<p className="notice">{moteText("这是历史版本，当前资料已更新。")}</p>}{renderAnswer(result,ref=>openHistoryReference(ref,turn.id))}{result.currentAction&&!turn.supersededBy?.length&&<CurrentActionReceipt api={api} reference={result.currentAction}/>}{result.draft&&!turn.supersededBy?.length&&<AssistantDraftActions api={api} conversationId={conversationId} turnId={turn.id} draft={result.draft} renderAnswer={renderAnswer} onOpen={onOpen}/>}<div className="conversation-turn-actions"><SaveConversationRecord inDialog formatError={conversationFailure} api={api} conversationId={conversationId} messageId={turn.id} question={turn.question} answer={result.answer} answerDetails={result} onOpen={onOpen}/>{turn.steering?.state==='accepted'&&conversation?.turns.some(target=>target.id===turn.steering!.targetMessageId&&pendingMessageStatus(target.status))&&<button className="text-button" disabled={cancelRequest.current!==null} onClick={()=>void cancelTurn(turn)}>{moteText('停止这条回答')}</button>}<button className="text-button" aria-label={moteText('本轮详情')+' '+turn.question} onClick={()=>setMoreTurn({owner:api,conversationId,turnId:turn.id})}>{moteText('更多')}</button></div><ConversationTurnDetails api={api} conversationId={conversationId} id={turn.id} question={turn.question} answer={result} open={moreTurn?.owner===api&&moreTurn.conversationId===conversationId&&moreTurn.turnId===turn.id} onClose={()=>setMoreTurn(null)} onOpen={ref=>{setMoreTurn(null);openHistoryReference(ref,turn.id);}} run={run?.turnId===turn.id?run:undefined} pollError={pollError}/></>}</>;
-  }
-  function turnRelations(turn:ConversationTurn,conversationId:string):ReactNode{
-    const ids=new Set([...(turn.amendedBy??[]),...(turn.supersededBy??[]),...(turn.steering?[turn.steering.targetMessageId]:[])]);
-    const related=conversation?.turns.filter(item=>ids.has(item.id))??[];
-    return related.length?<div className="conversation-steering-links">{related.map(item=><a key={item.id} href={pageHash('chat',{conversation:conversationId,turn:item.id})}><ArrowRight size={14}/>{item.question}</a>)}</div>:null;
-  }
-  return <div className={"conversation-layout final-conversation"+(historyOpen?" history-open":"")+(threadEmpty?" conversation-fresh":"")} aria-busy={loading||opening||recentRuns.loading}>
-    <ConversationDialog open={pendingSwitch?.owner===api} title={moteText('还有未发送的内容')} onClose={()=>setPendingSwitch(null)} footer={<><button className="button" onClick={()=>setPendingSwitch(null)}>{moteText('继续编辑')}</button><button className="button primary" onClick={()=>{const next=pendingSwitch;setPendingSwitch(null);if(next?.owner===api){if(next.id===null)startNew(true);else open(next.id,true);}}}>{moteText('舍弃并切换')}</button></>}><p>{pendingSwitch?.id===null?moteText('还有未发送的问题。舍弃原输入并新建对话？'):moteText('有未保存的修改。离开并丢弃修改？')}</p></ConversationDialog>
-    {unavailableReference&&<UnavailableReference opener={unavailableReference.opener} close={()=>setUnavailableReference(null)}/>}
-    <div className="conversation-toolbar"><button className="text-button" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={()=>setHistoryOpen(value=>!value)}>{historyOpen?moteText("返回对话"):moteText("对话历史")}</button><div><button className="text-button" aria-label={moteText('对话设置')} onClick={()=>setSettingsOpen(true)}>{moteText('对话设置')}</button><button className="text-button" disabled={opening} onClick={()=>{detail.refresh();recentRuns.refresh();main.refresh();configuration.refresh();}}>{moteText("刷新")}</button>{multipleConversations&&<button className="button subtle" disabled={busy} onClick={()=>void startNew()}><Plus size={15}/>{moteText("新对话")}</button>}{conversation&&!historyOpen&&<button className="text-button conversation-more" aria-label={moteText("对话更多")} onClick={()=>setMoreOpen(true)}>{moteText("更多")}</button>}</div></div>
-    <ConversationDialog open={settingsOwner===api&&settingsOpen} title={moteText('对话设置')} onClose={()=>setSettingsOpen(false)}><ConversationSettingsView api={api} settings={storedSettings} revision={configuration.data?.revision} onSaved={()=>{configuration.refresh();main.refresh();}}/></ConversationDialog>
-    <aside id="conversation-history" hidden={!historyOpen} className="conversation-history panel" aria-label={moteText("对话历史")}>
-      <div className="conversation-history-heading"><div className="chat-section-title"><div className="chat-section-icon"><MessageSquare size={15}/></div><div><h1>{moteText("对话历史")}</h1></div></div><button className="icon-button" aria-label={moteText("刷新对话历史")} disabled={loading} onClick={() => void loadHistory()}><RefreshCw size={16} className={loading ? 'spin' : ''}/></button></div>
-      {multipleConversations&&<button className="button subtle full new-conversation-button" disabled={busy} onClick={()=>void startNew()}><Plus size={16}/>{moteText("新对话")}</button>}
-      <FeaturePanels api={api} onOpen={onOpen} value={{kind:'mote.ask.history',schemaVersion:1,representation:'workspace',ref:selectedOwnerQuestion??'',revision:'1',title:'',text:''}}/>
-      {Boolean(historyError||history.error)&&<p className="notice error" role="alert">{historyError||conversationFailure(history.error)}</p>}
-      {history.data && !loadingPage && !historyError && !history.error && !items.length && <p className="fine-print">{moteText("回答会自动保存在中央，随时回来继续。")}</p>}
-      <div className="conversation-list">{items.map(item => <div className={`conversation-item-row${!selectedOwnerQuestion&&conversation?.id === item.id ? ' active' : ''}`} key={item.id}>
-        <button className={`conversation-item ${!selectedOwnerQuestion&&conversation?.id === item.id ? 'active' : ''} ${['failed','accepted','queued','running','cancelled'].includes(item.status) ? 'failed' : ''}`} aria-current={!selectedOwnerQuestion&&conversation?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void open(item.id)}>
-          <strong>{item.title||moteText('未命名对话')}</strong><span>{['accepted','queued','running'].includes(item.status) ? <><LoaderCircle size={12} className="spin"/>{messageStateLabel(item.status)}{' · '}</> : item.status === 'failed' ? <><AlertCircle size={12}/>{moteText("未完成")}{' · '}</> : item.status==='cancelled'?<><AlertCircle size={12}/>{moteText('已停止')}{' · '}</>:null}{dateTime(item.updatedAt)} · {item.turnCount}{' '}{moteText("轮")}</span>
-        </button>
-        <div className="conversation-item-meta">{mainId===item.id?<span className="badge muted">{moteText('主对话')}</span>:<button className="text-button" disabled={busy} onClick={()=>void selectMain(item.id)}>{moteText('设为主对话')}</button>}</div>
-      </div>)}</div>
-      {loading && (!history.data||loadingPage) && <Loading label={moteText('正在读取历史…')}/>}
-      {cursor && <button className="text-button" disabled={loading} onClick={() => void loadHistory(cursor)}>{moteText("加载更早的对话")}</button>}
-    </aside>
-    {selectedOwnerQuestion?<FeaturePanels api={api} onOpen={onOpen} unavailable={<section className="conversation-content"><p role="status">{moteText('此补充对话暂不可用，请刷新或查看相关资料。')}</p></section>} value={{kind:'mote.ask.question',schemaVersion:1,representation:'workspace',ref:selectedOwnerQuestion,revision:'1',title:'',text:''}}/>:<section className="conversation-content" aria-label={moteText("当前对话")} aria-busy={busy || opening}>
-      <ConversationHeading plain title={conversation?.title??moteText('想从留下的内容里找什么？')}/>
-      <ConversationDialog open={dialogOwner===api&&moreOpen&&Boolean(conversation)} title={moteText('对话')} onClose={()=>setMoreOpen(false)}>{conversation&&<><div className="conversation-more-list"><button className="text-button" disabled={busy} onClick={()=>{setMoreOpen(false);setError('');setConfirmDelete(true);}}>{moteText('删除这段对话')}</button></div></>}</ConversationDialog>
-      <ConversationDialog open={dialogOwner===api&&confirmDelete} busy={busy} title={moteText('删除整段对话？')} onClose={()=>{setConfirmDelete(false);setError('');}} footer={<><button className="button" disabled={busy} onClick={()=>{setConfirmDelete(false);setError('');}}>{moteText('取消')}</button><button className="button primary" disabled={busy} onClick={()=>void remove()}>{moteText('删除对话')}</button></>}>{confirmDelete&&<div className="conversation-delete-confirm"><p>{moteText('会删除这段对话的所有问答。已单独保存的记录保留。')}</p>{error&&<p role="alert">{error}</p>}</div>}</ConversationDialog>
-      {opening && <Loading label={moteText('正在打开对话…')}/>}
-      {targetTurn&&conversation&&!opening&&!conversation.nextCursor&&!conversation.turns.some(turn=>turn.id===targetTurn)&&<p role="status">{moteText('原始轮次暂不可读。')}</p>}
-      <div className="conversation-messages">
-      {conversation&&<p className="conversation-page-status" role="note">{conversation.nextCursor?moteText('已加载最近 {0} 轮；更早的对话仍在中央。',conversation.turns.length):moteText('已显示这段对话的 {0} 轮。',conversation.turns.length)}</p>}
-      {conversation?.nextCursor&&<button className="text-button" disabled={opening} onClick={()=>void loadOlderTurns()}>{moteText("加载更早的对话")}</button>}
-      {conversation?.turns.map((turn,index) => <article className={`answer-panel conversation-turn ${['failed','cancelled'].includes(turn.status) ? 'failed' : ''}${pendingMessageStatus(turn.status)?' pending':''}${index===0&&!conversation.nextCursor&&turn.question===conversation.title?' first-question-duplicate':''}`} key={turn.id} id={'conversation-turn-'+turn.id} tabIndex={-1} data-source-turn={targetTurn===turn.id?'true':undefined} data-state={turn.status}>
-        <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>{Boolean(turn.attachments?.length)&&<div className="chat-attached-images">{turn.attachments?.map(attachment=><span key={attachment.id}><ImagePlus size={13}/>{attachment.name}</span>)}</div>}
-        {turnBody(turn,conversation!.id)}
-        {turnRelations(turn,conversation!.id)}
-        {turn.taskSteering&&<TaskAmendment api={api} receipt={turn.taskSteering} revision={turn.version} onCancel={()=>void cancelTurn(turn)} cancelling={cancelRequest.current!==null}/>}
-      </article>)}
-      {busy&&!run&&pendingQuestion&&<p className="query-admission-status" role="status">{moteText('正在提交问题…')}</p>}
-      {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}
-      {turnError&&<p className="notice error conversation-turn-error" role="alert">{turnError}</p>}
-      {(recovery?.unknown||pollError&&run?.status==='running')&&<section className="query-unconfirmed notice" aria-label={recovery?.kind==='adopted'?moteText('请刷新检查结果，避免重复发送。'):moteText('结果尚未确认，请检查或重试原请求。')}><p role="status">{recovery?.kind==='adopted'?moteText('请刷新检查结果，避免重复发送。'):moteText('上次提交结果尚未确认；先重试原要求，当前草稿会保留。')}</p>{recovery?.kind==='owned'&&<p>{recovery.question}</p>}{pollError&&!pollReceiptMissing&&<p>{pollError}</p>}<div className="source-toolbar"><button className="button" disabled={busy} onClick={()=>void checkOriginal()}>{moteText('检查结果')}</button>{recovery?.kind==='owned'&&<button className="button" disabled={busy||uploading||opening} onClick={()=>void retryOriginal()}>{moteText('重试同一请求')}</button>}</div>{(run||pollReceiptMissing&&pollError)&&<details className="conversation-run-details"><summary>{moteText('运行详情')}</summary>{run?<QueryProgress api={api} run={run} error={pollError}/>:<p>{pollError}</p>}</details>}</section>}
-      {run&&run.status!=='completed'&&!recovery?.unknown&&!(pollError&&run.status==='running')&&<QueryProgress compact api={api} run={run} error={pollError}/>}
-      {run?.status==='running'&&<button className="button subtle" onClick={()=>void cancelRunning()}>{moteText("停止生成")}</button>}
-      <div ref={end}/>
-      </div>
-      {Boolean(error||detail.error||recentRuns.error||feedError)&&<p className="notice error" role="alert">{error||conversationFailure(detail.error||recentRuns.error||feedError)}</p>}
-      <div className="conversation-compose">
-      <ConversationSourceScope api={api} scope={messageScope} onChange={changeSourceScope} disabled={busy||opening||!conversation}/>
-      {!reference.origin&&threadEmpty&&<a className="conversation-add-reference text-button" href="#/library">＋ {moteText('参考资料')}</a>}
-      {threadEmpty&&reference.origin&&<nav className="filter-bar ask-original-reference" aria-label={moteText('参考记录')}><span>{reference.origin.kind==='memory'?moteText('这条记忆的原始依据'):reference.origin.kind==='material'?moteText('参考这份资料'):reference.origin.kind==='insight'?moteText('原始依据'):moteText('参考这条记录，自动查找相关上下文')}{reference.title?' · '+reference.title:''}</span>{reference.loading?<LoadingText/>:reference.error?<span role="alert">{reference.error}</span>:reference.origin.kind==='material'?<button className="text-button" onClick={()=>onOpen(reference.origin!.id)}>{moteText('查看参考资料')}</button>:reference.ids.map((id,index)=><button className="text-button" key={id} onClick={()=>onOpen('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<a className="text-button" href={reference.origin.kind==='memory'?'#/library?view=memories&memory='+encodeURIComponent(reference.origin.id):reference.returnRoute??'#/library?view=materials&selected='+encodeURIComponent(reference.origin.kind==='material'?reference.origin.id:'capture:'+reference.origin.id)}>{reference.origin.kind==='memory'?moteText('返回记忆'):moteText('返回资料')}</a><button className="text-button" disabled={busy||opening} onClick={()=>{queryRecovery.contextChanged(api);reference.clear();}}>{moteText('清除参考记录')}</button></nav>}
-      {!scopeOverridden&&Boolean(conversation?.scope.evidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('查询范围')}><span>{moteText('{0} 条证据',conversation!.scope.evidenceIds!.length)}</span>{conversation!.scope.evidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>openHistoryReference('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>changeSourceScope({kind:'all'})}>{moteText('清除范围')}</button></nav>}
-      {!scopeOverridden&&conversation?.scope.anchorMaterialRef&&<nav className="filter-bar" aria-label={moteText('参考资料')}><span>{moteText('参考这份资料')}</span><button className="text-button" onClick={()=>onOpen(conversation.scope.anchorMaterialRef!)}>{moteText('查看参考资料')}</button><button className="text-button" disabled={busy||opening} onClick={()=>changeSourceScope({kind:'all'})}>{moteText('清除参考记录')}</button></nav>}
-      {!scopeOverridden&&Boolean(conversation?.scope.anchorEvidenceIds?.length)&&<nav className="filter-bar" aria-label={moteText('参考记录')}><span>{moteText('参考这条记录，自动查找相关上下文')}</span>{conversation!.scope.anchorEvidenceIds!.map((id,index)=><button className="text-button" key={id} onClick={()=>openHistoryReference('capture:'+id)}>{moteText('查看原文依据')} {index+1}</button>)}<button className="text-button" disabled={busy||opening} onClick={()=>changeSourceScope({kind:'all'})}>{moteText('清除参考记录')}</button></nav>}
-      <DraftComposer draft={draft}>{question=><ConversationComposer label={moteText('向 Mote 提问')} placeholder={threadEmpty?moteText('比如，我最近都在忙什么？'):moteText('接着问，Mote 会结合前面的对话。')} value={question} onChange={value=>{queryRecovery.draftEdited(api);setQuestion(value);}} onSubmit={()=>void submit()} disabled={busy||opening} hintId="composer-hint">
-        {Boolean(attachments.length||imageUploads.length)&&<div className="chat-attachment-list">{attachments.map(attachment=><span key={attachment.id} className="chat-attachment"><ChatDraftThumbnail file={localImageFiles.get(api)?.get(attachment.id)}/><span><strong>{attachment.name}</strong><small>{moteText('已添加')}</small></span><button type="button" disabled={busy||uploading} aria-label={moteText("移除图片 {0}",attachment.name)} onClick={()=>{queryRecovery.draftEdited(api);setAttachments(current=>current.filter(item=>item.id!==attachment.id));}}><X size={13}/></button></span>)}{imageUploads.map(item=><span key={item.key} className="chat-attachment chat-image-upload" data-status={item.status}><ChatDraftThumbnail file={item.file}/><span><strong>{item.file.name}</strong><small role={item.status==='uploading'?'status':undefined}>{item.status==='uploading'?moteText('正在上传'):moteText('图片上传失败')}</small></span>{item.status==='failed'&&<button type="button" disabled={busy||uploading||opening} onClick={()=>{queryRecovery.draftEdited(api);void uploadImages([item]);}}>{moteText('重试')}</button>}<button type="button" disabled={busy||uploading} aria-label={moteText('移除图片 {0}',item.file.name)} onClick={()=>{queryRecovery.draftEdited(api);storeImages(rows=>rows.filter(row=>row.key!==item.key));setError('');}}><X size={13}/></button></span>)}</div>}
-        <details className="chat-model-options"><summary>{moteText("本次模型")}</summary><StableModelSelector api={api} feature="chat" value={modelProfileId} onChange={changeModelProfile} model={modelOverride} onModelChange={changeModelOverride} disabled={busy||opening} detachedFromForm/></details>
-        <div><span><ShieldCheck size={14}/>{moteText("只读查询 · 回答附带原始证据")}</span><input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event=>void addImages(event.target.files)}/><button className="chat-image-button" type="button" aria-label={moteText("添加图片")} title={moteText("聊天图片最多 4 张，每张不超过 8 MiB，支持 PNG、JPEG、WebP。") } disabled={busy||uploading||opening||attachments.length+imageUploads.length>=4} onClick={()=>attachmentInput.current?.click()}>{uploading?<LoaderCircle className="spin" size={17}/>:<ImagePlus size={17}/>}</button><span id="composer-hint" className="composer-hint">{moteText("Enter 发送 · Shift+Enter 换行")}</span><button className="send-button" type="submit" disabled={busy || uploading || imageUploads.length>0 || opening || Boolean(recovery)||Boolean(pollError&&run?.status==='running') || !question.trim() || !configured || !reference.ready} aria-label={moteText("发送问题")}>{busy ? <LoaderCircle className="spin" size={19}/> : <ArrowUp size={19}/>}</button></div>
-      </ConversationComposer>}</DraftComposer>
-      </div>
-      {threadEmpty && !busy && !opening && <div className="suggestions"><span>{moteText("从一个小问题开始")}</span>{[moteText("我最近都做了些什么？"), moteText("这周的时间主要花在了哪里？"), moteText("最近有哪些值得接着做的事情？")].map(sample => <button key={sample} disabled={!configured} onClick={() => void submit(undefined, sample)}>{sample}<ArrowRight size={14}/></button>)}</div>}
-    </section>}
-  </div>;
+export function Conversations({api, onOpen = doNothing, ...props}: Props) {
+  const [ownerQuestion] = useHashChoice('question', readOwnerQuestion);
+  if (ownerQuestion !== null) return <FeaturePanels api={api} onOpen={onOpen}
+    unavailable={<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>}
+    value={{kind: ownerQuestion ? 'mote.ask.question' : 'mote.ask.history', schemaVersion: 1, representation: 'standalone',
+      ref: ownerQuestion, revision: '1', title: '', text: ''}}/>;
+  if (!sessions.has(api)) sessions.set(api, ++nextSession);
+  return <Chat key={sessions.get(api)} {...props} api={api} onOpen={onOpen}/>;
 }
 
-function UnavailableReference({opener,close}:{opener:HTMLElement|null;close:()=>void}){
- const panel=useRef<HTMLElement>(null);
- useEffect(()=>panel.current?containDialogFocus(panel.current,opener):undefined,[opener]);
- return <div className="conversation-dialog-backdrop" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();close();}}}><section ref={panel} className="conversation-dialog" role="dialog" aria-modal="true" aria-label={moteText('引用不可用')}>
-  <header><h2>{moteText('引用不可用')}</h2></header><div className="conversation-dialog-body"><p>{moteText('引用原文已删除，历史问答仍保留。')}</p></div><footer><button className="button" onClick={close}>{moteText('返回原对话')}</button></footer>
- </section></div>;
+function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, 'onOpen'> & {onOpen: (ref: string) => void}) {
+  useLayoutEffect(() => {
+    if (document.head.querySelector('link[data-mote-chat]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = chatStyles;
+    link.dataset.moteChat = '';
+    document.head.append(link);
+  }, []);
+  const main = useResource<{id: string}>(api, '/api/conversations/main');
+  const path = main.data ? chatPath(main.data.id) : null;
+  const detail = useResource<ChatPage>(api, path);
+  const feedError = useOperationUpdates(api);
+  const [revoked, setRevoked] = useState<ChatPage>();
+  const head = detail.data?.id === main.data?.id && detail.data !== revoked ? detail.data : undefined;
+  const [older, setOlder] = useState<ChatPage>();
+  const thread = head && older && samePage(head, older) ? mergeChatPages(older, head) : head;
+  const [error, setError] = useState('');
+  const [receiptError, setReceiptError] = useState<unknown>();
+  const [unavailableReference, setUnavailableReference] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [contextSettings, setContextSettings] = useState(false);
+  const configuration = useResource<ServerConfiguration>(api, contextSettings ? '/api/configuration' : null);
+  const settings = useMemo(() => conversationSettingsSchema.safeParse(
+    configuration.data?.domains?.find(domain => domain.id === 'conversations')?.effective,
+  ), [configuration.data]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [cancelling, setCancelling] = useState<string>();
+  const [model, setModel] = useState('');
+  const [override, setOverride] = useState('');
+  const [scopeChoice, setScopeChoice] = useState<SourceScopeChoice>();
+  const [freshContext, setFreshContext] = useState(false);
+  const [highlight, setHighlight] = useState<{id: string}>();
+  const [routeTurn, setRouteTurn] = useHashChoice('turn', readTurn);
+  const [routeConversation] = useHashChoice('conversation', readConversation);
+  const [aboutValue, setAboutValue] = useHashChoice('about', readChatAbout);
+  const about = useChatAbout(api, aboutValue);
+  const target = highlight?.id ?? (routeConversation === main.data?.id ? routeTurn ?? undefined : undefined);
+  const reference = useOriginalReference(api);
+  const referenceKey = useRef(reference.key);
+  const [draft] = useState(() => createChatDraft(unsentDrafts.get(api)?.question ?? '', question => {
+    unsentDrafts.set(api, {question, attachments: unsentDrafts.get(api)?.attachments ?? []});
+  }));
+  const files = useChatAttachments(api, setError);
+  const operation = useRef<AbortController | undefined>(undefined);
+  const olderRequest = useRef<AbortController | undefined>(undefined);
+  const cancelRequest = useRef<AbortController | undefined>(undefined);
+  const citeRequest = useRef<AbortController | undefined>(undefined);
+  const viewport = useRef<HTMLDivElement>(null);
+  const scrollToBottom = useRef(true);
+  const growth = useRef<{height: number; top: number} | undefined>(undefined);
+  const latest = useRef({head, thread});
+  latest.current = {head, thread};
+
+  const storedScope = freshContext ? undefined : head?.scope;
+  const sourceScope = reference.scope ?? storedScope;
+  const aboutScope = about?.status === 'ready' && about.sourceIds?.length
+    ? {kind:'selection' as const, timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone, sourceIds:about.sourceIds}
+    : undefined;
+  // A current address reference owns the next range. It never inherits an older
+  // turn's stored selection or a withdrawn reference's stale pin.
+  const outgoingScope = aboutScope ?? (about ? admissionScope(undefined, {kind:'all'}) : admissionScope(sourceScope, scopeChoice));
+  const aboutAnchor = about?.status === 'ready'
+    ? about.anchorMaterialRef ? {anchorMaterialRef:about.anchorMaterialRef}
+      : about.anchorEvidenceIds?.length ? {anchorEvidenceIds:about.anchorEvidenceIds}
+      : undefined
+    : undefined;
+  const recovery = useSyncExternalStore(
+    useCallback(listener => queryRecovery.subscribe(api, listener), [api]),
+    useCallback(() => queryRecovery.get(api), [api]),
+    useCallback(() => queryRecovery.get(api), [api]),
+  );
+  const retryable = recovery?.kind === 'owned' && recovery.conversationId === main.data?.id && recovery.unknown;
+  const preparing = !head;
+  const pending = thread?.turns.filter(turn => pendingMessageStatus(turn.status)) ?? [];
+  const pendingKey = JSON.stringify(pending.map(({id, status, version}) => [id, status, version]));
+  const readError = main.error ?? detail.error ?? receiptError ?? feedError;
+  const offline = readError instanceof TypeError;
+
+  useEffect(() => () => {
+    operation.current?.abort();
+    const retained = queryRecovery.get(api);
+    if (retained) queryRecovery.set(api, {...retained, unknown: true});
+  }, [api]);
+  useEffect(() => {
+    setCancelling(undefined);
+    setReceiptError(undefined);
+    setUnavailableReference(false);
+    return () => {
+      olderRequest.current?.abort();
+      cancelRequest.current?.abort();
+      citeRequest.current?.abort();
+      olderRequest.current = undefined;
+      cancelRequest.current = undefined;
+      citeRequest.current = undefined;
+    };
+  }, [head?.id]);
+  useEffect(() => {
+    olderRequest.current?.abort();
+    olderRequest.current = undefined;
+    setLoadingOlder(false);
+    setOlder(undefined);
+  }, [head?.id, head?.revision]);
+  useEffect(() => {
+    if (reference.key !== referenceKey.current) {
+      referenceKey.current = reference.key;
+      queryRecovery.contextChanged(api);
+      if (reference.key) setScopeChoice(undefined);
+    }
+  }, [api, reference.key]);
+  useEffect(() => {
+    function takeDraft() {
+      const hash = window.location.hash;
+      const [route, query] = hash.split('?');
+      const params = new URLSearchParams(query);
+      const incoming = params.get('questionDraft');
+      if (incoming === null) return;
+      files.clear();
+      queryRecovery.contextChanged(api);
+      if (!params.has('conversation')) {
+        setFreshContext(true);
+        setScopeChoice(undefined);
+      }
+      draft.set(incoming.slice(0, 8000));
+      params.delete('questionDraft');
+      window.history.replaceState(null, '', route + (params.size ? '?' + params : ''));
+      window.dispatchEvent(new window.Event('mote:workspace-state'));
+    }
+    takeDraft();
+    window.addEventListener('hashchange', takeDraft);
+    return () => window.removeEventListener('hashchange', takeDraft);
+  }, [api, draft]);
+
+  useEffect(() => {
+    if (!head?.id || pendingKey === '[]') return;
+    const id = head.id;
+    let request: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function schedule() {
+      if (!document.hidden) timer = setTimeout(() => void poll(), 1200);
+    }
+    async function poll() {
+      const controller = new AbortController();
+      request = controller;
+      try {
+        let changed = false;
+        for (const turn of latest.current.thread?.turns ?? []) {
+          if (!pendingMessageStatus(turn.status)) continue;
+          const actual = await readConversationMessage(api, id, turn.id, controller.signal);
+          controller.signal.throwIfAborted();
+          if (actual.id !== turn.id) throw new Error('Conversation receipt identity changed');
+          changed ||= actual.status !== turn.status || turn.version !== undefined && actual.revision !== turn.version;
+        }
+        setReceiptError(undefined);
+        if (changed) detail.refresh();
+      } catch (reason) {
+        if (!controller.signal.aborted) setReceiptError(reason);
+      } finally {
+        if (request === controller) request = undefined;
+        if (!controller.signal.aborted) schedule();
+      }
+    }
+    function stop() {
+      clearTimeout(timer);
+      request?.abort();
+    }
+    function visibility() {
+      stop();
+      if (!document.hidden) void poll();
+    }
+    schedule();
+    document.addEventListener('visibilitychange', visibility);
+    return () => {stop(); document.removeEventListener('visibilitychange', visibility);};
+  }, [api, head?.id, pendingKey, detail.refresh]);
+
+  useLayoutEffect(() => {
+    const container = viewport.current;
+    if (!container) return;
+    if (growth.current) {
+      const {height, top} = growth.current;
+      growth.current = undefined;
+      container.scrollTop = top + container.scrollHeight - height;
+    } else if (!target && scrollToBottom.current) container.scrollTop = container.scrollHeight;
+  }, [thread?.turns.length, target]);
+
+  useEffect(() => {
+    const container = viewport.current;
+    if (!container?.firstElementChild || typeof ResizeObserver !== 'function') return;
+    const observer = new ResizeObserver(() => {
+      if (!target && scrollToBottom.current) container.scrollTop = container.scrollHeight;
+    });
+    observer.observe(container.firstElementChild);
+    return () => observer.disconnect();
+  }, [target]);
+
+  useEffect(() => {
+    if (!target) return;
+    const element = document.getElementById('conversation-turn-' + target);
+    if (!element) return;
+    element.scrollIntoView?.({block: 'center'});
+    element.focus({preventScroll: true});
+  }, [target, highlight, thread?.turns.length]);
+
+  useEffect(() => {
+    if (!target || !head || thread?.turns.some(turn => turn.id === target) || !detail.data) return;
+    const controller = new AbortController();
+    void readChatPage(api, head, new URLSearchParams({anchor: target}), controller.signal).then(page => {
+      if (samePage(latest.current.head, head)) setOlder(page);
+    }).catch(reason => {
+      if (controller.signal.aborted) return;
+      if (reason instanceof ChatRevisionChanged) invalidate(head);
+      else setError(moteText('原始轮次暂不可读。'));
+    });
+    return () => controller.abort();
+  }, [api, head, target]);
+
+  function invalidate(page: ChatPage) {
+    setRevoked(page);
+    setOlder(undefined);
+    detail.refresh();
+  }
+
+  async function loadOlder() {
+    if (!head || !thread?.nextCursor || olderRequest.current) return;
+    const controller = new AbortController();
+    olderRequest.current = controller;
+    setLoadingOlder(true);
+    setError('');
+    try {
+      const page = await readChatPage(api, head, new URLSearchParams({cursor: thread.nextCursor}), controller.signal);
+      if (!samePage(latest.current.head, head)) return;
+      scrollToBottom.current = false;
+      if (viewport.current) growth.current = {height: viewport.current.scrollHeight, top: viewport.current.scrollTop};
+      setOlder(mergeChatPages(page, thread));
+    } catch (reason) {
+      if (controller.signal.aborted || !samePage(latest.current.head, head)) return;
+      if (reason instanceof ChatRevisionChanged || chatRevoked(reason)) invalidate(head);
+      setError(moteText('读取失败'));
+    } finally {
+      if (olderRequest.current === controller) {
+        olderRequest.current = undefined;
+        setLoadingOlder(false);
+      }
+    }
+  }
+
+  async function openReference(ref: string, turn?: ChatTurn) {
+    if (!head || !ref.startsWith('capture:')) {onOpen(ref); return;}
+    const evidenceId = ref.slice('capture:'.length);
+    const matches = (value: Pick<ChatTurn, 'question' | 'evidenceDeleted' | 'evidenceStale' | 'result'> | undefined) =>
+      Boolean(value && turn && !value.evidenceDeleted && !value.evidenceStale && value.question === turn.question &&
+        value.result?.answer === turn.result?.answer && value.result?.citations.some(citation => citation.id === evidenceId));
+    if (turn && !matches(turn)) {setUnavailableReference(true); return;}
+    citeRequest.current?.abort();
+    const controller = new AbortController();
+    citeRequest.current = controller;
+    const current = () => !controller.signal.aborted && latest.current.head?.id === head.id &&
+      (!turn || matches(latest.current.thread?.turns.find(candidate => candidate.id === turn.id)));
+    try {
+      const availability = await api.request<{id: string; available: boolean}>(
+        chatPath(head.id) + '/references/' + encodeURIComponent(evidenceId), {signal: controller.signal});
+      if (!current()) return;
+      if (availability.id !== evidenceId || availability.available !== true) {setUnavailableReference(true); return;}
+      if (turn) {
+        const checked = await readOriginTurn(api, head.id, turn.id, controller.signal);
+        if (!current()) return;
+        if (!matches(checked)) {setUnavailableReference(true); return;}
+      }
+      onOpen(ref);
+    } catch {
+      if (current()) setUnavailableReference(true);
+    } finally {
+      if (citeRequest.current === controller) citeRequest.current = undefined;
+    }
+  }
+
+  async function post(retained: OwnedQuery, signal: AbortSignal) {
+    let unknown = retained.unknown;
+    const input = JSON.parse(retained.body) as ConversationMessageInput;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await admitConversationMessage(api, input, signal);
+        signal.throwIfAborted();
+        const versions = queryRecovery.versions(api);
+        if (versions.draftVersion === retained.draftVersion && draft.read().trim() === retained.question) {
+          draft.set('');
+          files.clear();
+        }
+        if (versions.contextVersion === retained.contextVersion && reference.key) reference.clear();
+        queryRecovery.set(api, undefined);
+        setReceiptError(undefined);
+        detail.refresh();
+        return;
+      } catch (reason) {
+        if (signal.aborted) return;
+        if (!unknown && definiteAdmissionFailure(reason)) {
+          queryRecovery.set(api, undefined);
+          setError(moteText('发送失败'));
+          return;
+        }
+        unknown = true;
+        queryRecovery.set(api, {...retained, unknown});
+        if (attempt === 1) setReceiptError(reason);
+      }
+    }
+  }
+
+  async function submit(original?: ChatTurn) {
+    const question = (original?.question ?? draft.read()).trim();
+    if (!head || !question || !configured || !reference.ready || files.uploading || files.pending.length ||
+      operation.current || queryRecovery.get(api)) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError('');
+    setHighlight(undefined);
+    if (routeTurn) setRouteTurn(null);
+    scrollToBottom.current = true;
+    try {
+      const scope = original?.scope ? admissionScope(original.scope, undefined) : outgoingScope;
+      if (!original && !scopeChoice) {
+        if (about?.status === 'ready') await verifyChatAbout(api,about,controller.signal);
+        else await reference.verify(controller.signal);
+      }
+      controller.signal.throwIfAborted();
+      const anchor = original ? original.scope : scopeChoice ? undefined : about ? aboutAnchor
+        : reference.origin
+          ? {anchorMaterialRef: reference.materialRef, anchorEvidenceIds: reference.ids.length ? reference.ids : undefined}
+          : storedScope;
+      const attachments = original ? original.attachments ?? [] : unsentDrafts.get(api)?.attachments ?? [];
+      const clientRequestId = crypto.randomUUID();
+      const modelProfileId = original ? original.modelProfileId : model;
+      const modelOverride = original ? original.modelOverride : override;
+      const input: ConversationMessageInput = {
+        conversationId: head.id, clientRequestId, question, scope,
+        ...(anchor?.anchorMaterialRef ? {anchorMaterialRef: anchor.anchorMaterialRef} :
+          anchor?.anchorEvidenceIds?.length ? {anchorEvidenceIds: anchor.anchorEvidenceIds} : {}),
+        ...(attachments.length ? {attachmentIds: attachments.map(item => item.id)} : {}),
+        ...(modelProfileId ? {modelProfileId} : {}),
+        ...(modelOverride ? {modelOverride} : {}),
+      };
+      const retained: OwnedQuery = {kind: 'owned', id: clientRequestId, body: JSON.stringify(input),
+        question, attachments, ...queryRecovery.versions(api), conversationId: head.id, unknown: false};
+      queryRecovery.set(api, retained);
+      await post(retained, controller.signal);
+    } catch {
+      if (!controller.signal.aborted) setError(moteText('发送失败'));
+    } finally {
+      if (operation.current === controller) operation.current = undefined;
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  }
+
+  async function retrySend() {
+    if (!retryable || operation.current || files.uploading) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError('');
+    try {
+      await post(recovery, controller.signal);
+    } finally {
+      if (operation.current === controller) operation.current = undefined;
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  }
+
+  async function cancel(turn: ChatTurn) {
+    if (!head || cancelRequest.current) return;
+    const controller = new AbortController();
+    cancelRequest.current = controller;
+    const active = () => !controller.signal.aborted && cancelRequest.current === controller && latest.current.head?.id === head.id;
+    setCancelling(turn.id);
+    setError('');
+    try {
+      const result = await api.request<ConversationMessage>(chatPath(head.id) + '/messages/' + encodeURIComponent(turn.id) + '/cancel',
+        {method: 'POST', signal: controller.signal});
+      if (!active()) return;
+      if (result.id !== turn.id || result.conversationId !== head.id || result.status !== 'cancelled')
+        throw new Error('Conversation cancellation was not confirmed');
+      detail.refresh();
+    } catch {
+      if (!active()) return;
+      const receipt = await readConversationMessage(api, head.id, turn.id, controller.signal).catch(() => undefined);
+      if (!active()) return;
+      if (receipt?.id === turn.id && receipt.status === 'cancelled') detail.refresh();
+      else setError(moteText('停止失败'));
+    } finally {
+      if (cancelRequest.current === controller) {
+        cancelRequest.current = undefined;
+        setCancelling(undefined);
+      }
+    }
+  }
+
+  function changeScope(value: SourceScopeChoice) {
+    queryRecovery.contextChanged(api);
+    setScopeChoice(value);
+    reference.clear();
+    if (aboutValue !== null) setAboutValue(null);
+  }
+  const clearAbout = () => {
+    queryRecovery.contextChanged(api);
+    setAboutValue(null);
+    setScopeChoice({kind:'all'});
+  };
+  const changeModel = useCallback((value: string) => {queryRecovery.draftEdited(api); setModel(value);}, [api]);
+  const changeOverride = useCallback((value: string) => {queryRecovery.draftEdited(api); setOverride(value);}, [api]);
+
+  const inherited = scopeChoice || reference.origin ? undefined : storedScope;
+  const pinnedIds = inherited?.evidenceIds?.length ? inherited.evidenceIds : inherited?.anchorEvidenceIds;
+  const pinnedMaterial = pinnedIds?.length ? undefined : inherited?.anchorMaterialRef;
+  const hasEvidenceScope = Boolean(inherited?.evidenceIds?.length);
+  const clearScope = () => changeScope({kind: 'all'});
+  const referenceOrigin = reference.origin;
+
+  return <section className="conversation-layout chat-page" aria-label={moteText('聊天')} aria-busy={preparing && !readError}>
+    <header className="chat-header">
+      <h1>{moteText('聊天')}</h1>
+      <ChatSearch api={api} head={head} onInvalidated={() => {if (head) invalidate(head);}} onSelect={(id, page) => {
+        if (!samePage(latest.current.head, page)) return;
+        olderRequest.current?.abort();
+        olderRequest.current = undefined;
+        setLoadingOlder(false);
+        setOlder(page);
+        setHighlight({id});
+      }}/>
+    </header>
+    <div className="chat-viewport" ref={viewport} onScroll={event => {
+      const element = event.currentTarget;
+      scrollToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+    }}>
+      <div className="conversation-messages chat-thread">
+        {about && <ChatAboutReference about={about}/>}
+        <OnboardingChatProgress api={api}/>
+        {preparing && !readError && <Loading label={moteText('正在打开对话…')}/>}
+        {thread?.nextCursor && <button className="text-button chat-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
+          {loadingOlder ? <LoadingText/> : moteText('加载更早的消息')}
+        </button>}
+        {thread?.turns.map((turn, index, turns) => <ChatMessage key={turn.id} api={api} conversationId={thread.id} turn={turn}
+          previous={turns[index - 1]} pending={pending} turns={turns} highlighted={target === turn.id} cancelling={cancelling !== undefined}
+          canRetry={!busy && Boolean(head) && configured && !recovery}
+          onCancel={() => void cancel(turn)} onRetry={() => void submit(turn)} onOpen={onOpen}
+          openReference={ref => void openReference(ref, turn)} renderAnswer={renderAnswer}/>)}
+      </div>
+    </div>
+    {unavailableReference && <ConversationDialog open title={moteText('引用不可用')} onClose={() => setUnavailableReference(false)}
+      footer={<button className="button subtle" onClick={() => setUnavailableReference(false)}>{moteText('返回原对话')}</button>}>
+      {null}
+    </ConversationDialog>}
+    {contextSettings && <ConversationDialog open title={moteText('上下文设置')} onClose={() => setContextSettings(false)}>
+      {configuration.loading && !configuration.data ? <Loading/> :
+        configuration.error ? <div className="chat-error" role="alert">
+          {moteText('读取失败')}<button className="text-button" onClick={configuration.refresh}>{moteText('重试')}</button>
+        </div> : <ConversationSettingsView api={api} settings={settings.data}
+          revision={configuration.data?.revision} onSaved={configuration.refresh}/>}
+    </ConversationDialog>}
+    <div className="chat-composer-area">
+      {Boolean(readError || error || retryable) && <div className="chat-error" role="alert">
+        <span>{offline ? moteText('没连上') : error || (retryable ? moteText('发送结果待确认') : moteText('读取失败'))}</span>
+        {retryable ? <button type="button" className="text-button" disabled={busy || preparing} onClick={() => void retrySend()}>{moteText('重试')}</button>
+          : readError ? <button type="button" className="text-button" onClick={() => {
+            setError('');
+            setReceiptError(undefined);
+            if (!main.data || chatRevoked(detail.error)) main.refresh();
+            detail.refresh();
+          }}>{moteText('重试')}</button> : null}
+      </div>}
+      {!configured && onSettings && <div className="chat-error" role="status">
+        <span>{moteText('未连接模型')}</span><button className="text-button" onClick={onSettings}>{moteText('打开模型设置')}</button>
+      </div>}
+      <ChatComposer api={api} draft={draft} files={files} busy={busy} preparing={preparing}
+        blocked={preparing || !configured || !reference.ready || about?.status === 'loading' || Boolean(recovery)} model={model} override={override}
+        onModel={changeModel} onOverride={changeOverride}
+        onEdit={value => {queryRecovery.draftEdited(api); draft.set(value);}}
+        onSend={() => void submit()}
+        options={<>
+          <ConversationSourceScope api={api} scope={outgoingScope} onChange={changeScope} disabled={preparing || busy}/>
+          <button type="button" className="text-button" onClick={() => setContextSettings(true)}>{moteText('上下文设置')}</button>
+        </>}
+        scopeTag={about ? <ChatAboutTag about={about} onClear={clearAbout} disabled={busy}/> : undefined}
+        reference={referenceOrigin ? <nav className="filter-bar ask-original-reference" aria-label={moteText('参考记录')}>
+          <span>{reference.title || moteText('参考资料')}</span>
+          {reference.loading && <LoadingText/>}
+          {reference.error && <span role="alert">{moteText('引用不可用')}</span>}
+          {reference.ready && reference.materialRef && <button type="button" className="text-button"
+            onClick={() => onOpen(reference.materialRef!)}>{moteText('查看参考资料')}</button>}
+          {reference.ids.map((id, index) => <button type="button" className="text-button" key={id}
+            onClick={() => onOpen('capture:' + id)}>{moteText('查看原文依据')} {index + 1}</button>)}
+          <a className="text-button" href={reference.returnRoute ?? (referenceOrigin.kind === 'memory'
+            ? pageHash('library', {view: 'memories', memory: referenceOrigin.id})
+            : pageHash('library', {view: 'materials', selected: referenceOrigin.kind === 'material'
+              ? referenceOrigin.id : 'capture:' + referenceOrigin.id}))}>
+            {referenceOrigin.kind === 'memory' ? moteText('返回记忆') : moteText('返回资料')}
+          </a>
+          <button type="button" className="text-button" disabled={busy} onClick={() => {
+            queryRecovery.contextChanged(api);
+            reference.clear();
+          }}>{moteText('清除参考记录')}</button>
+        </nav> : pinnedMaterial ? <nav className="filter-bar" aria-label={moteText('参考资料')}>
+          <button type="button" className="text-button" onClick={() => onOpen(pinnedMaterial)}>{moteText('查看参考资料')}</button>
+          <button type="button" className="text-button" disabled={busy} onClick={clearScope}>{moteText('清除参考记录')}</button>
+        </nav> : pinnedIds?.length ? <nav className="filter-bar" aria-label={hasEvidenceScope ? moteText('查询范围') : moteText('参考记录')}>
+          {hasEvidenceScope && <span>{moteText('{0} 条证据', pinnedIds.length)}</span>}
+          {pinnedIds.map((id, index) => <button type="button" className="text-button" key={id}
+            onClick={() => void openReference('capture:' + id)}>{moteText('查看原文依据')} {index + 1}</button>)}
+          <button type="button" className="text-button" disabled={busy} onClick={clearScope}>
+            {hasEvidenceScope ? moteText('清除范围') : moteText('清除参考记录')}
+          </button>
+        </nav> : null}/>
+    </div>
+  </section>;
 }

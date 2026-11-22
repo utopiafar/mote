@@ -43,7 +43,7 @@ class UploadOriginalActivity : MoteActivity() {
             body.addView(Button(this).apply { text = MoteI18n.text("保存原件"); setOnClickListener {
                 startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, "mote-original"), 812)
             } })
-        }.onFailure { status.text = if (it is CentralFailure) it.message else MoteI18n.text("历史版本暂不可读取：原件可能已更新、不可用或当前离线。请重试。") }
+        }.onFailure { status.text = if (it is CentralFailure) it.message else MoteI18n.text("历史版本暂不可读") }
             body.addView(Button(this).apply { text = MoteI18n.text("刷新"); setOnClickListener { load() } }); MoteUi.styleTree(body)
         }
     }
@@ -55,7 +55,7 @@ class UploadOriginalActivity : MoteActivity() {
         task.start(MoteI18n.text("正在读取原文…"), {}, {
             val item = find()
             contentResolver.openOutputStream(uri)?.use { HistoryOriginal.export(applicationContext,item,it) } ?: error("Destination unavailable")
-        }) { result -> Toast.makeText(this, if(result.isSuccess) MoteI18n.text("已保存") else MoteI18n.text("历史版本暂不可读取：原件可能已更新、不可用或当前离线。请重试。"), Toast.LENGTH_LONG).show(); if (resumed) load() }
+        }) { result -> Toast.makeText(this, if(result.isSuccess) MoteI18n.text("已保存") else MoteI18n.text("历史版本暂不可读"), Toast.LENGTH_LONG).show(); if (resumed) load() }
     }
 }
 

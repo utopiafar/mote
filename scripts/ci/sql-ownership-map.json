@@ -1626,6 +1626,16 @@
    "file": "apps/server/src/owner-questions-schema.ts",
    "installer": "ownerQuestionsSchemaInstallation"
   },
+  "owner_question_surface_views": {
+   "owner": "owner-question-services",
+   "file": "apps/server/src/owner-questions-schema.ts",
+   "installer": "ownerQuestionsSchemaInstallation"
+  },
+  "owner_question_surfaces": {
+   "owner": "owner-question-services",
+   "file": "apps/server/src/owner-questions-schema.ts",
+   "installer": "ownerQuestionsSchemaInstallation"
+  },
   "owner_questions": {
    "owner": "owner-question-services",
    "file": "apps/server/src/owner-questions-schema.ts",

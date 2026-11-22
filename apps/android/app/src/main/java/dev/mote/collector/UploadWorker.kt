@@ -110,7 +110,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         var pendingRecordId: String? = null
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
         fun failed(message: String, retryable: Boolean = true): Result {
-            settings.syncStatus("error", MoteI18n.text("{0}；记录保留在本机，{1}", message, if (manualOnly || !retryable) MoteI18n.text("请处理后点击立即同步") else MoteI18n.text("稍后自动重试")))
+            settings.syncStatus("error", MoteI18n.text("{0}；记录保留在本机，{1}", message, if (manualOnly || !retryable) MoteI18n.text("处理后点击立即同步") else MoteI18n.text("稍后自动重试")))
             return if (manualOnly || !retryable) Result.failure() else Result.retry()
         }
         return try {
@@ -138,7 +138,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             val contexts = applicationContext.captureContexts().pending(config.server.trimEnd('/'), settings.deviceId, includeUnbound = settings.dataOrigin() == config.server.trimEnd('/'))
             if (contexts.isNotEmpty()) {
                 SyncHeartbeat.send(applicationContext, settings, config, queue)
-                if (!CaptureContextSync.syncPending(applicationContext, config)) return failed(MoteI18n.text("采集来源说明有版本冲突，请保留或更新说明后重试"), retryable = false)
+                if (!CaptureContextSync.syncPending(applicationContext, config)) return failed(MoteI18n.text("采集来源说明有版本冲突，保留或更新说明后重试"), retryable = false)
             }
             // Each actual worker execution has its own batch identity, including a WorkManager retry.
             val batchId = java.util.UUID.randomUUID().toString()
@@ -186,7 +186,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     } catch (error: Exception) {
                         skippedAttachments++
                         Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
-                        if (error is CentralFailure && error.status == 401) return failed(error.message ?: MoteI18n.text("访问凭据已失效，请重新连接。"), false)
+                        if (error is CentralFailure && error.status == 401) return failed(error.message ?: MoteI18n.text("访问凭据已失效，重新连接"), false)
                         if (error is java.io.FileNotFoundException || error is IllegalArgumentException || error is org.json.JSONException || error is CentralFailure && error.status in setOf(400, 403, 409, 410, 413, 426)) queue.uploadConflict(pendingRecordId!!)
                         else attachmentRetry = true
                     }
@@ -270,7 +270,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             if (error is UploadHistoryUnavailable) {
                 UploadHistoryRecovery.report(applicationContext)
                 if (manualOnly) Result.failure() else Result.retry()
-            } else failed(MoteI18n.text("同步失败，请检查连接"))
+            } else failed(MoteI18n.text("同步失败，检查连接"))
         }
     }
     private fun finishStatus() = SyncHealth.finish(applicationContext)
@@ -318,7 +318,7 @@ internal object SyncHeartbeat {
                     SyncSchedule.delay(context, config)?.takeIf { it > 0 }?.let { put("nextUploadAt", java.time.Instant.ofEpochMilli(System.currentTimeMillis() + it).toString()) } })
             .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (!config.screenCollectionEnabled) "media_session" else if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
         if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
-            MoteI18n.text("采集服务未连接，请打开手机应用恢复权限") else settings.message())
+            MoteI18n.text("采集服务未连接，打开手机应用恢复权限") else settings.message())
         else if (status == "error") body.put("error", settings.message())
         SyncSchedule.requireConditions(context, config)
         val beforeSend = settings.read()

@@ -25,9 +25,9 @@ internal object CentralConversationMessage {
         val conversationId = uuid(value.getString("conversationId"))
         val clientRequestId = uuid(value.getString("clientRequestId"))
         val status = value.getString("status")
-        require(status in statuses) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
-        require(value.get("seq") is Number && value.getInt("seq") >= 0) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
-        require(value.get("revision") is Number && value.getInt("revision") >= 1) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
+        require(status in statuses) { MoteI18n.text("中央响应格式无效，刷新后重试") }
+        require(value.get("seq") is Number && value.getInt("seq") >= 0) { MoteI18n.text("中央响应格式无效，刷新后重试") }
+        require(value.get("revision") is Number && value.getInt("revision") >= 1) { MoteI18n.text("中央响应格式无效，刷新后重试") }
         return Receipt(id, conversationId, clientRequestId, status, value.getInt("seq"), value.getInt("revision"),
             value.optString("runId").takeIf(String::isNotBlank))
     }
@@ -52,7 +52,7 @@ internal object CentralConversationMessage {
     }
 
     private fun uuid(value: String): String {
-        require(UUID.fromString(value).toString() == value) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
+        require(UUID.fromString(value).toString() == value) { MoteI18n.text("中央响应格式无效，刷新后重试") }
         return value
     }
 }

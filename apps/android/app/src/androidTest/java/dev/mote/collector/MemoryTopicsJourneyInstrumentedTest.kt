@@ -102,7 +102,7 @@ class MemoryTopicsJourneyInstrumentedTest {
             until("cursor restored") { main { activity() !== before && settled() && members() == 2 && text("上一页") } }
             click("上一页"); until("back first page") { main { settled() && members() == 30 } }
             api.post("/api/__fixture/invalidate", JSONObject())
-            until("whole derived batch disappears") { main { settled() && text("此主题已不可用，请返回全部记忆。") && members() == 0 && !text("合成计划") } }
+            until("whole derived batch disappears") { main { settled() && text("此主题已不可用，返回全部记忆") && members() == 0 && !text("合成计划") } }
             capture("invalidated"); click("全部记忆"); until("existing memory still readable") { main { settled() && members() > 0 } }
         }
     }
@@ -121,7 +121,7 @@ class MemoryTopicsJourneyInstrumentedTest {
             until("cancel returns to same topic") { main { settled() && members() == 1 } }
             assertFalse(api.get("/api/memories/" + fixture.getString("firstMemory")).getString("statement").contains("UNSAVED"))
             api.post("/api/__fixture/empty", JSONObject()); click("全部记忆")
-            until("empty list") { main { settled() && members() == 0 && text("当前筛选下没有匹配的记忆。可切换内容分类或调整筛选条件。") } }
+            until("empty list") { main { settled() && members() == 0 && text("当前筛选没有记忆") } }
             capture("empty")
         }
     }

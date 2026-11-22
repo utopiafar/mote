@@ -8,7 +8,7 @@ export const ownerQuestionStateSchema=z.enum(['open','deferred','answered','clos
 export const ownerQuestionSchema=z.object({
  id:z.string().uuid(),provider:ownerQuestionProviderRefSchema,operationId:z.string().min(1).max(512),workId:z.string().min(1).max(512),
  materialId:z.string().min(1).max(256).optional(),materialRef:z.string().min(1).max(512).optional(),title:z.string().max(500),prompt:z.string().max(6000),reason:z.string().max(2000).optional(),
- evidence:z.array(ownerQuestionEvidenceSchema).max(20),choices:ownerQuestionChoicesSchema,state:ownerQuestionStateSchema,revision:z.number().int().positive(),createdAt:z.string().datetime({offset:true}),updatedAt:z.string().datetime({offset:true}),
+ evidence:z.array(ownerQuestionEvidenceSchema).max(20),choices:ownerQuestionChoicesSchema,state:ownerQuestionStateSchema,revision:z.number().int().positive(),createdAt:z.string().datetime({offset:true}),updatedAt:z.string().datetime({offset:true}),ignoredAt:z.string().datetime({offset:true}).optional(),
  messages:z.array(z.object({role:z.enum(['assistant','user']),text:z.string().max(6000),createdAt:z.string().datetime({offset:true})}).strict()),continuationId:z.string().min(1).max(512).optional(),outcome:z.string().max(6000).optional(),
 }).strict();
 export type OwnerQuestion=z.infer<typeof ownerQuestionSchema>;

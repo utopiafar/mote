@@ -519,7 +519,7 @@ internal class StorageBackupOwner internal constructor(
         val next = current.copy(syncMode = "manual")
         val snapshot = BackupSnapshot(
             BackupKind.RESTORE_APPLY, MoteI18n.text("从备份恢复"), MoteI18n.text("正在导入到本机"), MoteI18n.text("校验并保存记录"),
-            MoteI18n.text("请保持备份文件与存储位置可用。"), detail = name,
+            MoteI18n.text("备份文件与存储位置需可用"), detail = name,
         )
         if (!operations.begin(snapshot)) return false
         restoring = true
@@ -570,7 +570,7 @@ internal class StorageBackupOwner internal constructor(
                 val origin = Settings(app).dataOrigin()
                 writeDocument(app, uri) { output ->
                     ConnectionGuard.sync { QueueArchive.export(queue, origin, output) }
-                        ?: error(MoteI18n.text("设置正在变更，请稍后重试"))
+                        ?: error(MoteI18n.text("设置正在变更，稍后重试"))
                 }
             }
             14 -> {
@@ -586,7 +586,7 @@ internal class StorageBackupOwner internal constructor(
             15, 16 -> {
                 val client = CentralAccess.requireClient(app)
                 check(generation != null && client.server == generation.first &&
-                    CentralSession.get(app).generation == generation.second) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                    CentralSession.get(app).generation == generation.second) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                 val mode = if (code == 15) "metadata" else "data"
                 writeDocument(app, uri) { output -> client.download("/api/export-bundle?mode=$mode", output) }
             }

@@ -131,7 +131,7 @@ internal class NotesOwner internal constructor(
     private fun validateConversation(origin: JSONObject, presentation: JSONObject?, settings: Settings) {
         if (origin.optString("kind") == "conversation") {
             check(presentation?.optString("server") == settings.dataOrigin() && settings.dataOrigin().isNotBlank()) {
-                MoteI18n.text("访问凭据已失效，请重新连接。")
+                MoteI18n.text("访问凭据已失效，重新连接")
             }
         }
     }
@@ -167,7 +167,7 @@ internal class NotesOwner internal constructor(
             // edit ends it, and a repeated save reuses the same queued record.
             runCatching { UploadWorker.schedule(app, config) }
             event.getString("id")
-        } ?: error(MoteI18n.text("请稍后重试"))
+        } ?: error(MoteI18n.text("稍后重试"))
         return receipt(id, firstUse)
     }
 
@@ -184,7 +184,7 @@ internal class NotesOwner internal constructor(
             app.queue().enqueue(event, null)
             runCatching { UploadWorker.schedule(app, config) }
             event.getString("id")
-        } ?: error(MoteI18n.text("请稍后重试"))
+        } ?: error(MoteI18n.text("稍后重试"))
         return receipt(id, false)
     }
 
@@ -271,7 +271,7 @@ internal object NativeRecordReceipt {
 data class NoteSaveReceipt(val id: String, val duplicate: Boolean) {
     companion object {
         fun parse(response: JSONObject): NoteSaveReceipt {
-            val invalid = { throw IllegalArgumentException(MoteI18n.text("中央响应格式无效，请刷新后重试。")) }
+            val invalid = { throw IllegalArgumentException(MoteI18n.text("中央响应格式无效，刷新后重试")) }
             val id = runCatching { UUID.fromString(response.getString("id")).toString() }.getOrElse { invalid() }
             val receipt = response.optJSONObject("receipt") ?: invalid()
             if (receipt.optInt("version") != 2 || receipt.optString("kind") != "capture" || receipt.optString("state") != "received") invalid()

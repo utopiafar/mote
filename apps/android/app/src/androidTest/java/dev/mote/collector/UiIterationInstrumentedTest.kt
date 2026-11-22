@@ -222,7 +222,7 @@ class UiIterationInstrumentedTest {
                         shown.single { it.text.toString() == MoteI18n.text("连接设置") }.currentTextColor)
                     assertTrue("Receipt and processing has its own explicit role", labels.contains(MoteI18n.text("接收与整理状态")))
                     assertTrue("The exact receipt versus processing distinction remains visible", labels.contains(MoteI18n.text("本机保存、中央接收与整理完成分别显示；接收确认不代表已经可以搜索。")))
-                    assertTrue("Processing remains explicitly unknown in this generated offline fixture", labels.any { it.contains(MoteI18n.text("中央处理状态待查询，请在中央任务中心查看")) })
+                    assertTrue("Processing remains explicitly unknown in this generated offline fixture", labels.any { it.contains(MoteI18n.text("中央处理状态待查询，在中央任务中心查看")) })
                     assertTrue("Upload speed metadata is still available", labels.any { it.startsWith(MoteI18n.text("上传速率") + " · ") })
                     views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("查看同步详情") }.performClick()
                     activity.showMoteAddActions()

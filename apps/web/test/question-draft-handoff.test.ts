@@ -26,7 +26,7 @@ async function fixture(t:any){
 const mainId='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const settingsView={revision:1,domains:[{id:'conversations',effective:{multipleConversations:true,context:{historyRatio:0.5,lowWatermarkRatio:0.5,contextWindow:null,contextWindowSource:'conservative'}},saved:{},fields:[],status:'applied'}]};
 function owner(write:(path:string,init:RequestInit)=>unknown=()=>{throw Error('Unexpected write');}):Api{
- return{request:async(path:string,init?:RequestInit)=>{if(path==='/api/conversations/main')return{id:mainId};if(path==='/api/configuration')return settingsView;if(path==='/api/conversations'&&init?.method==='POST')return{id:crypto.randomUUID()};if(init?.method)return write(path,init);if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});if(path==='/api/model-settings')return modelView();if(path.startsWith('/api/conversations/')&&!path.includes('/messages/')&&!path.includes('/references/')){const id=decodeURIComponent(path.slice('/api/conversations/'.length));return{id,title:'',createdAt:'2026-10-29T01:00:00Z',updatedAt:'2026-10-29T01:00:00Z',turnCount:0,scope:{},status:'completed',revision:1,nextCursor:null,turns:[]};}return{items:[]};}} as Api;
+ return{request:async(path:string,init?:RequestInit)=>{if(path==='/api/conversations/main')return{id:mainId};if(path==='/api/configuration')return settingsView;if(init?.method)return write(path,init);if(path.startsWith('/api/operations/changes'))return new Promise(()=>{});if(path==='/api/model-settings')return modelView();if(path.startsWith('/api/conversations/')&&!path.includes('/messages/')&&!path.includes('/references/')){const id=decodeURIComponent(path.slice('/api/conversations/'.length));return{id,title:'',createdAt:'2026-10-29T01:00:00Z',updatedAt:'2026-10-29T01:00:00Z',turnCount:0,scope:{},status:'completed',revision:1,nextCursor:null,turns:[]};}return{items:[]};}} as Api;
 }
 const view=(root:ReturnType<typeof createRoot>,api:Api)=>act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:()=>null})));
 const strictView=(root:ReturnType<typeof createRoot>,api:Api)=>act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:()=>null}))));
@@ -64,17 +64,21 @@ test('discarding a pending upload fences its late receipt while preserving an un
  assert.equal(Boolean(d.querySelector('.chat-attachment')),false);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New search while old receipt is pending');assert.equal(queryRecovery.get(api),retained);assert.equal(posts.length,0);
 });
 
-test('an old pending query cannot reclaim the new Home/search question after its late completion',async t=>{
- const{root,d,w}=await fixture(t);let finish!:(value:unknown)=>void;const pending=new Promise(resolve=>finish=resolve),posts:any[]=[];
- const base=owner((path,init)=>{if(path==='/api/conversations/messages'){posts.push(JSON.parse(String(init.body)));throw new ApiError('Generated rejection',400);}throw Error(path);});
- const api={...base,request:async(path:string,init?:RequestInit)=>{if(path==='/api/query-runs/old-run')return pending;if(path==='/api/conversations/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')return{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',title:'Old conversation',turns:[],scope:{},revision:1};return base.request(path,init);}} as Api;
- const run={id:'old-run',status:'running' as const,conversationId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',createdAt:'2026-10-29T01:00:00Z',updatedAt:'2026-10-29T01:00:00Z',events:[]};
- const retained={kind:'owned' as const,id:run.id,body:'old exact body',question:'Old question',attachments:[],unknown:true,run,conversationId:run.conversationId,...queryRecovery.versions(api)};
- queryRecovery.set(api,retained);unsentDrafts.set(api,{question:'Old unsent draft',attachments:[]});w.confirm=()=>true;
- await changeHash(d,api,'New independent search question');await strictView(root,api);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New independent search question');
- await act(async()=>finish({...run,status:'completed'}));assert.equal(queryRecovery.get(api),undefined);assert.equal(w.location.hash,pageHash('chat'));assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New independent search question');
- await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));
- assert.equal(posts.length,1);assert.equal(posts[0].question,'New independent search question');assert.equal(posts[0].conversationId,mainId);
+test('a late main-conversation admission keeps the next Home/search question and does not change the route',async t=>{
+ const {root,d,w}=await fixture(t),posts:any[]=[];let finish!:(value:unknown)=>void;
+ const pending=new Promise(resolve=>finish=resolve),api=owner((path,init)=>{
+  assert.equal(path,'/api/conversations/messages');posts.push(JSON.parse(String(init.body)));
+  if(posts.length===1)return pending;throw new ApiError('Generated rejection',400);
+ });
+ w.history.replaceState(null,'',pageHash('chat',{questionDraft:'Original sent question'}));await strictView(root,api);
+ const send=()=>act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));
+ await send();assert.equal(posts.length,1);w.confirm=()=>true;
+ await changeHash(d,api,'New independent search question');
+ await act(async()=>finish({...posts[0],id:crypto.randomUUID(),revision:1,seq:0,createdAt:'2026-10-29T01:00:00Z',status:'accepted'}));
+ assert.equal(queryRecovery.get(api),undefined);assert.equal(w.location.hash,pageHash('chat'));
+ assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'New independent search question');
+ await send();assert.equal(posts.length,2);assert.equal(posts[1].question,'New independent search question');
+ assert.equal(posts[1].conversationId,mainId);
 });
 
 test('a directly opened questionDraft route replaces old attachments before StrictMode restoration',async t=>{
@@ -82,11 +86,11 @@ test('a directly opened questionDraft route replaces old attachments before Stri
  w.location.hash=pageHash('chat',{questionDraft:'Direct new question'});await strictView(root,api);assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'Direct new question');assert.equal(Boolean(d.querySelector('.chat-attachment')),false);assert.deepEqual(unsentDrafts.get(api)?.attachments,[]);
 });
 
-test('a search handoff while Ask is already showing history starts a new conversation and drops old scope',async t=>{
- const{root,d,w}=await fixture(t),posts:any[]=[],oldId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',when='2026-10-29T01:00:00Z',base=owner((path,init)=>{if(path==='/api/conversations/messages'){posts.push(JSON.parse(String(init.body)));throw new ApiError('Generated rejection',400);}throw Error(path);});
+test('a search handoff starts a new draft in main while leaving its earlier scoped messages visible',async t=>{
+ const{root,d,w}=await fixture(t),posts:any[]=[],oldId=mainId,when='2026-10-29T01:00:00Z',base=owner((path,init)=>{if(path==='/api/conversations/messages'){posts.push(JSON.parse(String(init.body)));throw new ApiError('Generated rejection',400);}throw Error(path);});
  const summary={id:oldId,title:'Previous conversation',createdAt:when,updatedAt:when,turnCount:1,scope:{evidenceIds:['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']},status:'completed'};
- const api={...base,request:async(path:string,init?:RequestInit)=>{if(path==='/api/conversations?limit=30')return{items:[summary]};if(path==='/api/conversations/'+oldId)return{...summary,revision:1,turns:[{id:'old-turn',question:'Previous question',status:'completed',result:{answer:'Previous answer',citations:[],trace:[],runId:'old'}}]};return base.request(path,init);}} as Api;
- w.location.hash=pageHash('chat');await strictView(root,api);await act(async()=>d.querySelector<HTMLButtonElement>('.conversation-item')!.click());assert.ok(d.querySelector('#conversation-turn-old-turn'));assert.ok(d.querySelector('nav[aria-label="查询范围"]'));
- await changeHash(d,api,'A new search question');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'A new search question');assert.equal(Boolean(d.querySelector('#conversation-turn-old-turn')),false);assert.equal(Boolean(d.querySelector('nav[aria-label="查询范围"]')),false);
+ const api={...base,request:async(path:string,init?:RequestInit)=>{if(path==='/api/conversations/'+oldId)return{...summary,revision:1,turns:[{id:'old-turn',question:'Previous question',status:'completed',result:{answer:'Previous answer',citations:[],trace:[],runId:'old'}}]};return base.request(path,init);}} as Api;
+ w.location.hash=pageHash('chat');await strictView(root,api);assert.ok(d.querySelector('#conversation-turn-old-turn'));assert.ok(d.querySelector('nav[aria-label="查询范围"]'));
+ await changeHash(d,api,'A new search question');assert.equal(d.querySelector<HTMLTextAreaElement>('textarea')!.value,'A new search question');assert.ok(d.querySelector('#conversation-turn-old-turn'));assert.equal(Boolean(d.querySelector('nav[aria-label="查询范围"]')),false);
  await act(async()=>d.querySelector('form.ask-form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(posts.length,1);assert.equal(posts[0].question,'A new search question');assert.equal(posts[0].conversationId,mainId);assert.ok(!posts[0].scope?.evidenceIds?.length);
 });

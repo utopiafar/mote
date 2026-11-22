@@ -24,7 +24,6 @@ final class MoteScreensUITests: XCTestCase {
         try captureEditor(appearance)
         try captureRecording(appearance)
         try captureShare(appearance)
-        try captureHistory(appearance)
         try captureAsk(appearance)
         try captureReader(appearance)
         try captureLibrary(appearance)
@@ -102,17 +101,8 @@ final class MoteScreensUITests: XCTestCase {
         }
     }
 
-    private func captureHistory(_ appearance: String) throws {
-        for state in ["list", "empty", "typing"] {
-            let app = launch(["-MoteHistoryPreview", "-MoteHistoryState", state], appearance: appearance)
-            let ready = state == "empty" ? app.textFields["问一问"] : app.buttons["conversation-one"]
-            XCTAssertTrue(ready.waitForExistence(timeout: 15), "history \(state)")
-            capture("history-\(state)", appearance, app)
-        }
-    }
-
     private func captureAsk(_ appearance: String) throws {
-        for state in ["answered", "streaming", "offline", "anchored"] {
+        for state in ["flow", "answered", "streaming", "offline", "anchored"] {
             let app = launch(["-MoteConversationPreview", "-MoteConversationState", state], appearance: appearance)
             let ready = switch state {
             case "streaming": app.buttons["停止"]

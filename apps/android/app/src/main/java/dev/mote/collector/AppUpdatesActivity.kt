@@ -41,10 +41,10 @@ class AppUpdatesActivity : MoteActivity() {
             val card = SecondaryUi.column(body, card = true)
             SecondaryUi.text(card, "Mote DEV · ${BuildConfig.VERSION_NAME}", muted = true)
             SecondaryUi.text(card, MoteI18n.text("DEV 构建手动安装"), heading = true)
-            SecondaryUi.text(card, MoteI18n.text("DEV 构建按提交保存在 GitHub Actions，请选择对应运行的 Artifact 下载并手动安装。"), muted = true)
+            SecondaryUi.text(card, MoteI18n.text("DEV 构建按提交保存在 GitHub Actions，选择对应运行的 Artifact 下载并手动安装"), muted = true)
             SecondaryUi.action(SecondaryUi.actions(card), MoteI18n.text("打开构建页面"), primary = true) {
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/utopiafar/mote/actions/workflows/release-android.yml"))) }
-                    .onFailure { Toast.makeText(this@AppUpdatesActivity, MoteI18n.text("无法打开 GitHub，请安装或启用浏览器后重试"), Toast.LENGTH_LONG).show() }
+                    .onFailure { Toast.makeText(this@AppUpdatesActivity, MoteI18n.text("无法打开 GitHub，安装或启用浏览器后重试"), Toast.LENGTH_LONG).show() }
             }
             MoteUi.styleTree(body)
             return
@@ -54,7 +54,7 @@ class AppUpdatesActivity : MoteActivity() {
             val value = AppUpdateStore(applicationContext); value to value.config()
         }) { result ->
             result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background(MoteI18n.text("正在读取安装状态…"), read = true) { systemTools.reconcileUpdates(applicationContext); AppUpdateWork.reconcile(applicationContext) } }
-                .onFailure { label.text = MoteI18n.text("更新设置读取失败，请重试") }
+                .onFailure { label.text = MoteI18n.text("更新设置读取失败，重试") }
         }
     }
     private fun buildUi(initialConfig: UpdateConfig) {
@@ -149,23 +149,23 @@ class AppUpdatesActivity : MoteActivity() {
     companion object {
         @Volatile var foreground = false; private set
         fun message(code: String): String = when (code) {
-            "queued" -> MoteI18n.text("已提交，等待系统启动任务"); "waiting_wifi" -> MoteI18n.text("等待非计费网络，可在更新设置中调整"); "scheduler" -> MoteI18n.text("上次任务未完成，请重试");
+            "queued" -> MoteI18n.text("已提交，等待系统启动任务"); "waiting_wifi" -> MoteI18n.text("等待非计费网络，可在更新设置中调整"); "scheduler" -> MoteI18n.text("上次任务未完成，重试");
             "idle" -> MoteI18n.text("尚未检查更新"); "waiting_network" -> MoteI18n.text("等待网络和系统后台调度"); "checking" -> MoteI18n.text("检查 GitHub 发布并验证清单签名…")
             "current", "not_newer" -> MoteI18n.text("已是最新版本"); "available" -> MoteI18n.text("发现已验证发布，可下载")
             "downloading" -> MoteI18n.text("正在下载，退出页面后仍按系统调度继续"); "verifying" -> MoteI18n.text("正在校验 APK 大小、SHA-256 和签名")
             "ready" -> MoteI18n.text("下载完成，可以安装"); "preparing" -> MoteI18n.text("正在重新校验安装文件，可取消"); "staging" -> MoteI18n.text("正在提交安装文件给 Android")
-            "install_pending", "awaiting_user" -> MoteI18n.text("等待系统安装确认；未弹出时查看通知，或取消待确认安装后重试")
-            "installed" -> MoteI18n.text("系统已完成更新；已有应用数据保留"); "install_permission" -> MoteI18n.text("请在系统允许此应用安装更新，返回后再次点击安装")
+            "install_pending", "awaiting_user" -> MoteI18n.text("等待系统安装确认")
+            "installed" -> MoteI18n.text("系统已完成更新；已有应用数据保留"); "install_permission" -> MoteI18n.text("在系统允许此应用安装更新，返回后再次点击安装")
             "certificate", "apk_signature" -> MoteI18n.text("APK 签名与当前应用不兼容或无效，已阻止更新；不会卸载旧应用")
             "checksum", "asset_size" -> MoteI18n.text("APK 大小或 SHA-256 不匹配，未交给系统安装")
             "package" -> MoteI18n.text("APK 包名、版本或系统要求与当前应用不符，已阻止安装")
             "manifest", "manifest_signature", "host", "redirect" -> MoteI18n.text("发布清单签名、格式或来源不可信，已拒绝")
             "not_found" -> MoteI18n.text("该渠道尚无可用的已签名发布，或 GitHub 未找到发布清单")
-            "asset_missing" -> MoteI18n.text("请先检查更新；该发布可能没有匹配当前包名的 Android 资产")
-            "rate_limit" -> MoteI18n.text("GitHub 暂时限流，稍后重试"); "access_denied" -> MoteI18n.text("更新服务器拒绝访问，请检查网络入口或发布资源的访问权限。"); "network" -> MoteI18n.text("网络暂不可用，断点保留，等待重试")
+            "asset_missing" -> MoteI18n.text("先检查更新；该发布可能没有匹配当前包名的 Android 资产")
+            "rate_limit" -> MoteI18n.text("GitHub 暂时限流，稍后重试"); "access_denied" -> MoteI18n.text("更新服务器拒绝访问"); "network" -> MoteI18n.text("网络暂不可用，断点保留，等待重试")
             "storage" -> MoteI18n.text("更新空间不足或文件保存失败；应用数据未删除"); "configuration" -> MoteI18n.text("仓库应为 owner/repository，渠道为 stable 或 preview")
             "cancelled" -> MoteI18n.text("操作已取消；旧应用数据及下载断点保留"); "install_failed" -> MoteI18n.text("系统未确认安装成功；旧应用保留，可重新检查或安装")
-            else -> MoteI18n.text("更新未完成，请重试；旧应用和数据保留")
+            else -> MoteI18n.text("更新未完成，重试；旧应用和数据保留")
         }
     }
 }

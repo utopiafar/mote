@@ -24,15 +24,28 @@ class CentralFailureTest {
 
     @Test fun permissionTransportAndProviderFailuresKeepDistinctSafeRecoveryMessages() {
         val origin = CentralFailure(403, "origin_denied", "PRIVATE_SERVER_DETAIL").message!!
-        assertTrue(origin.contains("公开地址")); assertFalse(origin.contains("升级")); assertFalse(origin.contains("PRIVATE"))
+        assertTrue("Origin denial identifies the web address", origin.contains("网页地址"))
+        assertFalse("Origin denial must not request an upgrade", origin.contains("升级"))
+        assertFalse(origin.contains("PRIVATE"))
+
         val permission = CentralFailure(403, "connection_scope_denied").message!!
-        assertTrue(permission.contains("连接权限")); assertFalse(permission.contains("失效"))
-        assertTrue(CentralFailure(401, "unauthorized").message!!.contains("凭据已失效"))
+        assertTrue("Scope denial identifies the connection permission", permission.contains("连接权限"))
+        assertFalse("Scope denial must not report expired credentials", permission.contains("失效"))
+
+        val unauthorized = CentralFailure(401, "unauthorized").message!!
+        assertTrue(unauthorized.contains("凭据已失效"))
+        assertTrue(unauthorized.contains("重新连接"))
         assertTrue(CentralFailure(426, "incompatible_protocol").message!!.contains("协议版本"))
-        assertTrue(CentralFailure(503, "provider_quota", "PRIVATE_PROVIDER_DETAIL").message!!.contains("额度不足"))
+
+        val quota = CentralFailure(503, "provider_quota", "PRIVATE_PROVIDER_DETAIL").message!!
+        assertTrue(quota.contains("额度不足"))
+        assertFalse(quota.contains("PRIVATE"))
+
         for (status in listOf(403, 413, 429, 502, 503, 504, 524)) {
             val proxy = CentralFailure(status, "", "PRIVATE_PROXY_BODY").message!!
-            assertFalse(proxy.contains("PRIVATE")); assertFalse(proxy.contains("凭据已失效")); assertFalse(proxy.contains("升级"))
+            assertFalse("HTTP $status must not expose the proxy body", proxy.contains("PRIVATE"))
+            assertFalse("HTTP $status must not report expired credentials", proxy.contains("失效"))
+            assertFalse("HTTP $status must not request an upgrade", proxy.contains("升级"))
         }
         val unknown = CentralFailure(503, "generated_unknown", "PRIVATE_PROVIDER_DETAIL").message!!
         assertTrue(unknown.contains("generated_unknown")); assertTrue(unknown.contains("503")); assertFalse(unknown.contains("PRIVATE"))

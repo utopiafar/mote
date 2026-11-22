@@ -9,7 +9,7 @@ struct MoteControlsBundle: WidgetBundle {
         RecordControl()
         PhotoControl()
         RecordingControl()
-        AskControl()
+        ChatControl()
         PauseSendingControl()
     }
 }
@@ -21,7 +21,7 @@ private func openControl(_ control: MoteSystemControl) -> some ControlWidgetConf
             Label {
                 Text(control.entry.title)
             } icon: {
-                Image(control.rawValue).renderingMode(.template)
+                Image(control == .ask ? "chat" : control.rawValue).renderingMode(.template)
             }
         }
     }
@@ -40,7 +40,7 @@ struct RecordingControl: ControlWidget {
     var body: some ControlWidgetConfiguration { openControl(.recording) }
 }
 
-struct AskControl: ControlWidget {
+struct ChatControl: ControlWidget {
     var body: some ControlWidgetConfiguration { openControl(.ask) }
 }
 

@@ -14,7 +14,7 @@ internal object RecordAttachmentSync {
         val attachments = record.getJSONArray("attachments")
         if (attachments.length() == 0) return original
         val bound = record.getString("server")
-        require(bound == Settings(context).dataOrigin() || bound.isBlank()) { MoteI18n.text("目标节点已变化，请确认本机记录归属。") }
+        require(bound == Settings(context).dataOrigin() || bound.isBlank()) { MoteI18n.text("目标节点已变化，确认本机记录归属") }
         val ids = JSONArray()
         for (index in 0 until attachments.length()) {
             val item = attachments.getJSONObject(index); val id = item.getString("id")

@@ -104,7 +104,7 @@ internal class AppCaptureEditor(
             }
         }) { result ->
             result.onSuccess { apps = it; ready = true; refresh() }
-                .onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("应用列表读取失败，请重试"); button(listSurface, MoteI18n.text("重试")) { loadApps() } }
+                .onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("应用列表读取失败，重试"); button(listSurface, MoteI18n.text("重试")) { loadApps() } }
         }
     }
 
@@ -126,7 +126,7 @@ internal class AppCaptureEditor(
         unavailable.visibility = GONE
         search.isEnabled = true
         scopeButtons.values.forEach { it.isEnabled = true }
-        val current = snapshot() ?: run { status.text = MoteI18n.text("手工规则格式有误，请展开高级规则修正。"); return }
+        val current = snapshot() ?: run { status.text = MoteI18n.text("手工规则格式有误，展开高级规则修正"); return }
         runCatching {
             refreshList(current)
             val selected = state.selected
@@ -134,7 +134,7 @@ internal class AppCaptureEditor(
             listSurface.visibility = if (selected == null) VISIBLE else GONE
             detailSurface.visibility = if (selected == null) GONE else VISIBLE
             if (selected != null) catalog(current).firstOrNull { it.id == selected }?.let { renderDetail(current, it) }
-        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("请先修正页面规则 JSON"); listSurface.visibility = VISIBLE; detailSurface.visibility = GONE; detailChanged(false) }
+        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("先修正页面规则 JSON"); listSurface.visibility = VISIBLE; detailSurface.visibility = GONE; detailChanged(false) }
     }
 
     private fun renderUnavailable(gate: SystemEntriesPlugin.Availability) {
@@ -188,7 +188,7 @@ internal class AppCaptureEditor(
                     }
                 }
             }
-        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("请先修正页面规则 JSON") }
+        }.onFailure { status.visibility = VISIBLE; status.text = MoteI18n.text("先修正页面规则 JSON") }
     }
 
     private fun renderDetail(current: AppCapturePresentation.Snapshot, app: AppCapturePresentation.App) {

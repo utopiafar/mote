@@ -9,6 +9,7 @@ import type {AddressInfo} from 'node:net';
 import sharp from 'sharp';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp,type QueryAgent} from '../src/app.js';
+import {Conversations} from '../src/conversations.js';
 import {TaskRecords} from '../src/task-records.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
@@ -108,7 +109,7 @@ test('two clients keep accepted messages in sequence and the real query complete
   assert.deepEqual([first.message.seq,second.message.seq],[0,1]);assert.equal(second.message.status,'queued');assert.equal(seen.length,1);
   const pending=(await f.node.app.inject({url:`/api/conversations/${id}`,headers})).json();assert.deepEqual(pending.turns.map((turn:any)=>turn.question),['  Generated first  ','Generated second']);
   assert.equal(pending.status,'running');assert.equal(pending.turnCount,2);
-  const listed=(await f.node.app.inject({url:'/api/conversations',headers})).json();assert.equal(listed.items.find((item:any)=>item.id===id).turnCount,2);
+  const listed=new Conversations(f.node.store).list();assert.equal(listed.items.find(item=>item.id===id)?.turnCount,2);
   const retried=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:second.payload});assert.equal(retried.statusCode,202,retried.body);assert.equal(retried.json().id,second.message.id);
   const conflicting=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{...second.payload,question:'Changed input'}});assert.equal(conflicting.statusCode,409);
   release.release();assert.equal((await settled(f.node,id,first.message.id)).status,'completed');assert.equal((await settled(f.node,id,second.message.id)).status,'completed');
@@ -329,10 +330,10 @@ test('a withdrawn image loses its title and a late response cannot publish',asyn
 test('deleting a conversation during a query does not recreate its turn',async t=>{
   const entered=signal(),release=signal();const f=await fixture(t,async()=>{entered.release();await release.promise;return result('Generated deleted conversation answer');});t.after(()=>release.release());
   const id=await main(f.node),turn=await post(f.node,id,'Generated delete while running');await entered.promise;
-  const deleted=await f.node.app.inject({method:'DELETE',url:`/api/conversations/${id}`,headers});assert.equal(deleted.json().deleted,1);release.release();
+  new Conversations(f.node.store).delete(id);release.release();
   await until(()=>{const work=f.node.delegation.get('query:'+turn.message.id);return work.status==='stale'||work.status==='cancelled'||work.status==='failed'?work.status:undefined;},'deleted query to stop');
   assert.equal((await f.node.app.inject({url:`/api/conversations/${id}`,headers})).statusCode,404);
-  const listed=await f.node.app.inject({url:'/api/conversations',headers});assert.doesNotMatch(listed.body,/Generated deleted conversation answer|Generated delete while running/);
+  const listed=JSON.stringify(new Conversations(f.node.store).list());assert.doesNotMatch(listed,/Generated deleted conversation answer|Generated delete while running/);
 });
 
 test('one-turn model selection is persisted and part of idempotent admission',async t=>{

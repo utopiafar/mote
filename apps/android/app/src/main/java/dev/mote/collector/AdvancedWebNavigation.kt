@@ -13,9 +13,14 @@ internal sealed interface AdvancedWebTarget {
         init { require(MoteLink.uuidId(id) == id) }
     }
     data class Models(val preparation: Preparation) : AdvancedWebTarget
+    data class ChatAbout(val kind: Kind, val id: String) : AdvancedWebTarget {
+        enum class Kind(val wire: String) { CARD("card"), QUESTION("question") }
+        init { require(MoteLink.uuidId(id) == id) }
+    }
     fun hash(): String = when (this) {
         is Recording -> "#/" + CentralPageRoutes.library + "?evidence=" + URLEncoder.encode("capture:$id", "UTF-8") + "&recordingTool=" + tool.query
         is Models -> "#/" + CentralPageRoutes.models + "?category=" + preparation.category + "&prepare=" + preparation.role
+        is ChatAbout -> "#/" + CentralPageRoutes.chat + "?about=" + URLEncoder.encode("${kind.wire}:$id", "UTF-8")
     }
 }
 
@@ -27,7 +32,7 @@ internal sealed interface AdvancedWebResult {
     data class LoginRequired(val access: AdvancedWebAccess, val target: AdvancedWebTarget) : AdvancedWebResult
     class Ready internal constructor(private val selected: AdvancedWebAccess, val url: String, private val clock: () -> Long, private val deadline: Long? = null) : AdvancedWebResult {
         fun launch(current: () -> AdvancedWebAccess, visit: () -> Boolean, open: (String) -> Unit) {
-            check(visit() && selected == current() && (!selected.authenticated || selected.expiresAt <= 0 || selected.expiresAt > clock()) && (deadline == null || deadline > clock())) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+            check(visit() && selected == current() && (!selected.authenticated || selected.expiresAt <= 0 || selected.expiresAt > clock()) && (deadline == null || deadline > clock())) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
             open(url)
         }
         override fun toString() = "AdvancedWebResult.Ready(url=redacted)"
@@ -67,7 +72,7 @@ internal object AdvancedWebNavigation {
         val uri = URI(selected.server)
         require(uri.scheme in setOf("http", "https") && uri.host != null && uri.userInfo == null && uri.rawQuery == null && uri.rawFragment == null && uri.rawPath in setOf("", "/") && uri.port in -1..65535)
         val origin = selected.server.trimEnd('/')
-        fun active() { check(visit() && current() == selected && (!selected.authenticated || selected.expiresAt <= 0 || selected.expiresAt > clock())) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") } }
+        fun active() { check(visit() && current() == selected && (!selected.authenticated || selected.expiresAt <= 0 || selected.expiresAt > clock())) { MoteI18n.text("登录会话已变更，重新打开中央页面") } }
         active()
         val publicUrl = origin + "/" + target.hash()
         if (!selected.authenticated) return AdvancedWebResult.Ready(selected, publicUrl, clock)
@@ -75,7 +80,7 @@ internal object AdvancedWebNavigation {
         val response = try { ticket() } catch (error: CentralFailure) {
             if (error.status == 401) {
                 val after = current()
-                check(visit() && after.server == selected.server && !after.authenticated) { MoteI18n.text("登录会话已变更，请重新打开中央页面。") }
+                check(visit() && after.server == selected.server && !after.authenticated) { MoteI18n.text("登录会话已变更，重新打开中央页面") }
                 return AdvancedWebResult.LoginRequired(after, target)
             }
             active()
@@ -84,7 +89,7 @@ internal object AdvancedWebNavigation {
         }
         active()
         val code = response.optString("code")
-        require(Regex("[A-Za-z0-9_-]{43}").matches(code)) { MoteI18n.text("中央响应格式无效，请刷新后重试。") }
+        require(Regex("[A-Za-z0-9_-]{43}").matches(code)) { MoteI18n.text("中央响应格式无效，刷新后重试") }
         return AdvancedWebResult.Ready(selected, "$publicUrl&loginTicket=$code", clock, deadline)
     }
 }

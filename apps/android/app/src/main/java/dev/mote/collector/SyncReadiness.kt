@@ -69,8 +69,8 @@ internal object SyncReadiness {
         VisibleSyncStatus.SourceUnavailable -> MoteI18n.text("来源需要处理") + " · " + MoteI18n.text("本机状态暂不可读取")
         VisibleSyncStatus.Disconnected -> MoteI18n.text("未连接中央")
         VisibleSyncStatus.SendAsConfigured -> MoteI18n.text("按设置发送")
-        is VisibleSyncStatus.NeedsAttention -> MoteI18n.text("{0} 条记录需要处理（冲突或中央不可用） · 待发 {1} 条；请打开同步与恢复", status.blocked, status.pending)
-        is VisibleSyncStatus.NeedsSourceAttention -> MoteI18n.text("{0} 个来源同步需要处理 · 待发 {1} 条；请在来源页面检查上传授权、权限或连接", status.sources, status.pending)
+        is VisibleSyncStatus.NeedsAttention -> MoteI18n.text("{0} 条待处理 · 待发 {1} 条", status.blocked, status.pending)
+        is VisibleSyncStatus.NeedsSourceAttention -> MoteI18n.text("{0} 个来源待处理 · 待发 {1}", status.sources, status.pending)
         is VisibleSyncStatus.Many -> status.items.joinToString("\n") { text(it) }
     }
 }

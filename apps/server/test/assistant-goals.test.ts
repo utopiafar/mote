@@ -164,6 +164,16 @@ test('GO1-06 a manually created goal enters mine without an inferred marker',asy
  assert.equal(item.direction,'mine');
  assert.equal(item.inferred,false);
  assert.ok(view.groups.some((group:any)=>group.mine.some((value:any)=>value.id===item.id)));
+ const url='/api/assistant/goals/todos/'+item.id;
+ const reference=await f.node.app.inject({url,headers:f.headers});
+ assert.equal(reference.statusCode,200,reference.body);
+ assert.equal(reference.headers['cache-control'],'no-store');
+ assert.deepEqual(reference.json(),{id:item.id,title:'Generated manual goal',evidenceIds:[]});
+ assert.equal((await f.node.app.inject({url})).statusCode,401);
+ const dismissed=await f.node.app.inject({method:'POST',url:`/api/assistant/goals/${item.id}/action`,headers:f.headers,
+  payload:{kind:'todo',action:'dismiss',expectedRevision:item.revision}});
+ assert.equal(dismissed.statusCode,200,dismissed.body);
+ assert.equal((await f.node.app.inject({url,headers:f.headers})).statusCode,404);
 });
 
 test('GO1-07 theirs goes to waiting, while a legacy commitment without direction stays mine',async t=>{

@@ -26,7 +26,7 @@ public enum MoteEntry: String, CaseIterable, Equatable, Sendable {
         case .record: "记录"
         case .photo: "拍照"
         case .recording: "录音"
-        case .ask: "问一问"
+        case .ask: "聊天"
         case .pauseSending: "暂停发送"
         }
     }
@@ -49,7 +49,7 @@ public enum MoteEntry: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .record: ["用 Mote 记一下"]
         case .recording: ["用 Mote 录音"]
-        case .ask: ["问 Mote"]
+        case .ask: ["和 Mote 聊聊"]
         case .photo, .pauseSending: []
         }
     }

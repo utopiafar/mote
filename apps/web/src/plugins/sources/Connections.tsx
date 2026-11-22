@@ -4,10 +4,12 @@ import { moteText } from '@mote/shared/i18n';
 import { connectionQrDataUrl } from '../../connection-qr';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight, Copy, Diamond, Download, Link2, Plus, QrCode, RefreshCw, ShieldCheck, Unplug, X } from 'lucide-react';
-import { connectionServerUrl, type ActionConnectorChoice, type ConnectionInvitation, type ServerConfiguration } from '@mote/shared';
+import { connectionServerUrl, pageHash, type ActionConnectorChoice, type ConnectionInvitation, type ServerConfiguration } from '@mote/shared';
 import { ApiError, type Api, type Device, ago, dateTime, errorMessage } from '../../api';
 import {useHashChoice} from '../../useHashChoice';
-import {containDialogFocus} from '../../dialog-focus';
+import {AccessRevocation, revokeAccess} from '../agent-access/AccessRevocation';
+import {connectionsHref} from '../agent-access/routes';
+import {servicesPath} from './connection-services';
 import {DeveloperAccess} from './DeveloperAccess';
 import { Loading } from '../../Loading';
 const readAccess=(hash:string)=>new URLSearchParams(hash.split('?')[1]??'').get('connection');
@@ -114,10 +116,8 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     const calendarChoices=calendarResource.data?.items??[];
     const selectedCalendar=calendarChoices.find(choice=>JSON.stringify(choice.target)===calendarKey);
     const [showAll, setShowAll] = useState(false);
-    const revokeDialog=useRef<HTMLDivElement>(null);
     const accessOwner=useRef({api,page:accessPage,generation:0});
     if(accessOwner.current.api!==api||accessOwner.current.page!==accessPage)accessOwner.current={api,page:accessPage,generation:accessOwner.current.generation+1};
-    useEffect(()=>{const panel=revokeDialog.current;if(!panel)return;return containDialogFocus(panel,document.activeElement as HTMLElement|null);},[revoking]);
     useEffect(()=>{if(mode==='chatbot'&&accessPage!=='generated')setMcp(undefined);},[accessPage,mode]);
     useEffect(()=>{if(inventoryResource.error instanceof ApiError&&[401,403].includes(inventoryResource.error.status)){setMcp(undefined);setInvite(undefined);setQr('');setRevoking('');}},[inventoryResource.error]);
     const mounted = useRef(true), active = useRef<AbortController | null>(null), acting = useRef(false);
@@ -180,7 +180,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
         setMessage(moteText("连接邀请已到期，请重新生成；已经连接的设备不受影响。"));
     } }, [expired]);
     async function refresh(signal: AbortSignal) {
-        resources(api).invalidate(key => key === '/api/connections');
+        resources(api).invalidate(key => key === '/api/connections' || key === servicesPath);
         await readResource<Inventory>(api, '/api/connections', signal);
     }
     async function action(name: string, operation: (signal: AbortSignal) => Promise<void>) {
@@ -272,7 +272,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     }
     function revoke(id: string) {
         void action('revoke', async (signal) => {
-            await api.request(`/api/connections/${encodeURIComponent(id)}`, { method: 'DELETE', signal });
+            await revokeAccess(api, id, signal);
             if (mounted.current && !signal.aborted) {
                 setRevoking('');
                 if (mcp?.credential.id === id)
@@ -309,6 +309,7 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
     function clearAccess(page:string|null){setMcp(undefined);setRevoking('');setError('');setMessage('');chooseAccessPage(page);}
     function hideAccessCredential(){clearAccess(mcp?.credential.id??null);}
     if(mode==='chatbot')return <section className="connections source-workspace access-workspace" aria-labelledby="connections-title">
+      {!accessPage&&<a className="back-link" href={connectionsHref}><ArrowLeft size={14}/>{moteText('连接')}</a>}
       {(accessPage==='new'||selectedCredential||accessPage==='generated'&&mcp)&&<button className="back-link" disabled={!!busy} onClick={leaveAccess}><ArrowLeft size={14}/>{moteText('AI 接入')}</button>}
       {Boolean(error||inventoryResource.error||configuration.error)&&<div className="notice error" role="alert">{error||errorMessage(inventoryResource.error||configuration.error)}</div>}
       {message&&<div className="notice" role="status"><Check size={16}/>{message}</div>}
@@ -354,10 +355,10 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
         <details className="connection-help"><summary>{moteText('连接方式')}</summary><p>{moteText('生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。')}</p><p>{oauthServiceUrl?moteText('只接受 OAuth 的客户端请填写服务地址 {0}；客户端会自动发现授权，首次连接需要在此页批准。',oauthServiceUrl):moteText('只接受 OAuth 的客户端需要可访问的中央地址；填写后再复制服务地址。')}</p></details>
       </>}
       {!accessPage&&<DeveloperAccess api={api}/>}
-      {revokingCredential&&<div className="source-dialog-overlay" onKeyDown={event=>{if(event.key==='Escape'&&!busy)setRevoking('');}}><div ref={revokeDialog} role="dialog" aria-modal="true" aria-labelledby="access-revoke-title" className="source-dialog"><header><h2 id="access-revoke-title">{moteText('撤销 {0}',revokingCredential.label)}</h2><button className="icon-button" aria-label={moteText('关闭')} disabled={!!busy} onClick={()=>setRevoking('')}><X size={18}/></button></header><p>{revokingCredential.scope==='mcp-calendar'?moteText('撤销后，此连接无法创建新日程。已派发的请求以行动回执为准。'):moteText('停止此连接的后续访问，已归档资料保留。再次接入需要生成新配置。')}</p><footer><button className="button" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText('取消')}</button><button className="button" disabled={!!busy} onClick={()=>revoke(revokingCredential.id)}>{moteText('确认撤销')}</button></footer></div></div>}
+      {revokingCredential&&<AccessRevocation key={revokingCredential.id} label={revokingCredential.label} calendar={revokingCredential.scope==='mcp-calendar'} busy={!!busy} cancel={()=>setRevoking('')} confirm={()=>revoke(revokingCredential.id)}/>}
     </section>;
     return <section className="connections device-pair-workspace" aria-labelledby={embedded ? undefined : 'connections-title'}>
-    {!embedded && <><a className="back-link" href="#/connections">← {moteText('来源')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div></>}
+    {!embedded && <><a className="back-link" href={pageHash('library')}>← {moteText('资料库')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div></>}
     <div className="device-pair-center"><div><strong>{moteText('中央')}</strong><small>{invite&&!pairEditing?invite.invitation.serverUrl:endpoint}</small></div><span>{(invite&&!pairEditing?invite.scope:deviceScope)==='collector'?moteText('独立采集器 · 仅同步本设备'):moteText('完整客户端权限')}</span></div>
     {Boolean(error||inventoryResource.error||configuration.error)&&<div className="notice error" role="alert">{error||errorMessage(inventoryResource.error||configuration.error)}</div>}{message&&<div className="notice" role="status">{message}</div>}
     {(!invite||pairEditing)&&<form className="device-pair-form" onSubmit={event=>{event.preventDefault();createInvitation();}}>

@@ -1,8 +1,8 @@
 import MoteCentral
 import XCTest
 
-final class ConversationDeletionContractTests: XCTestCase {
-    func testDeleteRemovesHistoryAndKeepsIndependentlySavedOriginal() async throws {
+final class ConversationReadContractTests: XCTestCase {
+    func testReadsTheSavedConversationAndKeepsIndependentlySavedOriginal() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let server = environment["MOTE_SWIFT_HISTORY_URL"],
               let token = environment["MOTE_SWIFT_HISTORY_TOKEN"],
@@ -11,15 +11,10 @@ final class ConversationDeletionContractTests: XCTestCase {
             throw XCTSkip("Use apps/ios/test-fixtures/central-swift-contract.ts --history-only")
         }
         let client = try CentralClient(serverUrl: server, token: token)
-        let before = try await client.conversations()
-        XCTAssertTrue(before.items.contains { $0.id == conversation })
         let existing = try await client.conversation(id: try XCTUnwrap(UUID(uuidString: conversation)))
+        XCTAssertEqual(existing.id, conversation)
         XCTAssertEqual(existing.turns.first?.result?.answer, "Generated saved answer")
 
-        let receipt = try await client.deleteConversation(id: try XCTUnwrap(UUID(uuidString: conversation)))
-        XCTAssertEqual(receipt.deleted, 1)
-        let after = try await client.conversations()
-        XCTAssertFalse(after.items.contains { $0.id == conversation })
         let retained = try await client.original(id: try XCTUnwrap(UUID(uuidString: original)))
         XCTAssertEqual(retained.ocrText, "Generated saved source body")
     }

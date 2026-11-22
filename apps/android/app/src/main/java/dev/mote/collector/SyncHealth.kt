@@ -13,8 +13,8 @@ internal object SyncHealth {
         val state: String
         val message: String
         when {
-            blocked > 0 -> { state = "error"; message = MoteI18n.text("{0} 条记录需要处理（冲突或中央不可用） · 待发 {1} 条；请打开同步与恢复", blocked, pending.count) }
-            sourceErrors > 0 -> { state = "error"; message = MoteI18n.text("{0} 个来源同步需要处理 · 待发 {1} 条；请在来源页面检查上传授权、权限或连接", sourceErrors, pending.count) }
+            blocked > 0 -> { state = "error"; message = MoteI18n.text("{0} 条待处理 · 待发 {1} 条", blocked, pending.count) }
+            sourceErrors > 0 -> { state = "error"; message = MoteI18n.text("{0} 个来源待处理 · 待发 {1}", sourceErrors, pending.count) }
             pending.hasWork -> { state = "waiting"; message = MoteI18n.text("仍有 {0} 条待发及 {1} 项来源设置待确认；暂停或权限不可用的来源需恢复后同步", pending.count, pending.pendingUpdates) }
             else -> { state = "idle"; message = MoteI18n.text("当前待发记录已获中央确认；这不表示两端保留数量相同") }
         }

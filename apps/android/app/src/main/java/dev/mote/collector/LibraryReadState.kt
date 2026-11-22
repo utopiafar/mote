@@ -60,7 +60,7 @@ internal class LibraryReadState {
     /** One page status: a local read failure hides any secondary Central complaint. */
     fun status(): String {
         local.values.firstOrNull { it.failed && it.message.isNotBlank() }?.let { return it.message }
-        local.values.firstOrNull { it.failed }?.let { return MoteI18n.text("资料暂不可读取，请稍后重试。") }
+        local.values.firstOrNull { it.failed }?.let { return MoteI18n.text("资料暂不可读取，稍后重试") }
         val states = remote.values
         states.firstOrNull { it.state == Central.SIGNED_OUT }?.let { return MoteI18n.text(SIGNED_OUT) }
         states.firstOrNull { it.state == Central.DENIED && it.message.isNotBlank() }?.let { return it.message }

@@ -37,7 +37,6 @@ test('PF1 Web entry reads NV2 once, renders before configuration, and invalidate
   if(path==='/api/features')return send({schemaVersion:1,revision:1,features:[],capabilities});
   if(path.startsWith('/api/operations/changes?'))return send({cursor:1,ids:[],reset:false,hasMore:false});
   if(path==='/api/conversations/main')return send({id:'10000000-0000-4000-8000-000000000001'});
-  if(path==='/api/conversations?limit=30')return send({items:[],nextCursor:null});
   if(/^\/api\/conversations\/[^/?]+$/.test(path))return send({id:decodeURIComponent(path.slice('/api/conversations/'.length)),title:'',createdAt:'2026-11-21T00:00:00Z',updatedAt:'2026-11-21T00:00:00Z',turnCount:0,scope:{},status:'completed',revision:1,nextCursor:null,turns:[]});
   if(path==='/api/query-runs')return send({items:[]});
   if(path==='/api/model-settings')return send({version:1,revision:1,profiles:[],defaults:{},defaultModels:{}});
@@ -67,7 +66,9 @@ test('PF1 Web entry reads NV2 once, renders before configuration, and invalidate
   });
 
   await t.test('PF1-02 one visible NV2 tick per 30 seconds is a bodyless 304 without reloading the page',async()=>{
-   const firstStatus=count('/api/status'),firstDevices=count('/api/devices'),firstMain=count('/api/conversations/main'),firstHistory=count('/api/conversations?limit=30'),firstNav=count('/api/nav-state');
+   const mainDetail='/api/conversations/10000000-0000-4000-8000-000000000001';
+   const firstStatus=count('/api/status'),firstDevices=count('/api/devices'),firstMain=count('/api/conversations/main'),firstDetail=count(mainDetail),firstNav=count('/api/nav-state');
+   assert.ok(firstDetail>0,'chat initially reads the main conversation detail');
    await tick(29_999);
    assert.equal(count('/api/nav-state'),firstNav,'no NV2 read before 30 seconds');
    await tick(1);
@@ -78,7 +79,7 @@ test('PF1 Web entry reads NV2 once, renders before configuration, and invalidate
    assert.equal(count('/api/status'),firstStatus,'the 30-second tick does not reread shell status');
    assert.equal(count('/api/devices'),firstDevices,'the 30-second tick does not reread devices');
    assert.equal(count('/api/conversations/main'),firstMain,'the 30-second tick does not reread the conversation');
-   assert.equal(count('/api/conversations?limit=30'),firstHistory,'the 30-second tick does not reread conversation history');
+   assert.equal(count(mainDetail),firstDetail,'the 30-second tick does not reread the main conversation detail');
   });
 
   await t.test('PF1-03 a page switch keeps shell reads and a library revision rereads only material resources',async()=>{

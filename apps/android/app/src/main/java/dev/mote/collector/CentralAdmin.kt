@@ -201,16 +201,10 @@ internal class CentralAdmin(
     private fun conversationSettings() {
         val api = client
         ui.work(MoteI18n.text("正在读取…"), {
-            val configuration = api.get("/api/configuration")
-            val preferences = CentralConversationSettings.read(configuration)
-            val conversations = api.get("/api/conversations?limit=100")
-            val main = api.get("/api/conversations/main").optString("id")
-            Triple(preferences, conversations, main)
-        }) { (preferences, conversations, main) ->
+            CentralConversationSettings.read(api.get("/api/configuration"))
+        }) { preferences ->
             body.removeAllViews(); screens.setBack { screens.refresh() }
             ui.text(MoteI18n.text("对话与上下文"), NativeFontRole.TITLE_MOBILE)
-            val multiple = CheckBox(ui).apply { text = MoteI18n.text("多对话"); isChecked = preferences.multipleConversations }
-            body.addView(multiple)
             val history = ui.field(MoteI18n.text("历史比例"), preferences.context.historyRatio.toString(), parent = body)
             val low = ui.field(MoteI18n.text("低水位"), preferences.context.lowWatermarkRatio.toString(), parent = body)
             ui.text(MoteI18n.text("上下文窗口"), NativeFontRole.SUPPORT, body)
@@ -222,34 +216,20 @@ internal class CentralAdmin(
             body.addView(source)
             val window = ui.field(MoteI18n.text("上下文窗口"), preferences.context.contextWindow?.toString().orEmpty(), parent = body)
             window.inputType = InputType.TYPE_CLASS_NUMBER
-            val items = conversations.optJSONArray("items") ?: JSONArray()
-            val mainTitle = (0 until items.length()).mapNotNull(items::optJSONObject)
-                .firstOrNull { it.optString("id") == main }?.optString("title").orEmpty()
-            ui.text(MoteI18n.text("主对话") + " · " + mainTitle.ifBlank { MoteI18n.text("问一问") }, NativeFontRole.SUPPORT)
-            ui.button(MoteI18n.text("选择主对话")) {
-                val rows = (0 until (conversations.optJSONArray("items")?.length() ?: 0))
-                    .mapNotNull { conversations.optJSONArray("items")?.optJSONObject(it) }
-                if (rows.isEmpty()) return@button ui.notice(MoteI18n.text("暂无记录"))
-                MoteDialogBuilder(ui).setTitle(MoteI18n.text("选择主对话"))
-                    .setItems(rows.map { it.optString("title").ifBlank { MoteI18n.text("问一问") } }.toTypedArray()) { _, index ->
-                        val id = rows[index].getString("id")
-                        ui.work(MoteI18n.text("正在保存…"), { api.put("/api/conversations/main", JSONObject().put("id", id)) }) { conversationSettings() }
-                    }.show()
-            }
             ui.button(MoteI18n.text("保存设置"), true) {
                 val historyValue = history.text.toString().trim().toDoubleOrNull()
                 val lowValue = low.text.toString().trim().toDoubleOrNull()
                 val windowText = window.text.toString().trim()
                 val windowValue = if (windowText.isBlank()) null else windowText.toLongOrNull()
                 if (historyValue == null || lowValue == null || windowText.isNotBlank() && windowValue == null) {
-                    ui.notice(MoteI18n.text("配置内容无效，请检查必填项和取值范围。")); return@button
+                    ui.notice(MoteI18n.text("配置内容无效，检查必填项和取值范围")); return@button
                 }
                 try {
                     CentralConversationSettings.validate(historyValue, lowValue, sources[source.selectedItemPosition], windowValue)
                 } catch (error: IllegalArgumentException) {
-                    ui.notice(error.message ?: MoteI18n.text("配置内容无效，请检查必填项和取值范围。")); return@button
+                    ui.notice(error.message ?: MoteI18n.text("配置内容无效，检查必填项和取值范围")); return@button
                 }
-                val payload = CentralConversationSettings.payload(preferences, multiple.isChecked, historyValue, lowValue,
+                val payload = CentralConversationSettings.payload(preferences, preferences.multipleConversations, historyValue, lowValue,
                     sources[source.selectedItemPosition], windowValue)
                 ui.work(MoteI18n.text("正在保存…"), { api.put("/api/configuration/conversations", payload) }) { screens.refresh() }
             }
@@ -259,7 +239,7 @@ internal class CentralAdmin(
         val api = client
         ui.work(MoteI18n.text("正在读取…"), {
             RuntimeStatusReceipt.parse(api.get("/api/agent-runtime-settings"))
-                ?: throw IllegalStateException(MoteI18n.text("中央响应格式无效，请刷新后重试。"))
+                ?: throw IllegalStateException(MoteI18n.text("中央响应格式无效，刷新后重试"))
         }) { receipt ->
             val value = receipt.saved
             body.removeAllViews(); screens.setBack { screens.refresh() }
@@ -366,7 +346,9 @@ internal class CentralAdmin(
         ui.work(MoteI18n.text("正在读取…"), {
             api.get(path + (scope?.let { "?scope=" + enc(it) } ?: "")) to api.get(if (integration) "/api/memory-integration-recipes" else "/api/memory-recipes")
         }) { (selection, catalog) ->
-            body.removeAllViews(); screens.setBack { memorySettings() }; if (!integration) ui.text(MoteI18n.text("这些提取门槛与最大等待时间只控制历史资料的窗口处理。已授权且内容就绪的新资料直接进入自动记忆队列，按可用名额持续处理。"))
+            body.removeAllViews()
+            screens.setBack { memorySettings() }
+            if (!integration) ui.text(MoteI18n.text("这些提取门槛与最大等待时间只控制历史资料的窗口处理。已授权且内容就绪的新资料直接进入自动记忆队列，按可用名额持续处理。"))
             val current = if (integration) listOfNotNull(selection.optJSONObject("binding")?.optJSONObject("recipe"))
                 else selection.getJSONArray("items").let { items -> (0 until items.length()).map { items.getJSONObject(it).getJSONObject("binding").getJSONObject("recipe") } }
             val choices = catalog.getJSONArray("items"); val selected = mutableListOf<JSONObject>()
@@ -645,7 +627,7 @@ internal class CentralAdmin(
                 }
                 val name = ui.field(MoteI18n.text("来源名称"), "MCP")
                 ui.button(MoteI18n.text("导入所选资源"), true) {
-                    require(selected.isNotEmpty()) { MoteI18n.text("请选择资源") }
+                    require(selected.isNotEmpty()) { MoteI18n.text("选择资源") }
                     importMcp(payload, name.text.toString(), JSONObject().put("resourceUris", JSONArray(selected)))
                 }
                 val tools = value.optJSONArray("tools") ?: JSONArray()
@@ -655,7 +637,7 @@ internal class CentralAdmin(
                     val args = ui.field(MoteI18n.text("工具参数 JSON"), "{}", multiline = true, parent = card)
                     val approved = CheckBox(ui).apply { text = MoteI18n.text("我确认此工具只读") }; card.addView(approved)
                     ui.button(MoteI18n.text("导入工具结果"), true, parent = card) {
-                        require(approved.isChecked) { MoteI18n.text("请确认工具只读后再执行") }
+                        require(approved.isChecked) { MoteI18n.text("确认工具只读后再执行") }
                         importMcp(payload, name.text.toString(), JSONObject().put("tool", JSONObject().put("name", tool.getString("name"))
                             .put("arguments", JSONObject(args.text.toString())).put("confirmedReadOnly", true)))
                     }
@@ -669,8 +651,8 @@ internal class CentralAdmin(
             body.removeAllViews()
             ui.button(MoteI18n.text("刷新")) { lark() }
             ui.text(MoteI18n.text("飞书文档与日历"), DesignTokens.fontTitleMobile.toFloat())
-            ui.text(MoteI18n.text("照常在飞书写日记、会议纪要和方案。中央归档文档与活动线索，供回顾、问答和 Memory 使用。"))
             ui.text(MoteI18n.text("打开、编辑等线索单独保存；打开不代表读完、认同或当时看到的版本。"))
+            ui.text(MoteI18n.text("照常在飞书写日记、会议纪要和方案。中央归档文档与活动线索，供回顾、问答和 Memory 使用。"))
             val account = ui.card()
             ui.text(if (value.optBoolean("connected")) MoteI18n.text("已连接") else MoteI18n.text("尚未授权"), DesignTokens.fontSection.toFloat(), account)
             if (value.optString("accountName").isNotBlank()) ui.text(value.optString("accountName"), parent = account)
@@ -908,7 +890,7 @@ internal class CentralAdmin(
                 else -> listOf("cancel" to "取消")
             }
             commands.forEach { (command, label) -> ui.button(MoteI18n.text(label)) {
-                if (command == "confirm") screens.confirm(MoteI18n.text("确认导入"), MoteI18n.text("请核对预览后再确认。")) { action("/api/imports/" + enc(id) + "/confirm") { importDetail(id) } }
+                if (command == "confirm") screens.confirm(MoteI18n.text("确认导入"), MoteI18n.text("核对预览后再确认")) { action("/api/imports/" + enc(id) + "/confirm") { importDetail(id) } }
                 else action("/api/imports/" + enc(id) + "/" + command) { importDetail(id) }
             } }
             ui.button(MoteI18n.text("刷新")) { importDetail(id) }

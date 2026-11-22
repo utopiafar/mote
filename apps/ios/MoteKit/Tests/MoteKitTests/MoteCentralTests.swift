@@ -129,8 +129,6 @@ final class MoteCentralTests: XCTestCase {
                        notification.metadata?.notification?.notificationKey)
         XCTAssertEqual(notificationOriginal.metadata?.collector?.method, "shortcuts")
 
-        let conversations = try await client.conversations()
-        XCTAssertTrue(conversations.items.contains { $0.id == conversationId })
         let conversation = try await client.conversation(id: try XCTUnwrap(UUID(uuidString: conversationId)))
         XCTAssertEqual(conversation.turns.first?.result?.answer, "Generated saved answer")
         XCTAssertEqual(conversation.turns.first?.result?.citations.first?.appName, "Generated source")
@@ -160,6 +158,12 @@ final class MoteCentralTests: XCTestCase {
         XCTAssertTrue(captures.items.contains { $0.id == note.id && $0.textPreview == "Generated iOS original" })
         let search = try await client.contextSearch(query: "Generated iOS original")
         XCTAssertTrue(search.items.contains { $0.id == note.id && $0.origin.source == .note })
+    }
+
+    func testMainConversationIdentityDecodesTheSingleIdResponse() throws {
+        let json = #"{"id":"00000000-0000-4000-8000-000000000003"}"#
+        let identity = try JSONDecoder().decode(ConversationIdentity.self, from: Data(json.utf8))
+        XCTAssertEqual(identity.id, "00000000-0000-4000-8000-000000000003")
     }
 
     func testContextSearchDecodesCaptureCards() throws {

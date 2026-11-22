@@ -16,7 +16,7 @@ enum SystemControlTarget: String, AppEnum {
         .record: "记录",
         .photo: "拍照",
         .recording: "录音",
-        .ask: "问一问",
+        .ask: "聊天",
     ]
 
     var entry: MoteEntry? { MoteSystemControl(rawValue: rawValue)?.entry }
