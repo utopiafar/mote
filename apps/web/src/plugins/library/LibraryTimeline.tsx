@@ -1,6 +1,6 @@
 import {commonFailureMessage,httpStatusMessage,formatEvidenceRef,type CaptureTimelineGroup,type CaptureTimelinePage,type CaptureTimelineMembers,type CaptureTimelineMember} from '@mote/shared';
 import {moteText,getLocale} from '@mote/shared/i18n';
-import {ChevronDown,ChevronLeft,ChevronRight,Clock3,FileText,Monitor,RefreshCw} from 'lucide-react';
+import {ChevronDown,ChevronLeft,ChevronRight,Clock3,FileText,Monitor,RefreshCw,Minus,Plus} from 'lucide-react';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ApiError,dateTime,errorMessage,type Api,type Device} from '../../api';
 import {captureDateRange,localDateInput} from '../../capture-presentation';
@@ -106,7 +106,7 @@ function TimelineGroup({api,scope,group,revision,refreshVersion,onOpen,onReload}
  const data=!returnReadReady||blocked(page.error)||mismatched||page.data===withdrawn.current?undefined:page.data;
  const title=group.kind==='screen-session'?(group.appName||moteText('应用未知')):sourceName(group.source);
  return <details className="library-time-group" data-group-id={group.id} data-import-return-ready={Boolean(returnReadReady&&(!current.open||page.error!==undefined||mismatched||!page.loading&&data!==undefined))} open={current.open} onToggle={event=>{if(event.currentTarget.open!==current.open)setState({...current,open:event.currentTarget.open});}}>
-  <summary><span className="library-time-symbol">{group.kind==='screen-session'?<Monitor size={18}/>:<FileText size={18}/>}</span><span><strong>{title}</strong><small>{group.deviceName} · {interval(group.firstAt,group.lastAt)}</small></span><span className="library-time-count">{counts(group)}{group.kind==='screen-session'&&<small>{moteText('{0} 张图片',group.imageCount)}</small>}{group.sampleCount!==null&&<small>{moteText('{0} 条记录',group.recordCount)}</small>}</span></summary>
+  <summary><span className="library-time-symbol">{group.kind==='screen-session'?<Monitor size={18}/>:<FileText size={18}/>}</span><span><strong>{title}</strong><small>{group.deviceName} · {interval(group.firstAt,group.lastAt)}</small></span><span className="library-time-count">{counts(group)}{group.kind==='screen-session'&&<small>{moteText('{0} 张图片',group.imageCount)}</small>}{group.sampleCount!==null&&<small>{moteText('{0} 条记录',group.recordCount)}</small>}</span><span className="library-time-toggle" aria-hidden="true">{current.open?<Minus size={14}/>:<Plus size={14}/>}</span></summary>
   {current.open&&!returnReadReady&&<Loading/>}
   {current.open&&<div className="library-time-members" aria-hidden={!returnReadReady||undefined} style={{visibility:returnReadReady?'visible':'hidden'}}>
    {(page.error!==undefined||mismatched)&&<TimelineFailure error={page.error??moteText('这组记录当前不可用，请重新读取当前范围。')} message={mismatched||page.error instanceof ApiError&&page.error.status===409?moteText('这组记录当前不可用，请重新读取当前范围。'):undefined} retry={mismatched||page.error instanceof ApiError&&page.error.status===409?onReload:page.refresh}/>}

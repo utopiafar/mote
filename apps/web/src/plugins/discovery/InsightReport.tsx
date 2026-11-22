@@ -1,7 +1,7 @@
 import {formatEvidenceRef} from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useId,useRef,useState,useSyncExternalStore} from 'react';
-import {Ellipsis,ArrowUpRight,ChevronDown} from 'lucide-react';
+import {Ellipsis,ArrowUpRight,ChevronDown,Check} from 'lucide-react';
 import {AnswerMarkdown} from '../ask/AnswerMarkdown';
 import {type Answer,dateTime} from '../../api';
 import {webAppearance} from '../../appearance';
@@ -34,8 +34,8 @@ export function InsightReport({answer,onOpen,onAsk,controlsTarget,owner,onAutoma
         items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();
       }}>
         {artifact&&<><div className="report-menu-label" role="presentation">{moteText('显示方式')}</div>
-        <button type="button" role="menuitemradio" aria-checked={view==='report'} onClick={()=>chooseView('report')}>{moteText('排版结果')}</button>
-        <button type="button" role="menuitemradio" aria-checked={view==='text'} onClick={()=>chooseView('text')}>{moteText('标准阅读')}</button></>}{onAutomaticSettings&&<button type="button" role="menuitem" onClick={()=>{setMoreOpen(false);onAutomaticSettings();}}>{moteText('自动生成设置')}</button>}
+        <button type="button" role="menuitemradio" aria-checked={view==='report'} onClick={()=>chooseView('report')}><Check size={14} className="report-view-check" aria-hidden="true"/>{moteText('排版结果')}</button>
+        <button type="button" role="menuitemradio" aria-checked={view==='text'} onClick={()=>chooseView('text')}><Check size={14} className="report-view-check" aria-hidden="true"/>{moteText('标准阅读')}</button></>}{onAutomaticSettings&&<button type="button" role="menuitem" onClick={()=>{setMoreOpen(false);onAutomaticSettings();}}>{moteText('自动生成设置')}</button>}
       </div>}
     </div>}</div>;
   return <article className="insight-report">

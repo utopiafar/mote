@@ -1034,7 +1034,7 @@ input,select,textarea { accent-color:var(--mote-accent); }
 .source-list-copy strong{font-weight:600;overflow-wrap:anywhere}
 .source-list-copy small,.source-state{font-size:12px;color:var(--mote-muted)}
 .source-state{white-space:nowrap}
-.source-state:before{content:'●';font-size:8px;margin-right:6px}
+.source-state:before{content:'';display:inline-block;width:6px;height:6px;margin-inline-end:6px;vertical-align:middle;border-radius:50%;background:currentColor}
 .source-state[data-state=idle],.source-state[data-state=syncing]{color:var(--mote-accent)}
 .source-state[data-state=error],.source-state[data-state=permission_required]{color:var(--mote-warning)}
 .source-screen-section{margin-top:30px}.source-screen-section h2{font-size:16px;margin:0 0 14px}
@@ -1254,7 +1254,7 @@ body[data-workspace-page="capture-sync"] main{padding-top:52px;padding-bottom:24
 .capture-sync-row{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:9px 14px;background:transparent;border:0;border-radius:0;color:var(--mote-ink);font-size:var(--mote-font-row);font-weight:400;line-height:1.45;text-align:left;white-space:normal}
 button.capture-sync-row{cursor:pointer}
 button.capture-sync-row:hover:not(:disabled){background:var(--mote-surface-hover)}
-.capture-sync-row>.icon{width:20px;height:20px;color:var(--mote-muted);stroke-width:1.65}
+.capture-sync-row>.icon{width:18px;height:18px;color:var(--mote-muted);stroke-width:1.65}
 .capture-sync-copy{display:block;flex:1;min-width:0}
 .capture-sync-copy strong{display:block;font-weight:500;color:var(--mote-ink);font-size:var(--mote-font-row)}
 .capture-sync-copy small{display:block;margin-top:1px;font-size:var(--mote-font-support);line-height:1.45;color:var(--mote-muted)}

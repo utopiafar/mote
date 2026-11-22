@@ -589,8 +589,8 @@
 .settings-directory-rows>button{grid-template-columns:33px minmax(0,1fr) 12px;gap:13px;padding:18px 1px}
 .settings-directory-rows>button>svg:first-child{color:var(--mote-accent)}
 .settings-directory-advanced>summary{list-style:none;padding:13px 0}
-.settings-directory-advanced>summary:before{content:'›';display:inline-block;margin-right:11px}
-.settings-directory-advanced[open]>summary:before{transform:rotate(90deg)}
+.settings-directory-advanced>summary>.disclosure-icon{vertical-align:middle;margin-inline-end:11px}
+.settings-directory-advanced[open]>summary>.disclosure-icon{transform:rotate(90deg)}
 .web-preference-section{margin:26px 0;padding:0;border:0}
 .web-preference-section h2{font-size:13px;margin:0 0 14px}
 .web-preferences select{height:44px;border:1px solid var(--mote-control-border);border-radius:var(--mote-radius-control);font-size:12px}
