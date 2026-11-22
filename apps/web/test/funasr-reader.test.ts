@@ -22,7 +22,7 @@ test('production FunASR bytes reach archive, reader, exact seek, owner naming, m
  const originalPlayer=ui.d.querySelector('audio')!;
  await ui.click('说话人');assert.ok(ui.stopped.includes(originalPlayer));assert.match(ui.d.body.textContent!,/CAM\+\+ \/ FunASR 1\.4\.25/);assert.doesNotMatch(ui.d.body.textContent!,/WeSpeaker|轮廓系数|sherpa/);
  const name=ui.d.querySelector<HTMLInputElement>('[data-recording-name="SPEAKER_0"]')!;await ui.input(name,'  Generated owner name  ');
- const sample=[...ui.d.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent?.trim()==='▷ 试听片段')!;await act(async()=>sample.click());await until(()=>!!ui.d.querySelector('.recording-sample-player'));
+ const sample=[...ui.d.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent?.trim()==='试听片段')!;await act(async()=>sample.click());await until(()=>!!ui.d.querySelector('.recording-sample-player'));
  assert.equal(ui.d.querySelectorAll('.recording-sample-player').length,1);assert.ok(f.calls.some(call=>call.path.includes('speaker_samples%2FSPEAKER_0.wav')));
  await ui.click('保存名称');await until(()=>!ui.d.querySelector('.recording-dialog'));
  const named=await f.api.request<any>('/api/files/'+id+'/chunks?offset=0');assert.equal(named.items[0].fileEvidence.speakerAttribution.name,'Generated owner name');
@@ -64,7 +64,7 @@ for(const change of ['file','version','owner','close'] as const)test('late speak
  const ui=await audioDom(t),sample=deferred<Response>(),save=deferred(),signals:AbortSignal[]=[],events:string[]=[];
  const api={request:async(_path:string,init?:RequestInit)=>{if(init?.method){signals.push(init.signal as AbortSignal);return save.promise;}return {items:[]};},raw:async(_path:string,init?:RequestInit)=>{signals.push(init?.signal as AbortSignal);return sample.promise;}} as Api;
  const props={api,id:fileId,artifacts:speakerArtifacts(),onChanged:async()=>{events.push('changed');},onClose:()=>events.push('closed'),initialSection:'speakers' as const};
- await ui.render(React.createElement(FileReview,props));await ui.input(ui.d.querySelector('input')!,'Old pending name');await ui.click('▷ 试听片段');await ui.click('保存名称');assert.equal(signals.length,2);
+ await ui.render(React.createElement(FileReview,props));await ui.input(ui.d.querySelector('input')!,'Old pending name');await ui.click('试听片段');await ui.click('保存名称');assert.equal(signals.length,2);
  await ui.render(change==='close'?null:React.createElement(FileReview,{...props,...(change==='file'?{id:randomUUID()}:change==='version'?{artifacts:speakerArtifacts(randomUUID(),randomUUID())}:{api:{...api} as Api})}));
  assert.ok(signals.every(signal=>signal?.aborted),'only page requests are aborted, without a Central cancel action');
  await act(async()=>{sample.resolve(new Response('late generated sample'));save.resolve({saved:true});});
