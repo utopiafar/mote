@@ -48,18 +48,18 @@ for(const failure of ['pin','revoked','model'] as const)test('cancelled retry do
  await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api))));await click(d,'开始提取');changed=true;await click(d,'重试');assert.equal(seen.filter(read=>read.method==='POST').length,1);assert.match(d.querySelector('.memory-work-job')!.textContent!,/cancelled-old/);assert.equal(Boolean(d.querySelector('[role="alert"]')),true);assert.equal(seen.some(read=>read.path.endsWith('/retry')),false);
 });
 test('an adopted cancelled job cannot reconstruct or offer a new admission retry',async t=>{
- const{root,d}=await fixture(t),seen:Seen[]=[],api=owner(undefined,seen);await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api,{kind:'current',choice:undefined,jobId:'adopted'}))));assert.equal([...d.querySelectorAll('button')].some(button=>button.textContent==='重试'),false);assert.match(d.querySelector('.memory-work-scope-details')!.textContent!,/未记录/);await click(d,'← 返回');assert.equal(Boolean(d.querySelector('.memory-work-choices')),true);assert.equal(seen.some(read=>read.method==='POST'),false);
+ const{root,d}=await fixture(t),seen:Seen[]=[],api=owner(undefined,seen);await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api,{kind:'current',choice:undefined,jobId:'adopted'}))));assert.equal([...d.querySelectorAll('button')].some(button=>button.textContent==='重试'),false);assert.match(d.querySelector('.memory-work-scope-details')!.textContent!,/未记录/);await click(d,'返回');assert.equal(Boolean(d.querySelector('.memory-work-choices')),true);assert.equal(seen.some(read=>read.method==='POST'),false);
 });
 test('back navigation during source revalidation and owner changes cannot admit or display a late task',async t=>{
  const{root,d}=await fixture(t),seen:Seen[]=[];let resolve!:(value:unknown)=>void,reads=0;const api=owner(path=>path.startsWith('/api/capture-browser/')&&++reads===2?new Promise(done=>resolve=done):undefined,seen),next=owner();
- await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api))));await click(d,'开始提取');await click(d,'← 返回');await act(async()=>resolve({id,libraryVersion:'pin-one'}));assert.equal(seen.some(read=>read.method==='POST'),false);
+ await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api))));await click(d,'开始提取');await click(d,'返回');await act(async()=>resolve({id,libraryVersion:'pin-one'}));assert.equal(seen.some(read=>read.method==='POST'),false);
  reads=1;await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api,{token:2}))));await click(d,'开始提取');await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(next,{token:3,choice:undefined}))));await act(async()=>resolve({id,libraryVersion:'pin-one'}));assert.equal(seen.some(read=>read.method==='POST'),false);assert.equal(Boolean(d.querySelector('.memory-work-job')),false);
 });
 test('choosing date scope after an original returns to date inputs rather than retaining the original',async t=>{
- const{root,d}=await fixture(t),api=owner();await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api))));await click(d,'← 返回');await click(d,'按时间范围提取');assert.equal(d.querySelectorAll('input[type="date"]').length,2);assert.equal(Boolean(d.querySelector('.memory-work-scope-notice')),false);
+ const{root,d}=await fixture(t),api=owner();await act(async()=>root.render(React.createElement(ManualMemoryWorkspace,props(api))));await click(d,'返回');await click(d,'按时间范围提取');assert.equal(d.querySelectorAll('input[type="date"]').length,2);assert.equal(Boolean(d.querySelector('.memory-work-scope-notice')),false);
 });
 test('Search Memory More opens the real integration scope without POST and returns to the same detail before Search',async t=>{
- const{root,d}=await fixture(t),seen:Seen[]=[],api=owner(undefined,seen);let back=0;await act(async()=>root.render(React.createElement(MemoryDetailPage,{api,id,onOpen:()=>{},onBack:()=>back++})));await click(d,'更多');await click(d,'从这条记忆开始整理');assert.match(d.querySelector('.memory-workspace-final h1')!.textContent!,/整理这条记忆/);assert.match(d.querySelector('.memory-integration-workspace')!.textContent!,/Generated Memory a/);assert.equal(d.querySelector<HTMLDetailsElement>('.memory-integration-workspace .memory-processing-options')!.open,false);assert.equal(Boolean(d.querySelector('.memory-integration-workspace a[href="#/system/models"]')?.closest('details')),true);assert.equal(seen.some(read=>read.method==='POST'),false);await click(d,'← 返回');assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'Generated Memory a');assert.equal(back,0);await click(d,'返回');await click(d,'返回');assert.equal(back,1);assert.equal(window.location.hash,'#/search?q=generated');
+ const{root,d}=await fixture(t),seen:Seen[]=[],api=owner(undefined,seen);let back=0;await act(async()=>root.render(React.createElement(MemoryDetailPage,{api,id,onOpen:()=>{},onBack:()=>back++})));await click(d,'更多');await click(d,'从这条记忆开始整理');assert.match(d.querySelector('.memory-workspace-final h1')!.textContent!,/整理这条记忆/);assert.match(d.querySelector('.memory-integration-workspace')!.textContent!,/Generated Memory a/);assert.equal(d.querySelector<HTMLDetailsElement>('.memory-integration-workspace .memory-processing-options')!.open,false);assert.equal(Boolean(d.querySelector('.memory-integration-workspace a[href="#/system/models"]')?.closest('details')),true);assert.equal(seen.some(read=>read.method==='POST'),false);await click(d,'返回');assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'Generated Memory a');assert.equal(back,0);await click(d,'返回');await click(d,'返回');assert.equal(back,1);assert.equal(window.location.hash,'#/search?q=generated');
 });
 test('chooser 503 preserves its cursor page, 409 withdraws it, and a new device never receives the old cursor',async t=>{
  const{root,d}=await fixture(t),seen:Seen[]=[];let status=0;const api=owner(path=>{if(path.startsWith('/api/library/browse?')){if(status)throw new ApiError('generated failure',status);return{items:[{entryType:'capture',ref:'capture:'+id,revision:'pin-one',contentAt:at,capture:{windowTitle:'Generated chooser'}}],nextCursor:'cursor-A'};}},seen);
@@ -70,7 +70,7 @@ test('a completed integration opened from Search returns to the selected Memory 
   if(path==='/api/memory-integrations'&&init?.method==='POST'){completed=true;return{id:'generated-integration'};}
   if(path==='/api/memory-settings')return{settings:{consolidation:{enabled:false,maxItems:5}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0,...(completed?{lastRun:{id:'generated-integration',completedAt:Date.parse(at)}}:{})}]};
  },seen);
- await act(async()=>root.render(React.createElement(MemoryDetailPage,{api,id,onOpen:()=>{},onBack:()=>back++})));await click(d,'更多');await click(d,'从这条记忆开始整理');await click(d,'开始整理');assert.match(d.querySelector('.memory-integration-workspace')!.textContent!,/本次手动整理已完成.*零条新记忆也是有效结果/);assert.equal(seen.filter(read=>read.method==='POST').length,1);await click(d,'← 返回');assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'Generated Memory a');assert.equal(back,0);assert.equal(window.location.hash,'#/search?q=generated');
+ await act(async()=>root.render(React.createElement(MemoryDetailPage,{api,id,onOpen:()=>{},onBack:()=>back++})));await click(d,'更多');await click(d,'从这条记忆开始整理');await click(d,'开始整理');assert.match(d.querySelector('.memory-integration-workspace')!.textContent!,/本次手动整理已完成.*零条新记忆也是有效结果/);assert.equal(seen.filter(read=>read.method==='POST').length,1);await click(d,'返回');assert.equal(d.querySelector('.memory-detail-heading h2')?.textContent,'Generated Memory a');assert.equal(back,0);assert.equal(window.location.hash,'#/search?q=generated');
 });
 
 test('a selected capture without a current opaque pin stays disabled and cannot admit a request',async t=>{
@@ -88,7 +88,7 @@ test('a hidden integration view never polls memory settings and resumes exactly 
  await click(d,'查看最近的处理');assert.equal(reads(),1,'activation reads immediately');const visible=reads();
  for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));
  assert.equal(reads()-visible,20,'the visible integration view polls once every three seconds over sixty seconds');
- await click(d,'← 返回');const folded=reads();
+ await click(d,'返回');const folded=reads();
  await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
  for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));
  assert.equal(reads(),folded,'leaving the view stops all its active reads again without losing mounted state');
@@ -106,7 +106,7 @@ test('integration activates with a fresh shared read without treating another su
  await render(true);const cached=reads();assert.equal(cached,2);
  await click(d,'查看最近的处理');assert.equal(reads(),cached+1,'an already observed, warm cache still gets a fresh activation read');
  await act(async()=>t.mock.timers.tick(3000));assert.equal(reads(),cached+2);
- await click(d,'← 返回');const hidden=reads();
+ await click(d,'返回');const hidden=reads();
  await act(async()=>t.mock.timers.tick(60000));assert.equal(reads(),hidden,'the remaining shared reader has no integration polling timer');
  await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
  assert.equal(reads(),hidden+1,'the other visible subscriber can still revalidate its shared resource');
@@ -125,7 +125,7 @@ test('closing the actual Memories integration workspace stops reads while retain
  const panel=d.querySelector('#manual-memory-integration')!,select=panel.querySelector<HTMLSelectElement>('select')!;
  await act(async()=>{select.value='generated.second@2';select.dispatchEvent(new d.defaultView!.Event('change',{bubbles:true}));});
  await click(d,'开始整理',panel);assert.match(panel.textContent!,/Generated integration action failed/);
- await click(d,'← 返回');assert.equal(d.querySelector('.memory-work-stage')!.hasAttribute('hidden'),true);
+ await click(d,'返回');assert.equal(d.querySelector('.memory-work-stage')!.hasAttribute('hidden'),true);
  assert.equal(d.querySelector('#manual-memory-integration'),panel,'the hidden work page retains the actual integration component');
  const hidden=reads();await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
  for(let step=0;step<20;step++)await act(async()=>t.mock.timers.tick(3000));

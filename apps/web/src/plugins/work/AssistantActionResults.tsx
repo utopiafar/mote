@@ -1,3 +1,4 @@
+import {ArrowRight} from 'lucide-react';
 import React,{useEffect,useRef,useState} from 'react';
 import type {AssistantActionResults as Results,QueryScope} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
@@ -40,7 +41,7 @@ export function AssistantActionResults({api,taskId,scope,canCreate=true}:{api:Ap
    return <section key={index} data-assistant-action={index}>
     <strong>{title}</strong>
     <p>{draft.kind==='message.send'?draft.message.text:draft.kind==='todo.create'?draft.todo.description:draft.event.description}</p>
-    {linked?<><a className="text-button" href={destination}>{title} →</a><span role="status"> · {label}</span>
+    {linked?<><a className="text-button" href={destination}>{title}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a><span role="status"> · {label}</span>
      {linked.error&&<p role="alert">{linked.error}</p>}</>:
      <>{targets.length>0&&<select aria-label={moteText('目标设备')} value={choices[index]??0} disabled={busy} onChange={event=>setChoices(value=>({...value,[index]:Number(event.target.value)}))}>
       {targets.map((target,i)=><option key={i} value={i}>{target.name}</option>)}

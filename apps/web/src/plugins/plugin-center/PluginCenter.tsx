@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {Check,ChevronRight,Package,RefreshCw,Settings2,ShieldCheck,X} from 'lucide-react';
+import {Check,ChevronRight,Package,RefreshCw,Settings2,ShieldCheck,X,ArrowLeft,ArrowRight} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {MemoryBindingView,MemoryPlanView,PluginBuildView,PluginCatalogEntry,PluginCatalogGroup,PluginCenterView,PluginInstanceView,PluginPackageView,PluginReleasePreview} from '@mote/shared';
 import {ApiError,errorMessage,type Api} from '../../api';
@@ -126,7 +126,7 @@ export function PluginCenter({api,onPage,viewScope,mode='plugins'}:{api:Api;onPa
  const waitingAuthorization=Boolean(authorization.error===undefined&&admission?.desired&&admission.state==='enabled'&&authorization.data?.authorization&&authorization.data.authorization.state==='off');
  const automaticStatus=!admission?moteText('状态未知'):admission.desired&&admission.state==='enabled'?authorization.error!==undefined?moteText('自动处理状态暂不可用'):!authorization.data?.authorization?(authorization.loading?<LoadingText/>:moteText('状态未知')):waitingAuthorization?moteText('等待开启自动处理'):memoryAdmissionLabel(admission):memoryAdmissionLabel(admission);
  return <div className="plugin-center">
-  {mode==='plugins'&&!(tab==='installed'&&currentPackage)&&<button className="back-link plugin-owner-back" onClick={()=>onPage('about')}>← {moteText('设置')}</button>}{tab==='installed'&&currentPackage&&<button className="back-link" disabled={busy} onClick={()=>setSelected(undefined)}>← {moteText('已安装插件')}</button>}{mode==='plugins'&&<div className="page-heading split-heading"><div><h1>{tab==='installed'&&currentPackage?currentPackage.name:moteText('插件中心')}</h1></div></div>}
+  {mode==='plugins'&&!(tab==='installed'&&currentPackage)&&<button className="back-link plugin-owner-back" onClick={()=>onPage('about')}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('设置')}</button>}{tab==='installed'&&currentPackage&&<button className="back-link" disabled={busy} onClick={()=>setSelected(undefined)}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('已安装插件')}</button>}{mode==='plugins'&&<div className="page-heading split-heading"><div><h1>{tab==='installed'&&currentPackage?currentPackage.name:moteText('插件中心')}</h1></div></div>}
   <nav hidden={mode==='memory'||tab==='installed'&&Boolean(currentPackage)} className="segmented-nav plugin-tabs" aria-label={moteText('插件页面')}>
    {(['discover','installed'] as const).map(value=><button key={value} className={tab===value?'active':''} aria-pressed={tab===value} onClick={()=>{if(confirmNavigation())setTab(value);}}>{value==='installed'?moteText('已安装插件'):moteText('官方目录')}</button>)}
   </nav>
@@ -178,7 +178,7 @@ export function PluginCenter({api,onPage,viewScope,mode='plugins'}:{api:Api;onPa
   {tab==='memory'&&<>
    {bindingResource.loading&&!binding&&<Loading/>}
    {binding&&<><section className="panel plugin-memory-control"><div className="section-heading"><div><h2>{moteText('自动记忆')}</h2><p role="status">{automaticStatus}</p></div><button type="button" role="switch" aria-checked={admission!.desired} aria-label={moteText('自动记忆')} className={'plugin-memory-switch '+(admission!.desired?'is-on':'')} disabled={busy||!(admission!.desired?memoryActions.includes('pause'):memoryActions.includes('resume'))} onClick={()=>memoryCommand(admission!.desired?'pause':'resume')}>{admission!.desired?moteText('已选择启用'):moteText('已选择暂停')}</button></div>
-    {authorization.error!==undefined&&<p className="notice error" role="alert">{errorMessage(authorization.error)}<button className="text-button" onClick={authorization.refresh}>{moteText('重新读取')}</button></p>}{waitingAuthorization&&<p className="plugin-waiting-authorization"><a className="text-button" href="#/system/models?category=processing">{moteText('开启自动处理')} →</a></p>}
+    {authorization.error!==undefined&&<p className="notice error" role="alert">{errorMessage(authorization.error)}<button className="text-button" onClick={authorization.refresh}>{moteText('重新读取')}</button></p>}{waitingAuthorization&&<p className="plugin-waiting-authorization"><a className="text-button" href="#/system/models?category=processing">{moteText('开启自动处理')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a></p>}
     {admission!.blockedReason&&<p className="notice">{admission!.blockedReason}</p>}
     {!admission!.desired&&<p>{moteText('暂停期间的新资料只归档。恢复只处理新资料，不会自动补跑暂停期间的历史。')}</p>}
     {admission!.state==='draining'&&<p>{moteText('已停止新增自动任务；已授权任务保留原范围与代次，完成后停用。')}</p>}

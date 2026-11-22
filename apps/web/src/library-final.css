@@ -89,7 +89,7 @@
 .library-time-final .library-time-daybar { display:flex; align-items:center; gap:10px; margin:20px 0 12px; }
 .library-time-final .library-time-daybar>.icon-button { width:28px; height:29px; min-height:0; padding:0; color:var(--mote-muted); }
 .library-time-final .library-time-daypicker { position:relative; min-width:141px; text-align:center; font-size:13px; color:var(--mote-ink); cursor:pointer; }
-.library-time-final .library-time-daypicker:after { content:'⌄'; font-size:11px; color:var(--mote-muted); margin-left:8px; }
+.library-time-final .library-time-daypicker>svg { color:var(--mote-muted); margin-left:8px; }
 .library-time-final .library-time-daypicker input { position:absolute; inset:0; width:100%; opacity:0; cursor:pointer; }
 .library-time-final .library-time-daypicker:focus-within { outline:2px solid var(--mote-accent); outline-offset:3px; border-radius:3px; }
 .library-time-final .library-time-daypicker input::-webkit-calendar-picker-indicator { position:absolute; inset:0; width:auto; height:auto; cursor:pointer; }

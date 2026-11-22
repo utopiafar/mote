@@ -184,10 +184,11 @@ test('proposed status filters the current server page and resets its previous cu
  await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
  const click=(text:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent?.trim()===text)!.click());
  await click('下一页');assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.get('cursor'),'generated-cursor');
- await click('筛选 ⌄');await click('待重新处理');
+ await click('筛选');await click('待重新处理');
  const selected=new URL('http://localhost'+paths.at(-1)).searchParams;assert.equal(selected.get('status'),'proposed');assert.equal(selected.has('cursor'),false);
  assert.equal(d.querySelector('.workspace-list-heading h2')?.textContent,'待重新处理');assert.match(d.body.textContent!,/当前筛选下没有匹配/);assert.equal(d.querySelector('#memory-search')!.closest('[hidden]'),null);
- await click('待重新处理 ×');assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.has('status'),false);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.memory-active-filters .memory-filter-chip')!.click());
+ assert.equal(new URL('http://localhost'+paths.at(-1)).searchParams.has('status'),false);
 });
 
 test('closed developer tools never mount an execution reader and opening starts its five-second reads',async t=>{
@@ -220,7 +221,7 @@ test('closed developer tools never mount an execution reader and opening starts 
  const workspace=reads();await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));
  for(let step=0;step<12;step++)await act(async()=>t.mock.timers.tick(5000));
  assert.equal(reads(),workspace,'the hidden browse stage owns no queue reader during the manual workspace visit');
- await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('.memory-work-stage button')].find(button=>button.textContent==='← 返回')!.click());
+ await act(async()=>[...d.querySelectorAll<HTMLButtonElement>('.memory-work-stage button')].find(button=>button.textContent==='返回')!.click());
  assert.equal(d.querySelector('.memory-browse-stage')!.hasAttribute('hidden'),false);assert.equal(disclosure.open,true);
  assert.equal(reads(),workspace+1,'returning to the still-open disclosure reads fresh immediately');
  await toggle();const closed=reads();

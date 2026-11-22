@@ -1,5 +1,5 @@
 import {moteText} from '@mote/shared/i18n';
-import {ChevronRight, FileText, Image, AudioLines} from 'lucide-react';
+import {ChevronRight, FileText, Image, AudioLines,ArrowRight} from 'lucide-react';
 import type {FilePolicy} from '@mote/shared';
 import {type Api,errorMessage} from '../../api';
 import {useResource} from '../../useResource';
@@ -13,6 +13,6 @@ export function ProcessingOverview({api,onSelect}:{api:Api;onSelect:(category:'i
  return <section className="processing-overview" aria-label={moteText('资料处理')}>
   {read.error!==undefined&&<p role="alert">{errorMessage(read.error)}</p>}
   {rows.map(({id,title,description,value,Icon})=><button type="button" className="processing-entry-row" key={id} onClick={()=>onSelect(id)}><span className="model-profile-symbol"><Icon size={18}/></span><span><strong>{title}</strong><small>{description}</small></span><span className="processing-current">{value||(read.loading?<LoadingText/>:moteText('未配置'))}</span><ChevronRight size={15}/></button>)}
-  <div className="processing-existing-links"><button className="text-button" onClick={()=>onSelect('providers')}>{moteText('服务连接')} →</button><a className="text-button" href="#/activity">{moteText('后台活动')} →</a></div>
+  <div className="processing-existing-links"><button className="text-button" onClick={()=>onSelect('providers')}>{moteText('服务连接')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></button><a className="text-button" href="#/activity">{moteText('后台活动')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a></div>
  </section>;
 }

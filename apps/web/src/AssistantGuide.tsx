@@ -1,3 +1,4 @@
+import {ChevronRight} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {DiscoveryLink} from './DiscoveryLink';
 import {assistantDiscoveryTarget,assistantEntrypoints} from './assistant-entrypoints';
@@ -13,7 +14,7 @@ export function AssistantGuide(){
     <div className="guide-unit-list">{assistantEntrypoints.map(entry=><div className="guide-unit" data-assistant-entry={entry.pageId} key={entry.pageId}>
       <DiscoveryLink target={assistantDiscoveryTarget(entry)} className="guide-unit-link">
         <span><strong>{moteText(entry.title)}</strong><small className="assistant-guide-purpose">{moteText(entry.purpose)}</small></span>
-        <span className="guide-chevron" aria-hidden="true">›</span>
+        <span className="guide-chevron" aria-hidden="true"><ChevronRight size={14} aria-hidden="true"/></span>
       </DiscoveryLink>
     </div>)}</div>
   </details>;

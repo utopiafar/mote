@@ -1,3 +1,4 @@
+import {desktopIcon} from './desktop-icon';
 import { moteText } from '@mote/shared/i18n';
 import type { DesktopApi } from './contracts';
 import type { PermissionKind, PermissionStatus } from './permission-types';
@@ -24,7 +25,7 @@ export function createPermissionsUi(api: Pick<DesktopApi, 'permissionStatus' | '
       const granted = value === 'granted', unknown = !['granted', 'denied', 'restricted', 'not-determined'].includes(value);
       const badge = byId('permission-' + kind);
       badge.className = 'permission-badge ' + (granted ? 'granted' : unknown ? 'unknown' : 'denied');
-      badge.textContent = (granted ? '✓ ' : unknown ? '? ' : '! ') + (labels[value] ?? labels.unknown);
+      badge.replaceChildren(desktopIcon(document, granted ? 'check' : unknown ? 'circle-help' : 'circle-alert', true), ' ' + (labels[value] ?? labels.unknown));
       const button = root.querySelector<HTMLButtonElement>(`[data-permission-request="${kind}"]`)!;
       button.textContent = pending.has(kind) ? moteText('正在打开…') : granted ? moteText('管理权限 ↗') : kind === 'calendar' ? moteText('授权日历') : moteText('前往授权 ↗');
     }

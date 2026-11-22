@@ -1,6 +1,6 @@
 import {provideMaintenanceDownload,maintenanceFailure,maintenanceTechnicalFailure} from './maintenance-transfer';
 import { getLocale, moteText } from '@mote/shared/i18n';
-import { CheckCircle2, LoaderCircle, RefreshCw } from "lucide-react";
+import { CheckCircle2, LoaderCircle, RefreshCw ,ArrowRight} from "lucide-react";
 import { useMemo, useRef, type ReactNode } from "react";
 import { bytes, dateTime, errorMessage, ApiError, type Api, type Status } from "../../api";
 import { ErrorNotice } from '../../shell-components';
@@ -68,12 +68,12 @@ export function Vault({ api, status, refresh, disconnect, embedded = false, chil
       <details className="owner-disclosure"><summary>{moteText('存储空间明细')}</summary>
         <StorageDetails api={api} embedded onUsage={()=>{window.location.hash='#/system/usage';}}/>
         <dl className="storage-stats"><div><dt>{moteText('上下文记录')}</dt><dd>{storage.captures.toLocaleString(getLocale())}</dd></div><div><dt>{moteText('独立影像对象')}</dt><dd>{storage.blobs.toLocaleString(getLocale())}</dd></div><div><dt>{moteText('影像原始大小')}</dt><dd>{bytes(storage.imageBytes)}</dd></div><div><dt>{moteText('最早记录')}</dt><dd>{storage.firstCaptureAt?dateTime(storage.firstCaptureAt):moteText('尚无记录')}</dd></div></dl>
-        <p className="fine-print">{moteText('相同影像共享一份存储，每次采样仍保留独立观察记录。')}{storage.imageCaptures!==undefined&&moteText('已复用 {0} 次影像。',Math.max(0,storage.imageCaptures-storage.blobs))}</p><a href="#/system" className="text-button">{moteText('按文件类型')} · {moteText('按日期')} →</a>
+        <p className="fine-print">{moteText('相同影像共享一份存储，每次采样仍保留独立观察记录。')}{storage.imageCaptures!==undefined&&moteText('已复用 {0} 次影像。',Math.max(0,storage.imageCaptures-storage.blobs))}</p><a href="#/system" className="text-button">{moteText('按文件类型')} · {moteText('按日期')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a>
       </details>
       <details className="owner-disclosure"><summary>{moteText('存储与备份')}</summary>
       <div><h3>{moteText('检索索引')}</h3><p>{status.index.model||moteText('文本检索')}</p><div className="index-statuses">{storage.indexing.map(row=><span key={row.status}>{({pending:moteText('等待索引'),indexed:moteText('已建立向量索引'),text_ready:moteText('文本就绪'),failed:moteText('索引失败')} as Record<string,string>)[row.status]||row.status} <strong>{row.count}</strong></span>)}</div>
-        <button className="button" disabled={!!busy||status.index.mode!=='hybrid'} onClick={()=>void action('retry',async()=>{const result=await api.request<{queued:number}>('/api/index/retry',{method:'POST',body:'{}'});return moteText('已将 {0} 条记录加入索引队列。',result.queued);})}><RefreshCw size={14} className={busy==='retry'?'spin':''}/>{moteText('重试索引')}</button><a className="text-button" href="#/system/models?category=embedding">{moteText('检索索引')} →</a>
+        <button className="button" disabled={!!busy||status.index.mode!=='hybrid'} onClick={()=>void action('retry',async()=>{const result=await api.request<{queued:number}>('/api/index/retry',{method:'POST',body:'{}'});return moteText('已将 {0} 条记录加入索引队列。',result.queued);})}><RefreshCw size={14} className={busy==='retry'?'spin':''}/>{moteText('重试索引')}</button><a className="text-button" href="#/system/models?category=embedding">{moteText('检索索引')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a>
       </div>
-      <p>{moteText('存储空间')} {bytes(storage.bytes)}</p><p>{moteText('持续保留 · 未启用自动删除')}</p><a className="text-button" href="#/system/models?category=storage">{moteText('存储与备份')} →</a><dl><dt>{moteText('推理模型')}</dt><dd>{status.agent.model||moteText('尚未配置')}</dd><dt>{moteText('自动回顾')}</dt><dd>{status.insightIntervalHours?moteText('每 {0} 小时且有足够新增资料',status.insightIntervalHours):moteText('手动生成')}</dd></dl><p className="fine-print">{moteText('当前服务（中央）')} · {window.location.origin}</p><button className="text-button" onClick={disconnect}>{moteText('退出登录')}</button></details>
+      <p>{moteText('存储空间')} {bytes(storage.bytes)}</p><p>{moteText('持续保留 · 未启用自动删除')}</p><a className="text-button" href="#/system/models?category=storage">{moteText('存储与备份')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a><dl><dt>{moteText('推理模型')}</dt><dd>{status.agent.model||moteText('尚未配置')}</dd><dt>{moteText('自动回顾')}</dt><dd>{status.insightIntervalHours?moteText('每 {0} 小时且有足够新增资料',status.insightIntervalHours):moteText('手动生成')}</dd></dl><p className="fine-print">{moteText('当前服务（中央）')} · {window.location.origin}</p><button className="text-button" onClick={disconnect}>{moteText('退出登录')}</button></details>
     </div></MaintenanceContext.Provider>;
 }

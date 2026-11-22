@@ -7,6 +7,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 h1:focus { outline: none; }
 .icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; }
 .icon { width: 20px; height: 20px; display: block; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.icon-inline { width: 16px; height: 16px; display: inline-block; vertical-align: middle; }
 .sidebar-label { margin: 0 14px 13px; color: var(--mote-muted); font-size: var(--mote-font-meta); letter-spacing: 1.2px; }
 .nav-item .icon { width: 18px; height: 18px; stroke-width: 1.65; }
 .central-link .icon { width: 17px; height: 17px; }
@@ -280,7 +281,6 @@ details.disclosure>.hint:last-child { margin-bottom: 0; }
 .home-status .local-dot { background: var(--mote-success); }
 .home-status>details { font-size: var(--mote-font-support); }
 .home-status>details>summary { font-size: var(--mote-font-support); color: var(--mote-accent); white-space: nowrap; list-style: none; }
-.home-status>details>summary::after { content: ' ⌄'; }
 .home-state-details .central-status { margin-bottom: 12px; background: var(--mote-background); border: 0; }
 .home-state-details .sync-summary { margin-top: 0; box-shadow: var(--mote-shadow); border: 0; padding: 8px 4px; }
 .home-state-details .sync-summary>.actions { align-items: flex-start; }
