@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
-import {UiPresentationHost,linearUiTheme,defaultUiLayout,androidUiLayout,desktopUiLayout,uiDestinationPresentation} from '../dist/ui-presentation.js';
+import {UiPresentationHost,linearUiTheme,defaultUiLayout,androidUiLayout} from '../dist/ui-presentation.js';
 import {PluginI18nRegistry} from '../dist/plugin-i18n.js';
 import {parseUiContribution} from '../dist/plugin-ui.js';
 import {configureLocale} from '../dist/i18n.js';
@@ -22,11 +22,12 @@ test('native assets, CSS and the compiled theme derive from the same selected de
   const androidTokens=values=>Object.fromEntries(Object.entries(values).map(([key,value])=>[key,/^#[\da-f]{8}$/i.test(value)?`#${value.slice(7,9)}${value.slice(1,7)}`:value]));
   const androidTheme={...linearUiTheme,tokens:androidTokens(linearUiTheme.tokens),schemes:Object.fromEntries(Object.entries(linearUiTheme.schemes).map(([scheme,values])=>[scheme,androidTokens(values)]))};
   assert.equal(asset.schemaVersion,1);assert.deepEqual(asset.theme,androidTheme);assert.deepEqual(asset.layout,androidUiLayout);
+  assert.equal('primary' in asset.layout,false);assert.equal('navigation' in asset.layout,false);
 });
 test('presentation changes atomically and disposal restores the built-in provider',()=>{
   const host=fixture();
   const theme={...linearUiTheme,id:'fixture.theme',tokens:{...linearUiTheme.tokens,accent:'#ffcc88'}};
-  const alternative={...defaultUiLayout,id:'fixture.layout',navigation:'top',detail:'stack',implementation:{name:'alternative'}};
+  const alternative={...defaultUiLayout,id:'fixture.layout',detail:'stack',implementation:{name:'alternative'}};
   const removeTheme=host.registerTheme(theme),removeLayout=host.registerLayout(alternative);
   let notifications=0;const unsubscribe=host.subscribe(()=>notifications++);
   const before=host.getSnapshot();
@@ -41,14 +42,15 @@ test('presentation changes atomically and disposal restores the built-in provide
   removeTheme();assert.equal(host.getSnapshot().theme.id,linearUiTheme.id);
   unsubscribe();removeLayout();assert.equal(notifications,3);
 });
-test('data-only themes and complete core navigation are validated before registration',()=>{
+test('data-only themes and detail-only layouts are validated before registration',()=>{
   const host=fixture();
   assert.throws(()=>host.registerTheme({...linearUiTheme,id:'fixture.remote',tokens:{...linearUiTheme.tokens,font:'url(https://example.invalid/font)'}}),/Invalid theme/);
   assert.throws(()=>host.registerTheme({...linearUiTheme,id:'fixture.partial',tokens:{accent:'#ffffff'}}),/roles/);
-  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.hidden',primary:['library'],implementation:{}}),/layout contract/);
-  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.overlap',secondary:['home'],implementation:{}}),/layout contract/);
-  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.duplicate',secondary:['activity','activity'],implementation:{}}),/layout contract/);
-  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.unknown',secondary:['settings'],implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.detail',detail:'hidden',implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.primary',primary:['generated'],implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.secondary',secondary:['generated'],implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.initial',initial:'generated',implementation:{}}),/layout contract/);
+  assert.throws(()=>host.registerLayout({...defaultUiLayout,id:'fixture.navigation',navigation:'generated',implementation:{}}),/layout contract/);
   assert.throws(()=>host.registerTheme(linearUiTheme),/already installed/);
   const pack={...linearUiTheme,id:'fixture.pinned',tokens:{...linearUiTheme.tokens}};
   host.registerTheme(pack);pack.tokens.accent='#ffffff';
@@ -56,34 +58,25 @@ test('data-only themes and complete core navigation are validated before registr
   assert.equal(host.getSnapshot().theme.tokens.accent,linearUiTheme.tokens.accent);
   assert(Object.isFrozen(host.getSnapshot().theme.tokens));
 });
-test('Android home-only presentation can change providers without restoring retired primary tabs',()=>{
+test('layout providers change only the detail contract and reject retired navigation fields',()=>{
   const host=new UiPresentationHost({theme:linearUiTheme,layout:{...androidUiLayout,implementation:{name:'phone'}}});
-  assert.deepEqual(host.getSnapshot().layout.primary,['home']);
+  assert.deepEqual(host.getSnapshot().layout,{id:'mote.android',version:'1',detail:'stack',implementation:{name:'phone'}});
   const replacement={...androidUiLayout,id:'fixture.phone',implementation:{name:'generated-phone'}};
   const remove=host.registerLayout(replacement);host.activate({theme:linearUiTheme,layout:replacement});
-  assert.equal(host.getSnapshot().layout.navigation,'home');assert.equal(host.getSnapshot().layout.detail,'stack');
+  assert.equal(host.getSnapshot().layout.detail,'stack');
+  assert.equal('primary' in host.getSnapshot().layout,false);
   for(const invalid of [
-    {...replacement,id:'fixture.tabs',primary:['home','library','ask','sources'],navigation:'bottom'},
-    {...replacement,id:'fixture.start',initial:'ask'},
-    {...replacement,id:'fixture.split',detail:'split'},
-    {...replacement,id:'fixture.bottom',navigation:'bottom'},
+    {...replacement,id:'fixture.tabs',primary:['generated'],navigation:'generated'},
+    {...replacement,id:'fixture.start',initial:'generated'},
+    {...replacement,id:'fixture.unknown',detail:'tabs'},
   ])assert.throws(()=>host.registerLayout(invalid),/layout contract/);
   remove();assert.equal(host.getSnapshot().layout.id,androidUiLayout.id);
 });
-test('clients preserve shared destination identities and the final platform-specific labels',()=>{
+test('the Mac shell lists only its five local sections',()=>{
   const repo=new URL('../../../',import.meta.url),read=path=>readFileSync(new URL(path,repo),'utf8');
-  const glyphs=Object.values(uiDestinationPresentation).map(item=>item.icon);
-  assert.equal(new Set(glyphs).size,glyphs.length,'Each destination needs its own glyph');
   const html=read('apps/desktop/src/index.html'),mainNav=html.slice(html.indexOf('<nav class="main-nav"'),html.indexOf('</nav>'));
-  const macRoutes={home:'overview',library:'records',sources:'sources',ask:'ask'};
-  assert.deepEqual([...mainNav.matchAll(/data-nav="([^"]+)"/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>macRoutes[id]));
-  assert.deepEqual([...mainNav.matchAll(/<span data-i18n>([^<]+)<\/span>/g)].map(match=>match[1]),desktopUiLayout.primary.map(id=>uiDestinationPresentation[id].label));
-  assert.match(html,/data-nav="settings"[^>]*>.*?<span data-i18n>设置<\/span>/);
-  assert.deepEqual(desktopUiLayout.secondary,['connections','activity'],'Web keeps AI access and activity in the lower navigation region');
-  // Android declares its tabs natively; route ids map to the same destinations.
-  const kotlin=read('apps/android/app/src/main/java/dev/mote/collector/PrimaryNavigation.kt');
-  const tabs=Object.fromEntries([...kotlin.matchAll(/^\s+[A-Z]+\("([^"]+)", "[^"]+", "[A-Z]+", "([a-z]+)"\)/gm)].map(match=>[match[2],match[1]]));
-  for(const id of [...androidUiLayout.primary,'activity'])assert.equal(tabs[id],uiDestinationPresentation[id].label,'Android '+id);
+  assert.deepEqual([...mainNav.matchAll(/data-nav="([^"]+)"/g)].map(match=>match[1]),['sources','permissions','work','storage','records']);
+  assert.deepEqual([...mainNav.matchAll(/<span data-i18n>([^<]+)<\/span>/g)].map(match=>match[1]),['来源','权限','发送','存储','本机记录']);
 });
 
 test('a contributed theme and layout bind exactly and expose runtime labels until removal',()=>{

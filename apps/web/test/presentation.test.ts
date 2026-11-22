@@ -28,7 +28,7 @@ test('a real shell and theme replacement preserves the mounted draft, selection,
     return React.createElement('section', { 'data-replacement-shell': true }, toolbar, navigation, React.createElement('article', null, content), footer);
   }
   const theme = { ...linearUiTheme, id: 'fixture.alternate', schemes:undefined, tokens: { ...linearUiTheme.tokens, accent: '#abcdef' } };
-  const removeTheme = host.registerTheme(theme), removeLayout = host.registerLayout({ ...defaultUiLayout, id: 'fixture.top', navigation: 'top', detail: 'stack', implementation: OtherShell });
+  const removeTheme = host.registerTheme(theme), removeLayout = host.registerLayout({ ...defaultUiLayout, id: 'fixture.stacked', detail: 'stack', implementation: OtherShell });
   t.after(async () => { await act(async () => root.unmount()); removeLayout(); removeTheme(); for (const [key, value] of previous) { if (value) Object.defineProperty(globalThis, key, value); else Reflect.deleteProperty(globalThis, key); } dom.window.close(); });
   await act(async () => root.render(React.createElement(PresentationSurface, { host, navigation: () => 'Generated navigation', toolbar: 'Generated toolbar', footer: 'Generated footer' }, React.createElement(Draft))));
   const field = dom.window.document.querySelector('textarea')!;
@@ -37,7 +37,7 @@ test('a real shell and theme replacement preserves the mounted draft, selection,
     await act(async()=>webAppearance.select(preference));
     assert.equal(dom.window.document.querySelector('textarea'),field);assert.equal(field.selectionStart,4);assert.equal(dom.window.document.activeElement,field);assert.equal(dom.window.location.hash,hash);assert.equal(starts,1);assert.equal(stops,0);
   }
-  await act(async () => host.activate({ theme, layout: { id: 'fixture.top', version: '1' } }));
+  await act(async () => host.activate({ theme, layout: { id: 'fixture.stacked', version: '1' } }));
   assert.ok(dom.window.document.querySelector('[data-replacement-shell] article textarea'));
   assert.equal(dom.window.document.querySelector('textarea'), field, 'the draft subtree is moved rather than reconstructed');
   assert.equal(field.value, 'Generated unsaved draft'); assert.equal(field.selectionStart, 4); assert.equal(field.selectionEnd, 12);
