@@ -107,8 +107,10 @@
 .connection-invitation,.connection-mcp{padding:14px;}
 }
 .sources-page .source-item form>.error-banner{grid-column:1/-1}
+@media (max-width:760px){
+.sources-page .source-item form{grid-template-columns:1fr !important}
+}
 @media (max-width:650px){
-.sources-page .source-item form{grid-template-columns:minmax(0,1fr)}
 .sources-page .source-item form>.button{justify-self:start}
 }
 .add-source-panel {padding:23px;margin-bottom:25px;}

@@ -109,3 +109,4 @@
  .owner-row-actions { flex-wrap:wrap; justify-content:flex-end; }
  .owner-maintenance-page .usage-price-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+.transfer-panel input.hidden { display:none !important; }

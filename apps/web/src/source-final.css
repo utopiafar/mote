@@ -92,3 +92,7 @@
 .source-onboarding-error details{font-size:11px;color:var(--mote-muted)}
 .source-onboarding-error pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:760px){.source-onboarding-intro{grid-template-columns:1fr;gap:16px}.source-onboarding-progress{grid-template-columns:1fr}.source-onboarding-retention{grid-template-columns:1fr}.source-onboarding-retention dd{justify-content:flex-start}}
+.source-final-originals .source-item .badge { margin-left:10px; }
+@media (max-width:760px) {
+  .source-final-originals .source-item .badge { max-width:100%; white-space:normal; }
+}

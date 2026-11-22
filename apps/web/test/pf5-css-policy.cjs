@@ -1,8 +1,11 @@
+const {readFileSync} = require('node:fs');
+const {join} = require('node:path');
 const postcss = require('postcss');
 const {tokenize, TokenType} = require('@csstools/css-tokenizer');
 
-// Historical JSX from before NV3, CH1 and CH3, including earlier renderers
-// in main.tsx. Shared classes used by current surfaces are outside this inventory.
+// Historical JSX and CSS for the pages retired by NV3, CH1 and CH3, including
+// earlier versions in main.tsx and former shell entries. Preserve the audited
+// class names here so this also works in shallow clones.
 const retiredPageClasses = new Set([
   // Home (Overview, FirstUseHome and plug-in contributions)
   `app-row art-center art-desktop art-file art-node art-phone
@@ -43,79 +46,35 @@ const retiredPageClasses = new Set([
   failed-answer failed-answer-icon final-conversation first-question-duplicate history-open history-preview
   model-notice model-used new-conversation-button query-admission-status query-unconfirmed rotated
   suggestions tabs thinking-panel`,
-  // Earlier shell chrome that no longer has a mount point.
-  `connection-pill connection-pill-dot footer version`,
+  // Former shell, reader and settings entrypoints with no mounted owner.
+  `auxiliary-nav avatar brand-dot breadcrumb-workspace connection-pill connection-pill-dot
+  discovery-nav-copy discovery-settings-boundary discovery-settings-grid dot footer local-note
+  mobile-menu mobile-settings nav-glyph nav-group-label nav-spark orbit-mark private-label
+  reader-top-actions session-settings settings-link-grid settings-scope settings-toolbar
+  sidebar-scrim utility-nav version workspace-label workspace-tool-select`,
 ].flatMap(group => group.split(/\s+/)));
 
-// The base owns the app shell, shared controls and the evidence and quick-note
-// surfaces that can open from anywhere. A new base class needs a shared owner.
-const sharedClasses = new Set(`
-  active amber answer answer-label app-shell archive-welcome archived-download back-link badge bare brand
-  breadcrumb button capture-image citation citation-grid citation-number citations close connect-modal connection-help
-  content conversation-dialog conversation-dialog-backdrop conversation-dialog-body conversation-item conversation-list
-  danger danger-text done dot download-error embedded-evidence empty empty-icon error error-banner
-  evidence-aside evidence-ask evidence-back evidence-body evidence-body-heading evidence-canonical
-  evidence-caption evidence-card evidence-description evidence-dock evidence-facts evidence-footer
-  evidence-grid evidence-heading evidence-main evidence-modal evidence-number evidence-ocr-status
-  evidence-processing-help evidence-reader evidence-reader-backdrop evidence-source-actions evidence-text
-  eyebrow feature-json field-label field-note file-row file-text
-  filter-bar fine-print form-footer full global-retrieval green greeting hidden icon-button
-  image-failure image-skeleton library-original-text load-more loading loading-line loading-mark loading-ring
-  loading-text login-endpoint main markdown material-detail media-image metadata-details modal modal-backdrop
-  modal-icon model-selector model-selector-selection mote-mark muted muted-copy native-size note-attachment-boundary
-  note-attachment-help note-attachments note-composer note-composer-actions note-composer-overlay
-  note-description note-evidence note-more note-more-content note-pending note-storage-hint notice
-  open original-image original-image-controls original-image-viewport page-heading panel panel-pad
-  pending-note period-select policy-card policy-grid presentation-content-outlet primary
-  processing-actions quick-note quick-note-backdrop quick-note-dialog reader-menu reader-menu-note
-  reader-menu-separator reader-more reader-more-button reader-source-details record-id report-more report-more-menu
-  review-notes run-details run-id secondary section-heading section-tabs segmented-nav session-lifetime-control
-  shell-menu shell-mobile-menu sidebar simple-values simple-welcome skeleton
-  skeleton-row source-item source-toolbar spin split-heading subtle success text-button text-image topbar
-  topbar-actions trace visually-hidden welcome welcome-archive-flow welcome-values workflow-icon
-  workflow-line workspace-back workspace-content workspace-context workspace-empty workspace-layout
-  workspace-list workspace-list-heading workspace-range workspace-select workspace-tool-links workspace-tools
-`.trim().split(/\s+/));
 
-const globalAttributes = new Set([
-  'data-color-scheme=dark', 'data-color-scheme=light', 'hidden', 'tabindex=-1',
-  'type=checkbox', 'type=date', 'type=file', 'type=radio', 'type=range',
-]);
+function cssTokens(text) {
+  return tokenize({css: text}).filter(([type]) => type !== TokenType.Comment && type !== TokenType.EOF);
+}
 
-// A shared class can still name a page-only variant. Check the role, data
-// attribute or state too (the reader and report both use report-more-menu).
-const sharedAttributeOwners = new Map([
-  ['aria-current=page', ['section-tabs', 'sidebar', 'workspace-tool-links']],
-  ['aria-expanded=true', ['reader-more-button']],
-  ['aria-pressed=true', ['original-image-controls']],
-  ['data-navigation', ['app-shell']],
-  ['data-navigation=adaptive', ['app-shell']],
-  ['data-navigation=sidebar', ['app-shell']],
-  ['data-navigation=top', ['app-shell']],
-  ['open', ['note-more']],
-  ['role=menuitem', ['reader-menu']],
-  ['role=status', ['note-composer']],
-]);
-const activeStateOwners = ['segmented-nav', 'sidebar', 'workspace-select'];
-
-function selectorParts(selector) {
-  const tokens = tokenize({css: selector}).filter(token => token[0] !== TokenType.Comment);
+function classesInSelector(selector) {
+  const tokens = cssTokens(selector);
   const classes = new Set();
-  const ids = [];
-  const attributes = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const [type, raw, , , data] = tokens[i];
-    if (type === TokenType.Delim && raw === '.' && tokens[i + 1]?.[0] === TokenType.Ident) {
-      classes.add(tokens[i + 1][4].value);
+  for (let index = 0; index < tokens.length; index++) {
+    const [type, raw] = tokens[index];
+    const next = tokens[index + 1];
+    if (type === TokenType.Delim && raw === '.' && next?.[0] === TokenType.Ident) {
+      classes.add(next[4].value);
     }
-    if (type === TokenType.Hash) ids.push(data.value);
     if (type !== TokenType.OpenSquare) continue;
 
-    const end = tokens.findIndex((token, index) => index > i && token[0] === TokenType.CloseSquare);
+    // Attribute values can contain literal periods that are not class selectors.
+    const end = tokens.findIndex((token, offset) => offset > index && token[0] === TokenType.CloseSquare);
     if (end === -1) continue;
-    const parts = tokens.slice(i + 1, end).filter(token => token[0] !== TokenType.Whitespace);
-    attributes.push(parts.map(token => token[4]?.value ?? token[1]).join(''));
-    const equals = parts.findIndex(token => token[0] === TokenType.Delim && token[1] === '=');
+    const parts = tokens.slice(index + 1, end).filter(([kind]) => kind !== TokenType.Whitespace);
+    const equals = parts.findIndex(([kind, value]) => kind === TokenType.Delim && value === '=');
     if (parts[0]?.[4]?.value?.toLowerCase() === 'class' && equals !== -1) {
       const value = parts[equals + 1]?.[4]?.value ?? '';
       const insensitive = parts[equals + 2]?.[4]?.value?.toLowerCase() === 'i';
@@ -123,44 +82,89 @@ function selectorParts(selector) {
         if (name) classes.add(name);
       }
     }
-    i = end;
+    index = end;
   }
-  return {classes, ids, attributes};
+  return classes;
 }
 
-function* ruleSelectors(root) {
-  for (const node of root.nodes) {
-    if (node.type === 'rule') yield* node.selectors;
-    if (node.nodes && !(node.type === 'atrule' && /(?:^|-)keyframes$/i.test(node.name))) {
-      yield* ruleSelectors(node);
+function isKeyframes(node) {
+  return node.type === 'atrule' && /(?:^|-)keyframes$/i.test(node.name);
+}
+
+function* styleRules(parent, context = []) {
+  for (const node of parent.nodes) {
+    if (node.type === 'rule') {
+      for (const selector of node.selectors) yield {selector, context};
+      yield* styleRules(node, [...context, node]);
+    } else if (node.type === 'atrule' && node.nodes && !isKeyframes(node)) {
+      yield* styleRules(node, [...context, node]);
     }
   }
 }
 
 function selectors(css) {
-  return [...ruleSelectors(postcss.parse(css))];
+  return [...styleRules(postcss.parse(css))].map(({selector}) => selector);
 }
 
 function retiredPageRules(css) {
-  return selectors(css).flatMap(selector => [...selectorParts(selector).classes]
+  const root = postcss.parse(css);
+  const candidates = [...styleRules(root)].map(({selector}) => selector);
+  root.walkAtRules(rule => {
+    if (['scope', 'supports', 'custom-selector'].includes(rule.name.toLowerCase())) {
+      candidates.push(rule.params);
+    }
+  });
+  return candidates.flatMap(selector => [...classesInSelector(selector)]
     .filter(name => retiredPageClasses.has(name))
-    .map(name => `.${name} in ${selector}`));
+    .map(name => '.' + name + ' in ' + selector));
+}
+
+// Source and Vite's minifier spell combinator spacing and attribute quotes
+// differently. Keep descendant combinators and significant string contents.
+function canonical(text, condition = false) {
+  const tokens = cssTokens(text);
+  const punctuators = condition ? /^[>+~=:,]$/ : /^[>+~=,]$/;
+  return tokens.map(([type, raw, , , data], index) => {
+    // esbuild collapses the CSS2 pseudo-elements and normalizes the even An+B form.
+    const next = tokens[index + 1];
+    if (type === TokenType.Colon && next?.[0] === TokenType.Colon &&
+        ['before', 'after'].includes(tokens[index + 2]?.[1])) return '';
+    if (raw === 'even' && ['nth-child(', 'nth-last-child('].includes(tokens[index - 1]?.[1]) &&
+        next?.[0] === TokenType.CloseParen) return '2n';
+    if (type === TokenType.String) {
+      return /^-?[_a-z][_a-z0-9-]*$/i.test(data.value) ? data.value : JSON.stringify(data.value);
+    }
+    if (type !== TokenType.Whitespace) return raw;
+    const before = tokens[index - 1]?.[1] ?? '';
+    const after = tokens[index + 1]?.[1] ?? '';
+    if (!before || !after || before.endsWith('(') || before === '[' || after === ')' || after === ']' ||
+        (condition && before === ')' && (after === 'and' || after === 'or')) ||
+        punctuators.test(before) || punctuators.test(after)) return '';
+    return ' ';
+  }).join('');
+}
+
+function baseRuleKeys(css) {
+  return [...styleRules(postcss.parse(css))].map(({selector, context}) => [
+    ...context.map(node => node.type === 'rule' ? canonical(node.selector) :
+      '@' + node.name + ' ' + canonical(node.params, node.name !== 'scope')),
+    canonical(selector),
+  ].join(' | '));
+}
+
+// This inventory covers complete selectors under their actual conditions. A
+// shared class can still acquire a page-only child, state or media override.
+// Review the owner when adding a selector to the base or to this fixture.
+function baseRuleInventory() {
+  return new Set(readFileSync(join(__dirname, 'pf5-base-selectors.txt'), 'utf8').trim().split('\n'));
 }
 
 function pageRulesInBase(css) {
-  const root = postcss.parse(css);
-  const unexpected = [...ruleSelectors(root)].filter(selector => {
-    const {classes, ids, attributes} = selectorParts(selector);
-    return [...classes].some(name => !sharedClasses.has(name)) ||
-      (classes.has('active') && !activeStateOwners.some(name => classes.has(name))) ||
-      ids.some(id => id !== 'note-text') ||
-      attributes.some(attribute => !globalAttributes.has(attribute) &&
-        !sharedAttributeOwners.get(attribute)?.some(name => classes.has(name)));
-  });
-  root.walkAtRules('container', rule => {
-    if (!/^model-selector\s*\(/.test(rule.params)) unexpected.push(`@container ${rule.params}`);
-  });
-  return unexpected;
+  const allowed = baseRuleInventory();
+  return baseRuleKeys(css).filter(key => !allowed.has(key));
 }
 
-module.exports = {pageRulesInBase, retiredPageRules, selectors, preConsolidationChatBytes: 491_895};
+module.exports = {
+  baseRuleInventory, baseRuleKeys, pageRulesInBase, retiredPageRules, selectors,
+  preConsolidationChatBytes: 491_895,
+};

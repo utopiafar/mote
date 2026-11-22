@@ -1,0 +1,800 @@
+*
+.answer
+.answer-label
+.answer-label .mote-mark
+.answer-label>span:last-child
+.app-shell
+.app-shell[data-navigation=top]
+.app-shell[data-navigation=top] .sidebar .brand
+.app-shell[data-navigation=top] .sidebar nav
+.app-shell[data-navigation=top] .sidebar nav button
+.app-shell[data-navigation=top]>.main
+.app-shell[data-navigation=top]>.sidebar
+.app-shell[data-navigation]
+.app-shell[data-navigation] .brand
+.app-shell[data-navigation] .brand .mote-mark
+.app-shell[data-navigation] .brand>span:last-child
+.app-shell[data-navigation] .breadcrumb
+.app-shell[data-navigation] .breadcrumb strong
+.app-shell[data-navigation] .content
+.app-shell[data-navigation] .global-retrieval
+.app-shell[data-navigation] .global-retrieval input
+.app-shell[data-navigation] .global-retrieval kbd
+.app-shell[data-navigation] .quick-note
+.app-shell[data-navigation] .shell-mobile-menu
+.app-shell[data-navigation] .sidebar .brand
+.app-shell[data-navigation] .sidebar [aria-current=page]
+.app-shell[data-navigation] .sidebar [aria-current=page]>svg
+.app-shell[data-navigation] .sidebar nav
+.app-shell[data-navigation] .sidebar nav button
+.app-shell[data-navigation] .sidebar nav button:hover
+.app-shell[data-navigation] .sidebar nav button>svg
+.app-shell[data-navigation] .topbar
+.app-shell[data-navigation] .topbar-actions
+.app-shell[data-navigation]>.main
+.app-shell[data-navigation]>.sidebar
+.archive-welcome
+.archived-download
+.back-link
+.badge
+.badge.amber
+.badge.green
+.badge.muted
+.brand
+.brand>span:last-child
+.breadcrumb
+.breadcrumb strong
+.breadcrumb>span
+.button
+.button.danger
+.button.danger:hover:not(:disabled)
+.button.full
+.button.primary
+.button.primary:hover
+.button.primary:hover:not(:disabled)
+.button.secondary
+.button.subtle
+.button.subtle:hover:not(:disabled)
+.button:focus-visible
+.button:hover:not(:disabled)
+.button:not(:disabled):active
+.capture-image
+.capture-image img
+.capture-image.media-image
+.capture-image.media-image p
+.capture-image.text-image
+.citation
+.citation p
+.citation strong
+.citation time
+.citation-grid
+.citation-number
+.citation>div
+.citation>svg
+.citations
+.citations>.eyebrow
+.close
+.connect-modal
+.connect-modal .muted-copy
+.connect-modal .notice
+.connect-modal .session-lifetime-control
+.connect-modal .session-lifetime-control select
+.connect-modal .session-lifetime-control>span
+.connect-modal form
+.connect-modal h2
+.connect-modal input
+.connect-modal label
+.connect-modal label>span
+.connection-help
+.connection-help code
+.connection-help p
+.connection-help summary
+.content
+.conversation-dialog
+.conversation-dialog .button
+.conversation-dialog .text-button
+.conversation-dialog summary
+.conversation-dialog-backdrop
+.conversation-dialog-body
+.conversation-dialog>footer
+.conversation-dialog>footer button
+.conversation-dialog>header
+.conversation-dialog>header h2
+.conversation-dialog>header>.icon-button
+.conversation-item
+.conversation-item span
+.conversation-item strong
+.conversation-item:hover
+.conversation-list
+.danger-text
+.download-error
+.embedded-evidence
+.embedded-evidence .evidence-reader
+.embedded-evidence>.evidence-reader
+.empty
+.empty .button
+.empty h3
+.empty-icon
+.error-banner
+.evidence-aside
+.evidence-aside .evidence-canonical pre
+.evidence-aside .reader-source-details dd
+.evidence-aside .reader-source-details dl>div
+.evidence-aside .reader-source-details>pre
+.evidence-aside .record-id
+.evidence-ask
+.evidence-ask:focus-visible
+.evidence-ask:hover
+.evidence-body
+.evidence-body-heading
+.evidence-caption time
+.evidence-card
+.evidence-card p
+.evidence-card small
+.evidence-card strong
+.evidence-card:hover
+.evidence-card>div
+.evidence-dock
+.evidence-facts
+.evidence-facts .evidence-description
+.evidence-facts .evidence-ocr-status
+.evidence-facts .evidence-ocr-status p
+.evidence-facts dd
+.evidence-facts dd>p
+.evidence-facts dt
+.evidence-facts>div
+.evidence-footer
+.evidence-footer .button
+.evidence-footer>p
+.evidence-footer>span
+.evidence-grid
+.evidence-grid>.capture-image
+.evidence-grid>.capture-image.text-image
+.evidence-grid>.capture-image>img
+.evidence-grid>.text-image p
+.evidence-heading
+.evidence-heading .evidence-caption
+.evidence-heading .eyebrow
+.evidence-heading h2
+.evidence-heading p
+.evidence-heading>.icon-button
+.evidence-heading>div
+.evidence-main
+.evidence-modal
+.evidence-number
+.evidence-ocr-status
+.evidence-ocr-status p
+.evidence-processing-help
+.evidence-processing-help>p
+.evidence-processing-help>summary
+.evidence-reader .evidence-back
+.evidence-reader .evidence-body-heading
+.evidence-reader .evidence-caption
+.evidence-reader .evidence-caption time
+.evidence-reader .evidence-footer
+.evidence-reader .evidence-footer>p
+.evidence-reader .evidence-grid
+.evidence-reader .evidence-grid>div
+.evidence-reader .evidence-heading
+.evidence-reader .evidence-heading .icon-button
+.evidence-reader .evidence-heading h2
+.evidence-reader .evidence-heading.bare
+.evidence-reader .evidence-heading>.reader-more
+.evidence-reader .evidence-text
+.evidence-reader .evidence-text>pre
+.evidence-reader .original-image
+.evidence-reader .original-image .capture-image
+.evidence-reader .original-image-controls
+.evidence-reader .original-image-viewport
+.evidence-reader .original-image:not(.open) .capture-image
+.evidence-reader .original-image:not(.open) .capture-image img
+.evidence-reader .original-image:not(.open) .original-image-viewport
+.evidence-reader .reader-more-button[aria-expanded=true]
+.evidence-reader .reader-source-details
+.evidence-reader .reader-source-details dl
+.evidence-reader .reader-source-details>summary
+.evidence-reader-backdrop
+.evidence-reader-backdrop>.evidence-reader
+.evidence-reader-backdrop>.evidence-reader:not(:has(>.evidence-dock))
+.evidence-reader>.evidence-back.text-button
+.evidence-source-actions
+.evidence-source-actions:empty
+.evidence-source-actions>.button
+.evidence-text
+.evidence-text .evidence-body-heading
+.evidence-text dd
+.evidence-text dl
+.evidence-text dl>div
+.evidence-text dt
+.evidence-text h3
+.evidence-text h4
+.evidence-text pre
+.evidence-text>.button
+.evidence-text>.eyebrow
+.evidence-text>.muted
+.eyebrow
+.feature-json
+.field-label
+.field-label>small
+.field-label>textarea
+.field-label>textarea:focus
+.field-note
+.file-row
+.file-row .button
+.file-row small
+.file-row strong
+.file-row:last-child
+.file-row>div
+.file-text
+.filter-bar
+.filter-bar input
+.filter-bar label
+.filter-bar select
+.fine-print
+.form-footer
+.form-footer>.button
+.form-footer>.muted
+.global-retrieval
+.global-retrieval input
+.global-retrieval kbd
+.greeting
+.greeting h1
+.greeting p
+.icon-button
+.icon-button:focus-visible
+.icon-button:hover
+.image-failure
+.image-skeleton
+.library-original-text
+.load-more
+.loading
+.loading-line i
+.loading-mark circle
+.loading-mark path
+.loading-mark path:nth-child(1)
+.loading-mark path:nth-child(2)
+.loading-mark path:nth-child(3)
+.loading-mark svg
+.loading-ring
+.loading-ring circle
+.loading-ring circle:first-child
+.loading-ring circle:last-child
+.loading.loading-line
+.loading.loading-mark
+.loading.loading-text
+.loading.skeleton
+.login-endpoint
+.login-endpoint strong
+.main
+.markdown
+.markdown blockquote
+.markdown code
+.markdown h1
+.markdown h2
+.markdown h3
+.markdown img
+.markdown li
+.markdown ol
+.markdown p
+.markdown pre
+.markdown pre code
+.markdown ul
+.material-detail
+.material-detail dl
+.material-detail pre
+.material-detail>.button
+.metadata-details
+.metadata-details dd
+.metadata-details dl
+.metadata-details dl>div
+.metadata-details dt
+.metadata-details summary
+.modal
+.modal-backdrop
+.modal-icon
+.model-selector
+.model-selector select
+.model-selector-selection
+.mote-mark
+.mote-mark circle
+.mote-mark path
+.muted-copy
+.note-attachment-boundary
+.note-attachment-help
+.note-attachment-help>p
+.note-attachment-help>summary
+.note-attachments
+.note-composer
+.note-composer input[type=file]
+.note-composer textarea
+.note-composer-actions
+.note-composer-actions .note-more
+.note-composer-actions .note-more-content
+.note-composer-actions .note-more-content label
+.note-composer-actions .note-more-content p
+.note-composer-actions>span
+.note-composer>label
+.note-composer>p[role=status]
+.note-description
+.note-description p
+.note-description textarea
+.note-description>summary
+.note-evidence
+.note-evidence .evidence-text
+.note-more
+.note-more>summary
+.note-more[open]>summary
+.note-pending
+.note-storage-hint
+.notice
+.notice .icon-button
+.notice.error
+.notice.success
+.notice>span
+.original-image
+.original-image .capture-image
+.original-image .capture-image img
+.original-image .native-size .capture-image img
+.original-image-controls
+.original-image-controls [aria-pressed=true]
+.original-image-viewport
+.original-image-viewport:focus-visible
+.page-heading
+.page-heading h1
+.page-heading p
+.page-heading>p
+.panel
+.panel-pad
+.pending-note
+.pending-note .badge
+.pending-note p
+.pending-note small
+.pending-note time
+.pending-note>div
+.period-select
+.policy-card
+.policy-grid
+.presentation-content-outlet
+.presentation-content-outlet>div
+.processing-actions
+.quick-note-backdrop
+.quick-note-dialog
+.quick-note-dialog #note-text
+.quick-note-dialog .note-composer-actions
+.quick-note-dialog .note-composer-actions .button
+.quick-note-dialog .note-composer-actions>span
+.quick-note-dialog .note-composer-overlay
+.quick-note-dialog .note-description textarea
+.quick-note-dialog .note-pending
+.quick-note-dialog>.notice
+.quick-note-dialog>header
+.quick-note-dialog>header h2
+.reader-menu
+.reader-menu .danger-text
+.reader-menu .evidence-source-actions
+.reader-menu [role=menuitem]
+.reader-menu [role=menuitem] small
+.reader-menu [role=menuitem]:focus-visible
+.reader-menu [role=menuitem]:hover
+.reader-menu-note
+.reader-menu-separator
+.record-id
+.report-more
+.report-more-menu
+.review-notes
+.review-notes .button
+.review-notes h3
+.review-notes p
+.review-notes ul
+.run-details
+.run-details dd
+.run-details dl
+.run-details summary
+.run-details>div
+.run-details>div p
+.run-id
+.section-heading
+.section-heading .eyebrow
+.section-heading h2
+.section-heading p
+.section-tabs
+.section-tabs button
+.section-tabs button[aria-current=page]
+.segmented-nav
+.segmented-nav button
+.segmented-nav button.active
+.session-lifetime-control
+.session-lifetime-control select
+.session-lifetime-control small
+.session-lifetime-control>span
+.shell-menu
+.shell-menu button
+.shell-menu button:hover
+.shell-menu>div
+.shell-menu>summary
+.sidebar
+.sidebar nav
+.sidebar nav button
+.sidebar nav button.active
+.sidebar nav button:hover
+.sidebar>nav
+.simple-values
+.simple-values h3
+.simple-values p
+.simple-values svg
+.simple-values>div
+.simple-welcome
+.simple-welcome h1
+.simple-welcome p
+.skeleton-row
+.skeleton-row i
+.skeleton-row i:first-child
+.skeleton-row i:last-child
+.skeleton-row:nth-child(2n) i:first-child
+.source-item
+.source-item .metadata-details
+.source-item code
+.source-item input:not([type=checkbox])
+.source-item label
+.source-item p
+.source-item pre
+.source-item summary
+.source-toolbar
+.source-toolbar>span
+.spin
+.split-heading
+.text-button
+.text-button.danger-text
+.text-button.danger-text:hover:not(:disabled)
+.text-button:disabled
+.text-button:focus-visible
+.text-button:hover:not(:disabled)
+.text-image p
+.topbar
+.topbar-actions
+.topbar>div
+.trace
+.trace code
+.trace small
+.trace summary
+.trace summary>span
+.trace>div
+.trace>div p
+.visually-hidden
+.welcome
+.welcome .button
+.welcome h1
+.welcome p
+.welcome-archive-flow svg
+.welcome-values
+.welcome-values h3
+.welcome-values p
+.welcome-values svg
+.welcome-values>div
+.workflow-icon
+.workflow-icon.done
+.workflow-line
+.workflow-line p
+.workflow-line strong
+.workspace-back
+.workspace-content
+.workspace-content>.panel
+.workspace-context
+.workspace-context>.back-link
+.workspace-context>.workspace-tool-links:only-child
+.workspace-empty
+.workspace-empty h2
+.workspace-empty>svg
+.workspace-layout
+.workspace-list
+.workspace-list-heading
+.workspace-list-heading h2
+.workspace-list-heading>span
+.workspace-range
+.workspace-range:empty
+.workspace-select
+.workspace-select small
+.workspace-select strong
+.workspace-select.active
+.workspace-select:hover
+.workspace-tool-links
+.workspace-tool-links>button
+.workspace-tool-links>button[aria-current=page]
+.workspace-tools
+.workspace-tools:has(>.workspace-range:only-child:empty)
+.workspace-tools>.workspace-back
+.workspace-tools>.workspace-context
+.workspace-tools>.workspace-range
+::selection
+:root
+:root[data-color-scheme=dark]
+@container model-selector (max-width:520px) | .model-selector-selection
+@media (max-height:800px)and (min-width:761px) | .sidebar
+@media (max-height:800px)and (min-width:761px) | .sidebar nav button
+@media (max-width:1000px) | .conversation-list
+@media (max-width:1000px) | .global-retrieval
+@media (max-width:1000px) | .global-retrieval kbd
+@media (max-width:1000px) | .topbar
+@media (max-width:1100px) | .content
+@media (max-width:1100px) | .form-footer
+@media (max-width:1100px) | .topbar
+@media (max-width:1100px) | .workspace-content>.panel
+@media (max-width:1100px) | .workspace-layout
+@media (max-width:1200px) | .content
+@media (max-width:1200px) | .greeting h1
+@media (max-width:1200px) | .main
+@media (max-width:1200px) | .sidebar
+@media (max-width:1200px) | .topbar
+@media (max-width:1200px) | .welcome .eyebrow
+@media (max-width:1200px) | .welcome h1
+@media (max-width:1200px)and (min-width:761px) | .content
+@media (max-width:1200px)and (min-width:761px) | .main
+@media (max-width:1200px)and (min-width:761px) | .sidebar
+@media (max-width:1200px)and (min-width:761px) | .topbar
+@media (max-width:500px) | .answer
+@media (max-width:500px) | .breadcrumb>span
+@media (max-width:500px) | .capture-image
+@media (max-width:500px) | .citation-grid
+@media (max-width:500px) | .citations>.eyebrow
+@media (max-width:500px) | .connect-modal
+@media (max-width:500px) | .connect-modal .eyebrow
+@media (max-width:500px) | .connect-modal .muted-copy
+@media (max-width:500px) | .connect-modal h2
+@media (max-width:500px) | .content
+@media (max-width:500px) | .evidence-footer .text-button
+@media (max-width:500px) | .evidence-footer>span
+@media (max-width:500px) | .evidence-heading
+@media (max-width:500px) | .evidence-text
+@media (max-width:500px) | .filter-bar input
+@media (max-width:500px) | .filter-bar label:first-child
+@media (max-width:500px) | .filter-bar label:nth-child(2)
+@media (max-width:500px) | .greeting h1
+@media (max-width:500px) | .greeting p
+@media (max-width:500px) | .markdown
+@media (max-width:500px) | .modal
+@media (max-width:500px) | .modal-backdrop
+@media (max-width:500px) | .page-heading h1
+@media (max-width:500px) | .page-heading>p
+@media (max-width:500px) | .section-heading
+@media (max-width:500px) | .section-heading h2
+@media (max-width:500px) | .topbar
+@media (max-width:500px) | .topbar-actions
+@media (max-width:500px) | .topbar>.topbar-actions .icon-button
+@media (max-width:500px) | .welcome
+@media (max-width:500px) | .welcome h1
+@media (max-width:500px) | .welcome p
+@media (max-width:500px) | .welcome-values
+@media (max-width:500px) | .welcome-values h3
+@media (max-width:500px) | .welcome-values p
+@media (max-width:500px) | .welcome-values svg
+@media (max-width:500px) | .welcome-values>div
+@media (max-width:500px) | .welcome>div:first-child
+@media (max-width:560px) | .app-shell[data-navigation] .topbar-actions
+@media (max-width:560px) | .app-shell[data-navigation] .topbar>.breadcrumb
+@media (max-width:560px) | .conversation-dialog-body
+@media (max-width:560px) | .conversation-dialog>footer
+@media (max-width:560px) | .conversation-dialog>header
+@media (max-width:560px) | .quick-note-dialog #note-text
+@media (max-width:560px) | .quick-note-dialog .note-composer-actions
+@media (max-width:560px) | .quick-note-dialog .note-composer-actions .note-more
+@media (max-width:560px) | .quick-note-dialog .note-composer-actions>.button
+@media (max-width:560px) | .quick-note-dialog .note-composer-actions>.button:last-child
+@media (max-width:560px) | .quick-note-dialog .note-composer-actions>.button:nth-of-type(1)
+@media (max-width:560px) | .quick-note-dialog .note-composer-actions>span
+@media (max-width:560px) | .quick-note-dialog .note-composer-overlay
+@media (max-width:560px) | .quick-note-dialog .note-pending
+@media (max-width:560px) | .quick-note-dialog>.notice
+@media (max-width:560px) | .quick-note-dialog>header
+@media (max-width:650px) | .note-composer
+@media (max-width:650px) | .note-composer-actions
+@media (max-width:650px) | .note-composer-actions>span
+@media (max-width:650px) | .note-pending
+@media (max-width:700px) | .quick-note
+@media (max-width:700px) | .section-tabs
+@media (max-width:700px) | .topbar-actions
+@media (max-width:736px) | .conversation-dialog-backdrop
+@media (max-width:760px) | .answer
+@media (max-width:760px) | .app-shell[data-navigation=sidebar]>.sidebar
+@media (max-width:760px) | .app-shell[data-navigation=top] .sidebar nav
+@media (max-width:760px) | .app-shell[data-navigation=top]>.main
+@media (max-width:760px) | .app-shell[data-navigation=top]>.sidebar
+@media (max-width:760px) | .app-shell[data-navigation] .content
+@media (max-width:760px) | .app-shell[data-navigation] .global-retrieval
+@media (max-width:760px) | .app-shell[data-navigation] .global-retrieval input
+@media (max-width:760px) | .app-shell[data-navigation] .global-retrieval kbd
+@media (max-width:760px) | .app-shell[data-navigation] .global-retrieval>svg
+@media (max-width:760px) | .app-shell[data-navigation] .quick-note
+@media (max-width:760px) | .app-shell[data-navigation] .quick-note>svg
+@media (max-width:760px) | .app-shell[data-navigation] .shell-mobile-menu
+@media (max-width:760px) | .app-shell[data-navigation] .shell-mobile-menu>div
+@media (max-width:760px) | .app-shell[data-navigation] .shell-mobile-menu>summary
+@media (max-width:760px) | .app-shell[data-navigation] .shell-mobile-menu>summary::-webkit-details-marker
+@media (max-width:760px) | .app-shell[data-navigation] .sidebar .brand
+@media (max-width:760px) | .app-shell[data-navigation] .sidebar nav
+@media (max-width:760px) | .app-shell[data-navigation] .sidebar nav button
+@media (max-width:760px) | .app-shell[data-navigation] .sidebar>.brand
+@media (max-width:760px) | .app-shell[data-navigation] .topbar
+@media (max-width:760px) | .app-shell[data-navigation] .topbar .icon-button
+@media (max-width:760px) | .app-shell[data-navigation] .topbar .quick-note
+@media (max-width:760px) | .app-shell[data-navigation] .topbar-actions
+@media (max-width:760px) | .app-shell[data-navigation] .topbar>.breadcrumb
+@media (max-width:760px) | .app-shell[data-navigation]>.main
+@media (max-width:760px) | .app-shell[data-navigation]>.sidebar
+@media (max-width:760px) | .breadcrumb
+@media (max-width:760px) | .breadcrumb>span
+@media (max-width:760px) | .connect-modal
+@media (max-width:760px) | .content
+@media (max-width:760px) | .evidence-footer
+@media (max-width:760px) | .evidence-footer>p
+@media (max-width:760px) | .evidence-grid
+@media (max-width:760px) | .evidence-grid>.capture-image
+@media (max-width:760px) | .evidence-grid>.capture-image img
+@media (max-width:760px) | .evidence-heading
+@media (max-width:760px) | .evidence-modal
+@media (max-width:760px) | .evidence-reader .evidence-heading h2
+@media (max-width:760px) | .evidence-reader .evidence-text>pre
+@media (max-width:760px) | .evidence-reader-backdrop
+@media (max-width:760px) | .evidence-text
+@media (max-width:760px) | .evidence-text dd
+@media (max-width:760px) | .evidence-text dl>div
+@media (max-width:760px) | .evidence-text pre
+@media (max-width:760px) | .file-row
+@media (max-width:760px) | .file-row>.archived-download
+@media (max-width:760px) | .filter-bar
+@media (max-width:760px) | .filter-bar input
+@media (max-width:760px) | .filter-bar label
+@media (max-width:760px) | .filter-bar label:nth-child(3)
+@media (max-width:760px) | .filter-bar label:nth-child(3) select
+@media (max-width:760px) | .form-footer
+@media (max-width:760px) | .form-footer .button
+@media (max-width:760px) | .form-footer>.button
+@media (max-width:760px) | .greeting
+@media (max-width:760px) | .greeting .eyebrow
+@media (max-width:760px) | .greeting h1
+@media (max-width:760px) | .greeting p
+@media (max-width:760px) | .main
+@media (max-width:760px) | .main :where(.button,.text-button,select,input:not([type=checkbox],[type=radio],[type=range]))
+@media (max-width:760px) | .main :where(select,input:not([type=checkbox],[type=radio],[type=range],[type=file]))
+@media (max-width:760px) | .main button
+@media (max-width:760px) | .main input
+@media (max-width:760px) | .main select
+@media (max-width:760px) | .main textarea
+@media (max-width:760px) | .modal
+@media (max-width:760px) | .modal-backdrop
+@media (max-width:760px) | .model-selector select
+@media (max-width:760px) | .model-selector-selection
+@media (max-width:760px) | .note-attachment-boundary
+@media (max-width:760px) | .note-composer textarea
+@media (max-width:760px) | .note-composer-actions
+@media (max-width:760px) | .note-composer-actions>.button
+@media (max-width:760px) | .page-heading h1
+@media (max-width:760px) | .page-heading>.eyebrow
+@media (max-width:760px) | .page-heading>p
+@media (max-width:760px) | .period-select
+@media (max-width:760px) | .quick-note
+@media (max-width:760px) | .section-heading
+@media (max-width:760px) | .section-heading h2
+@media (max-width:760px) | .section-tabs
+@media (max-width:760px) | .segmented-nav
+@media (max-width:760px) | .segmented-nav button
+@media (max-width:760px) | .session-lifetime-control
+@media (max-width:760px) | .session-lifetime-control select
+@media (max-width:760px) | .sidebar
+@media (max-width:760px) | .sidebar .brand
+@media (max-width:760px) | .sidebar nav
+@media (max-width:760px) | .sidebar nav button
+@media (max-width:760px) | .sidebar nav button.active
+@media (max-width:760px) | .sidebar.open
+@media (max-width:760px) | .simple-values
+@media (max-width:760px) | .simple-values h3
+@media (max-width:760px) | .simple-values p
+@media (max-width:760px) | .simple-values>div
+@media (max-width:760px) | .simple-welcome
+@media (max-width:760px) | .simple-welcome h1
+@media (max-width:760px) | .simple-welcome p
+@media (max-width:760px) | .source-toolbar
+@media (max-width:760px) | .source-toolbar select
+@media (max-width:760px) | .split-heading
+@media (max-width:760px) | .topbar
+@media (max-width:760px) | .topbar .breadcrumb
+@media (max-width:760px) | .topbar .breadcrumb strong
+@media (max-width:760px) | .topbar .quick-note
+@media (max-width:760px) | .topbar-actions
+@media (max-width:760px) | .topbar>.topbar-actions
+@media (max-width:760px) | .topbar>.topbar-actions .icon-button
+@media (max-width:760px) | .topbar>div
+@media (max-width:760px) | .topbar>div:first-child
+@media (max-width:760px) | .welcome
+@media (max-width:760px) | .welcome .button
+@media (max-width:760px) | .welcome h1
+@media (max-width:760px) | .welcome p
+@media (max-width:760px) | .welcome-values
+@media (max-width:760px) | .welcome-values h3
+@media (max-width:760px) | .welcome-values p
+@media (max-width:760px) | .welcome-values>div
+@media (max-width:760px) | .welcome>div:first-child
+@media (max-width:760px) | .workspace-back
+@media (max-width:760px) | .workspace-content>.panel
+@media (max-width:760px) | .workspace-context
+@media (max-width:760px) | .workspace-context>.workspace-tool-links:only-child
+@media (max-width:760px) | .workspace-layout
+@media (max-width:760px) | .workspace-list
+@media (max-width:760px) | .workspace-list-heading
+@media (max-width:760px) | .workspace-list>.muted
+@media (max-width:760px) | .workspace-range
+@media (max-width:760px) | .workspace-select
+@media (max-width:760px) | .workspace-tool-links
+@media (max-width:760px) | .workspace-tool-links>span
+@media (max-width:760px) | .workspace-tools
+@media (max-width:760px) | .workspace-tools>.workspace-context>.workspace-tool-links:only-child
+@media (max-width:760px) | .workspace-tools>.workspace-range select
+@media (max-width:760px) | html
+@media (max-width:900px) | .evidence-aside
+@media (max-width:900px) | .evidence-body
+@media (max-width:980px) | .citation-grid
+@media (max-width:980px) | .welcome .eyebrow
+@media (max-width:980px) | .welcome h1
+@media (min-width:1000px) | .evidence-modal
+@media (min-width:1000px) | .modal-backdrop:has(.evidence-modal)
+@media (min-width:1500px) | .content
+@media (min-width:1500px) | .greeting h1
+@media (min-width:1500px) | .workspace-layout
+@media (min-width:761px) | .app-shell:is([data-navigation=sidebar],[data-navigation=adaptive])>.sidebar
+@media (min-width:761px)and (max-width:1100px) | .topbar
+@media (min-width:761px)and (max-width:1100px) | .topbar-actions
+@media (pointer:coarse) | .button
+@media (pointer:coarse) | .icon-button
+@media (pointer:coarse) | .quick-note-dialog textarea
+@media (pointer:coarse) | .reader-menu [role=menuitem]
+@media (pointer:coarse) | .section-tabs button
+@media (pointer:coarse) | .segmented-nav button
+@media (pointer:coarse) | .text-button
+@media (pointer:coarse) | input
+@media (pointer:coarse) | select
+@media (prefers-color-scheme:dark) | :root:not([data-color-scheme=light])
+@media (prefers-contrast:more) | .button:not(.danger)
+@media (prefers-contrast:more) | :root
+@media (prefers-reduced-motion:reduce) | *
+@media (prefers-reduced-motion:reduce) | *:after
+@media (prefers-reduced-motion:reduce) | *:before
+@media (prefers-reduced-motion:reduce) | .spin
+[hidden]
+a
+a:focus-visible
+body
+button
+button:disabled
+button:focus-visible
+code
+dd
+dl
+dl>div
+dt
+h1
+h1[tabindex="-1"]:focus
+h2
+h2[tabindex="-1"]:focus
+h3
+h3[tabindex="-1"]:focus
+input
+input::placeholder
+input:focus-visible
+input:where(:not([type=checkbox],[type=radio],[type=range],[type=file]))
+input[type=checkbox]
+input[type=date]
+input[type=file]
+input[type=file]::file-selector-button
+input[type=file]::file-selector-button:hover
+input[type=radio]
+input[type=range]
+p
+pre
+progress
+select
+select:focus-visible
+strong
+summary:focus-visible
+svg
+textarea
+textarea::placeholder
+textarea:focus-visible

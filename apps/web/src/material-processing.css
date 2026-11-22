@@ -9,3 +9,4 @@
 .automatic-source-options label span{min-width:0}.automatic-source-options small{display:block;font-size:10px;color:var(--mote-muted);overflow-wrap:anywhere}
 
 .material-processing:has(>[data-processing-main][hidden]){margin-top:0}
+.policy-card summary { cursor:pointer; overflow-wrap:anywhere; }
