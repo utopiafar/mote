@@ -194,10 +194,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
             try {
                 val read=api.get("/api/materials/"+encode(id)+"/read?revision="+encode(revision)+"&offset=0&length=1").getJSONObject("material")
                 val current=api.get("/api/materials/"+encode(id))
-                check(read.getString("id")==id && read.getString("revision")==revision && current.getString("revision")==revision) { MoteI18n.text("资料已变更，草稿保留") }
+                check(read.getString("id")==id && read.getString("revision")==revision && current.getString("revision")==revision) { MoteI18n.text("所选资料版本已变更或不可用。请清除参考或重新选择；草稿已保留。") }
                 if(loadDraft) ask.readDraft() else JSONObject()
             } catch(error:CentralFailure) {
-                if(error.status in setOf(404,409))throw IllegalStateException(MoteI18n.text("资料已变更，草稿保留"),error)
+                if(error.status in setOf(404,409))throw IllegalStateException(MoteI18n.text("所选资料版本已变更或不可用。请清除参考或重新选择；草稿已保留。"),error)
                 throw error
             }
         }) { done(it) }
@@ -628,7 +628,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                 if(error is CentralFailure && error.status in setOf(400,409,413,422)) {
                     if (local) localChat.settle(origin, requestId, rejected = true)
                     val message = if(error.status==409 && error.code=="context_evidence_restricted" && ask.material(request)!=null)
-                        MoteI18n.text("资料已变更，草稿保留")
+                        MoteI18n.text("所选资料版本已变更或不可用。请清除参考或重新选择；草稿已保留。")
                     else error.message ?: MoteI18n.text("请求尚未确认，可重试同一请求。")
                     return@work AskAdmission(rejection=message)
                 }

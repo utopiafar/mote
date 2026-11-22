@@ -15,7 +15,7 @@ class CentralConversationPresentationTest {
     }
     @Test fun `privacy erasure wins over ordinary retirement and revision flags`() {
         val shown = CentralConversationPresentation.read(turn().put("evidenceDeleted", true).put("evidenceUnavailable", true).put("evidenceStale", true))
-        assertEquals(MoteI18n.text("证据已删除，历史回答已清除"), shown.notice)
+        assertEquals(MoteI18n.text("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。"), shown.notice)
         assertNull(shown.result)
     }
     @Test fun `revision retains result and a failed turn never invents a result`() {

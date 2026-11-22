@@ -27,7 +27,7 @@ class HistoricalConversationInstrumentedTest {
     private lateinit var fixture: JSONObject
     private val stale get() = MoteI18n.text("这是历史版本，当前资料已更新。")
     private val deleted get() = MoteI18n.text("引用原文已删除，历史问答仍保留。")
-    private val erased get() = MoteI18n.text("证据已删除，历史回答已清除")
+    private val erased get() = MoteI18n.text("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")
     @Before fun prepare() {
         val args = InstrumentationRegistry.getArguments()
         require(args.getString("historyFixture") == "true")

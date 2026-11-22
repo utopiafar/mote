@@ -191,7 +191,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             stopCapture()
             stateWorker.execute { if (!destroyed && settings.read().sameCaptureConfiguration(config)) {
                 settings.enabled = false
-                settings.status("permission_required", MoteI18n.text("通知权限关闭，采集已停止"))
+                settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
             } }
             return
         }

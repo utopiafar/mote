@@ -1489,6 +1489,7 @@ class MainActivity : MoteActivity() {
         permissionRow("电池优化",MoteI18n.text("电池优化设置")) { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         permissionRow("自启动",MoteI18n.text("自启动设置")) { autostart() }
         settingsRow(MoteI18n.text("应用详情 / 受限制设置"),MoteI18n.text("侧载应用可能需允许受限制设置")) { safeOpen(detailsIntent()) }
+        help(MoteI18n.text("HyperOS 帮助"),MoteI18n.text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。") + "\n\n" + MoteI18n.text("HyperOS 通知使用权：请按需打开实时、对话、通知、静音类别。旧版曾禁用这些类别；更新后若仍是灰色，可关闭再重新授予通知使用权。类别和应用级开关会影响可接收的事件。"))
         text(MoteI18n.text("授权后仍需明确开始。"),NativeFontRole.SUPPORT,NativeColorRole.MUTED)
         projectionButton = button(MoteI18n.text("返回采集范围")) { showPage(Page.PRIVACY) }
         if (permissionReturnPage != Page.PRIVACY) button(MoteI18n.text("返回原配置页面")) { showPage(permissionReturnPage) }

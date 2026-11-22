@@ -49,7 +49,7 @@ class ProjectionService : Service() {
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
             if (!closed && instanceGeneration == instances.get()) RuntimeSettings.cancelProjectionConsentRequest()
-            projectionEnded(MoteI18n.text("投屏已结束，打开应用重授权"))
+            projectionEnded(MoteI18n.text("投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权"))
             stopSelf()
         }
         override fun onCapturedContentResize(width: Int, height: Int) {

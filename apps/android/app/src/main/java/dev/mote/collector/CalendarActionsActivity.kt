@@ -246,7 +246,7 @@ class CalendarActionsActivity : MoteActivity() {
         if (choices.length() == 0) { status.text = MoteI18n.text("先连接本机日历，并在系统日历中添加可写账户"); return }
         val event = action.getJSONObject("event"); val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(MoteTheme.spacePanel), moteDp(MoteTheme.spaceInline), moteDp(MoteTheme.spacePanel), moteDp(MoteTheme.spaceInline)) }
         val allDay = CheckBox(this).apply { text = MoteI18n.text("全天"); isChecked = event.getBoolean("allDay") }; form.addView(allDay)
-        text(form, MoteI18n.text("点日期选择时间，时区可改"))
+        text(form, MoteI18n.text("点击日期字段选择时间。全天日程的结束日期不包含当天。时区可修改。"))
         val fields = linkedMapOf<String, EditText>()
         for ((key, label) in listOf("title" to MoteI18n.text("标题"), "start" to MoteI18n.text("开始"), "end" to MoteI18n.text("结束"), "timeZone" to MoteI18n.text("时区"), "location" to MoteI18n.text("地点"), "description" to MoteI18n.text("备注"))) {
             text(form, label); val input = EditText(this).apply { setText(if (event.isNull(key)) "" else event.getString(key)); contentDescription = label; maxLines = 3 }; fields[key] = input; form.addView(input)

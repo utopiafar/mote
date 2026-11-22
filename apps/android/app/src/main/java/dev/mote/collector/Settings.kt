@@ -166,7 +166,7 @@ class Settings(private val context: Context) {
             return edit.commit()
         }
         if (!write(committedValues)) {
-            if (!write(previous)) { enabled = false; status("error", MoteI18n.text("设置未持久保存，采集已停止")) }
+            if (!write(previous)) { enabled = false; status("error", MoteI18n.text("设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试")) }
             throw SettingsWriteFailure()
         }
         /* Configuration is committed as one snapshot; status counters are never rolled back. */
