@@ -51,7 +51,7 @@ it('returns fixed network/409 errors without provider body or token leakage and 
   for (const code of [302, 409, 500]) {
     let calls = 0; const value = new ConnectionOnboarding(async (_url, init) => { calls++; expect(init?.redirect).toBe('error'); return response({ secret: token }, code); }, () => now);
     const preview = value.preview(JSON.stringify(invitation)); const failure = value.redeem(preview.id, preview.serverUrl, { deviceId: 'fixture-device', deviceName: 'Synthetic' }, 'macos');
-    await expect(failure).rejects.not.toThrow(token); if (code === 409) await expect(failure).rejects.toThrow('操作状态已变化'); expect(calls).toBe(1);
+    await expect(failure).rejects.not.toThrow(token); if (code === 409) await expect(failure).rejects.toThrow('操作状态已变'); expect(calls).toBe(1);
   }
 });
 it('validates connection scope, device binding and bounded responses', async () => {
@@ -92,7 +92,7 @@ it('accepts registered owner identity and rejects retired collector or MCP crede
 });
 
 
-it.each([[403,'origin_denied','公开地址'],[403,'connection_scope_denied','连接权限'],[404,'not_found','资源不存在'],[426,'incompatible_protocol','协议版本'],[410,'login_expired','登录请求']])('keeps safe response-specific guidance without inferring an upgrade: %s %s',async(status,code,expected)=>{
+it.each([[403,'origin_denied','公开地址'],[403,'connection_scope_denied','无此权限'],[404,'not_found','资源不存在'],[426,'incompatible_protocol','协议版本'],[410,'login_expired','登录已过期']])('keeps safe response-specific guidance without inferring an upgrade: %s %s',async(status,code,expected)=>{
  await expect(testConnection({serverUrl:invitation.serverUrl,token,deviceId:'fixture-device'},async()=>response({reason:{private:'detail'},error:code,message:'PRIVATE_DETAIL'},Number(status)))).rejects.toThrow(String(expected));
 });
 it('only explicit device-registration conflicts ask the owner to select that device',async()=>{

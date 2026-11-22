@@ -32,7 +32,7 @@ it('keeps an unknown local original and a later confirmed central read captioned
  api.retry=vi.fn();ui.show();await flush();el('upload-run-list').querySelector<HTMLButtonElement>('[data-upload-run]')!.click();await flush();el('upload-view-all').click();await flush();
  const preview=el('upload-content-preview');
  expect(preview.querySelector('.upload-note')!.textContent).toContain('本机副本');
- expect(preview.textContent).toContain('中央接收仍待确认');expect(preview.textContent).not.toContain('已上传内容从中央读取');
+ expect(preview.textContent).toContain('中央接收待确认');expect(preview.textContent).not.toContain('已上传内容从中央读取');
  expect(preview.querySelector('#upload-preview-central')).toBeNull();expect(preview.querySelector('.upload-content-description')!.textContent).toContain('Generated independent description.');
  configureLocale(()=> 'en');el('upload-preview-refresh').click();await flush();
  expect(preview.querySelector('.upload-note')!.textContent).toBe(moteText('本机副本，中央接收待确认。预览最多 100000 字符。'));
