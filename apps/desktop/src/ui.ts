@@ -1,3 +1,4 @@
+import {desktopIcon} from './desktop-icon';
 import {createUpdateInstallUi} from './update-install-ui';
 import {renderStorageLocation} from './storage-location-ui';
 import {appendDiagnostic,renderReadableFailure} from './ui-diagnostic';
@@ -73,7 +74,7 @@ const settingsPages = new Set<Page>(['screen','connection', 'sync', 'capture', '
 const memoryTopicsUi=createMemoryTopicsUi(desktopApi,document.getElementById('memory-topics-dialog') as HTMLDialogElement);
 let contentOrigin:Page='records';
 const libraryUi=createContentLibraryUi(desktopApi,()=>memoryTopicsUi.open(),{
-  open(){contentOrigin=currentPage;const title=document.querySelector<HTMLElement>(`[data-page="${currentPage}"] [data-page-title]`)?.textContent?.trim()??moteText('内容');byId('content-detail-close').textContent='← '+title;showPage('content-reader');},
+  open(){contentOrigin=currentPage;const title=document.querySelector<HTMLElement>(`[data-page="${currentPage}"] [data-page-title]`)?.textContent?.trim()??moteText('内容');byId('content-detail-close').replaceChildren(desktopIcon(document,'arrow-left',true),' '+title);showPage('content-reader');},
   close(){if(currentPage==='content-reader')showPage(contentOrigin,true,false,true);},
 });
 function refreshContent():Promise<void>{return libraryUi.refresh();}

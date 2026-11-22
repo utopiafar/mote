@@ -12,7 +12,7 @@ export class BackgroundJobs {
     return [...this.rows.values()].filter(row => row.state === 'running' || now - (this.finishedAt.get(row.id) ?? now) < 10_000).map(row => ({
       ...row,
       // These are app-authored progress labels, rendered in the current language.
-      message: statusMessage(row.message) + (row.state === 'completed' ? moteText(" · 操作已结束") : row.state === 'failed' ? moteText(" · 未完成，请重试") : ''),
+      message: statusMessage(row.message) + (row.state === 'completed' ? moteText(" · 操作已结束") : row.state === 'failed' ? moteText(" · 未完成，重试") : ''),
     }));
   }
   private finishedAt = new Map<string, number>();

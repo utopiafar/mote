@@ -3,7 +3,7 @@ import { readResource, resources } from '../../resource-cache';
 import { moteText } from '@mote/shared/i18n';
 import { connectionQrDataUrl } from '../../connection-qr';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Copy, Diamond, Download, Link2, Plus, QrCode, RefreshCw, ShieldCheck, Unplug, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Copy, Diamond, Download, Link2, Plus, QrCode, RefreshCw, ShieldCheck, Unplug, X ,Laptop,Smartphone} from 'lucide-react';
 import { connectionServerUrl, pageHash, type ActionConnectorChoice, type ConnectionInvitation, type ServerConfiguration } from '@mote/shared';
 import { ApiError, type Api, type Device, ago, dateTime, errorMessage } from '../../api';
 import {useHashChoice} from '../../useHashChoice';
@@ -358,11 +358,11 @@ export function Connections({ api, serverUrl, devices, mode = 'chatbot', embedde
       {revokingCredential&&<AccessRevocation key={revokingCredential.id} label={revokingCredential.label} calendar={revokingCredential.scope==='mcp-calendar'} busy={!!busy} cancel={()=>setRevoking('')} confirm={()=>revoke(revokingCredential.id)}/>}
     </section>;
     return <section className="connections device-pair-workspace" aria-labelledby={embedded ? undefined : 'connections-title'}>
-    {!embedded && <><a className="back-link" href={pageHash('library')}>← {moteText('资料库')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div></>}
+    {!embedded && <><a className="back-link" href={pageHash('library')}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('资料库')}</a><div className="page-heading"><h1 id="connections-title">{moteText('连接设备')}</h1></div></>}
     <div className="device-pair-center"><div><strong>{moteText('中央')}</strong><small>{invite&&!pairEditing?invite.invitation.serverUrl:endpoint}</small></div><span>{(invite&&!pairEditing?invite.scope:deviceScope)==='collector'?moteText('独立采集器 · 仅同步本设备'):moteText('完整客户端权限')}</span></div>
     {Boolean(error||inventoryResource.error||configuration.error)&&<div className="notice error" role="alert">{error||errorMessage(inventoryResource.error||configuration.error)}</div>}{message&&<div className="notice" role="status">{message}</div>}
     {(!invite||pairEditing)&&<form className="device-pair-form" onSubmit={event=>{event.preventDefault();createInvitation();}}>
-    <div className="device-pair-choices" role="group" aria-label={moteText('设备类型')}>{(['macos','android'] as const).map(platform=><button type="button" key={platform} className="device-pair-choice" aria-pressed={pairPlatform===platform} disabled={!!busy} onClick={()=>setPairPlatform(platform)}><span aria-hidden="true">{platform==='macos'?'▱':'▯'}</span><span><strong>{platform==='macos'?'Mac':'Android'}</strong><small>{platform==='macos'?moteText('电脑客户端'):moteText('手机客户端')}</small></span></button>)}</div>
+    <div className="device-pair-choices" role="group" aria-label={moteText('设备类型')}>{(['macos','android'] as const).map(platform=><button type="button" key={platform} className="device-pair-choice" aria-pressed={pairPlatform===platform} disabled={!!busy} onClick={()=>setPairPlatform(platform)}><span aria-hidden="true">{platform==='macos'?<Laptop size={18} aria-hidden="true"/>:<Smartphone size={18} aria-hidden="true"/>}</span><span><strong>{platform==='macos'?'Mac':'Android'}</strong><small>{platform==='macos'?moteText('电脑客户端'):moteText('手机客户端')}</small></span></button>)}</div>
     <label>{moteText('连接名称')}<input aria-label={moteText('连接名称')} value={label} disabled={!!busy} onChange={event=>setLabel(event.target.value)} maxLength={120}/></label>
     <details className="device-pair-advanced"><summary>{moteText('中心地址与高级连接')}</summary><div className="connection-form"><label>{moteText('本服务供设备访问的地址')}<input aria-label={moteText('邀请节点地址')} type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048}/></label>
     <label>{moteText('设备权限')}<select aria-label={moteText('设备权限')} value={deviceScope} disabled={!!busy} onChange={event=>setDeviceScope(event.target.value as 'owner'|'collector')}><option value="owner">{moteText('本人客户端 · 完整权限')}</option><option value="collector">{moteText('独立采集器 · 仅同步')}</option></select></label>

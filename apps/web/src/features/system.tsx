@@ -64,7 +64,7 @@ export function SettingsDirectory({api,status,onPage}:PageProps) {
   };
   return <section className="settings-destinations final-settings-directory">
     {groups.map((group,index)=><section className="panel" key={index}>{group.map(row)}</section>)}
-    <details className="settings-directory-advanced"><summary>{moteText('其他设置')}</summary><div className="settings-directory-rows">{detailRow('actions',moteText('日程建议与执行'),moteText('发现、设备与日程执行范围'))}{detailRow('settings',moteText('定期生成发现'),moteText('生成周期与新增资料门槛'),pageHash('models',{category:'model',section:'automatic'}))}{detailRow('settings',moteText('活动整理'),moteText('是否整理后续采集内容'),pageHash('models',{category:'model',section:'automatic'}))}{detailRow('agentView',moteText('Agent 能看到什么'),'')}{detailRow('help',moteText('帮助与反馈'),moteText('连接、处理与维护'))}{extra.map(entry=>detailRow(entry.id,entry.label??entry.id,''))}</div><AppearanceSelector/></details>
+    <details className="settings-directory-advanced"><summary><ChevronRight className="disclosure-icon" size={14} aria-hidden="true"/>{moteText('其他设置')}</summary><div className="settings-directory-rows">{detailRow('actions',moteText('日程建议与执行'),moteText('发现、设备与日程执行范围'))}{detailRow('settings',moteText('定期生成发现'),moteText('生成周期与新增资料门槛'),pageHash('models',{category:'model',section:'automatic'}))}{detailRow('settings',moteText('活动整理'),moteText('是否整理后续采集内容'),pageHash('models',{category:'model',section:'automatic'}))}{detailRow('agentView',moteText('Agent 能看到什么'),'')}{detailRow('help',moteText('帮助与反馈'),moteText('连接、处理与维护'))}{extra.map(entry=>detailRow(entry.id,entry.label??entry.id,''))}</div><AppearanceSelector/></details>
   </section>;
 }
 

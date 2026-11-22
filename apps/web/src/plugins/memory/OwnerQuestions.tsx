@@ -1,5 +1,5 @@
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {ArrowRight,LoaderCircle} from 'lucide-react';
+import {ArrowRight,LoaderCircle,ArrowLeft} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {OwnerQuestion} from '@mote/shared';
 import {ApiError,dateTime,errorMessage,type Api} from '../../api';
@@ -42,7 +42,7 @@ export function OwnerQuestionWorkspace({api,id,onOpen}:{api:Api;id:string;onOpen
   useOwnerQuestionStyle();
   useEffect(()=>()=>{queueMicrotask(()=>{if(readOwnerQuestion(window.location.hash)===null)clearOwnerQuestionListOrigin(api);});},[api]);
   const returnTo=id?questionOrigins.get(api)?.get(id)?.hash??ownerQuestionRoute():ownerQuestionListOrigin(api)??'#/';
-  return <div className="owner-question-workspace"><div className="owner-question-workspace-header">{!id&&<h1>{moteText('需要你补充')}</h1>}<a className="text-button" href={returnTo} onClick={()=>{const position=id?questionOrigins.get(api)?.get(id):undefined;if(position)questionReturns.set(api,position);}}>← {moteText('返回')}</a></div>{id?<OwnerQuestionConversation key={id} api={api} id={id} onOpen={onOpen} standalone/>:<OwnerQuestionLinks api={api} history standalone/>}</div>;
+  return <div className="owner-question-workspace"><div className="owner-question-workspace-header">{!id&&<h1>{moteText('需要你补充')}</h1>}<a className="text-button" href={returnTo} onClick={()=>{const position=id?questionOrigins.get(api)?.get(id):undefined;if(position)questionReturns.set(api,position);}}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回')}</a></div>{id?<OwnerQuestionConversation key={id} api={api} id={id} onOpen={onOpen} standalone/>:<OwnerQuestionLinks api={api} history standalone/>}</div>;
 }
 
 export function OwnerQuestionLinks({api,workId,materialId,operationIds,history=false,selectedId,standalone=false}:{api:Api;workId?:string;materialId?:string;operationIds?:string[];history?:boolean;selectedId?:string;standalone?:boolean}){

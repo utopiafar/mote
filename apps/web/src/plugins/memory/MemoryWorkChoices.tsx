@@ -1,3 +1,4 @@
+import {ChevronRight} from 'lucide-react';
 import {useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,ApiError,dateTime,errorMessage} from '../../api';
@@ -27,8 +28,8 @@ export function MemoryWorkChoices({api,kind,deviceId,disabled,onMaterial,onMemor
  {page.error!==undefined&&<div role="alert"><p>{stale?moteText('分页内容已变化或游标无效，返回第一页重新读取。'):errorMessage(page.error)}</p><button className="text-button" onClick={stale?reset:page.refresh}>{moteText('重新读取')}</button></div>}
  {page.loading&&!data&&<Loading/>}
  {!page.loading&&!page.error&&!items?.length&&!materialItems?.length&&<p>{kind==='extract'?moteText('本页没有可选资料。'):moteText('本页没有可选的有效记忆。')}</p>}
- <div className="memory-work-choice-list">{items?.map(memory=><button type="button" key={memory.id} disabled={disabled} onClick={()=>onMemory(memory)}><span><strong>{memory.title}</strong><small>{moteText('以这条记忆作为整理起点')}</small></span><span aria-hidden="true">›</span></button>)}
- {materialItems?.map(entry=>{const material=entry.entryType==='material',title=material?entry.material.title:entry.capture.windowTitle||entry.capture.textPreview?.split('\n')[0]||moteText('原始记录');return <button type="button" key={entry.ref} disabled={disabled} onClick={()=>onMaterial({kind:material?'material':'capture',ref:entry.ref,title,revision:material?entry.material.revision:entry.revision})}><span><strong>{title}</strong><small>{dateTime(entry.contentAt)}</small></span><span aria-hidden="true">›</span></button>;})}</div>
+ <div className="memory-work-choice-list">{items?.map(memory=><button type="button" key={memory.id} disabled={disabled} onClick={()=>onMemory(memory)}><span><strong>{memory.title}</strong><small>{moteText('以这条记忆作为整理起点')}</small></span><span aria-hidden="true"><ChevronRight size={14} aria-hidden="true"/></span></button>)}
+ {materialItems?.map(entry=>{const material=entry.entryType==='material',title=material?entry.material.title:entry.capture.windowTitle||entry.capture.textPreview?.split('\n')[0]||moteText('原始记录');return <button type="button" key={entry.ref} disabled={disabled} onClick={()=>onMaterial({kind:material?'material':'capture',ref:entry.ref,title,revision:material?entry.material.revision:entry.revision})}><span><strong>{title}</strong><small>{dateTime(entry.contentAt)}</small></span><span aria-hidden="true"><ChevronRight size={14} aria-hidden="true"/></span></button>;})}</div>
  {(cursors.length>1||data?.nextCursor)&&<nav aria-label={moteText('选择资料')}><button className="text-button" disabled={page.loading||cursors.length===1} onClick={()=>setPaging({api,identity,cursors:cursors.slice(0,-1)})}>{moteText('上一页')}</button><span>{moteText('第 {0} 页',cursors.length)}</span><button className="text-button" disabled={page.loading||!data?.nextCursor} onClick={()=>{if(data?.nextCursor)setPaging({api,identity,cursors:[...cursors,data.nextCursor]});}}>{moteText('下一页')}</button></nav>}
  </section>;
 }

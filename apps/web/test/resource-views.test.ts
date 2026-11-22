@@ -167,7 +167,7 @@ test('current featured Memory detail offers the manual consolidation entry, whil
  await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('.memory-detail button')).find(b=>b.textContent==='从这条记忆开始整理')!.click());
  assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/仅选择此卡作为整合起点/);
  assert.equal(Array.from(d.querySelectorAll('#manual-memory-integration button')).find(b=>b.textContent==='开始整理')!.disabled,false,'the current feature default is configured');
- await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('.memory-workspace-final button')).find(b=>b.textContent==='← 返回')!.click());
+ await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('.memory-workspace-final button')).find(b=>b.textContent==='返回')!.click());
  shown={...item,validUntil:'2020-01-01T00:00:00Z'};
  await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/')));
  assert.equal(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'),false);
@@ -524,7 +524,7 @@ test('single-record memory extraction uses explicit evidence and chosen recipe w
  await act(async()=>d.querySelector<HTMLInputElement>('.manual-memory-recipes input')!.click());
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='开始提取')!.click());
  assert.deepEqual(writes[0].evidenceIds,[ids[0]]);assert.deepEqual(writes[0].recipes,[{id:'mote.personal-memory',version:'2'}]);assert.equal(writes[0].after,undefined);assert.equal(writes[0].before,undefined);assert.equal(writes[0].deviceId,undefined);
- await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='← 返回')!.click());
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='返回')!.click());
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='按时间范围提取')!.click());
  assert.equal(Boolean(d.querySelector('.memory-work-scope-notice')),false);await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='开始提取')!.click());assert.equal(writes[1].evidenceIds,undefined);assert.equal(writes[1].after,captureDateRange(localDateInput(new Date('2020-01-01T00:00:00Z')),localDateInput(new Date('2020-01-02T00:00:00Z'))).after);
 });

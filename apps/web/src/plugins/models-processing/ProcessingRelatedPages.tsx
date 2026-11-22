@@ -1,3 +1,4 @@
+import {ArrowLeft} from 'lucide-react';
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import type {Api} from '../../api';
@@ -24,7 +25,7 @@ export function useProcessingRelatedPages(api:Api,kind:'images'|'audio'|'documen
  useLayoutEffect(()=>{onDetailChange?.(Boolean(current));return()=>onDetailChange?.(false);},[Boolean(current),onDetailChange]);
  const open=(page:Panel['page'],id?:string)=>{if(!current)origin.current={owner:api,kind,x:window.scrollX,y:window.scrollY,focus:document.activeElement as HTMLElement|null};setVisited(value=>({...value,[page]:true}));setPanel({owner:api,kind,page,id,sequence:++sequence.current});};
  const label=moteText(kind==='images'?'图片':kind==='audio'?'录音':'文档与其他文件');
- const back=<button type="button" className="text-button model-profile-back" onClick={()=>setPanel(undefined)}>← {label}</button>;
+ const back=<button type="button" className="text-button model-profile-back" onClick={()=>setPanel(undefined)}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{label}</button>;
  const pages=<>
   {visited.service&&<div hidden={current?.page!=='service'}><ProcessingServices api={api} initialServiceId={current?.page==='service'?current.id:undefined} selectionSequence={current?.sequence} returnLabel={label} onSaved={onFileSaved} onReturn={()=>setPanel(undefined)} onDetailChange={ignoreDetail} onProcessing={()=>setPanel(undefined)}/></div>}
   {visited.models&&<div hidden={current?.page!=='models'}>{back}<div className="page-heading model-profile-heading"><h1>{moteText('模块与模型')}</h1></div><ModelAssignments api={api} revision={revision} onApplied={()=>setRevision(value=>value+1)} onManage={()=>open('profiles')}/></div>}

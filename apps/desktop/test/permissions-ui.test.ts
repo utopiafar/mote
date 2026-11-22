@@ -27,15 +27,16 @@ afterEach(() => { ui.dispose(); dom.window.close(); vi.unstubAllGlobals(); vi.us
 it('requests only the selected permission, manages existing grants, and never claims full disk access', async () => {
   ui.show(); await flush();
   expect(api.requestPermission).not.toHaveBeenCalled();
-  expect(el('#permission-screen').textContent).toBe('! 未授权');
-  expect(el('#permission-calendar').textContent).toBe('! 尚未授权');
+  expect(el('#permission-screen').textContent?.trim()).toBe('未授权');
+  expect(el('#permission-calendar').textContent?.trim()).toBe('尚未授权');
   expect(button('accessibility').textContent).toBe('管理权限');
   expect(el('#permission-drag-help').hidden).toBe(false);
   button('screen').click(); await flush(); expect(api.requestPermission).toHaveBeenCalledWith('screen');
   button('accessibility').click(); await flush(); expect(api.permissionSettings).toHaveBeenCalledWith('accessibility');
   vi.mocked(api.requestPermission).mockImplementationOnce(async () => { status.calendar = 'granted'; });
   button('calendar').click(); await flush();
-  expect(el('#permission-calendar').textContent).toBe('✓ 已授权');
+  expect(el('#permission-calendar').textContent?.trim()).toBe('已授权');
+  expect(el('#permission-calendar use').getAttribute('href')).toBe('#icon-check');
   el<HTMLButtonElement>('[data-permission=files]').click(); await flush();
   expect(api.permissionSettings).toHaveBeenCalledWith('files');
   expect(el('#permission-files').textContent).toBe('按所选路径访问');
@@ -47,7 +48,7 @@ it('requests only the selected permission, manages existing grants, and never cl
 it('automatically reflects revocation, coalesces checks, and rejects responses from a page that was left', async () => {
   ui.show(); await flush(); status.accessibility = 'denied';
   await vi.advanceTimersByTimeAsync(1500);
-  expect(el('#permission-accessibility').textContent).toBe('! 未授权');
+  expect(el('#permission-accessibility').textContent?.trim()).toBe('未授权');
   let finish!: (value: PermissionStatus) => void;
   vi.mocked(api.permissionStatus).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   el<HTMLButtonElement>('#permissions-refresh').click();
@@ -56,7 +57,7 @@ it('automatically reflects revocation, coalesces checks, and rejects responses f
   expect(api.permissionStatus).toHaveBeenCalledTimes(calls);
   ui.hide(); ui.show(); await flush();
   finish({ ...status, screen: 'granted', accessibility: 'granted' }); await flush();
-  expect(el('#permission-screen').textContent).toBe('! 未授权');
+  expect(el('#permission-screen').textContent?.trim()).toBe('未授权');
   ui.hide(); const hiddenCalls = vi.mocked(api.permissionStatus).mock.calls.length;
   await vi.advanceTimersByTimeAsync(4500); window.dispatchEvent(new dom.window.Event('focus')); await flush();
   expect(api.permissionStatus).toHaveBeenCalledTimes(hiddenCalls);
@@ -73,7 +74,7 @@ it('does not repeat a pending authorization and keeps failures visible through a
   expect(el('#permissions-error').textContent).toBe('权限窗口打不开。重试。');
   await vi.advanceTimersByTimeAsync(1500);
   expect(el('#permissions-error').textContent).toBe('权限窗口打不开。重试。');
-  expect(el('#permission-calendar').textContent).toBe('! 尚未授权');
+  expect(el('#permission-calendar').textContent?.trim()).toBe('尚未授权');
   el<HTMLButtonElement>('[data-permission=calendar]').click(); await flush();
   expect(api.permissionSettings).toHaveBeenCalledWith('calendar'); expect(el('#permissions-error').textContent).toBe('');
 });

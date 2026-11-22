@@ -89,7 +89,7 @@
 .library-time-final .library-time-daybar { display:flex; align-items:center; gap:10px; margin:20px 0 12px; }
 .library-time-final .library-time-daybar>.icon-button { width:28px; height:29px; min-height:0; padding:0; color:var(--mote-muted); }
 .library-time-final .library-time-daypicker { position:relative; min-width:141px; text-align:center; font-size:13px; color:var(--mote-ink); cursor:pointer; }
-.library-time-final .library-time-daypicker:after { content:'⌄'; font-size:11px; color:var(--mote-muted); margin-left:8px; }
+.library-time-final .library-time-daypicker>svg { color:var(--mote-muted); margin-left:8px; }
 .library-time-final .library-time-daypicker input { position:absolute; inset:0; width:100%; opacity:0; cursor:pointer; }
 .library-time-final .library-time-daypicker:focus-within { outline:2px solid var(--mote-accent); outline-offset:3px; border-radius:3px; }
 .library-time-final .library-time-daypicker input::-webkit-calendar-picker-indicator { position:absolute; inset:0; width:auto; height:auto; cursor:pointer; }
@@ -103,8 +103,7 @@
 .library-time-final .library-time-group { margin:0; border:0; border-bottom:1px solid var(--mote-hair); border-radius:0; background:none; }
 .library-time-final .library-time-group>summary { cursor:pointer; list-style:none; padding:17px 5px; display:grid; grid-template-columns:36px minmax(0,1fr) auto 16px; gap:15px; align-items:center; }
 .library-time-final .library-time-group>summary::-webkit-details-marker { display:none; }
-.library-time-final .library-time-group>summary:after { content:'＋'; color:var(--mote-muted); }
-.library-time-final .library-time-group[open]>summary:after { content:'−'; }
+.library-time-toggle { color:var(--mote-muted); display:flex; align-items:center; }
 .library-time-final .library-time-group>summary>span:nth-child(2) { min-width:0; }
 .library-time-final .library-time-group>summary strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; font-size:13px; font-weight:500; }
 .library-time-final .library-time-group>summary small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; margin-top:4px; font-size:11px; color:var(--mote-muted); }

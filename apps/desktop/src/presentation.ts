@@ -1,3 +1,4 @@
+import {desktopIcon} from './desktop-icon';
 import {UiPresentationHost,applyAppearanceTheme,type AppearanceStore,desktopUiLayout,linearUiTheme,type UiLayoutProfile} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {desktopSections,type DesktopPage,type DesktopSection} from './navigation';
@@ -45,8 +46,7 @@ export const defaultDesktopRenderer:DesktopLayoutRenderer={
     slots.root.dataset.detail=layout.detail;
     const buttons=desktopSections.map(page=>{
       const button=nav.ownerDocument.createElement('button');button.type='button';button.className='nav-item';button.dataset.nav=page;button.dataset.presentationNav='';
-      const icon=nav.ownerDocument.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('class','icon');icon.setAttribute('aria-hidden','true');
-      const use=nav.ownerDocument.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#icon-'+desktopIconSymbols[page]);icon.append(use);
+      const icon=desktopIcon(nav.ownerDocument,desktopIconSymbols[page]);
       const label=nav.ownerDocument.createElement('span');label.textContent=moteText(labels[page]);button.append(icon,label);return button;
     });
     nav.replaceChildren(...buttons);

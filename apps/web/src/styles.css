@@ -67,6 +67,21 @@ code {
 svg {
   flex-shrink: 0;
 }
+
+/* Shared disclosures can be rendered by several independently loaded pages. */
+:where(summary:has(> svg.disclosure-icon)) {
+  list-style: none;
+}
+:where(summary:has(> svg.disclosure-icon))::-webkit-details-marker {
+  display: none;
+}
+:where(summary > svg.disclosure-icon) {
+  vertical-align: middle;
+  margin-inline-end: var(--mote-space-inline);
+}
+:where(details[open] > summary > svg.disclosure-icon) {
+  transform: rotate(90deg);
+}
 input,select,textarea {
   border: 1px solid var(--mote-control-border);
   border-radius: var(--mote-radius-container);

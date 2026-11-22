@@ -1,3 +1,4 @@
+import {ArrowLeft} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {useEffect,useRef,useState} from 'react';
 import type {ServerConfiguration} from '@mote/shared';
@@ -88,11 +89,11 @@ export function Notifications({api,onPage}:Pick<PageProps,'api'|'onPage'>){
     finally{if(activeApi.current===api)setBusy(false);}
   }
   if(!config&&read.loading)return <section className="web-preferences notifications-page" aria-busy="true"><div className="page-heading"><h1>{moteText('通知')}</h1></div><Loading/></section>;
-  if(withdrawn)return <section className="web-preferences notifications-page"><div className="page-heading"><h1>{moteText('通知')}</h1><button className="text-button" onClick={()=>onPage('about')}>← {moteText('返回')}</button></div><div className="notice error" role="alert"><p>{moteText('操作或资源已失效。刷新后确认。')}</p><button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></div></section>;
-  if(read.error!==undefined&&!config)return <section className="web-preferences notifications-page"><div className="page-heading"><h1>{moteText('通知')}</h1><button className="text-button" onClick={()=>onPage('about')}>← {moteText('返回')}</button></div><p className="notice error" role="alert">{errorMessage(read.error)} <button className="text-button" onClick={read.refresh}>{moteText('重试')}</button></p></section>;
+  if(withdrawn)return <section className="web-preferences notifications-page"><div className="page-heading"><h1>{moteText('通知')}</h1><button className="text-button" onClick={()=>onPage('about')}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回')}</button></div><div className="notice error" role="alert"><p>{moteText('操作或资源已失效。刷新后确认。')}</p><button className="text-button" onClick={read.refresh}>{moteText('重新读取')}</button></div></section>;
+  if(read.error!==undefined&&!config)return <section className="web-preferences notifications-page"><div className="page-heading"><h1>{moteText('通知')}</h1><button className="text-button" onClick={()=>onPage('about')}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回')}</button></div><p className="notice error" role="alert">{errorMessage(read.error)} <button className="text-button" onClick={read.refresh}>{moteText('重试')}</button></p></section>;
   const current=draft??value;
   return <section className="web-preferences notifications-page">
-    <div className="page-heading"><h1>{moteText('通知')}</h1><button className="text-button" onClick={()=>onPage('about')}>← {moteText('返回')}</button></div>
+    <div className="page-heading"><h1>{moteText('通知')}</h1><button className="text-button" onClick={()=>onPage('about')}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回')}</button></div>
     <section className="web-preference-section">
       <label className="preference-toggle"><span><strong>{moteText('助理通知')}</strong></span><input type="checkbox" role="switch" aria-label={moteText('助理通知')} checked={current.enabled} disabled={busy||readOnly} onChange={event=>{edit({enabled:event.target.checked});setNotice('');}}/></label>
       <label className="preference-toggle"><span><strong>{moteText('安静时段')}</strong></span><input type="checkbox" role="switch" aria-label={moteText('安静时段')} checked={Boolean(current.quietHours)} disabled={busy||readOnly} onChange={event=>{edit({quietHours:event.target.checked?(current.quietHours??proposedQuietHours):null});setNotice('');}}/></label>

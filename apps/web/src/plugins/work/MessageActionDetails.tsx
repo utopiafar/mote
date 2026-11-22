@@ -1,3 +1,4 @@
+import {ArrowLeft} from 'lucide-react';
 import React from 'react';
 import type {ActionProposal} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
@@ -9,7 +10,7 @@ export function MessageActionDetails({action,targetName,busy,onConfirm,onDismiss
  action:ActionProposal;targetName:string;busy:boolean;onConfirm:()=>void;onDismiss:()=>void;onRefresh:()=>void;onBack:()=>void;
 }){
  return <section className="calendar-final-detail message-action-details">
-  <button className="back-link" disabled={busy} onClick={onBack}>← {moteText('返回原文')}</button>
+  <button className="back-link" disabled={busy} onClick={onBack}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回原文')}</button>
   <header className="action-final-detail-head"><span role="status">{calendarStateLabel(action)}</span><h1>{action.event.title}</h1></header>
   <p>{targetName}</p>
   {action.message&&<><strong>{action.message.conversationName??action.message.conversationId}</strong><p>{action.message.conversationId}</p>

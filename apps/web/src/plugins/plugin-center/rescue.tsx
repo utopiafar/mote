@@ -1,3 +1,4 @@
+import {ArrowLeft} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {Page} from '../../navigation';
 
@@ -6,7 +7,7 @@ import type {Page} from '../../navigation';
  * leaves the owner a route back to settings and a reload action. */
 export function PluginCenterRescue({onPage}:{onPage:(page:Page)=>void}){
  return <div className="plugin-center plugin-center-rescue">
-  <button className="back-link" onClick={()=>onPage('about')}>← {moteText('返回设置')}</button>
+  <button className="back-link" onClick={()=>onPage('about')}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回设置')}</button>
   <div className="page-heading"><h1>{moteText('插件中心')}</h1></div>
   <section className="panel panel-pad">
    <p role="status">{moteText('插件中心暂时不可用。重新加载或返回设置。')}</p>

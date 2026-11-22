@@ -1,3 +1,4 @@
+import {desktopIcon,desktopContentIcon} from './desktop-icon';
 import {getLocale,moteText} from '@mote/shared/i18n';
 import {appendDiagnostic,renderReadableFailure} from './ui-diagnostic';
 import type {DesktopApi,Status} from './contracts';
@@ -23,7 +24,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
     const root=el(id);root.replaceChildren();
     if(!rows.length){const empty=document.createElement('div');empty.className='content-empty';const title=document.createElement('strong');title.textContent=moteText('还没有内容，从一个小动作开始');const copy=document.createElement('p');copy.textContent=moteText('暂无本机内容。');empty.append(title,copy);root.append(empty);return;}
     for(const item of rows){const button=document.createElement('button');button.type='button';button.className='content-row';button.dataset.contentKey=item.key;
-      const icon=document.createElement('span');icon.className='content-type';icon.textContent=sourceName(item.source);
+      const icon=document.createElement('span');
       const copy=document.createElement('span');copy.className='content-row-copy';const title=document.createElement('strong');title.textContent=item.title||sourceName(item.source);const meta=document.createElement('small');const time=document.createElement('time');time.dateTime=item.observedAt;time.textContent=new Date(item.observedAt).toLocaleString(getLocale());const source=document.createElement('span');source.className='content-source-name';source.textContent=item.sourceName??sourceName(item.source);meta.append(time,document.createTextNode(' · '),source);
       {
         const observed=new Date(item.observedAt),today=observed.toDateString()===new Date().toDateString();
@@ -32,8 +33,8 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
       }
       const state=document.createElement('span');state.className=(item.error||item.localContentRelease?.pending)&&!item.key.startsWith('capture:')?'content-state needs-attention':'content-state';state.classList.toggle('received',item.key.startsWith('capture:')||Boolean(item.archiveAcknowledgment));state.title=item.archiveAcknowledgment?.origin??'';state.textContent=item.localContentRelease?moteText('中心已接收')+' · '+moteText(item.localContentRelease.pending?'需要处理':'本机副本已清理'):item.archiveAcknowledgment?moteText('中心已接收'):item.key.startsWith('capture:')?moteText('中心已接收'):item.error?moteText('需要处理'):moteText('本机待发送');
       {
-        button.classList.add('home-content-row');icon.className='home-content-symbol';icon.setAttribute('aria-hidden','true');icon.textContent=({note:'✎',screen:'▧',ui_page:'▤',activity:'◷',notification:'◌',media:'♫',file:'▤',calendar:'▦',coding:'⌘'} as Partial<Record<ContentItem['source'],string>>)[item.source]??'▤';
-        const arrow=document.createElement('span');arrow.className='chevron';arrow.setAttribute('aria-hidden','true');arrow.textContent='›';button.append(icon,copy,state,arrow);
+        button.classList.add('home-content-row');icon.className='home-content-symbol';icon.append(desktopContentIcon(document,item.source));
+        const arrow=document.createElement('span');arrow.className='chevron';arrow.append(desktopIcon(document,'chevron-right',true));button.append(icon,copy,state,arrow);
       }
       button.addEventListener('click',()=>{selectedButton=button;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();});root.append(button);
     }

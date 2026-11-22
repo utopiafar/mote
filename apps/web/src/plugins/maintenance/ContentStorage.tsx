@@ -1,3 +1,4 @@
+import {ChevronRight} from 'lucide-react';
 import { moteText } from '@mote/shared/i18n';
 import {type Api,errorMessage} from '../../api';
 import {useMaintenanceController,useMaintenanceSnapshot,useMaintenanceWatch} from './hooks';
@@ -13,7 +14,7 @@ export function ContentStorage({api,onChange}:{api:Api;onChange?:()=>void}) {
     <h2 id="content-storage-title">{moteText('内容保存')}</h2>
     <label className="check-field"><input type="checkbox" role="switch" aria-label={moteText('加密后续图片与原件')} checked={state?.enabled??false} disabled={!state||busy||running}
       onChange={event=>void controller.setContentEnabled(event.target.checked,onChange)}/><span><strong>{moteText('加密后续图片与原件')}</strong><small>{!state?<LoadingText/>:state.enabled?moteText('当前：加密保存'):moteText('当前：明文保存')}</small></span></label>
-    <details className="owner-disclosure"><summary>{moteText('已有文件与加密范围')}</summary>
+    <details className="owner-disclosure"><summary><ChevronRight className="disclosure-icon" size={14} aria-hidden="true"/>{moteText('已有文件与加密范围')}</summary>
     <p className="fine-print">{moteText("开关立即生效，已有文件保持原格式。正文和索引在 SQLite。")}</p>
     <div className="diagnostics-actions">
       <button className="button primary" disabled={!state||state.enabled||busy||running} onClick={()=>void controller.decrypt(onChange)}>{moteText("一次性批量解密")}</button>

@@ -1,5 +1,5 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
-import {ArrowLeft,ArrowRight,ChevronDown,ChevronRight,FileCheck2,Eye} from 'lucide-react';
+import {ArrowLeft,ArrowRight,ChevronDown,ChevronRight,FileCheck2,Eye,ArrowUpRight,Brain,Download,Sparkles,type LucideIcon} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import {formatEvidenceRef,parseEvidenceId,parseEvidenceRef,type WorkActivity,type WorkActivityPage} from '@mote/shared';
 import {type Api,errorMessage,dateTime} from '../../api';
@@ -17,7 +17,12 @@ import {ActivityMemoryResults} from '../../ActivityMemoryResults';
 import {confirmNavigation} from '../../unsaved';
 import { Loading } from '../../Loading';
 
-const activityKinds:Record<string,{label:string;symbol:string}>={import:{label:'资料导入',symbol:'⇣'},memory:{label:'记忆整理',symbol:'◈'},insight:{label:'回顾',symbol:'✧'},query:{label:'回答问题',symbol:'↗'}};
+const activityKinds:Record<string,{label:string;icon:LucideIcon}>={
+ import:{label:'资料导入',icon:Download},
+ memory:{label:'记忆整理',icon:Brain},
+ insight:{label:'回顾',icon:Sparkles},
+ query:{label:'回答问题',icon:ArrowUpRight},
+};
 type Section='progress'|'evidence'|'branches'|'technical';
 type DetailVisit={sections:Record<Section,boolean>;cursors:(number|undefined)[];memoryCursors:(string|undefined)[];scroll:number;memoryEntries:Map<string,{memoryId:string;cursors:(string|undefined)[];scroll:number}>};
 const visits=new WeakMap<Api,Map<string,DetailVisit>>();
@@ -108,7 +113,7 @@ export function Activity({ api, onNavigate, onOpen }: {
   {(related.has('sourceId')||related.has('materialId'))&&<div className="related-activity-context"><span>{moteText('相关活动')}</span><p>{moteText('仅列有稳定回执的活动。')}</p><a className="text-button" href="#/activity">{moteText('全部活动')}</a></div>}
   <nav className="section-tabs" aria-label={moteText('活动状态')}>{([['active', moteText("进行中")], ['attention', moteText("需要处理")], ['completed', moteText("已结束")]] as const).map(([key, label]) => <button key={key} aria-current={state === key ? 'page' : undefined} onClick={() => { setState(key); paging.reset(); }}>{moteText(label)}</button>)}</nav>
   {feedError !== undefined && <p role="status">{moteText('进度连接暂时中断，正在自动重连。')}</p>}{error !== undefined && <p className="notice error" role="alert">{errorMessage(error)} <button className="text-button" onClick={refresh}>{moteText('重试')}</button></p>}{loading && !data && <Loading/>}
-  <section className="activity-list" aria-label={moteText('工作列表')} aria-busy={loading}>{data?.items.map(work=><button className="activity-card" key={work.id} onClick={()=>{setSelected(work.id);window.location.hash='#/activity?'+new URLSearchParams({...Object.fromEntries(related),work:work.id});}}><span className="activity-symbol" aria-hidden="true">{activityKinds[work.kind]?.symbol}</span><span className="activity-card-content"><span className="activity-card-heading"><strong>{work.goal}</strong><WorkStateBadge state={work.state}/></span><WorkProgress progress={work.progress} compact/><span className="activity-row-bottom">{activityKinds[work.kind]&&<span className="activity-kind-tag">{moteText(activityKinds[work.kind].label)}</span>}{(work.branchCounts?.running??0)>0&&<small>{moteText('{0} 个工作分支正在进行',work.branchCounts!.running)}</small>}{work.artifacts.length>0&&<small>{work.artifacts.map(artifact=>artifact.title).join(' · ')}</small>}</span></span><time dateTime={work.updatedAt}>{dateTime(work.updatedAt)}</time><ChevronRight size={14}/></button>)}</section>
+  <section className="activity-list" aria-label={moteText('工作列表')} aria-busy={loading}>{data?.items.map(work=>{const Icon=activityKinds[work.kind]?.icon;return <button className="activity-card" key={work.id} onClick={()=>{setSelected(work.id);window.location.hash='#/activity?'+new URLSearchParams({...Object.fromEntries(related),work:work.id});}}><span className="activity-symbol" aria-hidden="true">{Icon&&<Icon size={20} aria-hidden="true"/>}</span><span className="activity-card-content"><span className="activity-card-heading"><strong>{work.goal}</strong><WorkStateBadge state={work.state}/></span><WorkProgress progress={work.progress} compact/><span className="activity-row-bottom">{activityKinds[work.kind]&&<span className="activity-kind-tag">{moteText(activityKinds[work.kind].label)}</span>}{(work.branchCounts?.running??0)>0&&<small>{moteText('{0} 个工作分支正在进行',work.branchCounts!.running)}</small>}{work.artifacts.length>0&&<small>{work.artifacts.map(artifact=>artifact.title).join(' · ')}</small>}</span></span><time dateTime={work.updatedAt}>{dateTime(work.updatedAt)}</time><ChevronRight size={14}/></button>;})}</section>
   {data && !data.items.length && <section className="panel empty"><h2>{moteText(materialId||sourceId?'未找到已关联活动':state === 'active' ? '目前没有正在进行的工作' : state === 'attention' ? '目前没有需要处理的工作' : '这里会显示已结束的工作')}</h2></section>}
   <ListPagination label={moteText('活动分页')} paging={paging} nextCursor={data?.nextCursor} count={data?.items.length ?? 0} loading={loading}/>
   <details className="panel activity-advanced" open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}><summary>{moteText('高级')}</summary>{advanced && <><p>{moteText("设备应用使用可在资料库查看。")}</p><p>{moteText('查看底层执行记录，排查依赖与失败原因。')}</p><button className="button subtle" onClick={() => onNavigate('processing')}>{moteText('技术执行记录')}</button><CodingReceiptPanel api={api}/></>}</details>
