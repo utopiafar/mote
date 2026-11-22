@@ -124,6 +124,6 @@ internal class SystemEventCollector(private val context: Context, private val wo
         }
     }
     private fun reportFailure() {
-        settings.status("error", MoteI18n.text("部分系统事件未保存"))
+        settings.status("error", MoteI18n.text("部分系统事件未能保存，请检查本机存储；事件历史可能不完整"))
     }
 }

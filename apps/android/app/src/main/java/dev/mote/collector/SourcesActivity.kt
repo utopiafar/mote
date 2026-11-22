@@ -582,7 +582,7 @@ class SourcesActivity : MoteActivity() {
         }) { result ->
             result.onSuccess { (calendars, sources) ->
                 operationStatus = MoteI18n.text("已读取 {0} 个日历", calendars.size)
-                if (calendars.isEmpty()) { toast(MoteI18n.text("系统日历暂无可用日历")); return@onSuccess }
+                if (calendars.isEmpty()) { toast(MoteI18n.text("系统日历提供者暂无日历；只有保存在本机提供者中的日历可连接")); return@onSuccess }
                 MoteDialogBuilder(this).setTitle(MoteI18n.text("选择一个本机日历")).setItems(calendars.map { it.name }.toTypedArray()) { _, index ->
                     val item = calendars[index]
                     if (!item.visible) { toast(MoteI18n.text("该日历在系统中已隐藏，先启用显示后再连接")); return@setItems }

@@ -82,7 +82,7 @@ class UiCentralRolloutInstrumentedTest {
                     }
                     when (page) {
                         "overview" -> assertTrue("Generated fixture has a configured model", labels(activity).contains(MoteI18n.text("模型已配置")))
-                        "files" -> assertTrue("The fixture has no file uploads and shows the actual empty state", labels(activity).contains(MoteI18n.text("当前范围暂无条目")))
+                        "files" -> assertTrue("The fixture has no file uploads and shows the actual empty state", labels(activity).contains(MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。")))
                         "notes" -> assertTrue("The existing native editor remains reachable from Central notes", views(root).filterIsInstance<Button>().any { it.text.toString() == MoteI18n.text("记下") && it.isEnabled })
                     }
                     GeneratedWindowRendering.save(activity, directory, "rollout-central-$page")

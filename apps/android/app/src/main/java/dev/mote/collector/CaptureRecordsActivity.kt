@@ -282,7 +282,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (source == "screen" && selected == null) {
                         status.text = MoteI18n.text("{0} · 当天 {1} 条 · {2} 个{3} · 第 {4} 页", if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录"), total, page.getInt(if (sessions) "sessionCount" else "albumCount"), if (sessions) "Session" else MoteI18n.text("相册"), pageNumber)
                         progress.visibility = View.GONE
-                        text(list, if (sessions) MoteI18n.text("会话按应用与间隔分段") else MoteI18n.text("每 15 分钟按 App 汇集 · 点开查看"), MoteTheme.fontMeta.toFloat())
+                        text(list, if (sessions) MoteI18n.text("同应用连续采样归为一段；切换应用或间隔超过 5 分钟分段。仅按本页日期与现存截图分组，起止范围不代表使用时长。") else MoteI18n.text("每 15 分钟按 App 汇集 · 点开查看"), MoteTheme.fontMeta.toFloat())
                         if (records.isEmpty()) text(list, MoteI18n.text("当天没有截图记录。"), MoteTheme.fontBody.toFloat())
                         for (item in records) albumRow(item, stamp)
                         previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
@@ -294,9 +294,9 @@ class CaptureRecordsActivity : MoteActivity() {
                     status.text = pageStatus + if (thumbnailCount > 0) MoteI18n.text(" · 已处理 {0}/{1}", 0, thumbnailCount) else ""
                     if (records.isEmpty()) text(list, when {
                         source == "note" -> MoteI18n.text("当天没有记录。选择其他日期，或添加一条记录。")
-                        source != "screen" -> MoteI18n.text("当天没有此类记录")
+                        source != "screen" -> MoteI18n.text("当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。")
                         remote -> MoteI18n.text("当天没有此设备的中央截图记录。")
-                        else -> MoteI18n.text("今天没有本机截图")
+                        else -> MoteI18n.text("当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。")
                     }, 14f)
                     progress.isIndeterminate = false; progress.max = maxOf(1, thumbnailCount); progress.progress = 0
                     if (thumbnailCount == 0) progress.visibility = View.GONE else if (!backgroundRefresh) progress.visibility = View.VISIBLE
@@ -706,11 +706,12 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (source in SystemEventRules.sources) {
                         readable = SystemEventRules.label(record)
                         text(content, readable, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
+                        quiet(MoteI18n.text("原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"))
                         text(content, record.getJSONObject("metadata").toString(2), MoteTheme.fontMeta.toFloat()).setTextIsSelectable(true)
                         chrome(describe = false); return@runOnUiThread
                     }
                     record.optJSONObject("stateSeries")?.optJSONArray("samples")?.let { samples ->
-                        text(content, MoteI18n.text("同状态合并为 {0} 次观察", samples.length(), time(samples.getJSONObject(samples.length() - 1).getString("at"))), MoteTheme.fontSupport.toFloat())
+                        text(content, MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。", samples.length(), time(samples.getJSONObject(samples.length() - 1).getString("at"))), MoteTheme.fontSupport.toFloat())
                     }
                     val media = record.optJSONObject("metadata")?.optJSONObject("media")
                     if (source == "media") {

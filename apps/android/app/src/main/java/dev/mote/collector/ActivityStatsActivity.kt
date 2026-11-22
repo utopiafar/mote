@@ -104,7 +104,7 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("截图已确认上传 {0} · 记录已确认上传 {1}\n", count(OperationKind.SCREEN_ACK), count(OperationKind.NOTE_ACK)))
                     append(MoteI18n.text("上传待重试结果 {0} · 来源版本已确认 {1} / 失败 {2}\n设备心跳失败 {3}\n", count(OperationKind.UPLOAD_RETRY), count(OperationKind.SOURCE_ACK), count(OperationKind.SOURCE_FAILED), count(OperationKind.HEARTBEAT_FAILED)))
                     append(MoteI18n.text("已确认上传 JSON 字节 {0}（不含 TLS/HTTP 开销）\n", size(state.getLong("confirmedUploadBytes"))))
-                    append(MoteI18n.text("\n采集区保留：{0} 条\n", queue.getInt("total"), queue.getInt("screens"), queue.getInt("activities"), queue.optInt("media"), queue.optInt("systemEvents"), queue.getInt("notes"), queue.getInt("unreadable"), queue.getInt("uninspected")))
+                    append(MoteI18n.text("\n记录明细抽样\n采集区保留：{0} 条，截图 {1} / 活动 {2} / 媒体 {3} / 系统事件 {4} / 笔记 {5} / 无法读取 {6} / 未检查 {7}（分类最多读取100条）\n", queue.getInt("total"), queue.getInt("screens"), queue.getInt("activities"), queue.optInt("media"), queue.optInt("systemEvents"), queue.getInt("notes"), queue.getInt("unreadable"), queue.getInt("uninspected")))
                     append(MoteI18n.text("本机存储")).append(": ").append(size(queue.getLong("bytes"))).append("\n").append(QueueStorage(this@ActivityStatsActivity).current().path).append("\n")
                     append(MoteI18n.text("来源待确认版本：{0} · 本机来源缓存 {1}\n{2}\n", sourcePending, size(directoryBytes(sources)), sources.absolutePath))
                     append(MoteI18n.text("历史模型及下载断点：{0}\n{1}\n", size(directoryBytes(models)), models.absolutePath))
@@ -115,7 +115,7 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("仅非计费 Wi-Fi：{0} · 仅充电采集：{1} · 低于 {2}% 暂停（0 关闭）\n", if (config.wifiOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), if (config.chargingOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), config.batteryPauseBelowPct))
                     append(MoteI18n.text("设备元数据：{0} · 应用规则 {1} 项\n", if (config.metadataEnabled) MoteI18n.text("上传新记录的实际状态") else MoteI18n.text("新记录不附带"), AppCollectionRules.parse(config.appCollectionRules).apps.size))
                     append(MoteI18n.text("\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。本机副本按中央确认时间和保留天数清理；中央内容识别状态不影响本机保留。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含同步失败和待复核保留的图片。\n"))
-                    append(MoteI18n.text("字节不含系统安装占用"))
+                    append(MoteI18n.text("文件字节合计不是 Android 系统的安装占用；不含 APK、系统配额或其他分区。目录仅可由本应用读取，不是共享相册。"))
                 }
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread

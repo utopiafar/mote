@@ -7468,5 +7468,130 @@
     "rule": "too-long",
     "location": "message",
     "text": "首次使用：在中央网页「行动」开启发现，并授权此设备查看跨来源的建议及原文片段。"
+  },
+  {
+    "rule": "banned-phrase(不代表)",
+    "location": "message",
+    "text": "原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"
+  },
+  {
+    "rule": "banned-phrase(不代表)",
+    "location": "message",
+    "text": "同应用连续采样归为一段；切换应用或间隔超过 5 分钟分段。仅按本页日期与现存截图分组，起止范围不代表使用时长。"
+  },
+  {
+    "rule": "banned-phrase(不代表)",
+    "location": "message",
+    "text": "接收进度不代表中央整理或索引已完成"
+  },
+  {
+    "rule": "banned-phrase(不代表)",
+    "location": "message",
+    "text": "累计保存、当前本机存量、请求上传和 Central 接收是不同事实。空间按现有文件统计，不代表每日新增量。"
+  },
+  {
+    "rule": "banned-phrase(不等于)",
+    "location": "message",
+    "text": "原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"
+  },
+  {
+    "rule": "polite",
+    "location": "message",
+    "text": "先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，请勿分享。"
+  },
+  {
+    "rule": "polite",
+    "location": "message",
+    "text": "当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。"
+  },
+  {
+    "rule": "polite",
+    "location": "message",
+    "text": "部分系统事件未能保存，请检查本机存储；事件历史可能不完整"
+  },
+  {
+    "rule": "polite",
+    "location": "message",
+    "text": "默认无障碍采集支持页面字段与截图回退。选择投屏会同时改为只截图，锁屏/被杀后必须重新授权。Android 10 截图请选投屏模式。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "\n记录明细抽样\n采集区保留：{0} 条，截图 {1} / 活动 {2} / 媒体 {3} / 系统事件 {4} / 笔记 {5} / 无法读取 {6} / 未检查 {7}（分类最多读取100条）\n"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "仍有 {0} 条待发及 {1} 项来源设置待确认；暂停或权限不可用的来源需恢复后同步"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，请勿分享。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "同应用连续采样归为一段；切换应用或间隔超过 5 分钟分段。仅按本页日期与现存截图分组，起止范围不代表使用时长。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "开发版与日常 Mote 独立安装，权限、设备 ID、令牌、草稿、队列和模型互不共享。默认测试端口 47842；模拟器使用 adb reverse tcp:47842 tcp:47842。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "文件字节合计不是 Android 系统的安装占用；不含 APK、系统配额或其他分区。目录仅可由本应用读取，不是共享相册。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "本周期累计页面 {0} · 截图 {1} · 应用活动 {2} · 媒体 {3} · 笔记 {4} · 已确认 {5}\n拦截 {6} · 失败 {7} · 重试结果 {8}"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "系统日历提供者暂无日历；只有保存在本机提供者中的日历可连接"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "约每30秒及状态变化时记录。系统休眠、终止服务或播放器未公开媒体会话时可能缺失；仅统计连续观测的播放时段。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "累计保存、当前本机存量、请求上传和 Central 接收是不同事实。空间按现有文件统计，不代表每日新增量。"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "记录已保存在队列；同步调度暂不可用，再次保存会重试同一条记录"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "部分系统事件未能保存，请检查本机存储；事件历史可能不完整"
+  },
+  {
+    "rule": "too-long",
+    "location": "message",
+    "text": "默认无障碍采集支持页面字段与截图回退。选择投屏会同时改为只截图，锁屏/被杀后必须重新授权。Android 10 截图请选投屏模式。"
   }
 ]

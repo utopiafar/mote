@@ -319,7 +319,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, options.map { if (it.isEmpty()) { if (source) MoteI18n.text("不声明") else MoteI18n.text("跟随来源") } else relationLabel(it) })
             setSelection(options.indexOf(value).coerceAtLeast(0))
         }; card.addView(selector)
-        ui.text(MoteI18n.text("声明帮助模型区分内容归属"), parent = card)
+        ui.text(MoteI18n.text("声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。"), parent = card)
         return selector to options
     }
     private fun material(id: String, revision: String?, offset: Int = 0) {
@@ -980,7 +980,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private fun renderPage(path: String, target: LinearLayout, cursor: String?, result: JSONObject, render: (JSONObject, LinearLayout) -> Unit) {
             target.removeAllViews()
             val items = result.optJSONArray("items") ?: result.optJSONArray("entries") ?: result.optJSONArray("jobs") ?: JSONArray()
-            if (items.length() == 0) ui.text(MoteI18n.text("当前范围暂无条目"), parent = target)
+            if (items.length() == 0) ui.text(MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。"), parent = target)
             for (i in 0 until items.length()) render(items.getJSONObject(i), ui.card(target))
             if (cursor != null) ui.button(MoteI18n.text("返回第一页"), parent = target) { paged(path, target, render = render) }
             CentralScreens.next(result)?.let { next -> ui.button(MoteI18n.text("下一页"), parent = target) { paged(path, target, next, render) } }
