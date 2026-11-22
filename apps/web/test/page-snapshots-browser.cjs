@@ -95,6 +95,8 @@ async function waitForPaint(contents, selector) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      // Let overlay scrollbars and deferred image loads settle before capture.
+      await new Promise(resolve => setTimeout(resolve, 800));
       const bodyColor = getComputedStyle(document.body).backgroundColor;
       return {
         width: innerWidth,

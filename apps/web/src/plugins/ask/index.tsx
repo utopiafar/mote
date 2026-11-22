@@ -17,6 +17,9 @@ export {QueryProgress,progressLabel,type QueryRun} from './QueryProgress';
 export {queryRecovery,type AdoptedQuery,type OwnedQuery,type PendingQuery} from './query-recovery';
 export {readOriginTurn,conversationTurnRoute,type OriginTurn} from './conversation-origin';
 export {associateChatScope,clearChatReloadDraft,preserveChatForLanguageReload,unsentDrafts,unsentImages,type ChatAttachment,type ChatImageUpload} from './chat-drafts';
+
+const conversationStyles=new URL('../../conversation-final.css?no-inline',import.meta.url).href;
+function PageStyles(){return <link rel="stylesheet" href={conversationStyles} precedence="default"/>;}
 export {AskController,createAskController,useAskController,type AskControllerOptions,type AskRunHandlers} from './controller';
 
 export interface AskPluginOptions {
@@ -62,7 +65,7 @@ export function askPlugin(api:Api){let plugin=plugins.get(api);if(!plugin){plugi
 export function AskPage(props:PageProps){
   const plugin=useMemo(()=>askPlugin(props.api),[props.api]);
   useEffect(()=>{plugin.activate();return()=>plugin.deactivate();},[plugin]);
-  return props.status?<Ask api={props.api} devices={props.devices} status={props.status} controller={plugin.controller} onOpen={props.onOpen} onInsights={()=>props.onPage('insights')} onSettings={()=>{window.location.hash=modelSetupHref('providers',window.location.hash);}}/>:null;
+  return props.status?<><PageStyles/><Ask api={props.api} devices={props.devices} status={props.status} controller={plugin.controller} onOpen={props.onOpen} onInsights={()=>props.onPage('insights')} onSettings={()=>{window.location.hash=modelSetupHref('providers',window.location.hash);}}/></>:null;
 }
 
 export const pages: PageEntry[] = [

@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync,readdirSync,statSync} from 'node:fs';
+import {join,relative} from 'node:path';
+
+const source = new URL('../src/', import.meta.url).pathname;
+const read = (name: string) => readFileSync(join(source, name), 'utf8');
+function walk(dir: string, out: string[] = []) {
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) walk(path, out);
+    else out.push(path);
+  }
+  return out;
+}
+const cssFiles = walk(source).filter(path => path.endsWith('.css'));
+const allCss = cssFiles.map(path => readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')).join('\n');
+
+/** Class names used by the retired Home, feature directory, Ask page and
+ * conversation list. The current source no longer renders any of them. */
+const retiredClasses = `answer-panel central-first-actions central-first-data central-first-original central-first-steps central-first-use central-onboarding central-overview chat-section-icon chat-section-title composer-hint conversation-add-reference conversation-delete-confirm conversation-fresh conversation-history conversation-history-heading conversation-item-meta conversation-item-row conversation-more-list conversation-page-status conversation-toolbar discovery-spinner failed-answer failed-answer-icon feature-guide final-conversation first-question-duplicate first-use-actions first-use-failure first-use-heading first-use-kicker first-use-later first-use-original first-use-received first-use-record first-use-record-meta first-use-stages ghost guide-empty guide-group guide-groups guide-heading guide-search history-open home-action-entry home-assistant home-assistant-actions home-assistant-activity-note home-assistant-body home-assistant-card home-assistant-conversation home-assistant-destination home-assistant-destination-link home-assistant-entry home-assistant-goal home-assistant-group home-assistant-history home-assistant-meta home-assistant-overview home-assistant-proof home-assistant-status-list home-assistant-task home-assistant-tools home-conversation-row home-conversations home-discovery home-discovery-copy home-discovery-label home-empty home-extensions home-find home-heading home-heading-meta home-insight home-material-list home-owner-question home-page home-read-error home-recent home-run-link home-section-actions home-source-issue home-summary model-notice new-conversation-button query-admission-status query-unconfirmed run-link-label step-number`.split(/\s+/);
+
+test('PF5-01 retired page classes are absent from every stylesheet', () => {
+  const found = retiredClasses.filter(name => new RegExp(`\\.${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`).test(allCss));
+  assert.deepEqual(found, []);
+  assert.equal(cssFiles.some(path => path.endsWith('/feature-guide.css')), false);
+});
+
+test('PF5-02 the chat route imports the base and chat styles only', () => {
+  const main = read('main.tsx');
+  const styleImports = [...main.matchAll(/^import\s+['"]([^'"]+\.css)['"];?$/gm)].map(match => match[1]);
+  assert.deepEqual(styleImports, ['./styles.css']);
+  const base = read('styles.css');
+  const baseImports = [...base.matchAll(/^@import\s+['"]([^'"]+)['"];?$/gm)].map(match => match[1]);
+  assert.deepEqual(baseImports, ['./design-tokens.css']);
+  const ask = read('plugins/ask/index.tsx');
+  assert.match(ask, /conversation-final\.css/);
+  const chat = read('plugins/ask/Conversations.tsx');
+  assert.match(chat, /chat\.css/);
+  for (const name of ['library.css','settings-ui.css','plugin-center.css','discovery-ui.css','imports-final.css','activity-final.css','actions-final.css','device-workspace.css','agent-final.css','memory-presentation.css','source-workspace.css']) {
+    assert.equal(ask.includes(name), false, name);
+  }
+});
+
+test('PF5-04 first-screen CSS source bytes are below the pre-consolidation total', () => {
+  const before = 581677;
+  const after = ['styles.css','design-tokens.css','conversation-final.css','plugins/ask/chat.css']
+    .reduce((total, name) => total + Buffer.byteLength(read(name)), 0);
+  assert.ok(after < before, `${after} < ${before}`);
+  assert.ok(after < before * 0.4, `${after} < 40% of ${before}`);
+});

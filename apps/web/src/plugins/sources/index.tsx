@@ -42,9 +42,17 @@ function ConnectionWorkspace({api, onOpen, onPage}: PageProps) {
   const [source] = useHashChoice('sourceId', readSource);
   const [setup] = useHashChoice('setup', readSetup);
   return source || setup
-    ? <Sources api={api} onOpen={onOpen} onImport={() => onPage('imports')}/>
-    : <ConnectionsPage api={api}/>;
+    ? <><PageStyles/><Sources api={api} onOpen={onOpen} onImport={() => onPage('imports')}/></>
+    : <><PageStyles/><ConnectionsPage api={api}/></>;
 }
+
+const connectionStyles=[
+  new URL('../../source-workspace.css?no-inline',import.meta.url).href,
+  new URL('../../settings-ui.css?no-inline',import.meta.url).href,
+  new URL('../../discovery-ui.css?no-inline',import.meta.url).href,
+  new URL('../../device-workspace.css?no-inline',import.meta.url).href,
+];
+function PageStyles(){return <>{connectionStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 export const pages: PageEntry[] = [
   {
@@ -54,7 +62,7 @@ export const pages: PageEntry[] = [
     section: 'connections',
     order: 0.5,
     featureId: 'mote.sources',
-    render: ({ api, onPage }: PageProps) => <SourceCatalog api={api} onPage={onPage}/>,
+    render: ({ api, onPage }: PageProps) => <><PageStyles/><SourceCatalog api={api} onPage={onPage}/></>,
   },
   {
     id: 'sources',
@@ -73,7 +81,7 @@ export const pages: PageEntry[] = [
     section: 'connections',
     order: 3,
     featureId: 'mote.sources',
-    render: ({ api, onPage }: PageProps) => <LarkSettings api={api} onSources={() => onPage('sources')}/>,
+    render: ({ api, onPage }: PageProps) => <><PageStyles/><LarkSettings api={api} onSources={() => onPage('sources')}/></>,
   },
 ];
 
@@ -90,7 +98,7 @@ export const connectionsPages: PageEntry[] = [
     section: 'connections',
     order: 2,
     featureId: 'mote.connections',
-    render: ({ api, devices }: PageProps) => <Connections key="chatbot" mode="chatbot" api={api} serverUrl={window.location.origin} devices={devices}/>,
+    render: ({ api, devices }: PageProps) => <><PageStyles/><Connections key="chatbot" mode="chatbot" api={api} serverUrl={window.location.origin} devices={devices}/></>,
   },
   {
     id: 'deviceConnections',
@@ -99,7 +107,7 @@ export const connectionsPages: PageEntry[] = [
     section: 'library',
     order: 1,
     featureId: 'mote.connections',
-    render: ({ api, devices }: PageProps) => <DevicePairing key="device" api={api} serverUrl={window.location.origin} devices={devices}/>,
+    render: ({ api, devices }: PageProps) => <><PageStyles/><DevicePairing key="device" api={api} serverUrl={window.location.origin} devices={devices}/></>,
   },
 ];
 

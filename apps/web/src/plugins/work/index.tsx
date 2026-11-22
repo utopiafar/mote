@@ -12,6 +12,13 @@ import type { BuiltinWebPlugin } from '../types';
 
 const Activity = React.lazy(() => import('./Activity').then(module => ({ default: module.Activity })));
 const Actions = React.lazy(() => import('./Actions').then(module => ({ default: module.Actions })));
+const activityStyles=[
+  new URL('../../activity-final.css?no-inline',import.meta.url).href,
+  new URL('../../special-materials-final.css?no-inline',import.meta.url).href,
+];
+const actionStyles=[new URL('../../actions-final.css?no-inline',import.meta.url).href,new URL('../../settings-ui.css?no-inline',import.meta.url).href];
+function ActivityStyles(){return <>{activityStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
+function ActionStyles(){return <>{actionStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 /** Compact background work shown inside diagnostics; the full activity page keeps
  * the detail view, evidence and technical records. */
@@ -36,14 +43,14 @@ export const pages: PageEntry[] = [
     route: 'activity',
     label: moteText('活动'),
     featureId: 'mote.activity',
-    render: ({ api, onPage, onOpen }: PageProps) => <Activity api={api} onNavigate={onPage} onOpen={onOpen}/>,
+    render: ({ api, onPage, onOpen }: PageProps) => <><ActivityStyles/><Activity api={api} onNavigate={onPage} onOpen={onOpen}/></>,
   },
   {
     id: 'actions',
     route: 'actions',
     label: moteText('待办与日程'),
     featureId: 'mote.actions',
-    render: ({ api, onOpen }: PageProps) => <Actions api={api} onOpen={onOpen}/>,
+    render: ({ api, onOpen }: PageProps) => <><ActionStyles/><Actions api={api} onOpen={onOpen}/></>,
   },
 ];
 

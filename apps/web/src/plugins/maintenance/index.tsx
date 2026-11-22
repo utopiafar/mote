@@ -70,13 +70,19 @@ export function MaintenancePage({api,children}:{api:Api;children:ReactNode}){
 }
 
 const storagePages:PageEntry[]=[
-  {id:'vault',route:'system/storage',get label(){return moteText('存储与备份');},section:'system',order:6,featureId:'mote.storage',render:({api,status,refresh,disconnect}:PageProps)=>status?<MaintenancePage api={api}><MaintenanceFrame title={moteText('存储与备份')}><Vault api={api} embedded status={status} refresh={refresh} disconnect={disconnect}><ContentStorage api={api} onChange={refresh}/></Vault></MaintenanceFrame></MaintenancePage>:null},
-  {id:'statistics',route:'system',get label(){return moteText("运行状态与空间");},section:'system',order:0,featureId:'mote.storage',render:({api,onPage}:PageProps)=><MaintenancePage api={api}><StorageStatistics api={api} onUsage={()=>onPage("usage")}/></MaintenancePage>},
+  {id:'vault',route:'system/storage',get label(){return moteText('存储与备份');},section:'system',order:6,featureId:'mote.storage',render:({api,status,refresh,disconnect}:PageProps)=>status?<><MaintenanceStyles/><MaintenancePage api={api}><MaintenanceFrame title={moteText('存储与备份')}><Vault api={api} embedded status={status} refresh={refresh} disconnect={disconnect}><ContentStorage api={api} onChange={refresh}/></Vault></MaintenanceFrame></MaintenancePage></>:null},
+  {id:'statistics',route:'system',get label(){return moteText("运行状态与空间");},section:'system',order:0,featureId:'mote.storage',render:({api,onPage}:PageProps)=><><MaintenanceStyles/><MaintenancePage api={api}><StorageStatistics api={api} onUsage={()=>onPage("usage")}/></MaintenancePage></>},
 ];
 
 const usagePages:PageEntry[]=[
-  {id:'usage',route:'system/usage',label:moteText('用量与费用'),section:'system',order:5,featureId:'mote.usage',render:({api}:PageProps)=><MaintenancePage api={api}><Usage api={api}/></MaintenancePage>},
+  {id:'usage',route:'system/usage',label:moteText('用量与费用'),section:'system',order:5,featureId:'mote.usage',render:({api}:PageProps)=><><MaintenanceStyles/><MaintenancePage api={api}><Usage api={api}/></MaintenancePage></>},
 ];
+
+const maintenanceStyles=[
+  new URL('../../owner-maintenance.css?no-inline',import.meta.url).href,
+  new URL('../../settings-ui.css?no-inline',import.meta.url).href,
+];
+function MaintenanceStyles(){return <>{maintenanceStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 /** The maintenance package keeps the former storage and usage package
  * identities; both contributions share the same durable transfer controller. */

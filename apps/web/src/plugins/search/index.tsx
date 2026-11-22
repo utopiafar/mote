@@ -19,8 +19,11 @@ export function GlobalRetrieval({onPage}:{onPage:(page:string)=>void}) {
   </form>;
 }
 
+const searchStyles=new URL('../../library.css?no-inline',import.meta.url).href;
+function SearchStyles(){return <link rel="stylesheet" href={searchStyles} precedence="default"/>;}
+
 export const pages:PageEntry[]=[
-  {id:'search',route:'search',label:moteText('搜索资料'),featureId:'mote.search',render:({api,onOpen}:PageProps)=><SearchWorkspace api={api} onOpen={onOpen}/>},
+  {id:'search',route:'search',label:moteText('搜索资料'),featureId:'mote.search',render:({api,onOpen}:PageProps)=><><SearchStyles/><SearchWorkspace api={api} onOpen={onOpen}/></>},
 ];
 
 /** The search package owns the topbar entry, the search page query/filter/

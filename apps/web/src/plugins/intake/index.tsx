@@ -7,6 +7,8 @@ import type {BuiltinWebPlugin} from '../types';
 import {ImportQueue,importQueue} from './import-queue';
 
 export const Imports=React.lazy(()=>import('./Imports').then(module=>({default:module.Imports})));
+const importStyles=[new URL('../../imports-final.css?no-inline',import.meta.url).href];
+function ImportStyles(){return <>{importStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 export {Files,FileDetail} from './Files';
 export {FileReview,downloadFileExport} from './FileReview';
@@ -18,7 +20,7 @@ const importOwners=new WeakMap<Api,number>();let nextImportOwner=0;
 function importOwner(api:Api){let id=importOwners.get(api);if(id===undefined){id=++nextImportOwner;importOwners.set(api,id);}return id;}
 
 export const pages:PageEntry[]=[
-{id:'imports',route:'library/import',label:moteText('导入'),section:'library',order:8,featureId:'mote.imports',render:({api,onPage,onOpen:setEvidenceId,timelineRevision,refresh}:PageProps)=><Imports key={importOwner(api)} api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage('assistantMemory')} onSettings={()=>{window.location.hash=modelSetupHref('providers',window.location.hash);}} onChanged={refresh}/>},
+{id:'imports',route:'library/import',label:moteText('导入'),section:'library',order:8,featureId:'mote.imports',render:({api,onPage,onOpen:setEvidenceId,timelineRevision,refresh}:PageProps)=><><ImportStyles/><Imports key={importOwner(api)} api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage('assistantMemory')} onSettings={()=>{window.location.hash=modelSetupHref('providers',window.location.hash);}} onChanged={refresh}/></>},
 ];
 
 /** The intake package owns the imports page, the session-scoped upload queue

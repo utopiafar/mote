@@ -67,8 +67,11 @@ export function AgentAccessPage(props:PageProps){
     plugin.activate();
     return()=>plugin.deactivate();
   },[plugin]);
-  return <AgentAccessContext.Provider value={plugin.context}><AgentInspector api={props.api} onOpen={props.onOpen} devices={props.devices}/></AgentAccessContext.Provider>;
+  return <><AgentStyles/><AgentAccessContext.Provider value={plugin.context}><AgentInspector api={props.api} onOpen={props.onOpen} devices={props.devices}/></AgentAccessContext.Provider></>;
 }
+
+const agentStyles=new URL('../../agent-final.css?no-inline',import.meta.url).href;
+function AgentStyles(){return <link rel="stylesheet" href={agentStyles} precedence="default"/>;}
 
 export const pages:PageEntry[]=[{id:'agentView',route:agentInspectorRoute,aliases:['agent'],section:'connections',label:moteText('Agent 视角'),featureId:'mote.agent-view',render:(props:PageProps)=><AgentAccessPage {...props}/>}];
 
