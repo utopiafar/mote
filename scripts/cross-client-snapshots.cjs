@@ -5,9 +5,11 @@ require('./fixture-language.cjs');
  * Generated data and private temporary profiles only; no model, personal capture or network beyond loopback. */
 const { app, BrowserWindow, nativeTheme } = require('electron');
 const { mkdtempSync, mkdirSync, writeFileSync, existsSync, copyFileSync, rmSync } = require('node:fs');
+const { rm } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join, resolve, relative } = require('node:path');
 const { spawn } = require('node:child_process');
+const { once } = require('node:events');
 const { randomBytes, randomUUID } = require('node:crypto');
 const net = require('node:net');
 const assert = require('node:assert/strict');
@@ -55,7 +57,7 @@ async function captureWeb() {
   // shared capture-status mapping visible in the device-list scene.
   await request('/api/devices/heartbeat', { deviceId: 'generated-mac', deviceName: 'Generated Mac', platform: 'macos', status: 'capturing', queueDepth: 12, lastCaptureAt: new Date().toISOString(), sync: { mode: 'manual', state: 'idle', intervalMinutes: 1, batchSize: 100, pendingRecords: 12 } });
   await request('/api/devices/heartbeat', { deviceId: 'generated-android', deviceName: 'Generated Android', platform: 'android', status: 'permission_required', queueDepth: 0 });
-  const window = new BrowserWindow({ width: 1360, height: 900, show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  const window = new BrowserWindow({ width: 1360, height: 900, show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'cross-client-fixture' } });
   const wc = window.webContents, js = code => wc.executeJavaScript(code);
   const browser = await request('/api/login/session', { serverUrl: base, deviceId: randomUUID(), deviceName: 'Generated UI browser', platform: 'other', durationMs: 0 });
   await window.loadURL(base);
@@ -133,6 +135,16 @@ function writeSheet() {
   writeFileSync(join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Mote 三端对照</title><style>body{font:14px -apple-system,sans-serif;margin:24px;background:#f7f5f1;color:#292623}table{border-collapse:collapse}th,td{border:1px solid #d8d2c9;padding:8px;vertical-align:top;background:#fffdf9}th{text-align:left;white-space:nowrap}img{display:block;width:420px}td.phone img{width:180px}.missing{color:#6b625b}</style><h1>Mote 三端对照</h1><p>生成数据，仅供人工比对。Android 列读取 --android 目录下按入口命名的截图。</p><table><tr><th></th><th>Web 宽屏</th><th>Mac</th><th>Web 手机</th><th>Android</th></tr>${rows}</table>`);
 }
 
+async function closeFixture() {
+  for (const window of BrowserWindow.getAllWindows()) window.destroy();
+  if (server && server.exitCode === null && server.signalCode === null) {
+    const closed = once(server, 'close', { signal: AbortSignal.timeout(10000) });
+    server.kill();
+    await closed;
+  }
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
 if (macArgument !== -1) {
   startMacFixture();
   return;
@@ -151,12 +163,16 @@ app.whenReady().then(async () => {
     const central = await captureWeb();
     await captureDesktop(central);
     writeSheet();
-    process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, physicalDevice: false, liveModels: false, sheet: relative(repo, join(out, 'index.html')) }) + '\n');
   } catch (error) {
     process.stderr.write(String(error?.stack ?? error) + '\n');
     code = 1;
   }
-  server?.kill();
-  rmSync(root, { recursive: true, force: true });
+  try {
+    await closeFixture();
+  } catch (error) {
+    process.stderr.write(String(error?.stack ?? error) + '\n');
+    code = 1;
+  }
+  if (code === 0) process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, physicalDevice: false, liveModels: false, sheet: relative(repo, join(out, 'index.html')) }) + '\n');
   app.exit(code);
 });
