@@ -6,7 +6,7 @@ The main conversation persists each owner message before starting its read-only 
 
 ## Starting from a selected Material
 
-Home’s first-acquaintance entry opens the Library. After opening a readable current Material, choose **First acquaintance** to prepare an editable question in the main conversation. Navigation preserves the exact Material revision and checks before discarding an existing unsent draft. Sending the question uses the normal durable owner-message route; it does not start a separate onboarding Task.
+Open a readable current Material in the Library and choose **First acquaintance** to prepare an editable question in the main conversation. Navigation preserves the exact Material revision and checks before discarding an existing unsent draft. Sending the question uses the normal durable owner-message route; it does not start a separate onboarding Task.
 
 This entry reads only the selected pinned Material and original evidence delivered from it. It offers no search or catalog tools and includes neither unrelated conversation history nor opening Memory. The Material’s source selection remains visible, but it does not authorize other Materials from that source. Current source and original-read permissions still apply; a changed, retired or revoked version cannot be silently replaced. Cancelling a running answer preserves the owner message and rejects late results. Ordinary Material questions keep their existing contextual-research behavior, and the existing bulk-onboarding API and saved runs retain their cancellation and continuation paths.
 

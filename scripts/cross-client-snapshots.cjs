@@ -1,3 +1,4 @@
+delete process.env.MOTE_TEST_SHOW_UI;
 require('./fixture-background.cjs');
 require('./fixture-language.cjs');
 /** Manual visual check: the same owner scenes from Web, Mac and (optionally) Android side by side.
@@ -10,23 +11,15 @@ const { spawn } = require('node:child_process');
 const { randomBytes, randomUUID } = require('node:crypto');
 const net = require('node:net');
 const assert = require('node:assert/strict');
+const { officialNavigation } = require('../packages/shared/dist/ui-navigation.js');
 
-const repo = resolve(__dirname, '..'), root = mkdtempSync(join(tmpdir(), 'mote-cross-client-'));
+const repo = resolve(__dirname, '..');
+const macArgument = process.argv.indexOf('--mac-fixture');
+const root = macArgument === -1 ? mkdtempSync(join(tmpdir(), 'mote-cross-client-')) : process.env.MOTE_SNAPSHOT_ROOT;
 // Optional light/dark capture: MOTE_SNAPSHOT_SCHEME keeps both sheets instead of overwriting one.
 const scheme = ['light', 'dark'].includes(process.env.MOTE_SNAPSHOT_SCHEME) ? process.env.MOTE_SNAPSHOT_SCHEME : undefined;
 const out = join(repo, '.mote/cross-client' + (scheme ? '-' + scheme : ''));
 const androidArgument = process.argv.indexOf('--android'), androidDirectory = androidArgument > 0 ? resolve(process.argv[androidArgument + 1] ?? '') : undefined;
-// Scene ids are the shared primary destinations plus settings; each client contributes its own route or fixture file.
-const scenes = [
-  { id: 'home', label: '首页', web: 'today', desktop: 'ui-fixture.png' },
-  { id: 'library', label: '资料库', web: 'library', desktop: 'capture-records-ui-fixture.png' },
-  { id: 'sources', label: '来源', web: 'connections', desktop: 'source-ui-fixture.png' },
-  { id: 'devices', label: '采集与设备', web: 'sources/devices' },
-  { id: 'device-detail', label: '设备详情', web: 'sources/devices?deviceId=generated-mac' },
-  { id: 'ask', label: '问一问', web: 'ask' },
-  { id: 'settings', label: '设置', web: 'preferences', desktop: 'settings-ui-fixture.png' },
-  { id: 'capture-sync', label: '采集与同步', desktop: 'capture-sync-ui-fixture.png' },
-];
 const viewports = [{ id: 'wide', width: 1360, height: 900 }, { id: 'phone', width: 390, height: 844 }];
 // A 1x1 generated PNG keeps fixture captures valid without any screen content.
 const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -34,12 +27,16 @@ let server, stderr = '';
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, label) { const end = Date.now() + 30000; while (Date.now() < end) { if (server?.exitCode != null) throw Error('Generated server exited: ' + stderr); if (await fn()) return; await delay(80); } throw Error('Timed out: ' + label); }
 
-for (const file of ['apps/server/dist/index.js', 'apps/web/dist/index.html', 'apps/desktop/dist/main.js'])
-  assert.ok(existsSync(join(repo, file)), `Missing ${file}; run npm run build first`);
-rmSync(out, { recursive: true, force: true });
-mkdirSync(join(out, 'web'), { recursive: true, mode: 0o700 });
-app.setPath('userData', join(root, 'browser'));
-app.on('window-all-closed', () => {});
+async function showDestination(window, id) {
+  const js = code => window.webContents.executeJavaScript(code);
+  const selector = `[data-nav-item="${id}"]`;
+  await until(() => js(`Boolean(document.querySelector(${JSON.stringify(selector)}))`), id + ' navigation');
+  await js(`document.querySelector(${JSON.stringify(selector)}).click()`);
+  const active = JSON.stringify(`${selector}[aria-current="page"]`);
+  await until(() => js(`Boolean(document.querySelector(${active}) && document.querySelector('main')?.textContent.trim())`), id + ' content');
+  // Page resources settle after the active navigation state updates.
+  await delay(500);
+}
 
 async function captureWeb() {
   const port = await new Promise(done => { const socket = net.createServer(); socket.listen(0, '127.0.0.1', () => { const value = socket.address().port; socket.close(() => done(value)); }); });
@@ -66,53 +63,100 @@ async function captureWeb() {
   await until(() => js(`!!document.querySelector('[data-session="ready"]')`), 'web session');
   for (const viewport of viewports) {
     window.setSize(viewport.width, viewport.height);
-    for (const scene of scenes) {
-      if (!scene.web) continue;
-      await js(`location.hash='#/${scene.web}'`);
-      await until(() => js(`!!document.querySelector('.content h1')`), scene.id + ' ' + viewport.id);
-      // Resources load after the heading; a short settle keeps loading placeholders out of the sheet.
-      await delay(800);
+    for (const scene of officialNavigation) {
+      await showDestination(window, scene.id);
       writeFileSync(join(out, 'web', `${scene.id}-${viewport.id}.png`), (await wc.capturePage()).toPNG());
     }
   }
   window.destroy();
-  server.kill();
+  return { base, token };
 }
 
-function captureDesktop() {
-  // The Mac fixture owns its generated profile and writes every scene it renders next to this path.
-  const target = join(out, 'desktop', 'ui-fixture.png');
-  mkdirSync(join(out, 'desktop'), { recursive: true, mode: 0o700 });
+function captureDesktop({ base, token }) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('MOTE_')));
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, ['scripts/ui-smoke.cjs'], { cwd: join(repo, 'apps/desktop'), env: { ...process.env, MOTE_UI_SCREENSHOT: target, ...(scheme ? { MOTE_UI_SCHEME: scheme } : {}) }, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(process.execPath, [__filename, '--mac-fixture'], {
+      cwd: repo, env: { ...env, MOTE_SNAPSHOT_ROOT: root, MOTE_SNAPSHOT_SCHEME: scheme ?? '', MOTE_PROFILE: 'dev', MOTE_URL: base, MOTE_TOKEN: token },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
     let log = ''; child.stderr.on('data', chunk => { log = (log + chunk).slice(-8000); });
+    child.on('error', fail);
     child.on('exit', code => code === 0 ? done() : fail(Error('Mac fixture failed: ' + log)));
   });
+}
+
+function startMacFixture() {
+  const origin = new URL(process.env.MOTE_URL);
+  assert.equal(origin.hostname, '127.0.0.1');
+  assert.ok(process.env.MOTE_TOKEN && existsSync(root), 'The generated parent fixture must provide its token and profile directory');
+  app.setPath('userData', join(root, 'mac'));
+  require('../apps/desktop/package.json').moteDevelopment = true;
+  const directory = join(out, 'desktop');
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  app.whenReady().then(async () => {
+    if (scheme) nativeTheme.themeSource = scheme;
+    const mainWindow = () => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().startsWith(origin.origin + '/'));
+    await until(mainWindow, 'Mac Central main window');
+    const window = mainWindow(), js = code => window.webContents.executeJavaScript(code);
+    await until(() => js('Boolean(window.moteDesktop?.deviceId && document.querySelector("[data-nav-item=chat][aria-current=page]"))'), 'Mac default Chat and preload');
+    assert.equal(window.isVisible(), false);
+    for (const scene of officialNavigation) {
+      await showDestination(window, scene.id);
+      writeFileSync(join(directory, `${scene.id}.png`), (await window.webContents.capturePage()).toPNG());
+    }
+    await showDestination(window, 'library');
+    await until(() => js('Boolean(document.querySelector("[data-local-device] button"))'), 'Mac local device');
+    await js('document.querySelector("[data-local-device] button").click()');
+    await until(() => js('Boolean(document.querySelector("[data-local-capture-sync]"))'), 'Mac capture and sync entry');
+    const local = BrowserWindow.getAllWindows().find(candidate => candidate.webContents.getURL().startsWith('file:'));
+    assert.ok(local, 'The local Mac window is available');
+    let opened = false;
+    const show = local.show.bind(local);
+    local.show = () => { opened = true; show(); };
+    await js('document.querySelector("[data-local-capture-sync]").click()');
+    await until(() => opened, 'Mac local capture and sync window');
+    assert.equal(local.isVisible(), false);
+    writeFileSync(join(directory, 'capture-sync.png'), (await local.webContents.capturePage()).toPNG());
+    app.quit();
+  }).catch(error => { console.error(error); app.exit(1); });
+  require('../apps/desktop/dist/main.js');
 }
 
 function writeSheet() {
   mkdirSync(join(out, 'android'), { recursive: true, mode: 0o700 });
   const cell = path => path && existsSync(join(out, path)) ? `<a href="${path}"><img src="${path}" alt=""></a>` : '<span class="missing">未提供</span>';
+  const scenes = [...officialNavigation, { id: 'capture-sync', label: '采集与同步' }];
   const rows = scenes.map(scene => {
     const android = androidDirectory && existsSync(join(androidDirectory, scene.id + '.png')) ? (copyFileSync(join(androidDirectory, scene.id + '.png'), join(out, 'android', scene.id + '.png')), `android/${scene.id}.png`) : undefined;
-    return `<tr><th>${scene.label}</th><td>${cell(scene.web && `web/${scene.id}-wide.png`)}</td><td>${cell(scene.desktop && `desktop/${scene.desktop}`)}</td><td class="phone">${cell(scene.web && `web/${scene.id}-phone.png`)}</td><td class="phone">${cell(android)}</td></tr>`;
+    return `<tr><th>${scene.label}</th><td>${cell(`web/${scene.id}-wide.png`)}</td><td>${cell(`desktop/${scene.id}.png`)}</td><td class="phone">${cell(`web/${scene.id}-phone.png`)}</td><td class="phone">${cell(android)}</td></tr>`;
   }).join('\n');
-  writeFileSync(join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Mote 三端对照</title><style>body{font:14px -apple-system,sans-serif;margin:24px;background:#f7f5f1;color:#292623}table{border-collapse:collapse}th,td{border:1px solid #d8d2c9;padding:8px;vertical-align:top;background:#fffdf9}th{text-align:left;white-space:nowrap}img{display:block;width:420px}td.phone img{width:180px}.missing{color:#6b625b}</style><h1>Mote 三端对照</h1><p>生成数据，仅供人工比对。Android 列来自 --android 目录中的 home/library/sources/ask/settings.png。</p><table><tr><th></th><th>Web 宽屏</th><th>Mac</th><th>Web 手机</th><th>Android</th></tr>${rows}</table>`);
+  writeFileSync(join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Mote 三端对照</title><style>body{font:14px -apple-system,sans-serif;margin:24px;background:#f7f5f1;color:#292623}table{border-collapse:collapse}th,td{border:1px solid #d8d2c9;padding:8px;vertical-align:top;background:#fffdf9}th{text-align:left;white-space:nowrap}img{display:block;width:420px}td.phone img{width:180px}.missing{color:#6b625b}</style><h1>Mote 三端对照</h1><p>生成数据，仅供人工比对。Android 列读取 --android 目录下按入口命名的截图。</p><table><tr><th></th><th>Web 宽屏</th><th>Mac</th><th>Web 手机</th><th>Android</th></tr>${rows}</table>`);
 }
 
+if (macArgument !== -1) {
+  startMacFixture();
+  return;
+}
+
+for (const file of ['apps/server/dist/index.js', 'apps/web/dist/index.html', 'apps/desktop/dist/main.js'])
+  assert.ok(existsSync(join(repo, file)), `Missing ${file}; run npm run build first`);
+rmSync(out, { recursive: true, force: true });
+mkdirSync(join(out, 'web'), { recursive: true, mode: 0o700 });
+app.setPath('userData', join(root, 'browser'));
+app.on('window-all-closed', () => {});
 app.whenReady().then(async () => {
   if (scheme) nativeTheme.themeSource = scheme;
   let code = 0;
   try {
-    await captureWeb();
-    await captureDesktop();
+    const central = await captureWeb();
+    await captureDesktop(central);
     writeSheet();
     process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, physicalDevice: false, liveModels: false, sheet: relative(repo, join(out, 'index.html')) }) + '\n');
   } catch (error) {
     process.stderr.write(String(error?.stack ?? error) + '\n');
-    server?.kill();
     code = 1;
   }
+  server?.kill();
   rmSync(root, { recursive: true, force: true });
   app.exit(code);
 });

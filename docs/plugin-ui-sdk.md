@@ -66,7 +66,7 @@ export async function run() {
 
 要点：
 
-- `page`、`renderer`、`panel`、`card`、`collection`、`home`、`action` 是不同 surface；`views()` 只按精确 `kind + schemaVersion + representation` 匹配，不按内容猜测。
+- `page`、`renderer`、`panel`、`card`、`collection`、`home`、`action` 是不同 surface；`views()` 只按精确 `kind + schemaVersion + representation` 匹配，不按内容猜测。Manifest 仍识别 `home`，当前界面没有承载它的导航页；插件视图用 `page`。
 - 外部实例的 page 公共 ID 会限定到实例；同包两个实例可以共存，回滚一个不会撤掉另一个。
 - `loader: 'external'` 必须有显式 `IsolatedLoader`（或 Manifest 自定义页面）才能 mount；未隔离的外部代码返回 `skipped / unsupported-loader`，不会假装已安装。
 - 真实应用在启动和退出时分别调用 `bootstrapPlugins` 与 `teardownPlugins`，scope 的 disposer、lifetime 和 install fiber 由同一生命周期释放。
