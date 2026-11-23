@@ -17,7 +17,7 @@ export function publicFilePolicy(policy:FilePolicy){return {...policy,services:p
 export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:ProcessorRegistry,options:{preserveCredentials?:boolean;applyParameterDefaults?:boolean}={}):FilePolicy{
   const copy=structuredClone(raw) as any;
   if(Array.isArray(copy?.services))for(const s of copy.services){delete s.apiKeyConfigured;const old=previous.services.find(v=>v.id===s.id);
-    if(options.preserveCredentials!==false&&s.apiKey===undefined&&old?.apiKey){if(s.endpoint!==old.endpoint||s.kind!==old.kind||s.execution!==old.execution)throw new StoreError(moteText("更换服务地址或类型时，请重新填写或清除密钥"),409);s.apiKey=old.apiKey;}
+    if(options.preserveCredentials!==false&&s.apiKey===undefined&&old?.apiKey){if(s.endpoint!==old.endpoint||s.kind!==old.kind||s.execution!==old.execution)throw new StoreError(moteText("更换服务地址或类型时，重新填写或清除密钥"),409);s.apiKey=old.apiKey;}
     if(s.apiKey===null||s.apiKey==='')delete s.apiKey;
   }
   const policy=filePolicySchema.parse(copy);
@@ -58,10 +58,10 @@ export function selectFilePolicy(policy:FilePolicy,sourceId:string,mime:string,r
 export function effectiveFileSettings(applied:AppliedFilePolicy,policy:FilePolicy,base:FileProcessingSettings,registry:ProcessorRegistry){
   const plugin=registry.get(applied.profile.processorId),profile={...applied.profile,parameters:effectiveProcessorParameters(plugin,applied.profile.parameters)};
   const service=(id:string|undefined)=>{if(!id)return;const snapshot=applied.services.find(s=>s.id===id),live=policy.services.find(s=>s.id===id);
-    if(!snapshot||!live||snapshot.endpoint!==live.endpoint||snapshot.kind!==live.kind||snapshot.execution!==live.execution||snapshot.model!==live.model)throw new StoreError(moteText("文件使用的服务已变更；请明确重新处理文件以应用新方案"),409);
+    if(!snapshot||!live||snapshot.endpoint!==live.endpoint||snapshot.kind!==live.kind||snapshot.execution!==live.execution||snapshot.model!==live.model)throw new StoreError(moteText("文件使用的服务已变更，明确重新处理文件以应用新方案"),409);
     return {...snapshot,apiKey:live.apiKey};};
   const endpoint=service(profile.serviceId),model=service(profile.modelServiceId);
-  if(plugin.serviceKind&&!endpoint&&!plugin.optionalService)throw new StoreError(moteText("请为方案选择处理服务"),409);
+  if(plugin.serviceKind&&!endpoint&&!plugin.optionalService)throw new StoreError(moteText("为方案选择处理服务"),409);
   if(endpoint&&endpoint.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),409);
   if(plugin.localOnly&&!plugin.optionalService&&endpoint?.execution==='remote')throw new StoreError('Local processing requires local services',409);
   const settings:FileProcessingSettings={...base,apiKey:undefined,localWorkerApiKey:undefined,imageEndpoint:'',audioProcessor:profile.processorId,

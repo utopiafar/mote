@@ -104,7 +104,13 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("截图已确认上传 {0} · 记录已确认上传 {1}\n", count(OperationKind.SCREEN_ACK), count(OperationKind.NOTE_ACK)))
                     append(MoteI18n.text("上传待重试结果 {0} · 来源版本已确认 {1} / 失败 {2}\n设备心跳失败 {3}\n", count(OperationKind.UPLOAD_RETRY), count(OperationKind.SOURCE_ACK), count(OperationKind.SOURCE_FAILED), count(OperationKind.HEARTBEAT_FAILED)))
                     append(MoteI18n.text("已确认上传 JSON 字节 {0}（不含 TLS/HTTP 开销）\n", size(state.getLong("confirmedUploadBytes"))))
-                    append(MoteI18n.text("\n记录明细抽样\n采集区保留：{0} 条，截图 {1} / 活动 {2} / 媒体 {3} / 系统事件 {4} / 笔记 {5} / 无法读取 {6} / 未检查 {7}（分类最多读取100条）\n", queue.getInt("total"), queue.getInt("screens"), queue.getInt("activities"), queue.optInt("media"), queue.optInt("systemEvents"), queue.getInt("notes"), queue.getInt("unreadable"), queue.getInt("uninspected")))
+                    append(MoteI18n.text("\n记录明细抽样\n"))
+                    append(MoteI18n.text(
+                        "保留 {0} · 截图 {1} · 活动 {2} · 媒体 {3} · 系统事件 {4} · 笔记 {5} · 无法读取 {6} · 未检查 {7}",
+                        queue.getInt("total"), queue.getInt("screens"), queue.getInt("activities"), queue.optInt("media"),
+                        queue.optInt("systemEvents"), queue.getInt("notes"), queue.getInt("unreadable"), queue.getInt("uninspected")
+                    ))
+                    append(MoteI18n.text("（分类最多读取 100 条）\n"))
                     append(MoteI18n.text("本机存储")).append(": ").append(size(queue.getLong("bytes"))).append("\n").append(QueueStorage(this@ActivityStatsActivity).current().path).append("\n")
                     append(MoteI18n.text("来源待确认版本：{0} · 本机来源缓存 {1}\n{2}\n", sourcePending, size(directoryBytes(sources)), sources.absolutePath))
                     append(MoteI18n.text("历史模型及下载断点：{0}\n{1}\n", size(directoryBytes(models)), models.absolutePath))
@@ -114,7 +120,7 @@ class ActivityStatsActivity : MoteActivity() {
                     append(MoteI18n.text("\n生效设置\n实际配置：每 {0} 秒，JPEG {1}，最长边 {2}px\n", config.intervalSeconds, config.jpegQuality, config.captureMaxSide))
                     append(MoteI18n.text("仅非计费 Wi-Fi：{0} · 仅充电采集：{1} · 低于 {2}% 暂停（0 关闭）\n", if (config.wifiOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), if (config.chargingOnly) MoteI18n.text("开启") else MoteI18n.text("关闭"), config.batteryPauseBelowPct))
                     append(MoteI18n.text("设备元数据：{0} · 应用规则 {1} 项\n", if (config.metadataEnabled) MoteI18n.text("上传新记录的实际状态") else MoteI18n.text("新记录不附带"), AppCollectionRules.parse(config.appCollectionRules).apps.size))
-                    append(MoteI18n.text("\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。本机副本按中央确认时间和保留天数清理；中央内容识别状态不影响本机保留。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含同步失败和待复核保留的图片。\n"))
+                    append(MoteI18n.text("\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。本机副本按中央确认时间和保留天数清理；中央内容识别状态不影响本机保留。被过滤的画面不会入队。暂停按原因变更计次，无法用来计数丢弃的截图；请求可能因系统或进程中断缺少后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含同步失败和待复核保留的图片。\n"))
                     append(MoteI18n.text("文件字节合计不是 Android 系统的安装占用；不含 APK、系统配额或其他分区。目录仅可由本应用读取，不是共享相册。"))
                 }
                 runOnUiThread {
@@ -123,7 +129,7 @@ class ActivityStatsActivity : MoteActivity() {
                     renderSummary(content); history.removeAllViews()
                     snapshot = state; queueSnapshot = queue; historyPage = historyPage.coerceAtMost(((state.getJSONArray("events").length() - 1) / 10).coerceAtLeast(0)); pendingPage = pendingPage.coerceAtMost(((queue.getJSONArray("pending").length() - 1) / 10).coerceAtLeast(0)); renderHistory()
                 }
-            } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary(MoteI18n.text("统计或队列暂不可读取，不能按零展示；原始文件保留，请查看支持诊断。")) } }
+            } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary(MoteI18n.text("统计或队列暂不可读取，不能按零展示。原始文件保留，查看支持诊断。")) } }
             finally { runOnUiThread { loading = false; if (!isDestroyed) { progress.visibility = android.view.View.GONE; if (refreshPending) { refreshPending = false; refresh() } } } }
         }
     }
@@ -143,7 +149,17 @@ class ActivityStatsActivity : MoteActivity() {
             val item = pending.getJSONObject(i)
             history.addView(Button(this).apply {
                 text = "${if (item.optBoolean("archiveMissing")) MoteI18n.text("中央不可更新") else if (item.optBoolean("uploaded")) MoteI18n.text("已同步保留") else MoteI18n.text("待确认")} · ${when (item.getString("kind")) { "screen" -> MoteI18n.text("截图"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体状态"); "notification" -> MoteI18n.text("通知事件"); "device_event" -> MoteI18n.text("设备事件"); else -> MoteI18n.text("记录") }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
-                setOnClickListener { MoteDialogBuilder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机记录")).setMessage(MoteI18n.text("记录 ID：{0}\n创建：{1}\n条目字节：{2}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。", item.getString("id"), item.getString("createdAt"), item.getLong("bytes"))).setPositiveButton(MoteI18n.text("关闭"), null).show() }
+                setOnClickListener {
+                    val details = MoteI18n.text(
+                        "记录 ID：{0}\n创建：{1}\n条目字节：{2}",
+                        item.getString("id"), item.getString("createdAt"), item.getLong("bytes")
+                    )
+                    val location = MoteI18n.text("本机仍保留。下方按 ID 查上传失败和确认，图文见采集记录。")
+                    MoteDialogBuilder(this@ActivityStatsActivity)
+                        .setTitle(MoteI18n.text("本机记录"))
+                        .setMessage("$details\n$location")
+                        .setPositiveButton(MoteI18n.text("关闭"), null).show()
+                }
             })
         }
         pager(pendingPage, pending.length()) { pendingPage = it; renderHistory() }

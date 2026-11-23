@@ -115,7 +115,7 @@ internal class CaptureContextDialog(private val activity: MoteActivity) {
         items.forEach { item ->
             fields.getValue(item.channel).apply { setText(item.draft); isEnabled = true }
             statuses.getValue(item.channel).text = when {
-                item.conflict != null -> MoteI18n.text("资料说明版本已变化；草稿已保留，请重新加载最新版本后再保存。")
+                item.conflict != null -> MoteI18n.text("资料说明版本已变化，草稿已保留。重新加载最新版本后再保存。")
                 item.dirty -> MoteI18n.text("有未保存的修改")
                 item.pending -> MoteI18n.text("资料说明保存在本机，等待中央确认。")
                 item.accepted != null && item.accepted.version > 0 -> MoteI18n.text("资料说明已获中央确认，版本 {0}。", item.accepted.version)

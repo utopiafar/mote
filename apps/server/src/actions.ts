@@ -247,9 +247,9 @@ export class Actions {
     const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
     try{
       const a=this.get(id);authorize(a);
-      if(a.status!=='proposed'||a.resolution||a.managed||a.operationId||!['calendar.create','calendar.update'].includes(a.kind)||a.version!==input.version||a.version===Number.MAX_SAFE_INTEGER)throw new StoreError(moteText("建议已更新或已处理，请刷新后重新确认"),409);
+      if(a.status!=='proposed'||a.resolution||a.managed||a.operationId||!['calendar.create','calendar.update'].includes(a.kind)||a.version!==input.version||a.version===Number.MAX_SAFE_INTEGER)throw new StoreError(moteText("建议已更新或已处理，刷新后重新确认"),409);
       const fields=['start','end','timeZone'] as const;
-      if(!fields.some(key=>a.event[key]===null)||fields.some(key=>a.event[key]!==null&&a.event[key]!==input[key]))throw new StoreError(moteText("建议已更新或已处理，请刷新后重新确认"),409);
+      if(!fields.some(key=>a.event[key]===null)||fields.some(key=>a.event[key]!==null&&a.event[key]!==input[key]))throw new StoreError(moteText("建议已更新或已处理，刷新后重新确认"),409);
       const event={...a.event,start:input.start,end:input.end,timeZone:input.timeZone};
       calendarEventSchema.parse(event);
       a.event=event;a.version++;
@@ -262,7 +262,7 @@ export class Actions {
     const samePayload=a.kind==='message.send'?(input.message===undefined||JSON.stringify(a.message)===JSON.stringify(input.message)):JSON.stringify(a.event)===JSON.stringify(input.event);
     const sameTarget=a.kind==='message.send'?(input.target===undefined||JSON.stringify(a.target)===JSON.stringify(input.target)):JSON.stringify(a.target)===JSON.stringify(input.target);
     if(a.operationId&&a.version===input.version+1&&samePayload&&sameTarget)return a;
-    if(a.status!=='proposed'||a.resolution||a.version!==input.version)throw new StoreError(moteText("建议已更新或已处理，请刷新后重新确认"),409);
+    if(a.status!=='proposed'||a.resolution||a.version!==input.version)throw new StoreError(moteText("建议已更新或已处理，刷新后重新确认"),409);
     if(a.kind==='message.send'){
       if(managed||!a.message||input.event!==undefined||(input.message!==undefined&&JSON.stringify(input.message)!==JSON.stringify(a.message)))throw new StoreError('The message proposal changed; refresh before confirming it',409);
       const target=input.target??a.target;
@@ -273,19 +273,19 @@ export class Actions {
     if(!event)throw new StoreError('A calendar proposal requires its reviewed event',400);
     const original=this.original(a),native=!!original?.externalId&&a.kind!=='calendar.complete';
     if(a.related){
-      if(!this.relationValid(a)||!original||!['proposed','dismissed','succeeded'].includes(original.status))throw new StoreError(moteText('关联日程已更新或正在执行，请刷新后重新确认'),409);
+      if(!this.relationValid(a)||!original||!['proposed','dismissed','succeeded'].includes(original.status))throw new StoreError(moteText('关联日程已更新或正在执行，刷新后重新确认'),409);
       if(this.store.db.prepare("SELECT 1 FROM action_proposals WHERE id<>? AND json_extract(json,'$.related.actionId')=? AND json_extract(json,'$.status') IN ('approved','executing','uncertain')").get(a.id,original.id))throw new StoreError(moteText('同一日程已有等待核实的操作'),409);
       if(original.target&&JSON.stringify(original.target)!==JSON.stringify(input.target))throw new StoreError(moteText('改期或取消必须使用原日程的设备和日历'),409);
       if(['calendar.cancel','calendar.complete'].includes(a.kind)&&JSON.stringify(event)!==JSON.stringify(a.event))throw new StoreError(moteText('取消或完成仅确认原日程，不能修改内容'),409);
     }
-    if(a.kind==='calendar.create'||a.kind==='calendar.update'){calendarEventSchema.parse(event);if(calendarExpired(event))throw new StoreError(moteText("日程已过期，请检查日期"),409);}
+    if(a.kind==='calendar.create'||a.kind==='calendar.update'){calendarEventSchema.parse(event);if(calendarExpired(event))throw new StoreError(moteText("日程已过期，检查日期"),409);}
     if(managed&&a.kind!=='calendar.create'&&!original)throw new StoreError('A managed change requires its original action',403);
     const target=input.target;
     if(a.kind==='calendar.create'||native){
-      if(!target)throw new StoreError(moteText("目标日历不可用，请在客户端重新连接日历"),409);
+      if(!target)throw new StoreError(moteText("目标日历不可用，在客户端重新连接日历"),409);
       if('executionLocation' in target){
-        if(target.capabilityId!=='calendar.manage'||target.capabilityVersion!==1||!this.connectorChoice(target))throw new StoreError(moteText("目标连接器不可用，请刷新后重试"),409);
-      }else if(!managed&&!this.targets().some(t=>t.deviceId===target.deviceId&&t.calendars.some(c=>c.id===target.calendarId)))throw new StoreError(moteText("目标日历不可用，请在客户端重新连接日历"),409);
+        if(target.capabilityId!=='calendar.manage'||target.capabilityVersion!==1||!this.connectorChoice(target))throw new StoreError(moteText("目标连接器不可用，刷新后重试"),409);
+      }else if(!managed&&!this.targets().some(t=>t.deviceId===target.deviceId&&t.calendars.some(c=>c.id===target.calendarId)))throw new StoreError(moteText("目标日历不可用，在客户端重新连接日历"),409);
     }
     a.event=event;a.target=input.target;a.operationId=randomUUID();a.status='approved';a.version++;
     if(original&&!native){a.status='succeeded';return this.completeRelated(a,original);}
@@ -297,8 +297,8 @@ export class Actions {
       const saved=this.save(a);if(own)this.store.db.exec('COMMIT');return saved;
     }catch(error){if(own&&this.store.db.isTransaction)this.store.db.exec('ROLLBACK');throw error;}
   }
-  dismiss(id:string,version:number){const a=this.get(id);if(a.status==='dismissed'&&a.version===version+1)return a;if(a.status!=='proposed'||a.version!==version)throw new StoreError(moteText("建议已处理，请刷新"),409);a.status='dismissed';a.version++;return this.save(a);}
-  claim(id:string,deviceId:string,managed=false){const a=this.get(id);if(Boolean(a.managed)!==managed)throw new StoreError('Use the authorized action execution channel',403);const mutationAllowed=a.status==='approved';if(!a.target||isCentralConnectorActionTarget(a.target)||a.target.deviceId!==deviceId)throw new StoreError(moteText("此操作属于另一台设备"),403);if(!['approved','executing','uncertain','succeeded'].includes(a.status))throw new StoreError(moteText("此建议尚未确认或证据已失效"),409);if(['executing','uncertain'].includes(a.status)&&a.related&&!this.relationValid(a))throw new StoreError(moteText('原日程版本已改变，请核实已有操作'),409);if(a.status==='approved'){if(a.kind!=='calendar.cancel'&&calendarExpired(a.event))throw new StoreError(moteText("日程已过期，请重新核对"),409);a.status='executing';this.save(a);}return {...a,mutationAllowed,description:calendarDescription(a)};}
+  dismiss(id:string,version:number){const a=this.get(id);if(a.status==='dismissed'&&a.version===version+1)return a;if(a.status!=='proposed'||a.version!==version)throw new StoreError(moteText("建议已处理，刷新页面"),409);a.status='dismissed';a.version++;return this.save(a);}
+  claim(id:string,deviceId:string,managed=false){const a=this.get(id);if(Boolean(a.managed)!==managed)throw new StoreError('Use the authorized action execution channel',403);const mutationAllowed=a.status==='approved';if(!a.target||isCentralConnectorActionTarget(a.target)||a.target.deviceId!==deviceId)throw new StoreError(moteText("此操作属于另一台设备"),403);if(!['approved','executing','uncertain','succeeded'].includes(a.status))throw new StoreError(moteText("此建议尚未确认或证据已失效"),409);if(['executing','uncertain'].includes(a.status)&&a.related&&!this.relationValid(a))throw new StoreError(moteText('原日程版本已改变，核实已有操作'),409);if(a.status==='approved'){if(a.kind!=='calendar.cancel'&&calendarExpired(a.event))throw new StoreError(moteText("日程已过期，重新核对"),409);a.status='executing';this.save(a);}return {...a,mutationAllowed,description:calendarDescription(a)};}
   receipt(id:string,deviceId:string,raw:unknown,managed=false){const v=z.object({operationId:z.string().uuid(),status:z.enum(['succeeded','uncertain']),externalId:z.string().min(1).max(2000).optional()}).strict().parse(raw),a=this.get(id);if(Boolean(a.managed)!==managed)throw new StoreError('Use the authorized action execution channel',403);if(!a.target||isCentralConnectorActionTarget(a.target)||a.target.deviceId!==deviceId||a.operationId!==v.operationId)throw new StoreError(moteText("执行回执与确认操作不匹配"),403);if(a.status==='succeeded'){if(v.status==='succeeded'&&a.externalId===v.externalId)return a;throw new StoreError(moteText("已完成的回执不可更改"),409);}if(!['executing','uncertain'].includes(a.status))throw new StoreError(moteText("操作尚未领取"),409);if(v.status==='succeeded'&&!v.externalId)throw new StoreError(moteText("缺少日历保存回执"));if(v.status==='succeeded'&&a.related?.externalId&&v.externalId!==a.related.externalId)throw new StoreError(moteText('回执不是已确认的原日程'),409);a.status=v.status;a.externalId=v.externalId;if(v.status==='succeeded')a.nativeOperationId=a.operationId;return v.status==='succeeded'&&a.related?this.completeRelated(a):this.save(a);}
   /** Host-owned Central connector channel. The host, not the connector, owns
    * operation identity, the approved-to-executing transition and receipts. */
@@ -307,9 +307,9 @@ export class Actions {
     const a=this.get(id);if(!a.target||!isCentralConnectorActionTarget(a.target))throw new StoreError('Not a Central connector action',403);
     if(a.operationId!==operationId)throw new StoreError(moteText("执行回执与确认操作不匹配"),403);
     if(!['approved','executing','uncertain','succeeded'].includes(a.status))throw new StoreError(moteText("此建议尚未确认或证据已失效"),409);
-    if(['executing','uncertain'].includes(a.status)&&a.related&&!this.relationValid(a))throw new StoreError(moteText('原日程版本已改变，请核实已有操作'),409);
+    if(['executing','uncertain'].includes(a.status)&&a.related&&!this.relationValid(a))throw new StoreError(moteText('原日程版本已改变，核实已有操作'),409);
     const mutationAllowed=a.status==='approved';
-    if(mutationAllowed){if(a.kind!=='calendar.cancel'&&a.kind!=='message.send'&&calendarExpired(a.event))throw new StoreError(moteText("日程已过期，请重新核对"),409);a.status='executing';this.save(a);}
+    if(mutationAllowed){if(a.kind!=='calendar.cancel'&&a.kind!=='message.send'&&calendarExpired(a.event))throw new StoreError(moteText("日程已过期，重新核对"),409);a.status='executing';this.save(a);}
     if(own)db.exec('COMMIT');return {...a,mutationAllowed};
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
@@ -386,7 +386,7 @@ export class Actions {
       JOIN action_jobs j ON j.key=json_extract(e.input,'$.jobKey')
       WHERE e.kind='actions.extract' AND e.state IN ('failed','blocked') AND e.error IS NOT NULL
       ORDER BY e.updated_at DESC`).all().find(row=>currentJobs.has(String(row.key)));
-    return {configured:this.configured(),running:!!this.running,jobs:[...counts].sort(([a],[b])=>a.localeCompare(b)).map(([status,count])=>({status,count})),error:failure?moteText("日程分析未完成，可能是模型不可用、证据更新或结果未通过校验。可重试失败批次。"):null,...(failure?{errorCode:String(failure.error),availableAt:Number(failure.available_at)}:{})};
+    return {configured:this.configured(),running:!!this.running,jobs:[...counts].sort(([a],[b])=>a.localeCompare(b)).map(([status,count])=>({status,count})),error:failure?moteText("日程分析未完成。重试失败批次。"):null,...(failure?{errorCode:String(failure.error),availableAt:Number(failure.available_at)}:{})};
   }
   retry(){for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind='actions.extract' AND state IN ('failed','blocked','stale','cancelled')").all())this.engine.retry(String(row.id),true);}
   tick(){if(this.closed||this.running||!this.settings().enabled)return this.running??Promise.resolve();this.running=this.execute().finally(()=>{this.running=undefined;});return this.running;}
@@ -448,7 +448,7 @@ export class Actions {
 
 }
 export function registerActions(app:FastifyInstance,actions:Actions,connections:Connections,credential:(req:FastifyRequest)=>ConnectionCredential|undefined,afterConfirm?:()=>void,owner?:(req:FastifyRequest)=>boolean){
-  const access=(req:FastifyRequest)=>{const c=credential(req);if(c){connections.assertActive(c);if(!c.deviceId||!actions.settings().reviewDeviceIds.includes(c.deviceId))throw new StoreError(moteText("请在中央网页的行动设置中授权此设备查看和确认日程建议"),403);}return c;};
+  const access=(req:FastifyRequest)=>{const c=credential(req);if(c){connections.assertActive(c);if(!c.deviceId||!actions.settings().reviewDeviceIds.includes(c.deviceId))throw new StoreError(moteText("在中央网页的行动设置中授权此设备查看和确认日程建议"),403);}return c;};
   const own=(req:FastifyRequest,deviceId:string)=>{const c=access(req);if(c&&c.deviceId!==deviceId)throw new StoreError(moteText("只能操作本设备日历"),403);return deviceId;};
   app.get('/api/actions/by-evidence/:id',async req=>{access(req);return actions.byEvidence(z.object({id:z.string().uuid()}).parse(req.params).id);});
   app.get('/api/actions/:id',async req=>{access(req);return actions.get(z.object({id:z.string().uuid()}).parse(req.params).id);});
@@ -457,7 +457,7 @@ export function registerActions(app:FastifyInstance,actions:Actions,connections:
   app.get('/api/actions/deliveries',async req=>{const {deviceId}=z.object({deviceId:z.string().min(1).max(200)}).strict().parse(req.query);return {items:actions.deliveries(own(req,deviceId))};});
   app.put('/api/actions/settings',{bodyLimit:16384},async(req,reply)=>{
     try{return await actions.saveSettings(req.body);}
-    catch(error){if(error instanceof ActionSettingsSaveError)return reply.code(error.statusCode).send({error:error.code,message:moteText('配置未能应用，请检查配置状态后重试。'),authorizationRevoked:true,revokedDeviceIds:error.revokedDeviceIds,authorizationRevision:error.authorizationRevision,...(error.revision===undefined?{}:{revision:error.revision})});throw error;}
+    catch(error){if(error instanceof ActionSettingsSaveError)return reply.code(error.statusCode).send({error:error.code,message:moteText('配置未能应用，检查配置状态后重试。'),authorizationRevoked:true,revokedDeviceIds:error.revokedDeviceIds,authorizationRevision:error.authorizationRevision,...(error.revision===undefined?{}:{revision:error.revision})});throw error;}
   });
   app.post('/api/actions/retry',async()=>{actions.retry();void actions.tick();return {ok:true};});
   app.post('/api/actions/targets',{bodyLimit:65536},async req=>{const raw=req.body as {deviceId:string};const c=credential(req);if(c)connections.assertOwnDevice(c,raw);return actions.registerTarget(raw);});

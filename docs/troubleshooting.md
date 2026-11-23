@@ -21,7 +21,7 @@ HTTP Provider单次期限是`modelRequestTimeoutMs`，Agent实际执行预算是
 
 设备离线或旧的客户端上报不能证明Central没有新归档。Tunnel连接与Central健康分开检查：502、524、413可分别来自origin、代理等待或入口大小限制，见[Tunnel排错](cloudflare-tunnel.md#排错与入口限制)。
 
-启动固定事件中的`data_directory_in_use`、`port_in_use`、`permission`分别指目录锁、端口和权限；配置错误提供字段名，不提供私有值。升级后旧网页无法加载延迟模块时刷新页面，并核对完整Web构建、代理缓存与运行目录；缺失资产应为404，不能返回首页HTML冒充模块。
+启动固定事件中的`data_directory_in_use`、`port_in_use`、`permission`分别指目录锁、端口和权限；配置错误提供字段名，不提供私有值。升级后旧网页无法加载延迟模块时刷新页面，并核对完整Web构建、代理缓存与运行目录。缺失的模块资产应返回 404，入口 HTML 只用于加载应用页面。
 
 ## 日志与调试
 

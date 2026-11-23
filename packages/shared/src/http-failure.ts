@@ -22,7 +22,7 @@ export function commonFailureMessage(code:string,status?:number):string|undefine
     case 'login_pending': return moteText('登录待确认。在浏览器授权。');
     case 'google_not_connected': return moteText('Google 账号未连接。到来源设置授权。');
     case 'incompatible_protocol': return moteText('网页或客户端与中央的协议版本不匹配。');
-    case 'invalid_request': case 'json_required': return moteText('输入格式无效，请检查必填项和取值范围。');
+    case 'invalid_request': case 'json_required': return moteText('输入格式无效，检查必填项和取值范围。');
     case 'invalid_response': return moteText('中央响应格式无效。刷新后重试。');
     case 'invalid_data': return status===413?httpStatusMessage(status):moteText('请求无效。核对输入和操作状态。');
     case 'config_invalid': return moteText('配置无效。检查必填项和取值。');

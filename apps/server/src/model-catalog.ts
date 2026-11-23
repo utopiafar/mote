@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {normalizeCodexServiceTier,type ModelSettings} from '@mote/shared/models';
 import {StoreError} from './evidence-store.js';
 export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string;serviceTiers?:string[]}
-export class ModelCatalogError extends StoreError {constructor(){super(moteText("无法读取模型列表。请检查节点上的服务、凭据及目录接口；仍可手动填写模型 ID。"),502);}}
+export class ModelCatalogError extends StoreError {constructor(){super(moteText("模型列表未读到。核对节点服务、凭据和目录接口，或手填 ID。"),502);}}
 const failure=()=>new ModelCatalogError();
 
 /** Read-only JSON-RPC: initializes the local server and calls model/list, never starts a thread. */

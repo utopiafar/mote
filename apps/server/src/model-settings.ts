@@ -89,16 +89,16 @@ export const modelsConfigDomain=Object.freeze({id:'models',schema:modelDomainSch
 export const defaultModelDomain=():ModelDomain=>modelDomainSchema.parse({});
 
 const errors = {
-  model_profile_missing: [400, moteText("所选模型配置不存在，请重新选择。")],
-  model_profile_read_only: [409, moteText("部署配置为只读，请复制为新预设后编辑。")],
-  model_profile_in_use: [409, moteText("该配置仍是某项功能的默认模型，请先修改功能默认值。")],
-  model_settings_invalid: [400, moteText("模型配置无效，请检查填写的参数。")],
-  model_settings_conflict: [409, moteText("模型设置已发生变化，请刷新后重试。")],
-  model_settings_credential_reuse: [409, moteText("服务商、协议或地址已改变，请确认复用已有凭据，或替换、清除已有凭据。")],
-  model_settings_unavailable: [503, moteText("模型设置暂不可用，请检查服务状态后重试。")],
+  model_profile_missing: [400, moteText("所选模型配置不存在，重新选择。")],
+  model_profile_read_only: [409, moteText("部署配置为只读，复制为新预设后编辑。")],
+  model_profile_in_use: [409, moteText("该配置仍是某项功能的默认模型，先修改功能默认值。")],
+  model_settings_invalid: [400, moteText("模型配置无效，检查填写的参数。")],
+  model_settings_conflict: [409, moteText("模型设置已发生变化，刷新后重试。")],
+  model_settings_credential_reuse: [409, moteText("服务商、协议或地址已改变。确认复用已有凭据，或替换、清除已有凭据。")],
+  model_settings_unavailable: [503, moteText("模型设置暂不可用，检查服务状态后重试。")],
   model_settings_prepare_failed: [503, moteText("无法准备新的模型配置，原配置保持使用。")],
   model_settings_save_failed: [503, moteText("模型设置未能保存，原配置保持使用。")],
-  model_settings_commit_uncertain: [503, moteText("模型设置保存结果需要重新确认，请刷新设置后重试。")],
+  model_settings_commit_uncertain: [503, moteText("模型设置保存结果需要重新确认，刷新设置后重试。")],
 } as const;
 export class ModelSettingsError extends Error {
   readonly statusCode: 400 | 409 | 503;
@@ -137,9 +137,9 @@ function validSettings(value: unknown): ModelSettings {
 }
 const testMessages: Record<ModelTestResult['code'], string> = {
   get ok() { return moteText("模型连接及工具调用测试通过。"); },
-  get not_configured() { return moteText("请先填写模型和所需凭据。"); },
-  get timeout() { return moteText("模型测试超时，请检查服务后重试。"); },
-  get provider_error() { return moteText("模型服务未能完成测试，请检查地址、凭据及模型配置。"); },
+  get not_configured() { return moteText("先填写模型和所需凭据。"); },
+  get timeout() { return moteText("模型测试超时，检查服务后重试。"); },
+  get provider_error() { return moteText("模型服务未能完成测试，检查地址、凭据及模型配置。"); },
   get invalid_response() { return moteText("模型返回格式或工具调用能力未通过测试。"); },
 };
 

@@ -215,7 +215,7 @@ internal class NotesOwner internal constructor(
         try { scheduleUpload(config) } catch (_: Exception) {
             SupportEvents.record(app, EventStage.NOTE, EventCode.SCHEDULER)
             settings.uploadStatus(MoteI18n.text("记录已入队，同步调度未完成；草稿保持原提交 ID，可安全重试"))
-            throw IllegalStateException(MoteI18n.text("记录已保存在队列；同步调度暂不可用，再次保存会重试同一条记录"))
+            throw IllegalStateException(MoteI18n.text("记录已入队。调度暂不可用，再次保存将重试同一条记录。"))
         }
         home.clear()
         return event.getString("id")

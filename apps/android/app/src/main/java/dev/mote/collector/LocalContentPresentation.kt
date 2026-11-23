@@ -32,7 +32,7 @@ internal object LocalContentPresentation {
             "permission", "provider", "consent", "offline", "ack", "http" -> sourceStatus(source, state)
             "paused" -> MoteI18n.text("中央已暂停，恢复后重试")
             "context-conflict" -> MoteI18n.text("资料说明与中央版本冲突；打开设置处理，文件保留待发")
-            "context-http" -> MoteI18n.text("资料说明尚未获中央确认；请检查连接或升级中央，文件保留待发。")
+            "context-http" -> MoteI18n.text("资料说明尚未获中央确认；检查连接或升级中央，文件保留待发。")
             else -> ""
         }
         val waiting = when {

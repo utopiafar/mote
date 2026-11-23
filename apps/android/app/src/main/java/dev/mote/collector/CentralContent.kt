@@ -545,8 +545,8 @@ internal class CentralContent(
         title.text = CentralScreens.pages.firstOrNull { it.first == page }?.second?.let { MoteI18n.text(it) } ?: MoteI18n.text("资料库")
         text(MoteI18n.text(when {
             page == AssistantPlugin.GOALS_ROUTE -> "连接你的 Mote"
-            MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。"
-            else -> "中央功能需要连接中央；文件和记录仍可在本机保存和查看。"
+            MoteNavigation.libraryRoute(page) -> "资料库暂不可用。连接中央后可浏览归档；本机文件和记录仍可保存、查看。"
+            else -> "中央功能需连接中央，本机文件和记录仍可保存、查看。"
         }))
         connectionButton()
     }

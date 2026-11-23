@@ -18,7 +18,7 @@ const modelSchema=z.object({model:z.string(),configuration:z.object({owner:z.lit
 const checkpointSchema=z.object({selection:memoryIntegrationSelectionSchema,model:modelSchema,inputs:z.array(z.object({id:z.string().uuid(),hash:z.string().length(64)}).strict()).max(50),completed:z.array(z.enum(['personal','coding'])).max(2)}).strict();
 export class MemoryIntegrationSelectionError extends StoreError {
   readonly code='memory_selection_changed';
-  constructor(){super(moteText('所选记忆已变化，请刷新后重新选择。'),409);}
+  constructor(){super(moteText('所选记忆已变化，刷新后重新选择。'),409);}
 }
 
 export function requestMemoryIntegration(raw:unknown,{lifecycle,memories,pipeline}:{lifecycle:MemoryLifecycle;memories:MemoryStore;pipeline:MemoryPipeline}){

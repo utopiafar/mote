@@ -156,7 +156,7 @@ class AppUpdatesActivity : MoteActivity() {
             "ready" -> MoteI18n.text("下载完成，可以安装"); "preparing" -> MoteI18n.text("正在重新校验安装文件，可取消"); "staging" -> MoteI18n.text("正在提交安装文件给 Android")
             "install_pending", "awaiting_user" -> MoteI18n.text("等待系统安装确认")
             "installed" -> MoteI18n.text("系统已完成更新；已有应用数据保留"); "install_permission" -> MoteI18n.text("在系统允许此应用安装更新，返回后再次点击安装")
-            "certificate", "apk_signature" -> MoteI18n.text("APK 签名与当前应用不兼容或无效，已阻止更新；不会卸载旧应用")
+            "certificate", "apk_signature" -> MoteI18n.text("APK 签名无效或不兼容，已阻止更新。旧应用保留。")
             "checksum", "asset_size" -> MoteI18n.text("APK 大小或 SHA-256 不匹配，未交给系统安装")
             "package" -> MoteI18n.text("APK 包名、版本或系统要求与当前应用不符，已阻止安装")
             "manifest", "manifest_signature", "host", "redirect" -> MoteI18n.text("发布清单签名、格式或来源不可信，已拒绝")

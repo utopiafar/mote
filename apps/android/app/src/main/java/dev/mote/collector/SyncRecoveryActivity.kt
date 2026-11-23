@@ -65,7 +65,7 @@ class SyncRecoveryActivity : MoteActivity() {
                 val translations = if (status.state in setOf("unconfigured", "paused")) MoteI18n.translations(SyncReadiness.obsoleteMessages) else emptyMap()
                 val visible = SyncReadiness.visible(config, status, SyncSchedule.waitingReason(this, config), c, local.sourceIssues, local.pending, inventoryUnavailable = local.error != null, sourceUnavailable = local.sourceError || sources == null) { source, value -> source == value || translations[source]?.contains(value) == true }
                 val notice = if (settings.syncRequestRejected()) "\n" + MoteI18n.text("配置已发生变化，刷新后重试") else ""
-                MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", c.records, local.pending ?: "—") to MoteI18n.text("{0}\n本机保留 {1} 条 · 待发 {2} 条\n需处理 {3} 条\n来源待发 {4} 个版本 / {5} 项设置\n\n{6}\n最后收到上传确认：{7}", local.imageLabel(), c.records, local.pending ?: "—", c.blocked, local.sourcePending ?: "—", sources?.pendingUpdates ?: "—", SyncReadiness.text(visible) + notice, settings.lastUploadAt() ?: MoteI18n.text("尚无"))
+                MoteI18n.text("本机保留 {0} 条 · 待发 {1} 条", c.records, local.pending ?: "—") to MoteI18n.text("{0}\n本机保留 {1} · 待发 {2} · 需处理 {3}\n来源待发 {4} 版 / 设置 {5} 项\n\n{6}\n最近上传确认 {7}", local.imageLabel(), c.records, local.pending ?: "—", c.blocked, local.sourcePending ?: "—", sources?.pendingUpdates ?: "—", SyncReadiness.text(visible) + notice, settings.lastUploadAt() ?: MoteI18n.text("尚无"))
             }.getOrElse { MoteI18n.text("本机状态暂不可读：{0}", it.message ?: MoteI18n.text("检查存储")) to "" }
             val failures = runCatching { queue().syncIssues() }.getOrDefault(emptyList())
             val report = getSharedPreferences("sync-recovery", MODE_PRIVATE).getString("message", "")

@@ -669,7 +669,7 @@ class UiIterationInstrumentedTest {
                     instrumentation.runOnMainSync {
                         val rows = views(reader.window.decorView)
                         assertFalse(rows.any { it.isShown && it.tag == "capture:$savedId" })
-                        assertFalse(rows.filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。") })
+                        assertFalse(rows.filterIsInstance<TextView>().any { it.isShown && it.text.toString() == MoteI18n.text("当天没有此类记录。开启相应采集来源并授权，记录按同步策略上传。") })
                         GeneratedWindowRendering.save(reader, directory, "note-empty-list")
                         File(directory, "note-empty-list.txt").writeText(rows.filterIsInstance<TextView>().filter { it.isShown }.joinToString("\n") { it.text.toString() })
                         val next = rows.filterIsInstance<TextView>().single { it.isShown && it.text.toString() == MoteI18n.text("后一天") }
@@ -720,7 +720,7 @@ class UiIterationInstrumentedTest {
                 val deadline = SystemClock.elapsedRealtime() + 10000
                 var ready = false
                 while (!ready && SystemClock.elapsedRealtime() < deadline) {
-                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。") } }
+                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("资料库暂不可用。连接中央后可浏览归档；本机文件和记录仍可保存、查看。") } }
                     if (!ready) Thread.sleep(25)
                 }
                 assertTrue("Offline archive must explain browsing instead of questioning", ready)

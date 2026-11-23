@@ -87,7 +87,7 @@ class ConnectionActivity : MoteActivity() {
         val root = moteDetailPage(title = MoteI18n.text("连接你的 Mote"),onBack = { onBackPressed() })
         fun text(value: String, size: Float = MoteTheme.fontBody.toFloat()) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); setPadding(0, moteDp(MoteTheme.spaceInline), 0, moteDp(MoteTheme.spaceInline)) }.also(root::addView)
         fun button(label: String, primary: Boolean = false, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { if (!working && !task.busy) runCatching(action).onFailure { showFailure(it) } } }, primary).also(root::addView)
-        text(MoteI18n.text("先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，请勿分享。"))
+        text(MoteI18n.text("先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，勿分享。"))
         currentNode = text(""); refreshCurrentNode()
         button(MoteI18n.text("复制本设备 ID")) { getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Mote device ID", deviceId)); Toast.makeText(this, MoteI18n.text("已复制设备 ID，不含凭据"), Toast.LENGTH_SHORT).show() }
         text(MoteI18n.text("设备名称"))
@@ -296,7 +296,7 @@ class ConnectionActivity : MoteActivity() {
         }
     }
     private fun refreshCurrentNode() {
-        currentNode.text = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。", currentConfig.server.ifBlank { MoteI18n.text("尚未配置") }, deviceId)
+        currentNode.text = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备由中央生成绑定此设备 ID 的邀请；设备身份不会重置。", currentConfig.server.ifBlank { MoteI18n.text("尚未配置") }, deviceId)
     }
     override fun onResume() { super.onResume(); refreshRequested = true; handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }

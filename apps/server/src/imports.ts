@@ -193,7 +193,7 @@ export class ImportStore {
       }};await walk(source,0);
       }catch(error){
         const code=(error as NodeJS.ErrnoException).code;
-        if(code==='ENOENT'||code==='ENOTDIR')throw new ImportInputError('import_directory_missing',moteText('中央所在机器上的目录不存在或文件已移动。检查路径后重新提交'));
+        if(code==='ENOENT'||code==='ENOTDIR')throw new ImportInputError('import_directory_missing',moteText('中央目录不存在或文件已移动。核对路径后重新提交。'));
         if(code==='EACCES'||code==='EPERM')throw new ImportInputError('import_directory_unreadable',moteText('中央无法读取该目录。检查访问权限后重新提交'));
         throw error;
       }

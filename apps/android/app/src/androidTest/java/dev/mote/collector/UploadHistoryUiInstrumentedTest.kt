@@ -83,10 +83,10 @@ class UploadHistoryUiInstrumentedTest {
             assertEquals(2,context.queue().archiveRecord(observed.getString("id"))!!.first.getJSONObject("stateSeries").getJSONArray("samples").length())
             click("historical original after same-ID update") { it.tag == "history-original-${observed.getString("id")}" }
             until("historical version unavailable") { text(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。")) }
-            assertFalse(text(MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",2,java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at+5000)))))
+            assertFalse(text(MoteI18n.text("同状态共 {0} 次，最近 {1}。累计实测时长，间隙不计。",2,java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at+5000)))))
             main { activity().recreate() }
             until("historical version constraint restored") { text(MoteI18n.text("历史版本不可用：本机原件已更新或清理，不能将当前内容作为这次上传的原文。")) }
-            assertFalse(text(MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",2,java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at+5000)))))
+            assertFalse(text(MoteI18n.text("同状态共 {0} 次，最近 {1}。累计实测时长，间隙不计。",2,java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(at+5000)))))
             click("close unavailable original") { it is Button && it.text.toString() == MoteI18n.text("关闭详情") }
             main { activity().finish() }
             until("batch restored after unavailable original") { main { activityOrNull() is UploadBatchActivity } }

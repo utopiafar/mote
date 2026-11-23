@@ -99,7 +99,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     }
     private fun codingStatus() {
         ui.text(MoteI18n.text("上传与处理"), NativeFontRole.TITLE_MOBILE)
-        ui.text(MoteI18n.text("接收成功表示原件已保留；正文发布、索引和记忆整理分别显示状态。"))
+        ui.text(MoteI18n.text("接收成功即保留原件。正文发布、索引和记忆整理各有状态。"))
         paged("/api/coding/uploads?limit=20", ui.card()) { row, card ->
             val source = row.getJSONObject("source")
             ui.text(source.getString("name"), NativeFontRole.ROW, card)
@@ -319,7 +319,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             adapter = ArrayAdapter(ui, android.R.layout.simple_spinner_dropdown_item, options.map { if (it.isEmpty()) { if (source) MoteI18n.text("不声明") else MoteI18n.text("跟随来源") } else relationLabel(it) })
             setSelection(options.indexOf(value).coerceAtLeast(0))
         }; card.addView(selector)
-        ui.text(MoteI18n.text("声明帮助模型区分你的表达、第三方内容和混合引用；归属未知也能查询和整理。"), parent = card)
+        ui.text(MoteI18n.text("告知模型归属：自述、第三方或混合。未知也可查询整理。"), parent = card)
         return selector to options
     }
     private fun material(id: String, revision: String?, offset: Int = 0) {
@@ -438,8 +438,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             else if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
             if (fileView == null) ui.text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, processing)
             when (cancellation?.optString("wait")) {
-                "running" -> ui.text(MoteI18n.text("外部结果尚未确认，停止请求不代表远端工作已结束。"), parent = processing)
-                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), parent = processing)
+                "running" -> ui.text(MoteI18n.text("已请求停止，外部结果待核实，远端工作仍可能运行。"), parent = processing)
+                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), parent = processing)
             }
             if (job != null) ui.disclosure(MoteI18n.text("处理详情")) { target -> ui.text(job.toString(2), parent = target) }
             if (fileView != null && fileView.hasOriginal && fileView.canOpenOriginal) {
@@ -481,7 +481,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     val retry = {
                         ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset) }
                     }
-                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。请确认后继续。"), retry) else retry()
+                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), retry) else retry()
                 }
             }
             ui.button(MoteI18n.text("删除文件")) { screens.confirm(MoteI18n.text("删除中央文件"), MoteI18n.text("删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。")) {
@@ -980,7 +980,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
     private fun renderPage(path: String, target: LinearLayout, cursor: String?, result: JSONObject, render: (JSONObject, LinearLayout) -> Unit) {
             target.removeAllViews()
             val items = result.optJSONArray("items") ?: result.optJSONArray("entries") ?: result.optJSONArray("jobs") ?: JSONArray()
-            if (items.length() == 0) ui.text(MoteI18n.text("当前范围内暂无条目。没有列出不代表不存在。"), parent = target)
+            if (items.length() == 0) ui.text(MoteI18n.text("当前范围内暂无条目。未列出的记录仍可能存在。"), parent = target)
             for (i in 0 until items.length()) render(items.getJSONObject(i), ui.card(target))
             if (cursor != null) ui.button(MoteI18n.text("返回第一页"), parent = target) { paged(path, target, render = render) }
             CentralScreens.next(result)?.let { next -> ui.button(MoteI18n.text("下一页"), parent = target) { paged(path, target, next, render) } }

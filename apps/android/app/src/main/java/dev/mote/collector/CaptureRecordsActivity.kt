@@ -282,7 +282,11 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (source == "screen" && selected == null) {
                         status.text = MoteI18n.text("{0} · 当天 {1} 条 · {2} 个{3} · 第 {4} 页", if (remote) MoteI18n.text("中央归档") else MoteI18n.text("本机记录"), total, page.getInt(if (sessions) "sessionCount" else "albumCount"), if (sessions) "Session" else MoteI18n.text("相册"), pageNumber)
                         progress.visibility = View.GONE
-                        text(list, if (sessions) MoteI18n.text("同应用连续采样归为一段；切换应用或间隔超过 5 分钟分段。仅按本页日期与现存截图分组，起止范围不代表使用时长。") else MoteI18n.text("每 15 分钟按 App 汇集 · 点开查看"), MoteTheme.fontMeta.toFloat())
+                        val grouping = if (sessions) {
+                            MoteI18n.text("同应用连续采样归一段，换应用或间隔超 5 分钟另起一段。") + "\n" +
+                                MoteI18n.text("按当日现存截图分组。起止是观察范围，不能计使用时长。")
+                        } else MoteI18n.text("每 15 分钟按 App 汇集 · 点开查看")
+                        text(list, grouping, MoteTheme.fontMeta.toFloat())
                         if (records.isEmpty()) text(list, MoteI18n.text("当天没有截图记录。"), MoteTheme.fontBody.toFloat())
                         for (item in records) albumRow(item, stamp)
                         previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
@@ -294,9 +298,9 @@ class CaptureRecordsActivity : MoteActivity() {
                     status.text = pageStatus + if (thumbnailCount > 0) MoteI18n.text(" · 已处理 {0}/{1}", 0, thumbnailCount) else ""
                     if (records.isEmpty()) text(list, when {
                         source == "note" -> MoteI18n.text("当天没有记录。选择其他日期，或添加一条记录。")
-                        source != "screen" -> MoteI18n.text("当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。")
+                        source != "screen" -> MoteI18n.text("当天没有此类记录。开启相应采集来源并授权，记录按同步策略上传。")
                         remote -> MoteI18n.text("当天没有此设备的中央截图记录。")
-                        else -> MoteI18n.text("当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。")
+                        else -> MoteI18n.text("当天无本机截图。已同步并完成 OCR 的图片见中央归档。")
                     }, 14f)
                     progress.isIndeterminate = false; progress.max = maxOf(1, thumbnailCount); progress.progress = 0
                     if (thumbnailCount == 0) progress.visibility = View.GONE else if (!backgroundRefresh) progress.visibility = View.VISIBLE
@@ -611,7 +615,7 @@ class CaptureRecordsActivity : MoteActivity() {
                                         runOnUiThread {
                                             if (reading()) {
                                                 clearReader(); thumbnails.evictAll()
-                                                result.onSuccess { detail(id, false, null, generation, version) }.onFailure { notice(MoteI18n.text("本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。") + "\n" + (it.message ?: "")); button(content, MoteI18n.text("重试")) { detail(id, false, null, generation, version) } }
+                                                result.onSuccess { detail(id, false, null, generation, version) }.onFailure { notice(MoteI18n.text("本机副本清理尚未完成。重试；尚存输入不会用于重新上传。") + "\n" + (it.message ?: "")); button(content, MoteI18n.text("重试")) { detail(id, false, null, generation, version) } }
                                             }
                                         }
                                     }
@@ -621,7 +625,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (!remote && release != null && (release.optBoolean("pending") || readbackError != null)) {
                         quiet("$capturedAt · $origin")
                         quiet(MoteI18n.text("已收到上传确认") + " · " + record.getJSONObject("archiveAcknowledgment").getString("origin"))
-                        text(content, MoteI18n.text(if (release.optBoolean("pending")) "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。" else "本机副本已清理"), MoteTheme.fontBody.toFloat())
+                        text(content, MoteI18n.text(if (release.optBoolean("pending")) "本机副本清理尚未完成。重试；尚存输入不会用于重新上传。" else "本机副本已清理"), MoteTheme.fontBody.toFloat())
                         if (!release.optBoolean("pending")) quiet(MoteI18n.text("本机原件不在此设备，连接原中央后可按当前权限读取。"))
                         readbackError?.let { alert(errorMessage(it, true)) }
                         button(content, MoteI18n.text("重试")) { detail(id, false, null, generation, version) }
@@ -706,12 +710,12 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (source in SystemEventRules.sources) {
                         readable = SystemEventRules.label(record)
                         text(content, readable, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
-                        quiet(MoteI18n.text("原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。"))
+                        quiet(MoteI18n.text("原始系统事件 · 阅读和任务执行未知。熄屏与锁定各自记录。"))
                         text(content, record.getJSONObject("metadata").toString(2), MoteTheme.fontMeta.toFloat()).setTextIsSelectable(true)
                         chrome(describe = false); return@runOnUiThread
                     }
                     record.optJSONObject("stateSeries")?.optJSONArray("samples")?.let { samples ->
-                        text(content, MoteI18n.text("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。", samples.length(), time(samples.getJSONObject(samples.length() - 1).getString("at"))), MoteTheme.fontSupport.toFloat())
+                        text(content, MoteI18n.text("同状态共 {0} 次，最近 {1}。累计实测时长，间隙不计。", samples.length(), time(samples.getJSONObject(samples.length() - 1).getString("at"))), MoteTheme.fontSupport.toFloat())
                     }
                     val media = record.optJSONObject("metadata")?.optJSONObject("media")
                     if (source == "media") {

@@ -34,7 +34,7 @@ function walk(directory){
 // Prompts reworded by this migration state the condition only; none of them uses 请.
 // Prompts whose only reference was a retired catalog entry are not live wording assertions.
 const changedPrompts=[
-  '当前网页地址未获中央允许。公开地址或反向代理配置不匹配。',
+  '网页地址未获中央允许。检查公开地址和反向代理。',
   '网页或客户端与中央的协议版本不匹配。',
   '所需服务暂不可用。',
   '中央未接受当前登录身份（401）。登录信息可能已失效。',
@@ -42,7 +42,7 @@ const changedPrompts=[
   '查询服务暂不可用。',
   '先连接中央；本机记录仍可查看',
   '中央返回 HTTP {0}。稍后重试',
-  '还有待上传记录，不能切换中央；先完成上传，或导出并移走旧队列后重启',
+  '待传记录未处理。上传，或导出并移走队列后重启。',
   '待完成记录属于原中央；恢复原节点后完成保存',
   '配置中央访问令牌',
   '中央拒绝访问；检查令牌。队列已保留',
@@ -59,19 +59,19 @@ const changedPrompts=[
   '填写完整的中央地址',
   '连接邀请已过期。在中央重新生成',
   '先在连接与同步中配置中央',
-  '中央尚不支持两端检查。升级中央代码后重试；未修改本机状态',
+  '中央暂不支持两端检查。升级后重试，本机状态未改动。',
   '备份属于不同中央。先连接原节点',
   '备份属于不同中央。连接原节点后导入',
-  '这是中央返回的结构化记忆记录；下载文本是导出表示，实际模型输入见运行追踪。',
+  '导出为文本。实际模型输入见运行追踪。',
   '先在中央完成飞书账号授权，再连接录音',
   '先在中央完成钉钉账号授权，再连接录音',
   '先登录中央，各页面会共用这次登录',
   '填写中央所在机器上的目录',
   '该路径不是目录。填写中央所在机器上可读取的目录',
-  '中央所在机器上的目录不存在或文件已移动。检查路径后重新提交',
+  '中央目录不存在或文件已移动。核对路径后重新提交。',
   '中央无法读取该目录。检查访问权限后重新提交',
   '升级中央后再登录',
-  '中央的文档原件归档暂不可用。检查节点版本与存储后重试',
+  '文档原件归档不可用。检查中央版本和存储。',
 ];
 
 test('retired wording no longer appears in Chinese entries or client source',()=>{
@@ -91,15 +91,16 @@ test('changed prompts state the condition without 请',()=>{
   }
 });
 
-test('Memory deletion promise stays verbatim across clients',()=>{
+test('each client retains its approved Memory deletion promise',()=>{
   const memoryTitle='删除这条记忆？';
   const memoryDelete='原始资料保留。同一批旧证据不会重新生成这个结论；有新证据时可以重新判断。';
+  const webMemoryDelete='保留原始资料。同一批旧证据不会重建此结论。新证据可供重新判断。';
   const memoryConfirm='确认删除';
-  for(const copy of [memoryTitle,memoryDelete,memoryConfirm]){
+  for(const copy of [memoryTitle,memoryDelete,webMemoryDelete,memoryConfirm]){
     assert.ok(catalog.includes(copy),`Promise copy missing from the Chinese catalog: ${copy}`);
   }
   const required=new Map([
-    ['apps/web/src/plugins/memory/MemoryDeleteDialog.tsx',[memoryTitle,memoryDelete,memoryConfirm]],
+    ['apps/web/src/plugins/memory/MemoryDeleteDialog.tsx',[memoryTitle,webMemoryDelete,memoryConfirm]],
     ['apps/android/app/src/main/java/dev/mote/collector/MemoryDetailPanel.kt',[memoryTitle,memoryDelete,memoryConfirm]],
     ['apps/ios/MoteKit/Sources/MoteCentral/MemoryDetail.swift',[memoryTitle,memoryDelete,memoryConfirm]],
   ]);

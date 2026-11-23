@@ -42,7 +42,7 @@ export class InsightRuns {
     if(!this.store.db.prepare('SELECT 1 FROM insight_runs WHERE id=?').get(id))return;
     const run=this.raw(id),before=JSON.stringify(run);run.operationId=`insight:${id}`;run.status=step.state==='succeeded'?'completed':step.state==='cancelled'?'cancelled':['waiting','running'].includes(step.state)?'running':'failed';
     if(step.error==='interrupted')run.error={code:'interrupted',message:moteText('中央重启中断了此次回顾。')};
-    else if(step.error==='timeout')run.error={code:'timeout',message:moteText('模型执行超时，请重试。')};
+    else if(step.error==='timeout')run.error={code:'timeout',message:moteText('模型执行超时，重试。')};
     run.execution=runEnvelope({...step,error:run.error?.code??step.error,availableAt:run.availableAt??step.availableAt});run.updatedAt=new Date(Math.max(Date.parse(run.updatedAt),Number(this.store.db.prepare('SELECT updated_at FROM execution_steps WHERE id=?').get(step.id)!.updated_at))).toISOString();if(JSON.stringify(run)!==before)this.save(run);
   }
   list():InsightRun[]{return (this.store.db.prepare("SELECT id FROM insight_runs ORDER BY json_extract(json,'$.createdAt') DESC,id LIMIT 20").all() as {id:string}[]).map(row=>this.get(row.id));}

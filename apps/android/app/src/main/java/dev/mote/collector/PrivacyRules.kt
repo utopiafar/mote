@@ -38,7 +38,7 @@ object PrivacyRules {
             host == "localhost" || host == "::1" || host == "[::1]" || (ipv4 &&
                 (octets[0] in setOf(127, 10) || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && octets[1]!! in 16..31)))
         }
-        require(uri.scheme == "https" || (uri.scheme == "http" && privateHost && debugHttp && isDebug)) { MoteI18n.text("请使用 HTTPS；仅 debug APK 可显式允许私有 IP 的 HTTP") }
+        require(uri.scheme == "https" || (uri.scheme == "http" && privateHost && debugHttp && isDebug)) { MoteI18n.text("使用 HTTPS。仅 debug APK 可显式允许私有 IP 的 HTTP") }
         return value.trim().trimEnd('/')
     }
 

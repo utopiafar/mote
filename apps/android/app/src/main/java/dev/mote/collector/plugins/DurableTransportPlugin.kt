@@ -191,7 +191,7 @@ internal class DurableTransportPlugin private constructor(
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         WorkManager.getInstance(app).enqueueUniqueWork("mote-sync-recovery", ExistingWorkPolicy.KEEP, request)
         app.getSharedPreferences("sync-recovery", Context.MODE_PRIVATE).edit()
-            .putString("message", MoteI18n.text("操作已请求；重复点击会合并，等待网络条件或当前操作完成")).apply()
+            .putString("message", MoteI18n.text("操作已请求。重复点击合并，等待网络或当前操作完成")).apply()
     }
 
     fun inventory(): TransportInventory = TransportInventory(

@@ -185,7 +185,7 @@ export class DelegatedQueryRuns {
     if(['failed','blocked','stale','cancelled'].includes(work.status))this.runtime.engine.abortLocal(stepId);
     run.status=work.error==='timeout'||run.error?.code==='timeout'?'failed':work.status==='succeeded'?'completed':work.status==='cancelled'?'cancelled':['running','waiting'].includes(work.status)?'running':'failed';
     run.sourceContextDependencies=this.runtime.sourceContextDependencies(work.id);
-    if(work.error==='timeout')run.error={code:'timeout',message:moteText('模型执行超时，请重试。')};
+    if(work.error==='timeout')run.error={code:'timeout',message:moteText('模型执行超时，重试。')};
     else if(run.status==='failed'){this.finishFailure(run,work);if(!run.error){const failure=safeError(this.restoredFailure(undefined,work));run.error={code:work.error==='evidence_deleted'?'deleted':work.error==='source_context_changed'?'source_context_changed':failure.category,message:failure.message};}}
     if(run.status!=='running'&&!this.foreground.has(id))this.errors.delete(id);
     run.updatedAt=work.updatedAt;

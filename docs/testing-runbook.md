@@ -69,7 +69,7 @@ npm run test:profiles -w @mote/desktop
 
 After building `@mote/web`, run `node_modules/.bin/electron apps/web/test/page-snapshots-browser.cjs library` (or use another name from `apps/web/test/page-fixtures/`) to capture four hidden-window screenshots and `report.json` under `.mote/page-snapshots/<fixture>/`.
 
-Cross-client visual consistency is compared by a person, not by automated checks. The commands below build the clients, capture the Home, Library, Source, Ask and Settings pages of Web (wide and phone) and Mac with generated data, and write a comparison page to `.mote/cross-client/index.html`. Android screenshots exported from the dedicated emulator as `home.png`, `library.png` and so on can be passed with `--android`. `packages/shared/test/ui-presentation.test.mjs` checks navigation names and icons automatically.
+The cross-client comparison builds the clients and captures their nine destinations with generated data. It includes wide and phone Web layouts, the Mac main window, and the Mac capture and sync window. Open `.mote/cross-client/index.html` to review the screenshots. Pass the dedicated Android emulator's screenshots with `--android`, using the matching scene names such as `chat.png`, `library.png` and `capture-sync.png`. `packages/shared/test/ui-presentation.test.mjs` checks navigation names and icons.
 
 ```sh
 npm run snapshots:cross-client

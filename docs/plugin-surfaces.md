@@ -454,31 +454,29 @@ meaning of an existing configuration field without a new field ID.
 
 ### Surface: `home`
 
-**What it does.** Declares a home/Today entry for a host. Home entries are
-ordered host contributions; they can surface an existing capability but do not
-create a second capture or task authority.
+**What it does.** Registers a host contribution under the existing `home`
+surface identifier. Current navigation opens Chat. For a visible plugin view,
+use a [page contribution](#surface-page).
 
 **Manifest fields.** `contributions[].surface: "home"`, `runtime: "host"`,
 optional `entry`, optional `requires`, optional `capabilities`.
 
-**Minimal example.** The closest existing package is
-[examples/domain-plugin](../examples/domain-plugin/mote-plugin.json), which
-shows an instance-scoped host contribution.
+**Minimal example.** The schema accepts this declaration. See
+[examples/domain-plugin](../examples/domain-plugin/mote-plugin.json) for an
+instance-scoped host contribution.
 
 ```json manifest-example
-{"schemaVersion":1,"id":"example.surface.home","name":"Home example","version":"0.1.0","runtime":"service","entry":"plugin.mjs",
+{"schemaVersion":1,"id":"example.surface.home","name":"Legacy host contribution","version":"0.1.0","runtime":"service","entry":"plugin.mjs",
  "archive":{"asset":"example.zip","sha256":"0000000000000000000000000000000000000000000000000000000000000000"},
  "contributions":[{"id":"example.surface.home","version":"1","surface":"home","runtime":"host"}],
  "capabilities":[],"configuration":[],"dependencies":[],"access":[]}
 ```
 
-**Lifecycle.** The entry is registered with the home scope and sorted by its
-declared order. Hiding or suspending the home surface aborts view-scoped reads
-but does not stop independent capture or upload work.
+**Lifecycle.** The registration follows the package's host scope. The current
+client shell does not mount a view for this surface.
 
-**Common errors.** Starting capture from a home card, assuming a fixed order
-across packages, keeping a poll alive after hide, or relying on home presence
-as proof that a feature is enabled.
+**Common errors.** Relying on this identifier for a visible entry or for
+capture or task authority.
 
 ### Surface: `theme`
 
@@ -618,7 +616,7 @@ treating a dependency-unavailable projection as a real stop.
 
 **What it does.** Runs a contribution in the activating client or host process.
 Host contributions are used for pages, collections, cards, panels, settings,
-home, theme, layout, host-owned routes and Agent registration. The package
+theme, layout, host-owned routes and Agent registration. The package
 entry itself still runs in its declared `worker` or `service` runtime.
 
 **Manifest fields.** A contribution with `runtime: "host"`; `entry` may be

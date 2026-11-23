@@ -196,14 +196,14 @@ internal object GeneratedWindowRendering {
             "p37-local-metadata-json-success-dark" -> Triple("backup", "metadata-exported", "导出文件已生成")
             "p37-local-metadata-json-write-failure-dark" -> Triple("backup", "metadata-write-failed", "备份未能生成")
             "p27-notification-granted-return-dark", "p27-usage-granted-return-dark" -> Triple("permissions", "actual-grant-return", "采集权限")
-            "p11-central-unconnected-dark" -> Triple("materials", "disconnected", "资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。")
-            "p11-empty-materials-dark", "p11-empty-materials-light", "p11-empty-materials-message-dark" -> Triple("central-library", "actual-empty", "当前范围内暂无条目。没有列出不代表不存在。")
+            "p11-central-unconnected-dark" -> Triple("materials", "disconnected", "资料库暂不可用。连接中央后可浏览归档；本机文件和记录仍可保存、查看。")
+            "p11-empty-materials-dark", "p11-empty-materials-light", "p11-empty-materials-message-dark" -> Triple("central-library", "actual-empty", "当前范围内暂无条目。未列出的记录仍可能存在。")
             "p11-empty-memories-dark", "p11-empty-memories-light", "p11-empty-memories-message-dark", "p11-memory-return-dark" -> Triple("memories", "actual-empty", "当前筛选没有记忆")
             "p11-memory-management-more-dark" -> Triple("memories", "explicit-more", "记忆主题")
             "p11-existing-extraction-entry-dark" -> Triple("memories", "existing-extraction-entry", "开始提取")
             "gap-library-local-light", "gap-library-local-dark", "gap-library-central-unavailable-dark" -> Triple("library","real-location-choice","资料与记忆")
             "gap-library-exact-original-dark" -> Triple("reader","exact-local-original","Generated exact local library original")
-            "gap-library-memory-handoff-dark" -> Triple("memories","memory-connection-required","资料库暂不可用。连接中央后，可浏览已归档的资料；文件和记录仍可在本机保存和查看。")
+            "gap-library-memory-handoff-dark" -> Triple("memories","memory-connection-required","资料库暂不可用。连接中央后可浏览归档；本机文件和记录仍可保存、查看。")
             "gap-processing-language-en", "gap-processing-language-zh-CN" -> Triple("processing","retained-language-draft","JPEG 质量")
             "gap-actions-owner-denied-withdrawn-dark", "gap-actions-owner-late-read-rejected-dark" -> Triple("actions","former-owner-withdrawn","日程")
             "gap-processing-default-light", "gap-processing-default-dark" -> Triple("processing","default-hierarchy","JPEG 质量")
@@ -279,7 +279,7 @@ internal object GeneratedWindowRendering {
                 val title = CentralScreens.pages.single { it.first == centralPage }.second
                 when (centralPage) {
                     "overview" -> Triple(centralPage, "content", "模型已配置")
-                    "files" -> Triple(centralPage, "empty", "当前范围内暂无条目。没有列出不代表不存在。")
+                    "files" -> Triple(centralPage, "empty", "当前范围内暂无条目。未列出的记录仍可能存在。")
                     "notes" -> Triple(centralPage, "content", "已经留下的心绪与杂事")
                     else -> Triple(centralPage, "content", title)
                 }

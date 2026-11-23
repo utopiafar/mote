@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import {createHash} from 'node:crypto';
 import {existsSync,readFileSync,readdirSync} from 'node:fs';
 import {join,relative,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -6,7 +7,6 @@ import {fileURLToPath} from 'node:url';
 export const defaultCatalogFile='packages/shared/src/i18n-en.ts';
 export const defaultUiDirs=['apps/web/src','apps/desktop/src'];
 export const defaultServerDir='apps/server/src';
-export const defaultBaselineFile='scripts/ui-copy-baseline.json';
 export const defaultPromisesFile='scripts/ui-copy-promises.json';
 export const maxHanLength=24;
 
@@ -35,12 +35,6 @@ function readJson(path,fallback){
  const value=JSON.parse(readFileSync(path,'utf8'));
  if(!Array.isArray(value))throw new Error(`${path} must contain a JSON array`);
  return value;
-}
-
-function readBaseline(path){
- const entries=readJson(path,[]);
- for(const entry of entries)if(!entry||typeof entry.rule!=='string'||typeof entry.location!=='string'||typeof entry.text!=='string')throw new Error(`${path} has an invalid baseline entry`);
- return entries;
 }
 
 function readPromises(path){
@@ -193,13 +187,26 @@ function isMoteTextArgument(node){
  return ts.isCallExpression(call)&&call.arguments[0]===node&&call.expression.getText()==='moteText';
 }
 
+/** The owner approved the existing model-only JSON example in this one prompt. */
+function isCodingMemoryExample(path,node){
+ if(path!=='apps/server/src/memory-profiles.ts'||!ts.isNoSubstitutionTemplateLiteral(node))return false;
+ const expression=node.parent;
+ if(!ts.isBinaryExpression(expression)||expression.right!==node||expression.operatorToken.kind!==ts.SyntaxKind.PlusToken)return false;
+ const declaration=expression.parent;
+ if(!ts.isVariableDeclaration(declaration)||!ts.isIdentifier(declaration.name)||declaration.name.text!=='CODING_MEMORY_PROMPT')return false;
+ return createHash('sha256').update(node.text).digest('hex')==='1963e101be47f3caab76f7b81389f38f9cc06e04013485704e00b75c42adfc7d';
+}
+
 function serverViolations(root,dir){
  const violations=[];
  for(const file of walk(join(root,dir))){
   if(!/\.tsx?$/.test(file)||/\.(?:test|spec)\.tsx?$/.test(file))continue;
   const ast=ts.createSourceFile(file,readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true,file.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);
+  const path=relative(root,file).split('\\').join('/');
   const visit=node=>{
-   if(ts.isStringLiteralLike(node)&&/\p{Script=Han}/u.test(node.text)&&!isMoteTextArgument(node))violations.push({rule:'raw-chinese',location:locationFor(root,file,ast,node),text:node.text});
+   if(ts.isStringLiteralLike(node)&&/\p{Script=Han}/u.test(node.text)&&!isMoteTextArgument(node)&&!isCodingMemoryExample(path,node)){
+    violations.push({rule:'raw-chinese',location:locationFor(root,file,ast,node),text:node.text});
+   }
    ts.forEachChild(node,visit);
   };
   visit(ast);
@@ -207,7 +214,7 @@ function serverViolations(root,dir){
  return violations;
 }
 
-/** Collects every authored message and source-level violation before the baseline is applied. */
+/** Collects every authored message and source-level violation. */
 export function scanUiCopy({
  root=process.cwd(),
  catalogFile=defaultCatalogFile,
@@ -222,36 +229,24 @@ export function scanUiCopy({
  return {messages,violations};
 }
 
-export function entryKey({rule,location,text}){
- // The recorded file:line is informative; matching ignores it so unrelated edits above a
- // frozen line do not turn the whole baseline into new violations. Source text still has
- // to match exactly, so edited copy is reported again.
- const source=location==='message'?'message':location.replace(/:\d+$/,'');
- return `${rule}\u0000${source}\u0000${text}`;
-}
-
 export function formatReport({violations}){
  const lines=violations.map(violation=>`${violation.rule}  ${violation.location}  ${JSON.stringify(violation.text)}`);
  lines.push(`UI copy violations: ${violations.length}`);
  return lines.join('\n');
 }
 
-/** Runs the check and only reports violations that are not frozen in the baseline.
- *  Baseline records keep rule, location and exact source text, so edited copy is new again. */
-export function checkUiCopy({root=process.cwd(),stdout=console.log,stderr=console.error,baselineFile=defaultBaselineFile,...options}={}){
+export function checkUiCopy({root=process.cwd(),stdout=console.log,stderr=console.error,...options}={}){
  try{
   const scan=scanUiCopy({root,...options});
-  const baseline=readBaseline(join(root,baselineFile)).map(entryKey);
-  const seen=new Set(baseline);
-  const violations=scan.violations.filter(violation=>!seen.has(entryKey(violation)));
-  stdout(formatReport({violations}));
+  const {violations}=scan;
+  stdout(formatReport(scan));
   if(violations.length){
    const byRule=Object.entries(violations.reduce((counts,violation)=>(counts[violation.rule.split('(')[0]]=(counts[violation.rule.split('(')[0]]??0)+1,counts),{}));
-   stderr(`UI copy check failed: ${violations.length} new violation(s) (${byRule.map(([rule,count])=>`${rule}: ${count}`).join(', ')})`);
-   return {exitCode:1,...scan,violations};
+   stderr(`UI copy check failed: ${violations.length} violation(s) (${byRule.map(([rule,count])=>`${rule}: ${count}`).join(', ')})`);
+   return {exitCode:1,...scan};
   }
-  stdout(`Checked ${scan.messages.length} messages and ${seen.size} baselined violations; no new UI copy violations.`);
-  return {exitCode:0,...scan,violations};
+  stdout(`Checked ${scan.messages.length} messages. No UI copy violations.`);
+  return {exitCode:0,...scan};
  }catch(error){
   stderr(error instanceof Error?error.message:String(error));
   return {exitCode:1};

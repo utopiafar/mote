@@ -50,7 +50,7 @@ class MeetingRecordingActivity : MoteActivity() {
         stop = SecondaryUi.action(actions, MoteI18n.text("结束并入库")) { MeetingRecordingService.stop(this) }
         SecondaryUi.action(actions, MoteI18n.text("上传本机录音")) { MeetingRecordingUploadWorker.schedule(this); summary.text = MoteI18n.text("已尝试上传本机会议录音。") }
         SecondaryUi.action(actions, MoteI18n.text("麦克风与系统音频权限")) { openPermissions() }
-        SecondaryUi.text(content, MoteI18n.text("只有点击开始后才会录音；不会按日历或日程自动开始。第一次开始时先请告知在场的人。结束后音频进入中央已有转写，不会与记录页的语音附件或飞书妙记、钉钉闪记合并。"), muted = true)
+        SecondaryUi.text(content, MoteI18n.text("只有点击开始后才会录音；不会按日历或日程自动开始。第一次开始时先告知在场的人。结束后音频进入中央已有转写，不会与记录页的语音附件或飞书妙记、钉钉闪记合并。"), muted = true)
         last = SecondaryUi.text(content, "", muted = true)
         sessions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(sessions)
     }
@@ -71,11 +71,11 @@ class MeetingRecordingActivity : MoteActivity() {
         state.text = if (active != null) MoteI18n.text("正在录音") else MoteI18n.text("未在录音")
         summary.text = if (active != null) MoteI18n.text("已于 {0} 开始。麦克风与系统音频同时采集；仅在你点击结束后生成一场会议的音频。", active.startedAt.take(19).replace('T', ' '))
         else if (!microphoneGranted()) MoteI18n.text("麦克风权限未授予，会议录音不会开始。")
-        else MoteI18n.text("麦克风与系统音频权限将在开始时检查；缺少任一项都不会开始。")
+        else MoteI18n.text("开始时查麦克风及系统音频权限，缺一项就不会开始。")
         val latest = store.sessions().maxByOrNull { it.startedAt }
         last.text = when {
             latest == null -> MoteI18n.text("尚无会议录音。")
-            latest.localContentRelease != null -> MoteI18n.text(if (latest.localContentRelease.pending) "本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。" else "本机副本已清理")
+            latest.localContentRelease != null -> MoteI18n.text(if (latest.localContentRelease.pending) "本机副本清理尚未完成。重试；尚存输入不会用于重新上传。" else "本机副本已清理")
             latest.quarantined -> MoteI18n.text("当前本机来源范围已变更，旧待传版本已隔离，原输入保留。")
             latest.state == "uploaded" -> MoteI18n.text("已收到上传确认") + " · " + latest.startedAt.take(16).replace('T', ' ') + "\n" + MoteI18n.text("本机采集内容长期保留，上传确认后不自动删除。")
             latest.state == "completed" -> MoteI18n.text("最近一场 {0} 保存在本机，连接中央后上传。", latest.startedAt.take(16).replace('T', ' '))
@@ -101,7 +101,7 @@ class MeetingRecordingActivity : MoteActivity() {
         val release = session.localContentRelease
         val view = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         SecondaryUi.text(view, session.startedAt + "\n" + (session.origin ?: "") + "\n" + (session.uploadedAt ?: MoteI18n.text("尚未上传")))
-        if (release?.pending == true) SecondaryUi.text(view, MoteI18n.text("本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。"))
+        if (release?.pending == true) SecondaryUi.text(view, MoteI18n.text("本机副本清理尚未完成。重试；尚存输入不会用于重新上传。"))
         if (session.state == "uploaded" && !session.quarantined && (release == null || release.pending)) {
             SecondaryUi.action(view, MoteI18n.text("清理本机副本")) {
                 dev.mote.collector.MoteDialogBuilder(this).setTitle(MoteI18n.text("清理本机副本"))
@@ -111,7 +111,7 @@ class MeetingRecordingActivity : MoteActivity() {
                             val result = runCatching { owner.releaseMeeting(id, ::current) }
                             runOnUiThread { if (pageActive && !isDestroyed) {
                                 result.onSuccess { render(); original(id) }.onFailure { error ->
-                                    dev.mote.collector.MoteDialogBuilder(this).setMessage(MoteI18n.text("本机副本清理尚未完成；请重试，尚存输入不会用于重新上传。") + "\n" + error.message).setPositiveButton(MoteI18n.text("关闭"), null).show()
+                                    dev.mote.collector.MoteDialogBuilder(this).setMessage(MoteI18n.text("本机副本清理尚未完成。重试；尚存输入不会用于重新上传。") + "\n" + error.message).setPositiveButton(MoteI18n.text("关闭"), null).show()
                                 }
                             } }
                         }
@@ -150,7 +150,7 @@ class MeetingRecordingActivity : MoteActivity() {
 
     private fun notice() {
         AlertDialog.Builder(this).setTitle(MoteI18n.text("先告知在场的人"))
-            .setMessage(MoteI18n.text("这场会议将同时录制麦克风与系统音频，结束后上传到你的中央并转写。请确认已告知在场的人并得到同意。该确认只在本机记住一次；取消则不会开始录音。"))
+            .setMessage(MoteI18n.text("这场会议将同时录制麦克风与系统音频，结束后上传到你的中央并转写。确认已告知在场的人并得到同意。该确认只在本机记住一次；取消则不会开始录音。"))
             .setNegativeButton(MoteI18n.text("取消"), null)
             .setPositiveButton(MoteI18n.text("已告知，开始录音")) { _, _ -> meetingRecordings().acknowledgeNotice(); requestSystemAudio() }
             .show()
@@ -175,7 +175,7 @@ class MeetingRecordingActivity : MoteActivity() {
         }
         if (requestCode != REQUEST_SYSTEM_AUDIO) return
         if (resultCode != RESULT_OK || data == null) {
-            summary.text = MoteI18n.text("系统音频权限未授予，会议录音没有开始；不会在缺少系统声时只录麦克风。")
+            summary.text = MoteI18n.text("缺少系统音频权限，未开始会议录音。不会只录麦克风。")
             return
         }
         val notice = meetingRecordings().noticeAcknowledgedAt() ?: return notice()

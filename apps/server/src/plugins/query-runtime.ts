@@ -1,3 +1,4 @@
+import {modelPrompt} from '../model-prompt.js';
 import {randomUUID} from 'node:crypto';
 import {ConversationRuntimeControls} from '../conversation-runtime-controls.js';
 import type {ManifestContribution} from '@mote/plugin-api';
@@ -357,7 +358,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
   async function insight(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId='insight:'+randomUUID(),snapshot?:InsightSnapshot) {
     if(!agent.configured)throw new AgentNotConfiguredError();
     const {prompt,...scope}=range;
-    const result=insightResult(await queryAgent({question:prompt||moteText("请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。"),skill:'personal-insight',...scope,...(snapshot?{...snapshot.scope,contextTime:snapshot.asOf,insightSnapshot:snapshot}:{}),onProgress,signal,traceContext:{operationId}},'insight','insights'));
+    const result=insightResult(await queryAgent({question:prompt||modelPrompt('defaultInsight'),skill:'personal-insight',...scope,...(snapshot?{...snapshot.scope,contextTime:snapshot.asOf,insightSnapshot:snapshot}:{}),onProgress,signal,traceContext:{operationId}},'insight','insights'));
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
   const close=async()=>{await Promise.allSettled([...activeQueries]);};

@@ -82,7 +82,7 @@ export class Connections {
   private async persist(credentials:ConnectionCredential[]){
     // Reserve each record's revocation timestamp before issuing it, so a full store remains revocable.
     const reserved=credentials.map(c=>c.revokedAt?c:{...c,revokedAt:'2000-01-01T00:00:00.000Z'});
-    if(Buffer.byteLength(JSON.stringify({version:1,credentials:reserved}))>2*1024*1024)throw new ConnectionError('connection_limit',409,moteText("连接记录已达到存储上限，请联系节点管理员。"));
+    if(Buffer.byteLength(JSON.stringify({version:1,credentials:reserved}))>2*1024*1024)throw new ConnectionError('connection_limit',409,moteText("连接记录已达到存储上限，联系节点管理员。"));
     try{await this.file.write({version:1,credentials});}catch{throw new ConnectionError('connection_storage_failed',503,moteText("连接凭据未保存，操作未生效。检查中央存储后重试。"));}
     this.credentials=credentials;
     for(const listener of this.changed)listener();
@@ -105,7 +105,7 @@ export class Connections {
       if(!invitation)throw new ConnectionError('invitation_invalid_or_expired',410,moteText("邀请已使用、取消或过期。在中央重新生成。"));
       if(invitation.authorizedDeviceId&&invitation.authorizedDeviceId!==input.deviceId)throw new ConnectionError('invitation_device_mismatch',403,moteText("此邀请已绑定另一台设备。在中央确认设备后重新生成。"));
       const known=this.credentials.some(c=>c.deviceId===input.deviceId)||Boolean(this.store.db.prepare('SELECT id FROM devices WHERE id=?').get(input.deviceId))||this.sources.listSources().some(s=>s.deviceId===input.deviceId);
-      if(known&&!invitation.authorizedDeviceId)throw new ConnectionError('device_already_registered',409,moteText("此设备 ID 已在中央登记；请由所有者选择该设备并生成绑定邀请。"));
+      if(known&&!invitation.authorizedDeviceId)throw new ConnectionError('device_already_registered',409,moteText("此设备 ID 已在中央登记。由所有者选择该设备并生成绑定邀请。"));
       const token=randomBytes(32).toString('base64url'),now=new Date(this.clock()).toISOString();
       const credential:ConnectionCredential={id:randomUUID(),label:invitation.label,scope:invitation.scope,createdAt:now,serverUrl:invitation.serverUrl,hash:digest(token),deviceId:input.deviceId,deviceName:input.deviceName,platform:input.platform};
       const next=this.credentials.map(c=>c.scope===invitation.scope&&c.deviceId===input.deviceId&&!c.revokedAt?{...c,revokedAt:now}:c);
@@ -118,7 +118,7 @@ export class Connections {
     if(this.closed||typeof header!=='string'||!/^Bearer [A-Za-z0-9_-]{43}$/.test(header))return;
     const hash=digest(header.slice(7));return this.credentials.find(c=>c.hash===hash&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock()));
   }
-  assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，请重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));}
+  assertActive(credential:ConnectionCredential){if(!this.credentials.some(c=>c.id===credential.id&&!c.revokedAt&&(!c.expiresAt||Date.parse(c.expiresAt)>this.clock())))throw new ConnectionError('connection_revoked',401,moteText("此设备连接已撤销，重新配对。"));if(this.closed)throw new ConnectionError('connection_closed',503,moteText("中央正在关闭。稍后重试。"));}
   publicCredential(c:ConnectionCredential){const {hash:_,writeSourceIds,mcpResource:__,calendarGrant,...visible}=c;return {...visible,tokenHint:`…${c.id.slice(-8)}`,...(writeSourceIds?{writeSourceIds:[...writeSourceIds]}:{}),...(calendarGrant?{calendarName:calendarGrant.name}:{})};}
   inventory(config?:ConnectorConfig){return {items:this.credentials.map(c=>this.publicCredential(c)),mcp:{enabled:Boolean(config?.mcpEnabled),writeEnabled:Boolean(config?.mcpEnabled&&config.mcpWriteEnabled&&config.mcpWriteSourceIds?.length),writeSourceIds:config?.mcpWriteSourceIds??[]}};}
   revoke(id:string){z.string().uuid().parse(id);return this.serialize(async()=>{const found=this.credentials.find(c=>c.id===id);if(!found)throw new ConnectionError('connection_not_found',404,moteText("未找到此连接。"));if(!found.revokedAt)await this.persist(this.credentials.map(c=>c.id===id?{...c,revokedAt:new Date(this.clock()).toISOString()}:c));return {revoked:true as const,id};});}
@@ -130,8 +130,8 @@ export class Connections {
   }
   mintMcp(raw:unknown,config?:ConnectorConfig){
     const input=z.object({serverUrl:z.string().max(2048),label,access:z.enum(['read','write'])}).strict().parse(raw),url=serverUrl(input.serverUrl);
-    if(!config?.mcpEnabled)throw new ConnectionError('mcp_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。"));
-    if(input.access==='write'&&(!config.mcpWriteEnabled||!config.mcpWriteSourceIds?.length))throw new ConnectionError('mcp_write_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpWriteToken、connectors.mcpWriteSourceIds，并开启 connectors.mcpWriteEnabled 后重启节点。"));
+    if(!config?.mcpEnabled)throw new ConnectionError('mcp_disabled',409,moteText("在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，再重启节点。"));
+    if(input.access==='write'&&(!config.mcpWriteEnabled||!config.mcpWriteSourceIds?.length))throw new ConnectionError('mcp_write_disabled',409,moteText("在 mote.yaml 配置 connectors.mcpWriteToken、connectors.mcpWriteSourceIds 并开启 connectors.mcpWriteEnabled，再重启节点。"));
     const sourceIds=input.access==='write'?z.array(z.string().min(1).max(128)).min(1).max(500).parse([...new Set(config.mcpWriteSourceIds)]):undefined;
     return this.serialize(()=>this.issueMcp({
       label:input.label,scope:input.access==='write'?'mcp-write':'mcp-read',serverUrl:url,...(sourceIds?{writeSourceIds:sourceIds}:{}),
@@ -179,9 +179,9 @@ export class Connections {
    * existing /mcp authorization path cover them without a second token store. */
   mintMcpOAuth(input:{serverUrl:string;label:string;access:'read'|'write';expiresAt:string;resource:string},policy:{enabled:boolean;writeEnabled:boolean;writeSourceIds:readonly string[]}){
     const url=serverUrl(input.serverUrl),access=z.enum(['read','write']).parse(input.access),expiresAt=z.string().datetime().parse(input.expiresAt);
-    if(!policy.enabled)throw new ConnectionError('mcp_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。"));
+    if(!policy.enabled)throw new ConnectionError('mcp_disabled',409,moteText("在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，再重启节点。"));
     const sourceIds=access==='write'?z.array(z.string().min(1).max(128)).min(1).max(500).parse([...new Set(policy.writeSourceIds)]):[];
-    if(access==='write'&&(!policy.writeEnabled||!sourceIds.length))throw new ConnectionError('mcp_write_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpWriteToken、connectors.mcpWriteSourceIds，并开启 connectors.mcpWriteEnabled 后重启节点。"));
+    if(access==='write'&&(!policy.writeEnabled||!sourceIds.length))throw new ConnectionError('mcp_write_disabled',409,moteText("在 mote.yaml 配置 connectors.mcpWriteToken、connectors.mcpWriteSourceIds 并开启 connectors.mcpWriteEnabled，再重启节点。"));
     if(Date.parse(expiresAt)<=this.clock())throw new ConnectionError('mcp_token_expired',400,'MCP token lifetime is invalid');
     return this.serialize(async()=>{
       const token=randomBytes(32).toString('base64url');
@@ -194,11 +194,11 @@ export class Connections {
    * of that ID cannot race into a surviving second credential. */
   rotateMcpOAuth(input:{credentialId:string;write:boolean;expiresAt:string},policy:{enabled:boolean;writeEnabled:boolean;writeSourceIds:readonly string[]}){
     const expiresAt=z.string().datetime().parse(input.expiresAt);
-    if(!policy.enabled)throw new ConnectionError('mcp_disabled',409,moteText("请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。"));
+    if(!policy.enabled)throw new ConnectionError('mcp_disabled',409,moteText("在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，再重启节点。"));
     if(Date.parse(expiresAt)<=this.clock())throw new ConnectionError('mcp_token_expired',400,'MCP token lifetime is invalid');
     return this.serialize(async()=>{
       const found=this.credentials.find(c=>c.id===input.credentialId);
-      if(!found||found.revokedAt)throw new ConnectionError('connection_revoked',401,moteText("此连接已撤销，请重新授权。"));
+      if(!found||found.revokedAt)throw new ConnectionError('connection_revoked',401,moteText("此连接已撤销，重新授权。"));
       if(found.scope!==(input.write?'mcp-write':'mcp-read'))throw denied();
       if(found.scope==='mcp-write'&&(!policy.writeEnabled||!policy.writeSourceIds.length))throw new ConnectionError('mcp_write_disabled',409,moteText("MCP 写入权限已关闭。"));
       const token=randomBytes(32).toString('base64url'),updated={...found,hash:digest(token),expiresAt};

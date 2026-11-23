@@ -24,8 +24,8 @@ export function googleCalendarManifest(dependencies?:GoogleDependencies):Connect
         host.ownerRoute({method:'PUT',path:'/api/connectors/google/calendars',handler:req=>google.select(req.body)});
         host.ownerRoute({method:'POST',path:'/api/connectors/google/sync',handler:()=>google.sync()});
         host.ownerRoute({method:'DELETE',path:'/api/connectors/google',handler:()=>google.disconnect()});
-        host.oauthCallback({path:'/oauth/google/callback',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历已连接。请返回 Mote 选择需要同步的日历。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
-        host.oauthCallback({path:'/oauth/google/callback',statePrefix:'google.write.',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历写出授权已连接。写出仍需在行动平台确认范围。'),failureMessage:moteText('写出授权未完成或已过期。请返回 Mote 重试。')});
+        host.oauthCallback({path:'/oauth/google/callback',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历已连接。返回 Mote 选择需要同步的日历。'),failureMessage:moteText('授权未完成或已过期。返回 Mote 重新连接 Google 日历。')});
+        host.oauthCallback({path:'/oauth/google/callback',statePrefix:'google.write.',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历写出授权已连接。写出仍需在行动平台确认范围。'),failureMessage:moteText('写出授权未完成或已过期。返回 Mote 重试。')});
       },
       close:()=>google.close(),
     };

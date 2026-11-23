@@ -24,6 +24,8 @@ Deterministic code handles privacy filters, authorization, transport, deduplicat
 
 ## Applications and actions
 
-The personal assistant uses one continuing main conversation for questions, assignments, feedback and corrections. Long tasks run in the background while conversation remains available. New guidance takes priority for the affected work. Plain recording receives a lightweight acknowledgement; the “get to know me” entry opens the main conversation.
+Mote opens to Chat on Web, Mac and Android. From Chat, use Feed for updates and recaps, Ideas for suggestions and questions, Goals for commitments and follow-up, and Library for material and its sources. Memory, Skills, Connections and Settings support managing the context center. [Architecture](architecture.md#client-navigation) maps these nine entries to the current implementations.
+
+The personal assistant uses one continuing main conversation for questions, assignments, feedback and corrections. Long tasks run in the background while conversation remains available. New guidance takes priority for the affected work. Plain recording receives a lightweight acknowledgement. Start “Get to know me” from Connections, choose sources and a time range, and follow the result in Chat.
 
 Models follow current instructions, valid memories and existing authorization. Explicit constraints persist. Continue work already authorized; ask when necessary information is missing or a change exceeds that authorization. External agents follow the same principle. Select models by module or request; automatic fallback requires an explicitly permitted scope.

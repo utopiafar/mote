@@ -111,7 +111,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
                     SecondaryUi.text(content, MoteI18n.text("点击图片放大比较。"), muted = true)
                     val details = SecondaryUi.disclosure(content, MoteI18n.text("评分与采集时的对比依据"), "dedupe-measurements")
                     text(details, MoteI18n.text("档位：{0}\n依据：{1}", ImageDedupeDiagnosticsDetails.modeName(item.getString("mode")), ImageDedupeDiagnosticsDetails.reason(item)), 15f)
-                    text(details, MoteI18n.text("哈希相似度 {0}\n计算：1 − {1}/64；这是像素哈希指标，不是模型置信度或语义相似度。", percent(item.getDouble("hashSimilarityPercent")), item.getInt("hashDistance")), 14f)
+                    text(details, MoteI18n.text("哈希相似度 {0}\n1 − {1}/64（像素哈希，无关模型置信度或语义相似度）。", percent(item.getDouble("hashSimilarityPercent")), item.getInt("hashDistance")), 14f)
                     text(details, measurements(item), 13f).setTextIsSelectable(true)
                     text(details, MoteI18n.text("处理后基准图 · 上一次保留的非重复帧\n{0}", time(item.getString("referenceCapturedAt"))), 15f)
                     text(details, MoteI18n.text("被去重图片 · 本次未进入图片上传队列\n{0}", time(item.getString("capturedAt"))), 15f)

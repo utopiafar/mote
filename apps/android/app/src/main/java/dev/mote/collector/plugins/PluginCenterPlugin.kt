@@ -209,7 +209,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
     }
     private fun discover() {
         val data = inventory ?: return
-        ui.text(MoteI18n.text("只展示主线签发的固定制品。安装不等于授权，也不等于切换 Memory 方案或开始扫描历史。"))
+        ui.text(MoteI18n.text("只展示主线签发的固定制品。安装后仍须单独授权；安装不会切换 Memory 方案或开始扫描历史。"))
         if (!data.installation.optBoolean("supported")) ui.text(data.installation.optString("reason", MoteI18n.text("当前节点不支持在线安装。")))
         if (data.catalog.isEmpty()) ui.text(MoteI18n.text("当前没有可安装的官方制品。"))
         val groups = listOf(
@@ -306,7 +306,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         admission.optString("blockedReason").takeIf(String::isNotBlank)?.let { ui.text(it, parent = target) }
         if (!desired) ui.text(MoteI18n.text("暂停期间的新资料只归档。恢复只处理新资料，不会自动补跑暂停期间的历史。"), parent = target)
         if (admission.getString("state") == "draining") ui.text(MoteI18n.text("已停止新增自动任务；已授权任务保留原范围与代次，完成后停用。"), parent = target)
-        if (admission.getInt("resultUnknown") > 0) ui.text(MoteI18n.text("外部结果尚未确认，停止请求不代表远端工作已结束。"), parent = target)
+        if (admission.getInt("resultUnknown") > 0) ui.text(MoteI18n.text("已请求停止，外部结果待核实，远端工作仍可能运行。"), parent = target)
         if ("stop" in data.allowedActions) ui.button(MoteI18n.text("立即停止"), parent = target) { screens.confirm(MoteI18n.text("立即停止自动记忆"), MoteI18n.text("撤销旧任务继续写入的权限，并请求取消运行中的自动记忆任务。外部工作可能无法立刻停止，未确认结果会单独保留。")) { submit(PluginControlClient.memoryAction("stop", data.revision)) } }
         ui.text(MoteI18n.text("当前记忆方案") + " · " + data.activePlan.name, NativeFontRole.SECTION)
         ui.text(MoteI18n.text("准备与生效分开执行。只有范围、正文与索引核验通过后，才能切换写入与查询绑定。"))
@@ -340,7 +340,7 @@ internal class PluginCenterPlugin(private val screens: CentralScreens, private v
         ui.text(MoteI18n.text("当前阶段：{0}", value.getString("phase")), parent = target)
         ui.text((if (value.getBoolean("oldAdmissionFrozen")) MoteI18n.text("旧方案已冻结新增写入，仍为既有查询提供读取。") else MoteI18n.text("当前方案继续按原绑定服务。")) + MoteI18n.text(" 待核对尾部任务：{0}", value.getInt("tail")), parent = target)
         capabilities(PluginControlProjection.capabilities(value.getJSONArray("checks")), target)
-        if (value.getBoolean("usageUnknown")) ui.text(MoteI18n.text("实际模型与 Embedding 费用尚未确定，请查看服务用量。"), parent = target)
+        if (value.getBoolean("usageUnknown")) ui.text(MoteI18n.text("实际模型与 Embedding 费用尚未确定，查看服务用量。"), parent = target)
         value.optString("error").takeIf(String::isNotBlank)?.let { ui.text(it, parent = target) }
         val actions = PluginControlProjection.actions(value)
         listOf("retry" to MoteI18n.text("重试准备"), "cancel" to MoteI18n.text("取消准备"), "activate" to MoteI18n.text("设为当前方案")).forEach { (action, label) ->
