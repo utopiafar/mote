@@ -141,6 +141,61 @@ test('owner retry repartitions a saved overflow using current budgets without ce
  assert.ok(leaves.every(batch=>batch.reviewReceipt?.decision==='independent'));assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,160);
 });
 
+for(const phase of ['extract','review'] as const)test(`owner retry of a live ${phase==='extract'?'extraction':'review'} capacity failure preserves the frozen ranges${phase==='review'?' and saved extraction':' in smaller requests'}`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-live-capacity-'));
+ const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ const capacity:MemoryRequestCapacity={contextWindow:98304,maxOutputTokens:16384,draftTokens:16384};
+ const calls:{phase:string;ranges:NonNullable<QueryInput['evidenceRanges']>;readRanges:number;draft?:unknown}[]=[];
+ const query=async(input:MemoryPipelineQuery)=>{
+  assertMemoryRequestFits(input,memories.readEvidence(input.evidenceIds),capacity);
+  const stage=input.traceContext!.phase!,ranges=input.evidenceRanges!;
+  calls.push({phase:stage,ranges,readRanges:input.evidenceReadRanges!.length,draft:input.taskContext?.untrustedMemoryDraft});
+  const hitCapacity=stage===phase&&(phase==='extract'?ranges.length>8:calls.filter(call=>call.phase==='review').length===1);
+  if(hitCapacity)throw new ProviderFailure({category:'permanent',code:'processing_limit'});
+  const {members}=input.taskContext!.memoryWork as {members:MemoryWorkMember[]};
+  return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()};
+ };
+ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>true,model:()=> 'generated-provider',capacity:()=>capacity},phases:{query,review:(input,draft,strategy)=>reviewMemory(input,draft,query,{strategy})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-capacity',name:'Generated capacity recording',kind:'custom',deviceId:'generated',platform:'import'});
+ const evidenceIds=[];
+ for(let index=0;index<16;index++){
+  const original=await sources.upsert('generated-capacity',{externalId:String(index),revision:'1',text:'Generated recording fragment '+index,observedAt:at,kind:'file',layer:'original',document:{contentRole:'transcript',recordedAt:at,timeBasis:'recorded'}});
+  evidenceIds.push(original.id);
+ }
+ const job=pipeline.create({evidenceIds});
+ assert.equal(job.totalBatches,1);
+ const failed=await pipeline.run(job.id);
+ assert.equal(failed.status,'failed');
+ assert.equal(failed.batches[0].errorCode,'processing_limit');
+ assert.equal(failed.batches[0].phase,phase);
+ assert.equal(failed.batches.length,1);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ const firstCalls=calls.length;
+ await pipeline.run(job.id);
+ assert.equal(calls.length,firstCalls,'ordinary re-entry cannot reopen the failed transport step');
+ const done=await pipeline.retry(job.id);
+ assert.equal(done.status,'completed');
+ if(phase==='extract'){
+  const parent=done.batches.find(batch=>batch.id===job.batches[0].id)!;
+  const children=parent.supersededBy!.map(id=>done.batches.find(batch=>batch.id===id)!);
+  assert.equal(children.length,2);
+  assert.deepEqual(children.flatMap(batch=>batch.evidenceRanges),job.batches[0].evidenceRanges);
+  for(const call of calls.slice(firstCalls)){
+   assert.equal(call.ranges.length,8);
+   assert.equal(call.readRanges,8,'the smaller retry leaves room for provider continuations');
+  }
+  assert.ok(children.every(batch=>batch.reviewReceipt?.decision==='independent'));
+ }else{
+  assert.deepEqual(calls.map(call=>call.phase),['extract','review','review']);
+  assert.deepEqual(calls[2].ranges,calls[1].ranges);
+  assert.deepEqual(calls[2].draft,calls[1].draft);
+  assert.equal(done.batches.length,1);
+  assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+ }
+ assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
+});
+
 for(const withdrawal of ['cancel','replace-original','change-model'] as const)test(`recovered native-budget planning yields to ${withdrawal} before dispatch and preserves its frozen targets`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-budget-withdrawal-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
  let enabled=false,capacityReads=0,calls=0,entered!:()=>void,fingerprint='a'.repeat(64);

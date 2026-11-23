@@ -49,7 +49,7 @@ export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;b
 type Chunk=EvidenceRange&{materialInputFingerprints?:string[];strategy?:MemoryRecipeBinding;reviewFingerprint?:string;profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
 export type MemoryBatch={contextFeedbackChildId?:string;failureReceipt?:ExecutionFailureReceipt;workContract?:MemoryWorkContract;evaluation?:{workContract:MemoryWorkContract;selectedCandidates:number;assessedTargets:number;incompleteTargets:number;reviewRunId?:string;resultHash:string;checkedAt:string};generationContract?:string;replanRound?:number;feedbackRound?:number;feedbackWorkId?:string;workerGoal?:string;workerInstruction?:string;contextRanges?:EvidenceRange[];coverage?:MemoryWorkMember[];reviewReceipt?:MemoryReviewReceipt;supersededBy?:string[];strategy?:MemoryRecipeBinding;configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope};
 type BatchInputScope={planIds?:string[];materialInputs:MaterialInputPin[];materialRefs:Record<string,string>};
-type StoredBatch=MemoryBatch&BatchInputScope&{readRanges?:EvidenceRange[];transitionStamp?:string;nativeDraft?:{key:string;context:MemoryEngineDraftPin};engineDrafts?:MemoryEngineDraftPin[];feedbackOnly?:boolean;contextFeedbackChildId?:string;artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];contextChunks?:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
+type StoredBatch=MemoryBatch&BatchInputScope&{readRanges?:EvidenceRange[];splitForCapacityRetry?:true;transitionStamp?:string;nativeDraft?:{key:string;context:MemoryEngineDraftPin};engineDrafts?:MemoryEngineDraftPin[];feedbackOnly?:boolean;contextFeedbackChildId?:string;artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];contextChunks?:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
 type EvidenceSnapshot=ReadonlyMap<string,ReturnType<MemoryStore['readEvidence']>[number]>;
 type MemorySizingSnapshot={images:ReadonlyMap<string,MemoryImageLocator>;grants:MemoryImageGrant[];batches:StoredBatch[];members:Map<string,MemoryWorkMember>};
 export type MemoryJob={failureReceipt?:ExecutionFailureReceipt;priorValidationFailure?:(MemoryValidationFailure&{batchId:string;batchIndex:number});outcome?:'completed'|'processing_failed'|'input_invalidated';invalidatedBatches?:number;workContract?:MemoryWorkContract;continuationOf?:string;cancellationCause?:'authority'|'owner';authorizedChunks:Chunk[];activationRequired:boolean;inputPlanVersion:1;inputPlans:MemoryPlanSummary;recipeProgress:MemoryRecipeProgress[];materialInputs:MaterialInputPin[];batchCharacters:number;automaticGrant?:AutomaticMemoryGrant;automaticGrants?:AutomaticMemoryGrant[];workPackage?:MemoryWorkPackage;contextTime:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs:Record<string,string>;language:Locale;id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'waiting_for_input'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];memoryCount:number;availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
@@ -571,23 +571,31 @@ export class MemoryPipeline {
       const planned=review?{...input,question:memoryReviewQuestion(input,strategy??undefined),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
       return measure(planned,review?capacity.draftTokens:0).fits;
     };
-    const bound=function*(batch:StoredBatch):Generator<void,StoredBatch[],void>{
-      const initial=[...batch.chunks,...(batch.contextChunks??[])],rangeKey=(range:EvidenceRange)=>JSON.stringify([range.id,range.offset,range.length]);
-      const initialKeys=new Set(initial.map(rangeKey)),all=pipeline.contextReadScope(job,{...batch,readRanges:undefined}).chunks;
+    const bound=function*(batch:StoredBatch,requiredOnly=false):Generator<void,StoredBatch[],void>{
+      const initial=[...batch.chunks,...(batch.contextChunks??[])];
       const required=initial.map(({id,offset,length})=>({id,offset,length}));
       const limited={...batch,readRanges:required};
-      if(!(yield* fits(limited))){
+      if(batch.splitForCapacityRetry||!(yield* fits(limited))){
         // An indivisible range can still exceed capacity (for example large
         // attribution metadata). Keep it intact and explicitly recoverable;
         // the actual pre-dispatch guard will fail it without certifying it.
         if(batch.chunks.length<2)return [limited];
         const middle=Math.ceil(batch.chunks.length/2),result:StoredBatch[]=[];
-        for(const chunks of [batch.chunks.slice(0,middle),batch.chunks.slice(middle)])result.push(...yield* bound({id:randomUUID(),index:batch.index,status:'pending',attempts:0,memoryIds:[],strategy:batch.strategy,workContract:batch.workContract,workerGoal:batch.workerGoal,workerInstruction:batch.workerInstruction,skillVersion:batch.skillVersion,artifactRefs:batch.artifactRefs,replanRound:batch.replanRound,contextChunks:batch.contextChunks,contextRanges:batch.contextRanges,chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),...pipeline.sliceBatchScope(job,batch,chunks)}));
+        for(const chunks of [batch.chunks.slice(0,middle),batch.chunks.slice(middle)]){
+          const child:StoredBatch={id:randomUUID(),index:batch.index,status:'pending',attempts:0,memoryIds:[],strategy:batch.strategy,
+            workContract:batch.workContract,workerGoal:batch.workerGoal,workerInstruction:batch.workerInstruction,skillVersion:batch.skillVersion,
+            artifactRefs:batch.artifactRefs,replanRound:batch.replanRound,contextChunks:batch.contextChunks,contextRanges:batch.contextRanges,
+            chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),...pipeline.sliceBatchScope(job,batch,chunks)};
+          result.push(...yield* bound(child,requiredOnly||batch.splitForCapacityRetry===true));
+        }
         return result;
       }
+      if(requiredOnly)return [limited];
       // Nearby ranges are a deterministic transport order, not semantic
       // selection. The model can request useful missing context through the
       // existing reviewed context workflow; no omitted range becomes checked.
+      const rangeKey=(range:EvidenceRange)=>JSON.stringify([range.id,range.offset,range.length]);
+      const initialKeys=new Set(initial.map(rangeKey)),all=pipeline.contextReadScope(job,{...batch,readRanges:undefined}).chunks;
       const positions=all.flatMap((chunk,index)=>initialKeys.has(rangeKey(chunk))?[index]:[]),first=positions[0]??0,last=positions.at(-1)??first;
       const optional=all.map((chunk,index)=>({chunk,distance:index<first?first-index:index>last?index-last:0,index})).filter(({chunk})=>!initialKeys.has(rangeKey(chunk))).sort((a,b)=>a.distance-b.distance||a.index-b.index).map(({chunk})=>chunk);
       const candidate=(count:number)=>({...limited,readRanges:[...required,...optional.slice(0,count).map(({id,offset,length})=>({id,offset,length}))]});
@@ -881,6 +889,7 @@ export class MemoryPipeline {
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
       // A partial retry keeps the active job's model and the sibling batches'
       // input ranges. A new run can rebind its model and plan remaining work.
+      const previousConfiguration=job.configuration?.fingerprint;
       if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
       const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);
       for(const batch of batches)if(retryable(batch)){
@@ -892,6 +901,12 @@ export class MemoryPipeline {
         this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
         const step=this.engine.get(batch.id);
         if(step)this.engine.retry(batch.id,ownerAction);
+        // With the same model allowance the previous estimate would repeat the
+        // rejected extraction. Reuse the frozen targets in smaller requests.
+        if(ownerAction&&capacity&&batch.readRanges&&batch.errorCode==='processing_limit'&&batch.phase==='extract'&&
+          !batch.feedbackOnly&&batch.strategy?.review!==null&&previousConfiguration===job.configuration?.fingerprint){
+          batch.splitForCapacityRetry=true;
+        }
         batch.status='pending';delete batch.errorCode;
         if(active&&capacity)delete batch.readRanges;
         this.saveBatch(batch);
@@ -1025,7 +1040,7 @@ export class MemoryPipeline {
       let index=Number(this.store.db.prepare('SELECT coalesce(max(idx),-1)+1 n FROM memory_batches WHERE job_id=?').get(job.id)!.n);
       for(const child of output.transportBatches){child.index=index++;child.coverage=this.workMembers(job,child,child.chunks);this.insertBatch(job.id,child);this.engine.enqueue('memory:'+job.id,'memory.batch',{jobId:job.id,batchId:child.id,evidenceIds:[...new Set([...child.chunks,...(child.contextChunks??[])].map(chunk=>chunk.id))]},{id:child.id});}
       for(const plan of this.inputPlans.list(job.id))if(plan.batchIds?.includes(batch.id)){plan.batchIds=plan.batchIds.flatMap(id=>id===batch.id?output.transportBatches.map(child=>child.id):[id]);this.inputPlans.put(plan);}
-      batch.supersededBy=output.transportBatches.map(child=>child.id);this.saveBatch(batch);this.drafts.clear(batch.id);return;
+      batch.supersededBy=output.transportBatches.map(child=>child.id);delete batch.splitForCapacityRetry;this.saveBatch(batch);this.drafts.clear(batch.id);return;
     }
     const batch=this.batch(String(step.input.batchId)),{result,model,profile,skillVersion,ranges,chunks}=output,processingChunks=[...chunks,...(batch.contextChunks??[]),...(output.contextReadChunks??[])];
     if(output.feedbackPlan){this.applyFeedback(job,batch,output.feedbackPlan,chunks,output.coverage??[]);return;}
@@ -1092,7 +1107,7 @@ export class MemoryPipeline {
       const planned=await this.budgetRecoveredBatch(job,batch,records,assertGrant);assertGrant();
       this.admitBatch(job,batch);this.assertStrategies(batch);this.assertConfiguration(job);
       if(planned.length>1)return {transportBatches:planned};
-      if(!observeCurrent(()=>{batch.readRanges=planned[0].readRanges;this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
+      if(!observeCurrent(()=>{batch.readRanges=planned[0].readRanges;delete batch.splitForCapacityRetry;this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
     }
     let chunks:Chunk[]=[];
     if(!observeCurrent(()=>{
