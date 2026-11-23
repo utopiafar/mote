@@ -3,6 +3,7 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {isDeepStrictEqual} from 'node:util';
 import type {Cancellation, ServiceLease} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
+import {ProviderFailure} from '@mote/shared';
 import {parseRuntimeOutcome, RuntimeContractError,RuntimeSteeringUnavailable, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type AgentTraceEvent, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
@@ -74,25 +75,37 @@ export async function resolveHostOutput(options: {
   toolsReady(): boolean;
   evaluate(text: string): Promise<HostOutputDecision>;
 }): Promise<AgentAnswer> {
-  let outcome = parseRuntimeOutcome(await options.run());
+  let rejected: AgentResponseError|undefined;
   for (let repair = 0;; repair++) {
-    options.assertCurrent();
-    const terminal = outcome.terminal;
-    if (terminal.kind === 'cancelled') {
-      if (terminal.cause === 'deadline_exceeded') throw new AgentTimeoutError();
-      throw new HostCancellationError(terminal.cause);
-    }
-    if (terminal.kind === 'yielded') throw new AgentYieldError();
-    if (terminal.kind === 'failed') {
-      if (terminal.reason === 'tools_unverified' || terminal.reason === 'tool_failure') throw new AgentResponseError('Runtime tools could not complete safely.', terminal.reason);
-      throw new AgentProviderError(terminal.providerFailure ?? (terminal.reason === 'processing_limit' ? {category: 'permanent', code: 'processing_limit'} : undefined));
+    let outcome: RuntimeOutcome;
+    try {
+      const raw = rejected
+        ? await options.repair(outputRepairPrompt(options.input, rejected, options.maxTokens), rejected, repair)
+        : await options.run();
+      outcome = parseRuntimeOutcome(raw);
+      options.assertCurrent();
+      const terminal = outcome.terminal;
+      if (terminal.kind === 'cancelled') {
+        if (terminal.cause === 'deadline_exceeded') throw new AgentTimeoutError();
+        throw new HostCancellationError(terminal.cause);
+      }
+      if (terminal.kind === 'yielded') throw new AgentYieldError();
+      if (terminal.kind === 'failed') {
+        if (terminal.reason === 'tools_unverified' || terminal.reason === 'tool_failure') throw new AgentResponseError('Runtime tools could not complete safely.', terminal.reason);
+        throw new AgentProviderError(terminal.providerFailure ?? (terminal.reason === 'processing_limit' ? {category: 'permanent', code: 'processing_limit'} : undefined));
+      }
+    } catch (error) {
+      if (rejected?.reason === 'output_limit' && error instanceof ProviderFailure && error.details.category === 'permanent' && error.details.code === 'processing_limit') {
+        throw new AgentProviderError(error.details, error.diagnostic, 'output_limit');
+      }
+      throw error;
     }
     // Readiness failure cannot be repaired by producing different prose.
     if (!options.toolsReady()) throw new AgentResponseError('The read-only agent tools were not verified.', 'tools_unverified');
     reportProgress(options.input, {stage: 'validating'});
     reportTrace(options.input, {runId: options.runId, type: 'validation.started', stage: 'validating', phase: 'started', ...(repair ? {payload: {repair: true}} : {})});
     let error: AgentResponseError;
-    if (terminal.kind === 'output_limit') error = new AgentResponseError('The model reached its output token limit before completing the response.', 'output_limit');
+    if (outcome.terminal.kind === 'output_limit') error = new AgentResponseError('The model reached its output token limit before completing the response.', 'output_limit');
     else {
       const decision = await options.evaluate(outcome.candidate!.text);
       options.assertCurrent();
@@ -105,7 +118,7 @@ export async function resolveHostOutput(options: {
     if (error.reason === 'tools_unverified' || error.reason === 'tool_failure' || repair >= MAX_OUTPUT_REPAIRS) throw error;
     reportTrace(options.input, {runId: options.runId, type: 'validation.failed', stage: 'validating', phase: 'completed', status: 'rejected', payload: {reason: error.reason}});
     options.assertCurrent();
-    outcome = parseRuntimeOutcome(await options.repair(outputRepairPrompt(options.input, error, options.maxTokens), error, repair + 1));
+    rejected = error;
   }
 }
 

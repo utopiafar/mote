@@ -13,7 +13,7 @@ import {failureContext,recoverableProviderFailure,retainFailureContext} from './
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {requestLocale} from './i18n.js';
 import type {Locale} from '@mote/shared/i18n';
-import {AgentResponseError,AgentTimeoutError,SYSTEM_PROMPT,skillCatalog,type QueryInput} from '@mote/agent';
+import {AgentProviderError,AgentResponseError,AgentTimeoutError,SYSTEM_PROMPT,skillCatalog,type QueryInput} from '@mote/agent';
 import {memoryProfile,memoryRangeSelectionProfile} from './memory-profiles.js';
 import {MemoryStrategies} from './memory-strategies.js';
 import {defaultMemoryReviewStrategy} from './memory-review-policy.js';
@@ -1291,7 +1291,12 @@ export class MemoryPipeline {
                   }
                   break;
                 }catch(error){
-                  if(!(error instanceof MemoryOutputValidationError)||reviewAttempt===1)throw error;
+                  if(reviewAttempt===1)throw error;
+                  if(contract==='range-evaluation@1'&&error instanceof AgentProviderError&&error.details.code==='processing_limit'&&error.repairReason==='output_limit'){
+                    input.memoryReviewRepair='The previous response reached the output limit and the in-session correction did not fit. Review the same valid draft and every supplied original target in a fresh response. Keep the required coverage entry for every target, omit optional detail, and use brief claims, exact supporting quotes and concise reasons. Inspect any required original pages and pixels through the existing tools. Report incomplete inspection explicitly.';
+                    continue;
+                  }
+                  if(!(error instanceof MemoryOutputValidationError))throw error;
                   recordFailure(error,result,true);
                   input.memoryReviewRepair=error.repairInstruction+' Re-review the same valid draft and all supplied original target ranges.'+(workMembers?' Preserve the complete member coverage contract.':'');
                 }

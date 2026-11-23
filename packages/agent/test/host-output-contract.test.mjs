@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {createHostRunSession, settleHostCleanup, assembleHostContext} from '../dist/host/run-session.js';
 import {createHostOutputProvider} from '../dist/host/output.js';
 import {ActiveExecutionBudget} from '../dist/active-budget.js';
-import {AgentResponseError, AgentTimeoutError} from '../dist/types.js';
+import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../dist/types.js';
 import {RuntimeContractError} from '../dist/runtime/contracts.js';
 import {ContextToolError} from '../dist/tool-errors.js';
 import {startBridge} from '../dist/bridge.js';
@@ -157,6 +157,26 @@ test('output_limit is rejected even with valid JSON, then requests a shorter com
     const prompt = JSON.parse(request.prompt); assert.equal(request.validation.reason, 'output_limit'); assert.match(prompt.recovery, /shorter/); return outcome();
   }});
   const s = await f.create(); await s.execute(); assert.equal(s.repairs, 1);
+});
+
+test('a context limit during output repair preserves the rejected output and transport facts', async () => {
+  const transport = new AgentProviderError({category: 'permanent', code: 'processing_limit'}, {source: 'http', stage: 'model', httpStatus: 413});
+  for (const returned of [false, true]) {
+    const f = fixture({run: async () => ({...outcome(), terminal: {kind: 'output_limit'}}), repair: async request => {
+      assert.equal(request.validation.reason, 'output_limit');
+      if (returned) return {terminal: {kind: 'failed', reason: 'processing_limit', providerFailure: transport.details}};
+      throw transport;
+    }});
+    const session = await f.create();
+    await assert.rejects(session.execute(), error => {
+      assert.ok(error instanceof AgentProviderError);
+      assert.equal(error.repairReason, 'output_limit');
+      assert.deepEqual(error.details, transport.details);
+      if (!returned) assert.deepEqual(error.diagnostic, transport.diagnostic);
+      return true;
+    });
+    assert.equal(session.repairs, 1);
+  }
 });
 
 test('every pixel-required validation repair, including the third, still requires read_image', async () => {
