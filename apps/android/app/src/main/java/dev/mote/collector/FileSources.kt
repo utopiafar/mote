@@ -102,7 +102,7 @@ object FileUpload {
                       history: ItemUploadSession = dev.mote.collector.plugins.DurableTransportPlugin.get(context).uploadSession(config, lane = "source")): Boolean = try { syncSlice(context, source, config, slice, stillSelected, history) } catch (_: SliceYield) { false }
     private class SliceYield : RuntimeException()
     private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean, history: ItemUploadSession): Boolean {
-        require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("请编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。") }
+        require(source.retention != "snapshot" || source.centralProcessingConsent) { MoteI18n.text("编辑来源并确认完整文件上传到中央处理，处理后不保留中央原件。") }
         val queue = context.fileArchives()
         val connectionLease = ConnectionLease(context, config)
         val sourceLease = queue.sourceLease(source)

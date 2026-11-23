@@ -1046,11 +1046,15 @@ class MainActivity : MoteActivity() {
             else if (!settings.enabled) startCapture()
             else requestProjectionConsent()
         }
-        help(MoteI18n.text("播放时间如何计算"), MoteI18n.text("约每30秒及状态变化时记录。系统休眠、终止服务或播放器未公开媒体会话时可能缺失；仅统计连续观测的播放时段。"))
+        help(MoteI18n.text("播放时间如何计算"), listOf(
+            MoteI18n.text("约每 30 秒和状态变化时记录。"),
+            MoteI18n.text("系统休眠、服务终止或未公开媒体会话时，记录可能缺失。"),
+            MoteI18n.text("只统计连续观测到的播放时段。")
+        ).joinToString("\n"))
         section(MoteI18n.text("采样与空间"))
         interval = sourcePresetNumber("采集间隔 / 秒", config.intervalSeconds, "30", 5..300, listOf(5, 15, 30, 60, 120, 300))
         projectionMode = sourceCheck("使用投屏模式（只截图，每次需授权）", config.mode == "projection")
-        help(MoteI18n.text("截图模式说明"), MoteI18n.text("默认无障碍采集支持页面字段与截图回退。选择投屏会同时改为只截图，锁屏/被杀后必须重新授权。Android 10 截图请选投屏模式。"))
+        help(MoteI18n.text("截图模式说明"), MoteI18n.text("默认无障碍采集支持页面字段与截图回退。选择投屏会同时改为只截图，锁屏或应用被系统终止后必须重新授权。Android 10 截图用投屏模式。"))
         section(MoteI18n.text("电量策略"))
         chargingOnly = sourceCheck("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
         batteryBelow = sourcePresetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
@@ -1221,7 +1225,7 @@ class MainActivity : MoteActivity() {
             }
         }
         button(MoteI18n.text("新建一条 · 清除草稿")) {
-            if (!task.busy) MoteDialogBuilder(this).setTitle(MoteI18n.text("清除当前草稿？")).setMessage(MoteI18n.text("此操作仅清除正在编辑的本机草稿。已保存的记录不受影响。"))
+            if (!task.busy) MoteDialogBuilder(this).setTitle(MoteI18n.text("清除当前草稿？")).setMessage(MoteI18n.text("只清除正在编辑的本机草稿，已保存记录保留。"))
                 .setNegativeButton(MoteI18n.text("继续编辑"), null).setPositiveButton(MoteI18n.text("清除并新建")) { _, _ ->
                     if (!task.busy) {
                         editable(false)
@@ -1259,7 +1263,7 @@ class MainActivity : MoteActivity() {
         appDefaultDuration = sourceCheck("默认：应用时长", appRules.defaultMode.duration)
         appDefaultScreenshots = sourceCheck("默认：截图", appRules.defaultMode.screenshots)
         appDefaultStructured = sourceCheck("默认：结构化内容", appRules.defaultMode.structured)
-        text(MoteI18n.text("默认方式适用于没有单独设置的应用，也适用于以后安装的应用。修改后点击保存生效。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("默认规则用于未单设的应用及以后安装的应用。保存生效。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         content = defaultOwner
         listOf(appDefaultDuration, appDefaultScreenshots, appDefaultStructured).forEach { choice ->
             choice.setOnCheckedChangeListener { _, _ ->
@@ -1292,7 +1296,7 @@ class MainActivity : MoteActivity() {
         }
         appPolicies.addTextChangedListener(rulesWatcher); excludes.addTextChangedListener(rulesWatcher)
         section(MoteI18n.text("开启前预览"))
-        text(MoteI18n.text("保存范围后开始，系统权限按需申请。拒绝授权不影响文件和记录。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("保存范围后开始。按需申请权限，拒绝不影响文件和记录。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         button(MoteI18n.text("预览当前配置的记录格式")) {
             val candidate = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: MoteI18n.text("检查设置")); return@button }
             showCapturePreview(candidate)
@@ -1309,13 +1313,14 @@ class MainActivity : MoteActivity() {
         text(MoteI18n.text("开启后附带实际系统/机型、采集器版本、语言/时区、电量/充电、网络类型、锁屏与可用空间；不取设备序列号、IMEI、MAC、SSID或定位。关闭只影响新记录和心跳，已入队内容不追溯修改。授权文件来源自身的大小/修改时间不受此开关影响。"), NativeFontRole.SUPPORT)
         text(MoteI18n.text("没有内置应用黑名单。配置排除后，无法识别应用、多个应用窗口或系统遮挡时暂停。投屏模式需要同时启用无障碍服务才能可靠执行排除；仅使用情况权限不足以保证所有可见窗口。"), NativeFontRole.SUPPORT)
         section(MoteI18n.text("页面采集方式"))
-        text(MoteI18n.text("端侧提取可见字段，中央组织资料和活动。每个应用分别选择截图和结构化内容。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
-        text(MoteI18n.text("结构化字段规则按应用和版本匹配，仅在该应用已选择结构化内容时运行。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("端侧提取可见字段，中央整理资料和活动。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("各应用分别设置截图和结构化。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("按应用和版本匹配，仅在应用启用结构化时运行。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         uiPageMode=Spinner(this).apply {
             adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf(MoteI18n.text("只截图"),MoteI18n.text("页面优先，未取得内容时截图")))
             setSelection(if (config.uiPageMode == "screen_only") 0 else 1)
         }; uiPageMode.visibility = View.GONE
-        text(MoteI18n.text("截图和结构化内容独立执行，解析结果不改变截图选择。投屏模式不支持结构化内容。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
+        text(MoteI18n.text("截图与结构化独立，解析不改截图设置。投屏不支持结构化。"), NativeFontRole.SUPPORT, NativeColorRole.MUTED)
         val ruleEditor = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         button(MoteI18n.text("高级：查看或编辑全部页面规则")) { ruleEditor.visibility = if (ruleEditor.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
         content.addView(ruleEditor)
@@ -1374,7 +1379,7 @@ class MainActivity : MoteActivity() {
             setSelection(listOf("hold", "drop", "allow").indexOf(config.uploadGate.failureAction).coerceAtLeast(0))
         }
         content.addView(gateFailure); track(gateFailure, "gateFailure")
-        text(MoteI18n.text("文字规则适用于截图、页面和通知；截图文字仅在本机用于审查，完整内容识别由中央执行。待复核记录请在同步恢复中逐条处理；更改规则不会自动释放旧记录。"), NativeFontRole.SUPPORT)
+        text(MoteI18n.text("文字规则适用于截图、页面和通知；截图文字仅在本机用于审查，完整内容识别由中央执行。在同步恢复中逐条处理待复核记录；更改规则不会自动释放旧记录。"), NativeFontRole.SUPPORT)
         val reviewSettings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         val privacyContent = content
         button(MoteI18n.text("高级：截图文字隐私审查")) { reviewSettings.visibility = if (reviewSettings.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
@@ -1475,7 +1480,7 @@ class MainActivity : MoteActivity() {
         section(MoteI18n.text("采集权限"))
         permissionRow("无障碍截图",MoteI18n.text("无障碍截图服务")) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("屏幕采集权限说明"))
-                .setMessage(getString(R.string.accessibility_description) + MoteI18n.text("\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。"))
+                .setMessage(getString(R.string.accessibility_description) + MoteI18n.text("\n\n继续后，在系统设置选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。"))
                 .setNegativeButton(MoteI18n.text("取消"),null).setPositiveButton(MoteI18n.text("打开系统设置")) { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
         permissionRow("通知使用权",MoteI18n.text("通知使用权：读取通知与媒体会话")) { mediaPermission() }
@@ -1489,7 +1494,18 @@ class MainActivity : MoteActivity() {
         permissionRow("电池优化",MoteI18n.text("电池优化设置")) { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         permissionRow("自启动",MoteI18n.text("自启动设置")) { autostart() }
         settingsRow(MoteI18n.text("应用详情 / 受限制设置"),MoteI18n.text("侧载应用可能需允许受限制设置")) { safeOpen(detailsIntent()) }
-        help(MoteI18n.text("HyperOS 帮助"),MoteI18n.text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。") + "\n\n" + MoteI18n.text("HyperOS 通知使用权：请按需打开实时、对话、通知、静音类别。旧版曾禁用这些类别；更新后若仍是灰色，可关闭再重新授予通知使用权。类别和应用级开关会影响可接收的事件。"))
+        val hyperOsCapture = listOf(
+            MoteI18n.text("小米 / HyperOS 系统应用设置：启用 Mote 自启动、通知，省电设为无限制。"),
+            MoteI18n.text("可在最近任务锁定应用。菜单随系统版本变化。"),
+            MoteI18n.text("侧载 APK 无障碍受限，应用详情菜单查看「允许受限制的设置」。"),
+            MoteI18n.text("系统仍可能终止采集。")
+        ).joinToString("\n")
+        val hyperOsNotifications = listOf(
+            MoteI18n.text("HyperOS 通知使用权：按需开启实时、对话、通知和静音类别。"),
+            MoteI18n.text("旧版曾停用。更新后仍为灰色时，撤回并重授通知使用权。"),
+            MoteI18n.text("类别和应用开关会影响接收的事件。")
+        ).joinToString("\n")
+        help(MoteI18n.text("HyperOS 帮助"), "$hyperOsCapture\n\n$hyperOsNotifications")
         text(MoteI18n.text("授权后仍需明确开始。"),NativeFontRole.SUPPORT,NativeColorRole.MUTED)
         projectionButton = button(MoteI18n.text("返回采集范围")) { showPage(Page.PRIVACY) }
         if (permissionReturnPage != Page.PRIVACY) button(MoteI18n.text("返回原配置页面")) { showPage(permissionReturnPage) }
@@ -1626,7 +1642,7 @@ class MainActivity : MoteActivity() {
                 updateSaveBar()
                 result.onSuccess { needsBinding ->
                     if (needsBinding) MoteDialogBuilder(this).setTitle(MoteI18n.text("将本机资料绑定到此节点？"))
-                        .setMessage(MoteI18n.text("{0}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。请核对这是你自己的节点。", c.server))
+                        .setMessage(MoteI18n.text("{0}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。核对这是你自己的节点。", c.server))
                         .setNegativeButton(MoteI18n.text("继续保存在本机"), null).setPositiveButton(MoteI18n.text("确认绑定并保存")) { _, _ -> applySettings(c, true, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after) }.show()
                     else applySettings(c, bindLocal, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after)
                 }.onFailure { toast(it.message ?: MoteI18n.text("无法检查设置，重试")); refreshStatus() }
@@ -1686,7 +1702,7 @@ class MainActivity : MoteActivity() {
             enableCapture(c, MoteI18n.text("采集已启用，等待首帧；配置页受系统安全保护")) {}
         } else {
             if (!CaptureAccessibilityService.connected && AppCollectionRules.parse(c.appCollectionRules).requiresWindowIdentity(PrivacyRules.exclusions(c.excludedPackages))) {
-                showPage(Page.PERMISSIONS); toast(MoteI18n.text("分级采集需要可靠窗口身份，请先启用无障碍服务；不会读取控件文字")); return
+                showPage(Page.PERMISSIONS); toast(MoteI18n.text("分级采集须可靠识别窗口。启用无障碍服务，不读控件文字。")); return
             }
             requestProjectionConsent()
         }
@@ -1705,7 +1721,7 @@ class MainActivity : MoteActivity() {
     private fun requestProjectionConsent() {
         val c = loadedConfig
         if (!CaptureAccessibilityService.connected && AppCollectionRules.parse(c.appCollectionRules).requiresWindowIdentity(PrivacyRules.exclusions(c.excludedPackages))) {
-            showPage(Page.PERMISSIONS); toast(MoteI18n.text("分级采集需要可靠窗口身份，请先启用无障碍服务")); return
+            showPage(Page.PERMISSIONS); toast(MoteI18n.text("分级采集须可靠识别窗口，先启用无障碍服务")); return
         }
         val manager = getSystemService(MediaProjectionManager::class.java)
         val intent = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
@@ -1749,7 +1765,7 @@ class MainActivity : MoteActivity() {
                         toast(MoteI18n.text("应用版本或规则草稿已变化，重新导入"))
                     } else {
                         uiPageRules.setText(merged); uiPageMode.setSelection(uiPageModes.indexOf("ui_preferred"))
-                        toast(MoteI18n.text("字段规则已加入草稿；返回后保存生效，应用内容授权未改变"))
+                        toast(MoteI18n.text("草稿已加入字段规则，返回后保存生效。应用内容授权不变。"))
                     }
                 }.onFailure { toast(it.message ?: MoteI18n.text("字段规则格式无效")) }
             }
@@ -1911,7 +1927,16 @@ class MainActivity : MoteActivity() {
         val missingSource = c != null && (c.screenCollectionEnabled && !screenLive || c.observesSystem() && !systemLive)
         val state = if (settings.enabled && live && missingSource) MoteI18n.text("部分采集来源未连接，检查权限") else if (settings.enabled && !live) MoteI18n.text("采集服务未连接：恢复权限") else if (settings.state() == "capturing") MoteI18n.text("正在采集") else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
-        val totals = if (stats == null) MoteI18n.text("统计暂不可读取") else MoteI18n.text("本周期累计页面 {0} · 截图 {1} · 应用活动 {2} · 媒体 {3} · 笔记 {4} · 已确认 {5}\n拦截 {6} · 失败 {7} · 重试结果 {8}", stats.optLong("PAGE_QUEUED"), stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"), stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), stats.optLong("PAGE_ACK") + stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK") + stats.optLong("SYSTEM_EVENT_ACK"), stats.optLong("FRAME_BLOCKED"), stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED"), stats.optLong("UPLOAD_RETRY"))
+        val totals = if (stats == null) MoteI18n.text("统计暂不可读取") else {
+            val acknowledged = stats.optLong("PAGE_ACK") + stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") +
+                stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK") + stats.optLong("SYSTEM_EVENT_ACK")
+            val failed = stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED")
+            MoteI18n.text(
+                "本周期累计：页面 {0} · 截图 {1} · 应用活动 {2} · 媒体 {3} · 笔记 {4} · 已确认 {5}",
+                stats.optLong("PAGE_QUEUED"), stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"),
+                stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), acknowledged
+            ) + "\n" + MoteI18n.text("拦截 {0} · 失败 {1} · 重试结果 {2}", stats.optLong("FRAME_BLOCKED"), failed, stats.optLong("UPLOAD_RETRY"))
+        }
         val queueStats = local.active
         val pending = local.pending
         val bytes = queueStats?.quotaBytes?.div(1024.0 * 1024)
@@ -2529,7 +2554,7 @@ class MainActivity : MoteActivity() {
     private fun appLabel(id: String): String = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(id, 0)).toString() }.getOrDefault(id)
     private fun draftAppMode(id: String, c: CollectorConfig): AppCollectionMode = if (id in PrivacyRules.exclusions(c.excludedPackages)) AppCollectionMode.OFF else c.collectionRules.apps[id] ?: c.collectionRules.defaultMode
     private fun pageAdapterSummary(raw: String, id: String, version: String): String {
-        if (version.isBlank()) return MoteI18n.text("应用未安装或版本不可读取；不会使用其他版本的字段规则")
+        if (version.isBlank()) return MoteI18n.text("应用未安装或版本不可读，其他版本的规则不会生效。")
         val adapters = runCatching { AppPageSetup.adapters(raw, id, version) }.getOrDefault(emptyList())
         if (adapters.isEmpty()) return MoteI18n.text("当前版本未配置字段规则；截图仍按独立选择执行")
         return adapters.joinToString("\n") { rule ->
@@ -2547,7 +2572,7 @@ class MainActivity : MoteActivity() {
             require(builtin.isNotEmpty()) { MoteI18n.text("内置规则没有适配当前安装版本，配置字段或导入规则") }
             uiPageRules.setText(AppPageSetup.merge(uiPageRules.text.toString(), org.json.JSONArray(builtin).toString(), id, version))
             uiPageMode.setSelection(uiPageModes.indexOf("ui_preferred")); renderAppRules()
-            toast(MoteI18n.text("字段规则已加入草稿；返回后保存生效，应用内容授权未改变"))
+            toast(MoteI18n.text("草稿已加入字段规则，返回后保存生效。应用内容授权不变。"))
         }.onFailure { toast(it.message ?: MoteI18n.text("字段规则格式无效")) }
     }
     private fun editAppPageRule(id: String, version: String, onChanged: () -> Unit) {
@@ -2595,8 +2620,12 @@ class MainActivity : MoteActivity() {
         }
         val structuredAllowed = config.screenCollectionEnabled && if (appId == null) config.collectionRules.mayCollectStructured() else draftAppMode(appId, config).structured
         if (structuredAllowed) {
-            detail(MoteI18n.text("结构化格式示例\n类型：可见内容\n字段：标题、正文、价格或控件状态等实际可见字段\n来源：可见文字、本机 OCR 或安全控件状态"))
-            detail(MoteI18n.text("这些格式示例不代表所有应用已适配。字段仅记录匹配规则取得的可见内容；截图按独立选择执行。"))
+            detail(listOf(
+                MoteI18n.text("结构化格式示例\n类型：可见内容"),
+                MoteI18n.text("字段：标题、正文、价格、控件状态等可见字段"),
+                MoteI18n.text("来源：可见文字、本机 OCR 或安全控件状态")
+            ).joinToString("\n"))
+            detail(MoteI18n.text("格式为示例，应用支持范围须核对实际规则。只记录匹配规则取得的可见字段，截图按独立选择执行。"))
             detail(MoteI18n.text("本机 OCR 补充：{0}", if (config.localContentOcr) MoteI18n.text("已选择") else MoteI18n.text("未选择")))
         }
         if (appId == null) detail(MoteI18n.text("通知：{0} · 设备事件：{1} · 媒体：{2}", if (config.notificationCollectionEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择"), if (config.deviceEventCollectionEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择"), if (config.mediaCollectionEnabled && config.metadataEnabled) MoteI18n.text("已选择") else MoteI18n.text("未选择")))

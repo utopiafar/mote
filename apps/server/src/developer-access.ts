@@ -229,7 +229,7 @@ export class DeveloperAccessHost {
   events(credential:ConnectionCredential,query:{after?:string;limit?:string}){
     if(credential.scope!=='developer')throw new DeveloperAccessError('developer_credential_required',403,moteText("此读取需要独立的开发者凭据。"));
     this.options.connections.assertActive(credential);
-    if(!this.allow(credential))throw new DeveloperAccessError('developer_rate_limited',429,moteText("Developer API 请求过于频繁，请稍后重试。"));
+    if(!this.allow(credential))throw new DeveloperAccessError('developer_rate_limited',429,moteText("Developer API 请求过于频繁，稍后重试。"));
     const sourceIds=credential.eventSourceIds??[],kinds=credential.eventKinds??[];
     if(!sourceIds.length||!kinds.length)return {events:[],nextCursor:null,hasMore:false};
     const after=Math.max(0,Number.parseInt(query.after??'0',10)||0);

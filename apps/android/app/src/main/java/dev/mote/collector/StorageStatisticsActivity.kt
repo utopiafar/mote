@@ -43,8 +43,9 @@ class StorageStatisticsActivity : MoteActivity() {
         // FRAME_BLOCKED also includes window/state changes; it is not a privacy-only count.
         SecondaryUi.fact(facts, MoteI18n.text("隐私拦截"), MoteI18n.text("未单独统计"))
         val boundary = SecondaryUi.disclosure(result, MoteI18n.text("计数边界"), "statistics-scope")
-        SecondaryUi.text(boundary, MoteI18n.text("累计保存、当前本机存量、请求上传和 Central 接收是不同事实。空间按现有文件统计，不代表每日新增量。"), muted = true)
-        SecondaryUi.text(boundary, MoteI18n.text("当前磁盘占用，按文件类型和最后修改日期（UTC）汇总。共享文件只计一次；日期分布不是每日新增量。"), muted = true)
+        SecondaryUi.text(boundary, MoteI18n.text("累计保存、本机存量、上传请求与中央接收分别计数。"), muted = true)
+        SecondaryUi.text(boundary, MoteI18n.text("空间按现存文件统计，无法据此计算每日新增量。"), muted = true)
+        SecondaryUi.text(boundary, MoteI18n.text("磁盘存量按类型和 UTC 修改日汇总。共享文件计一次。"), muted = true)
         value.ledger?.let { SecondaryUi.text(boundary, MoteI18n.text("起算：{0}\n", Instant.ofEpochMilli(it.getLong("epochAtMs"))), muted = true) }
         SecondaryUi.row(result, MoteI18n.text("采集与存储详情"), MoteI18n.text("查看累计结果、队列与使用空间")) { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         val storage = SecondaryUi.disclosure(result, MoteI18n.text("磁盘占用详情"), "statistics-disk")

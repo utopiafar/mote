@@ -1,7 +1,7 @@
+import {modelPrompt} from './model-prompt.js';
 import {randomUUID} from 'node:crypto';
 import {InsightRuns} from './insight-runs.js';
 import {linkOperationParent} from './operation-projection.js';
-import { moteText } from './i18n.js';
 import type {QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {MemoryLifecycle} from './memory-lifecycle.js';
@@ -71,7 +71,7 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
       const childId='insight:'+prior.id,replayable=prior.status==='failed'&&execution?.recovery==='transient'&&pipeline.engine.failure(childId)?.category==='transient'&&store.db.prepare('SELECT 1 FROM operation_parents WHERE parent_id=? AND child_id=?').get(execution.operationId,childId);
       if(!replayable)throw new ExecutionFailure('permanent',prior.error?.code??(prior.status==='cancelled'?'insight_cancelled':'insight_failed'));
     }catch(error){if(!(error instanceof StoreError&&error.statusCode===404))throw error;}}
-    const id=randomUUID(),prompt=moteText("先检索 memories 的精选记忆概览，再按需展开相关记忆、observation 和 segments。Memory 未命中不代表原始事件不存在；参考整理覆盖信息，用 changes 的 overview 或全文检索发现尚未整理的增量。只对有意义的发现选择性读取原始证据，核实最终报告的事实、数字、归属和时间。不要穷尽读取本窗口全部原文；预算不足时用已有证据生成范围明确的部分报告，说明未覆盖内容。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。按照宿主固定范围检索，允许范围内跨月检索。");
+    const id=randomUUID(),prompt=modelPrompt('scheduledInsight');
     execution?.signal.throwIfAborted();checkpoint('insight:'+id);if(execution)execution.commit(()=>linkOperationParent(store,execution.operationId,'insight:'+id));
     const abort=()=>{try{runs.cancel(id);}catch(error){if(!(error instanceof StoreError&&error.statusCode===404))throw error;}};execution?.signal.addEventListener('abort',abort,{once:true});
     try{await runs.perform(id,{prompt,timeZone:'UTC'},async(observe,signal,snapshot)=>{

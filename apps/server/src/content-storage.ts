@@ -24,7 +24,7 @@ export class ContentStorageService {
   }
   snapshot(){return {enabled:this.store.contentEncryption.enabled,keyConfigured:Boolean(this.store.key),job:{...this.progress},...(this.configService?{revision:this.configService.revision}:{})};}
   prepare(enabled:boolean,previous:boolean):PreparedConfigChange {
-    if(enabled!==previous&&this.progress.state==='running')throw new StoreError(moteText("批量解密期间请等待完成或取消后再修改加密设置"),409);
+    if(enabled!==previous&&this.progress.state==='running')throw new StoreError(moteText("批量解密期间，等待完成或取消后再修改加密设置"),409);
     this.store.contentEncryption.prepareEnabled(enabled);
     return {apply:()=>{},publish:()=>this.store.contentEncryption.setEnabled(enabled),rollback:()=>this.store.contentEncryption.setEnabled(previous),complete:()=>this.onEncryptionApplied?.(enabled)};
   }
@@ -32,7 +32,7 @@ export class ContentStorageService {
   async save(input:{enabled:boolean;revision:number}){if(!this.configService)throw new StoreError('Configuration service is unavailable',503);await this.configService.update('storage',{contentEncryptionEnabled:input.enabled},input.revision);return this.snapshot();}
   start(){
     if(this.progress.state==='running')return this.snapshot();
-    if(this.store.contentEncryption.enabled)throw new StoreError(moteText("请先关闭内容加密，再批量解密已有文件"),409);
+    if(this.store.contentEncryption.enabled)throw new StoreError(moteText("先关闭内容加密，再批量解密已有文件"),409);
     this.stopped=false;this.progress={state:'running',total:0,processed:0,converted:0,skipped:0,failed:0};
     this.work=this.run().catch(()=>{this.progress.failed++;this.progress.state='completed';});
     return this.snapshot();

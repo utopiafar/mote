@@ -423,7 +423,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
         const requestId=randomUUID(),locale=negotiateLocale(req.headers['accept-language'],'zh-CN');
         diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:414},'warn');
         res.writeHead(414,{'Content-Type':'application/json; charset=utf-8','Content-Language':locale,'Vary':'Accept-Language','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Request-Id':requestId});
-        requestLocale.run(locale,()=>res.end(JSON.stringify({error:'request_path_too_long',message:moteText("请求路径过长，请检查链接。"),requestId})));
+        requestLocale.run(locale,()=>res.end(JSON.stringify({error:'request_path_too_long',message:moteText("请求路径过长，检查链接。"),requestId})));
       },
     },
     frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
@@ -479,7 +479,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
       return;
     }
     const c=connections.authenticate(req.headers.authorization);
-    if(!c)return reply.code(401).send({error:'unauthorized',message:moteText("请提供有效访问令牌；管理网页请重新登录"),requestId:req.id});
+    if(!c)return reply.code(401).send({error:'unauthorized',message:moteText("提供有效访问令牌。管理网页重新登录。"),requestId:req.id});
     identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');assignRequestPin(req,reply);
     if(!connections.isOwner(c)&&collectorIngressWrite(req.method,req.routeOptions.url??'')&&req.headers['x-mote-ingress-version']!==INGRESS_PROTOCOL_VERSION)
       return reply.code(426).send({error:'ingress_protocol_upgrade_required',requiredVersion:INGRESS_PROTOCOL_VERSION,requestId:req.id});
@@ -496,7 +496,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     if(error instanceof DeveloperAccessError)return reply.code(error.statusCode).send({error:error.code,message:error.publicMessage,requestId:req.id});
     if(error instanceof ModelCatalogError)return reply.code(error.statusCode).send({error:'model_catalog_unavailable',message:error.message,requestId:req.id});
     if(error instanceof ModelSettingsError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});
-    if(error instanceof ConfigServiceError)return reply.code(error.statusCode).send({error:error.code,message:error.code==='config_conflict'?moteText('配置已发生变化，请刷新后重试。'):moteText('配置未能应用，请检查配置状态后重试。'),requestId:req.id});
+    if(error instanceof ConfigServiceError)return reply.code(error.statusCode).send({error:error.code,message:error.code==='config_conflict'?moteText('配置已发生变化，刷新后重试。'):moteText('配置未能应用，检查配置状态后重试。'),requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
   // Source routes mount after the root error handler so their encapsulated

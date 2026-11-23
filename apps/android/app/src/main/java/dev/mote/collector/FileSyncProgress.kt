@@ -56,6 +56,6 @@ internal data class FileSyncProgress(val counts: Map<FileSyncPhase, Int>, val sc
         return listOf(progress, stages,
             if (!scanComplete) MoteI18n.text("扫描尚未完成，总数会继续更新") else "",
             if (count(FileSyncPhase.BASELINE) > 0) MoteI18n.text("首次仅清点、不发送：{0} 个文件", count(FileSyncPhase.BASELINE)) else "",
-            MoteI18n.text("接收进度不代表中央整理或索引已完成")).filter { it.isNotBlank() }.joinToString("\n")
+            MoteI18n.text("接收、中央整理和索引各有进度")).filter { it.isNotBlank() }.joinToString("\n")
     }
 }

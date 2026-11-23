@@ -27,14 +27,14 @@ internal object ConnectionPresentation {
     }
 
     fun message(code: String) = when (code) {
-        "storage" -> MoteI18n.text("凭据持久保存失败，恢复记录仍保留。请释放空间后恢复连接，不要卸载应用。")
+        "storage" -> MoteI18n.text("凭据持久保存失败，恢复记录仍保留。释放空间后恢复连接，不要卸载应用。")
         "no_pending" -> MoteI18n.text("没有可恢复的兑换结果，重新生成邀请")
         "unchecked" -> MoteI18n.text("尚未测试连接")
         "connected" -> MoteI18n.text("上次连接测试成功（不是持续在线保证）")
         "invitation", "expired", "invite_rejected" -> invalidInvitation
-        "device_conflict" -> MoteI18n.text("中央已有此设备 ID。请用上方设备 ID 生成绑定邀请，再试一次；不会更换设备身份。")
+        "device_conflict" -> MoteI18n.text("中央已有此设备 ID。用上方设备 ID 生成绑定邀请，再试一次；不会更换设备身份。")
         "local_confirmation" -> MoteI18n.text("本机有尚未绑定节点的资料，确认档案地址后再连接")
-        "pending" -> MoteI18n.text("仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。")
+        "pending" -> MoteI18n.text("仍有截图、笔记或来源待同步，或草稿已准备提交，不能切换节点。先同步原节点。")
         "busy" -> MoteI18n.text("另一次设置操作尚未完成，稍候再试")
         "authentication" -> MoteI18n.text("节点拒绝当前凭据，生成绑定本设备的邀请")
         "protocol_incompatible" -> centralFailureMessage(426, "incompatible_protocol")

@@ -105,7 +105,7 @@ internal class MeetingRecordingStore(private val directory: File, private val ci
     }
 
     fun begin(id: String, startedAt: Instant, noticeAcknowledgedAt: String, origin: String = ""): MeetingSession = synchronized(lock) {
-        require(this.noticeAcknowledgedAt() == noticeAcknowledgedAt) { MoteI18n.text("开始前请先确认已告知在场的人。") }
+        require(this.noticeAcknowledgedAt() == noticeAcknowledgedAt) { MoteI18n.text("开始前先确认已告知在场的人。") }
         require(!sessions().any { it.state == "recording" })
         val session = MeetingSession(id, startedAt.toString(), null, "recording", 0, false, false, noticeAcknowledgedAt, origin = origin.trim().trimEnd('/'))
         val state = read(); state.getJSONArray("sessions").put(session.json()); write(state); return@synchronized session

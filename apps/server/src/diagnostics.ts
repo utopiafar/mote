@@ -37,32 +37,32 @@ const categories = new Set(['configuration','port_in_use','data_directory_in_use
 const numberKeys = ['durationMs','queueWaitMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','maxCandidates','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount','clockForwardMs','clockBackwardMs','leaseRemainingMs','leaseOverdueMs','succeeded','skipped','dropped','intervalMs','delayMs'] as const;
 const responseReasons:Record<string,string>={
   provider_quota:moteText("模型服务额度不足，恢复账户额度后再继续。"),
-  provider_policy:moteText("模型服务拒绝了本次请求，请调整内容或处理范围。"),
+  provider_policy:moteText("模型服务拒绝了本次请求，调整内容或处理范围。"),
   recovery_window_exhausted:moteText("自动恢复时间已用完，可手动重试开启新的恢复周期。"),
-  configuration_changed:moteText("相关模型配置已改变，请重试以使用新配置；已完成批次会保留。"),
-  provider_authentication:moteText("处理服务拒绝了凭据，请检查服务权限与密钥。"),
-  provider_endpoint:moteText("处理服务地址不可用，请检查端点配置。"),
-  provider_redirect:moteText("处理服务返回了重定向，请配置最终服务地址。"),
-  rate_limited:moteText("处理服务正在限流，请等待允许重试的时间。"),
-  provider_unavailable:moteText("处理服务暂时不可用，请稍后重试。"),
-  provider_timeout:moteText("处理服务报告请求超时，请稍后重试。"),
-  provider_network:moteText("无法连接处理服务，请检查网络与服务地址。"),
-  processing_limit:moteText("处理服务拒绝了内容大小，请缩小本次处理范围。"),
+  configuration_changed:moteText("相关模型配置已改变，重试以使用新配置。已完成批次会保留。"),
+  provider_authentication:moteText("处理服务拒绝了凭据，检查服务权限与密钥。"),
+  provider_endpoint:moteText("处理服务地址不可用，检查端点配置。"),
+  provider_redirect:moteText("处理服务返回了重定向，配置最终服务地址。"),
+  rate_limited:moteText("处理服务正在限流，到允许重试时再试。"),
+  provider_unavailable:moteText("处理服务暂时不可用，稍后重试。"),
+  provider_timeout:moteText("处理服务报告请求超时，稍后重试。"),
+  provider_network:moteText("无法连接处理服务，检查网络与服务地址。"),
+  processing_limit:moteText("处理服务拒绝了内容大小，缩小本次处理范围。"),
   unsupported_format:moteText("处理服务不支持此内容格式。"),
-  provider_request_invalid:moteText("处理服务拒绝了请求参数，请检查处理配置。"),
+  provider_request_invalid:moteText("处理服务拒绝了请求参数，检查处理配置。"),
 
-  invalid_response:moteText("模型未返回可验证的回答，请重试或检查模型配置。"),
+  invalid_response:moteText("模型未返回可验证的回答，重试或检查模型配置。"),
   tool_failure:moteText("工具调用修复次数已耗尽，本次任务已停止。"),
-  image_disclosure_disabled:moteText("问答读取原图尚未开启。请在中央感知设置中允许查询模型按需读取原图，再重新提问。"),
+  image_disclosure_disabled:moteText("问答读取原图尚未开启。在中央感知设置中允许查询模型按需读取原图，再重新提问。"),
   host_validation:moteText("模型输出未通过业务校验，当前对话内修复后仍不合规。"),
-  invalid_json:moteText("模型返回的回答格式不完整或无效，请重试。"),
-  invalid_shape:moteText("模型返回的回答或引用列表格式无效，请重试。"),
-  response_too_large:moteText("模型回答超过大小限制，请缩小问题范围后重试。"),
-  unretrieved_citation:moteText("模型引用了本次未检索到的资料，回答未保存，请重试。"),
-  truncated_citation:moteText("模型未使用完整的资料引用编号，回答未保存，请重试。"),
-  undeclared_citation:moteText("模型正文与引用列表不一致，回答未保存，请重试。"),
-  output_limit:moteText("模型达到输出上限，回答未能完整生成。请缩小问题范围，或在模型服务设置中提高输出预算后重试。"),
-  tools_unverified:moteText("只读检索工具未能完成初始化，请重试或检查节点运行环境。"),
+  invalid_json:moteText("模型返回的回答格式不完整或无效，重试。"),
+  invalid_shape:moteText("模型返回的回答或引用列表格式无效，重试。"),
+  response_too_large:moteText("模型回答超过大小限制，缩小问题范围后重试。"),
+  unretrieved_citation:moteText("模型引用了本次未检索到的资料，回答未保存，重试。"),
+  truncated_citation:moteText("模型未使用完整的资料引用编号，回答未保存，重试。"),
+  undeclared_citation:moteText("模型正文与引用列表不一致，回答未保存，重试。"),
+  output_limit:moteText("回答被截断。缩小问题或在模型设置调高预算后重试。"),
+  tools_unverified:moteText("只读检索工具初始化失败，重试或检查节点环境。"),
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
@@ -131,25 +131,25 @@ export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEvent
 
 /** Normal diagnostic events never carry error text, stacks, headers, provider bodies or arbitrary codes. */
 export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
-  try{return {...describeError(error),diagnostic:errorDiagnostics(error)};}catch{return {status:500,category:'internal',message:moteText("请求未完成，请使用请求编号查看诊断记录。")};}
+  try{return {...describeError(error),diagnostic:errorDiagnostics(error)};}catch{return {status:500,category:'internal',message:moteText("请求未完成，用请求编号查看诊断记录。")};}
 }
 function describeError(error:unknown):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
   const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown;reason?:unknown;errcode?:unknown}:{};
-  if(e.name==='ZodError')return {status:400,category:'validation',message:moteText("输入格式无效，请检查必填项和取值范围。")};
+  if(e.name==='ZodError')return {status:400,category:'validation',message:moteText("输入格式无效，检查必填项和取值范围。")};
   if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:moteText("Agent 未配置。在中央配置模型后重试。")};
-  if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:moteText("Agent 请求已超时，请稍后重试或缩小查询范围。")};
-  if(e.code==='context_lineage_incomplete')return {status:409,category:'context_lineage_incomplete',message:moteText("这段历史的证据范围不完整，无法安全发送给远程模型。请新建对话，或改用本地模型并重新提供证据。")};
-  if(e.code==='source_context_changed')return {status:409,category:'source_context_changed',message:moteText("资料状态已变化或当前配置不支持此操作，请刷新后重试。")};
-  if(e.code==='context_evidence_restricted')return {status:409,category:'context_evidence_restricted',message:moteText("这段历史包含当前不可向所选模型披露的资料。请改用本地模型，或新建对话并重新选择可用证据。")};
+  if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:moteText("Agent 请求已超时，稍后重试或缩小查询范围。")};
+  if(e.code==='context_lineage_incomplete')return {status:409,category:'context_lineage_incomplete',message:moteText("这段历史的证据范围不完整，无法安全发送给远程模型。新建对话，或改用本地模型并重新提供证据。")};
+  if(e.code==='source_context_changed')return {status:409,category:'source_context_changed',message:moteText("资料状态已变化或当前配置不支持此操作，刷新后重试。")};
+  if(e.code==='context_evidence_restricted')return {status:409,category:'context_evidence_restricted',message:moteText("这段历史包含当前不可向所选模型披露的资料。改用本地模型，或新建对话并重新选择可用证据。")};
   if(error instanceof ProviderFailure&&Object.hasOwn(responseReasons,error.details.code)){const reason=error.details.code;return {status:502,category:error.details.category==='blocked'?'model_not_configured':error.details.category==='permanent'?'validation':reason==='rate_limited'?'rate_limited':'unavailable',reason,message:moteText(responseReasons[reason])};}
-  if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:moteText("模型服务请求未完成，请检查地址、凭据和模型配置。")};
+  if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:moteText("模型服务请求未完成，检查地址、凭据和模型配置。")};
   if(e.name==='AgentResponseError') {const reason=typeof e.reason==='string'&&Object.hasOwn(responseReasons,e.reason)?e.reason:'invalid_response';return {status:502,category:'agent_response',reason,message:moteText(responseReasons[reason])};}
-  if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:moteText("操作已取消或超时，请稍后重试。")};
-  if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:moteText("索引模型请求未完成，请检查模型配置或稍后重试。")};
+  if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:moteText("操作已取消或超时，稍后重试。")};
+  if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:moteText("索引模型请求未完成，检查模型配置或稍后重试。")};
   const full=['ENOSPC','EDQUOT'].includes(String(e.code))||typeof e.errcode==='number'&&(e.errcode&255)===13;
   const status=full?507:typeof e.statusCode==='number'&&Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
-  const fixed:Record<number,[string,string]>={400:['validation',moteText("输入格式无效，请检查必填项和取值范围。")],401:['unauthorized',moteText("访问凭据无效或已失效，请重新验证身份。")],403:['forbidden',moteText("此操作不可用。")],404:['not_found',moteText("未找到所请求的资料。")],409:['conflict',moteText("资料状态已变化或当前配置不支持此操作，请刷新后重试。")],410:['deleted',moteText("该条目已删除，排队重试不能恢复它。")],413:['too_large',moteText("内容超过大小限制，请分批处理。")],429:['rate_limited',moteText("处理服务正在限流，请等待允许重试的时间。")],503:['unavailable',moteText("服务暂不可用，请检查节点状态与模型配置。")],507:['storage_full',moteText("存储设备无法继续写入，请检查可用空间后重试；已有资料和待传内容不会因此自动删除。")]};
-  const [category,message]=fixed[status]??['internal',moteText("请求未完成，请使用请求编号查看诊断记录。")];
+  const fixed:Record<number,[string,string]>={400:['validation',moteText("输入格式无效，检查必填项和取值范围。")],401:['unauthorized',moteText("访问凭据无效或已失效，重新验证身份。")],403:['forbidden',moteText("此操作不可用。")],404:['not_found',moteText("未找到所请求的资料。")],409:['conflict',moteText("资料状态已变化或当前配置不支持此操作，刷新后重试。")],410:['deleted',moteText("该条目已删除，排队重试不能恢复它。")],413:['too_large',moteText("内容超过大小限制，分批处理。")],429:['rate_limited',moteText("处理服务正在限流，到允许重试时再试。")],503:['unavailable',moteText("服务暂不可用，检查节点状态与模型配置。")],507:['storage_full',moteText("存储设备无法继续写入。检查可用空间后重试；已有资料和待传内容不会因此自动删除。")]};
+  const [category,message]=fixed[status]??['internal',moteText("请求未完成，用请求编号查看诊断记录。")];
   return {status,category,message};
 }
 function fields(raw:unknown,event?:string):EventFields {

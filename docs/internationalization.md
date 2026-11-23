@@ -8,6 +8,8 @@ Authored Chinese strings are stable source keys in `packages/shared/src/i18n-en.
 
 After editing translations, run `node scripts/sync-i18n.mjs` to update the Android asset, then `node scripts/check-i18n.mjs` to check call-site coverage, placeholder parity and asset consistency. Keep sentence interpolation in a single message where possible. Do not translate SQL, parser literals, identifiers or model protocol fields.
 
+Central keeps localized model instructions in `apps/server/src/model-prompts.json`. The server selects the same request language for these instructions, which are separate from the interface catalog.
+
 Web persists the choice in local storage and reloads after the user confirms. Desktop stores it in the active profile's `language.json`; the trusted main process saves in-progress notes and reloads the fixed client page. Android stores it in private preferences and recreates activities. Existing evidence and historical messages retain their original content.
 
 Fixture checks: shared i18n tests; server concurrent-request tests; desktop `i18n-smoke.cjs`; Web `test-web-i18n.cjs`. These use generated content only. Android unit tests and lint do not substitute for a physical device check; synthetic Codex transport tests do not substitute for a live-model check.

@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import {createHash} from 'node:crypto';
 import {existsSync,readFileSync,readdirSync} from 'node:fs';
 import {join,relative,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -186,13 +187,26 @@ function isMoteTextArgument(node){
  return ts.isCallExpression(call)&&call.arguments[0]===node&&call.expression.getText()==='moteText';
 }
 
+/** The owner approved the existing model-only JSON example in this one prompt. */
+function isCodingMemoryExample(path,node){
+ if(path!=='apps/server/src/memory-profiles.ts'||!ts.isNoSubstitutionTemplateLiteral(node))return false;
+ const expression=node.parent;
+ if(!ts.isBinaryExpression(expression)||expression.right!==node||expression.operatorToken.kind!==ts.SyntaxKind.PlusToken)return false;
+ const declaration=expression.parent;
+ if(!ts.isVariableDeclaration(declaration)||!ts.isIdentifier(declaration.name)||declaration.name.text!=='CODING_MEMORY_PROMPT')return false;
+ return createHash('sha256').update(node.text).digest('hex')==='1963e101be47f3caab76f7b81389f38f9cc06e04013485704e00b75c42adfc7d';
+}
+
 function serverViolations(root,dir){
  const violations=[];
  for(const file of walk(join(root,dir))){
   if(!/\.tsx?$/.test(file)||/\.(?:test|spec)\.tsx?$/.test(file))continue;
   const ast=ts.createSourceFile(file,readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true,file.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);
+  const path=relative(root,file).split('\\').join('/');
   const visit=node=>{
-   if(ts.isStringLiteralLike(node)&&/\p{Script=Han}/u.test(node.text)&&!isMoteTextArgument(node))violations.push({rule:'raw-chinese',location:locationFor(root,file,ast,node),text:node.text});
+   if(ts.isStringLiteralLike(node)&&/\p{Script=Han}/u.test(node.text)&&!isMoteTextArgument(node)&&!isCodingMemoryExample(path,node)){
+    violations.push({rule:'raw-chinese',location:locationFor(root,file,ast,node),text:node.text});
+   }
    ts.forEachChild(node,visit);
   };
   visit(ast);

@@ -230,7 +230,7 @@ class FileTaskActivity : MoteActivity() {
     }
     private fun updateMetadataStatus() {
         metadataStatus.visibility = if (hasContextConflict || source.contextDirty || source.contextVersion > 0) View.VISIBLE else View.GONE
-        metadataStatus.text = MoteI18n.text(if (hasContextConflict) "资料说明与中央版本冲突；请打开设置处理，文件保留待发。" else if (source.contextDirty) "资料说明保存在本机，等待中央确认。" else if (source.contextVersion > 0) "资料说明已获中央确认，版本 {0}。" else "资料说明会作为这个来源的背景保存。", source.contextVersion)
+        metadataStatus.text = MoteI18n.text(if (hasContextConflict) "资料说明与中央版本冲突，打开设置处理，文件保留待发。" else if (source.contextDirty) "资料说明保存在本机，等待中央确认。" else if (source.contextVersion > 0) "资料说明已获中央确认，版本 {0}。" else "资料说明会作为这个来源的背景保存。", source.contextVersion)
     }
     private fun pick() {
         if (task.busy) return

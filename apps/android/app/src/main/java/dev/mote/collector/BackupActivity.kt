@@ -83,7 +83,7 @@ class BackupActivity : MoteActivity() {
         SecondaryUi.text(config, MoteI18n.text("迁移采集与同步设置"), heading = true)
         SecondaryUi.text(config, MoteI18n.text("迁移采集、应用规则、同步和诊断设置。系统权限和来源文件授权需在新设备重新授予。"), muted = true)
         val options = SecondaryUi.disclosure(config, MoteI18n.text("导出选项"), "backup-export-options", includeToken)
-        secrets = CheckBox(this).apply { text = MoteI18n.text("导出时包含节点令牌（文件为明文，请妥善保管）"); isChecked = includeToken; setOnCheckedChangeListener { _, checked -> includeToken = checked } }.also(options::addView)
+        secrets = CheckBox(this).apply { text = MoteI18n.text("导出时包含节点令牌（文件为明文，妥善保管）"); isChecked = includeToken; setOnCheckedChangeListener { _, checked -> includeToken = checked } }.also(options::addView)
         val configActions = SecondaryUi.actions(config)
         SecondaryUi.action(configActions, MoteI18n.text("导出配置 JSON"), primary = true) { includeToken = secrets.isChecked; create(10, "application/json", "mote-settings.json") }
         SecondaryUi.action(configActions, MoteI18n.text("导入配置 JSON")) { open(11, "application/json") }
@@ -120,7 +120,7 @@ class BackupActivity : MoteActivity() {
     private fun chooseRestore() {
         if (!canChooseFile()) return
         operation.show(MoteI18n.text("从备份恢复"), "", MoteI18n.text("选择本机记录 ZIP"),
-            MoteI18n.text("导入前先校验备份。已有记录保留，已有的同一条记录不重复添加。"),
+            MoteI18n.text("导入前校验备份。既有记录保留，相同记录不会重复添加。"),
             actions = listOf(Triple(MoteI18n.text("选择备份文件"), true) { open(13, "application/zip") }))
     }
     private fun returnFromOperation() {
@@ -204,8 +204,8 @@ class BackupActivity : MoteActivity() {
     }
     private fun exportResult(snapshot: BackupSnapshot, outcome: BackupOutcome.Exported) {
         val message = when {
-            outcome.includeToken -> MoteI18n.text("配置文件包含节点令牌，请妥善保管。")
-            outcome.code == 10 -> MoteI18n.text("配置文件不含节点令牌。系统权限需在目标设备上重新授予。")
+            outcome.includeToken -> MoteI18n.text("配置文件包含节点令牌，妥善保管。")
+            outcome.code == 10 -> MoteI18n.text("配置不含节点令牌。目标设备须重新授予系统权限。")
             outcome.code == 14 -> MoteI18n.text("元数据文件可用于查看记录信息，不是带附件的备份。")
             else -> MoteI18n.text("导出没有清空本机内容。")
         }
@@ -215,7 +215,7 @@ class BackupActivity : MoteActivity() {
     }
     private fun exportFailure(snapshot: BackupSnapshot) {
         status.text = MoteI18n.text("导出未完成")
-        operation.show(snapshot.title, MoteI18n.text("导出未完成"), MoteI18n.text("备份未能生成"), MoteI18n.text("请删除刚才不完整的文件，再重新导出。本机记录保留。"), file = owner.documentFacts(),
+        operation.show(snapshot.title, MoteI18n.text("导出未完成"), MoteI18n.text("备份未能生成"), MoteI18n.text("删除刚才不完整的文件后重新导出。本机记录保留。"), file = owner.documentFacts(),
             actions = listOf(Triple(MoteI18n.text("重新导出"), true) { retryExport(snapshot.request) }, Triple(MoteI18n.text("返回"), false) { returnFromOperation() }))
     }
     private fun retryExport(code: Int) {

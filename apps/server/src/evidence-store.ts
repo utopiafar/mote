@@ -686,8 +686,8 @@ export class EvidenceStore {
     this.db.prepare("INSERT INTO settings VALUES('physical-storage-snapshot',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(snapshot));return snapshot;
   }
   exportArchive(maxBytes:number) {
-    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_products'").get()&&this.db.prepare('SELECT 1 FROM image_products LIMIT 1').get())throw new StoreError(moteText('图片处理成果请使用 npm run backup 完整备份；JSON 导出不包含图片理解版本。'),409);
-    if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError(moteText("文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。"),409);
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='image_products'").get()&&this.db.prepare('SELECT 1 FROM image_products LIMIT 1').get())throw new StoreError(moteText('图片处理成果用 npm run backup 完整备份。JSON 导出不包含图片理解版本。'),409);
+    if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError(moteText("文件归档用 npm run backup 完整备份。JSON 导出不包含文件原件和转写。"),409);
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_pipeline_bindings'").get()&&this.db.prepare('SELECT 1 FROM source_pipeline_bindings LIMIT 1').get())throw new StoreError('Source archives require a complete backup; portable JSON excludes them',409);
     const stats=this.stats() as {logicalBytes:number;captures:number};
     const archivedFiles=new ArchivedFileStore(this);

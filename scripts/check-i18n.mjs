@@ -15,10 +15,10 @@ export const defaultAndroidAssetDir='apps/android/app/src/main/assets';
  *  The scanner currently also sees their authored literals; registering them keeps
  *  the unused report correct if a lookup moves behind computed data. */
 export const dynamicKeyAllowlist=[
- '解析未说明置信度与歧义，请核对预览。',
- '解析置信度不足或仍有歧义，请核对预览。',
- '解析未说明高置信度的依据，请核对预览。',
- '处理产生了提醒，请核对预览后再保存。',
+ '解析未说明置信度与歧义，核对预览。',
+ '解析置信度不足或仍有歧义，核对预览。',
+ '解析未说明高置信度的依据，核对预览。',
+ '处理产生了提醒，核对预览后再保存。',
  '尚未核对全部原件，检查文件解析情况。',
  '部分原件未作为证据解析，核对原件与预览。',
  '解析记录已通过校验，置信度高且无歧义。',

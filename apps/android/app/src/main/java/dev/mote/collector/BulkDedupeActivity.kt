@@ -150,7 +150,7 @@ class BulkDedupeActivity : MoteActivity() {
             stamp = key
             val data = info?.progress ?: Data.EMPTY
             val message = if (active) MoteI18n.text("{0} · {1}/{2} · 命中/成功 {3} · 跳过/失败 {4}", data.getString("stage") ?: MoteI18n.text("等待后台执行"), data.getInt("done", 0), data.getInt("total", 0), data.getInt("found", 0), data.getInt("errors", 0)) else when (info?.state) {
-                WorkInfo.State.CANCELLED -> MoteI18n.text("任务已取消，已完成的处理保留；可重新扫描或查看待决定区。")
+                WorkInfo.State.CANCELLED -> MoteI18n.text("任务已取消，已完成部分保留。可重扫或查看待决定区。")
                 else -> info?.outputData?.getString("message") ?: MoteI18n.text("就绪")
             }
             runOnUiThread {

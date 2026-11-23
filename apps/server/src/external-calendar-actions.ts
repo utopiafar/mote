@@ -49,10 +49,10 @@ export class ExternalCalendarActions {
   mint(raw:unknown,assertOwner:()=>void){
     return this.connections.mintMcpCalendar(raw,target=>{
       assertOwner();
-      if(!this.authority.enabled())throw new ConnectionError('mcp_disabled',409,moteText('请先在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，然后重启节点。'));
+      if(!this.authority.enabled())throw new ConnectionError('mcp_disabled',409,moteText('在 mote.yaml 配置 connectors.mcpReadToken 并开启 connectors.mcpEnabled，再重启节点。'));
       const choice=this.targets().find(choice=>isDeepStrictEqual(choice.target,target));
       const provider=choice&&this.capabilities.resolveCentralTarget(target);
-      if(!choice||!provider)throw new ConnectionError('calendar_target_unavailable',409,moteText('目标连接器不可用，请刷新后重试'));
+      if(!choice||!provider)throw new ConnectionError('calendar_target_unavailable',409,moteText('目标连接器不可用，刷新后重试'));
       return {target,name:choice.name,identity:provider.identity};
     });
   }

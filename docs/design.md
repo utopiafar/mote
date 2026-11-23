@@ -42,7 +42,7 @@ For the MVP, Android keeps common media reading, playback and text correction na
 - The central service returns status codes and data, not explanatory prose for people; clients render short labels.
 - Tests assert states and available actions, not exact explanatory copy.
 
-`npm run check:ui-copy` checks the full catalog for banned constructions, more than 24 Han characters, a bare 请, and trailing arrows. It also checks hidden Web and Mac markup for lone character icons and Central source for Chinese literals outside `moteText`. Review and screenshots enforce the shorter limits for individual controls. Promises are listed in `scripts/ui-copy-promises.json`.
+`npm run check:ui-copy` checks the full catalog for banned constructions, more than 24 Han characters, a bare 请, and trailing arrows. It also checks hidden Web and Mac markup for lone character icons and Central source for Chinese literals outside `moteText`. The checker recognizes one approved internal model example by its file, declaration, and exact content. Review and screenshots enforce the shorter limits for individual controls. The length exceptions for promises are listed in `scripts/ui-copy-promises.json`.
 
 ## Presentation extensions
 

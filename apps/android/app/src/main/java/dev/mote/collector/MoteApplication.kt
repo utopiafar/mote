@@ -69,7 +69,7 @@ class MoteApplication : Application() {
                     val config = settings.read()
                     if (settings.enabled && config.screenCollectionEnabled && config.mode == "projection" && !config.observesSystem()) {
                         settings.enabled = false
-                        settings.status("permission_required", MoteI18n.text("投屏会话已结束，请点击开始并重新授权；已有记录保留，同步按所选策略运行"))
+                        settings.status("permission_required", MoteI18n.text("投屏会话已结束。点击开始并重新授权；已有记录保留，同步按所选策略运行"))
                     }
                     QueueStorage.recovering = false
                     QueueStorage.maintaining = true

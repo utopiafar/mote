@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -90,6 +90,23 @@ test('X1-06 long English translations are outside the Chinese-source check',t=>{
  const key='短词条';
  const root=fixture(t,{keys:[key],translations:{[key]:'A deliberately long English translation that would exceed the source limit.'.repeat(3)}});
  assert.equal(checkUiCopy({root,stdout:()=>{},stderr:()=>{}}).exitCode,0);
+});
+
+test('only the approved coding-memory example is outside the raw-Chinese check',t=>{
+ const root=fixture(t);
+ const path='apps/server/src/memory-profiles.ts';
+ const existing=readFileSync(join(repoRoot,path),'utf8');
+ const other="\nexport const copy = '另一条中文';\n";
+ writeFileSync(join(root,path),existing+other);
+ assert.deepEqual(scanUiCopy({root}).violations.map(({text})=>text),['另一条中文']);
+
+ writeFileSync(join(root,path),existing.replace('简短标题','不同的标题'));
+ assert.equal(scanUiCopy({root}).violations.length,1);
+
+ writeFileSync(join(root,path),existing);
+ writeFileSync(join(root,'apps/server/src/another-file.ts'),existing);
+ const [{location}]=scanUiCopy({root}).violations;
+ assert.match(location,/^apps\/server\/src\/another-file\.ts:/);
 });
 
 test('X1-07 请 fails while authorized 请求 wording passes',t=>{

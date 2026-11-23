@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class ConnectionInstrumentedTest {
-    private fun currentNodePrefix(server: String = "") = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。", server, "").substringBefore('\n')
+    private fun currentNodePrefix(server: String = "") = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备由中央生成绑定此设备 ID 的邀请；设备身份不会重置。", server, "").substringBefore('\n')
     private fun previewPrefix(server: String = "") = MoteI18n.text("将连接：{0}\n有效至：{1}\n确认后连接", server, "").substringBefore('\n')
     @Test fun connectionPageRefreshesSavedNodeAndSecondScanReplacesFirstPreview() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

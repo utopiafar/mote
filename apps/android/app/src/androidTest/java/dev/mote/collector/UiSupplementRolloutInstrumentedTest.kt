@@ -116,10 +116,10 @@ class UiSupplementRolloutInstrumentedTest {
             assertTrue(ready)
             scenario.onActivity { activity ->
                 listOf(
-                    "\n记录明细抽样\n采集区保留：{0} 条，截图 {1} / 活动 {2} / 媒体 {3} / 系统事件 {4} / 笔记 {5} / 无法读取 {6} / 未检查 {7}（分类最多读取100条）\n",
+                    "\n记录明细抽样\n",
                     "\n资料在哪里\n队列存储：{0} / 上限 {1} MiB\n{2}\n",
                     "\n生效设置\n实际配置：每 {0} 秒，JPEG {1}，最长边 {2}px\n",
-                    "\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。本机副本按中央确认时间和保留天数清理；中央内容识别状态不影响本机保留。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含同步失败和待复核保留的图片。\n"
+                    "\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。本机副本按中央确认时间和保留天数清理；中央内容识别状态不影响本机保留。被过滤的画面不会入队。暂停按原因变更计次，无法用来计数丢弃的截图；请求可能因系统或进程中断缺少后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含同步失败和待复核保留的图片。\n"
                 ).forEach { block ->
                     // These production disclosure labels are composed from the translated block heading.
                     val heading = MoteI18n.text(block).trimStart('\n').substringBefore('\n')

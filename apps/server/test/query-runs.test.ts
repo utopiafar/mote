@@ -58,7 +58,7 @@ test('failed background queries retain a retryable conversation history entry',a
   for(let attempt=0;attempt<30;attempt++){await new Promise(resolve=>setImmediate(resolve));run=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();if(run.status==='failed')break;}
   assert.equal(run.status,'failed');assert.ok(run.conversationId);assert.ok(!JSON.stringify(run).includes('Generated provider secret'));
   const conversation=(await app.inject({url:`/api/conversations/${run.conversationId}`,headers})).json();
-  assert.equal(conversation.status,'failed');assert.equal(conversation.turns[0].status,'failed');assert.equal(conversation.turns[0].question,'Generated failed question');assert.equal(conversation.turns[0].error.message,'模型服务请求未完成，请检查地址、凭据和模型配置。');
+  assert.equal(conversation.status,'failed');assert.equal(conversation.turns[0].status,'failed');assert.equal(conversation.turns[0].question,'Generated failed question');assert.equal(conversation.turns[0].error.message,'模型服务请求未完成，检查地址、凭据和模型配置。');
 });
 
 test('unrelated archive deletion does not fail a query, but deleting used evidence does',async t=>{

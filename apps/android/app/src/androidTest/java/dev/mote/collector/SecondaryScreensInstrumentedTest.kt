@@ -197,7 +197,7 @@ class SecondaryScreensInstrumentedTest {
     @Test fun sourceFailuresRemainVisibleOutsideCollapsedDetails() = fixture {
         val source = LocalSource(name = "Generated permission source", kind = "local-calendar", calendarId = 991993, enabled = true)
         context.localSources().save(source)
-        for ((code, message) in listOf("permission" to "权限丢失，请重新授权", "paused" to "中央已暂停；请在中央恢复后重试", "provider" to "提供者不可用或缓存已满；保留旧快照，稍后重试", "context-conflict" to "资料说明与中央版本冲突；请打开设置处理，文件保留待发。")) {
+        for ((code, message) in listOf("permission" to "权限丢失，重新授权", "paused" to "中央已暂停，在中央恢复后重试", "provider" to "提供者不可用或缓存已满；保留旧快照，稍后重试", "context-conflict" to "资料说明与中央版本冲突，打开设置处理，文件保留待发。")) {
             context.localSources().status(source.id, code)
             ActivityScenario.launch<SourcesActivity>(Intent(context, SourcesActivity::class.java).putExtra("detailSourceId", source.id)).use { scenario ->
                 until("visible $code") { main { visible().filterIsInstance<TextView>().any { it.tag == "source-primary-status" && it.text.toString() == MoteI18n.text(message) } } }

@@ -191,7 +191,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             stopCapture()
             stateWorker.execute { if (!destroyed && settings.read().sameCaptureConfiguration(config)) {
                 settings.enabled = false
-                settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
+                settings.status("permission_required", MoteI18n.text("通知权限已关闭。为保持采集可见已停止，授权通知后重新开始。"))
             } }
             return
         }
@@ -284,7 +284,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                 inFlight = false
                 Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
                 runCatching { SupportEvents.runtime(this@CaptureAccessibilityService).screenshotFailure(errorCode) }
-                pipeline?.pause(MoteI18n.text("系统未提供截图（代码 {0}），可能是安全窗口或权限变化；未保存内容", errorCode))
+                pipeline?.pause(MoteI18n.text("系统未提供截图（代码 {0}）。或因安全窗口、权限变化，内容未保存。", errorCode))
             }
         })
     }
