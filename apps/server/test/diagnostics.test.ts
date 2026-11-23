@@ -15,9 +15,10 @@ import { ServerDiagnostics,safeError,serializeDiagnosticEvent } from '../src/dia
 import { DiagnosticLogStore } from '../src/diagnostic-log-store.mjs';
 import { buildApp,type QueryAgent } from '../src/app.js';
 import type { ConfigurationPlatformOptions } from '../src/config.js';
+import type { DiagnosticsSettingsValue } from '../src/execution-settings.js';
 
 const marker='SYNTHETIC_PRIVATE_BODY_TOKEN_URL_QUERY';
-const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{debug:true}}});
+const config=(dataDir:string,diagnostics:Partial<DiagnosticsSettingsValue>={}):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'synthetic-observability-token-only',tokenPath:join(dataDir,'synthetic-token-file')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'synthetic-provider-credential',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{debug:true,...diagnostics}}});
 const inactive:QueryAgent={configured:false,query:async()=>{throw new Error('fixture must not run');},close:async()=>{}};
 
 const currentFiles=(directory:string)=>readdirSync(directory).filter(name=>/^central\.(error|warn|info|debug|trace)\./.test(name)).sort((a,b)=>Number(b.split('.')[3])-Number(a.split('.')[3])||b.localeCompare(a));
@@ -479,18 +480,41 @@ test('concurrent requests keep independent request IDs, and SDK failures cannot 
 });
 
 test('enabled Agent trace is correlated with the request and is visible in ordinary diagnostics but not safe support export',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-trace-api-')),cfg={...config(directory),agentTraceEnabled:true};
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-trace-api-'));
+  const cfg=config(directory,{traceEnabled:true,traceExpiresAt:Date.now()+60*60*1000});
   const agent:QueryAgent={configured:true,close:async()=>{},query:async args=>{args.onTrace?.({type:'fixture.model.completed',stage:'model',status:'succeeded',payload:{prompt:marker,context:'synthetic fixture'}});return {answer:'fixture',citations:[],trace:[],runId:randomUUID()};}};
   const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
   const response=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'synthetic trace request'}});assert.equal(response.statusCode,200);await diagnostics.flush();
-  const requestId=response.headers['x-request-id'],trace=diagnostics.events().items.find(event=>event.event==='agent.trace'&&event.requestId===requestId&&((event.trace as Record<string,unknown>)?.type==='fixture.model.completed'));
-  assert.ok(trace);assert.equal(((trace!.trace as Record<string,unknown>).payload as Record<string,unknown>).prompt,marker);assert.equal(diagnostics.snapshot().agentTrace.enabled,true);
-  const bundle=await app.inject({url:'/api/support-bundle',headers});assert.equal(bundle.statusCode,200);assert.ok(!bundle.body.includes(marker));
+  const ownerEvents=await app.inject({url:'/api/diagnostics/events',headers});
+  assert.equal(ownerEvents.statusCode,200,ownerEvents.body);
+  const {items}=ownerEvents.json<ReturnType<typeof diagnostics.events>>();
+  const trace=items.find(event=>event.event==='agent.trace'&&event.requestId===response.headers['x-request-id']&&event.trace?.type==='fixture.model.completed');
+  assert.ok(trace?.trace);
+  assert.equal((trace.trace.payload as Record<string,unknown>).prompt,marker);
+  assert.equal(diagnostics.snapshot().agentTrace.enabled,true);
+  const bundle=await app.inject({url:'/api/support-bundle',headers});
+  assert.equal(bundle.statusCode,200,bundle.body);
+  assert.ok(!bundle.body.includes(marker));
 });
 
 test('disabled central diagnostics keeps the authenticated numeric status available without recording',async t=>{
-  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-off-api-'));const cfg={...config(directory),diagnosticsEnabled:false};const {app}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};await app.inject({url:'/api/status',headers});const bundle=(await app.inject({url:'/api/support-bundle',headers})).json();assert.equal(bundle.snapshot.enabled,false);assert.equal(bundle.snapshot.retainedEvents,0);assert.deepEqual(bundle.events,[]);await assert.rejects(stat(join(directory,'logs')),{code:'ENOENT'});
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-off-api-'));
+  const cfg=config(directory,{enabled:false});
+  const {app}=await buildApp(cfg,{agent:inactive});
+  t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
+  const headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
+  assert.equal((await app.inject({url:'/api/diagnostics'})).statusCode,401);
+  assert.equal((await app.inject({url:'/api/status',headers})).statusCode,200);
+  const status=await app.inject({url:'/api/diagnostics',headers});
+  assert.equal(status.statusCode,200,status.body);
+  assert.equal(status.json().enabled,false);
+  assert.ok(status.json().runtime.rssBytes>0);
+  const bundle=await app.inject({url:'/api/support-bundle',headers});
+  assert.equal(bundle.statusCode,200,bundle.body);
+  assert.equal(bundle.json().snapshot.enabled,false);
+  assert.equal(bundle.json().snapshot.retainedEvents,0);
+  assert.deepEqual(bundle.json().events,[]);
+  await assert.rejects(stat(join(directory,'logs')),{code:'ENOENT'});
 });
 
 test('request bursts keep model configuration errors correlated and safe',async t=>{
@@ -558,7 +582,8 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
 
 test('raw log endpoint returns file text verbatim with owner authentication and no cache', async t=>{
   const dataDir=await mkdtemp(join(tmpdir(),'mote-raw-log-'));
-  const {app,diagnostics}=await buildApp(config(dataDir),{agent:inactive});
+  const cfg=config(dataDir),headers={authorization:`Bearer ${cfg.privateCredential!.token}`};
+  const {app,diagnostics}=await buildApp(cfg,{agent:inactive});
   t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
   const unauthorized=await app.inject({method:'GET',url:'/api/diagnostics/logs'});
   assert.equal(unauthorized.statusCode,401);
@@ -573,13 +598,13 @@ test('raw log endpoint returns file text verbatim with owner authentication and 
   const latestPage=await diagnostics.readPage(0,1,1);assert.deepEqual(latestPage,{items:['malformed <script>中文 fixture</script>'],page:1,pageSize:1,totalLines:2,totalPages:2,hasPrevious:true,hasNext:false});
   const olderPage=await diagnostics.readPage(0,2,1);assert.deepEqual(olderPage.items,['  {"level":"info"}']);
   await assert.rejects(diagnostics.readRaw(-1));
-  const result=await app.inject({method:'GET',url:'/api/diagnostics/logs?file='+fileId,headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  const result=await app.inject({method:'GET',url:'/api/diagnostics/logs?file='+fileId,headers});
   assert.equal(result.statusCode,200);assert.match(result.headers['content-type']!,/^text\/plain/);
   assert.equal(result.headers['cache-control'],'no-store');assert.ok(result.body.startsWith(raw));
-  const pageResult=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file='+fileId+'&page=1&pageSize=1',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  const pageResult=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file='+fileId+'&page=1&pageSize=1',headers});
   assert.equal(pageResult.statusCode,200);assert.equal(pageResult.headers['cache-control'],'no-store');const pageBody=pageResult.json();assert.equal(pageBody.page,1);assert.equal(pageBody.pageSize,1);assert.equal(pageBody.totalLines,pageBody.totalPages);assert.ok(pageBody.items.length===1);assert.ok(pageBody.totalLines>=latestPage.totalLines);
-  const filtered=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file='+fileId+'&page=1&pageSize=10&stage=unknown',headers:{authorization:`Bearer ${config(dataDir).token}`}});
-  assert.equal(filtered.statusCode,200);assert.equal(filtered.json().totalLines,2);assert.equal((await app.inject({method:'GET',url:'/api/diagnostics/log-pages?stage=invalid',headers:{authorization:`Bearer ${config(dataDir).token}`}})).statusCode,400);
+  const filtered=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file='+fileId+'&page=1&pageSize=10&stage=unknown',headers});
+  assert.equal(filtered.statusCode,200);assert.equal(filtered.json().totalLines,2);assert.equal((await app.inject({method:'GET',url:'/api/diagnostics/log-pages?stage=invalid',headers})).statusCode,400);
 });
 
 test('stage failures use warning for rejected input and error for failed execution', async t=>{
@@ -606,10 +631,11 @@ test('memory validation diagnostics survive reload without trace opt-in and reje
 
 test('saved diagnostic preferences apply immediately and survive app restart',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-live-preferences-'));t.after(()=>rm(directory,{recursive:true,force:true}));
- let {app}=await buildApp({...config(directory),diagnosticsEnabled:false},{agent:inactive});
+ let {app}=await buildApp(config(directory,{enabled:false}),{agent:inactive});
  const headers={authorization:'Bearer synthetic-observability-token-only'};
  try{
-  const revision=(await app.inject({url:'/api/diagnostics-settings',headers})).json().revision;const update=await app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{revision,enabled:true,debug:true,traceEnabled:true,level:'debug'}});assert.equal(update.statusCode,200,update.body);
+  const {enabled,revision}=(await app.inject({url:'/api/diagnostics-settings',headers})).json();assert.equal(enabled,false);
+  const update=await app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{revision,enabled:true,debug:true,traceEnabled:true,level:'debug'}});assert.equal(update.statusCode,200,update.body);
   const status=(await app.inject({url:'/api/diagnostics',headers}));assert.equal(status.statusCode,200);
   assert.equal((await app.inject({url:'/api/diagnostics-settings',headers})).json().traceEnabled,true);
   const execution=await app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:update.json().revision,agentConcurrency:6,llmConcurrency:3,memoryConcurrency:2}});assert.equal(execution.statusCode,200,execution.body);
