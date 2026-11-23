@@ -1137,6 +1137,7 @@ export class MemoryPipeline {
         }
         const model=job.configuration?.model??job.modelOverride??this.options.models.model(job.modelProfileId);
         const normalizeFailure=(error:unknown):unknown=>{
+          if(error instanceof MemoryOutputValidationError&&error.cause instanceof ProviderFailure)return error.cause;
           if(error instanceof MemoryProviderError)return retainFailureContext(new ExecutionFailure(error.code==='unknown_result'||error.code==='unavailable'?'blocked':'permanent','memory_provider_'+error.code),failureContext(error));
           if(error instanceof AgentResponseError&&['output_limit','response_too_large'].includes(error.reason))return new ExecutionFailure('permanent','model_output_capacity');
           if(error instanceof ProviderFailure&&error.details.category==='transient'&&!recoverableProviderFailure(error))return retainFailureContext(new ProviderFailure({category:'permanent',code:error.details.code,retryAfterMs:error.details.retryAfterMs,...(error.details.executionStarted===false?{executionStarted:false as const}:{})},undefined,error.diagnostic),failureContext(error));
@@ -1189,7 +1190,7 @@ export class MemoryPipeline {
               if(readRanges)assertMemoryTargetSupport(result,chunks,id=>this.options.memories.readEvidence([id])[0]?.ocrText);
               if(workMembers){const accounting=readMemoryWorkCoverage(result,workMembers,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage',{workContract:contract});}
             }
-            catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return {code:error.code,feedback:error.repairInstruction};}
+            catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return error;}
           };
           const input:MemoryPipelineQuery={...this.modelInput(job,batch,chunks),signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
           const draftKey=sha256(JSON.stringify(['memory-extraction-draft@2',generationContract,(batch.artifactRefs??[]).map(ref=>({...ref})).sort((a,b)=>a.id.localeCompare(b.id)),summaries.slice().sort((a,b)=>a.id.localeCompare(b.id))]));
