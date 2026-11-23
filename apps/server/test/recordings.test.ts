@@ -25,11 +25,11 @@ const selection={enabled:true,start:'2026-09-01T00:00:00Z',end:'2026-10-01T00:00
 const wav=Buffer.concat([Buffer.from('RIFF0000WAVE'),Buffer.alloc(200)]);
 async function fixture(t:import('node:test').TestContext,createProvider?:(directory:string)=>RecordingProvider){
  const directory=await mkdtemp(join(tmpdir(),'mote-recording-fixture-'));
- const state={account:'generated-owner',text:raw,ids:['r1','r1'],mediaFails:false,transcriptFails:false,pages:false,cycle:false,held:undefined as undefined|Promise<void>,switchAfterRead:false,modelFailurePhase:'extract' as 'extract'|'review',modelFailures:0,modelEntered:undefined as undefined|(()=>void),modelHeld:undefined as undefined|Promise<void>};
+ const state={account:'generated-owner',text:raw,ids:['r1','r1'],createdAt:'2026-09-20T10:00:00Z',mediaFails:false,transcriptFails:false,pages:false,cycle:false,held:undefined as undefined|Promise<void>,switchAfterRead:false,modelFailurePhase:'extract' as 'extract'|'review',modelFailures:0,modelEntered:undefined as undefined|(()=>void),modelHeld:undefined as undefined|Promise<void>};
  const calls:{phase:string;id?:string;start?:string;end?:string}[]=[],models:QueryInput[]=[];
  const provider:RecordingProvider={id:'feishu',version:'generated@1',account:async()=>({id:state.account,name:'Generated owner'}),
   discover:async(_account,range)=>{calls.push({phase:'discover',...range});return {ids:range.cursor?['r2']:state.ids,...(state.cycle?{next:range.cursor==='a'?'b':'a'}:state.pages&&!range.cursor?{next:'second'}:{})};},
-  metadata:async(_account,id)=>{calls.push({phase:'metadata',id});return {id,title:'Generated diary',recordedAt:'2026-09-20T00:00:00Z',durationMs:5000};},
+  metadata:async(_account,id)=>{calls.push({phase:'metadata',id});return {id,title:'Generated diary',createdAt:state.createdAt,recordedAt:'2026-09-20T00:00:00Z',durationMs:5000};},
   transcript:async()=>{calls.push({phase:'transcript'});if(state.held)await state.held;if(state.transcriptFails)throw new ExecutionFailure('blocked','generated_transcript_unavailable');if(state.switchAfterRead)state.account='another-generated-owner';return {rawText:state.text,transcript:feishuTranscript(state.text,5000)};},
   media:async()=>{calls.push({phase:'media'});if(state.mediaFails)throw new ExecutionFailure('blocked','generated_media_permission');return {mimeType:'audio/wav',bytes:wav};},
  };
@@ -55,11 +55,23 @@ test('the recording source plugin binds the provider account, transcript revisio
  assert.equal(status.sourceId,sourceId);assert.equal(status.connected,true);
  const source=f.node.sources.getSource(sourceId);assert.equal(source.kind,'feishu.recordings');assert.equal(source.deviceId,sourceId);assert.equal(source.enabled,true);
  const head=f.node.sources.getItem(sourceId,'r1')!;assert.equal(head.document?.contentRole,'transcript');assert.equal(head.document?.recordedAt,'2026-09-20T00:00:00Z');assert.equal(head.layer,'original');
+ assert.deepEqual(head.document?.originalMetadata,{
+  createdAt:'2026-09-20T10:00:00Z',recordedAt:'2026-09-20T00:00:00Z',durationMs:5000,corpusTimeSource:'recordedAt',
+ });
  const history=f.node.sources.history(sourceId,'r1');assert.equal(history.length,1);assert.equal(history[0].revision,head.revision);assert.match(head.revision,/^[a-f0-9]{64}$/);
  const material=f.node.materials.list({sourceId}).items[0];assert.ok(material);assert.equal(material.origin.sourceId,sourceId);assert.ok(f.node.materials.members(material.ref).items.some(member=>member.id===head.captureId&&member.ref==='capture:'+head.captureId));
  const archived=new ArchivedFileStore(f.node.store).listForCapture(head.captureId);assert.equal(archived.length,1);assert.deepEqual(new ArchivedFileStore(f.node.store).read(archived[0].id),wav);
  await f.memory();const memories=f.node.memoryPipeline.list().map(job=>f.node.memoryPipeline.get(job.id)).flatMap(job=>job.memoryIds);assert.ok(memories.length);
  for(const id of memories)for(const evidence of f.node.memories.get(id).evidence){assert.equal(evidence.sourceId,sourceId);assert.equal(evidence.externalId,material.id);assert.ok(evidence.revision);}
+ f.state.createdAt='2026-09-20T11:00:00Z';
+ await f.request('POST','/sync');await f.flush();
+ const amended=f.node.sources.getItem(sourceId,'r1')!;
+ assert.equal(amended.document?.recordedAt,head.document?.recordedAt);
+ assert.equal(amended.document?.originalMetadata?.createdAt,'2026-09-20T11:00:00Z');
+ assert.deepEqual([...f.node.files.bytes(amended.captureId)],[...f.node.files.bytes(head.captureId)]);
+ assert.equal(f.calls.filter(call=>call.phase==='media').length,1);
+ await f.request('POST','/sync');await f.flush();
+ assert.equal(f.node.sources.history(sourceId,'r1').length,2,'an identical replay preserves the metadata revision');
 });
 
 test('stopping and re-enabling the recording instance preserves cursor and binding without duplicating polling or Memory strategies',async t=>{
@@ -226,6 +238,7 @@ test('DingTalk actual connector intake keeps raw JSON, uses source corpus time, 
  }));
  await f.connect();await f.flush();const status=await f.request('GET'),head=f.node.sources.getItem(status.sourceId,'d1')!;
  assert.equal(status.counts.transcripts,1);assert.equal(status.counts.failed,0);assert.equal(head.document?.recordedAt,sourceTime);assert.equal(head.document?.timeBasis,'recorded');assert.equal(head.document?.occurredAt,undefined);assert.notEqual(head.observedAt,sourceTime);
+ assert.deepEqual(head.document?.originalMetadata,{createdAt:sourceTime,durationMs:5000,corpusTimeSource:'createdAt'});
  assert.equal(f.node.sources.listItems({sourceId:status.sourceId,after:sourceTime,before:'2026-09-21T00:00:00Z'}).items.length,1,'corpus date participates in normal source retrieval');
  const retained=JSON.parse(Buffer.concat([...f.node.files.bytes(head.captureId)]).toString());assert.deepEqual(JSON.parse(retained.rawText),payload());
  const chunks=f.node.files.chunks(head.captureId);assert.equal(chunks.length,2);assert.ok(chunks.every(chunk=>chunk.ocrText.includes(speech)&&!chunk.ocrText.includes('sentenceList')));
