@@ -116,9 +116,21 @@ function startMacFixture() {
     const show = local.show.bind(local);
     local.show = () => { opened = true; show(); };
     await js('document.querySelector("[data-local-capture-sync]").click()');
-    await until(() => opened, 'Mac local capture and sync window');
+    await until(async () => opened && await local.webContents.executeJavaScript(
+      "document.querySelector('[data-page=capture-sync]:not([hidden])')?.getClientRects().length",
+    ), 'Mac local capture and sync window');
     assert.equal(local.isVisible(), false);
-    writeFileSync(join(directory, 'capture-sync.png'), (await local.webContents.capturePage()).toPNG());
+    // The renderer updates the route before Chromium paints the new page.
+    await local.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Mac capture and sync did not paint')), 5000);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        clearTimeout(timeout);
+        resolve(true);
+      }));
+    })`);
+    const captureSync = await local.webContents.capturePage();
+    assert.ok(!captureSync.isEmpty(), 'The Mac capture and sync screenshot is not empty');
+    writeFileSync(join(directory, 'capture-sync.png'), captureSync.toPNG());
     app.quit();
   }).catch(error => { console.error(error); app.exit(1); });
   require('../apps/desktop/dist/main.js');

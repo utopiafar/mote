@@ -1249,9 +1249,11 @@ body[data-workspace-page="capture-sync"] main{padding-top:52px;padding-bottom:24
 .capture-sync-page .page-header{margin-bottom:24px}
 .capture-sync-page h1{font-weight:600}
 .capture-sync-groups{display:flex;flex-direction:column;gap:20px}
-.capture-sync-group{overflow:hidden;background:var(--mote-surface);border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container)}
-.capture-sync-group>*+*{border-top:1px solid var(--mote-hair)}
+.capture-sync-controls{margin-bottom:20px}
+.capture-sync-group-title{margin:0 0 var(--mote-space-inline);color:var(--mote-muted);font-size:var(--mote-font-meta);font-weight:500}
+.capture-sync-controls,.capture-sync-group{overflow:hidden;background:var(--mote-surface);border:1px solid var(--mote-hair);border-radius:var(--mote-radius-container)}
 .capture-sync-row{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:9px 14px;background:transparent;border:0;border-radius:0;color:var(--mote-ink);font-size:var(--mote-font-row);font-weight:400;line-height:1.45;text-align:left;white-space:normal}
+.capture-sync-controls>*+*,.capture-sync-group>*+*{border-top:1px solid var(--mote-hair)}
 button.capture-sync-row{cursor:pointer}
 button.capture-sync-row:hover:not(:disabled){background:var(--mote-surface-hover)}
 .capture-sync-row>.icon{width:18px;height:18px;color:var(--mote-muted);stroke-width:1.65}

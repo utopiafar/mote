@@ -10,6 +10,7 @@ type CaptureSyncActions={
   addSource():void;
   openChrome():void;
   openCalendar():void;
+  openCodingAgent():void;
   openSources():void;
   sendNow():void;
   setPaused(paused:boolean):void;
@@ -66,7 +67,7 @@ export function createCaptureSyncUi(api:Pick<DesktopApi,'permissionSettings'|'st
     el('capture-sync-send-state').textContent=!connected?moteText('尚未连接'):status.config.syncPaused?moteText('发送已暂停'):status.sync.state==='error'?moteText('需要重新连接'):pending>0?moteText('待发送 {0} 条',pending):status.sync.lastUploadAt?moteText('已同步')+' · '+new Date(status.sync.lastUploadAt).toLocaleTimeString(getLocale(),{hour:'2-digit',minute:'2-digit',hour12:false}):moteText('已同步');
     const sendNow=el<HTMLButtonElement>('capture-sync-send-now');sendNow.disabled=!connected;
     el('capture-sync-mode').textContent=syncModeLabel(status.sync.mode);
-    setSwitch(switches('capture-sync-pause'),Boolean(status.config.syncPaused));
+    setSwitch(switches('capture-sync-send-toggle'), !status.config.syncPaused);
   };
 
   async function refreshStorage(){
@@ -88,9 +89,10 @@ export function createCaptureSyncUi(api:Pick<DesktopApi,'permissionSettings'|'st
   el('capture-sync-screen-toggle').addEventListener('click',()=>{if(!status)return;if(status.running)actions.stop();else actions.start();});
   el('capture-sync-chrome-toggle').addEventListener('click',()=>{if(!status)return;const configured=(status.config.chromeOrigins??[]).length>0;if(!configured)actions.openChrome();else if(status.running)actions.stop();else actions.start();});
   el('capture-sync-calendar-toggle').addEventListener('click',()=>{if(!status)return;const calendars=rows.filter(row=>row.source.kind==='local-calendar');if(status.running&&calendars.some(row=>row.source.enabled))actions.stop();else if(!calendars.length)actions.openCalendar();else if(calendars.some(row=>row.source.enabled))actions.start();else actions.openSources();});
+  el('capture-sync-coding-agent').addEventListener('click', () => actions.openCodingAgent());
   el('capture-sync-add-source').addEventListener('click',()=>actions.addSource());
   el('capture-sync-send-now').addEventListener('click',()=>{if(!el<HTMLButtonElement>('capture-sync-send-now').disabled)actions.sendNow();});
-  el('capture-sync-pause').addEventListener('click',()=>{if(!status)return;actions.setPaused(!status.config.syncPaused);});
+  el('capture-sync-send-toggle').addEventListener('click',()=>{if(!status)return;actions.setPaused(!status.config.syncPaused);});
 
   return {
     update(next:Status,nextRows:SourceStatus[]){status=next;rows=nextRows;render();},

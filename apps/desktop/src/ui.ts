@@ -90,6 +90,7 @@ const captureSyncUi=createCaptureSyncUi(desktopApi,{
   addSource:()=>byId('source-add').click(),
   openChrome:()=>showPage('chrome'),
   openCalendar:()=>byId('source-calendar-choice-open').click(),
+  openCodingAgent: () => byId('source-agent-choice-open').click(),
   openSources:()=>showPage('sources'),
   sendNow:()=>void perform(async()=>{render(await desktopApi.retry());feedback(currentStatus.sync.message,currentStatus.sync.state!=='error'&&currentStatus.sync.state!=='unconfigured');}),
   setPaused:paused=>void perform(async()=>{render(await desktopApi.setSyncPaused(paused));}),
