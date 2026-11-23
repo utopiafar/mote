@@ -436,28 +436,36 @@ const captureApi=()=>({
   permissionSettings:vi.fn(async()=>{}),
   storageStatistics:vi.fn(async()=>({bytes:3.4*1024*1024*1024,files:1,skipped:0,generatedAt:'2026-11-06T00:00:00.000Z',timeZone:'UTC' as const,dateBasis:'modified' as const,days:[],types:[]})),
 });
-const captureActions=()=>({start:vi.fn(),stop:vi.fn(),addSource:vi.fn(),openChrome:vi.fn(),openCalendar:vi.fn(),openSources:vi.fn(),sendNow:vi.fn(),setPaused:vi.fn(),failure:vi.fn()});
+const captureActions=()=>({start:vi.fn(),stop:vi.fn(),addSource:vi.fn(),openChrome:vi.fn(),openCalendar:vi.fn(),openCodingAgent:vi.fn(),openSources:vi.fn(),sendNow:vi.fn(),setPaused:vi.fn(),failure:vi.fn()});
 const captureRow=(id:string,kind:SourceStatus['source']['kind'],enabled=true):SourceStatus=>({...structuredClone(source),source:{...structuredClone(source.source),id,kind,enabled}});
 
 it('keeps the Mac capture and sync window structure, order and routes',()=>{
   const page=document.querySelector<HTMLElement>('[data-page="capture-sync"]')!;
   expect(page.querySelector('[data-page-title]')!.textContent).toBe('采集与同步');
+  const controls = page.querySelector('.capture-sync-controls')!;
+  expect(controls.nextElementSibling).toBe(page.querySelector('.capture-sync-groups'));
+  expect(Array.from(controls.querySelectorAll('[role=switch]'), button => button.getAttribute('aria-label')))
+    .toEqual(['屏幕与应用', '发送到中央']);
+  expect(Array.from(page.querySelectorAll('.capture-sync-group-title'), title => title.textContent))
+    .toEqual(['来源', '发送', '本机']);
   const groups=page.querySelectorAll('.capture-sync-group');
   expect(groups).toHaveLength(3);
-  expect(Array.from(groups[0].querySelectorAll<HTMLElement>('[data-capture-sync-source]')).map(row=>row.dataset.captureSyncSource)).toEqual(['screen','chrome','calendar','folders','add']);
-  expect(Array.from(groups[0].querySelectorAll('strong')).map(row=>row.textContent)).toEqual(['屏幕与应用','Chrome 页面','日历','同步文件夹','添加来源']);
-  expect(Array.from(groups[1].querySelectorAll('strong')).map(row=>row.textContent).filter(Boolean)).toEqual(['发送方式','暂停发送']);
-  expect(Array.from(groups[2].querySelectorAll('strong')).map(row=>row.textContent)).toEqual(['隐私与过滤','本机存储']);
+  expect(Array.from(groups[0].querySelectorAll<HTMLElement>('[data-capture-sync-source]')).map(row=>row.dataset.captureSyncSource)).toEqual(['meeting','chrome','calendar','folders','agent','add']);
+  expect(Array.from(groups[0].querySelectorAll('strong')).map(row=>row.textContent)).toEqual(['会议录音','Chrome 页面','日历','同步文件夹','本机 Coding Agent','添加来源']);
+  expect(Array.from(groups[1].querySelectorAll('strong')).map(row=>row.textContent).filter(Boolean)).toEqual(['发送方式']);
+  expect(Array.from(groups[2].querySelectorAll('strong')).map(row=>row.textContent)).toEqual(['权限管理','本机记录','隐私与过滤','本机存储']);
+  expect(groups[0].querySelector('[data-capture-sync-source=meeting]')!.getAttribute('data-nav')).toBe('meeting');
   expect(groups[0].querySelector('[data-capture-sync-source=folders]')!.getAttribute('data-nav')).toBe('sources');
   expect(groups[0].querySelector('[data-capture-sync-source=add]')!.hasAttribute('data-nav')).toBe(false);
   expect(groups[1].querySelector('[data-nav=sync]')).not.toBeNull();
-  expect(groups[2].querySelector('[data-nav=privacy]')).not.toBeNull();
+  expect(Array.from(groups[2].querySelectorAll<HTMLElement>('[data-nav]'), row => row.dataset.nav))
+    .toEqual(['permissions', 'records', 'privacy', 'storage']);
   expect(groups[2].querySelector('[data-nav=storage]')).not.toBeNull();
   expect(el('capture-sync-screen-settings').textContent).toBe('打开系统设置');
   expect(el('capture-sync-screen-toggle').getAttribute('aria-label')).toBe('屏幕与应用');
   expect(el('capture-sync-chrome-toggle').getAttribute('aria-label')).toBe('Chrome 页面');
   expect(el('capture-sync-calendar-toggle').getAttribute('aria-label')).toBe('日历');
-  expect(el('capture-sync-pause').getAttribute('aria-label')).toBe('暂停发送');
+  expect(el('capture-sync-send-toggle').getAttribute('aria-label')).toBe('发送到中央');
   expect(document.querySelector('[data-nav="capture-sync"]')).not.toBeNull();
 });
 
@@ -477,7 +485,7 @@ it('shows source, sending and storage facts and opens the screen recording setti
   expect(el('capture-sync-host').textContent).toBe('mote.example.net');
   expect(el('capture-sync-send-state').textContent).toBe('待发送 12 条');
   expect(el('capture-sync-mode').textContent).toBe('立即发送');
-  expect(el('capture-sync-pause').getAttribute('aria-checked')).toBe('false');
+  expect(el('capture-sync-send-toggle').getAttribute('aria-checked')).toBe('true');
   expect(el('capture-sync-storage').textContent).toBe('3.4 GB');
   el<HTMLButtonElement>('capture-sync-screen-settings').click();await flush();
   expect(api.permissionSettings).toHaveBeenCalledWith('screen');
@@ -496,7 +504,7 @@ it('keeps stopped, paused, reconnect and empty-source states explicit',async()=>
   expect(el('capture-sync-chrome-state').textContent).toBe('未选择');
   expect(el('capture-sync-calendar-state').textContent).toBe('尚未连接');
   expect(el('capture-sync-send-state').textContent).toBe('发送已暂停');
-  expect(el('capture-sync-pause').getAttribute('aria-checked')).toBe('true');
+  expect(el('capture-sync-send-toggle').getAttribute('aria-checked')).toBe('false');
   expect(el('capture-sync-mode').textContent).toBe('定时发送');
   capture.dispose();
 });
@@ -511,7 +519,13 @@ it('routes toggles and the add-source row without changing unrelated settings',(
   el<HTMLButtonElement>('capture-sync-chrome-toggle').click();expect(actions.stop).toHaveBeenCalledTimes(2);
   el<HTMLButtonElement>('capture-sync-calendar-toggle').click();expect(actions.openCalendar).toHaveBeenCalledOnce();
   el<HTMLButtonElement>('capture-sync-add-source').click();expect(actions.addSource).toHaveBeenCalledOnce();
-  el<HTMLButtonElement>('capture-sync-pause').click();expect(actions.setPaused).toHaveBeenCalledWith(true);
+  el<HTMLButtonElement>('capture-sync-coding-agent').click();
+  expect(actions.openCodingAgent).toHaveBeenCalledOnce();
+  el<HTMLButtonElement>('capture-sync-send-toggle').click();
+  expect(actions.setPaused).toHaveBeenLastCalledWith(true);
+  capture.update(captureStatus({config:{...captureStatus().config, syncPaused:true}}), []);
+  el<HTMLButtonElement>('capture-sync-send-toggle').click();
+  expect(actions.setPaused).toHaveBeenLastCalledWith(false);
   el<HTMLButtonElement>('capture-sync-send-now').click();expect(actions.sendNow).toHaveBeenCalledOnce();
   capture.update(captureStatus({running:false,state:'stopped',config:{...captureStatus().config,chromeOrigins:[]}}),[captureRow('calendar-one','local-calendar',false)]);
   el<HTMLButtonElement>('capture-sync-chrome-toggle').click();expect(actions.openChrome).toHaveBeenCalledOnce();

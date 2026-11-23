@@ -187,7 +187,7 @@ async function showCentral(page?: string, evidenceId?: string,workId?:string,con
 }
 function showWindow(): void { centralWindow?.show(); centralWindow?.focus(); retryCentralWindow?.(); }
 function showLocalWindow(): void { window?.show(); window?.focus(); }
-function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'central' | 'capture-start' | 'permissions' | 'storage' | 'sync' | 'connection'): void {
+function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings' | 'capture-sync' | 'central' | 'capture-start' | 'permissions' | 'storage' | 'sync' | 'connection'): void {
   if (page === 'central') { showWindow(); return; }
   if (page === 'notes') { void openQuickNote?.(); return; }
   showLocalWindow(); window?.webContents.send(pushChannels.navigate, page);
@@ -232,7 +232,7 @@ function updateUi(status: Status): void {
     open: () => showWindow(),
     toggle: () => { if(status.running){collector.stop();void serialize(()=>collector.settleCapture());}else showClientPage('capture-start'); },
     send: () => { void systemTools.sendNow(); },
-    settings: () => showClientPage('settings'),
+    settings: () => showClientPage('capture-sync'),
     quit: () => app.quit(),
   };
   tray?.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate({
@@ -648,8 +648,7 @@ else {
         senderId: event.sender.id, mainSenderId: centralSenderId,
         frameIsMain: event.senderFrame === event.sender.mainFrame, frameUrl: event.senderFrame?.url,
       }, allowedCentralOrigin(), centralWindowOfflineUrl)) return;
-      showLocalWindow();
-      if (event.senderFrame?.url === centralWindowOfflineUrl) window?.webContents.send(pushChannels.navigate, 'connection');
+      showClientPage(event.senderFrame?.url === centralWindowOfflineUrl ? 'connection' : 'capture-sync');
     });
 
     await window.loadURL(pageUrl);

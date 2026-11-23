@@ -182,62 +182,93 @@
     <section data-page="statistics" class="page" hidden><header class="page-header"><div><h1 tabindex="-1" data-page-title><span data-i18n>统计中心</span></h1></div><button id="storage-refresh" type="button" data-i18n>刷新</button></header><div id="storage-statistics" role="status"></div></section>
     <section data-page="capture-sync" class="page capture-sync-page" hidden>
       <header class="page-header"><div><h1 tabindex="-1" data-page-title data-i18n>采集与同步</h1></div></header>
+      <div class="capture-sync-controls">
+        <div class="capture-sync-row" data-capture-sync-source="screen">
+          <svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg>
+          <span class="capture-sync-copy"><strong data-i18n>屏幕与应用</strong><small id="capture-sync-screen-state"></small></span>
+          <button id="capture-sync-screen-settings" class="secondary capture-sync-action" type="button" data-i18n>打开系统设置</button>
+          <button id="capture-sync-screen-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="屏幕与应用" data-i18n-aria-label="" hidden></button>
+        </div>
+        <div class="capture-sync-row">
+          <svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg>
+          <span class="capture-sync-copy"><strong data-i18n>发送到中央</strong></span>
+          <button id="capture-sync-send-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="发送到中央" data-i18n-aria-label=""></button>
+        </div>
+      </div>
       <div class="capture-sync-groups">
-        <section class="capture-sync-group" aria-label="来源" data-i18n-aria-label="">
-          <div class="capture-sync-row" data-capture-sync-source="screen">
-            <svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>屏幕与应用</strong><small id="capture-sync-screen-state"></small></span>
-            <button id="capture-sync-screen-settings" class="secondary capture-sync-action" type="button" data-i18n>打开系统设置</button>
-            <button id="capture-sync-screen-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="屏幕与应用" data-i18n-aria-label="" hidden></button>
-          </div>
-          <div class="capture-sync-row" data-capture-sync-source="chrome">
-            <svg class="icon" aria-hidden="true"><use href="#icon-globe"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>Chrome 页面</strong><small id="capture-sync-chrome-state"></small></span>
-            <button id="capture-sync-chrome-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="Chrome 页面" data-i18n-aria-label=""></button>
-          </div>
-          <div class="capture-sync-row" data-capture-sync-source="calendar">
-            <svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>日历</strong><small id="capture-sync-calendar-state"></small></span>
-            <button id="capture-sync-calendar-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="日历" data-i18n-aria-label=""></button>
-          </div>
-          <button class="capture-sync-row" type="button" data-capture-sync-source="folders" data-nav="sources">
-            <svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>同步文件夹</strong></span>
-            <span id="capture-sync-folder-count" class="capture-sync-value"></span><span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
-          </button>
-          <button id="capture-sync-add-source" class="capture-sync-row capture-sync-add" type="button" data-capture-sync-source="add">
-            <svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>添加来源</strong></span>
-          </button>
-        </section>
-        <section class="capture-sync-group" aria-label="发送" data-i18n-aria-label="">
-          <div class="capture-sync-row" data-capture-sync-send="central">
-            <svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg>
-            <span class="capture-sync-copy"><strong id="capture-sync-host"></strong><small id="capture-sync-send-state"></small></span>
-            <button id="capture-sync-send-now" class="secondary capture-sync-action" type="button" data-i18n>立即发送</button>
-          </div>
-          <button class="capture-sync-row" type="button" data-nav="sync">
-            <svg class="icon" aria-hidden="true"><use href="#icon-clock"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>发送方式</strong></span>
-            <span id="capture-sync-mode" class="capture-sync-value"></span><span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
-          </button>
-          <div class="capture-sync-row">
-            <svg class="icon" aria-hidden="true"><use href="#icon-pause"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>暂停发送</strong></span>
-            <button id="capture-sync-pause" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="暂停发送" data-i18n-aria-label=""></button>
+        <section aria-labelledby="capture-sync-sources-title">
+          <h2 class="capture-sync-group-title" id="capture-sync-sources-title" data-i18n>来源</h2>
+          <div class="capture-sync-group">
+            <button class="capture-sync-row" type="button" data-capture-sync-source="meeting" data-nav="meeting">
+              <svg class="icon" aria-hidden="true"><use href="#icon-music"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>会议录音</strong></span>
+              <span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+            <div class="capture-sync-row" data-capture-sync-source="chrome">
+              <svg class="icon" aria-hidden="true"><use href="#icon-globe"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>Chrome 页面</strong><small id="capture-sync-chrome-state"></small></span>
+              <button id="capture-sync-chrome-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="Chrome 页面" data-i18n-aria-label=""></button>
+            </div>
+            <div class="capture-sync-row" data-capture-sync-source="calendar">
+              <svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>日历</strong><small id="capture-sync-calendar-state"></small></span>
+              <button id="capture-sync-calendar-toggle" class="capture-sync-switch" type="button" role="switch" aria-checked="false" aria-label="日历" data-i18n-aria-label=""></button>
+            </div>
+            <button class="capture-sync-row" type="button" data-capture-sync-source="folders" data-nav="sources">
+              <svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>同步文件夹</strong></span>
+              <span id="capture-sync-folder-count" class="capture-sync-value"></span><span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+            <button id="capture-sync-coding-agent" class="capture-sync-row" type="button" data-capture-sync-source="agent">
+              <svg class="icon" aria-hidden="true"><use href="#icon-code"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>本机 Coding Agent</strong></span>
+              <span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+            <button id="capture-sync-add-source" class="capture-sync-row capture-sync-add" type="button" data-capture-sync-source="add">
+              <svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>添加来源</strong></span>
+            </button>
           </div>
         </section>
-        <section class="capture-sync-group" aria-label="本机设置" data-i18n-aria-label="">
-          <button class="capture-sync-row" type="button" data-nav="privacy">
-            <svg class="icon" aria-hidden="true"><use href="#icon-lock"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>隐私与过滤</strong></span>
-            <span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
-          </button>
-          <button class="capture-sync-row" type="button" data-nav="storage">
-            <svg class="icon" aria-hidden="true"><use href="#icon-disk"/></svg>
-            <span class="capture-sync-copy"><strong data-i18n>本机存储</strong></span>
-            <span id="capture-sync-storage" class="capture-sync-value"></span><span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
-          </button>
+        <section aria-labelledby="capture-sync-send-title">
+          <h2 class="capture-sync-group-title" id="capture-sync-send-title" data-i18n>发送</h2>
+          <div class="capture-sync-group">
+            <div class="capture-sync-row" data-capture-sync-send="central">
+              <svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg>
+              <span class="capture-sync-copy"><strong id="capture-sync-host"></strong><small id="capture-sync-send-state"></small></span>
+              <button id="capture-sync-send-now" class="secondary capture-sync-action" type="button" data-i18n>立即发送</button>
+            </div>
+            <button class="capture-sync-row" type="button" data-nav="sync">
+              <svg class="icon" aria-hidden="true"><use href="#icon-clock"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>发送方式</strong></span>
+              <span id="capture-sync-mode" class="capture-sync-value"></span><span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+          </div>
+        </section>
+        <section aria-labelledby="capture-sync-local-title">
+          <h2 class="capture-sync-group-title" id="capture-sync-local-title" data-i18n>本机</h2>
+          <div class="capture-sync-group">
+            <button class="capture-sync-row" type="button" data-nav="permissions">
+              <svg class="icon" aria-hidden="true"><use href="#icon-access"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>权限管理</strong></span>
+              <span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+            <button class="capture-sync-row" type="button" data-nav="records">
+              <svg class="icon" aria-hidden="true"><use href="#icon-activity"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>本机记录</strong></span>
+              <span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+            <button class="capture-sync-row" type="button" data-nav="privacy">
+              <svg class="icon" aria-hidden="true"><use href="#icon-lock"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>隐私与过滤</strong></span>
+              <span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+            <button class="capture-sync-row" type="button" data-nav="storage">
+              <svg class="icon" aria-hidden="true"><use href="#icon-disk"/></svg>
+              <span class="capture-sync-copy"><strong data-i18n>本机存储</strong></span>
+              <span id="capture-sync-storage" class="capture-sync-value"></span><span class="chevron" aria-hidden="true"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-chevron-right"/></svg></span>
+            </button>
+          </div>
         </section>
       </div>
     </section>

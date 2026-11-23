@@ -5081,6 +5081,7 @@ export const french: Readonly<Record<string, string>> = {
   "选择允许记录的应用与范围": "Choisissez quelles apps et zones peuvent être enregistrées",
   "写下想法，断网也能保存": "Notez des idées et enregistrez-les hors ligne",
   "查看状态与操作": "Voir l'état et les contrôles",
+  "发送到中央": "Envoyer au centre",
   "发送到中央 ·": "Envoyer au centre ·",
   "立即发送": "Envoyer maintenant",
   "屏幕记录状态": "État de l'enregistrement d'écran",

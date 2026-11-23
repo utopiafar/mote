@@ -116,7 +116,9 @@ function startMacFixture() {
     const show = local.show.bind(local);
     local.show = () => { opened = true; show(); };
     await js('document.querySelector("[data-local-capture-sync]").click()');
-    await until(() => opened, 'Mac local capture and sync window');
+    await until(async () => opened && await local.webContents.executeJavaScript(
+      "document.body.dataset.workspacePage === 'capture-sync'",
+    ), 'Mac local capture and sync window');
     assert.equal(local.isVisible(), false);
     writeFileSync(join(directory, 'capture-sync.png'), (await local.webContents.capturePage()).toPNG());
     app.quit();

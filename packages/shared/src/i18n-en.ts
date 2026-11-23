@@ -5081,6 +5081,7 @@ export const english: Readonly<Record<string, string>> = {
   "选择允许记录的应用与范围": "Choose which apps and areas may be recorded",
   "写下想法，断网也能保存": "Write down ideas and save them offline",
   "查看状态与操作": "View status and controls",
+  "发送到中央": "Send to Central",
   "发送到中央 ·": "Send to Central ·",
   "立即发送": "Send now",
   "屏幕记录状态": "Screen recording status",
