@@ -1,7 +1,7 @@
 import { moteText } from './i18n.js';
 import {spawn} from 'node:child_process';
 import {tmpdir} from 'node:os';
-import {normalizeCodexServiceTier,type ModelSettings} from '@mote/shared/models';
+import {normalizeCodexServiceTier,OPENCODE_GO_PROVIDER,type ModelSettings} from '@mote/shared/models';
 import {StoreError} from './evidence-store.js';
 export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string;serviceTiers?:string[]}
 export class ModelCatalogError extends StoreError {constructor(){super(moteText("模型列表未读到。核对节点服务、凭据和目录接口，或手填 ID。"),502);}}
@@ -76,11 +76,13 @@ export async function providerModels(settings:ModelSettings,transport:typeof fet
     if(!headers.has('api-key'))headers.set('api-key',settings.apiKey);
   }else if(settings.apiKey&&!headers.has('authorization'))headers.set('authorization',`Bearer ${settings.apiKey}`);
   const path=(settings.protocol==='anthropic-messages'||settings.protocol==='deepseek'&&!officialDeepSeek)&&!base.endsWith('/v1')?'/v1/models':'/models';
+  const openCodeGo = settings.provider === OPENCODE_GO_PROVIDER.id;
+  const endpoint = openCodeGo ? OPENCODE_GO_PROVIDER.modelsUrl : base + path;
   const items:CatalogModel[]=[];let cursor:string|undefined;
   const signal=AbortSignal.timeout(20000);
   try{
     for(let page=0;page<20;page++){
-      const url=new URL(base+path);
+      const url=new URL(endpoint);
       if(cursor)url.searchParams.set(settings.protocol==='google-generative-ai'?'pageToken':'after_id',cursor);
       const response=await transport(url,{headers,signal,redirect:'error'});
       if(!response.ok){await response.body?.cancel();throw Error();}
@@ -93,7 +95,7 @@ export async function providerModels(settings:ModelSettings,transport:typeof fet
       for(const model of models){
         if(settings.protocol==='google-generative-ai'&&Array.isArray(model.supportedGenerationMethods)&&!model.supportedGenerationMethods.includes('generateContent'))continue;
         const id=settings.protocol==='google-generative-ai'?model.name?.replace(/^models\//,''):model.id;
-        if(typeof id==='string'&&id.length&&id.length<=512&&!items.some(m=>m.id===id))items.push({id,name:String(model.display_name??model.displayName??id).slice(0,512)});
+        if(typeof id==='string'&&id.length&&id.length<=512&&!items.some(m=>m.id===id))items.push({id,name:String(model.display_name??model.displayName??(openCodeGo?model.name:undefined)??id).slice(0,512)});
       }
       cursor=settings.protocol==='google-generative-ai'?data.nextPageToken:data.has_more?data.last_id:undefined;
       if(!cursor)return {items:items.sort((a,b)=>a.id.localeCompare(b.id))};

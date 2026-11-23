@@ -2839,6 +2839,7 @@ export const english: Readonly<Record<string, string>> = {
   "使用 Responses 接口和 xAI API key；也可切换兼容 Chat Completions。": "Responses with an xAI key; compatible Chat Completions is also supported.",
   "使用 Chat Completions；选择支持函数调用的模型。": "Chat Completions; choose a function-calling model.",
   "Groq 官方兼容接口；模型的参数和工具能力以控制台说明为准。": "Official Groq-compatible API. Check the console for model parameters and tool capabilities.",
+  "使用 OpenCode Go 的 API key。": "Use an OpenCode Go API key.",
   "填写支持工具调用的完整模型 ID。": "Enter the full model ID and choose a tools-capable model and route.",
   "Ollama 在中央运行。选择可调用工具的模型。": "This address is on the central host. Start Ollama and install a tool-capable model first.",
   "先在中央所在机器启动 LM Studio 服务，模型须支持工具调用。": "Start LM Studio on the central host first. The model must support tools.",

@@ -6,6 +6,47 @@ import { createAgent, parseAnswer, AgentResponseError } from '../dist/index.js';
 
 const bridge='http://127.0.0.1:1';
 
+test('OpenCode Go completions identify Mote and scope the session header to each conversation', async () => {
+  const baseUrl = 'https://opencode.ai/inference/go/openai/v1';
+  const sessionId = 'generated-conversation';
+  const conversation = (overrides = {}) => {
+    const configuration = {provider:'opencode-go', protocol:'openai-completions', baseUrl, sessionId, ...overrides};
+    let headers;
+    const transport = boundedModelFetch(async (_input, init) => {
+      headers = init.headers;
+      return Response.json({ok:true});
+    }, bridge, 1024, configuration);
+    return async () => {
+      const url = configuration.baseUrl + '/chat/completions';
+      await (await transport(url,{method:'POST',body:'{}'})).text();
+      return headers;
+    };
+  };
+  const sendTurn = conversation();
+  const initial = await sendTurn();
+  const session = initial.get('x-opencode-session');
+  assert.match(session, /^[a-f\d]{64}$/);
+  assert.equal(initial.get('user-agent'), 'Mote');
+  assert.equal((await sendTurn()).get('x-opencode-session'), session);
+  assert.equal((await conversation()()).get('x-opencode-session'), session);
+  const nextSession = (await conversation({sessionId:'another-conversation'})()).get('x-opencode-session');
+  assert.match(nextSession, /^[a-f\d]{64}$/);
+  assert.notEqual(nextSession, session);
+  for (const alternate of [
+    {provider:'custom'},
+    {baseUrl:'https://opencode.ai/inference/openai/v1'},
+    {baseUrl:'https://fixture.invalid/inference/go/openai/v1'},
+  ]) {
+    const headers = await conversation(alternate)();
+    assert.equal(headers.has('x-opencode-session'), false);
+    assert.equal(headers.has('user-agent'), false);
+  }
+  const managed = await conversation({headers:{'X-Opencode-Session':'static','User-Agent':'generic','X-Fixture':'preserved'}})();
+  assert.equal(managed.get('x-opencode-session'), session);
+  assert.equal(managed.get('user-agent'), 'Mote');
+  assert.equal(managed.get('x-fixture'), 'preserved');
+});
+
 test('native DeepSeek rejects Files I/O before admission and preserves inline Messages',async()=>{
   for(const baseUrl of ['https://fixture.invalid/anthropic','https://fixture.invalid/v1']){
     let fetches=0,admissions=0;

@@ -4,7 +4,7 @@ import { useUnsavedChanges } from '../../unsaved';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ExternalLink, KeyRound, LoaderCircle, RotateCcw, Save, SlidersHorizontal, TestTube2 } from 'lucide-react';
-import { DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, MODEL_REASONING_EFFORTS, normalizeCodexServiceTier, type ModelSettingsView, type ModelTestResult } from '@mote/shared/models';
+import { DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, MODEL_REASONING_EFFORTS, normalizeCodexServiceTier, OPENCODE_GO_PROVIDER, type ModelSettingsView, type ModelTestResult } from '@mote/shared/models';
 import { ApiError, errorMessage, type Api } from '../../api';
 import { createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft } from './model-settings-form';
 import { codexReasoningChoices, type CatalogModel } from '../../model-reasoning';
@@ -215,10 +215,11 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
     const codexChoices = codexReasoningChoices(selectedCatalogModel);
     const codexEffortSupported = draft?.reasoningEffort === 'auto' || codexChoices.options.some(option => option.value === draft?.reasoningEffort);
     const preset = MODEL_PROVIDER_PRESETS.find(p => p.id === draft?.provider);
+    const openCodeGo = preset?.id === OPENCODE_GO_PROVIDER.id;
     const dirty = active ? modelDraftChanged(active.draft, active.snapshot.settings) || active.name !== profileName(active.snapshot) : false;
     useUnsavedChanges(dirty);
     const localAddress=(()=>{try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(draft?.baseUrl??'').hostname);}catch{return false;}})();
-    const addressField=draft&&<label className="preference-field">{moteText('服务地址')}<input aria-label={moteText('模型服务地址')} type="url" autoComplete="off" spellCheck={false} value={draft.baseUrl} onChange={event=>change({baseUrl:event.target.value})}/></label>;
+    const addressField=draft&&<label className="preference-field">{moteText('服务地址')}<input aria-label={moteText('模型服务地址')} type="url" autoComplete="off" spellCheck={false} readOnly={openCodeGo} value={draft.baseUrl} onChange={event=>change({baseUrl:event.target.value})}/></label>;
     const credentialChoice = (field: 'apiKeyAction' | 'headersAction' | 'extraBodyAction', label: string, configured: boolean) => <label className="preference-field">{label}<select aria-label={label} value={draft![field]} onChange={e => change({ [field]: e.target.value as CredentialAction, ...(field === 'apiKeyAction' ? { apiKey: '' } : field === 'headersAction' ? { headers: '' } : { extraBody: '' }) })}><option value="keep">{moteText("不改动（")}{configured ? moteText("已配置") : moteText("未配置")}）</option><option value="replace">{moteText("填写新值，替换已有配置")}</option><option value="clear">{moteText("清除已有配置")}</option></select></label>;
     return <>
     <section className="panel config-builder model-settings-editor" aria-label={moteText("模型服务设置")} aria-busy={busy}>
@@ -248,7 +249,7 @@ export function ModelSettingsEditor({ api, revision, onApplied, profileId, initi
           <label className="preference-field model-default-model">{moteText('默认模型')}<input aria-label={moteText('模型名称')} list={'model-catalog-'+(profileId??'default')} autoComplete="off" spellCheck={false} maxLength={512} value={draft.model} onChange={event=>change({model:event.target.value})} placeholder={moteText('选择或填写模型 ID')}/><datalist id={'model-catalog-'+(profileId??'default')}>{catalog.map(model=><option key={model.id} value={model.id}>{model.name}</option>)}</datalist></label>
           <div className="model-catalog-line"><button type="button" className="text-button" disabled={catalogLoading} aria-busy={catalogLoading} onClick={()=>setCatalogReload(value=>value+1)}>{catalogLoading&&<LoadingRing label={moteText('正在读取模型列表…')}/>}{moteText('读取模型列表')}</button>{catalogError&&<span role="status">{catalogError}</span>}{!catalogLoading&&!catalogError&&!catalog.length&&<span>{moteText('目录暂无可用模型，可手动填写。')}</span>}</div>
           <details className="model-advanced"><summary>{moteText('高级设置')}</summary>
-            <label className="preference-field">{moteText("接口协议")}<select aria-label={moteText("接口协议")} value={draft.protocol} onChange={e => change({ protocol: e.target.value as ModelSettingsDraft['protocol'] })}>{Object.entries(protocolNames).map(([id, name]) => <option key={id} value={id}>{moteText(name)}</option>)}</select><small>{moteText("选择服务支持的协议。高级参数沿用该协议。")}</small></label>
+            <label className="preference-field">{moteText("接口协议")}<select aria-label={moteText("接口协议")} disabled={openCodeGo} value={draft.protocol} onChange={e => change({ protocol: e.target.value as ModelSettingsDraft['protocol'] })}>{Object.entries(protocolNames).map(([id, name]) => <option key={id} value={id}>{moteText(name)}</option>)}</select>{!openCodeGo && <small>{moteText("选择服务支持的协议。高级参数沿用该协议。")}</small>}</label>
           {preset?.docsUrl && <a className="model-provider-docs" href={preset.docsUrl} target="_blank" rel="noreferrer">{moteText("查看")}{' '}{preset.name}{' '}{moteText("接入文档")}<ExternalLink size={13}/></a>}
           <div className="preference-grid">
             {draft.protocol === 'codex-app-server' && <label className="preference-field">{moteText("速度模式")}<select aria-label={moteText("速度模式")} value={draft.serviceTier} onChange={e => change({ serviceTier: e.target.value as ModelSettingsDraft['serviceTier'] })}>

@@ -2838,6 +2838,7 @@
   "使用 Responses 接口和 xAI API key；也可切换兼容 Chat Completions。": "Responses avec une clé xAI ; Chat Completions compatible est aussi pris en charge.",
   "使用 Chat Completions；选择支持函数调用的模型。": "Chat Completions ; choisissez un modèle prenant en charge les appels de fonction.",
   "Groq 官方兼容接口；模型的参数和工具能力以控制台说明为准。": "API officielle compatible Groq. Consultez la console pour les paramètres du modèle et les capacités d'outils.",
+  "使用 OpenCode Go 的 API key。": "Utilisez une clé API OpenCode Go.",
   "填写支持工具调用的完整模型 ID。": "Saisissez l'ID de modèle complet et choisissez un modèle et une route compatibles avec les outils.",
   "Ollama 在中央运行。选择可调用工具的模型。": "Cette adresse se trouve sur l'hôte central. Démarrez d'abord Ollama et installez un modèle compatible avec les appels d'outils.",
   "先在中央所在机器启动 LM Studio 服务，模型须支持工具调用。": "Démarrez d'abord LM Studio sur l'hôte central. Le modèle doit prendre en charge les outils.",

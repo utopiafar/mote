@@ -56,7 +56,12 @@ export function apply(ctx){
       harness=new DeepSeekHarness({...launch?{dshBin:launch.dshBin}:{},profile:'sdk-minimal',patches:[patch],dshHome:join(root,'home'),cwd:input.workspace,processCwd:input.workspace,provider:connection.route,model:options.model,maxTokens:capacity.maxOutputTokens,initializeTimeoutMs:30000,requestTimeoutMs:Math.max(requestTimeoutMs??120000,300000),
         env:{PATH:process.env.PATH,TMPDIR:tmpdir(),HOME:join(root,'home'),DEEPSEEK_API_KEY:options.apiKey||'mote-local-no-auth',DEEPSEEK_BASE_URL:connection.baseUrl,MOTE_MODEL_API_KEY:options.apiKey||'mote-local-no-auth',
           MOTE_MODEL_OBSERVER:JSON.stringify(transportObserver.configuration),
-          MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody,contextWindow:capacity.contextWindow,maxTokens:capacity.maxOutputTokens}),
+          MOTE_MODEL_TRANSPORT:JSON.stringify({
+            baseUrl:connection.baseUrl,protocol:connection.protocol,sessionId:runId,
+            reasoningEffort:connection.effort,provider:options.provider,
+            headers:options.headers,extraBody:options.extraBody,
+            contextWindow:capacity.contextWindow,maxTokens:capacity.maxOutputTokens,
+          }),
           MOTE_SKILLS:JSON.stringify([importSkillDescriptor])}});
       active.add(harness);
       const observeUsage=observeHarness({question:'',onUsage},runId,connection.protocol!=='deepseek');

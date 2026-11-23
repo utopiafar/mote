@@ -2839,6 +2839,7 @@ export const japanese: Readonly<Record<string, string>> = {
   "使用 Responses 接口和 xAI API key；也可切换兼容 Chat Completions。": "Responses インターフェースと xAI API key を使用。互換 Chat Completions にも切り替え可能。",
   "使用 Chat Completions；选择支持函数调用的模型。": "Chat Completions を使用。関数呼び出し対応モデルを選択。",
   "Groq 官方兼容接口；模型的参数和工具能力以控制台说明为准。": "Groq 公式互換インターフェース。モデルのパラメータとツール能力はコンソール説明を確認。",
+  "使用 OpenCode Go 的 API key。": "OpenCode Go の API キーを使用。",
   "填写支持工具调用的完整模型 ID。": "完全なモデル ID を入力し、tools 対応のモデルとルートを選択。",
   "Ollama 在中央运行。选择可调用工具的模型。": "このアドレスは中央ノードのあるマシンに属する。先に Ollama を起動し、ツール呼び出し対応モデルをインストール。",
   "先在中央所在机器启动 LM Studio 服务，模型须支持工具调用。": "先に中央ノードのあるマシンで LM Studio サービスを起動。モデルはツール呼び出し対応が必要。",

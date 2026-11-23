@@ -30,6 +30,19 @@ export interface ModelProviderPreset {
   allowUnauthenticatedLocal?: boolean;
 }
 
+const openCodeGoRoot = 'https://opencode.ai/inference/go';
+export const OPENCODE_GO_PROVIDER = {
+  id: 'opencode-go',
+  name: 'OpenCode Go',
+  group: 'international',
+  protocol: 'openai-completions',
+  baseUrl: openCodeGoRoot + '/openai/v1',
+  modelsUrl: openCodeGoRoot + '/v1/models',
+  get description() { return moteText("使用 OpenCode Go 的 API key。"); },
+  docsUrl: 'https://opencode.ai/docs/console/go/',
+  reasoningEffort: 'auto',
+} as const satisfies ModelProviderPreset & { modelsUrl: string };
+
 export interface ModelSettingsParameters {
   provider: string;
   protocol: ModelProtocol;
@@ -118,6 +131,7 @@ export const MODEL_PROVIDER_PRESETS: readonly ModelProviderPreset[] = [
   { id: 'mistral', name: 'Mistral', group: 'international', protocol: 'openai-completions', baseUrl: 'https://api.mistral.ai/v1', get description() { return moteText("使用 Chat Completions；选择支持函数调用的模型。"); }, docsUrl: 'https://docs.mistral.ai/api/endpoint/chat', reasoningEffort: 'auto' },
   { id: 'groq', name: 'Groq', group: 'international', protocol: 'openai-completions', baseUrl: 'https://api.groq.com/openai/v1', get description() { return moteText("Groq 官方兼容接口；模型的参数和工具能力以控制台说明为准。"); }, docsUrl: 'https://console.groq.com/docs/openai', reasoningEffort: 'auto' },
   { id: 'openrouter', name: 'OpenRouter', group: 'international', protocol: 'openai-completions', baseUrl: 'https://openrouter.ai/api/v1', get description() { return moteText("填写支持工具调用的完整模型 ID。"); }, docsUrl: 'https://openrouter.ai/docs/quickstart', reasoningEffort: 'auto' },
+  OPENCODE_GO_PROVIDER,
   { id: 'ollama', name: 'Ollama', group: 'local', protocol: 'openai-completions', baseUrl: 'http://localhost:11434/v1', get description() { return moteText("Ollama 在中央运行。选择可调用工具的模型。"); }, docsUrl: 'https://docs.ollama.com/api/openai-compatibility', reasoningEffort: 'auto', allowUnauthenticatedLocal: true },
   { id: 'lm-studio', name: 'LM Studio', group: 'local', protocol: 'openai-completions', baseUrl: 'http://localhost:1234/v1', get description() { return moteText("先在中央所在机器启动 LM Studio 服务，模型须支持工具调用。"); }, docsUrl: 'https://lmstudio.ai/docs/developer/openai-compat/tools', reasoningEffort: 'auto', allowUnauthenticatedLocal: true },
 ];

@@ -1,4 +1,4 @@
-import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,type ModelProtocol} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,OPENCODE_GO_PROVIDER,type ModelProtocol} from '@mote/shared/models';
 import {IMAGE_MAX_BYTES} from '@mote/shared';
 import {AgentConfigurationError, type AgentOptions} from '../types.js';
 
@@ -62,6 +62,11 @@ export function validateModelOptions(options: ConnectionOptions): void {
   if(options.serviceTier!==undefined&&(options.protocol!=='codex-app-server'||!['default','fast'].includes(options.serviceTier)))throw new AgentConfigurationError('This service tier requires Codex App Server.');
   if(options.protocol==='codex-app-server'&&(options.baseUrl||Object.keys(options.headers??{}).length||Object.keys(options.extraBody??{}).length))throw new AgentConfigurationError('Codex uses its local login and does not accept HTTP endpoints or advanced request parameters.');
   if (options.protocol !== undefined && !protocols.includes(options.protocol)) throw new AgentConfigurationError('Unsupported model protocol.');
+  if (options.provider === OPENCODE_GO_PROVIDER.id &&
+    ((options.protocol !== undefined && options.protocol !== OPENCODE_GO_PROVIDER.protocol) ||
+      (options.baseUrl && options.baseUrl.replace(/\/+$/, '') !== OPENCODE_GO_PROVIDER.baseUrl))) {
+    throw new AgentConfigurationError('The OpenCode Go preset requires its Chat Completions endpoint.');
+  }
   if (options.reasoningEffort !== undefined && !MODEL_REASONING_EFFORTS.includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
   if (options.protocol !== 'codex-app-server' && options.reasoningEffort !== undefined && ['minimal', 'medium', 'xhigh', 'ultra'].includes(options.reasoningEffort)) throw new AgentConfigurationError('This reasoning effort requires Codex App Server.');
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || options.maxTokens < 1 || options.maxTokens > 128_000)) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
@@ -103,8 +108,9 @@ export function validateModelOptions(options: ConnectionOptions): void {
 
 export function modelConnection(options: ConnectionOptions) {
   validateModelOptions(options);
-  const protocol = options.protocol ?? 'deepseek';
-  const suppliedBaseUrl = (options.baseUrl || defaults[protocol]).replace(/\/+$/, '');
+  const preset = options.provider === OPENCODE_GO_PROVIDER.id ? OPENCODE_GO_PROVIDER : undefined;
+  const protocol = options.protocol ?? preset?.protocol ?? 'deepseek';
+  const suppliedBaseUrl = (options.baseUrl || preset?.baseUrl || defaults[protocol]).replace(/\/+$/, '');
   const baseUrl = suppliedBaseUrl;
   const effort = options.reasoningEffort ?? (protocol === 'deepseek' ? 'high' : 'auto');
   const route = protocol === 'deepseek' ? 'deepseek-official' : protocol === 'google-generative-ai' ? 'google' : 'mote-model';
