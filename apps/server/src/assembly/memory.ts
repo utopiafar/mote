@@ -1,9 +1,9 @@
 import type {AgentOptions,QueryInput} from '@mote/agent';
 import {skillCatalog,codexContextCapacity} from '@mote/agent';
-import {assertMemoryRequestFits,type MemoryRequestCapacity} from '../memory-request-budget.js';
+import {assertMemoryRequestFits,httpMemoryRequestCapacity,type MemoryRequestCapacity} from '../memory-request-budget.js';
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
-import type {ModelSettings} from '@mote/shared/models';
+import {OPENCODE_GO_PROVIDER,type ModelSettings} from '@mote/shared/models';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {Context} from '@deepseek-ai/cordis';
 import {sha256,StoreError,type EvidenceStore as Store} from '../evidence-store.js';
@@ -197,15 +197,21 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   memoryPublicationPlatform.prepare();memoryPublicationPlatform.start();
   registerEvidenceDeletionForAssembly(store,()=>memoryPublicationPlatform.evidenceDeletion);
   const memoryPublication=memoryPublicationPlatform.publication;
-  const requestCapacity=(profileId?:string,modelOverride?:string):MemoryRequestCapacity|undefined=>{
-    const settings=modelSettings.select('memory',profileId).settings;
-    if(settings.protocol!=='codex-app-server')return;
+  const nativeRequestCapacity=(settings:ModelSettings,modelOverride?:string):MemoryRequestCapacity|undefined=>{
     const capacity=codexContextCapacity(modelOverride??settings.model);
     return capacity?{...capacity,draftTokens:settings.maxTokens}:undefined;
   };
+  const requestCapacity=(profileId?:string,modelOverride?:string):MemoryRequestCapacity|undefined=>{
+    const settings=modelSettings.select('memory',profileId).settings;
+    if(settings.protocol==='codex-app-server')return nativeRequestCapacity(settings,modelOverride);
+    if(settings.provider===OPENCODE_GO_PROVIDER.id)return httpMemoryRequestCapacity(settings);
+  };
   const boundedQuery:typeof query=async input=>{
-    const capacity=requestCapacity(input.modelProfileId,input.modelOverride);
-    if(capacity)assertMemoryRequestFits(input,memories.readEvidence(input.evidenceIds??[]),capacity);
+    const settings=modelSettings.select('memory',input.modelProfileId).settings;
+    if(settings.protocol==='codex-app-server'){
+      const capacity=nativeRequestCapacity(settings,input.modelOverride);
+      if(capacity)assertMemoryRequestFits(input,memories.readEvidence(input.evidenceIds??[]),capacity);
+    }
     return query(input);
   };
   const memoryPipelineOptions:MemoryPhasePipelineOptions={allowQueryImages:()=>configService.current(perceptionConfigDomain).allowQueryImages,onPublished:(step,items,job)=>topics.current?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublicationPlatform.port.stage,ownerPublication:memoryPublicationPlatform.port.owner,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryProviderAdapters.port.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.bindingMode(binding)!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryProviderAdapters.port.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;

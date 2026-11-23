@@ -4,9 +4,11 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {assembleHostContext,estimateSerializedTokens,type QueryInput} from '@mote/agent';
+import {assembleHostContext,estimateSerializedTokens,resolveModelCapabilities,type QueryInput} from '@mote/agent';
 import {ProviderFailure} from '@mote/shared';
+import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
+import {boundedModelFetch} from '../../../packages/agent/dist/models/http-transport.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {materialId} from '../src/materials.js';
@@ -20,6 +22,73 @@ import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js
 import {reviewMemory} from '../src/memory-review.js';
 
 const at='2026-11-01T08:00:00Z';
+
+test('OpenCode Go Memory fits a long recording through the HTTP transport guard and reviews every original range',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-http-memory-budget-'));
+ const {id:provider,baseUrl,protocol}=OPENCODE_GO_PROVIDER;
+ const model='deepseek-v4.1-flash',maxTokens=16384;
+ const config:ConfigurationPlatformOptions={
+  path:join(directory,'mote.yaml'),privateCredential:{token:'generated-http-budget',tokenPath:'generated'},
+  initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},
+   server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},
+   models:{deployment:{model,provider,protocol,baseUrl,maxTokens,reasoningEffort:'max',apiKey:'generated',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},
+   diagnostics:{enabled:false,traceEnabled:false,level:'silent'}},
+ };
+ const {contextWindow}=resolveModelCapabilities({maxTokens});
+ let sent=0,refused=0;
+ const transport=boundedModelFetch(async()=>{sent++;return new Response('{}');},'http://127.0.0.1:4001',undefined,
+  {baseUrl,provider,protocol,contextWindow,maxTokens},()=>{refused++;});
+ const calls:{phase:string;ids:string[]}[]=[];
+ const failures:unknown[]=[];
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({
+  configured:true,close:async()=>{},query:async input=>{
+   const bridge=await startBridge(reader,input);
+   try{
+    const {system,tools,prompt,outputSchema}=assembleHostContext(input,bridge.seedEvidence,maxTokens);
+    const response=await transport(baseUrl+'/chat/completions',{method:'POST',body:JSON.stringify({
+     model,max_tokens:maxTokens,tools,response_format:outputSchema,
+     messages:[{role:'system',content:system},{role:'user',content:prompt}],
+    })});
+    await response.body?.cancel();
+    if(!response.ok)throw new ProviderFailure({category:'permanent',code:'processing_limit',executionStarted:false});
+    const members=(input.taskContext!.memoryWork as {members:MemoryWorkMember[]}).members;
+    assert.deepEqual(bridge.seedEvidence.map(record=>record.id),members.map(member=>member.id));
+    assert.deepEqual(bridge.seedEvidence.map(record=>record.ocrText.length),members.map(member=>member.length));
+    assert.ok(input.evidenceReadRanges!.length>=members.length);
+    calls.push({phase:input.traceContext!.phase!,ids:members.map(member=>member.id)});
+    return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID(),evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};
+   }catch(error){failures.push(error);throw error;}finally{await bridge.close();}
+  },
+ })});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ await node.app.ready();
+ const sourceId='generated-http-recording';
+ node.sources.register({id:sourceId,name:'Generated HTTP recording',kind:'custom',deviceId:'generated',platform:'import'});
+ const texts=Array.from({length:320},(_,index)=>`第${String(index).padStart(3,'0')}段合成转写：只读核对虚构的设备流水记录。`);
+ const original=await node.sources.upsert(sourceId,{externalId:'recording',revision:'1',text:texts.join('\n'),observedAt:at,kind:'file',layer:'original',document:{contentRole:'transcript',recordedAt:at,timeBasis:'recorded'}});
+ const material=node.materials.publish({id:materialId(sourceId,'segmented-recording'),kind:'mote.note',schemaVersion:1,title:'Generated segmented recording',origin:{sourceId,externalId:'segmented-recording',deviceId:'generated',firstAt:at,lastAt:at},members:[{id:original.id,kind:'capture',ref:'capture:'+original.id}],
+  blocks:texts.map((text,index)=>({id:'segment-'+index,kind:'text' as const,format:'plain',text,memberIds:[original.id],evidenceContext:{observedAt:new Date(Date.parse(at)+index*1000).toISOString(),document:{contentRole:'transcript' as const,recordedAt:at,timeBasis:'recorded' as const}}})),
+  artifacts:[{key:'transcript',state:'ready',blockIds:texts.map((_,index)=>'segment-'+index)}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}});
+ const evidenceIds=node.materials.input(material.ref,['transcript'])!.evidenceIds;
+ assert.equal(evidenceIds.length,320);
+ const headers={authorization:'Bearer '+config.privateCredential!.token};
+ const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds,recipes:[{id:'mote.personal-memory',version:'5'}]}});
+ assert.equal(response.statusCode,202,response.body);
+ const job=await node.memoryPipeline.run(response.json().id);
+ assert.equal(refused,0,'the HTTP transport accepts every planned request');
+ if(failures.length)throw failures[0];
+ assert.equal(job.status,'completed');
+ assert.ok(job.batches.length>1,'the oversized original target list is partitioned before dispatch');
+ assert.equal(job.inputPlans.completed,1);
+ assert.equal(sent,job.batches.length*2);
+ for(const phase of ['extract','review']){
+  const delivered=calls.filter(call=>call.phase===phase).flatMap(call=>call.ids);
+  assert.equal(delivered.length,evidenceIds.length);
+  assert.deepEqual(new Set(delivered),new Set(evidenceIds));
+ }
+ assert.ok(job.batches.every(batch=>batch.reviewReceipt?.decision==='independent'));
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,evidenceIds.length);
+});
 
 test('the serialized request fits exactly at its buffered boundary and fails before dispatch just above it',async t=>{
  const id=randomUUID(),record={id,capturedAt:at,appName:'Generated audio',deviceId:'generated',ocrText:'合成的原始录音🧪'.repeat(600),provenance:{sourceId:'generated-budget',externalId:'generated-original',layer:'original',document:{recordedAt:at,contentRole:'transcript',timeBasis:'recorded'}}};
