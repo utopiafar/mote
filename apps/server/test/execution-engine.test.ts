@@ -217,6 +217,43 @@ test('a missed lease renewal interrupts parent and child work instead of cancell
  assert.equal(engine.get('generated-child')!.state,'succeeded');assert.equal(engine.get(parent)!.state,'succeeded');assert.equal(childRuns,2);
 });
 
+test('recovered child work runs under a fresh parent after both leases expire',async t=>{
+ t.mock.timers.enable({apis:['setInterval']});
+ const {engine,advance}=await fixture(t);
+ const child='generated-recovered-child',operation='generated-recovered-parent';
+ const {promise:started,resolve:entered}=Promise.withResolvers<void>();
+ const {promise:held,resolve:release}=Promise.withResolvers<void>();
+ let childRuns=0,parentRuns=0,committed:string|undefined;
+ engine.register({...base,kind:'recovered-parent',pool:'recovered-parent',execute:async(_step,signal)=>{
+  parentRuns++;
+  return engine.runStep({id:child,operationId:operation,kind:'recovered-child',pool:'recovered-child',input:{},
+   signal:AbortSignal.any([signal]),validate:()=>true,project:()=>{},read:()=>committed,
+   execute:async childSignal=>{
+    childSignal.throwIfAborted();
+    if(++childRuns===1){entered();await held;}
+    childSignal.throwIfAborted();
+    return 'generated child result';
+   },commit:result=>{committed=String(result);}});
+ }});
+ const parent=engine.enqueue(operation,'recovered-parent',{}),running=engine.drain([parent]);
+ await started;
+ try{
+  advance(30001);
+  await engine.tick();
+  assert.equal(engine.get(parent)!.state,'waiting');
+  assert.equal(engine.get(child)!.state,'waiting');
+  t.mock.timers.tick(10000);
+ }finally{release();}
+ await running;
+ await engine.drain([parent,child]);
+ assert.equal(engine.get(child)!.state,'succeeded');
+ assert.equal(engine.get(parent)!.state,'succeeded');
+ assert.equal(engine.get(child)!.attempts,1);
+ assert.equal(parentRuns,2);
+ assert.equal(childRuns,2);
+ assert.equal(committed,'generated child result');
+});
+
 test('handler disposal interrupts local work and preserves queued, blocked and terminal tasks',async t=>{
  const {engine}=await fixture(t);let entered!:()=>void,release!:()=>void,signal!:AbortSignal,commits=0;
  const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
