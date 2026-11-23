@@ -443,7 +443,15 @@ export class ExecutionEngine {
    // The child owns retries; a replayed parent only observes durable progress.
    classify:options.classify??(()=>new ExecutionFailure('permanent','step_failed')),
   });
-  const abort=()=>{if(this.stopping||options.signal.reason===interrupted)this.active.get(options.id)?.controller.abort(interrupted);else this.cancel(options.id);};options.signal.addEventListener('abort',abort,{once:true});
+  let disposal:Promise<void>|undefined;
+  const dispose=()=>disposal??=unregister();
+  const abort=()=>{
+   // Recovery can requeue the child before the parent's lease renewal aborts.
+   // Retire this definition now so a new claim uses the next parent's signal.
+   if(this.stopping||options.signal.reason===interrupted)void dispose();
+   else this.cancel(options.id);
+  };
+  options.signal.addEventListener('abort',abort,{once:true});
   try{
    this.enqueue(options.operationId,kind,options.input,{id:options.id,generation:options.generation,optional:options.optional,initial:{state:options.cached?'succeeded':'waiting',attempts:options.initialAttempts??0,availableAt:0}});
    const current=this.get(options.id)!;
@@ -465,7 +473,7 @@ export class ExecutionEngine {
    if(step.state==='failed')throw retainFailureContext(new ExecutionFailure('permanent',step.error??'step_failed',options.requireDurableResult?Math.max(0,step.availableAt-this.now()):undefined),{...failureContext(failure),causeStepId:step.id,causeCode:step.error??'step_failed',causeState:step.state});
    if(failure)throw failure;
    throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));
-  }finally{options.signal.removeEventListener('abort',abort);await unregister();}
+  }finally{options.signal.removeEventListener('abort',abort);await dispose();}
  }
  /** Fence new admission while already accepted leases may finish. */
  quiesce(){this.quiescing=true;if(this.scheduled){clearImmediate(this.scheduled);this.scheduled=undefined;}}
