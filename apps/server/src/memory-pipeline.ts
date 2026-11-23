@@ -901,9 +901,10 @@ export class MemoryPipeline {
         this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
         const step=this.engine.get(batch.id);
         if(step)this.engine.retry(batch.id,ownerAction);
-        // With the same model allowance the previous estimate would repeat the
-        // rejected extraction. Reuse the frozen targets in smaller requests.
-        if(ownerAction&&capacity&&batch.readRanges&&batch.errorCode==='processing_limit'&&batch.phase==='extract'&&
+        // An unchanged extraction can hit the same context or output limit.
+        // Reuse the frozen targets in smaller requests.
+        if(ownerAction&&capacity&&batch.readRanges&&batch.phase==='extract'&&
+          (batch.errorCode==='processing_limit'||batch.errorCode==='model_output_capacity')&&
           !batch.feedbackOnly&&batch.strategy?.review!==null&&previousConfiguration===job.configuration?.fingerprint){
           batch.splitForCapacityRetry=true;
         }
