@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {assembleHostContext,estimateSerializedTokens,resolveModelCapabilities,type QueryInput} from '@mote/agent';
+import {AgentResponseError,assembleHostContext,estimateSerializedTokens,resolveModelCapabilities,type QueryInput} from '@mote/agent';
 import {ProviderFailure} from '@mote/shared';
 import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
@@ -141,7 +141,12 @@ test('owner retry repartitions a saved overflow using current budgets without ce
  assert.ok(leaves.every(batch=>batch.reviewReceipt?.decision==='independent'));assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,160);
 });
 
-for(const phase of ['extract','review'] as const)test(`owner retry of a live ${phase==='extract'?'extraction':'review'} capacity failure preserves the frozen ranges${phase==='review'?' and saved extraction':' in smaller requests'}`,async t=>{
+for(const {phase,limit} of [
+ {phase:'extract',limit:'context'},
+ {phase:'extract',limit:'output'},
+ {phase:'review',limit:'context'},
+ {phase:'review',limit:'output'},
+] as const)test(`owner retry of a live ${phase==='extract'?'extraction':'review'} ${limit} capacity failure preserves the frozen ranges${phase==='review'?' and saved extraction':' in smaller requests'}`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-live-capacity-'));
  const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
  const capacity:MemoryRequestCapacity={contextWindow:98304,maxOutputTokens:16384,draftTokens:16384};
@@ -151,7 +156,10 @@ for(const phase of ['extract','review'] as const)test(`owner retry of a live ${p
   const stage=input.traceContext!.phase!,ranges=input.evidenceRanges!;
   calls.push({phase:stage,ranges,readRanges:input.evidenceReadRanges!.length,draft:input.taskContext?.untrustedMemoryDraft});
   const hitCapacity=stage===phase&&(phase==='extract'?ranges.length>8:calls.filter(call=>call.phase==='review').length===1);
-  if(hitCapacity)throw new ProviderFailure({category:'permanent',code:'processing_limit'});
+  if(hitCapacity){
+   if(limit==='output')throw new AgentResponseError('Generated output limit','output_limit');
+   throw new ProviderFailure({category:'permanent',code:'processing_limit'});
+  }
   const {members}=input.taskContext!.memoryWork as {members:MemoryWorkMember[]};
   return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()};
  };
@@ -167,7 +175,7 @@ for(const phase of ['extract','review'] as const)test(`owner retry of a live ${p
  assert.equal(job.totalBatches,1);
  const failed=await pipeline.run(job.id);
  assert.equal(failed.status,'failed');
- assert.equal(failed.batches[0].errorCode,'processing_limit');
+ assert.equal(failed.batches[0].errorCode,limit==='output'?'model_output_capacity':'processing_limit');
  assert.equal(failed.batches[0].phase,phase);
  assert.equal(failed.batches.length,1);
  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
