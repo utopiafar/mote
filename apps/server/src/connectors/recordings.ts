@@ -159,8 +159,15 @@ class RecordingRuntime {
    // The owner's corpus-date policy accepts source creation time as an authored
    // time anchor. It does not assign the described events an occurrence date.
    const corpusTime=metadata.recordedAt??metadata.createdAt;
+   const originalMetadata={
+    ...(metadata.createdAt?{createdAt:metadata.createdAt}:{}),
+    ...(metadata.recordedAt?{recordedAt:metadata.recordedAt}:{}),
+    durationMs:metadata.durationMs,
+    corpusTimeSource:metadata.recordedAt?'recordedAt':metadata.createdAt?'createdAt':'unknown',
+   };
    const ack=await this.ctx.files.transcriptRevision(sourceId,{externalId:id,kind:'file',title:metadata.title,observedAt:new Date().toISOString(),deleted:false,
-    ...(metadata.uri?{uri:metadata.uri}:{}),document:{contentRole:'transcript',...(corpusTime?{recordedAt:corpusTime,timeBasis:'recorded'}:{timeBasis:'unknown'})}},result.rawText,result.transcript,authorize);authorize();
+    ...(metadata.uri?{uri:metadata.uri}:{}),document:{contentRole:'transcript',originalMetadata,
+     ...(corpusTime?{recordedAt:corpusTime,timeBasis:'recorded'}:{timeBasis:'unknown'})}},result.rawText,result.transcript,authorize);authorize();
    this.observe('publish','completed',step,{count:ack.duplicate?0:1});
    const prior=this.ctx.state.media(sourceId,id);
    if(prior)grant.commit(()=>this.ctx.archives.attach(ack.id,[prior]));

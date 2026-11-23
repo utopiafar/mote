@@ -6,6 +6,7 @@ import {rmSync} from 'node:fs';
 import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
+import {isDeepStrictEqual} from 'node:util';
 import type {StatementSync} from 'node:sqlite';
 import {fileRevisionSchema,fileViewSchema,sourceItemSchema,FILE_MAX_BYTES,FILE_PART_BYTES,FILE_PART_RECEIPTS,executionEnvelope,transcriptSchema,type FileCoverage,type SourceItem,type Transcript,type FileRevision,type CaptureRecord,type ArchivedFile,type FileProcessingJobView,type ExecutionEnvelope,fileEvidenceSchema} from '@mote/shared';
 import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
@@ -250,7 +251,12 @@ export class FileStore {
     if(bytes.length>16*1024*1024)throw new StoreError('Provider transcript exceeds limit',413);
     const hash=sha256(bytes),head=this.sources.getItem(sourceId,item.externalId);
     const prior=head&&this.store.db.prepare('SELECT manifest,object_hash FROM file_versions WHERE capture_id=?').get(head.captureId);
-    if(head&&!head.deleted&&this.store.isCurrentEvidence(head.captureId)&&prior?.object_hash===hash&&head.title===item.title&&head.uri===item.uri&&head.document?.recordedAt===item.document?.recordedAt&&head.document?.timeBasis===item.document?.timeBasis&&head.document?.contentRole===item.document?.contentRole){authorize();return {id:head.captureId,duplicate:true};}
+    if(head&&!head.deleted&&this.store.isCurrentEvidence(head.captureId)&&prior?.object_hash===hash&&
+      head.title===item.title&&head.uri===item.uri&&head.document?.recordedAt===item.document?.recordedAt&&
+      head.document?.timeBasis===item.document?.timeBasis&&head.document?.contentRole===item.document?.contentRole&&
+      isDeepStrictEqual(head.document?.originalMetadata,item.document?.originalMetadata)){
+      authorize();return {id:head.captureId,duplicate:true};
+    }
     const revision=sha256(JSON.stringify([hash,item.title,item.uri,item.document,head?.revision??null]));
     const asset=this.store.assets.put(bytes);
     try{return await this.revisionAdmitted({sourceId,relativePath:`recordings/${sha256(item.externalId)}.json`,previousRevision:head?.revision??null,
