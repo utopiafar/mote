@@ -162,28 +162,42 @@ test('an explicitly retried window replaces its one receipt and deleting its lif
 test('actual app records native text handoff only after prepare succeeds, before independent review',async t=>{
  const dataDir=await mkdtemp(join(tmpdir(),'mote-native-integration-delivery-')),token='generated-native-delivery-owner';
  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-native',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
- let release!:()=>void,entered!:()=>void,nativeCalls=0,reviewCalls=0;
- const preparing=new Promise<void>(resolve=>entered=resolve),accepted=new Promise<void>(resolve=>release=resolve);
+ let nativeCalls=0,reviewCalls=0;
+ const preparing=Promise.withResolvers<void>(),accepted=Promise.withResolvers<void>();
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
   assert.equal(input.traceContext?.phase,'review');reviewCalls++;
   const receipt=JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_integration_deliveries').get()!.json));
   assert.deepEqual(receipt.memoryIds,[memory.id]);assert.deepEqual(receipt.evidenceIds,[original.id]);
   return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
  }}});
- t.after(async()=>{release?.();await node.app.close();await rm(dataDir,{recursive:true,force:true});});
+ t.after(async()=>{accepted.resolve();await node.app.close();await rm(dataDir,{recursive:true,force:true});});
  node.sources.register({id:'generated-native-text',name:'Generated native text',kind:'custom',deviceId:'generated',platform:'import'});
  await node.sources.upsert('generated-native-text',{externalId:'one',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'The generated owner uses a silver telescope.'});
  await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);
  const material=node.materials.list({sourceId:'generated-native-text'}).items[0],original=node.memories.readEvidence(node.materials.evidenceIds(material.ref)).find(record=>record.ocrText.includes('silver telescope'))!;assert.ok(original);
  const saved=node.memories.extract(fixtureMemoryResult(node.memories,{answer:JSON.stringify({memories:[{title:'Generated native telescope',statement:`The generated owner uses a silver telescope. [${original.id}]`,uncertainty:'Generated fixture only',evidenceIds:[original.id]}]}),citations:[{id:original.id,capturedAt:original.capturedAt,appName:'Generated',excerpt:original.ocrText}],trace:[],runId:randomUUID()}),'generated').items[0],memory=node.memories.get(saved.id);
- generatedNativeAdapter(node,{prepare:async input=>{nativeCalls++;assert.equal(input.phase,'integrate');assert.deepEqual(input.relatedMemories?.map(card=>card.id),[memory.id]);entered();await accepted;return {answer:'{"memories":[]}',citations:[],trace:[],runId:input.opId};}});
+ generatedNativeAdapter(node,{prepare:async input=>{
+  nativeCalls++;
+  assert.equal(input.phase,'integrate');
+  assert.deepEqual(input.relatedMemories?.map(card=>card.id),[memory.id]);
+  preparing.resolve();
+  await accepted.promise;
+  return {answer:'{"memories":[]}',citations:[],trace:[],runId:input.opId};
+ }});
  await node.app.ready();
  node.lifecycle.retirePending('extraction',Number(node.store.db.prepare('SELECT coalesce(max(seq),0) n FROM artifact_events').get()!.n));
  node.memoryPipeline.assertNewManualWork();node.memoryPipeline.inputs.assert([original.id]);assert.equal(memory.admission?.layer,'memory');assert.notEqual(memory.status,'stale');
  const request=await node.app.inject({method:'POST',url:'/api/memory-integrations',headers:{authorization:'Bearer '+token},payload:{recipe:{id:'mote.memory-integration',version:'2'},inputs:[{id:memory.id,version:memory.version,fingerprint:memory.fingerprint}]}});assert.equal(request.statusCode,202,request.body);
- await preparing;
+ const integration=node.lifecycle.tick();
+ // Join the tick started by the request so an early lifecycle failure is
+ // reported directly instead of waiting for a prepare call that won't occur.
+ const entered=await Promise.race([preparing.promise.then(()=>true),integration.then(()=>false)]);
+ if(!entered){
+  const state=node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation');
+  assert.fail(`Integration finished before native prepare: ${state?.error??state?.status}`);
+ }
  const pending=JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_integration_deliveries').get()!.json));assert.deepEqual(pending.memoryIds,[]);assert.deepEqual(pending.evidenceIds,[],'local native arguments are not delivered originals');assert.equal(reviewCalls,0);
- release();await node.lifecycle.tick();
+ accepted.resolve();await integration;
  const state=node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation')!;assert.equal(state.error,undefined);assert.equal(state.active,undefined);assert.equal(state.lastRun?.id,request.json().id);assert.equal(nativeCalls,1);assert.equal(reviewCalls,1);
  const delivered=JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_integration_deliveries').get()!.json));assert.deepEqual(delivered.memoryIds,[memory.id]);assert.deepEqual(delivered.evidenceIds,[original.id]);
 });
