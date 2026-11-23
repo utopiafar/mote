@@ -8,7 +8,7 @@ import {AgentResponseError,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
-import {MemoryStore,MemoryOutputValidationError} from '../src/memory.js';
+import {MemoryStore,MemoryOutputValidationError,queryWithMemoryValidationFeedback} from '../src/memory.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
 import {reviewMemory} from '../src/memory-review.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
@@ -249,6 +249,60 @@ test('raw extraction and independent review repairs retain exact scope within th
  });
  const done=await f.pipeline.run(f.pipeline.create({evidenceIds:f.ids}).id);assert.equal(done.status,'completed');assert.equal(f.extracts.length,2);assert.equal(f.reviews.length,2);assert.equal(done.memoryIds.length,1);
  assert.deepEqual(done.batches[0].validationFailures!.map(failure=>failure.phase),['extract','review']);assert.equal(f.memories.get(done.memoryIds[0]).evidence![0].quote,quote);
+});
+
+for(const {phase,persistent} of [
+ {phase:'extract',persistent:false},
+ {phase:'review',persistent:false},
+ {phase:'extract',persistent:true},
+] as const)test(`a context limit during ${phase==='extract'?'extraction':'review'} correction ${persistent?'remains failed after one fresh attempt':'allows one fresh attempt with the same originals'}`,async t=>{
+ const quote='Generated preference with exact source punctuation.',f=await fixture(t,[quote,'Generated neutral original.']);
+ const valid=(input:MemoryPipelineQuery)=>result(input,[{member:work(input).members[0],quote}]);
+ const rejectCorrection=async(input:MemoryPipelineQuery):Promise<never>=>{
+  const rejected=result(input,[{member:work(input).members[0],quote:'Generated altered wording.'}]);
+  assert.equal((await input.validateOutput!(rejected))?.code,'quote_not_found');
+  assert.equal(f.memories.list().length,0);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  throw new ProviderFailure({category:'permanent',code:'processing_limit'});
+ };
+ f.setGenerate(input=>queryWithMemoryValidationFeedback(input,async request=>{
+  if(phase==='extract'){
+   if(f.extracts.length===1)return rejectCorrection(request);
+   assert.match(request.question,/not an exact substring/);
+   assert.deepEqual(request.evidenceRanges,f.extracts[0].evidenceRanges);
+   assert.deepEqual(request.processingEvidence,f.extracts[0].processingEvidence);
+   if(persistent)return rejectCorrection(request);
+  }
+  return valid(request);
+ }));
+ f.setReview((input,draft)=>queryWithMemoryValidationFeedback(input,async request=>{
+  if(phase==='review'){
+   if(f.reviews.length===1)return rejectCorrection(request);
+   assert.match(request.question,/Host review repair:.*not an exact substring/s);
+   assert.deepEqual(request.evidenceRanges,f.reviews[0].evidenceRanges);
+   assert.deepEqual(request.taskContext!.untrustedMemoryDraft,f.reviews[0].taskContext!.untrustedMemoryDraft);
+  }
+  return {...draft,runId:randomUUID()};
+ }));
+ const job=f.create(),done=await f.pipeline.run(job.id);
+ assert.equal(f.extracts.length,phase==='extract'?2:1);
+ assert.equal(f.reviews.length,persistent?0:phase==='review'?2:1);
+ assert.equal(done.batches.length,1);
+ assert.deepEqual(done.batches[0].evidenceRanges,job.batches[0].evidenceRanges);
+ assert.equal(done.batches[0].validationFailures?.[0].phase,phase);
+ assert.equal(done.batches[0].validationFailures?.[0].code,'quote_not_found');
+ if(persistent){
+  assert.equal(done.status,'failed');
+  assert.equal(done.batches[0].errorCode,'processing_limit');
+  assert.equal(done.memoryIds.length,0);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ }else{
+  assert.equal(done.status,'completed');
+  assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+  assert.equal(done.memoryIds.length,1);
+  assert.equal(f.memories.get(done.memoryIds[0]).evidence![0].quote,quote);
+  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);
+ }
 });
 
 for(const variant of ['coding-original','personal-correction','coding-correction'] as const)test(`new raw range assessment preserves the ${variant} provenance procedure`,async t=>{

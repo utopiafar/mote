@@ -28,7 +28,7 @@ import type {MaterialMemoryWork} from '../material-memory-work.js';
 import type {SourcePipelineRuntime} from '../source-pipelines.js';
 import type {EvidenceReader} from '../evidence-reader.js';
 import type {ContextTreeRegistry} from '../context-trees.js';
-import {memoryEvidenceFingerprint,type MemoryStore} from '../memory.js';
+import {memoryEvidenceFingerprint,queryWithMemoryValidationFeedback,type MemoryStore} from '../memory.js';
 import type {ConversationRepository as Conversations,OwnerQuestionsPort} from '../plugins/central-contracts.js';
 import {EvidenceExposurePolicy} from '../evidence-exposure.js';
 import {memoryIntegrationImageInputs} from '../memory-image-grants.js';
@@ -212,7 +212,7 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
       const capacity=nativeRequestCapacity(settings,input.modelOverride);
       if(capacity)assertMemoryRequestFits(input,memories.readEvidence(input.evidenceIds??[]),capacity);
     }
-    return query(input);
+    return queryWithMemoryValidationFeedback(input,query);
   };
   const memoryPipelineOptions:MemoryPhasePipelineOptions={allowQueryImages:()=>configService.current(perceptionConfigDomain).allowQueryImages,onPublished:(step,items,job)=>topics.current?.enqueue(step,items,job.configuration?.profileId??job.modelProfileId,job.configuration?.model??job.modelOverride),assertIntegrationAuthority:()=>modelAuthorization.assertCurrent(),withIntegrationAuthority:(id,manual,evidenceIds,task)=>manual?modelAuthorization.run('owner-integration:'+id,task):modelAuthorizationHost.automatic('automatic-integration:'+id,'integration',modelAuthorizationHost.evidenceTriggers(evidenceIds),task),integrationReadInput:cards=>memoryIntegrationImageInputs(store,materials,cards.flatMap(card=>card.evidence)),assertIntegrationReadable:cards=>evidenceReader.assertMemoryReadable(cards),publication:memoryPublicationPlatform.port.stage,ownerPublication:memoryPublicationPlatform.port.owner,assertNewManualWork:()=>memoryBindings.assertNewManualWork(),nativeStages:{settle:async context=>{if(!context.provider)throw new StoreError('Native Memory cleanup has no pinned provider configuration',503);await memoryProviderAdapters.port.discardPrepared({...context.provider,opId:context.opId,phase:context.phase});},prepare:async(input,context)=>withQueryModelAuthority(input,'memories',async signal=>{input={...input,signal};const binding=memoryBindings.binding();if(memoryBindings.bindingMode(binding)!=='engine')return;const namespace=binding.namespace!;context.provider={instanceId:namespace.instanceId,namespace,configurationIdentity:memoryProviderAdapters.port.configurationIdentity(namespace.instanceId,namespace)};input.signal?.throwIfAborted();const originals=memories.readEvidence(context.evidenceIds);if(originals.length!==new Set(context.evidenceIds).size)throw new StoreError('Engine originals are unavailable',409);const evidence=input.evidenceRanges?.map(range=>{const record=originals.find(record=>record.id===range.id);if(!record)throw new StoreError('Engine original range is unavailable',409);return {record,offset:range.offset,length:range.length};})??originals;
     const engineProfile=pluginCenter.instanceView(namespace.instanceId).configuration.modelProfileId;if(typeof engineProfile!=='string')throw new StoreError('Native Memory model profile is missing',409);
