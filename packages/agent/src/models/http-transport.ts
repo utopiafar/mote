@@ -1,12 +1,16 @@
 import {AsyncResource} from 'node:async_hooks';
 import {createServer} from 'node:http';
-import {randomBytes,timingSafeEqual} from 'node:crypto';
+import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
 import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
+import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {AgentProviderError,type AgentOptions} from '../types.js';
 import {createRequestBudget} from './request-budget.js';
 
 type FetchTransport = typeof fetch;
-type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoningEffort'|'headers'|'extraBody'|'contextWindow'|'maxTokens'> & {baseUrl:string};
+type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoningEffort'|'headers'|'extraBody'|'contextWindow'|'maxTokens'> & {
+  baseUrl:string;
+  sessionId?:string;
+};
 type FailureReport = {status:number;retryAfter?:string;diagnostic?:FailureDiagnostics};
 
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
@@ -42,6 +46,14 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
         headers.set('api-key',process.env.MOTE_MODEL_API_KEY as string);
       }
       for(const [key,value] of Object.entries(configuration.headers??{}))headers.set(key,value);
+      if(configuration.sessionId&&configuration.provider===OPENCODE_GO_PROVIDER.id&&
+        configuration.protocol===OPENCODE_GO_PROVIDER.protocol&&
+        destination.origin+destination.pathname===OPENCODE_GO_PROVIDER.baseUrl+'/chat/completions'){
+        // Go requires a stable identifier for the conversation. Keep the internal Mote ID private.
+        const session=createHash('sha256').update('mote:opencode-go:').update(configuration.sessionId).digest('hex');
+        headers.set('x-opencode-session',session);
+        headers.set('user-agent','Mote');
+      }
       const raw=init?.body??(input instanceof Request?await input.clone().text():undefined);
       if(typeof raw!=='string')throw new Error('Model request must contain a JSON body');
       const body=JSON.parse(raw);

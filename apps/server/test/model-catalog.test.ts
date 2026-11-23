@@ -22,6 +22,23 @@ test('DeepSeek catalogs preserve official Bearer discovery and custom Messages g
     assert.deepEqual(result.items,[{id:'generated-deepseek',name:'generated-deepseek'}]);
   }
 });
+test('OpenCode Go uses its model catalog and rejects mismatched deployment routes', async () => {
+  const deployment = {provider:'opencode-go', model:'generated-go-model'};
+  const parsed = modelDomainSchema.parse({deployment}).deployment;
+  assert.equal(parsed.protocol,'openai-completions');
+  assert.equal(parsed.baseUrl,'https://opencode.ai/inference/go/openai/v1');
+  assert.equal(modelDomainSchema.safeParse({deployment:{...deployment,protocol:'openai-responses'}}).success,false);
+  assert.equal(modelDomainSchema.safeParse({
+    deployment:{...deployment,baseUrl:'https://opencode.ai/inference/openai/v1'},
+  }).success,false);
+  const result = await providerModels({...parsed,apiKey:'generated-secret'}, async (url, init) => {
+    assert.equal(String(url),'https://opencode.ai/inference/go/v1/models');
+    assert.equal(init?.redirect,'error');
+    assert.equal(new Headers(init?.headers).get('authorization'),'Bearer generated-secret');
+    return Response.json({data:[{id:'generated-go-model',name:'Generated Go model'}]});
+  });
+  assert.deepEqual(result.items,[{id:'generated-go-model',name:'Generated Go model'}]);
+});
 test('provider catalog supports account headers, pagination, Google names and generation filtering',async()=>{
   let calls=0;
   const result=await providerModels({...settings,protocol:'anthropic-messages',baseUrl:'https://fixture.invalid'},(async(url,init)=>{

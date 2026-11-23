@@ -71,6 +71,13 @@ test('Codex editor saves Fast, blocks unsupported models and clears speed when s
   await change('可用模型','legacy');assert.equal(select('速度模式').querySelector<HTMLOptionElement>('option[value="fast"]')!.disabled,false);
   assert.match(dom.window.document.body.textContent!,/尚未取得速度档位/);
   await change('服务商类型','openai');assert.equal(dom.window.document.querySelector('select[aria-label="速度模式"]'),null);
+  await change('服务商类型','opencode-go');
+  assert.equal(select('服务商类型').selectedOptions[0]?.text,'OpenCode Go');
+  assert.equal(select('接口协议').value,'openai-completions');
+  assert.equal(select('接口协议').disabled,true);
+  const address=dom.window.document.querySelector<HTMLInputElement>('input[aria-label="模型服务地址"]')!;
+  assert.equal(address.value,'https://opencode.ai/inference/go/openai/v1');
+  assert.equal(address.readOnly,true);
   await change('服务商类型','codex');assert.equal(select('速度模式').value,'default');
   await submit();assert.equal(bodies.length,2);assert.equal(bodies[1].settings.serviceTier,'default');
 });
