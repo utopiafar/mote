@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {officialNavigation} from '../dist/ui-navigation.js';
 
 const repo=new URL('../../../',import.meta.url);
 const read=path=>readFileSync(new URL(path,repo),'utf8');
@@ -12,6 +13,7 @@ const navigationSources=[
   'apps/web/src/navigation.ts',
   'packages/shared/src/ui-presentation.ts',
   'apps/desktop/src/presentation.ts',
+  'apps/desktop/src/desktop-icon.ts',
 ];
 
 test('web and Mac navigation sources contain no character icon glyphs',()=>{
@@ -28,15 +30,11 @@ test('web and Mac navigation sources contain no character icon glyphs',()=>{
 test('the web sidebar maps shared destination icons to lucide instead of a duplicate glyph table',()=>{
   const source=read('apps/web/src/WorkspaceSidebar.tsx');
   assert.doesNotMatch(source,/destinationGlyphs/);
-  assert.match(source,/from 'lucide-react'/);
-  for(const icon of ['House','Database','Link2','Bot','MessageSquare','Activity'])assert.match(source,new RegExp(`\\b${icon}\\b`));
-});
-
-test('the Mac generated navigation uses the shared line-icon symbols',()=>{
-  const source=read('apps/desktop/src/presentation.ts');
-  assert.match(source,/desktopIconSymbols/);
-  assert.match(source,/createElementNS\('http:\/\/www\.w3\.org\/2000\/svg','svg'\)/);
-  assert.match(source,/#icon-'\+desktopIconSymbols/);
-  const html=read('apps/desktop/src/index.html');
-  for(const symbol of ['icon-home','icon-storage','icon-link','icon-ask','icon-activity','icon-settings','icon-external'])assert.match(html,new RegExp(`id="${symbol}"`));
+  const imported=source.match(/import\s*\{([^}]*)\}\s*from 'lucide-react'/)?.[1];
+  assert.ok(imported,'the sidebar imports Lucide components');
+  for(const {id,icon} of officialNavigation){
+    const component=icon.split('-').map(part=>part[0].toUpperCase()+part.slice(1)).join('');
+    assert.match(imported,new RegExp(`\\b${component}\\b`),id);
+    assert.match(source,new RegExp(`^\\s*['"]?${icon}['"]?\\s*:\\s*${component}\\b`,'m'),id);
+  }
 });

@@ -41,6 +41,16 @@ it('renders the five local sections and removes Home, Ask and Central record fil
   expect(items.map(node=>node.dataset.nav)).toEqual(['sources','permissions','work','storage','records']);
   expect(items.map(node=>node.querySelector('span:not([aria-hidden]):not(.pending-dot)')!.textContent)).toEqual(['来源','权限','发送','存储','本机记录']);
   expect(items.map(node=>node.querySelector('use')!.getAttribute('href'))).toEqual(['#icon-plug','#icon-access','#icon-send','#icon-disk','#icon-layers']);
+  for(const item of items){
+    const icon=item.querySelector('svg')!;
+    const use=icon.querySelector('use')!;
+    expect(icon.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect(use.namespaceURI).toBe(icon.namespaceURI);
+    expect(icon.getAttribute('aria-hidden')).toBe('true');
+    const symbol=document.getElementById(use.getAttribute('href')!.slice(1));
+    expect(symbol?.localName).toBe('symbol');
+    expect(symbol?.childElementCount).toBeGreaterThan(0);
+  }
   expect(document.querySelector('.sidebar>.sidebar-titlebar')).not.toBeNull();
   expect(document.querySelector('[data-page=overview], [data-page=ask]')).toBeNull();
   expect(document.querySelector('[data-content-scope=received], #records-location')).toBeNull();
