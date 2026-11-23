@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {AgentResponseError,type QueryInput} from '@mote/agent';
+import {AgentProviderError,AgentResponseError,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {EvidenceStore as Store} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
@@ -302,6 +302,41 @@ for(const {phase,persistent} of [
   assert.equal(done.memoryIds.length,1);
   assert.equal(f.memories.get(done.memoryIds[0]).evidence![0].quote,quote);
   assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);
+ }
+});
+
+for(const mode of ['recovered','still-limited','initial-context-limit'] as const)test(`range review after an output repair capacity failure: ${mode}`,async t=>{
+ const quote='Generated preference with exact evidence.',f=await fixture(t,[quote,'Generated neutral range.','Another generated neutral range.']);
+ const capacityFailure=new AgentProviderError({category:'permanent',code:'processing_limit'},{source:'http',stage:'model',httpStatus:413},mode==='initial-context-limit'?undefined:'output_limit');
+ f.setGenerate(async input=>result(input,[{member:work(input).members[0],quote}]));
+ f.setReview(async (input,draft)=>{
+  if(f.reviews.length===1)throw capacityFailure;
+  const first=f.reviews[0];
+  assert.deepEqual(input.evidenceRanges,first.evidenceRanges);
+  assert.deepEqual(input.evidenceReadRanges,first.evidenceReadRanges);
+  assert.deepEqual(input.processingEvidence,first.processingEvidence);
+  assert.deepEqual(work(input).members,work(first).members);
+  assert.deepEqual(input.taskContext!.untrustedMemoryDraft,first.taskContext!.untrustedMemoryDraft);
+  assert.match(input.question,/required coverage entry for every target/);
+  assert.match(input.question,/exact supporting quotes/);
+  if(mode==='still-limited')throw capacityFailure;
+  return {...draft,runId:randomUUID()};
+ });
+ const job=f.create(),done=await f.pipeline.run(job.id);
+ assert.equal(f.extracts.length,1);
+ assert.equal(f.reviews.length,mode==='initial-context-limit'?1:2);
+ assert.deepEqual(done.batches[0].evidenceRanges,job.batches[0].evidenceRanges);
+ if(mode==='recovered'){
+  assert.equal(done.status,'completed');
+  assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+  assert.equal(done.batches[0].coverage?.length,3);
+  assert.equal(done.memoryIds.length,1);
+  assert.equal(f.memories.get(done.memoryIds[0]).evidence![0].quote,quote);
+ }else{
+  assert.equal(done.status,'failed');
+  assert.equal(done.batches[0].errorCode,'processing_limit');
+  assert.deepEqual(done.memoryIds,[]);
+  assert.equal(f.store.db.prepare("SELECT count(*) n FROM memory_phase_outputs WHERE batch_id=? AND phase='extract'").get(done.batches[0].id)!.n,1);
  }
 });
 
