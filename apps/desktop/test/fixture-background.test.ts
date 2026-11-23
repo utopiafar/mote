@@ -17,7 +17,9 @@ test('Electron UI fixture entry points load the background policy before Electro
       if (nodeDrivers.has(path) || helpers.has(path)) continue;
       const source = readFileSync(resolve(root, path), 'utf8');
       if (!/require\(['"]electron['"]\)/.test(source)) continue;
-      expect(source.split('\n')[0], path).toMatch(/^require\(['"].*fixture-background\.cjs['"]\);$/);
+      // Screenshot fixtures may explicitly clear the visible-mode opt-in before policy loads.
+      const bootstrap = source.replace(/^delete process\.env\.MOTE_TEST_SHOW_UI;\r?\n/, '');
+      expect(bootstrap.split('\n')[0], path).toMatch(/^require\(['"].*fixture-background\.cjs['"]\);$/);
     }
   }
 });
