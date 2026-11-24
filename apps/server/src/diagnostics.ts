@@ -22,6 +22,7 @@ type RecordingOperation='recording_metadata'|'recording_discover'|'recording_tra
 export type Operation = RecordingOperation|'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
 export interface AgentTraceContext {
   operationId?: string;
+  taskKey?: string;
   traceId?: string; requestId?: string; jobId?: string; batchId?: string; batchIndex?: number; attempt?: number;
   phase?: string; operation?: string; moduleId?: string; profileId?: string; provider?: string; protocol?: string; model?: string;
 }
@@ -31,7 +32,7 @@ export interface AgentTraceInput {
 }
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['recording_metadata','recording_discover','recording_transcript','recording_media','recording_decode','recording_publish','capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
-const events = new Set(['event-loop.blocked','task.loop_timing','task.lease_timing','task.lease_renewal','task.lease_recovered','memory.reader_timing','server.started','server.stopping','server.listening','server.stopped','server.stop_failed','server.start_failed','process.exited','process.spawn_failed','process.output_suppressed','process.output_dropped','config.shutdown_drain_failed','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.runtime_attempt_terminal','agent.runtime_run_terminal','agent.runtime_event_rejected','agent.fragment_timing','agent.harness_timing','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.yielded','agent.heartbeat','file.waiting','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
+const events = new Set(['event-loop.blocked','task.loop_timing','task.lease_timing','task.lease_renewal','task.lease_recovered','memory.reader_timing','server.started','server.stopping','server.listening','server.stopped','server.stop_failed','server.start_failed','process.exited','process.spawn_failed','process.output_suppressed','process.output_dropped','config.shutdown_drain_failed','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.runtime_attempt_terminal','agent.runtime_run_terminal','agent.runtime_event_rejected','agent.fragment_timing','agent.harness_timing','agent.tool_rejected','agent.research_failed','agent.memory_validation_failed','agent.waiting','agent.yielded','agent.heartbeat','file.waiting','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['configuration','port_in_use','data_directory_in_use','permission','startup','shutdown','validation','unauthorized','forbidden','not_found','conflict','source_context_changed','deleted','too_large','rate_limited','processor_response_unknown','processor_still_running','step_failed','step_pending','provider_timeout','provider_unavailable','provider_network','interrupted','input_changed','grant_revoked','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','queueWaitMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','maxCandidates','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount','clockForwardMs','clockBackwardMs','leaseRemainingMs','leaseOverdueMs','succeeded','skipped','dropped','intervalMs','delayMs'] as const;
@@ -82,6 +83,7 @@ const eventStage=(event:string):DiagnosticStage=>{
 const validStage=(value:unknown):value is DiagnosticStage=>typeof value==='string'&&value!=='all'&&diagnosticStageFilters.includes(value as DiagnosticStageFilter);
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
+type ExecutionCorrelation = {operationId?:string;taskKey?:string;attempt?:number};
 type QueuedLine = {line:string;at:string;eventKey?:string;channel:'debug'|'info'|'warn'|'error'|'trace';writeNumber:number};
 type LogLineRange={position:number;length:number;terminated:boolean;chunk?:Buffer;offset?:number};
 
@@ -111,7 +113,7 @@ async function readLogLine(file:FileHandle,range:LogLineRange):Promise<string> {
   // The scanner's chunk is valid until its next iteration; ordinary short lines need no extra I/O.
   return range.chunk?range.chunk.toString('utf8',range.offset!,range.offset!+range.length):readLogText(file,range.position,range.length);
 }
-export type EventFields = Metrics & { lane?:'background'|'interactive';unit?:'agent_fragment'|'harness_session';status?:'completed'|'failed'|'yielded';taskId?:string;taskKey?:string;attemptId?:string;name?:ObservationName;phase?:ObservationPhase;state?:'completed'|'failed'|'cas_missed'|'recovered'|'summary';requestId?:string;jobId?:string;batchId?:string;runId?:string;evidenceId?:string;validationCode?:string;toolErrorCode?:string;validationPhase?:'extract'|'review';fieldPath?:string;problem?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;routeTemplate?:string;jobLabels?:BlockingJobLabel[];category?:string;reason?:string;diagnostic?:FailureDiagnostics };
+export type EventFields = Metrics & ExecutionCorrelation & { researchStage?:'prepare'|'query'|'receipt';lane?:'background'|'interactive';unit?:'agent_fragment'|'harness_session';status?:'completed'|'failed'|'yielded';taskId?:string;attemptId?:string;name?:ObservationName;phase?:ObservationPhase;state?:'completed'|'failed'|'cas_missed'|'recovered'|'summary';requestId?:string;jobId?:string;batchId?:string;runId?:string;evidenceId?:string;validationCode?:string;toolErrorCode?:string;validationPhase?:'extract'|'review';fieldPath?:string;problem?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;routeTemplate?:string;jobLabels?:BlockingJobLabel[];category?:string;reason?:string;diagnostic?:FailureDiagnostics };
 export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'>;stage?:DiagnosticStage;truncated?:boolean;trace?:Record<string,unknown> }
 export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxTotalBytes?:number;retention?:LogRetention;maxEntries?:number;traceExpiresAt?:number;now?:()=>Date;traceEnabled?:boolean }
 
@@ -130,8 +132,14 @@ export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEvent
 }
 
 /** Normal diagnostic events never carry error text, stacks, headers, provider bodies or arbitrary codes. */
-export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
-  try{return {...describeError(error),diagnostic:errorDiagnostics(error)};}catch{return {status:500,category:'internal',message:moteText("请求未完成，用请求编号查看诊断记录。")};}
+export function safeError(error:unknown,{includeUpstreamRequestId=false}={}):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
+  try {
+    const diagnostic=errorDiagnostics(error);
+    if(!includeUpstreamRequestId)delete diagnostic.upstreamRequestId;
+    return {...describeError(error),diagnostic};
+  } catch {
+    return {status:500,category:'internal',message:moteText("请求未完成，用请求编号查看诊断记录。")};
+  }
 }
 function describeError(error:unknown):{status:number;category:string;message:string;reason?:string;diagnostic?:FailureDiagnostics} {
   const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown;reason?:unknown;errcode?:unknown}:{};
@@ -161,6 +169,8 @@ function fields(raw:unknown,event?:string):EventFields {
   if(value.status==='completed'||value.status==='failed'||value.status==='yielded')out.status=value.status;
   for(const key of numberKeys){const n=value[key];if(typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER)out[key]=Math.round(n*1000)/1000;}
   if(typeof value.taskKey==='string'&&/^[a-f0-9]{64}$/.test(value.taskKey))out.taskKey=value.taskKey;
+  if(typeof value.operationId==='string'&&value.operationId.startsWith('query:')&&uuid.test(value.operationId.slice(6)))out.operationId=value.operationId;
+  if(event==='agent.research_failed'&&(value.researchStage==='prepare'||value.researchStage==='query'||value.researchStage==='receipt'))out.researchStage=value.researchStage;
   for(const key of ['taskId','attemptId'] as const)if(typeof value[key]==='string'&&uuid.test(value[key]))out[key]=value[key];
   if(['host_tick','lease_renew','lease_recover','reader_prepare','catalog_snapshot','query_assert','reader_search','reader_timeline','reader_evidence','reader_activity','reader_devices','reader_image','reader_memories'].includes(value.name as string))out.name=value.name as ObservationName;
   if(['host','extract','review','coding_understanding'].includes(value.phase as string))out.phase=value.phase as ObservationPhase;
@@ -367,6 +377,7 @@ export class ServerDiagnostics {
     const traceId=typeof context.traceId==='string'&&uuid.test(context.traceId)?context.traceId:randomUUID();
     const trace:Record<string,unknown>={
       type:event.type.slice(0,120),traceId,...(context.operationId&&/^[a-z]+:[a-zA-Z0-9:-]{1,200}$/.test(context.operationId)?{operationId:context.operationId}:{}),
+      ...(typeof context.taskKey==='string'&&/^[a-f0-9]{64}$/.test(context.taskKey)?{taskKey:context.taskKey}:{}),
       ...(typeof event.runId==='string'?{runId:event.runId.slice(0,200)}:{}),
       ...(typeof event.stage==='string'?{stage:event.stage.slice(0,80)}:{}),
       ...(typeof event.phase==='string'?{phase:event.phase.slice(0,80)}:{}),
@@ -391,15 +402,15 @@ export class ServerDiagnostics {
     const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event:'agent.trace',level:'debug',stage:'agent',...fields({requestId:context.requestId??this.context.getStore(),jobId:context.jobId}),trace};
     let line=JSON.stringify(entry)+'\n';
     const traceLimit=Math.min(this.maxBytes,MAX_TRACE_EVENT_BYTES);
-    if(Buffer.byteLength(line)>traceLimit){entry.trace={type:trace.type,traceId,runId:trace.runId,truncated:true,payload:'trace payload exceeded the diagnostic event limit'};line=JSON.stringify(entry)+'\n';}
+    if(Buffer.byteLength(line)>traceLimit){entry.trace={type:trace.type,traceId,runId:trace.runId,operationId:trace.operationId,taskKey:trace.taskKey,attempt:trace.attempt,truncated:true,payload:'trace payload exceeded the diagnostic event limit'};line=JSON.stringify(entry)+'\n';}
     if(Buffer.byteLength(line)>traceLimit){this.dropped++;return;}
     this.retain(entry);
     this.enqueue({line,at,eventKey:entry.instanceId+':'+entry.seq,channel:'trace'});
   }
-  async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics):Promise<T> {
-    const start=performance.now();this.record(`${stage}.started`,{operation},'debug');
-    try {const result=await task();let extra:Metrics={};try{extra=metrics?.(result)??{};}catch{}this.record(`${stage}.completed`,{operation,durationMs:performance.now()-start,...extra});return result;}
-    catch(error){if(stage==='agent'&&error instanceof AgentYieldError){this.record('agent.yielded',{operation,durationMs:performance.now()-start},'debug');throw error;}const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category,reason:failure.reason,diagnostic:failure.diagnostic},failure.status>=500?'error':'warn');throw error;}
+  async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics,correlation:ExecutionCorrelation={}):Promise<T> {
+    const start=performance.now();this.record(`${stage}.started`,{operation,...correlation},'debug');
+    try {const result=await task();let extra:Metrics={};try{extra=metrics?.(result)??{};}catch{}this.record(`${stage}.completed`,{operation,durationMs:performance.now()-start,...correlation,...extra});return result;}
+    catch(error){if(stage==='agent'&&error instanceof AgentYieldError){this.record('agent.yielded',{operation,durationMs:performance.now()-start},'debug');throw error;}const failure=safeError(error,{includeUpstreamRequestId:true});this.record(`${stage}.failed`,{operation,...correlation,durationMs:performance.now()-start,category:failure.category,reason:failure.reason,diagnostic:failure.diagnostic},failure.status>=500?'error':'warn');throw error;}
   }
   private startWrite() {
     if(this.pending)return;
@@ -477,7 +488,10 @@ export class ServerDiagnostics {
         if(!record){invalidLines++;continue;}
         const key=record.instanceId+':'+record.seq;if(seen.has(key))continue;seen.add(key);
         if(retained.oldestAt===null||record.at<retained.oldestAt)retained.oldestAt=record.at;
-        if(record.event!=='agent.trace'&&record.at>=after&&record.at<before)records.push(record);
+        if(record.event!=='agent.trace'&&record.at>=after&&record.at<before){
+          if(record.diagnostic)delete record.diagnostic.upstreamRequestId;
+          records.push(record);
+        }
       }
     });
     records.sort((a,b)=>a.at.localeCompare(b.at)||a.seq-b.seq);

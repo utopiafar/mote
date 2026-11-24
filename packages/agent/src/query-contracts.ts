@@ -168,6 +168,7 @@ export interface AgentProgress {
 }
 export interface AgentTraceContext {
   operationId?: string;
+  taskKey?: string;
   traceId?: string;
   requestId?: string;
   jobId?: string;

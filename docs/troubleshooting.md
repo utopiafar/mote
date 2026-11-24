@@ -48,6 +48,8 @@ Central文件名为`central.<level>.<firstMillis>.<lastMillis>.<id>.ndjson`，�
 
 设备日志和级别由各设备维护，不互相修改。普通日志不记录私人正文、凭据或任意异常文本；显式trace可能包含prompt、模型输出和工具内容，仅在私有环境查看。
 
+排查 Ask 时，用日志里的 `operationId` 找到同一次问答，并用 `taskKey` 和 `attempt` 定位执行步骤及尝试。检索分支的 `agent.research_failed` 记录失败阶段。模型诊断在取得相应信息时记录 SDK 结束类型、错误码、上游 HTTP 状态及请求 ID。详细过程里的 `step` 表示同一 Agent 运行中的模型和输出校验轮次。
+
 ## 管理接口与支持包
 
 使用管理身份访问诊断与配置，响应禁止缓存；令牌不放URL。

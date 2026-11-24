@@ -8,7 +8,7 @@ import {StoreError,type EvidenceStore as Store} from './evidence-store.js';
 import {safeError} from './diagnostics.js';
 import {moteText,requestLocale} from './i18n.js';
 import {DelegationRuntime,type DelegationWork} from './delegation-runtime.js';
-import {createAgentDelegationPlugin} from './agent-delegation-plugin.js';
+import {createAgentDelegationPlugin,type ResearchFailureContext} from './agent-delegation-plugin.js';
 import type {QueryRun} from './query-run-types.js';
 import type {SavedQuery} from './plugins/query-preparation.js';
 import type {RunDeadline} from './run-execution.js';
@@ -25,6 +25,7 @@ type QueryCallbacks={
   resolveInput?:(input:unknown)=>unknown;
   prepare:(body:unknown,work:DelegationWork,signal:AbortSignal,onProgress:QueryInput['onProgress'])=>Promise<QueryInput>;
   query:(input:QueryInput)=>Promise<QueryResult>;
+  onResearchFailure?:(context:ResearchFailureContext,error:unknown)=>void;
   commit:(body:unknown,result:QueryResult,work:DelegationWork)=>Receipt;
   failure?:(body:unknown,error:unknown,work:DelegationWork)=>Receipt;
   operationUsage?:(operationId:string,createdAt:string,finishedAt:string)=>import('./usage.js').OperationUsage;
@@ -50,8 +51,11 @@ export class DelegatedQueryRuns {
     installSchemaPlan(store.db,[queryRunSchemaInstallation]);
     store.installContextHistoryInvalidation();
     createAgentDelegationPlugin(runtime,{
+      onResearchFailure:(context,error)=>{
+        if(!capacityWaiting(error)&&!(error instanceof AgentYieldError))callbacks.onResearchFailure?.(context,error);
+      },
       timeoutMs:input=>(input as SavedInput).executionTimeoutMs??null,
-      prepare:async(work,saved,signal)=>{
+      prepareInput:async(work,saved,signal)=>{
         const id=work.id.slice('query:'.length),input=saved as SavedInput;
         try{
           const prepared=await callbacks.prepare(input.hostRequest,work,signal,event=>this.observe(id,event));
@@ -158,7 +162,8 @@ export class DelegatedQueryRuns {
         const timedOut=failure.category==='timeout'||current.error==='timeout';
         // A timed-out fragment cannot publish a conversation turn after its grant
         // has expired; waiting time never establishes a timeout.
-        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error,current),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message,reason:failure.reason,diagnostic:sanitizeFailureDiagnostics({...failure.diagnostic!,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool})}};
+        const diagnostic=sanitizeFailureDiagnostics({...failure.diagnostic,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool});
+        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error,current),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message,reason:failure.reason,diagnostic}};
         this.save(finished);
         if(own)this.store.db.exec('COMMIT');
         Object.assign(run,finished);if(conversation&&error&&typeof error==='object')Object.assign(error,{conversation});

@@ -180,13 +180,15 @@ test('a context limit during output repair preserves the rejected output and tra
 });
 
 test('every pixel-required validation repair, including the third, still requires read_image', async () => {
-  const prompts = [];
-  const f = fixture({input: {validateOutput: () => ({code: 'image_pixels_not_inspected', feedback: 'Generated pixels missing', requiresToolUse: true})},
+  const prompts = [], traces = [];
+  const f = fixture({input: {onTrace: event => traces.push(event), validateOutput: () => ({code: 'image_pixels_not_inspected', feedback: 'Generated pixels missing', requiresToolUse: true})},
     run: async () => outcome(),
     repair: async request => { prompts.push(JSON.parse(request.prompt)); return outcome(); },
   });
   await assert.rejects((await f.create()).execute(), error => error instanceof AgentResponseError && error.reason === 'host_validation' && error.requiresToolUse === true);
   assert.equal(prompts.length, 3, 'the Host keeps its three-correction output budget');
+  assert.deepEqual(traces.filter(event => event.type === 'validation.failed').map(event => [event.step, event.payload.reason]),
+    [1,2,3,4].map(step => [step,'host_validation']));
   for (const prompt of prompts) {
     assert.match(prompt.instruction, /read_image/);
     assert.doesNotMatch(prompt.instruction, /ONLY a JSON object/);

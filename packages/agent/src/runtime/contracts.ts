@@ -1,5 +1,5 @@
 import type {Cancellation, ServiceBinding, ServiceContract, ServiceLease} from '@mote/plugin-api/contracts';
-import type {ProviderFailureDetails, TokenUsage} from '@mote/shared';
+import {sanitizeFailureDiagnostics,type FailureDiagnostics,type ProviderFailureDetails,type TokenUsage} from '@mote/shared';
 import type {AgentProgress, AgentTraceEvent} from '../query-contracts.js';
 
 export const RUNTIME_API_VERSION = '1';
@@ -137,9 +137,9 @@ export type RuntimeTerminal =
   | {readonly kind: 'cancelled'; readonly cause: Cancellation['kind']}
   | {readonly kind: 'yielded'};
 export type RuntimeOutcome =
-  | {readonly terminal: Extract<RuntimeTerminal, {kind: 'completed'}>; readonly candidate: RuntimeCandidate}
-  | {readonly terminal: Extract<RuntimeTerminal, {kind: 'output_limit'}>; readonly candidate?: RuntimeCandidate}
-  | {readonly terminal: Exclude<RuntimeTerminal, {kind: 'completed' | 'output_limit'}>; readonly candidate?: never};
+  | {readonly terminal: Extract<RuntimeTerminal, {kind: 'completed'}>; readonly candidate: RuntimeCandidate; readonly diagnostic?: never}
+  | {readonly terminal: Extract<RuntimeTerminal, {kind: 'output_limit'}>; readonly candidate?: RuntimeCandidate; readonly diagnostic?: FailureDiagnostics}
+  | {readonly terminal: Exclude<RuntimeTerminal, {kind: 'completed' | 'output_limit'}>; readonly candidate?: never; readonly diagnostic?: FailureDiagnostics};
 
 export interface RuntimeHandle {
   run(request: RuntimeRunRequest): Promise<RuntimeOutcome>;
@@ -194,9 +194,16 @@ function providerFailure(input: unknown): ProviderFailureDetails {
 /** Reconstructs plain data and rejects ALL authority/receipt/result fields, including nested extras.
  * Empty/oversized/invalid candidate text is left to Host parsing so existing response reasons survive. */
 export function parseRuntimeOutcome(input: unknown): RuntimeOutcome {
-  const value = data(input, ['terminal', 'candidate']);
+  const value = data(input, ['terminal', 'candidate', 'diagnostic']);
   const terminal = data(value.terminal, ['kind', 'reason', 'providerFailure', 'cause']);
   const kind = terminal.kind;
+  let diagnostic: FailureDiagnostics | undefined;
+  if (Object.hasOwn(value, 'diagnostic')) {
+    if (kind !== 'failed' && kind !== 'output_limit') throw new RuntimeContractError();
+    diagnostic = sanitizeFailureDiagnostics(data(value.diagnostic,
+      ['source', 'stage', 'code', 'errorType', 'modelId', 'lastTool', 'httpStatus', 'upstreamRequestId',
+        'sdkTerminal', 'sdkErrorCode', 'rpcCode', 'exitCode', 'signal']));
+  }
   const allowed = kind === 'failed' ? ['kind', 'reason', 'providerFailure'] : kind === 'cancelled' ? ['kind', 'cause'] : ['kind'];
   if (Object.keys(terminal).some(key => !allowed.includes(key))) throw new RuntimeContractError();
   let parsed: RuntimeTerminal;
@@ -207,12 +214,12 @@ export function parseRuntimeOutcome(input: unknown): RuntimeOutcome {
     parsed = {kind, cause: terminal.cause as Cancellation['kind']};
   } else throw new RuntimeContractError();
   if (kind === 'completed' || kind === 'output_limit') {
-    if (!Object.hasOwn(value, 'candidate') && kind === 'output_limit') return {terminal: {kind}};
+    if (!Object.hasOwn(value, 'candidate') && kind === 'output_limit') return {terminal: {kind}, ...(diagnostic ? {diagnostic} : {})};
     const candidate = data(value.candidate, ['text']);
     if (typeof candidate.text !== 'string') throw new RuntimeContractError();
     if (kind === 'completed') return {terminal: {kind}, candidate: {text: candidate.text}};
-    return {terminal: {kind}, candidate: {text: candidate.text}};
+    return {terminal: {kind}, candidate: {text: candidate.text}, ...(diagnostic ? {diagnostic} : {})};
   }
   if (Object.hasOwn(value, 'candidate')) throw new RuntimeContractError();
-  return {terminal: parsed as Exclude<RuntimeTerminal, {kind: 'completed' | 'output_limit'}>};
+  return {terminal: parsed as Exclude<RuntimeTerminal, {kind: 'completed' | 'output_limit'}>, ...(diagnostic ? {diagnostic} : {})};
 }

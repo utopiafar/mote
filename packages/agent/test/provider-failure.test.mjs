@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createServer} from 'node:http';import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
+import {DeepSeekHarness,JsonRpcResponseError} from '@deepseek-ai/dsh-sdk-client';
 import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport,boundedModelFetch,modelFailureReporter} from '../dist/models/http-transport.js';
 const reader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 test('private transport reporter rejects unauthorized or unstructured reports',async()=>{
@@ -16,10 +17,49 @@ test('transport errno survives the private reporter without retaining the except
  }finally{if(previous===undefined)delete process.env.MOTE_MODEL_OBSERVER;else process.env.MOTE_MODEL_OBSERVER=previous;await observer.close();}
 });
 test('real Harness preserves HTTP recovery facts and does not retry opaque provider failures', {timeout:90000},async()=>{
- let status=401,calls=0;const provider=createServer(async(req,res)=>{for await(const _ of req){}calls++;res.writeHead(status,{'Content-Type':'application/json','Retry-After':'13'}).end(JSON.stringify({error:{message:'generated-private-provider-text'}}));});await new Promise(r=>provider.listen(0,'127.0.0.1',r));
- try{for(const protocol of ['openai-completions','deepseek'])for(const code of [401,429,503]){status=code;const before=calls,agent=createAgent({reader,protocol,model:'fixture',apiKey:'synthetic-key',baseUrl:'http://127.0.0.1:'+provider.address().port,agentTimeoutMs:15000});try{await assert.rejects(agent.query({question:'Generated transport fixture'}),error=>{assert.ok(error instanceof AgentProviderError);assert.equal(error.details.category,code===401?'blocked':'transient');assert.equal(error.details.code,code===401?'provider_authentication':code===429?'rate_limited':'provider_unavailable');if(code!==401)assert.equal(error.details.retryAfterMs,13000);assert.doesNotMatch(String(error),/generated-private-provider-text/);return true;});assert.equal(calls-before,1);}finally{await agent.close();}}
+ let status=401,calls=0;const provider=createServer(async(req,res)=>{for await(const _ of req){}calls++;res.writeHead(status,{'Content-Type':'application/json','Retry-After':'13','X-Request-Id':'oc_sk_generated_secret','Request-Id':'req_generated_http'}).end(JSON.stringify({error:{message:'generated-private-provider-text'}}));});await new Promise(r=>provider.listen(0,'127.0.0.1',r));
+ try{for(const protocol of ['openai-completions','deepseek'])for(const code of [401,429,503]){status=code;const before=calls,agent=createAgent({reader,protocol,model:'fixture',apiKey:'synthetic-key',baseUrl:'http://127.0.0.1:'+provider.address().port,agentTimeoutMs:15000});try{await assert.rejects(agent.query({question:'Generated transport fixture'}),error=>{assert.ok(error instanceof AgentProviderError);assert.equal(error.details.category,code===401?'blocked':'transient');assert.equal(error.details.code,code===401?'provider_authentication':code===429?'rate_limited':'provider_unavailable');if(code!==401)assert.equal(error.details.retryAfterMs,13000);assert.equal(error.diagnostic.httpStatus,code);assert.equal(error.diagnostic.upstreamRequestId,'req_generated_http');assert.doesNotMatch(JSON.stringify(error.diagnostic),/generated_secret|generated-private-provider-text/);return true;});assert.equal(calls-before,1);}finally{await agent.close();}}
  const workspace=await mkdtemp(join(tmpdir(),'mote-import-transport-'));status=429;const before=calls,agent=createImportAgent({protocol:'openai-completions',model:'fixture',apiKey:'synthetic-key',baseUrl:'http://127.0.0.1:'+provider.address().port});try{await assert.rejects(agent.prepare({workspace,inputPaths:[],helperPath:join(workspace,'helper.py'),instruction:'Generated transport check',manifestSchema:{}}),error=>error instanceof AgentProviderError&&error.details.code==='rate_limited'&&error.details.retryAfterMs===13000);assert.equal(calls-before,1);}finally{await agent.close();await rm(workspace,{recursive:true,force:true});}
  }finally{provider.closeAllConnections();await new Promise(r=>provider.close(r));}
+});
+
+test('DSH terminal failure retains safe SDK and upstream facts in the model attempt trace', async t => {
+  let rpcFailure=false;
+  t.mock.method(DeepSeekHarness.prototype,'run',async()=>{
+    if(rpcFailure)throw new JsonRpcResponseError(-32603,'generated private SDK message',{credential:'generated private RPC data'});
+    return {finalResponse:'',events:[{
+      type:'turn/end',data:{reason:{kind:'error',error:{
+        code:'EMPTY_RESPONSE',status:200,requestId:'req_generated_sdk',message:'generated private SDK message',
+      }}},
+    }]};
+  });
+  const events=[];
+  const agent=createAgent({reader,protocol:'openai-completions',model:'fixture',apiKey:'generated',
+    baseUrl:'http://127.0.0.1:1/v1',agentTimeoutMs:15000});
+  const diagnostic={source:'runtime',stage:'model',sdkTerminal:'error',sdkErrorCode:'EMPTY_RESPONSE',
+    httpStatus:200,upstreamRequestId:'req_generated_sdk'};
+  try {
+    await assert.rejects(agent.query({question:'Generated SDK terminal check',onTrace:event=>events.push(event)}),error=>{
+      assert.ok(error instanceof AgentProviderError);
+      assert.equal(error.details.code,'provider_failed');
+      assert.deepEqual(error.diagnostic,diagnostic);
+      return true;
+    });
+    const failed=events.find(event=>event.type==='model.failed');
+    assert.ok(failed?.runId);
+    assert.equal(failed.step,1);
+    assert.deepEqual(failed.payload.diagnostic,diagnostic);
+    rpcFailure=true;
+    await assert.rejects(agent.query({question:'Generated SDK protocol check',onTrace:event=>events.push(event)}),error=>{
+      assert.ok(error instanceof AgentProviderError);
+      assert.equal(error.diagnostic.errorType,'JsonRpcResponseError');
+      assert.equal(error.diagnostic.rpcCode,-32603);
+      assert.equal(error.diagnostic.stage,'model');
+      assert.equal(error.diagnostic.sdkTerminal,undefined);
+      return true;
+    });
+    assert.doesNotMatch(JSON.stringify(events),/generated private SDK message|generated private RPC data/);
+  }finally{await agent.close();}
 });
 
 test('host admission failures cross query and import adapters without becoming generic SDK errors',async()=>{
@@ -32,7 +72,7 @@ test('provider context overflow recovers once with marked history reduction and 
  let mode='recover';const requests=[];
  const provider=createServer(async(req,res)=>{
   let raw='';for await(const chunk of req)raw+=chunk;requests.push(JSON.parse(raw));
-  if(mode==='always'||requests.length%2===1){res.writeHead(400,{'Content-Type':'application/json'}).end(JSON.stringify({error:{code:'context_length_exceeded',message:'generated private details'}}));return;}
+  if(mode==='always'||requests.length%2===1){res.writeHead(400,{'Content-Type':'application/json','X-Request-Id':'req_generated_context'}).end(JSON.stringify({error:{code:'context_length_exceeded',message:'generated private details'}}));return;}
   res.writeHead(200,{'Content-Type':'text/event-stream'});
   const response=JSON.stringify({answer:'Generated recovery answer',citationIds:[]});
   res.write('data: '+JSON.stringify({id:'generated',choices:[{index:0,delta:{role:'assistant',content:response},finish_reason:null}]})+'\n\n');
@@ -51,13 +91,13 @@ test('provider context overflow recovers once with marked history reduction and 
    assert.equal(prompt(requests[1]).request,'Generated current question');
   }finally{await agent.close();}
   mode='always';requests.length=0;agent=createAgent(options);
-  try{await assert.rejects(agent.query({question:'Generated failure question',conversation:history}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit');assert.equal(requests.length,2);}
+  try{await assert.rejects(agent.query({question:'Generated failure question',conversation:history}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit'&&error.diagnostic.httpStatus===400&&error.diagnostic.upstreamRequestId==='req_generated_context');assert.equal(requests.length,2);}
   finally{await agent.close();}
   requests.length=0;agent=createAgent(options);
   try{await assert.rejects(agent.query({question:'Generated irreducible input'}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit');assert.equal(requests.length,1);}
   finally{await agent.close();}
   requests.length=0;agent=createAgent({...options,contextWindow:20000});
-  try{await assert.rejects(agent.query({question:'Oversized generated input '+('x'.repeat(20000))}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit'&&/context limit/i.test(error.message));assert.equal(requests.length,0,'irreducible input is rejected before provider I/O');}
+  try{await assert.rejects(agent.query({question:'Oversized generated input '+('x'.repeat(20000))}),error=>error instanceof AgentProviderError&&error.details.code==='processing_limit'&&error.diagnostic.code==='input_too_large'&&error.diagnostic.httpStatus===undefined&&/context limit/i.test(error.message));assert.equal(requests.length,0,'irreducible input is rejected before provider I/O');}
   finally{await agent.close();}
   mode='recover';requests.length=0;let admissions=0;const {ProviderFailure}=await import('@mote/shared');
   agent=createAgent({...options,authorizeModelRequest:()=>{if(++admissions===2)throw new ProviderFailure({category:'blocked',code:'context_evidence_restricted'});}});
