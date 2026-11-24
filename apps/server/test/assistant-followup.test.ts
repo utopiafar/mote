@@ -7,6 +7,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {assembleHostContext,estimateSerializedTokens,originalEvidenceReceipt,type QueryInput} from '@mote/agent';
 import type {AttributionContext,QueryResult,QueryScope} from '@mote/shared';
+import {ProviderFailure} from '@mote/shared';
+import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {TaskRecords} from '../src/task-records.js';
@@ -652,11 +654,17 @@ test('a very long Assistant file pages every exact original grant when its inlin
  assert.deepEqual(selected.evidenceReadRanges,prepared.evidenceReadRanges);
 });
 
-test('the assembled batch passes the configured product budget to its query consumer',async t=>{
+test('OpenCode Go follow-up fits original quotes to the conversation budget and retains the full read grants',async t=>{
  const dataDir=mkdtempSync(join(tmpdir(),'mote-followup-budget-'));let calls=0;
- const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-followup-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',maxTokens:512,baseUrl:'https://generated.invalid',apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+ let grantedIds:string[]=[];
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-followup-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-model',maxTokens:512,provider:OPENCODE_GO_PROVIDER.id,baseUrl:OPENCODE_GO_PROVIDER.baseUrl,apiKey:'generated-key',allowUnauthenticatedLocal:false,protocol:OPENCODE_GO_PROVIDER.protocol,reasoningEffort:'max'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query:async(input:QueryInput)=>{
   calls++;assert.deepEqual(input.modelBudget,{contextWindow:32000,maxTokens:512,historyRatio:0.5,lowWatermarkRatio:0.5,tokenCounting:'estimated',contextWindowSource:'configured'});
+  assert.ok(input.evidenceRanges?.length);
+  assert.ok(input.evidenceReadRanges?.length);
+  assert.deepEqual(input.evidenceIds,[...new Set(input.evidenceRanges.map(range=>range.id))]);
+  for(const range of input.evidenceRanges)assert.ok(input.evidenceReadRanges.some(grant=>grant.id===range.id&&grant.offset<=range.offset&&grant.offset+grant.length>=range.offset+range.length));
+  grantedIds=input.evidenceReadRanges.map(grant=>grant.id);
   return {answer:JSON.stringify(answer()),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:input.contextEvidenceDependencies};
  },close:async()=>{}}});
  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
@@ -668,10 +676,33 @@ test('the assembled batch passes the configured product budget to its query cons
  const material=node.materials.list({kind:'mote.note',limit:100}).items.find(item=>item.origin.externalId===id)!;assert.ok(material);
  const profile=node.modelSettings.select('chat'),task=await node.featureServices.assistantFollowup.start({operationId:'generated-production-budget',requestId:randomUUID(),scope:all,materialRefs:[material.ref],mode:{kind:'change'}},
   {identities:[],connections:[agentModelConnection({kind:'profile',id:profile.id},profile.settings)]});
- const tasks=new TaskRecords(node.store),snapshot=tasks.input<{batchId:string}>(task.id,task.revision,()=>{});
+ const tasks=new TaskRecords(node.store),snapshot=tasks.input<{batchId:string;evidenceIds:string[]}>(task.id,task.revision,()=>{});
  await until(()=>node.batchProcessing.progress(snapshot.batchId).items.some(item=>['succeeded','failed','blocked'].includes(item.state)));
  assert.equal(node.batchProcessing.progress(snapshot.batchId).items[0].state,'succeeded');assert.equal(calls,1);
+ assert.deepEqual(new Set(grantedIds),new Set(snapshot.evidenceIds));
  assert.deepEqual((await node.featureServices.assistantFollowup.finish(task.id)).cardIds,[]);
+});
+
+test('owner retries the same follow-up batch with a large frozen selection',async t=>{
+ const f=await fixture(t),note=await f.add('Generated original to retry.');
+ const scope={kind:'selection' as const,evidenceIds:[note.id,...f.node.materials.evidenceIds(note.material.ref),...Array.from({length:900},()=>randomUUID())]};
+ f.programs.push(()=>{throw new ProviderFailure({category:'permanent',code:'processing_limit',executionStarted:false});},()=>answer());
+ const task=await f.start([note.material.ref],{kind:'change'},scope),batch=f.service.progress(task.id).batch!.task.id;
+ await until(()=>f.batch.progress(batch).items[0]?.state==='failed');
+ const url=`/api/assistant/followups/${task.id}`,view=await f.node.app.inject({method:'GET',url:url+'?'+new URLSearchParams({scope:JSON.stringify(all)}),headers});
+ assert.equal(view.statusCode,200,view.body);assert.deepEqual(view.json().allowedActions,['retry']);
+ assert.deepEqual(view.json().scope,scope);
+ const payload={expectedRevision:view.json().task.revision,scope};
+ assert.ok(Buffer.byteLength(JSON.stringify(payload))>32768);
+ const unauthorized=await f.node.app.inject({method:'POST',url:url+'/retry',payload});assert.equal(unauthorized.statusCode,401);
+ const other=await f.node.app.inject({method:'POST',url:url+'/retry',headers,payload:{...payload,scope:{...scope,evidenceIds:[...scope.evidenceIds,randomUUID()]}}});
+ assert.equal(other.statusCode,409,other.body);
+ const retry=await f.node.app.inject({method:'POST',url:url+'/retry',headers,payload});
+ assert.equal(retry.statusCode,202,retry.body);assert.equal(retry.json().batch.task.id,batch);
+ await until(()=>f.batch.progress(batch).items[0]?.state==='succeeded');
+ assert.equal(f.seen.length,2);
+ assert.deepEqual(f.grants[0],f.grants[1]);
+ assert.deepEqual((await f.service.finish(task.id)).cardIds,[]);
 });
 
 

@@ -42,7 +42,7 @@ import {createC10Integration,createC10IntegrationFactory} from './plugins/c10-in
 import type {ProcessingConfiguration} from './processing-configuration.js';
 import {modelConnection,type ModelConnection} from './background-model-authorization.js';
 import {agentModelConnection,captureModelIdentity} from './model-authorization-host.js';
-import {MODEL_FEATURES,DEFAULT_MODEL_MAX_TOKENS,modelProvider} from '@mote/shared/models';
+import {MODEL_FEATURES,DEFAULT_MODEL_MAX_TOKENS,OPENCODE_GO_PROVIDER,modelProvider} from '@mote/shared/models';
 import type {ObservationName} from './execution-observability.js';
 import {assertMemoryImageGrants} from './memory-image-grants.js';
 import {CODING_DIALOGUE_SCHEMA_VERSION,formatEvidenceRef} from '@mote/shared';
@@ -631,10 +631,13 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const assistantWorkbench=new AssistantWorkbench(store,evidenceReader,assistantMatters,assistantCommitments,memoryPublicationService.owner);
   assistantFollowup=new AssistantFollowup(store,materials,evidenceReader,assistantCards,assistantCommitments,assistantMatters,batchProcessing,ids=>{
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant evidence is no longer permitted',409);
-  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port,()=>{
-    const settings=modelSettings.select('chat').settings;if(settings.protocol!=='codex-app-server')return;
-    const budget=queryModelBudget(settings.maxTokens,configService.current(conversationsConfigDomain).context);
-    const capacity=codexContextCapacity(settings.model,budget.contextWindowSource==='configured'?budget.contextWindow:undefined);
+  },undefined,modelAuthorization,automaticEvidenceAllowed,diagnostics,ownerQuestionServices.port,input=>{
+    const settings=modelSettings.select('chat',input?.modelProfileId).settings;
+    if(settings.protocol!=='codex-app-server'&&settings.provider!==OPENCODE_GO_PROVIDER.id)return;
+    const budget=input?.modelBudget??queryModelBudget(settings.maxTokens,configService.current(conversationsConfigDomain).context);
+    const capacity=settings.protocol==='codex-app-server'
+      ?codexContextCapacity(input?.modelOverride??settings.model,budget.contextWindowSource==='configured'?budget.contextWindow:undefined)
+      :{contextWindow:budget.contextWindow,maxOutputTokens:budget.maxTokens};
     return capacity?{...capacity,draftTokens:settings.maxTokens,language:requestLocale.getStore()??'zh-CN'}:undefined;
   });
   const followup=assistantFollowup;
