@@ -8,6 +8,7 @@ import {AgentResponseError,assembleHostContext,estimateSerializedTokens,resolveM
 import {ProviderFailure} from '@mote/shared';
 import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
+import {resolveHostOutput} from '../../../packages/agent/dist/host/run-session.js';
 import {boundedModelFetch} from '../../../packages/agent/dist/models/http-transport.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
@@ -144,6 +145,7 @@ test('owner retry repartitions a saved overflow using current budgets without ce
 for(const {phase,limit} of [
  {phase:'extract',limit:'context'},
  {phase:'extract',limit:'output'},
+ {phase:'extract',limit:'output-repair-context'},
  {phase:'review',limit:'context'},
  {phase:'review',limit:'output'},
 ] as const)test(`owner retry of an ${phase} ${limit} capacity failure preserves the frozen ranges`,async t=>{
@@ -158,6 +160,22 @@ for(const {phase,limit} of [
   const hitCapacity=stage===phase&&(phase==='extract'?ranges.length>8:calls.filter(call=>call.phase==='review').length===1);
   if(hitCapacity){
    if(limit==='output')throw new AgentResponseError('Generated output limit','output_limit');
+   if(limit==='output-repair-context')return resolveHostOutput({
+    input,
+    runId:randomUUID(),
+    maxTokens:capacity.maxOutputTokens,
+    run:async()=>({terminal:{kind:'output_limit'}}),
+    repair:async(_prompt,rejected)=>{
+     assert.equal(rejected.reason,'output_limit');
+     return {
+      terminal:{kind:'failed',reason:'processing_limit',providerFailure:{category:'permanent',code:'processing_limit'}},
+      diagnostic:{source:'runtime',stage:'model',code:'input_too_large'},
+     };
+    },
+    assertCurrent:()=>input.signal?.throwIfAborted(),
+    toolsReady:()=>true,
+    evaluate:async()=>assert.fail('A stopped model response must never reach validation'),
+   });
    throw new ProviderFailure({category:'permanent',code:'processing_limit'});
   }
   const {members}=input.taskContext!.memoryWork as {members:MemoryWorkMember[]};
@@ -175,7 +193,7 @@ for(const {phase,limit} of [
  assert.equal(job.totalBatches,1);
  const failed=await pipeline.run(job.id);
  assert.equal(failed.status,'failed');
- assert.equal(failed.batches[0].errorCode,limit==='output'?'model_output_capacity':'processing_limit');
+ assert.equal(failed.batches[0].errorCode,limit==='context'?'processing_limit':'model_output_capacity');
  assert.equal(failed.batches[0].phase,phase);
  assert.equal(failed.batches.length,1);
  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
@@ -183,7 +201,7 @@ for(const {phase,limit} of [
  await pipeline.run(job.id);
  assert.equal(calls.length,firstCalls,'ordinary re-entry cannot reopen the failed transport step');
  const done=await pipeline.retry(job.id);
- if(phase==='extract'&&limit==='output'){
+ if(phase==='extract'&&limit!=='context'){
   assert.equal(done.status,'failed');
   assert.equal(done.batches[0].errorCode,'model_output_capacity');
   assert.equal(done.batches.length,1);
