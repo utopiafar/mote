@@ -38,6 +38,7 @@ export class MemoryPhaseOutputs {
   installSchemaPlan(store.db,[memoryPhaseOutputsSchemaInstallation]);
  }
  id(batchId:string,phase:'extract'|'review',inputHash:string){return 'memory-phase:'+sha256([batchId,phase,inputHash].join(':'));}
+ hasExtraction(batchId:string){return Boolean(this.store.db.prepare("SELECT 1 FROM memory_phase_outputs WHERE batch_id=? AND phase='extract' LIMIT 1").get(batchId));}
  read<T>(stepId:string,inputHash:string):T|undefined{
   const row=this.store.db.prepare('SELECT input_hash,output_hash,json FROM memory_phase_outputs WHERE step_id=?').get(stepId);if(!row)return;
   try{if(row.input_hash!==inputHash)throw Error();const payload=decodeMemoryPrivate<T>(this.store,JSON.parse(String(row.json)).private);if(sha256(JSON.stringify(payload))!==row.output_hash)throw Error();return payload;}

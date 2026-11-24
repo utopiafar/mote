@@ -18,6 +18,7 @@ const parameters = {
   reasoningEffort: z.enum(MODEL_REASONING_EFFORTS),
   serviceTier: z.enum(CODEX_SERVICE_TIERS).optional(),
   maxTokens: z.number().int().min(1).max(128_000),
+  contextWindow: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   modelRequestTimeoutMs: z.number().int().min(5000).max(MAX_MODEL_REQUEST_TIMEOUT_MS).nullable(),
   agentTimeoutMs: z.number().int().min(5000).max(MAX_AGENT_TIMEOUT_MS).nullable(),
   allowUnauthenticatedLocal: z.boolean(),
@@ -48,7 +49,7 @@ export const modelSettingsSchema=z.preprocess((value,ctx)=>{
 },modelSettingsObjectSchema);
 const settingsSchema=modelSettingsSchema;
 const inputSchema = z.object({
-  ...parameters, apiKey: apiKey.nullable().optional(),
+  ...parameters, contextWindow: parameters.contextWindow.nullable(), apiKey: apiKey.nullable().optional(),
   headers: headers.nullable().optional(), extraBody: extraBody.nullable().optional(),
 }).strict().superRefine(validateTimeouts);
 const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -234,7 +235,7 @@ export class ModelSettingsStore {
       const normalized = body;
       update = updateSchema.parse(normalized);
       const original = (normalized as {settings: ModelSettingsInput}).settings;
-      validateModelOptions({ ...update.settings, headers: original.headers ?? undefined, extraBody: original.extraBody ?? undefined });
+      validateModelOptions({ ...update.settings, contextWindow: update.settings.contextWindow ?? undefined, headers: original.headers ?? undefined, extraBody: original.extraBody ?? undefined });
       if (update.settings.protocol !== 'codex-app-server' && !update.settings.baseUrl.trim() && update.settings.model.trim()) throw new Error('Configured models need an endpoint');
     } catch { throw new ModelSettingsError('model_settings_invalid'); }
     this.expectedRevision(update.revision);
@@ -248,6 +249,7 @@ export class ModelSettingsStore {
     if (changed && retained && update.allowCredentialReuse !== true) throw new ModelSettingsError('model_settings_credential_reuse');
     return validSettings({
       ...input,
+      contextWindow: input.contextWindow === undefined && !changed && input.model === current.model ? current.contextWindow : input.contextWindow ?? undefined,
       apiKey: input.apiKey === undefined ? current.apiKey : input.apiKey ?? '',
       headers: input.headers === undefined ? current.headers : input.headers ?? {},
       extraBody: input.extraBody === undefined ? current.extraBody : input.extraBody ?? {},

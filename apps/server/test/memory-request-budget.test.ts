@@ -146,7 +146,7 @@ for(const {phase,limit} of [
  {phase:'extract',limit:'output'},
  {phase:'review',limit:'context'},
  {phase:'review',limit:'output'},
-] as const)test(`owner retry of a live ${phase==='extract'?'extraction':'review'} ${limit} capacity failure preserves the frozen ranges${phase==='review'?' and saved extraction':' in smaller requests'}`,async t=>{
+] as const)test(`owner retry of an ${phase} ${limit} capacity failure preserves the frozen ranges`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-live-capacity-'));
  const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
  const capacity:MemoryRequestCapacity={contextWindow:98304,maxOutputTokens:16384,draftTokens:16384};
@@ -183,6 +183,14 @@ for(const {phase,limit} of [
  await pipeline.run(job.id);
  assert.equal(calls.length,firstCalls,'ordinary re-entry cannot reopen the failed transport step');
  const done=await pipeline.retry(job.id);
+ if(phase==='extract'&&limit==='output'){
+  assert.equal(done.status,'failed');
+  assert.equal(done.batches[0].errorCode,'model_output_capacity');
+  assert.equal(done.batches.length,1);
+  assert.deepEqual(calls.map(call=>call.ranges),[job.batches[0].evidenceRanges,job.batches[0].evidenceRanges]);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  return;
+ }
  assert.equal(done.status,'completed');
  if(phase==='extract'){
   const parent=done.batches.find(batch=>batch.id===job.batches[0].id)!;
@@ -201,6 +209,50 @@ for(const {phase,limit} of [
   assert.equal(done.batches.length,1);
   assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
  }
+ assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
+});
+
+test('an owner-selected long-output profile resumes the original paused batch under the new allowance',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-profile-retry-'));
+ const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ const old='generated-default',selected='generated-long-output';
+ const capacity=(id?:string)=>id===selected
+  ?{contextWindow:1000000,maxOutputTokens:128000,draftTokens:128000}
+  :{contextWindow:98304,maxOutputTokens:16384,draftTokens:16384};
+ const calls:{profile?:string;phase?:string;ranges:QueryInput['evidenceRanges']}[]=[];
+ const query=async(input:MemoryPipelineQuery)=>{
+  const {modelProfileId,traceContext,evidenceRanges}=input;
+  assertMemoryRequestFits(input,memories.readEvidence(input.evidenceIds),capacity(modelProfileId));
+  calls.push({profile:modelProfileId,phase:traceContext?.phase,ranges:evidenceRanges});
+  if(modelProfileId!==selected)throw new ProviderFailure({category:'permanent',code:'processing_limit'});
+  const {members}=input.taskContext!.memoryWork as {members:MemoryWorkMember[]};
+  return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()};
+ };
+ const models={configured:()=>true,model:()=> 'generated-model',capacity,configuration:(id=old)=>({owner:'models' as const,fingerprint:id,revision:1,profileId:id,provider:'generated',model:'generated-model'})};
+ const pipeline=new MemoryPipeline({store,memories,models,phases:{query,review:(input,draft,strategy)=>reviewMemory(input,draft,query,{strategy})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'generated-rebind',name:'Generated rebind',kind:'custom',deviceId:'generated',platform:'import'});
+ const evidenceIds=[];
+ for(let index=0;index<16;index++){
+  const original=await sources.upsert('generated-rebind',{externalId:String(index),revision:'1',text:'Generated original '+index,observedAt:at,kind:'file',layer:'original'});
+  evidenceIds.push(original.id);
+ }
+ const job=pipeline.create({evidenceIds});
+ assert.equal(job.batches.length,1);
+ const first=await pipeline.run(job.id);
+ assert.equal(first.status,'failed');
+ const queued=pipeline.acceptRetry(job.id,true);
+ assert.equal(pipeline.pause(job.id).status,'paused');
+ await queued.completion;
+ assert.equal(store.db.prepare("SELECT json_extract(json,'$.splitForCapacityRetry') split FROM memory_batches WHERE id=?").get(job.batches[0].id)?.split,1);
+ const done=await pipeline.acceptRetry(job.id,true,selected).completion;
+ assert.equal(done.status,'completed');
+ assert.equal(done.modelProfileId,selected);
+ assert.equal(done.batches.length,1);
+ assert.equal(done.batches[0].id,job.batches[0].id);
+ assert.deepEqual(done.batches[0].evidenceRanges,job.batches[0].evidenceRanges);
+ assert.deepEqual(calls.map(call=>call.profile),[old,selected,selected]);
+ assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
 });
 

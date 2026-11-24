@@ -190,6 +190,11 @@ export class ExecutionEngine {
   if(this.get(id)?.state==='running')throw new StoreError('Cancel the active step before retrying',409);
   this.active.get(id)?.controller.abort();this.store.db.prepare("UPDATE execution_steps SET state='waiting',attempts=CASE WHEN ? THEN 0 ELSE attempts END,available_at=0,lease_until=0,fence=NULL,error=NULL,recovery_deadline=CASE WHEN ? THEN 0 ELSE recovery_deadline END,updated_at=? WHERE id=? AND state!='running'").run(Number(resetAttempts),Number(resetAttempts),this.now(),id);this.project(id);
  }
+ /** An explicit owner-selected retry can take the next available turn. The
+  * ordinary claim restores its position in the same durable fairness order. */
+ preferOperationOnce(pool:string,operationId:string){
+  this.store.db.prepare('INSERT INTO execution_fairness(pool,operation_id,last_started) VALUES(?,?,-1) ON CONFLICT(pool,operation_id) DO UPDATE SET last_started=excluded.last_started').run(pool,operationId);
+ }
  /** Restore an issued attempt refunded by shutdown, without granting execution.
   * The domain settles its exact authenticated receipt in this same transaction. */
  recoverAttemptCount(id:string,expectedInput:Record<string,unknown>,issuedAttempt:number){

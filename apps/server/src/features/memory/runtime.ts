@@ -132,12 +132,15 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
     child.post('/api/memory-jobs/:id/retry',async(req,reply)=>{
       const pipeline=dependencies.pipeline(),id=jobId(req.params),operationId='memory:'+id,control=dependencies.modelAuthorizationHost.control;
       const {target}=z.object({target:z.literal('topics').optional()}).parse(req.query);
+      const {modelProfileId}=z.object({modelProfileId:modelProfileIdSchema.optional()}).parse(req.body??{});
       const job=pipeline.get(id);
       if(target==='topics'||job.status==='completed'){
+        if(modelProfileId!==undefined)throw new StoreError('A model profile can only be selected for unfinished Memory extraction',409);
         if(['paused','pausing','cancelled'].includes(job.status))throw new StoreError('Memory job is paused or cancelled',409);
         dependencies.retryTopics(operationId);
         return reply.code(202).send(job);
       }
+      if(modelProfileId!==undefined)dependencies.modelSettings.select('memory',modelProfileId);
       // This owner action covers only the selected job. Existing steps retain
       // their original authority; previously denied steps have none to resume.
       const accepted=control.manualCommand('owner-memory-retry:'+randomUUID(),[operationId],dependencies.availableModelConnections(),()=>{
@@ -145,7 +148,7 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
           const step=pipeline.engine.get(String(row.id));
           if(step&&!control.stepAuthority(step.id))control.bindCurrentStep(step);
         }
-        return pipeline.acceptRetry(id,true);
+        return pipeline.acceptRetry(id,true,modelProfileId);
       });
       void accepted.completion.catch(()=>{});return reply.code(202).send(accepted.job);
     });

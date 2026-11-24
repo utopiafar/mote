@@ -113,6 +113,29 @@ test('draft probe uses only generated records and neither persists nor exposes p
   assert.equal(bad.statusCode, 400); assert.equal(bad.body.includes('synthetic-secret-never-echo'), false);
 });
 
+test('an owner can persist a long-output profile with a separate context window',async t=>{
+  const prepared=new Map<string,number|undefined>();
+  const {app}=await fixture(t,async settings=>{
+    prepared.set(settings.model,settings.contextWindow);
+    return {configured:true,query:async()=>answer(settings.model),close:async()=>{}};
+  });
+  const get=async()=> (await app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>();
+  const save=(view:ModelSettingsView,settings:ModelSettingsInput)=>app.inject({method:'PUT',url:'/api/model-settings/profiles/generated-long',headers,payload:{revision:view.revision,name:'Generated long profile',settings}});
+  const before=await get(),settings={...input(before),model:'generated-long',maxTokens:128000,apiKey:'synthetic-long-key'};
+  const invalid=await save(before,{...settings,contextWindow:128000});
+  assert.equal(invalid.statusCode,400);
+  const saved=await save(before,{...settings,contextWindow:1000000});
+  assert.equal(saved.statusCode,200,saved.body);
+  const view=saved.json<ModelSettingsView>();
+  assert.deepEqual(view.defaults,before.defaults);
+  assert.equal(view.profiles.find(profile=>profile.id==='generated-long')?.settings.contextWindow,1000000);
+  assert.equal(prepared.get('generated-long'),1000000);
+  const {apiKey:_,...retained}=settings;
+  const edited=await save(view,{...retained,agentTimeoutMs:600000});
+  assert.equal(edited.statusCode,200,edited.body);
+  assert.equal((await get()).profiles.find(profile=>profile.id==='generated-long')?.settings.contextWindow,1000000);
+});
+
 test('connection probe redacts thrown provider text and requires an actual evidence tool result', async () => {
   const settings = { provider: 'custom', protocol: 'openai-completions' as const, baseUrl: 'https://example.invalid/v1', model: 'synthetic', reasoningEffort: 'auto' as const, maxTokens: 8192, modelRequestTimeoutMs: 120000, agentTimeoutMs: 120000, allowUnauthenticatedLocal: false, apiKey: 'synthetic', headers: {}, extraBody: {} };
   let closed = 0;
