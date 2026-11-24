@@ -473,7 +473,7 @@ struct ConversationView: View {
                 model.clearScope()
             } label: {
                 MoteIcon(.close, size: 16)
-                    .frame(width: 26, height: 26)
+                    .frame(width: MoteMetrics.touchTarget, height: MoteMetrics.touchTarget)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

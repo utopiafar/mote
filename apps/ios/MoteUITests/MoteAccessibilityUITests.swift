@@ -95,6 +95,7 @@ final class MoteAccessibilityUITests: XCTestCase {
             ("share-answer", ["-MoteSharePreview", "-MoteShareState", "answer"]),
             ("chat-main", ["-MoteConversationPreview", "-MoteConversationState", "flow"]),
             ("ask", ["-MoteConversationPreview", "-MoteConversationState", "answered"]),
+            ("ask-anchored", ["-MoteConversationPreview", "-MoteConversationState", "anchored"]),
             ("ask-streaming", ["-MoteConversationPreview", "-MoteConversationState", "streaming"]),
             ("reader", ["-MoteReaderPreview", "-MoteReaderState", "reader"]),
             ("reader-panel", ["-MoteReaderPreview", "-MoteReaderState", "panel-more"]),
