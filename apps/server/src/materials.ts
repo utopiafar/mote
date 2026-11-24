@@ -105,6 +105,18 @@ const currentEvidenceSelection=`SELECT e.id,h.source_id,h.sequence,h.min_visible
       AND (b.until_sequence IS NULL OR b.until_sequence>h.sequence)) coding_active
     FROM material_evidence e JOIN material_heads h ON h.id=e.material_id`;
 const currentEvidenceAllowed=(row:CurrentEvidenceRow|undefined)=>Boolean(row&&!row.retired&&!row.invalidated&&row.sequence>=row.min_visible_sequence&&(row.snapshot_active||row.coding_active));
+
+/** Load immutable original coordinates by the requested anchor IDs. */
+export function prepareMaterialEvidenceUriLookup(db:Store['db']){
+  // A head-first join can scan all retained evidence for a single requested ID.
+  const anchors=db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM json_each(?) wanted
+    CROSS JOIN material_evidence e ON e.id=wanted.value
+    CROSS JOIN material_heads h ON h.id=e.material_id WHERE h.retired=0`);
+  return (ids:readonly string[]):ReadonlyMap<string,string>=>{
+    const rows=anchors.all(JSON.stringify([...new Set(ids)])) as {id:string;material_id:string;revision:string;block_id:string}[];
+    return new Map(rows.map(anchor=>[anchor.id,`material:${anchor.material_id}@${anchor.revision}#${anchor.block_id}`]));
+  };
+}
 type BlockRow={block_id:string;anchor_id?:string|null;kind:'text'|'asset';format:string|null;payload:string;asset_hash:string|null;mime_type:string|null;member_ids:string;locator:string|null;start_offset:number;end_offset:number};
 const canonicalContext=(value:unknown):unknown=>Array.isArray(value)?value.map(canonicalContext):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonicalContext(item)])):value;
 /** Catalogs and range descriptors carry authority identities, never declaration prose. */

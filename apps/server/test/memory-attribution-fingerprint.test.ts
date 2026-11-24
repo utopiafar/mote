@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {EvidenceStore as Store,sha256} from '../src/evidence-store.js';
 import {SourceStore} from '../src/sources.js';
-import {MaterialStore} from '../src/materials.js';
+import {MaterialStore,materialId} from '../src/materials.js';
 import {FileStore} from '../src/files.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {Conversations} from '../src/conversations.js';
@@ -74,4 +74,37 @@ test('description-only source changes fence raw and ASR Memory extraction and cl
   }
   assert.deepEqual(store.db.prepare('SELECT * FROM file_chunks').all(),chunks);assert.equal(files.isCurrentEvidence(chunkId),true);
   assert.equal(store.db.prepare("SELECT count(*) n FROM sqlite_master WHERE name='memory_input_authorizations'").get()!.n,0);
+});
+
+
+test('Memory checks current Material originals with indexed lookups of requested anchors',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-memory-anchor-lookup-')),store=new Store(dir),sources=new SourceStore(store),materials=new MaterialStore(store);
+  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+  const sourceId='generated-anchor-source',externalId='generated-material';
+  sources.register({id:sourceId,name:'Generated source',kind:'custom',deviceId:'generated',platform:'import'});
+  const {id}=await sources.upsert(sourceId,{externalId,revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated original.'});
+  const material=materials.publish({
+    id:materialId(sourceId,externalId),kind:'mote.message',schemaVersion:1,title:'Generated Material',
+    origin:{sourceId,externalId},members:[{id,kind:'capture',ref:'capture:'+id}],
+    blocks:[{id:'body',kind:'text',format:'plain',text:'Generated original.',memberIds:[id]}],
+    coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'},
+  });
+  const [anchor]=materials.evidenceIds(material.ref),missing=randomUUID();
+  assert.ok(anchor);
+  const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials);
+  const prepare=store.db.prepare.bind(store.db);
+  let lookup:string|undefined;
+  t.mock.method(store.db,'prepare',(sql:string)=>{
+    if(sql.includes('SELECT e.id,e.material_id,e.revision,e.block_id'))lookup=sql;
+    return prepare(sql);
+  });
+  assert.equal(reader.memories.isCurrentEvidence(anchor),true);
+  assert.deepEqual(reader.memories.readCurrentEvidence([anchor,anchor,missing]).map(record=>record.id),[anchor]);
+  assert.ok(lookup,'current Material proof looked up immutable coordinates');
+  const plan=prepare('EXPLAIN QUERY PLAN '+lookup).all(JSON.stringify([anchor,missing])).map(row=>String(row.detail));
+  assert.match(plan[0],/^SCAN wanted /);
+  assert.ok(plan.some(row=>/^SEARCH e USING INDEX .*\(id=\?\)/.test(row)),'the lookup searches the anchor ID index');
+  materials.retire(material.id,{expectedRevision:material.revision});
+  assert.equal(reader.memories.isCurrentEvidence(anchor),false);
+  assert.deepEqual(reader.memories.readCurrentEvidence([anchor,missing]),[]);
 });
