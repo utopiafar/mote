@@ -30,7 +30,7 @@ function createDshImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?
     let harness:DeepSeekHarness|undefined,primaryFailure=false;
     const budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);
     try{
-      transportObserver=await observeModelTransport(options.authorizeModelRequest);
+      transportObserver=await observeModelTransport(options.authorizeModelRequest,options.requestTimeoutMs??undefined);
       const transportPath=new URL('./models/http-transport.js',import.meta.url).href;
       const plugin=join(root,'import-plugin.mjs');
       await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization} from ${JSON.stringify(transportPath)};
