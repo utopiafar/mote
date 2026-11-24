@@ -1,11 +1,37 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createServer} from 'node:http';import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {DeepSeekHarness,JsonRpcResponseError} from '@deepseek-ai/dsh-sdk-client';
-import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport,boundedModelFetch,modelFailureReporter} from '../dist/models/http-transport.js';
+import {setTimeout as delay} from 'node:timers/promises';
+import {createAgent,createImportAgent,AgentProviderError} from '../dist/index.js';import {observeModelTransport,boundedModelFetch,modelFailureReporter,modelRequestAuthorization} from '../dist/models/http-transport.js';
 const reader={search:async()=>[],timeline:async()=>({items:([]),nextCursor:null}),evidence:async()=>[],activity:async()=>({}),devices:async()=>[]};
 test('private transport reporter rejects unauthorized or unstructured reports',async()=>{
  const observer=await observeModelTransport();try{const {url,token}=observer.configuration;assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,403);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({status:429,body:'private text'})})).status,400);
  const failure=assert.rejects(observer.failure,error=>error instanceof AgentProviderError&&error.details.code==='rate_limited'&&error.details.retryAfterMs===9000);assert.equal((await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify({status:429,retryAfter:'9'})})).status,200);await failure;}finally{await observer.close();}
 });
+test('slow host authorization respects the configured deadline and request cancellation', {timeout:18000},async()=>{
+ let checks=0,sent=0,started,release;
+ const authorizationStarted=new Promise(resolve=>{started=resolve;});
+ const hold=new Promise(resolve=>{release=resolve;});
+ const observer=await observeModelTransport(async()=>{
+  if(++checks===1){await delay(5300);return;}
+  started();await hold;
+ },10000);
+ const previous=process.env.MOTE_MODEL_OBSERVER;
+ process.env.MOTE_MODEL_OBSERVER=JSON.stringify(observer.configuration);
+ const authorize=modelRequestAuthorization(fetch);
+ if(previous===undefined)delete process.env.MOTE_MODEL_OBSERVER;else process.env.MOTE_MODEL_OBSERVER=previous;
+ const model=boundedModelFetch(async()=>{sent++;return new Response('Generated provider output');},'http://generated-context.invalid',undefined,undefined,undefined,authorize);
+ const destination='http://generated-provider.invalid/chat/completions';
+ try{
+  const response=await model(destination,{method:'POST',signal:AbortSignal.timeout(12000)});
+  assert.equal(await response.text(),'Generated provider output');assert.equal(sent,1);
+  const cancelled=new AbortController(),reason=new Error('Generated caller cancelled');
+  const waiting=model(new Request(destination,{method:'POST',signal:cancelled.signal}));
+  await authorizationStarted;cancelled.abort(reason);
+  await assert.rejects(waiting,error=>error===reason);
+  release();assert.equal(sent,1,'the cancelled model request never reaches the transport');
+ }finally{release();await observer.close();}
+});
+
 test('transport errno survives the private reporter without retaining the exception text',async()=>{
  const observer=await observeModelTransport(),previous=process.env.MOTE_MODEL_OBSERVER;
  process.env.MOTE_MODEL_OBSERVER=JSON.stringify(observer.configuration);

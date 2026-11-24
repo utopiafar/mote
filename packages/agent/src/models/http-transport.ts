@@ -2,7 +2,7 @@ import {AsyncResource} from 'node:async_hooks';
 import {createServer} from 'node:http';
 import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
 import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,safeUpstreamRequestId,type FailureDiagnostics} from '@mote/shared';
-import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
+import {DEFAULT_MODEL_REQUEST_TIMEOUT_MS,OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {AgentProviderError,type AgentOptions} from '../types.js';
 import {createRequestBudget} from './request-budget.js';
 
@@ -21,7 +21,7 @@ function upstreamFailure(response: Response): FailureDiagnostics {
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
-export function boundedModelFetch(transport:FetchTransport,bridge:string,maximumBytes=32*1024*1024,configuration?:TransportConfiguration,reportFailure?:(value:FailureReport)=>void|Promise<void>,authorizeRequest?:()=>void|Promise<void>){
+export function boundedModelFetch(transport:FetchTransport,bridge:string,maximumBytes=32*1024*1024,configuration?:TransportConfiguration,reportFailure?:(value:FailureReport)=>void|Promise<void>,authorizeRequest?:(signal?:AbortSignal)=>void|Promise<void>){
   let received=0;
   let exceeded=false;
   const budget=configuration?.contextWindow&&configuration.maxTokens?createRequestBudget(configuration.contextWindow,configuration.maxTokens,configuration.protocol):undefined;
@@ -34,6 +34,12 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
     // Redirects can forward personal evidence to a destination the owner never
     // selected. SSE is the only enabled SDK transport, so this covers every turn.
     let requestInit:RequestInit={...init,redirect:'manual'};
+    const signal=requestInit.signal??(input instanceof Request?input.signal:undefined);
+    const authorize=async()=>{
+      signal?.throwIfAborted();
+      await authorizeRequest?.(signal);
+      signal?.throwIfAborted();
+    };
     if(configuration){
       const destination=new URL(url),base=new URL(configuration.baseUrl);
       const prefix=base.pathname.replace(/\/+$/,'');
@@ -91,7 +97,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
       }
       requestInit={...requestInit,headers,body:JSON.stringify(customized)};
     }
-    await authorizeRequest?.();
+    await authorize();
     let response:Response;
     try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
     // Only explicit structured context-limit codes (or HTTP 413) qualify.
@@ -105,7 +111,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
         budget.fit(body,target);
         if(JSON.stringify(body)!==before&&budget.measure(body)<=configuration!.contextWindow!){
           requestInit={...requestInit,body:JSON.stringify(body)};
-          await authorizeRequest?.();
+          await authorize();
           try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
           if(!response.ok&&await isContextOverflow(response)){
             await reportFailure?.({status:413,diagnostic:upstreamFailure(response)});
@@ -179,13 +185,21 @@ export function modelFailureReporter(transport:FetchTransport){
 
 export function modelRequestAuthorization(transport:FetchTransport){
   const configured=process.env.MOTE_MODEL_OBSERVER;if(!configured)return undefined;
-  const {authorizationUrl,token}=JSON.parse(configured) as {authorizationUrl?:string;token:string};if(!authorizationUrl)return undefined;
-  return async()=>{const response=await transport(authorizationUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:'{}',redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host model evidence authorization denied');};
+  const {authorizationUrl,token,authorizationTimeoutMs=DEFAULT_MODEL_REQUEST_TIMEOUT_MS}=JSON.parse(configured) as {authorizationUrl?:string;token:string;authorizationTimeoutMs?:number};
+  if(!authorizationUrl)return undefined;
+  return async(signal?:AbortSignal)=>{
+    // Original-evidence authorization shares the caller's request deadline.
+    const deadline=AbortSignal.timeout(authorizationTimeoutMs);
+    const response=await transport(authorizationUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+      body:'{}',redirect:'error',signal:signal?AbortSignal.any([signal,deadline]):deadline});
+    await response.body?.cancel();
+    if(!response.ok)throw Error('Host model evidence authorization denied');
+  };
 }
 
 /** Host-private transport reporting. No body, endpoint or credential is accepted.
  * This is not registered as a model tool. The host owns subsequent retry. */
-export async function observeModelTransport(authorize?:()=>void|Promise<void>){
+export async function observeModelTransport(authorize?:()=>void|Promise<void>,authorizationTimeoutMs=DEFAULT_MODEL_REQUEST_TIMEOUT_MS){
  const authorization=authorize?AsyncResource.bind(authorize):undefined;
  const token=randomBytes(32).toString('hex');let reject!:(error:AgentProviderError)=>void;
  const failure=new Promise<never>((_,fail)=>reject=fail);void failure.catch(()=>{});
@@ -211,5 +225,5 @@ export async function observeModelTransport(authorize?:()=>void|Promise<void>){
  server.requestTimeout=5000;server.headersTimeout=5000;
  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{server.off('error',reject);resolve();});});
  const address=server.address();if(!address||typeof address==='string')throw Error('Transport observer unavailable');
- return {configuration:{url:'http://127.0.0.1:'+address.port+'/failure',authorizationUrl:'http://127.0.0.1:'+address.port+'/authorize',token},failure,close:()=>new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());})};
+ return {configuration:{url:'http://127.0.0.1:'+address.port+'/failure',authorizationUrl:'http://127.0.0.1:'+address.port+'/authorize',authorizationTimeoutMs,token},failure,close:()=>new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());})};
 }

@@ -36,7 +36,7 @@ export function createDshModelAdapter(model: ModelLease<DshModelAdapter>, host: 
         await authorize?.();
         host.assertCurrent();
         model.assertCurrent();
-      });
+      },value.requestTimeoutMs??undefined);
       return observer;
     },
     async dispose() { await observer?.close(); },
