@@ -116,6 +116,29 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const resources=new ServerResources();
   let startupApp:FastifyInstance|undefined;
   try{
+  const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,
+    routerOptions:{
+      // Source IDs allow 128 characters; composite activity IDs allow 512.
+      // Keep a finite routing bound above those per-endpoint business limits.
+      maxParamLength:1024,
+      onMaxParamLength:(_path,req,res)=>{
+        const requestId=randomUUID(),locale=negotiateLocale(req.headers['accept-language'],'zh-CN');
+        diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:414},'warn');
+        res.writeHead(414,{'Content-Type':'application/json; charset=utf-8','Content-Language':locale,'Vary':'Accept-Language','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Request-Id':requestId});
+        requestLocale.run(locale,()=>res.end(JSON.stringify({error:'request_path_too_long',message:moteText("请求路径过长，检查链接。"),requestId})));
+      },
+    },
+    frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
+  startupApp=app;
+  const web=dependencies?.webRoot??join(repositoryRoot,'apps/web/dist');
+  const hasWeb=existsSync(web);
+  if(hasWeb) {
+    // Enumerate the built assets before host services can resume persisted work.
+    // This registration awaits filesystem callbacks under Fastify's plugin deadline.
+    // A catch-all static route masks rejected API parameters as missing files.
+    await app.register(staticFiles,{root:web,prefix:'/',wildcard:false,preCompressed:true,
+      setHeaders:(reply,path)=>{if(relative(web,path).startsWith(`assets${sep}`))reply.header('Cache-Control','public, max-age=31536000, immutable');}});
+  }
   const bootstrap=await bootstrapCentral({configuration,...(dependencies?.configService?{configService:dependencies.configService}:{}),...(dependencies?.store?{store:dependencies.store}:{}),...(dependencies?.backgroundWorker!==undefined?{backgroundWorker:dependencies.backgroundWorker}:{})},dependencies?.distribution);
   resources.defer(()=>bootstrap.close());
   const configService=bootstrap.configService,configurationPlatform=bootstrap.configurationPlatform,store=bootstrap.store,facts=bootstrap.configurationBootstrap;
@@ -414,20 +437,6 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     }
     return [...new Set(ready)];
   };
-  const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,
-    routerOptions:{
-      // Source IDs allow 128 characters; composite activity IDs allow 512.
-      // Keep a finite routing bound above those per-endpoint business limits.
-      maxParamLength:1024,
-      onMaxParamLength:(_path,req,res)=>{
-        const requestId=randomUUID(),locale=negotiateLocale(req.headers['accept-language'],'zh-CN');
-        diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:414},'warn');
-        res.writeHead(414,{'Content-Type':'application/json; charset=utf-8','Content-Language':locale,'Vary':'Accept-Language','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Request-Id':requestId});
-        requestLocale.run(locale,()=>res.end(JSON.stringify({error:'request_path_too_long',message:moteText("请求路径过长，检查链接。"),requestId})));
-      },
-    },
-    frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
-  startupApp=app;
   app.addHook('onReady',async()=>{batchProcessing.start();});
   app.addHook('onReady',async()=>{
     try{blockingMonitor.run('assistant-changes',()=>assistantChanges.tick());}
@@ -582,14 +591,10 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   }
 
 
-  const web=dependencies?.webRoot??join(repositoryRoot,'apps/web/dist');
   let webVersion:string|null=null;
   try {webVersion=JSON.parse(readFileSync(join(web,'build-info.json'),'utf8')).version??null;} catch {}
-  if(existsSync(web)) {
+  if(hasWeb) {
     app.addHook('onRequest',async(req,reply)=>{if(!req.url.startsWith('/api/')&&webVersion!==serverVersion)return reply.code(503).type('text/plain; charset=utf-8').send('Web/server build mismatch. Run npm run build -w @mote/web and restart the server.');});
-    // A catch-all static route masks rejected API parameters as missing files.
-    await app.register(staticFiles,{root:web,prefix:'/',wildcard:false,preCompressed:true,
-      setHeaders:(reply,path)=>{if(relative(web,path).startsWith(`assets${sep}`))reply.header('Cache-Control','public, max-age=31536000, immutable');}});
     app.setNotFoundHandler(async(req,reply)=>{
       if(req.url.startsWith('/api/'))return reply.code(404).send({error:'not_found',requestId:req.id});
       // A removed hashed bundle must not receive the SPA HTML fallback. Open
