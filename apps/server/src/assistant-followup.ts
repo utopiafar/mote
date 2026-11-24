@@ -46,6 +46,10 @@ const cardProposal=z.object({action:z.enum(['new','update','resolve','confirm'])
 // dependencies and source pins are taken from the host's saved snapshot.
 const commitmentInterpretation=commitmentProposalSchema.innerType().omit({commitmentId:true,eventId:true,evidenceDependencies:true,sourceContextDependencies:true});
 const outputSchema=z.object({reason:text,cards:z.array(cardProposal).max(20),commitments:z.array(commitmentInterpretation.extend({commitmentId:uuid.nullable()})).max(20)}).strict();
+function parseOutput(answer:string){
+ try{return outputSchema.parse(JSON.parse(answer));}
+ catch{throw new StoreError('Assistant analysis output is invalid',409);}
+}
 const inputSchema=z.object({operationId:z.string().min(1).max(512),requestId:z.string().min(1).max(512),scope:queryScopeSchema,
  materialRefs:z.array(z.string().min(1).max(300)).min(1).max(5),
  ownerQuestions:z.array(z.object({id:uuid,revision:z.number().int().positive()}).strict()).max(100).optional(),
@@ -408,17 +412,22 @@ export class AssistantFollowup {
   * initial original spans. No saved input is rewritten. */
  prepareQuery(input:QueryInput):QueryInput{
   const batchId=input.traceContext?.jobId;if(!batchId)return input;
-  const context=input.taskContext,capacity=this.requestCapacity?.(input);
-  if(!capacity&&context&&(!('materials' in context)||'originals' in context))return input;
   const row=this.store.db.prepare("SELECT f.id FROM task_records b JOIN task_records f ON f.operation_id=b.operation_id WHERE b.id=? AND b.kind='batch' AND f.kind='assistant.followup'").get(batchId);
   if(!row)return input;
+  const validated:QueryInput={...input,validateOutput:async result=>{
+   const rejected=await input.validateOutput?.(result);if(rejected)return rejected;
+   try{parseOutput(result.answer);}
+   catch{return {code:'assistant_output_schema',feedback:'Put a JSON object in the answer string with reason, cards, and commitments. Use the proposal fields from the task instructions. Empty arrays are valid.'};}
+  }};
+  const context=input.taskContext,capacity=this.requestCapacity?.(input);
+  if(!capacity&&context&&(!('materials' in context)||'originals' in context))return validated;
   const snapshot=this.snapshot(this.tasks.get(String(row.id)));
   if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
   const saved=snapshot.queryContext;
   if(saved&&!capacity)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(saved)));
   // The saved batch owns its exact group. Page its original catalog when
   // needed so a retry can keep every grant and the same material selection.
-  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity,true);
+  return this.prepareRequest(saved?{...validated,taskContext:saved}:validated,snapshot.originals,capacity,true);
  }
  private prepareRequest(input:QueryInput,originals:Snapshot['originals'],capacity:AssistantRequestCapacity|undefined,allowCatalogPaging:boolean,currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
   const context=input.taskContext;
@@ -598,7 +607,7 @@ export class AssistantFollowup {
   const result=this.batch.result(snapshot.batchId);
   if(!result)throw new StoreError('Assistant analysis is not complete',409);
   try{
-  let output:z.infer<typeof outputSchema>;try{output=outputSchema.parse(JSON.parse(result.answer));}catch{throw new StoreError('Assistant analysis output is invalid',409);}
+  const output=parseOutput(result.answer);
   // Re-read the external Memory provider before the synchronous transaction.
   const memory=await readCurrentMemoryPage(this.reader,snapshot.input.scope,{level:'detail',limit:10,asOf:this.now()});
   if(JSON.stringify(memory.items.map(item=>[item.id,item.version,item.fingerprint]))!==JSON.stringify(snapshot.memoryRevisions.map(item=>[item.id,item.version,item.fingerprint])))throw new StoreError('Memory changed; analyze again',409);
