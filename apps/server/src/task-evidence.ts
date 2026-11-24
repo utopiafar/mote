@@ -64,6 +64,10 @@ export function taskEvidenceIds(store:Store,dependencies:EvidenceDependencies):s
 }
 
 export function addTaskEvidence(store:Store,id:string,ids:readonly string[]){
-  const insert=store.db.prepare('INSERT OR IGNORE INTO task_evidence(task_id,evidence_id) VALUES(?,?)');
-  for(const evidenceId of ids)insert.run(id,evidenceId);
+  const insert=store.db.prepare(`INSERT OR IGNORE INTO task_evidence(task_id,evidence_id)
+    SELECT ?,value FROM json_each(?)`);
+  const pageSize=1024;
+  for(let offset=0;offset<ids.length;offset+=pageSize){
+    insert.run(id,JSON.stringify(ids.slice(offset,offset+pageSize)));
+  }
 }

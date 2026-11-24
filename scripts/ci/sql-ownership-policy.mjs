@@ -133,6 +133,9 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'task-evidence.ts':{
+  addTaskEvidence:'task-evidence',
+ },
  'execution-engine.ts':{
   'ExecutionEngine.preferOperationOnce':'execution',
  },
@@ -2164,7 +2167,7 @@ export const importedHelpers=[
   "name": "retireTaskRecordsSql",
   "definitionFile": "apps/server/src/task-evidence.ts",
   "importFingerprint": "78c693fc749b9a91d202cc9127cf46122227deb149e0452a1a0147bfd6f7de7d",
-  "definitionModuleFingerprint": "1092b6557524a088764b93c8762469c6548bb870023a88d916326e0c1e48abb0",
+  "definitionModuleFingerprint": "bc7d23efb4f01e72bd53c9a1fc79dfc6c2add5616de81b0fe5f63a61801c96f6",
   "definitionFingerprint": "5766030cc8f3da30e11feef88294493278724ff72f915de19eebbfd74dcfa02f",
   "callFingerprint": "ce0fa4e1dbee71c6501b0713390f072d64dfbcb340c0658b8ea83b9bc881ac67",
   "reason": "Resolve the exact pure Task retirement SQL in the existing constructor trigger; no runtime call inherits construction authority."

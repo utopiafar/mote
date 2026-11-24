@@ -102,6 +102,24 @@ test('SQLite write failures and interrupted acceptance leave neither private inp
   assert.equal(tasks.create(interrupted,ownerInputOnly).revision,1);
 });
 
+test('large task receipts retain every dependency and roll back when a later page fails',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-task-large-receipt-')),store=new Store(directory),tasks=new TaskRecords(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const original=await capture(store),ids=[...Array.from({length:1100},(_,index)=>`0-generated-${String(index).padStart(4,'0')}`),original];
+  const input=request([...ids,original,ids[0]]);
+  const authorize:AssertTaskCurrent=selected=>assert.deepEqual(selected,ids);
+  store.db.exec(`CREATE TRIGGER generated_late_receipt_failure BEFORE INSERT ON task_evidence
+    WHEN new.evidence_id='0-generated-1099' BEGIN SELECT RAISE(ABORT,'Generated late receipt failure'); END`);
+  assert.throws(()=>tasks.create(input,authorize),/Generated late receipt failure/);
+  assert.equal(tasks.page().items.length,0);
+  assert.equal(store.db.prepare('SELECT count(*) AS total FROM task_evidence').get()!.total,0);
+  store.db.exec('DROP TRIGGER generated_late_receipt_failure');
+  const task=tasks.create(input,authorize);
+  assert.deepEqual(tasks.evidenceDependencies(task.id,task.revision,authorize).ids,ids);
+  store.delete(original);
+  assert.equal(tasks.get(task.id).state,'stale');
+});
+
 test('deleting A erases its frozen inputs and real stored results, leaves B intact and fences late writes',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-task-delete-')),store=new Store(directory),tasks=new TaskRecords(store);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
