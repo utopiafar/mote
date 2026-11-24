@@ -1168,9 +1168,16 @@ export class MemoryPipeline {
         }
         const model=job.configuration?.model??job.modelOverride??this.options.models.model(job.modelProfileId);
         const normalizeFailure=(error:unknown):unknown=>{
-          if(error instanceof MemoryOutputValidationError&&error.cause instanceof ProviderFailure)return error.cause;
+          const providerCause=error instanceof MemoryOutputValidationError&&error.cause instanceof ProviderFailure?error.cause:undefined;
+          const failure=providerCause??error;
+          // An input limit during an output-limit repair must not trigger
+          // input partitioning for a batch whose original request fit.
+          if((failure instanceof AgentResponseError&&['output_limit','response_too_large'].includes(failure.reason))||
+            (failure instanceof AgentProviderError&&failure.details.code==='processing_limit'&&failure.repairReason==='output_limit')){
+            return retainFailureContext(new ExecutionFailure('permanent','model_output_capacity'),failureContext(failure));
+          }
+          if(providerCause)return providerCause;
           if(error instanceof MemoryProviderError)return retainFailureContext(new ExecutionFailure(error.code==='unknown_result'||error.code==='unavailable'?'blocked':'permanent','memory_provider_'+error.code),failureContext(error));
-          if(error instanceof AgentResponseError&&['output_limit','response_too_large'].includes(error.reason))return new ExecutionFailure('permanent','model_output_capacity');
           if(error instanceof ProviderFailure&&error.details.category==='transient'&&!recoverableProviderFailure(error))return retainFailureContext(new ProviderFailure({category:'permanent',code:error.details.code,retryAfterMs:error.details.retryAfterMs,...(error.details.executionStarted===false?{executionStarted:false as const}:{})},undefined,error.diagnostic),failureContext(error));
           if(error instanceof AgentResponseError&&error.reason==='image_disclosure_disabled')return retainFailureContext(new ExecutionFailure('blocked','image_disclosure_disabled'),failureContext(error));
           if(error instanceof AgentTimeoutError)return retainFailureContext(new ExecutionFailure('permanent','provider_timeout'),failureContext(error));

@@ -334,7 +334,7 @@ for(const mode of ['recovered','still-limited','initial-context-limit'] as const
   assert.equal(f.memories.get(done.memoryIds[0]).evidence![0].quote,quote);
  }else{
   assert.equal(done.status,'failed');
-  assert.equal(done.batches[0].errorCode,'processing_limit');
+  assert.equal(done.batches[0].errorCode,mode==='initial-context-limit'?'processing_limit':'model_output_capacity');
   assert.deepEqual(done.memoryIds,[]);
   assert.equal(f.store.db.prepare("SELECT count(*) n FROM memory_phase_outputs WHERE batch_id=? AND phase='extract'").get(done.batches[0].id)!.n,1);
  }
