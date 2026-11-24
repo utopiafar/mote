@@ -665,7 +665,11 @@ test('OpenCode Go follow-up fits original quotes to the conversation budget and 
   assert.deepEqual(input.evidenceIds,[...new Set(input.evidenceRanges.map(range=>range.id))]);
   for(const range of input.evidenceRanges)assert.ok(input.evidenceReadRanges.some(grant=>grant.id===range.id&&grant.offset<=range.offset&&grant.offset+grant.length>=range.offset+range.length));
   grantedIds=input.evidenceReadRanges.map(grant=>grant.id);
-  return {answer:JSON.stringify(answer()),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:input.contextEvidenceDependencies};
+  const result={answer:JSON.stringify(answer()),citations:[],trace:[],runId:randomUUID(),evidenceDependencies:input.contextEvidenceDependencies};
+  assert.equal((await input.validateOutput?.({...result,answer:'Generated plain-language summary.'}))?.code,'assistant_output_schema');
+  assert.equal((await input.validateOutput?.({...result,answer:JSON.stringify({reason:'Generated incomplete result'})}))?.code,'assistant_output_schema');
+  assert.equal(await input.validateOutput?.(result),undefined);
+  return result;
  },close:async()=>{}}});
  await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const view=await node.app.inject({method:'GET',url:'/api/configuration',headers});
