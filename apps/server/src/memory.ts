@@ -10,6 +10,7 @@ import {validateInlineCitations,SOURCE_TIME_INSTRUCTIONS,skillCatalog,type Query
 import {fileEvidenceSchema,sourceContentTime,noteCapture,ProviderFailure,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {EvidenceStore as Store,StoreError,sha256} from './evidence-store.js';
 import {installSchemaPlan} from './schema-installation.js';
+import {prepareMaterialEvidenceUriLookup} from './materials.js';
 import {memorySearchSchemaInstallation} from './memory-search-schema.js';
 import {CODING_MEMORY_CONTRACT,codingMemorySchema,memorySchema,memoryAdmissionSchema,memoryRelationSchema,memoryReviewReceiptSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
 import {memoryImageReadReceipts,memoryImageSelectorSchema} from './memory-image-proof.js';
@@ -78,7 +79,7 @@ export class MemoryStore {
   readonly deletions:MemoryDeletions;
   // Retain compiled handles only. Each guard still reads the current transaction.
   private materialEvidenceTableStatement?:StatementSync;
-  private materialEvidenceStatement?:StatementSync;
+  private findMaterialEvidenceUris?:ReturnType<typeof prepareMaterialEvidenceUriLookup>;
   constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),
     private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id),
     private currentEvidenceBatch?:(ids:readonly string[])=>ReadonlySet<string>){
@@ -117,10 +118,7 @@ export class MemoryStore {
   private materialEvidenceUris(records:readonly MemoryRecord[]):ReadonlyMap<string,string> {
     const ids=records.filter(record=>formalMaterialUri(record)!==undefined).map(record=>record.id);
     if(!ids.length||!(this.materialEvidenceTableStatement??=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'")).get())return new Map();
-    const anchors=(this.materialEvidenceStatement??=this.store.db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM material_evidence e
-      JOIN material_heads h ON h.id=e.material_id
-      WHERE e.id IN (SELECT value FROM json_each(?)) AND h.retired=0`)).all(JSON.stringify(ids)) as {id:string;material_id:string;revision:string;block_id:string}[];
-    return new Map(anchors.map(anchor=>[anchor.id,`material:${anchor.material_id}@${anchor.revision}#${anchor.block_id}`]));
+    return (this.findMaterialEvidenceUris??=prepareMaterialEvidenceUriLookup(this.store.db))(ids);
   }
   private recordIsCurrent(record:MemoryRecord,current:ReadonlySet<string>|undefined,materialUris:ReadonlyMap<string,string>):boolean {
     const id=record.id;
