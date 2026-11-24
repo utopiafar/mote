@@ -1,7 +1,9 @@
 package dev.mote.collector
 
 import android.app.Activity
+import android.view.Gravity
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -85,6 +87,17 @@ class MotePrimaryNavigationTest {
         assertEquals(View.GONE, bar.findViewWithTag<View>("local-tab-dot:chat")!!.visibility)
         bar.setBadges(NavBadges(library = false))
         assertEquals(View.GONE, bar.findViewWithTag<View>("local-tab-dot:library")!!.visibility)
+    }
+
+    @Test fun everyTabLabelIsCenteredBelowItsIcon() {
+        val bar = MoteTabBar(activity) {}
+        bar.render(catalog().daily(), NavBadges(), "chat")
+
+        for (item in catalog().daily()) {
+            val tab = bar.findViewWithTag<LinearLayout>("local-tab:${item.id}")!!
+            val label = (0 until tab.childCount).map { tab.getChildAt(it) }.filterIsInstance<TextView>().single()
+            assertEquals(Gravity.CENTER_HORIZONTAL, label.gravity and Gravity.HORIZONTAL_GRAVITY_MASK)
+        }
     }
 
     @Test fun selectingATabOnlyMovesTheSelection() {
