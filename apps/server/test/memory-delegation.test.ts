@@ -1,6 +1,7 @@
 import {testScope} from './fixtures/plugin-scope.js';
 import {fixtureMemoryCapacity} from './fixtures/memory-planning.js';
 import {test,type TestContext} from 'node:test';
+import {constants} from 'node:sqlite';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -117,6 +118,9 @@ test('ordinary production queue directly packs independently reviewed members wi
  assert.deepEqual(f.counts(),{planning:0,extraction:1,reviews:1});assert.equal(f.pipeline.list().length,1);
  const job=f.pipeline.get(f.pipeline.list()[0].id);assert.equal(job.automaticGrants?.length,4);assert.equal(new Set(job.automaticGrants?.map(grant=>grant.sourceId)).size,2);assert.equal(job.status,'completed');assert.equal(job.batches[0].coverage?.length,4);assert.ok(job.batches[0].reviewReceipt?.reviewRunId);
  assert.equal(f.runtime.list().length,0);assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,4);
+ f.store.db.setAuthorizer((action,table)=>action===constants.SQLITE_READ&&table==='memory_jobs'?constants.SQLITE_DENY:constants.SQLITE_OK);
+ try{assert.doesNotThrow(()=>f.adapter.reconcile(),'without external units reconciliation must not read the ordinary Memory job journal');}
+ finally{f.store.db.setAuthorizer(null);}
  assert.equal(await f.sourcePipelines.drainMemory(f.pipeline,true),0);assert.deepEqual(f.counts(),{planning:0,extraction:1,reviews:1});
 });
 

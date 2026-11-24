@@ -78,6 +78,12 @@ export function registerMemoryDelegation(options:MemoryDelegationOptions){
  };
  let statusCursor='';
  const reconcile=()=>{
+  // Ordinary Memory intake can leave the delegation journal without external
+  // units. Check that journal before opening the frozen product payloads.
+  if(!runtime.journal.hasExternalUnits()){
+   statusCursor='';
+   return;
+  }
   const links=runtime.store.db.prepare(`SELECT j.id,json_extract(j.json,'$.workPackage.id') unit_id,json_extract(j.json,'$.status') product_status
    FROM memory_jobs j JOIN delegation_units u ON u.id=json_extract(j.json,'$.workPackage.id') JOIN delegation_works w ON w.id=u.work_id
    WHERE json_extract(u.json,'$.external')=1 AND (
