@@ -91,7 +91,8 @@ export function createModelEvidenceAuthority(dependencies:ModelEvidenceAuthority
   const assertModelEvidence=(input:QueryInput|undefined)=>{
     if(input)selectedQueryMaterial(input);
     if(modelAuthorization.currentId){
-      modelAuthorizationHost.assertEvidence([...(input?.evidenceIds??[]),...modelContextGroups(input).flatMap(group=>group.ids)]);
+      // Source exclusion resolves lineage only when the active grant needs it.
+      modelAuthorizationHost.assertEvidence(()=>[...(input?.evidenceIds??[]),...modelContextGroups(input).flatMap(group=>group.ids)]);
       modelAuthorization.assertDisclosure(sourceContextDependencies(input).map(pin=>({sourceId:pin.sourceId})));
       const catalog=(input as QueryInput&{memoryCatalogMetadata?:MemoryCatalogMetadataReceipt}|undefined)?.memoryCatalogMetadata;
       if(catalog)modelAuthorization.assertDisclosure(catalog.members.flatMap(member=>member.sourceId?[{sourceId:member.sourceId}]:[]));
