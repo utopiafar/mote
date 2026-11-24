@@ -31,9 +31,9 @@ export interface DelegationCapability {
  cancel?:(unit:Readonly<DelegationUnit>,work:Readonly<DelegationWork>)=>void;
  retry?:(unit:Readonly<DelegationUnit>,work:Readonly<DelegationWork>)=>void;
  validate?:(unit:Readonly<DelegationUnit>,work:Readonly<DelegationWork>)=>boolean;
- execute:(unit:Readonly<DelegationUnit>,context:{signal:AbortSignal;scope:DelegationScope;grant:ExecutionGrant;work:DelegationWork})=>Promise<DelegationProduct>;
+ execute:(unit:Readonly<DelegationUnit>,context:{signal:AbortSignal;scope:DelegationScope;grant:ExecutionGrant;work:DelegationWork;step:ExecutionStep})=>Promise<DelegationProduct>;
 }
-export type DelegationCoordinatorContext={work:DelegationWork;input:unknown;signal:AbortSignal;grant:ExecutionGrant;controls:HostControlChannel};
+export type DelegationCoordinatorContext={work:DelegationWork;input:unknown;signal:AbortSignal;grant:ExecutionGrant;controls:HostControlChannel;step:ExecutionStep};
 export interface DelegationCoordinator {
  id:string;execute:(context:DelegationCoordinatorContext)=>Promise<unknown>;
  /** Host product entry owns this declaration; submitted units inherit it. */
@@ -83,7 +83,7 @@ export class DelegationRuntime {
   const entry=Object.freeze({...capability});this.capabilities.set(entry.id,entry);
   if(!entry.proposal)this.unregister.push(this.engine.register({kind:`delegation.unit.${entry.id}`,pool:'delegated-agents',concurrency:this.options.concurrency??(()=>4),policy:EXECUTION_POLICIES.orchestration,
    validate:step=>this.currentUnit(step,entry),
-   execute:(step,signal,grant)=>{const unit=this.unit(String(step.input.unitId));return entry.execute(unit,{signal,scope:unit.scope,grant,work:this.get(unit.workId)});},
+   execute:(step,signal,grant)=>{const unit=this.unit(String(step.input.unitId));return entry.execute(unit,{signal,scope:unit.scope,grant,work:this.get(unit.workId),step});},
    commit:(step,result)=>this.commitUnit(step,result as DelegationProduct),project:step=>this.projectUnit(step),
   }));
   return entry;
@@ -96,7 +96,7 @@ export class DelegationRuntime {
    timeoutMs:step=>{const work=this.get(String(step.input.workId));return profile.timeoutMs?.(work,this.journal.payload(work.id))??null;},
    validate:step=>this.currentWork(String(step.input.workId),profile),
    execute:async(step,signal,grant)=>{const work=this.get(String(step.input.workId)),controls=this.controlChannel(work.id,grant),input=this.journal.payload(work.id);
-    try{const result=await profile.execute({work,input,signal,grant,controls});return {yielded:false,result};}
+    try{const result=await profile.execute({work,input,signal,grant,controls,step});return {yielded:false,result};}
     catch(error){if(error instanceof AgentYieldError)return {yielded:true};throw profile.classify?.(error)??error;}
    },
    commit:(step,value)=>{const work=this.raw(String(step.input.workId)),outcome=value as {yielded:boolean;result?:unknown};

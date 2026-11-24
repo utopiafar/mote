@@ -3,7 +3,7 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {isDeepStrictEqual} from 'node:util';
 import type {Cancellation, ServiceLease} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,errorDiagnostics} from '@mote/shared';
 import {parseRuntimeOutcome, RuntimeContractError,RuntimeSteeringUnavailable, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type AgentTraceEvent, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
@@ -91,8 +91,8 @@ export async function resolveHostOutput(options: {
       }
       if (terminal.kind === 'yielded') throw new AgentYieldError();
       if (terminal.kind === 'failed') {
-        if (terminal.reason === 'tools_unverified' || terminal.reason === 'tool_failure') throw new AgentResponseError('Runtime tools could not complete safely.', terminal.reason);
-        throw new AgentProviderError(terminal.providerFailure ?? (terminal.reason === 'processing_limit' ? {category: 'permanent', code: 'processing_limit'} : undefined));
+        if (terminal.reason === 'tools_unverified' || terminal.reason === 'tool_failure') throw new AgentResponseError('Runtime tools could not complete safely.', terminal.reason, false, outcome.diagnostic);
+        throw new AgentProviderError(terminal.providerFailure ?? (terminal.reason === 'processing_limit' ? {category: 'permanent', code: 'processing_limit'} : undefined), outcome.diagnostic);
       }
     } catch (error) {
       if (rejected?.reason === 'output_limit' && error instanceof ProviderFailure && error.details.category === 'permanent' && error.details.code === 'processing_limit') {
@@ -103,20 +103,20 @@ export async function resolveHostOutput(options: {
     // Readiness failure cannot be repaired by producing different prose.
     if (!options.toolsReady()) throw new AgentResponseError('The read-only agent tools were not verified.', 'tools_unverified');
     reportProgress(options.input, {stage: 'validating'});
-    reportTrace(options.input, {runId: options.runId, type: 'validation.started', stage: 'validating', phase: 'started', ...(repair ? {payload: {repair: true}} : {})});
+    reportTrace(options.input, {runId: options.runId, type: 'validation.started', stage: 'validating', phase: 'started', step: repair + 1, ...(repair ? {payload: {repair: true}} : {})});
     let error: AgentResponseError;
-    if (outcome.terminal.kind === 'output_limit') error = new AgentResponseError('The model reached its output token limit before completing the response.', 'output_limit');
+    if (outcome.terminal.kind === 'output_limit') error = new AgentResponseError('The model reached its output token limit before completing the response.', 'output_limit', false, outcome.diagnostic);
     else {
       const decision = await options.evaluate(outcome.candidate!.text);
       options.assertCurrent();
       if (decision.kind === 'accepted') {
-        reportTrace(options.input, {runId: options.runId, type: 'validation.completed', stage: 'validating', phase: 'completed', status: 'accepted', payload: {citations: decision.result.citations.map(citation => citation.id)}});
+        reportTrace(options.input, {runId: options.runId, type: 'validation.completed', stage: 'validating', phase: 'completed', step: repair + 1, status: 'accepted', payload: {citations: decision.result.citations.map(citation => citation.id)}});
         return decision.result;
       }
       error = new AgentResponseError(decision.feedback, decision.reason, decision.requiresToolUse === true);
     }
+    reportTrace(options.input, {runId: options.runId, type: 'validation.failed', stage: 'validating', phase: 'completed', step: repair + 1, status: 'rejected', payload: {reason: error.reason}});
     if (error.reason === 'tools_unverified' || error.reason === 'tool_failure' || repair >= MAX_OUTPUT_REPAIRS) throw error;
-    reportTrace(options.input, {runId: options.runId, type: 'validation.failed', stage: 'validating', phase: 'completed', status: 'rejected', payload: {reason: error.reason}});
     options.assertCurrent();
     rejected = error;
   }
@@ -394,7 +394,7 @@ class ManagedHostRunSession implements HostRunSession {
     const request: RuntimeRunRequest = {attempt, prompt, ...(this.assembly.outputSchema ? {outputSchema: this.assembly.outputSchema} : {})};
     const started = performance.now(), repair = index ? {repair: true, repairAttempt: index} : {};
     reportProgress(this.dependencies.input, {stage: 'model'});
-    reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.started', stage: 'model', phase: 'started', payload: {prompt, ...repair}});
+    reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.started', stage: 'model', phase: 'started', step: index + 1, payload: {prompt, ...repair}});
     try {
       this.runtimeWork = Promise.resolve().then(() => error ? this.handle.repair({...request, validation: {reason: error.reason, feedback: error.message}} satisfies RuntimeRepairRequest) : this.handle.run(request));
       const raw = await this.runtimeWork;
@@ -403,9 +403,20 @@ class ManagedHostRunSession implements HostRunSession {
       if (pause) await pause;
       this.assertAttempt(attempt);
       const outcome = parseRuntimeOutcome(raw);
-      reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: 'model.completed', stage: 'model', phase: 'completed', durationMs: performance.now() - started, payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...repair}});
+      const failed = outcome.terminal.kind === 'failed';
+      reportTrace(this.dependencies.input, {runId: this.dependencies.identity.runId, type: failed ? 'model.failed' : 'model.completed',
+        stage: 'model', phase: 'completed', step: index + 1, ...(failed ? {status:'failed'} : {}), durationMs: performance.now() - started,
+        payload: {response: outcome.candidate?.text, terminal: outcome.terminal, ...('diagnostic' in outcome ? {diagnostic:outcome.diagnostic} : {}), ...repair}});
       this.observeRuntime({identity: this.dependencies.identity, attemptId: attempt.id, event: {type: 'attempt.terminal', terminal: outcome.terminal}});
       return outcome;
+    } catch (failure) {
+      if (!(failure instanceof AgentYieldError) && !this.port.signal.aborted) {
+        try {
+          reportTrace(this.dependencies.input, {runId:this.dependencies.identity.runId,type:'model.failed',stage:'model',
+            step:index+1,status:'failed',durationMs:performance.now()-started,payload:{diagnostic:errorDiagnostics(failure),...repair}});
+        } catch { /* A diagnostic must not replace the original failure. */ }
+      }
+      throw failure;
     } finally { this.usageEvents.forget(attempt.id); this.runtimeWork = undefined; this.attempt = undefined; if (this.lifecycle.phase === 'running') this.lifecycle.setPhase('idle'); }
   }
   execute(): Promise<AgentAnswer> { return this.execution ??= this.executeOnce(); }

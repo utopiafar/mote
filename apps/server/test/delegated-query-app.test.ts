@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {AgentYieldError,originalEvidenceReceipt,parseAnswer,type QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {buildApp,type QueryAgent} from '../src/app.js';
@@ -83,6 +83,70 @@ async function researchFixture(t:TestContext,mode:'parallel'|'restart'|'cancel'|
   async completed(){return until(()=>{const run=node.queryRuns.get(id);return run.status==='completed'?run:undefined;},this.describe);},
  };
 }
+
+test('Ask retains a failed research attempt in safe diagnostics and correlates its private trace',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-ask-research-diagnostics-'));
+ const base=config(directory);
+ const cfg={...base,initialDocument:{...base.initialDocument!,diagnostics:{traceEnabled:true,traceExpiresAt:Date.now()+60_000,level:'info'}}};
+ const privateMessage='Generated private provider body and authorization header';
+ const diagnostic={source:'runtime' as const,stage:'model' as const,errorType:'ProviderFailure',sdkTerminal:'error' as const,
+  sdkErrorCode:'CLIENT',httpStatus:422,upstreamRequestId:'req_generated_research'};
+ const childRunId=randomUUID();
+ const node=await buildApp(cfg,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
+  if(!input.hostControlChannel){
+   input.onTrace?.({type:'model.started',runId:childRunId,stage:'model',step:1});
+   throw new ProviderFailure({category:'permanent',code:'provider_request_invalid'},privateMessage,diagnostic);
+  }
+  const delegation=input.taskContext!.delegation as {units:{id:string;status:string}[]};
+  if(delegation.units.length){
+   assert.equal(delegation.units[0].status,'failed');
+   return plain('Generated answer using the remaining evidence');
+  }
+  const controls=input.hostControlChannel;
+  const submitted=await controls.execute('delegation_submit',{units:[{id:'generated-branch',capabilityId:'context.research',
+   title:'Generated research',goal:'Inspect generated evidence',input:{question:'Inspect generated evidence'}}]});
+  const units=(submitted.data as {units:{id:string}[]}).units;
+  const yielded=await controls.execute('delegation_yield',{mode:'all',workspaceJson:JSON.stringify({unresolved:['Inspect generated evidence'],workerIds:units.map(unit=>unit.id)})});
+  assert.equal(yielded.yield,true);
+  throw new AgentYieldError();
+ }}});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const main=await node.app.inject({url:'/api/conversations/main',headers});
+ assert.equal(main.statusCode,200,main.body);
+ const result=await node.app.inject({method:'POST',url:'/api/conversations/messages',headers,payload:{
+  conversationId:main.json().id,clientRequestId:randomUUID(),question:'Generated question about the archive',scope:{kind:'all'}}});
+ assert.equal(result.statusCode,202,result.body);
+ const id=result.json().id as string;
+ await until(()=>{
+  if(!node.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id))return;
+  const run=node.queryRuns.get(id);
+  return run.status==='completed'?run:undefined;
+ },()=>snapshot(node,id));
+ const work=node.delegation.get('query:'+id);
+ const taskKey=createHash('sha256').update(work.units[0]!.stepId).digest('hex');
+ await node.diagnostics.flush();
+ const logs=await node.app.inject({url:'/api/diagnostics/events?afterSeq=0&limit=500',headers});
+ assert.equal(logs.statusCode,200);
+ const events=logs.json().items;
+ const branch=events.find((row:any)=>row.event==='agent.research_failed');
+ assert.ok(branch);
+ assert.equal(branch.researchStage,'query');
+ assert.equal(branch.operationId,work.operationId);
+ assert.equal(branch.taskKey,taskKey);
+ assert.equal(branch.attempt,1);
+ assert.deepEqual(branch.diagnostic,diagnostic);
+ const trace=events.map((row:any)=>row.trace).find((row:any)=>row?.type==='query.failed'&&row.taskKey===taskKey);
+ assert.ok(trace);
+ assert.equal(trace.operationId,branch.operationId);
+ assert.equal(trace.attempt,branch.attempt);
+ assert.equal(trace.runId,childRunId);
+ assert.deepEqual(trace.payload.diagnostic,diagnostic);
+ assert.doesNotMatch(JSON.stringify([branch,trace]),/Generated private provider body|generated-branch/);
+ const support=await node.app.inject({url:'/api/support-bundle',headers});
+ assert.equal(support.statusCode,200);
+ assert.ok(support.json().events.some((row:any)=>row.event==='agent.research_failed'&&row.taskKey===taskKey));
+ assert.doesNotMatch(support.body,/Generated private provider body|agent\.trace|req_generated_research/);
+});
 
 for(const restart of [false,true])test(`owner HTTP research ${restart?'resumes an interrupted worker while retaining a completed private product':'runs multiple model-selected questions within the actual two-slot limit'}`,async t=>{
  const f=await researchFixture(t,restart?'restart':'parallel');await f.admit();

@@ -1,7 +1,7 @@
 import {AsyncResource} from 'node:async_hooks';
 import {createServer} from 'node:http';
 import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
-import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
+import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,safeUpstreamRequestId,type FailureDiagnostics} from '@mote/shared';
 import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {AgentProviderError,type AgentOptions} from '../types.js';
 import {createRequestBudget} from './request-budget.js';
@@ -12,6 +12,11 @@ type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoning
   sessionId?:string;
 };
 type FailureReport = {status:number;retryAfter?:string;diagnostic?:FailureDiagnostics};
+function upstreamFailure(response: Response): FailureDiagnostics {
+  const upstreamRequestId = ['x-request-id', 'request-id', 'apim-request-id']
+    .map(header => safeUpstreamRequestId(response.headers.get(header))).find(Boolean);
+  return {source:'http',stage:'model',httpStatus:response.status,...(upstreamRequestId?{upstreamRequestId}:{})};
+}
 
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
@@ -81,7 +86,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
       if(configuration.protocol==='openai-responses')customized.store=false;
       headers.delete('content-length');
       if(budget&&!budget.fit(customized)){
-        await reportFailure?.({status:413});
+        await reportFailure?.({status:413,diagnostic:{source:'runtime',stage:'model',code:'input_too_large'}});
         return new Response(JSON.stringify({error:{message:'Model request exceeds the configured context budget'}}),{status:400,headers:{'Content-Type':'application/json'}});
       }
       requestInit={...requestInit,headers,body:JSON.stringify(customized)};
@@ -103,11 +108,11 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
           await authorizeRequest?.();
           try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
           if(!response.ok&&await isContextOverflow(response)){
-            await reportFailure?.({status:413});
+            await reportFailure?.({status:413,diagnostic:upstreamFailure(response)});
             return new Response(JSON.stringify({error:{message:'Model context limit exceeded after bounded recovery'}}),{status:400,headers:{'Content-Type':'application/json'}});
           }
         }else{
-          await reportFailure?.({status:413});
+          await reportFailure?.({status:413,diagnostic:upstreamFailure(response)});
           return new Response(JSON.stringify({error:{message:'Model context limit exceeded; no safely reducible context remains'}}),{status:400,headers:{'Content-Type':'application/json'}});
         }
       }
@@ -116,7 +121,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
     if(reportFailure&&!response.ok){
       await response.body?.cancel();
       const retryAfter=response.headers.get('retry-after');
-      await reportFailure({status:response.status,...(retryAfter&&retryAfter.length<=128?{retryAfter}:{})});
+      await reportFailure({status:response.status,diagnostic:upstreamFailure(response),...(retryAfter&&retryAfter.length<=128?{retryAfter}:{})});
       // Suppress opaque SDK retries. The durable host received the real status.
       return new Response(JSON.stringify({error:{message:'Model request stopped by host'}}),{status:400,headers:{'Content-Type':'application/json'}});
     }
@@ -195,7 +200,12 @@ export async function observeModelTransport(authorize?:()=>void|Promise<void>){
    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['status','retryAfter','diagnostic'].includes(k))||!Number.isInteger(value.status)||value.status<0||value.status>599||value.status>0&&value.status<300||value.retryAfter!==undefined&&(typeof value.retryAfter!=='string'||value.retryAfter.length>128))throw Error();
    res.writeHead(200,{'Content-Type':'application/json'}).end('{"ok":true}');
    const diagnostic=sanitizeFailureDiagnostics(value.diagnostic);
-   reject(new AgentProviderError(value.status===0?{category:'transient',code:'provider_network'}:providerHttpFailure(value.status,value.retryAfter),{source:value.status?'http':'transport',stage:'model',errorType:diagnostic.errorType,...(value.status?{httpStatus:value.status}:{code:diagnostic.code??'unknown'})}));
+   const source = value.status===0 ? 'transport' : diagnostic.source==='runtime' ? 'runtime' : 'http';
+   reject(new AgentProviderError(value.status===0?{category:'transient',code:'provider_network'}:providerHttpFailure(value.status,value.retryAfter),{
+     source,stage:'model',errorType:diagnostic.errorType,
+     ...(source==='http' ? {httpStatus:diagnostic.httpStatus??value.status,upstreamRequestId:diagnostic.upstreamRequestId}
+       : {code:diagnostic.code??'unknown'}),
+   }));
   }catch{res.writeHead(400).end();}
  });
  server.requestTimeout=5000;server.headersTimeout=5000;

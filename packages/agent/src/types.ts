@@ -103,7 +103,7 @@ export class AgentNotConfiguredError extends Error {
 export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified' | 'host_validation' | 'tool_failure' | 'image_disclosure_disabled';
 export class AgentResponseError extends Error {
   readonly statusCode = 502;
-  constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response', readonly requiresToolUse = false) {
+  constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response', readonly requiresToolUse = false, readonly diagnostic?: FailureDiagnostics) {
     super(message);
     this.name = "AgentResponseError";
   }

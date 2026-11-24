@@ -24,7 +24,7 @@ import {moteText,requestLocale} from '../i18n.js';
 import {insightResult,validateInsightOutput} from '../insights.js';
 import {contextFailure} from '../model-evidence-authority.js';
 import type {QueryScope} from '../query-scope.js';
-import type {ServerDiagnostics,AgentTraceContext} from '../diagnostics.js';
+import {safeError,type ServerDiagnostics,type AgentTraceContext} from '../diagnostics.js';
 import type {ServerLifecycle} from '../assembly/lifecycle.js';
 import type {ConcurrencyGate} from '../concurrency.js';
 import type {ModelSettingsStore} from '../model-settings.js';
@@ -350,8 +350,11 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
       if(accounting)throw accounting;
       retainFailureContext(error,{runId:failureRunId,phase:input.traceContext?.phase,jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,
         ...(error instanceof ProviderFailure?{causeCode:errorDiagnostics(error).code}:{})});
-      trace(wait?{type:'query.waiting',status:'waiting',payload:wait}:{type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;
-    }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
+      const failure=safeError(error,{includeUpstreamRequestId:true});
+      trace(wait?{type:'query.waiting',runId:failureRunId,status:'waiting',payload:wait}:{type:'query.failed',runId:failureRunId,status:'failed',
+        payload:{category:failure.category,reason:failure.reason,diagnostic:failure.diagnostic}});throw error;
+    }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}),
+    moduleId==='conversations'?{operationId:traceContext.operationId,taskKey:traceContext.taskKey,attempt:traceContext.attempt}:undefined);
     activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
 

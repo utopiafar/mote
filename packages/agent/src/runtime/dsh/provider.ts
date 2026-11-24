@@ -1,4 +1,4 @@
-import {DeepSeekHarness, RequestTimeoutError, type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
+import {DeepSeekHarness, JsonRpcResponseError, RequestTimeoutError, type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
 import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import type {PluginDefinition} from '@mote/plugin-host';
 import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
-import {ProviderFailure,errorDiagnostics} from '@mote/shared';
+import {ProviderFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
 import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../../types.js';
 import {createDshModelAdapter, type DshModelAdapter} from '../../models/dsh-adapter.js';
 import {resolveModelCapabilities} from '../../models/provider-registry.js';
@@ -37,6 +37,19 @@ export interface DshProviderOptions {
 
 /** Assemble only an already resolved selection with real Host-owned leases.
  * Configuration admission/persistence and model adapter construction remain outside this provider. */
+function sdkTerminalDiagnostics(reason: {kind?: unknown; error?: {code?: unknown; status?: unknown; requestId?: unknown}} | undefined): FailureDiagnostics {
+  const failure = reason?.kind === 'error' ? reason.error : undefined;
+  const diagnostic = sanitizeFailureDiagnostics({source:'runtime',stage:'model',sdkTerminal:reason?.kind,
+    sdkErrorCode:failure?.code,httpStatus:failure?.status,upstreamRequestId:failure?.requestId});
+  if (!diagnostic.sdkTerminal) diagnostic.code = reason ? 'sdk_end_unrecognized' : 'sdk_end_missing';
+  return diagnostic;
+}
+function sdkExceptionDiagnostics(error: unknown, stage: 'startup' | 'model'): FailureDiagnostics {
+  const diagnostic = errorDiagnostics(error);
+  return sanitizeFailureDiagnostics({...diagnostic,source:diagnostic.source==='unknown'?'runtime':diagnostic.source,
+    stage:diagnostic.stage??stage,...(error instanceof JsonRpcResponseError?{rpcCode:error.code}:{})});
+}
+
 export function prepareDshRun(selection: ResolvedRunSelection, dependencies: Omit<HostRunDependencies, 'profile' | 'identity'> & {readonly runId: string}, assembly: HostSessionAssembly) {
   if (selection.runtime.runtimeId !== DSH_RUNTIME_ID || !isDeepStrictEqual(selection.modelSelection, dependencies.model.selection)) throw new DshProfileError('dsh_profile_invalid');
   const {runId, ...ports} = dependencies, profile = selection.runtime;
@@ -130,11 +143,12 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
               try {
                 const result = await host.runModel(request.attempt, () => Promise.race([harness!.run(request.prompt, {sessionId, onNotification: notification}), channel!.failure, observer!.failure]));
                 const end = result.events && [...result.events].reverse().find(event => event.type === 'turn/end');
-                const reason = (end?.data as {reason?: {kind?: string}} | undefined)?.reason;
-                if (reason?.kind === 'max-tokens') return {terminal: {kind: 'output_limit'}, candidate: {text: result.finalResponse}};
+                const reason = (end?.data as {reason?: {kind?: unknown; error?: {code?: unknown; status?: unknown; requestId?: unknown}}} | undefined)?.reason;
+                if (reason?.kind === 'completed') return {terminal: {kind: 'completed'}, candidate: {text: result.finalResponse}};
                 if (reason?.kind === 'aborted') return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
-                if (reason?.kind !== 'completed') return {terminal: {kind: 'failed', reason: 'provider_error'}};
-                return {terminal: {kind: 'completed'}, candidate: {text: result.finalResponse}};
+                const diagnostic = sdkTerminalDiagnostics(reason);
+                if (reason?.kind === 'max-tokens') return {terminal: {kind: 'output_limit'}, candidate: {text: result.finalResponse}, diagnostic};
+                return {terminal: {kind: 'failed', reason: 'provider_error'}, diagnostic};
               } catch (error) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
                 if (error instanceof AgentYieldError) return {terminal: {kind: 'yielded'}};
@@ -145,7 +159,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
                 // generic provider or tool failure.
                 if (error instanceof ProviderFailure || error instanceof AgentResponseError) throw error;
                 if (error instanceof ContextToolError && error.recovery === 'stop') return {terminal: {kind: 'failed', reason: 'tool_failure'}};
-                throw new AgentProviderError(undefined,errorDiagnostics(error));
+                throw new AgentProviderError(undefined,sdkExceptionDiagnostics(error, 'model'));
               } finally { active = undefined; }
             })();
             return task;
@@ -159,7 +173,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           await closeResources().catch(() => {});
           if (error instanceof AgentResponseError || error instanceof AgentTimeoutError || error instanceof DshProfileError || error instanceof ProviderFailure) throw error;
           if (error instanceof RequestTimeoutError) throw new AgentTimeoutError();
-          throw new AgentProviderError(undefined,errorDiagnostics(error));
+          throw new AgentProviderError(undefined,sdkExceptionDiagnostics(error, 'startup'));
         }
       })();
       preparations.add(preparing); void preparing.then(() => preparations.delete(preparing), () => preparations.delete(preparing)); return preparing;

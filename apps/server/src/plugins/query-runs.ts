@@ -33,7 +33,8 @@ import {parseQueuedQuery} from '../query-request.js';
 import {ConversationQueue,conversationQueryInput} from '../conversation-queue.js';
 import type {QueryScope} from '../query-scope.js';
 import {assertSourceContextDependencies} from '../source-context-lineage.js';
-import {safeError} from '../diagnostics.js';
+import {safeError,type ServerDiagnostics} from '../diagnostics.js';
+import {failureContext} from '../execution-failures.js';
 import type {QueryRuntime} from './query-runtime.js';
 import {moteText} from '../i18n.js';
 import type {UsageLedger} from '../usage.js';
@@ -60,6 +61,7 @@ export interface QueryRunDependencies {
   readonly store:ConstructorParameters<typeof DelegationRuntime>[0];
   readonly executor:ExecutionEngine;
   readonly executionObserver:Pick<ExecutionObservability,'hostTick'>;
+  readonly diagnostics:Pick<ServerDiagnostics,'record'>;
   readonly runtimeSettings:Pick<ExecutionSettings,'execution'>;
   readonly evidenceReader:EvidenceReader;
   readonly sourceContexts:SourceContextStore;
@@ -179,6 +181,11 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
       const prepared=await prepareDelegatedQuery.prepare(saved.hostRequest,work,input.signal!,input.onProgress);
       const current=runtime.journal.payload<SavedQuery>(work.id);current.continuationPrepared=true;runtime.journal.savePayload(work.id,current);return prepared;
     }),
+    onResearchFailure:(context,error)=>{
+      const failure=safeError(error,{includeUpstreamRequestId:true});
+      dependencies.diagnostics.record('agent.research_failed',{operation:'query',...context,runId:failureContext(error).runId,category:failure.category,
+        reason:failure.reason,diagnostic:failure.diagnostic},'warn');
+    },
     operationUsage:(operationId:string,createdAt:string,finishedAt:string)=>usageLedger.operation(operationId,createdAt,finishedAt),
     pinnedConfigurationCurrent,
     assertModelWork,
