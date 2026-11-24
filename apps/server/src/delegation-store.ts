@@ -10,6 +10,9 @@ export class DelegationStore {
     installSchemaPlan(store.db,[delegationJournalSchemaInstallation]);
     store.installContextHistoryInvalidation();
   }
+  hasExternalUnits():boolean {
+    return Boolean(this.store.db.prepare("SELECT 1 FROM delegation_units WHERE json_extract(json,'$.external')=1 LIMIT 1").get());
+  }
   encodePrivate(value:unknown){const bytes=Buffer.from(JSON.stringify(value));return this.store.contentEncryption.enabled?'aes:'+this.store.contentEncryption.seal(bytes).toString('base64'):'json:'+bytes.toString('utf8');}
   decodePrivate<T>(value:string):T {return JSON.parse(value.startsWith('aes:')?this.store.contentEncryption.open(Buffer.from(value.slice(4),'base64')).toString('utf8'):value.slice(5)) as T;}
   payload<T>(id:string):T {const row=this.store.db.prepare('SELECT json FROM delegation_payloads WHERE work_id=?').get(id);if(!row)throw new StoreError('Delegation input is no longer available',409);return this.decodePrivate<T>(String(row.json));}

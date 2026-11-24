@@ -77,6 +77,10 @@ export type MemoryPipelineOptions={allowQueryImages?:()=>boolean;models:MemoryMo
 type EvaluatedBatchOutput={contextReadChunks?:Chunk[];workContract?:MemoryWorkContract;engineDrafts?:MemoryEngineDraftPin[];publication?:MemoryPublicationReceipt;feedbackPlan?:MemoryFeedbackPlan;coverage?:MemoryWorkCoverage;strategy?:MemoryRecipeBinding;result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 type BatchOutput={transportBatches:StoredBatch[]}|EvaluatedBatchOutput;
 
+function memoryReadRangeKey({id,offset,length}:EvidenceRange){
+  return JSON.stringify([id,offset,length]);
+}
+
 /** Jobs reference originals. Validated drafts have a separate private, dependency-bound stage store. */
 export class MemoryPipeline {
   get publication(){return this.options.publication;}
@@ -594,10 +598,9 @@ export class MemoryPipeline {
       // Nearby ranges are a deterministic transport order, not semantic
       // selection. The model can request useful missing context through the
       // existing reviewed context workflow; no omitted range becomes checked.
-      const rangeKey=(range:EvidenceRange)=>JSON.stringify([range.id,range.offset,range.length]);
-      const initialKeys=new Set(initial.map(rangeKey)),all=pipeline.contextReadScope(job,{...batch,readRanges:undefined}).chunks;
-      const positions=all.flatMap((chunk,index)=>initialKeys.has(rangeKey(chunk))?[index]:[]),first=positions[0]??0,last=positions.at(-1)??first;
-      const optional=all.map((chunk,index)=>({chunk,distance:index<first?first-index:index>last?index-last:0,index})).filter(({chunk})=>!initialKeys.has(rangeKey(chunk))).sort((a,b)=>a.distance-b.distance||a.index-b.index).map(({chunk})=>chunk);
+      const initialKeys=new Set(initial.map(memoryReadRangeKey)),all=pipeline.contextReadScope(job,{...batch,readRanges:undefined}).chunks;
+      const positions=all.flatMap((chunk,index)=>initialKeys.has(memoryReadRangeKey(chunk))?[index]:[]),first=positions[0]??0,last=positions.at(-1)??first;
+      const optional=all.map((chunk,index)=>({chunk,distance:index<first?first-index:index>last?index-last:0,index})).filter(({chunk})=>!initialKeys.has(memoryReadRangeKey(chunk))).sort((a,b)=>a.distance-b.distance||a.index-b.index).map(({chunk})=>chunk);
       const candidate=(count:number)=>({...limited,readRanges:[...required,...optional.slice(0,count).map(({id,offset,length})=>({id,offset,length}))]});
       let low=0,high=optional.length;
       while(low<high){const middle=Math.ceil((low+high)/2);if(yield* fits(candidate(middle)))low=middle;else high=middle-1;}
@@ -656,10 +659,14 @@ export class MemoryPipeline {
   /** Reuse the existing bounded original catalog, prioritizing current
    * originals. Target subdivision never narrows their frozen input ranges. */
   private contextReadScope(job:MemoryJob,batch:StoredBatch):{chunks:Chunk[];ranges:EvidenceRange[]}{
-    const first=batch.chunks[0],compatible=(chunk:Chunk)=>JSON.stringify([chunk.strategy??null,chunk.profile,chunk.profileVersion,chunk.reviewFingerprint])===JSON.stringify([first.strategy??null,first.profile,first.profileVersion,first.reviewFingerprint]);
-    const authorized=job.authorizedChunks.filter(chunk=>compatible(chunk)&&(!batch.readRanges||batch.readRanges.some(range=>range.id===chunk.id&&range.offset===chunk.offset&&range.length===chunk.length))),initial=[...batch.chunks,...(batch.contextChunks??[])];
-    const initialIds=[...new Set(initial.map(chunk=>chunk.id))],ids=[...new Set([...initialIds,...authorized.map(chunk=>chunk.id)])];
-    const chunks=authorized.filter(chunk=>ids.includes(chunk.id));
+    const profileKey=(chunk:Chunk)=>JSON.stringify([chunk.strategy??null,chunk.profile,chunk.profileVersion,chunk.reviewFingerprint]);
+    const profile=job.authorizedChunks.length?profileKey(batch.chunks[0]):undefined;
+    const requested=batch.readRanges&&new Set(batch.readRanges.map(memoryReadRangeKey));
+    // The capacity search evaluates several selections from one frozen catalog.
+    // Check exact range membership before serializing the recipe profile.
+    const chunks=job.authorizedChunks.filter(chunk=>
+      (!requested||requested.has(memoryReadRangeKey(chunk)))&&profileKey(chunk)===profile);
+    const initial=[...batch.chunks,...(batch.contextChunks??[])];
     return {chunks,ranges:mergeMemoryReadRanges([...chunks,...initial].map(({id,offset,length})=>({id,offset,length})))};
   }
   private contextReadMaterialInputs(job:MemoryJob,chunks:Chunk[]){

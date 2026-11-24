@@ -269,6 +269,7 @@ export const consumerScopes={
  "DeveloperAccessHost.prune": "developer-access"
 },
  "delegation-store.ts":{
+ "DelegationStore.hasExternalUnits": "delegation",
  "DelegationStore.payload": "delegation",
  "DelegationStore.savePayload": "delegation",
  "DelegationStore.result": "delegation",
