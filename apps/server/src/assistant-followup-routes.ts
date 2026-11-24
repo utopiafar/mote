@@ -3,6 +3,7 @@ import {queryScopeSchema} from '@mote/shared';
 import {z} from 'zod';
 import type {AssistantFollowup} from './assistant-followup.js';
 import type {AssistantChangeFeed} from './assistant-change-feed.js';
+import {BATCH_TASK_INPUT_MAX_BYTES} from './batch-processing.js';
 import {StoreError} from './evidence-store.js';
 
 /** The owner retries a saved analysis under its exact scope and revision.
@@ -15,8 +16,9 @@ export function registerAssistantFollowupRoutes(app:FastifyInstance,followup:()=
   let value:unknown;try{value=JSON.parse(scope);}catch{throw new StoreError('Invalid assistant detail scope');}
   return followup().retryView(id(request),queryScopeSchema.parse(value));
  });
- app.post('/api/assistant/followups/:id/retry',{bodyLimit:32768},async(request,reply)=>{
-  owner(request);const {expectedRevision,scope}=z.object({expectedRevision:z.number().int().positive().safe(),scope:queryScopeSchema}).strict().parse(request.body);
+ // The exact selection is already bounded by the stored task input.
+ app.post('/api/assistant/followups/:id/retry',{bodyLimit:BATCH_TASK_INPUT_MAX_BYTES,onRequest:async request=>owner(request)},async(request,reply)=>{
+  const {expectedRevision,scope}=z.object({expectedRevision:z.number().int().positive().safe(),scope:queryScopeSchema}).strict().parse(request.body);
   const result=followup().retry(id(request),expectedRevision,scope,changes());
   return reply.code(202).header('Cache-Control','no-store').send(result);
  });

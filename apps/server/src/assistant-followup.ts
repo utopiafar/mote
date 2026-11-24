@@ -98,7 +98,8 @@ export class AssistantFollowup {
   private readonly cards:AssistantCards,private readonly commitments:AssistantCommitments,private readonly matters:AssistantMatters,
   private readonly batch:BatchProcessing,private readonly assertCurrent:AssertTaskCurrent,private readonly now=()=>new Date().toISOString(),private readonly control?:BackgroundModelAuthorization,
   private readonly allowsAutomatic:(ids:readonly string[])=>boolean=()=>false,private readonly diagnostics?:Pick<ServerDiagnostics,'record'>,
-  private readonly questions?:Pick<OwnerQuestionsPort,'get'|'page'>,private readonly requestCapacity?:()=>AssistantRequestCapacity|undefined){
+  private readonly questions?:Pick<OwnerQuestionsPort,'get'|'page'>,
+  private readonly requestCapacity?:(input?:Pick<QueryInput,'modelProfileId'|'modelOverride'|'modelBudget'>)=>AssistantRequestCapacity|undefined){
   this.tasks=new TaskRecords(store);this.understanding=new AssistantUnderstandingReader(store,materials,reader);this.files=new FileObservationReader(reader);
  }
  private transaction<T>(run:()=>T):T{
@@ -407,7 +408,7 @@ export class AssistantFollowup {
   * initial original spans. No saved input is rewritten. */
  prepareQuery(input:QueryInput):QueryInput{
   const batchId=input.traceContext?.jobId;if(!batchId)return input;
-  const context=input.taskContext,capacity=this.requestCapacity?.();
+  const context=input.taskContext,capacity=this.requestCapacity?.(input);
   if(!capacity&&context&&(!('materials' in context)||'originals' in context))return input;
   const row=this.store.db.prepare("SELECT f.id FROM task_records b JOIN task_records f ON f.operation_id=b.operation_id WHERE b.id=? AND b.kind='batch' AND f.kind='assistant.followup'").get(batchId);
   if(!row)return input;
@@ -415,7 +416,9 @@ export class AssistantFollowup {
   if(snapshot.batchId!==batchId||canonicalRecipeJson(unique(input.evidenceIds??[]))!==canonicalRecipeJson(unique(snapshot.evidenceIds)))throw new StoreError('Assistant batch context changed',409);
   const saved=snapshot.queryContext;
   if(saved&&!capacity)throw new AssistantContextLimit(Buffer.byteLength(JSON.stringify(saved)));
-  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity,snapshot.materialRefs.length===1);
+  // The saved batch owns its exact group. Page its original catalog when
+  // needed so a retry can keep every grant and the same material selection.
+  return this.prepareRequest(saved?{...input,taskContext:saved}:input,snapshot.originals,capacity,true);
  }
  private prepareRequest(input:QueryInput,originals:Snapshot['originals'],capacity:AssistantRequestCapacity|undefined,allowCatalogPaging:boolean,currentRecords?:ReturnType<EvidenceReader['memories']['readCurrentEvidence']>){
   const context=input.taskContext;
