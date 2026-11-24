@@ -18,7 +18,8 @@ const cfg=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-authority-usecase-')),node=await buildApp(cfg(directory),{backgroundWorker:false});
  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
- const authority=createModelEvidenceAuthority({resolveLineage:value=>resolveDependencies(node.store,value),assertImageGrants:(inputs,images)=>assertMemoryImageGrants(node.store,inputs,images),reader:node.featureServices.evidenceReader,conversations:node.conversations,sourceContexts:new SourceContextStore(node.store),authorization:node.modelAuthorization,host:node.modelAuthorizationHost,readEvidence:ids=>node.memories.readEvidence(ids)});
+ const resolveLineage=t.mock.fn((value:Parameters<typeof resolveDependencies>[1])=>resolveDependencies(node.store,value));
+ const authority=createModelEvidenceAuthority({resolveLineage,assertImageGrants:(inputs,images)=>assertMemoryImageGrants(node.store,inputs,images),reader:node.featureServices.evidenceReader,conversations:node.conversations,sourceContexts:new SourceContextStore(node.store),authorization:node.modelAuthorization,host:node.modelAuthorizationHost,readEvidence:ids=>node.memories.readEvidence(ids)});
  const add=async()=>{const id=randomUUID();await node.store.ingest({id,deviceId:'generated',deviceName:'Generated fixture',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00Z',durationMs:0,ocrText:'Generated authority corpus '+id});return id;};
  const publish=async(id:string)=>{
   const original=node.memories.readEvidence([id])[0];
@@ -28,7 +29,7 @@ async function fixture(t:import('node:test').TestContext){
   assert.equal(response.statusCode,200,response.body);
   return node.memories.get(draft.id);
  };
- return {node,authority,add,publish};
+ return {node,authority,add,publish,resolveLineage};
 }
 
 test('model authority rejects a stale exact selection and incomplete retained context using real lineage',async t=>{
@@ -37,6 +38,18 @@ test('model authority rejects a stale exact selection and incomplete retained co
  const records=authority.selectedQueryEvidence(input);assert.equal(records.length,1);assert.equal(records[0].id,id);authority.assert(input);
  assert.throws(()=>authority.assert({question:'Generated retained summary',taskContext:{previousSummary:'Generated summary from an earlier run'},contextEvidenceDependencies:{version:1,complete:false,ids:[id]}}),{code:'context_lineage_incomplete'});
  node.store.delete(id);assert.throws(()=>authority.assert(input),{code:'context_evidence_restricted'});
+});
+
+test('an admitted manual disclosure resolves current lineage once at each authority check',async t=>{
+ const {node,authority,add,resolveLineage}=await fixture(t),id=await add();
+ const input:QueryInput={question:'Generated current evidence',contextEvidenceDependencies:{version:1,complete:true,ids:[id]}};
+ await node.modelAuthorizationHost.manual('generated-lineage-check',node.featureServices.availableModelConnections(),async()=>{
+  authority.assert(input);
+  assert.equal(resolveLineage.mock.callCount(),1,'manual disclosure has no automatic source exclusions to resolve');
+  node.store.delete(id);
+  assert.throws(()=>authority.assert(input),{code:'context_evidence_restricted'});
+  assert.equal(resolveLineage.mock.callCount(),2,'a fresh check still sees evidence withdrawal');
+ });
 });
 
 test('async authority rechecks permissions after yielding between dependency pages',async t=>{

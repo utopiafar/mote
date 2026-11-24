@@ -72,7 +72,9 @@ export class ModelAuthorizationHost {
     const records=[...this.store.evidence([...ids]),...this.materials.evidence([...ids]),...(this.files?.evidence([...ids])??[])];
     return [...records.map(record=>({sourceId:record.provenance?.sourceId??'device:'+record.deviceId})),...ids.flatMap(id=>{const root=retiredConversationRoot(this.store,id),released=releasedMemoryOriginal(this.store,id);return [...(root?[{sourceId:root.scope.sourceId??'device:'+root.scope.deviceId}]:[]),...(released?[{sourceId:released.record.provenance?.sourceId??'device:'+released.record.deviceId}]:[])];})];
   }
-  assertEvidence(ids:readonly string[]){this.control.assertDisclosure(()=>this.disclosure(ids));}
+  assertEvidence(ids:readonly string[]|(()=>readonly string[])){
+    this.control.assertDisclosure(()=>this.disclosure(typeof ids==='function'?ids():ids));
+  }
   async manual<T>(id:string,connections:ModelConnection[],task:(signal:AbortSignal)=>Promise<T>,signal?:AbortSignal,kind:'manual'|'probe'='manual',identities:readonly string[]=[]){
     this.control.manual(id,kind,identities,connections);return this.control.run(id,task,signal);
   }
