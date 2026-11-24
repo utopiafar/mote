@@ -865,7 +865,7 @@ export class MemoryPipeline {
   async retry(id:string,ownerAction=true):Promise<MemoryJobDetail> {return this.acceptRetry(id,ownerAction).completion;}
   /** Admission is synchronous so HTTP can reject a stale/cancelled/cooling-down
    * retry before returning 202. The accepted execution remains asynchronous. */
-  acceptRetry(id:string,ownerAction:boolean):{job:MemoryJobDetail;completion:Promise<MemoryJobDetail>} {
+  acceptRetry(id:string,ownerAction:boolean,modelProfileId?:string):{job:MemoryJobDetail;completion:Promise<MemoryJobDetail>} {
     this.assertAdmission();
     let job=this.storedJob(id);
     this.assertRetryWindow(job);
@@ -874,6 +874,7 @@ export class MemoryPipeline {
     // Keep that handle while reopening failed work in an idle owner retry.
     if(this.active.has(id))this.settle([id]);
     const active=this.active.get(id);
+    if(modelProfileId!==undefined&&(!ownerAction||active))throw new StoreError('Pause the active Memory job before selecting another model profile',409);
     const retryable=(batch:MemoryBatch)=>batch.status==='failed'&&batch.errorCode!=='memory_context_required';
     if(active){
       const current=this.get(id);
@@ -890,7 +891,13 @@ export class MemoryPipeline {
       // A partial retry keeps the active job's model and the sibling batches'
       // input ranges. A new run can rebind its model and plan remaining work.
       const previousConfiguration=job.configuration?.fingerprint;
-      if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
+      if(modelProfileId!==undefined){
+        if(!this.options.models.configuration||!this.options.models.configured(modelProfileId))throw new StoreError('Memory model profile is unavailable',409);
+        const configuration=this.options.models.configuration(modelProfileId,job.modelOverride);
+        if(configuration.fingerprint!==previousConfiguration&&batches.some(batch=>['pending','failed'].includes(batch.status)&&this.phaseOutputs.hasExtraction(batch.id)))throw new StoreError('An unfinished Memory review already has a saved extraction',409);
+        job.modelProfileId=modelProfileId;
+        job.configuration=structuredClone(configuration);
+      }else if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
       const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);
       for(const batch of batches)if(retryable(batch)){
         try{this.admitBatch(job,batch);}catch{batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
@@ -901,10 +908,9 @@ export class MemoryPipeline {
         this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
         const step=this.engine.get(batch.id);
         if(step)this.engine.retry(batch.id,ownerAction);
-        // An unchanged extraction can hit the same context or output limit.
-        // Reuse the frozen targets in smaller requests.
-        if(ownerAction&&capacity&&batch.readRanges&&batch.phase==='extract'&&
-          (batch.errorCode==='processing_limit'||batch.errorCode==='model_output_capacity')&&
+        // With the same model allowance the previous estimate would repeat the
+        // rejected extraction. Reuse the frozen targets in smaller requests.
+        if(ownerAction&&capacity&&batch.readRanges&&batch.errorCode==='processing_limit'&&batch.phase==='extract'&&
           !batch.feedbackOnly&&batch.strategy?.review!==null&&previousConfiguration===job.configuration?.fingerprint){
           batch.splitForCapacityRetry=true;
         }
@@ -917,9 +923,11 @@ export class MemoryPipeline {
       // the retry can plan unfinished work using the current allowance, even
       // when the original job predates request-aware partitioning.
       if(!active&&capacity)for(const batch of batches)if(batch.status==='pending'){
+        if(modelProfileId!==undefined&&previousConfiguration!==job.configuration?.fingerprint)delete batch.splitForCapacityRetry;
         delete batch.readRanges;this.saveBatch(batch);
       }
       job.status='queued';delete job.errorCode;this.saveJob(job);
+      if(modelProfileId!==undefined&&previousConfiguration!==job.configuration?.fingerprint)this.engine.preferOperationOnce('memory.batch','memory:'+id);
       if(!active)for(const plan of this.inputPlans.list(id)){
         const step=this.engine.get(plan.id);
         if(!step||!['waiting','blocked','failed'].includes(step.state)||plan.batchIds!==undefined)continue;

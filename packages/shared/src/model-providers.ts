@@ -52,6 +52,8 @@ export interface ModelSettingsParameters {
   /** Explicit Codex speed selection; never sent to HTTP providers. */
   serviceTier?: CodexServiceTier;
   maxTokens: number;
+  /** Total context supported by the selected model and endpoint. */
+  contextWindow?: number;
   /** One provider/model request. Null means not applicable to Codex App Server. */
   modelRequestTimeoutMs: number | null;
   /** Complete Agent run, including all model/tool turns. Null disables Mote's total deadline. */
@@ -89,7 +91,8 @@ export const MODEL_FEATURE_LABELS: Record<ModelFeature, string> = {get chat() { 
 export interface ModelProfile {id: string; name: string; settings: ModelSettings}
 export interface ModelProfilePublic {id: string; name: string; settings: ModelSettingsPublic; readOnly?: boolean; source?: 'file'}
 export interface ModelSelection {profileId: string; profileName: string; provider: string; model: string}
-export interface ModelSettingsInput extends ModelSettingsParameters {
+export interface ModelSettingsInput extends Omit<ModelSettingsParameters, 'contextWindow'> {
+  contextWindow?: number | null;
   /** Omitted secrets retain their saved value; null explicitly clears them. */
   apiKey?: string | null;
   headers?: Record<string, string> | null;

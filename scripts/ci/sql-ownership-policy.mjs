@@ -133,6 +133,9 @@ export const consumers={
 /** These exact method scopes belong to the named formal owner. Other
  * statements in the same file remain pending. */
 export const consumerScopes={
+ 'execution-engine.ts':{
+  'ExecutionEngine.preferOperationOnce':'execution',
+ },
  'memory.ts':{
   'MemoryStore.dependenciesByEvidence':'memory',
  },
