@@ -114,7 +114,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
             env: {PATH: process.env.PATH, TMPDIR: tmpdir(), HOME: home, DEEPSEEK_API_KEY: adapter.apiKey || 'mote-local-no-auth', DEEPSEEK_BASE_URL: connection.baseUrl, MOTE_MODEL_API_KEY: adapter.apiKey || 'mote-local-no-auth',
               MOTE_HOST_RUN: JSON.stringify(channel.configuration), MOTE_MODEL_OBSERVER: JSON.stringify(observer.configuration),
               MOTE_MODEL_TRANSPORT: JSON.stringify({
-                baseUrl: connection.baseUrl, protocol: connection.protocol, sessionId,
+                baseUrl: connection.baseUrl, protocol: connection.protocol, sessionId: host.modelSessionId ?? sessionId,
                 reasoningEffort: connection.effort, provider: adapter.provider,
                 headers: adapter.headers, extraBody: adapter.extraBody,
                 contextWindow: resolveModelCapabilities(adapter).contextWindow,

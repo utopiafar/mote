@@ -22,12 +22,13 @@ const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).m
 });
 export const claimSchema=z.object({domain:z.enum(['personal','coding']).optional(),relations:z.array(memoryRelationSchema).max(20).optional(),admission:memoryAdmissionSchema.optional(),contextPriority:z.literal('standing').optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),coding:codingMemorySchema.optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),validFrom:z.string().datetime({offset:true}).optional(),validUntil:z.string().datetime({offset:true}).optional(),title:z.string().trim().min(1),statement:z.string().trim().min(1),uncertainty:z.string(),evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(spanSchema).min(1).max(30).optional()}).strict();
 export {type MemoryOutputValidationCode,type MemoryValidationDetails} from './memory-validation.js';
-import {memoryValidationInstruction,validationLocation,validationProblem,type MemoryOutputValidationCode,type MemoryValidationDetails} from './memory-validation.js';
+import {memoryValidationInstruction,memoryRepairScope,validationLocation,validationProblem,type MemoryOutputValidationCode,type MemoryValidationDetails} from './memory-validation.js';
 /** Feedback contains only host-owned instructions and numeric locations, never model text. */
 export class MemoryOutputValidationError extends StoreError {
   constructor(public code:MemoryOutputValidationCode,message:string,public details:MemoryValidationDetails={},options?:ErrorOptions){super(message,502,options);this.name='MemoryOutputValidationError';}
   get repairInstruction(){return memoryValidationInstruction(this.code,this.details);}
   get feedback(){return this.repairInstruction;}
+  get memoryRepair(){return memoryRepairScope(this.code,this.details);}
 }
 
 /** If the runtime cannot fit its in-session correction, preserve the host

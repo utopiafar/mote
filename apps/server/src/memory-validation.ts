@@ -1,3 +1,4 @@
+import type {MemoryRepairScope} from '@mote/agent';
 import {CODING_MEMORY_CONTRACT} from './memory-schema.js';
 import {MEMORY_VISUAL_REVIEW_COVERAGE_CONTRACT} from './memory-image-proof.js';
 const MEMORY_SCHEMA_FEEDBACK='Every candidate needs admission (layer observation|memory, reason, scope, attribution user|third_party|observed|inferred) and exact evidence quotes. Consolidated candidates must be layer memory and include only relatedMemoryIds actually used from supplied cards. Empty output is valid.';
@@ -27,10 +28,31 @@ export type MemoryValidationDetails={workContract?:'range-evaluation@1';candidat
 /** Schema-owned locations only; never echo arbitrary keys, bad values or model text. */
 const fields=new Set('memories domain relations admission layer reason scope attribution relatedMemoryIds coding kind applicability validation validFrom validUntil title statement uncertainty evidenceIds evidence id offset length quote citationIds coverage key state candidateIndexes contextRefs question prompt choices label answer capacity saturated memoryId fingerprint version summary memoryCandidates workRecords requirements constraints decisions results openItems artifactRefs events occurredAt actor status basis sourceTime ref actionCues'.split(' '));
 export function validationLocation(path:(string|number)[]){return path.every(key=>typeof key==='number'?Number.isSafeInteger(key)&&key>=0:fields.has(key))?path.reduce<string>((value,key)=>typeof key==='number'?value+'['+key+']':value+(value?'.':'')+key,''):'unrecognized_field';}
-export function memoryValidationInstruction(code:MemoryOutputValidationCode,details:MemoryValidationDetails){
+export function memoryValidationInstruction(code:MemoryOutputValidationCode,details:MemoryValidationDetails,complete=true){
  const feedback=details.workContract==='range-evaluation@1'&&(code==='coverage'||code==='schema')?
   'The range-evaluation@1 output is {memories:[...],coverage:[{key,state:checked|no_candidates|incomplete|needs_context|needs_owner_input,candidateIndexes:[zero-based indices],reason,contextRefs:[],question?}]}. Do not return capacity or saturated. There is no candidate-count quota. Every target must be fully assessed and independently reviewed before checked/no_candidates; deliberate selection is permitted. Unassessed ranges require incomplete with a concrete reason; needs_context identifies useful additional authorized interpretation evidence. Preserve exact keys, candidate ownership and the owner-question contract. '+MEMORY_SCHEMA_FEEDBACK+' '+CODING_MEMORY_CONTRACT:code==='scope'&&details.problem==='missing_target_support'?'Every candidate needs an exact supporting quote wholly within a listed target range. Successfully read context may explain or complete a target claim, but a context-only claim cannot become an independent candidate. Remove that candidate or provide genuine target support; do not invent a target quote.':validationFeedback[code];
- return feedback+(details.fieldPath?' Host field: '+details.fieldPath+'.':'')+(details.problem?' Host issue: '+details.problem+'.':'')+(details.maxItems===undefined?'':' Use at most '+details.maxItems+' entries in this field.')+(details.candidateIndex===undefined?'':' Candidate index: '+details.candidateIndex+'.')+(details.spanIndex===undefined?'':' Evidence entry index: '+details.spanIndex+'.')+' Return the complete corrected object; preserve all required fields and exact target keys. Do not repair an evidence ID by guessing.';
+ return feedback+(details.fieldPath?' Host field: '+details.fieldPath+'.':'')+(details.problem?' Host issue: '+details.problem+'.':'')+(details.maxItems===undefined?'':' Use at most '+details.maxItems+' entries in this field.')+(details.candidateIndex===undefined?'':' Candidate index: '+details.candidateIndex+'.')+(details.spanIndex===undefined?'':' Evidence entry index: '+details.spanIndex+'.')+(complete?' Return the complete corrected object; preserve all required fields and exact target keys.':'')+' Do not repair an evidence ID by guessing.';
+}
+
+/** Only a host-owned existing row or exact quote can be repaired in isolation.
+ * An identity change or a missing/cross-row contract goes through full validation. */
+export function memoryRepairScope(code:MemoryOutputValidationCode,details:MemoryValidationDetails):MemoryRepairScope|undefined {
+  const feedback=()=>memoryValidationInstruction(code,details,false);
+  if(['quote_not_found','quote_ambiguous','quote_length_mismatch','quote_offset_mismatch','quote_range'].includes(code)&&
+    details.candidateIndex!==undefined&&details.spanIndex!==undefined){
+    return {section:'memories',index:details.candidateIndex,spanIndex:details.spanIndex,feedback:feedback()};
+  }
+  if(code==='schema'){
+    const member=details.fieldPath?.match(/^memories\[(\d+)\](?:\.|\[)/);
+    if(member)return {section:'memories',index:Number(member[1]),feedback:feedback()};
+  }
+  if(code==='coverage'&&!['duplicate_target_key','unknown_target_key'].includes(details.problem??'')){
+    const row=details.fieldPath?.match(/^coverage\[(\d+)\]\./);
+    if(row)return {section:'coverage',index:Number(row[1]),feedback:feedback()};
+  }
+  if(code==='scope'&&details.problem==='missing_target_support'&&details.candidateIndex!==undefined){
+    return {section:'memories',index:details.candidateIndex,feedback:feedback()};
+  }
 }
 
 export function validationProblem(issue:{code:string;validation?:unknown;received?:unknown}){

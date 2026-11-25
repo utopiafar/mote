@@ -63,7 +63,7 @@ test('unbounded retrieval, consolidation and missing host validation always requ
  const options={cache:new MemoryReviewCache(),snapshot:()=> 'same'};let calls=0;const query=async()=>{calls++;return draft();};
  for(const request of [{...input(),contextTime:undefined},{...input(),evidenceIds:undefined},{...input(),evidenceRanges:undefined},{...input(),skill:'memory-consolidation' as const},{...input(),validateOutput:undefined}]){const d=draft();await reviewMemory(request,d,query,options);await reviewMemory(request,d,query,options);}
  assert.equal(calls,10);
- const empty=await reviewMemory(input(),{...draft(),answer:'{"memories":[]}'},query,options);assert.equal(calls,10);assert.equal(memoryReviewReceipt(empty)?.decision,'empty');assert.equal(memoryReviewReceipt(empty)?.reviewRunId,undefined);
+ const empty=await reviewMemory(input(),{...draft(),answer:'{"memories":[]}'},query,options);assert.equal(calls,11);assert.equal(memoryReviewReceipt(empty)?.decision,'independent');assert.ok(memoryReviewReceipt(empty)?.reviewRunId);
 });
 
 test('invalid output, deletion during review, validation race and cancellation cannot populate or use cache',async()=>{
@@ -193,13 +193,13 @@ test('native eighteen-fact proposals reach independent review before canonical a
  assert.equal(draftValidations,1,'ordinary Mote draft admission remains required');
 });
 
-test('an empty native proposal still requires independent review and validated output; ordinary empty Mote behavior is preserved',async()=>{
+test('empty native and Mote proposals both require independent review under a reviewed recipe',async()=>{
  const native={answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty-native'};let calls=0,validations=0;
  const request={...input(),validateOutput:()=>{validations++;return undefined;}};
  const reviewed=await reviewMemory(request,native,async value=>{calls++;assert.equal(value.traceContext?.phase,'review');return {...native,runId:'generated-empty-native-review'};},{draftOrigin:'native-engine'});
  assert.equal(calls,1);assert.equal(validations,1);assert.equal(memoryReviewReceipt(reviewed)?.decision,'independent');assert.equal(memoryReviewReceipt(reviewed)?.reviewRunId,'generated-empty-native-review');
- const ordinary=await reviewMemory(request,native,async()=>{throw Error('Existing empty Mote path should not invoke another model');},{draftOrigin:'mote'});
- assert.equal(memoryReviewReceipt(ordinary)?.decision,'empty');assert.equal(calls,1);
+ const ordinary=await reviewMemory(request,native,async value=>{calls++;assert.equal(value.memoryReviewDraft,undefined);return {...native,runId:'generated-empty-mote-review'};},{draftOrigin:'mote'});
+ assert.equal(memoryReviewReceipt(ordinary)?.decision,'independent');assert.equal(memoryReviewReceipt(ordinary)?.reviewRunId,'generated-empty-mote-review');assert.equal(calls,2);
 });
 
 test('native and Mote review cache identities are isolated and cached native output cannot bypass validation',async()=>{

@@ -9,6 +9,7 @@ export {buildContextEnvelope, taskTools} from './task-context.js';
 export {assembleHostContext} from './host/run-session.js';
 export type {HostRunControl,HostSteeringTarget} from './host/run-contracts.js';
 export {parseAnswer} from './answer-parser.js';
+export {memoryReviewEditsInstruction,type MemoryRepairScope} from './host/memory-output-edits.js';
 export {skillCatalog, SKILL_VERSION} from './skills.js';
 export {type ImportAgentInput} from './import-agent.js';
 export {IMPORT_CAPABILITY_API_VERSION,ImportCapabilityError,ImportCapabilityRegistry,defineImportCapabilityDescriptor,type ImportAgentLaunch,type ImportAgentObserver,type ImportAgentResult,type ImportCapability,type ImportCapabilityDescriptor} from './runtime/import-capability.js';

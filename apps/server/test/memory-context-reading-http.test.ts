@@ -75,7 +75,7 @@ async function fixture(t:TestContext,scenario:Scenario){
    if(target.length===1&&target[0].offset===256&&target[0].length===256){
     assert.ok(input.evidenceReadRanges?.some(range=>range.id===member.id&&range.offset===0&&range.length===diary.length),'the frozen selected original remains readable after configured initial partitioning');
     const denied=await tool('context_evidence',{id:['cross-original-context','review-only-context','unused-context-correction','unused-context-deletion'].includes(scenario)?randomUUID():otherId,offset:0,length:12});assert.equal(denied.status,400,'an original outside this job selection has no read grant');
-    const ordinary=await tool('evidence',{ids:[member.id],offset:0,length:header.length});assert.equal(ordinary.status,input.traceContext?.phase==='review'?200:400,'ordinary evidence uses only the seeds supplied to its own phase');
+    const ordinary=await tool('evidence',{ids:[member.id],offset:0,length:header.length});assert.equal(ordinary.status,400,'only target seeds are attached; independent review obtains the authorized background with context_evidence');
     const prefix={quote:header,offset:0},event={quote:repair,offset:256};
     if(scenario==='unread-quote'&&input.traceContext?.phase==='extract'){
      const invalid=claim('Unread diary context','The owner repaired a blue bicycle in 2024',[prefix,event]);
@@ -155,10 +155,11 @@ test('HTTP configured-range Memory cannot publish context read before an owner c
  assert.equal(f.node.materials.get(f.material.id)!.attributionContext?.ownerRelation,'third_party');
 });
 
-test('HTTP selected originals allow cross-original context citations and redisclose them to an independent reviewer',{timeout:30000},async t=>{
+test('HTTP selected originals allow cross-original context citations after the reviewer reads its own authorized pages',{timeout:30000},async t=>{
  const f=await fixture(t,'cross-original-context');assert.equal(f.done.status,'completed',failureSummary(f));assert.equal(f.done.memoryIds.length,2);
  const middle=f.calls.filter(call=>call.target.length===1&&call.target[0].offset===256&&call.target[0].length===256);assert.deepEqual(middle.map(call=>call.phase),['extract','review']);
- assert.ok(!middle[0].seedIds.includes(f.otherId),'cross-original context is not an extraction seed');assert.ok(middle[1].seedIds.includes(f.otherId),'the reviewer receives every original actually read by extraction');
+ assert.ok(!middle[0].seedIds.includes(f.otherId),'cross-original context is not an extraction seed');assert.ok(!middle[1].seedIds.includes(f.otherId),'background stays outside the initial independent review');
+ assert.ok(middle[1].contextReads.some(range=>range.id===f.otherId),'the reviewer independently reads the linked original from its existing grant');
  for(const call of middle)assert.ok(call.readRanges.some(range=>range.id===f.otherId&&range.offset===0&&range.length===otherText.length));
  const memory=f.done.memoryIds.map((id:string)=>f.node.memories.get(id)).find((memory:any)=>memory.title==='Generated bicycle repair')!;
  assert.deepEqual(new Set(memory.evidenceIds),new Set(f.selected));assert.ok(memory.evidence.some((span:any)=>span.id===f.otherId&&span.quote===otherText));
