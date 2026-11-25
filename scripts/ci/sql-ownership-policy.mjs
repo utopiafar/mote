@@ -259,6 +259,7 @@ export const consumerScopes={
  "BackgroundModelAuthorization.automatic": "background-model-authorization",
  "BackgroundModelAuthorization.bindStep": "background-model-authorization",
  "BackgroundModelAuthorization.stepAuthority": "background-model-authorization",
+ "BackgroundModelAuthorization.renewMemoryRetryAuthority": "background-model-authorization",
  "BackgroundModelAuthorization.assertStep": "background-model-authorization",
  "BackgroundModelAuthorization.runStep": "background-model-authorization"
 },

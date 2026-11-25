@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import {randomUUID} from 'node:crypto';
+import {AgentResponseError} from '@mote/agent';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
@@ -101,4 +102,87 @@ test('an owner retry admits only the selected formerly excluded Memory job with 
  assert.equal((await node.app.inject({method:'POST',url:'/api/memory-jobs/'+sibling.id+'/cancel',headers,payload:{}})).statusCode,200);
  const beforeRejectedRetry=grants();assert.equal((await node.app.inject({method:'POST',url:'/api/memory-jobs/'+sibling.id+'/retry',headers,payload:{}})).statusCode,409);
  assert.equal(grants(),beforeRejectedRetry,'a rejected retry cannot retain a manual grant');
+});
+
+
+test('an owner Memory retry renews the selected model on the same parked or failed batch', async t => {
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-owner-model-renewal-'));
+ const token='generated-memory-model-renewal-owner';
+ const config:ConfigurationPlatformOptions={
+  path:join(directory,'mote.yaml'),privateCredential:{token,tokenPath:'fixture'},
+  initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},
+   server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},
+   models:{deployment:{model:'generated-model',provider:'custom',protocol:'openai-completions',baseUrl:'https://generated.invalid/v1',apiKey:'generated-only',maxTokens:16384},
+    embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}},
+ };
+ const calls:{id?:string;phase?:string;budget:number}[]=[];
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(settings,reader)=>({
+  configured:true,close:async()=>{},
+  query:async input=>{
+   const topic=fixtureTopicResult(input);if(topic)return topic;
+   calls.push({id:input.traceContext?.jobId,phase:input.traceContext?.phase,budget:settings.maxTokens});
+   if(settings.maxTokens===16384)throw new AgentResponseError('Generated output exhausted its budget','output_limit');
+   const bridge=await startBridge(reader,input);
+   try{return {runId:randomUUID(),answer:generatedMemoryOutput(input),citations:[],trace:bridge.trace,
+    evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};}
+   finally{await bridge.close();}
+  },
+ })});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ await node.app.ready();
+ const headers={authorization:'Bearer '+token};
+ const create=async(label:string)=>{
+  const id=randomUUID();
+  const original=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-renewal',
+   deviceName:'Generated',platform:'import',capturedAt:'2026-05-01T00:00:00Z',text:'Generated original for '+label}});
+  assert.equal(original.statusCode,201,original.body);
+  const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[id]}});
+  assert.equal(response.statusCode,202,response.body);
+  const failed=await node.memoryPipeline.run(response.json().id);
+  assert.equal(failed.status,'failed');
+  assert.equal(failed.batches.length,1);
+  assert.equal(failed.batches[0].errorCode,'model_output_capacity');
+  return failed;
+ };
+ const parked=await create('a previously selected model');
+ const failed=await create('an explicit model selection');
+ const profileId='generated-new-budget';
+ const view=node.modelSettings.view();
+ const update=await node.app.inject({method:'PUT',url:'/api/model-settings/profiles/'+profileId,headers,payload:{
+  revision:view.revision,name:'Generated new budget',
+  settings:{...node.modelSettings.select('memory').settings,contextWindow:1000000,maxTokens:65536},
+ }});
+ assert.equal(update.statusCode,200,update.body);
+ const waitFor=async(jobId:string,expected:string)=>{
+  const end=Date.now()+7000;
+  while(Date.now()<end){
+   const job=node.memoryPipeline.get(jobId);
+   if(job.status===expected||job.batches[0].errorCode===expected)return job;
+   await setTimeout(20);
+  }
+  const job=node.memoryPipeline.get(jobId);
+  assert.fail('Expected '+expected+', got '+job.status+' / '+job.batches[0].errorCode);
+ };
+ // Simulate work saved by the old retry path, which selected the profile
+ // and left the existing step bound to the old owner model allowance.
+ void node.memoryPipeline.acceptRetry(parked.id,true,profileId).completion.catch(()=>{});
+ await waitFor(parked.id,'background_model_authorization_required');
+ assert.equal(calls.filter(call=>call.id===parked.id).length,1);
+ const retry=async(jobId:string,payload:Record<string,unknown>)=>node.app.inject({method:'POST',
+   url:'/api/memory-jobs/'+jobId+'/retry',headers,payload});
+ const resumed=await retry(parked.id,{});
+ assert.equal(resumed.statusCode,202,resumed.body);
+ node.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE operation_id=? AND error='background_model_authorization_required'").run('memory:'+parked.id);
+ const resumedJob=await waitFor(parked.id,'completed');
+ assert.equal(node.memoryPipeline.get(failed.id).status,'failed');
+ const selected=await retry(failed.id,{modelProfileId:profileId});
+ assert.equal(selected.statusCode,202,selected.body);
+ const selectedJob=await waitFor(failed.id,'completed');
+ for(const [before,after] of [[parked,resumedJob],[failed,selectedJob]]){
+  assert.equal(after.batches[0].id,before.batches[0].id);
+  assert.deepEqual(after.batches[0].evidenceRanges,before.batches[0].evidenceRanges);
+  assert.equal(after.batches[0].reviewReceipt?.decision,'independent');
+  assert.deepEqual(calls.filter(call=>call.id===before.id).map(({phase,budget})=>[phase,budget]),
+   [['extract',16384],['extract',65536],['review',65536]]);
+ }
 });
