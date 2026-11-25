@@ -245,7 +245,12 @@ export class MemoryStore {
     const parsed=z.object({memories:maxCandidates===undefined?claims:claims.max(maxCandidates),citationIds:citationIds.optional(),...(options.workContract?{coverage:memoryRangeEvaluationCoverageSchema}:{})}).strict().safeParse(input);
     if(!parsed.success){
       const codingIssue=parsed.error.issues.find(issue=>issue.path[2]==='coding'||issue.code==='unrecognized_keys'&&issue.keys.includes('applicability'));
-      throw new MemoryOutputValidationError(codingIssue?'coding_contract':'schema','Model returned an invalid memory structure; no memories were saved',{fieldPath:validationLocation((codingIssue??parsed.error.issues[0]).path),problem:validationProblem(codingIssue??parsed.error.issues[0]),workContract:options.workContract,...(typeof (codingIssue??parsed.error.issues[0]).path[1]==='number'?{candidateIndex:Number((codingIssue??parsed.error.issues[0]).path[1])}:{})});
+      const issue=codingIssue??parsed.error.issues[0],candidateIndex=issue.path[1];
+      const maxItems=issue.code==='too_big'&&issue.type==='array'&&issue.inclusive&&typeof issue.maximum==='number'&&Number.isSafeInteger(issue.maximum)&&issue.maximum>=0?issue.maximum:undefined;
+      throw new MemoryOutputValidationError(codingIssue?'coding_contract':'schema','Model returned an invalid memory structure; no memories were saved',{
+        fieldPath:validationLocation(issue.path),problem:validationProblem(issue),workContract:options.workContract,
+        ...(typeof candidateIndex==='number'?{candidateIndex}:{}),...(maxItems===undefined?{}:{maxItems}),
+      });
     }
     const allowed=new Set(result.citations.map(c=>c.id)),now=options.prepared?.at??options.at??new Date().toISOString(),items:Memory[]=[];
     if(parsed.data.citationIds){const repeated=new Set(parsed.data.citationIds);if(repeated.size!==allowed.size||[...repeated].some(id=>!allowed.has(id)))throw new MemoryOutputValidationError('citations','Repeated memory citation envelope does not match verified evidence');}
