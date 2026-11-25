@@ -1,6 +1,7 @@
 import {observeModelTransport} from './models/http-transport.js';
 import {ActiveExecutionBudget,DEFAULT_AGENT_EXECUTION_TIMEOUT_MS} from './active-budget.js';
 import {ProviderFailure,type TokenUsage} from '@mote/shared';
+import {OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {observeHarness} from './usage.js';
 import {codexImportCapabilityDescriptor} from './codex-import.js';
 import {DeepSeekHarness,RequestTimeoutError,type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
@@ -30,14 +31,16 @@ function createDshImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?
     let harness:DeepSeekHarness|undefined,primaryFailure=false;
     const budget=new ActiveExecutionBudget(options.agentTimeoutMs===undefined?DEFAULT_AGENT_EXECUTION_TIMEOUT_MS:options.agentTimeoutMs);
     try{
-      transportObserver=await observeModelTransport(options.authorizeModelRequest,options.requestTimeoutMs??undefined);
+      const observeRequest=options.provider===OPENCODE_GO_PROVIDER.id&&input.onOpenCodeUsage;
+      transportObserver=await observeModelTransport(options.authorizeModelRequest,options.requestTimeoutMs??undefined,
+        observeRequest?usage=>observeRequest(usage,runId):undefined);
       const transportPath=new URL('./models/http-transport.js',import.meta.url).href;
       const plugin=join(root,'import-plugin.mjs');
-      await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization} from ${JSON.stringify(transportPath)};
+      await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization,openCodeUsageReporter} from ${JSON.stringify(transportPath)};
 import {apply as applySkillTool} from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))};
 export const name='mote-import'; export const inject=['tools','skills','agents'];
 export function apply(ctx){
- const transport=JSON.parse(process.env.MOTE_MODEL_TRANSPORT),raw=globalThis.fetch.bind(globalThis); globalThis.fetch=boundedModelFetch(raw,'mote-no-context-bridge',32*1024*1024,transport,modelFailureReporter(raw),modelRequestAuthorization(raw));
+ const transport=JSON.parse(process.env.MOTE_MODEL_TRANSPORT),raw=globalThis.fetch.bind(globalThis); globalThis.fetch=boundedModelFetch(raw,'mote-no-context-bridge',32*1024*1024,transport,modelFailureReporter(raw),modelRequestAuthorization(raw),openCodeUsageReporter(raw));
  for(const skill of JSON.parse(process.env.MOTE_SKILLS))ctx.skills.register({name:skill.name,description:skill.description,content:skill.content,source:'bundled',metadata:{version:skill.version}});
  applySkillTool(ctx);ctx.provide('moteImportReady',true);
 }`,{mode:0o600});
@@ -57,7 +60,7 @@ export function apply(ctx){
         env:{PATH:process.env.PATH,TMPDIR:tmpdir(),HOME:join(root,'home'),DEEPSEEK_API_KEY:options.apiKey||'mote-local-no-auth',DEEPSEEK_BASE_URL:connection.baseUrl,MOTE_MODEL_API_KEY:options.apiKey||'mote-local-no-auth',
           MOTE_MODEL_OBSERVER:JSON.stringify(transportObserver.configuration),
           MOTE_MODEL_TRANSPORT:JSON.stringify({
-            baseUrl:connection.baseUrl,protocol:connection.protocol,sessionId:runId,
+            baseUrl:connection.baseUrl,protocol:connection.protocol,sessionId:input.modelSessionId??runId,
             reasoningEffort:connection.effort,provider:options.provider,
             headers:options.headers,extraBody:options.extraBody,
             contextWindow:capacity.contextWindow,maxTokens:capacity.maxOutputTokens,

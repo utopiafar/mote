@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {AsyncLocalStorage} from 'node:async_hooks';
 import {AgentNotConfiguredError,createImportAgent,type AgentOptions,type ImportAgentInput,type ImportCapability} from '@mote/agent';
 import type {ModelSettings} from '@mote/shared/models';
+import type {ServerDiagnostics} from './diagnostics.js';
 import type {AgentRuntimeRegistry} from './agent-runtime-registry.js';
 import type {AdmittedUsageMeter} from './assembly/processing.js';
 import type {BackgroundModelAuthorization,ModelConnection} from './background-model-authorization.js';
@@ -29,6 +30,7 @@ export interface AgentImportHostDependencies {
   readonly modelOperation:Pick<AsyncLocalStorage<string>,'run'>;
   readonly providerAdmission:Pick<ProviderAdmission,'run'>;
   readonly observeImport?:(workspace:string,event:unknown)=>void;
+  readonly diagnostics?:Pick<ServerDiagnostics,'record'>;
   /** Trusted build adapter only; the product capability is never selected by input. */
   readonly capability?:ImportCapabilityFactory;
 }
@@ -69,7 +71,8 @@ export function createAgentImportHost(dependencies:AgentImportHostDependencies):
       active.add(runtime);
       const {signal:_signal,operationId:_operationId,...request}=prepared;
       const result=await meter.run(()=>dependencies.agentGate.run(()=>dependencies.modelOperation.run(operationId,
-        ()=>dependencies.providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},
+        ()=>dependencies.providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN',modelSessionId:operationId,
+          onOpenCodeUsage:(usage,runId)=>dependencies.diagnostics?.record('agent.opencode_request_usage',{...usage,runId,operationId,operation:'import'})},
           dependencies.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>meter.update(usage)))),
       input.signal,input.operationId));
       // A late preview from a cancelled or revoked preparation cannot become

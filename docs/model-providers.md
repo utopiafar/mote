@@ -37,6 +37,8 @@ HTTP 单次输出预算 `maxTokens` 默认从 65,536 起，按所选供应商、
 
 遇到输出截断时，先核对失败请求的单次输出预算和模型结束原因。调整预算后，用原失败批次和原文范围验证，核对目标覆盖、独立复核和原文引文。采用例外档位时，以供应商能力和原批次的实际结果为依据。输入超出上下文窗口时，按原文范围的容量约束处理。输出超限的较短回答恢复与失败保留见[Agent说明](agent-runtime.md#runtime-roles)。
 
+启用普通诊断的 Central 会为 OpenCode Go 的实际 HTTP 请求记录 `agent.opencode_request_usage`。每条记录包含请求标识、可用的上游请求标识，以及相关运行、尝试和 Memory 阶段。标准 API token 计数与 OpenCode 报告的未缓存输入、缓存读写、输出和推理计数分开记录。Go 套餐扣量以 `allowanceUsd` 记录，取自供应商回执。缺失字段为 `null`。记录沿用本机日志保留规则，不含密钥、请求正文或模型回答。参考 [OpenCode 计量说明](https://opencode.ai/docs/console/api/inference/#cost)。
+
 Codex 需要运行 Central 的系统用户有可访问的文件登录。原生部署还需在对应发布目录构建带请求预算检查的 App Server，见[原生部署](deployment.md#安装与启动)。系统安装的 Codex CLI 可用于登录和读取模型目录。`models.codex.executable/home`只由宿主配置提供，修改需重启。每次请求使用独立进程和临时home，不继承私人MCP、插件、hooks或历史会话。查询只开放Mote上下文工具，导入使用独立可写临时工作区。
 
 Codex单次模型请求期限由上游管理，Mote的Agent总预算仍可为空；HTTP输出token设置不传给Codex。推理档位和Standard/Fast按当前目录选择，不静默替换；Fast返回档位不匹配会失败。Host未配置窗口时使用272000 token保守预算，并受目录实际窗口和输出预留约束；真正超限保留失败，不裁剪原始目标。能力取决于所用CLI和模型，连接测试仅证明本次调用。

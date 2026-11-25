@@ -1,10 +1,11 @@
 import {AsyncResource} from 'node:async_hooks';
 import {createServer} from 'node:http';
 import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
-import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,safeUpstreamRequestId,type FailureDiagnostics} from '@mote/shared';
+import {ProviderFailure,providerHttpFailure,errorDiagnostics,sanitizeFailureDiagnostics,safeUpstreamRequestId,normalizeOpenCodeRequestUsage,type FailureDiagnostics} from '@mote/shared';
 import {DEFAULT_MODEL_REQUEST_TIMEOUT_MS,OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {AgentProviderError,type AgentOptions} from '../types.js';
 import {createRequestBudget} from './request-budget.js';
+import {openCodeRequestMeasurement,type ObserveOpenCodeUsage} from './opencode-usage.js';
 
 type FetchTransport = typeof fetch;
 type TransportConfiguration = Pick<AgentOptions,'protocol'|'provider'|'reasoningEffort'|'headers'|'extraBody'|'contextWindow'|'maxTokens'> & {
@@ -21,7 +22,7 @@ function upstreamFailure(response: Response): FailureDiagnostics {
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
-export function boundedModelFetch(transport:FetchTransport,bridge:string,maximumBytes=32*1024*1024,configuration?:TransportConfiguration,reportFailure?:(value:FailureReport)=>void|Promise<void>,authorizeRequest?:(signal?:AbortSignal)=>void|Promise<void>){
+export function boundedModelFetch(transport:FetchTransport,bridge:string,maximumBytes=32*1024*1024,configuration?:TransportConfiguration,reportFailure?:(value:FailureReport)=>void|Promise<void>,authorizeRequest?:(signal?:AbortSignal)=>void|Promise<void>,reportOpenCodeUsage?:ObserveOpenCodeUsage){
   let received=0;
   let exceeded=false;
   const budget=configuration?.contextWindow&&configuration.maxTokens?createRequestBudget(configuration.contextWindow,configuration.maxTokens,configuration.protocol):undefined;
@@ -35,6 +36,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
     // selected. SSE is the only enabled SDK transport, so this covers every turn.
     let requestInit:RequestInit={...init,redirect:'manual'};
     const signal=requestInit.signal??(input instanceof Request?input.signal:undefined);
+    let openCodeGo=false;
     const authorize=async()=>{
       signal?.throwIfAborted();
       await authorizeRequest?.(signal);
@@ -57,9 +59,10 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
         headers.set('api-key',process.env.MOTE_MODEL_API_KEY as string);
       }
       for(const [key,value] of Object.entries(configuration.headers??{}))headers.set(key,value);
-      if(configuration.sessionId&&configuration.provider===OPENCODE_GO_PROVIDER.id&&
+      openCodeGo=configuration.provider===OPENCODE_GO_PROVIDER.id&&
         configuration.protocol===OPENCODE_GO_PROVIDER.protocol&&
-        destination.origin+destination.pathname===OPENCODE_GO_PROVIDER.baseUrl+'/chat/completions'){
+        destination.origin+destination.pathname===OPENCODE_GO_PROVIDER.baseUrl+'/chat/completions';
+      if(openCodeGo&&configuration.sessionId){
         // Go requires a stable identifier for the conversation. Keep the internal Mote ID private.
         const session=createHash('sha256').update('mote:opencode-go:').update(configuration.sessionId).digest('hex');
         headers.set('x-opencode-session',session);
@@ -90,6 +93,11 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
       // Defense in depth: profile changes cannot add upload metadata to evidence requests.
       if(configuration.protocol==='deepseek'){delete customized.dsh_session_log;delete customized.dsh_plugin_packages;}
       if(configuration.protocol==='openai-responses')customized.store=false;
+      if(openCodeGo&&reportOpenCodeUsage&&customized.stream===true){
+        customized.stream_options=merge(
+          customized.stream_options&&typeof customized.stream_options==='object'&&!Array.isArray(customized.stream_options)
+            ?customized.stream_options as Record<string,unknown>:{},{include_usage:true});
+      }
       headers.delete('content-length');
       if(budget&&!budget.fit(customized)){
         await reportFailure?.({status:413,diagnostic:{source:'runtime',stage:'model',code:'input_too_large'}});
@@ -97,9 +105,21 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
       }
       requestInit={...requestInit,headers,body:JSON.stringify(customized)};
     }
-    await authorize();
-    let response:Response;
-    try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
+    let measurement:ReturnType<typeof openCodeRequestMeasurement>|undefined;
+    const send=async()=>{
+      await authorize();
+      measurement=openCodeGo&&reportOpenCodeUsage?openCodeRequestMeasurement(reportOpenCodeUsage):undefined;
+      let response:Response;
+      try{response=await transport(input,requestInit);}catch(error){
+        await measurement?.finish();
+        if(reportFailure&&!signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});
+        throw error;
+      }
+      measurement?.headers(response);
+      if(!response.ok)await measurement?.finish();
+      return response;
+    };
+    let response=await send();
     // Only explicit structured context-limit codes (or HTTP 413) qualify.
     // Never classify free-form provider prose or report it to the host.
     if(budget&&!response.ok&&typeof requestInit.body==='string'){
@@ -111,8 +131,7 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
         budget.fit(body,target);
         if(JSON.stringify(body)!==before&&budget.measure(body)<=configuration!.contextWindow!){
           requestInit={...requestInit,body:JSON.stringify(body)};
-          await authorize();
-          try{response=await transport(input,requestInit);}catch(error){if(reportFailure&&!requestInit.signal?.aborted)await reportFailure({status:0,diagnostic:errorDiagnostics(error)});throw error;}
+          response=await send();
           if(!response.ok&&await isContextOverflow(response)){
             await reportFailure?.({status:413,diagnostic:upstreamFailure(response)});
             return new Response(JSON.stringify({error:{message:'Model context limit exceeded after bounded recovery'}}),{status:400,headers:{'Content-Type':'application/json'}});
@@ -137,25 +156,27 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
       // transient network exception and repeatedly resending the same evidence.
       return new Response(JSON.stringify({error:{message:'Model redirects are not allowed'}}),{status:400,headers:{'Content-Type':'application/json'}});
     }
-    if(!response.body)return response;
+    if(!response.body){await measurement?.finish();return response;}
     const reader=response.body.getReader();
     const body=new ReadableStream({
       async pull(controller){
         try{
           const {done,value}=await reader.read();
-          if(done){reader.releaseLock();controller.close();return;}
+          if(done){reader.releaseLock();await measurement?.finish();controller.close();return;}
           received+=value.byteLength;
           if(received>maximumBytes){
             exceeded=true;
             await reader.cancel().catch(()=>undefined);
             reader.releaseLock();
+            await measurement?.finish();
             controller.error(tooLarge());
             return;
           }
+          measurement?.read(value);
           controller.enqueue(value);
-        }catch(error){controller.error(error);}
+        }catch(error){await measurement?.finish();controller.error(error);}
       },
-      async cancel(reason){try{await reader.cancel(reason);}finally{reader.releaseLock();}},
+      async cancel(reason){try{await reader.cancel(reason);}finally{reader.releaseLock();await measurement?.finish();}},
     });
     return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});
   };
@@ -183,6 +204,17 @@ export function modelFailureReporter(transport:FetchTransport){
   return async(value:FailureReport)=>{const response=await transport(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(value),redirect:'error',signal:AbortSignal.timeout(5000)});await response.body?.cancel();if(!response.ok)throw Error('Host transport observer unavailable');};
 }
 
+export function openCodeUsageReporter(transport:FetchTransport):ObserveOpenCodeUsage|undefined {
+  const configured=process.env.MOTE_MODEL_OBSERVER;if(!configured)return;
+  const {usageUrl,token}=JSON.parse(configured) as {usageUrl?:string;token:string};
+  if(!usageUrl)return;
+  return async usage=>{
+    const response=await transport(usageUrl,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+      body:JSON.stringify(usage),redirect:'error',signal:AbortSignal.timeout(1000)});
+    await response.body?.cancel();
+  };
+}
+
 export function modelRequestAuthorization(transport:FetchTransport){
   const configured=process.env.MOTE_MODEL_OBSERVER;if(!configured)return undefined;
   const {authorizationUrl,token,authorizationTimeoutMs=DEFAULT_MODEL_REQUEST_TIMEOUT_MS}=JSON.parse(configured) as {authorizationUrl?:string;token:string;authorizationTimeoutMs?:number};
@@ -199,14 +231,26 @@ export function modelRequestAuthorization(transport:FetchTransport){
 
 /** Host-private transport reporting. No body, endpoint or credential is accepted.
  * This is not registered as a model tool. The host owns subsequent retry. */
-export async function observeModelTransport(authorize?:()=>void|Promise<void>,authorizationTimeoutMs=DEFAULT_MODEL_REQUEST_TIMEOUT_MS){
+export async function observeModelTransport(authorize?:()=>void|Promise<void>,authorizationTimeoutMs=DEFAULT_MODEL_REQUEST_TIMEOUT_MS,observeUsage?:ObserveOpenCodeUsage){
  const authorization=authorize?AsyncResource.bind(authorize):undefined;
+ const reportUsage=observeUsage?AsyncResource.bind(observeUsage):undefined;
+ const usageRequests=new Set<string>();
  const token=randomBytes(32).toString('hex');let reject!:(error:AgentProviderError)=>void;
  const failure=new Promise<never>((_,fail)=>reject=fail);void failure.catch(()=>{});
  const server=createServer(async(req,res)=>{
   const auth=Buffer.from(req.headers.authorization??''),expected=Buffer.from('Bearer '+token);
-  if(req.method!=='POST'||!['/failure','/authorize'].includes(req.url??'')||auth.length!==expected.length||!timingSafeEqual(auth,expected)){res.writeHead(403).end();return;}
-  try{let text='';for await(const chunk of req){text+=chunk;if(Buffer.byteLength(text)>1024)throw Error();}const value=JSON.parse(text);
+  if(req.method!=='POST'||!['/failure','/authorize',...(reportUsage?['/usage']:[])].includes(req.url??'')||auth.length!==expected.length||!timingSafeEqual(auth,expected)){res.writeHead(403).end();return;}
+  try{let text='';for await(const chunk of req){text+=chunk;if(Buffer.byteLength(text)>(req.url==='/usage'?2048:1024))throw Error();}const value=JSON.parse(text);
+   if(req.url==='/usage'){
+    const usage=normalizeOpenCodeRequestUsage(value);
+    if(!usage){res.writeHead(400).end();return;}
+    if(!usageRequests.has(usage.modelRequestId)){
+      usageRequests.add(usage.modelRequestId);
+      try{await reportUsage?.(usage);}catch{/* Observation cannot stop the model. */}
+    }
+    res.writeHead(204).end();
+    return;
+   }
    if(req.url==='/authorize'){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==0)throw Error();
     try{await authorization?.();res.writeHead(200).end();}catch(error){res.writeHead(409).end();reject(error instanceof ProviderFailure?new AgentProviderError(error.details):new AgentProviderError({category:'blocked',code:'context_evidence_restricted'}));}return;
@@ -225,5 +269,5 @@ export async function observeModelTransport(authorize?:()=>void|Promise<void>,au
  server.requestTimeout=5000;server.headersTimeout=5000;
  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{server.off('error',reject);resolve();});});
  const address=server.address();if(!address||typeof address==='string')throw Error('Transport observer unavailable');
- return {configuration:{url:'http://127.0.0.1:'+address.port+'/failure',authorizationUrl:'http://127.0.0.1:'+address.port+'/authorize',authorizationTimeoutMs,token},failure,close:()=>new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());})};
+ return {configuration:{url:'http://127.0.0.1:'+address.port+'/failure',authorizationUrl:'http://127.0.0.1:'+address.port+'/authorize',authorizationTimeoutMs,token,...(reportUsage?{usageUrl:'http://127.0.0.1:'+address.port+'/usage'}:{})},failure,close:()=>new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());})};
 }

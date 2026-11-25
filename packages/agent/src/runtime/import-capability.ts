@@ -1,5 +1,5 @@
 import type {HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
-import type {ImportHostMedia,ImportReviewDecision,TokenUsage} from '@mote/shared';
+import type {ImportHostMedia,ImportReviewDecision,TokenUsage,OpenCodeRequestUsage} from '@mote/shared';
 import {ImportTaskContractError,importSkillDescriptor,importTaskDescriptor,resolveImportRecordsPath} from '../tasks/import.js';
 import {AgentResponseError,type AgentOptions} from '../types.js';
 
@@ -11,7 +11,7 @@ export interface ImportCapability {
   close():Promise<void>;
 }
 
-export type ImportAgentInput={language?:import('@mote/shared/i18n').Locale;workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string}};
+export type ImportAgentInput={language?:import('@mote/shared/i18n').Locale;workspace:string;inputPaths:string[];hostMedia?:ImportHostMedia[];instruction:string;helperPath:string;manifestSchema:unknown;schemaPath?:string;previous?:{summary:string;error?:string};modelSessionId?:string;onOpenCodeUsage?:(usage:OpenCodeRequestUsage,runId:string)=>void};
 export type ImportAgentResult={summary:string;recordsPath?:string;warnings?:string[];reviewDecision?:ImportReviewDecision};
 export type ImportAgentObserver=(notification:HarnessNotification)=>void;
 export type ImportAgentLaunch=(input:{workspace:string;runtimeRoot:string})=>Promise<{dshBin:string}>;
@@ -98,7 +98,8 @@ export class ImportCapabilityRegistry {
 /** The complete request contract sent to either transport. Prompt fields never
  * grant workspace or archive access; the Host selects those per capability. */
 export function importRequestPayload(input:ImportAgentInput):string{
-  return JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:importSkillDescriptor.id,taskId:importTaskDescriptor.id,taskVersion:importTaskDescriptor.version,importedAt:new Date().toISOString(),nodeExecutable:process.execPath});
+  const {modelSessionId:_modelSessionId,onOpenCodeUsage:_onOpenCodeUsage,...request}=input;
+  return JSON.stringify({...request,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:importSkillDescriptor.id,taskId:importTaskDescriptor.id,taskVersion:importTaskDescriptor.version,importedAt:new Date().toISOString(),nodeExecutable:process.execPath});
 }
 
 /** Bounded same-session correction shared by every import transport. */

@@ -1,4 +1,4 @@
-import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization} from './models/http-transport.js';
+import {boundedModelFetch,modelFailureReporter,modelRequestAuthorization,openCodeUsageReporter} from './models/http-transport.js';
 
 export const name = "mote-context";
 export const inject = ["tools", "agents", "attachments"];
@@ -26,7 +26,7 @@ export async function apply(ctx) {
   const configuration=process.env.MOTE_MODEL_TRANSPORT?JSON.parse(process.env.MOTE_MODEL_TRANSPORT):undefined;
   const original=globalThis.fetch;
   const transport=original.bind(globalThis);
-  globalThis.fetch=boundedModelFetch(transport,endpoint,undefined,configuration,modelFailureReporter(transport),modelRequestAuthorization(transport));
+  globalThis.fetch=boundedModelFetch(transport,endpoint,undefined,configuration,modelFailureReporter(transport),modelRequestAuthorization(transport),openCodeUsageReporter(transport));
   ctx.effect(()=>()=>{globalThis.fetch=original;});
   await applyContextPlugin(ctx);
 }

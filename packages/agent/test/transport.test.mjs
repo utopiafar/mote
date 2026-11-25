@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { boundedModelFetch } from '../dist/models/http-transport.js';
+import { boundedModelFetch, observeModelTransport } from '../dist/models/http-transport.js';
 import { createAgent, parseAnswer, AgentResponseError } from '../dist/index.js';
 
 const bridge='http://127.0.0.1:1';
@@ -45,6 +45,84 @@ test('OpenCode Go completions identify Mote and scope the session header to each
   assert.equal(managed.get('x-opencode-session'), session);
   assert.equal(managed.get('user-agent'), 'Mote');
   assert.equal(managed.get('x-fixture'), 'preserved');
+});
+
+test('OpenCode records one correlated report per send and keeps absent counters unknown', async t => {
+  const baseUrl = 'https://opencode.ai/inference/go/openai/v1';
+  const records = [];
+  const observer = await observeModelTransport(undefined, undefined, usage => records.push(usage));
+  t.after(() => observer.close());
+  const {usageUrl, token} = observer.configuration;
+  const report = async usage => {
+    // The same bridge message can be delivered again without charging twice.
+    for (let index = 0; index < 2; index++) {
+      const response = await fetch(usageUrl, {method:'POST', headers:{authorization:'Bearer '+token}, body:JSON.stringify(usage)});
+      assert.equal(response.status,204);
+    }
+  };
+  const usage = {prompt_tokens:9200,completion_tokens:300,total_tokens:9500,
+    prompt_tokens_details:{cached_tokens:8000},completion_tokens_details:{reasoning_tokens:120},
+    opencode:{allowance:0.00000127,billing_source:'go',tokens:{input:1200,cache_read:8000,cache_write_5m:0,output:300,reasoning:120}}};
+  const frames = [
+    'data: '+JSON.stringify({id:'chatcmpl-generated',choices:[{delta:{content:'测试正文'}}],usage:null})+'\r\n\r\n',
+    'data: '+JSON.stringify({id:'chatcmpl-generated',choices:[],usage})+'\r\n\r\n',
+    'data: [DONE]\r\n\r\n',
+  ].join('');
+  const data = new TextEncoder().encode(frames);
+  let sent = 0;
+  const transport = boundedModelFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (++sent === 2) {
+      assert.equal(body.stream_options,undefined);
+      return Response.json({choices:[],usage:{prompt_tokens:9,completion_tokens:0}},{headers:{'x-request-id':'req-second'}});
+    }
+    assert.deepEqual(body.stream_options,{include_usage:true,generated:true});
+    return new Response(new ReadableStream({
+      start(controller) {
+        for (let offset = 0; offset < data.length; offset += 7) controller.enqueue(data.subarray(offset,offset+7));
+        controller.close();
+      },
+    }),{headers:{'content-type':'text/event-stream'}});
+  }, bridge, 64*1024, {provider:'opencode-go',protocol:'openai-completions',baseUrl},undefined,undefined,report);
+  const send = body => transport(baseUrl+'/chat/completions',{method:'POST',body:JSON.stringify(body)});
+  assert.equal(await (await send({stream:true,stream_options:{include_usage:false,generated:true}})).text(),frames);
+  await (await send({stream:false})).text();
+  assert.equal(records.length,2);
+  const [first,second]=records;
+  assert.notEqual(first.modelRequestId,second.modelRequestId);
+  assert.equal(first.upstreamRequestId,'chatcmpl-generated');
+  assert.equal(first.httpStatus,200);
+  assert.equal(first.promptTokens,9200);
+  assert.equal(first.cachedPromptTokens,8000);
+  assert.equal(first.billedInputTokens,1200);
+  assert.equal(first.billedOutputTokens,300);
+  assert.equal(first.billedReasoningTokens,120);
+  assert.equal(first.billedCacheWrite5mTokens,0);
+  assert.equal(first.billedCacheWrite1hTokens,null);
+  assert.equal(first.allowanceUsd,0.00000127);
+  assert.equal(second.upstreamRequestId,'req-second');
+  assert.equal(second.completionTokens,0);
+  assert.equal(second.billedInputTokens,null);
+  assert.equal(second.allowanceUsd,null);
+  assert.doesNotMatch(JSON.stringify(records),/测试正文|authorization|choices|usageUrl/);
+});
+
+test('OpenCode logs a provider failure with unknown usage and leaves custom providers alone', async () => {
+  const baseUrl='https://opencode.ai/inference/go/openai/v1', records=[];
+  const send=async provider=>{
+    const transport=boundedModelFetch(async(_url,init)=>{
+      assert.equal(JSON.parse(init.body).stream_options?.include_usage,provider==='opencode-go'?true:undefined);
+      return new Response('generated',{status:429,headers:{'x-request-id':'req-limited'}});
+    },bridge,1024,{provider,protocol:'openai-completions',baseUrl},undefined,undefined,usage=>records.push(usage));
+    return (await transport(baseUrl+'/chat/completions',{method:'POST',body:'{"stream":true}'})).text();
+  };
+  assert.equal(await send('opencode-go'),'generated');
+  assert.equal(await send('custom'),'generated');
+  assert.equal(records.length,1);
+  assert.equal(records[0].httpStatus,429);
+  assert.equal(records[0].upstreamRequestId,'req-limited');
+  assert.equal(records[0].promptTokens,null);
+  assert.equal(records[0].allowanceUsd,null);
 });
 
 test('native DeepSeek rejects Files I/O before admission and preserves inline Messages',async()=>{

@@ -3,7 +3,7 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {isDeepStrictEqual} from 'node:util';
 import type {Cancellation, ServiceLease} from '@mote/plugin-api/contracts';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
-import {ProviderFailure,errorDiagnostics} from '@mote/shared';
+import {normalizeOpenCodeRequestUsage,ProviderFailure,errorDiagnostics} from '@mote/shared';
 import {parseRuntimeOutcome, RuntimeContractError,RuntimeSteeringUnavailable, type RuntimeAttempt, type RuntimeOutcome, type RuntimeHandle, type RuntimeRunRequest, type RuntimeRepairRequest, type RuntimeToolCall, type RuntimeToolPayload, type HostRunPort} from '../runtime/contracts.js';
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type AgentTraceEvent, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
@@ -180,6 +180,7 @@ class ManagedHostRunSession implements HostRunSession {
   private backgroundTurnStarted = performance.now();
   private abortListener: () => void;
   private readonly usageEvents: ReturnType<typeof createRuntimeUsageEvents>;
+  private readonly openCodeRequests = new Set<string>();
   constructor(readonly dependencies: HostRunDependencies, private assembly: HostSessionAssembly) {
     this.usageEvents = createRuntimeUsageEvents(({attemptId, usage}) => this.observeRuntime({identity: dependencies.identity, attemptId, event: {type: 'usage', usage}}));
     // Required providers can stop independently of the consumer scope. Relay
@@ -275,11 +276,16 @@ class ManagedHostRunSession implements HostRunSession {
           this.ready = true;
           this.observeRuntime({identity: dependencies.identity, attemptId: null, event});
         } else {
-          if (event.type !== 'progress' && event.type !== 'usage') throw new RuntimeContractError();
+          if (event.type !== 'progress' && event.type !== 'usage' && event.type !== 'opencode.request_usage') throw new RuntimeContractError();
           if (!attempt) throw new RuntimeContractError();
           this.assertAttempt(attempt);
           if (event.type === 'usage') this.usageEvents.emit(attempt.id, event.usage);
-          else this.observeRuntime({identity: dependencies.identity, attemptId: attempt.id, event});
+          else if (event.type === 'opencode.request_usage') {
+            const usage = normalizeOpenCodeRequestUsage(event.usage);
+            if (!usage || this.openCodeRequests.has(usage.modelRequestId)) return;
+            this.openCodeRequests.add(usage.modelRequestId);
+            this.observeRuntime({identity: dependencies.identity, attemptId: attempt.id, event: {type: event.type, usage}});
+          } else this.observeRuntime({identity: dependencies.identity, attemptId: attempt.id, event});
         }
       },
     };
