@@ -11,6 +11,7 @@ import {ProviderFailure,errorDiagnostics,sanitizeFailureDiagnostics,type Failure
 import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../../types.js';
 import {createDshModelAdapter, type DshModelAdapter} from '../../models/dsh-adapter.js';
 import {resolveModelCapabilities} from '../../models/provider-registry.js';
+import {estimateSerializedTokens} from '../../models/context-budget.js';
 import {observeHarness} from '../../usage.js';
 import {runtimeService, type RuntimeProvider, type RuntimeHandle, type RuntimeRunRequest, type RuntimeOutcome, type RuntimeAttempt} from '../contracts.js';
 import type {ResolvedRunSelection, RuntimeProfileConfiguration} from '../profile.js';
@@ -125,8 +126,22 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           const usage = observeHarness({question: '', onUsage(value) { if (active) host.emit({type: 'usage', usage: value}, active); }, onProgress(value) { if (active) host.emit({type: 'progress', progress: value}, active); }}, host.identity.runId, connection.protocol !== 'deepseek');
           const notification = (value: HarnessNotification) => {
             if (value.method !== 'session.event' || value.params.sessionId !== sessionId) return;
-            const event = value.params.event as {type: string; data?: {turn?: number; callId?: string; name?: string; arguments?: string}};
+            const event = value.params.event as {type: string; data?: {
+              turn?: number; callId?: string; name?: string; arguments?: string;
+              message?: {content?: readonly {type?: string; text?: string}[]};
+            }};
             if (event.type === 'turn/start' && active && Number.isSafeInteger(event.data?.turn)) turns.set(event.data!.turn!, active);
+            if (event.type === 'assistant/message' && active && turns.get(event.data?.turn ?? -1) === active) {
+              const content = event.data?.message?.content;
+              if (Array.isArray(content)) {
+                // Tool names and arguments are charged when the Host prepares the call.
+                const text = content.filter(block => (block?.type === 'text' || block?.type === 'reasoning') && typeof block.text === 'string');
+                if (text.length) {
+                  try { host.reserveAssistantContext?.(active, estimateSerializedTokens(text).tokens); }
+                  catch { /* A settled attempt cannot charge a later read. */ }
+                }
+              }
+            }
             if (event.type === 'tool/call' && typeof event.data?.callId === 'string' && typeof event.data.name === 'string') {
               const attempt = turns.get(event.data.turn!);
               if (attempt) {

@@ -26,6 +26,9 @@ function respond(res, protocol, stage, final = answer, actions, usage) {
       send(res, {id:`fixture-${stage}`,choices:[{index:0,delta:{reasoning_details:[{type:'reasoning.text',text:'Synthetic structured ',index:0,signature:'fixture-signature'},{type:'reasoning.encrypted',data:'opaque-fixture',id:'rd_fixture',index:1}]},finish_reason:null}]});
       send(res, {id:`fixture-${stage}`,choices:[{index:0,delta:{reasoning_details:[{type:'reasoning.text',text:'reasoning.',index:0}]},finish_reason:null}]});
     }
+    if (tool?.assistantPrefix) {
+      send(res, {id:'fixture-'+stage,choices:[{index:0,delta:{role:'assistant',content:tool.assistantPrefix},finish_reason:null}]});
+    }
     send(res, {id:`fixture-${stage}`, choices:[{index:0, delta:tool ? {role:'assistant',tool_calls:[{index:0,id:`call_${stage}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]} : {role:'assistant',content:final},finish_reason:null}]});
     send(res, {id:`fixture-${stage}`,choices:[{index:0,delta:{},finish_reason:tool ? 'tool_calls' : 'stop'}],usage:{prompt_tokens:80,completion_tokens:40,total_tokens:120}});
     res.end('data: [DONE]\n\n');
@@ -312,6 +315,44 @@ test('a large original tool page is shortened before the Host confirms its deliv
   const {estimateSerializedTokens}=await import('../dist/index.js');
   for(const {body} of requests)assert.ok(estimateSerializedTokens(body).tokens+512<=24000);
  },{reader:{...reader,search:async()=>[original],evidence:async()=>[original]},contextWindow:24000,maxTokens:512,maxToolCalls:2},actions);
+});
+
+test('the real HTTP continuation leaves room for the assistant text before preparing an original page', {timeout: 60000}, async () => {
+  const {estimateSerializedTokens} = await import('../dist/index.js');
+  const target = {...record, ocrText: 'Short generated target.'};
+  const extra = {...target, id: '44444444-5555-4444-8444-444444444444', ocrText: 'Generated optional passage. '.repeat(410)};
+  const range = original => ({id: original.id, offset: 0, length: original.ocrText.length});
+  const assistantPrefix = 'Generated interim material during document review. '.repeat(205);
+  const actions = [{name: 'context_evidence', args: {id: extra.id, offset: 0, length: 12000}, assistantPrefix}];
+  const contextWindow = 22900;
+  const maxTokens = 4400;
+  const testReader = {...reader, evidence: async ({ids}) => [target, extra].filter(original => ids.includes(original.id))};
+
+  await withProvider('openai-completions', async (agent, requests) => {
+    const result = await agent.query({
+      question: 'Inspect the supplied generated review target.',
+      skill: 'memory-extraction',
+      evidenceIds: [target.id],
+      evidenceRanges: [range(target)],
+      evidenceReadRanges: [range(target), range(extra)],
+    });
+
+    assert.equal(requests.length, 2);
+    const {body} = requests[1];
+    assert.ok(body.messages.some(message => message.role === 'assistant' && message.content === assistantPrefix));
+    assert.ok(estimateSerializedTokens(body).tokens + maxTokens <= contextWindow);
+
+    const page = JSON.parse(body.messages.find(message => message.role === 'tool').content);
+    assert.equal(page.budgetCoverage.truncated, true);
+    const delivered = result.evidenceReadRanges.find(item => item.id === extra.id);
+    assert.ok(delivered && delivered.length > 0 && delivered.length < extra.ocrText.length);
+    assert.deepEqual(delivered, {id: extra.id, offset: 0, length: page.budgetCoverage.deliveredLength});
+    assert.equal(page.data.length, 1);
+    assert.equal(page.data[0].id, extra.id);
+    assert.equal(page.data[0].ocrText, extra.ocrText.slice(0, delivered.length));
+    assert.deepEqual(result.evidenceReadRanges.find(item => item.id === target.id), range(target));
+  }, {reader: testReader, contextWindow, maxTokens, maxToolCalls: 1}, actions,
+  JSON.stringify({answer: 'Generated evaluation', citationIds: []}));
 });
 
 test('the frozen per-query model window reaches the real HTTP adapter', {timeout:60000},async()=>{

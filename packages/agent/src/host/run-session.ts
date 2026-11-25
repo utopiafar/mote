@@ -141,6 +141,7 @@ export interface HostSessionAssembly {
   readonly contextUsage: NonNullable<AgentAnswer['contextUsage']>;
   evidence(): HostEvidenceSnapshot;
   readTool(call: RuntimeToolCall, signal: AbortSignal): Promise<{payload: RuntimeToolPayload; confirm(): void; discard(): void}>;
+  reserveAssistantContext?(tokens: number): void;
   admit?<T>(task: () => Promise<T>, signal: AbortSignal): Promise<T>;
   close(): Promise<void>;
   observe?(event: HostRunEvent): void;
@@ -259,6 +260,11 @@ class ManagedHostRunSession implements HostRunSession {
         this.assertAttempt(attempt);
         return result;
       }),
+      reserveAssistantContext: (attempt, tokens) => {
+        this.assertAttempt(attempt);
+        if (!Number.isSafeInteger(tokens) || tokens < 0) throw new RuntimeContractError();
+        assembly.reserveAssistantContext?.(tokens);
+      },
       emit: (event, attempt) => {
         this.assertCurrent();
         if (event.type === 'tools.ready') {
