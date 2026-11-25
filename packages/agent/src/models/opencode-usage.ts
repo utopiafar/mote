@@ -8,7 +8,8 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 export function openCodeRequestMeasurement(report: ObserveOpenCodeUsage) {
-  const modelRequestId = randomUUID(), startedAt = performance.now();
+  const modelRequestId = randomUUID();
+  let startedAt = performance.now(), startReport: Promise<void> | undefined;
   const decoder = new TextDecoder();
   let responseId: string | undefined, headerId: string | undefined, httpStatus: number | undefined;
   let mode: 'sse' | 'json' | undefined, json = '', jsonTooLarge = false, finished = false;
@@ -46,7 +47,15 @@ export function openCodeRequestMeasurement(report: ObserveOpenCodeUsage) {
       else { jsonTooLarge = true; json = ''; }
     }
   };
+  const publish=async (fields: Record<string, unknown>)=>{
+    const usage=normalizeOpenCodeRequestUsage({...fields,modelRequestId});
+    if(usage)try{await report(usage);}catch{/* Accounting does not govern execution. */}
+  };
   return {
+    begin() {
+      startedAt=performance.now();
+      startReport=publish({requestState:'started',durationMs:0});
+    },
     headers(response: Response) {
       httpStatus = response.status;
       headerId = ['x-request-id', 'request-id', 'apim-request-id']
@@ -63,10 +72,9 @@ export function openCodeRequestMeasurement(report: ObserveOpenCodeUsage) {
       finished = true;
       if (mode) feed(decoder.decode());
       if (mode === 'json') sample(json);
-      const usage = normalizeOpenCodeRequestUsage({
-        ...counts, modelRequestId, httpStatus, upstreamRequestId: headerId ?? responseId, durationMs: performance.now() - startedAt,
-      });
-      if (usage) try { await report(usage); } catch { /* Accounting does not govern execution. */ }
+      const durationMs=performance.now()-startedAt;
+      await startReport;
+      await publish({...counts,requestState:'finished',httpStatus,upstreamRequestId:headerId??responseId,durationMs});
     },
   };
 }

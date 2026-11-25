@@ -301,8 +301,10 @@ class ManagedHostRunSession implements HostRunSession {
           if (event.type === 'usage') this.usageEvents.emit(attempt.id, event.usage);
           else if (event.type === 'opencode.request_usage') {
             const usage = normalizeOpenCodeRequestUsage(event.usage);
-            if (!usage || this.openCodeRequests.has(usage.modelRequestId)) return;
-            this.openCodeRequests.add(usage.modelRequestId);
+            if (!usage) return;
+            const sample = usage.modelRequestId+':'+usage.requestState;
+            if (this.openCodeRequests.has(sample)) return;
+            this.openCodeRequests.add(sample);
             this.observeRuntime({identity: dependencies.identity, attemptId: attempt.id, event: {type: event.type, usage}});
           } else this.observeRuntime({identity: dependencies.identity, attemptId: attempt.id, event});
         }

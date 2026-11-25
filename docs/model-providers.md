@@ -37,7 +37,7 @@ HTTP 单次输出预算 `maxTokens` 默认从 65,536 起，按所选供应商、
 
 遇到输出截断时，先核对失败请求的单次输出预算和模型结束原因。调整预算后，用原失败批次和原文范围验证，核对目标覆盖、独立复核和原文引文。采用例外档位时，以供应商能力和原批次的实际结果为依据。输入超出上下文窗口时，按原文范围的容量约束处理。输出超限的较短回答恢复与失败保留见[Agent说明](agent-runtime.md#runtime-roles)。
 
-启用普通诊断的 Central 会为 OpenCode Go 的实际 HTTP 请求记录 `agent.opencode_request_usage`。每条记录包含请求标识、可用的上游请求标识，以及相关运行、尝试和 Memory 阶段。标准 API token 计数与 OpenCode 报告的未缓存输入、缓存读写、输出和推理计数分开记录。Go 套餐扣量以 `allowanceUsd` 记录，取自供应商回执。缺失字段为 `null`。记录沿用本机日志保留规则，不含密钥、请求正文或模型回答。参考 [OpenCode 计量说明](https://opencode.ai/docs/console/api/inference/#cost)。
+启用普通诊断的 Central 会为 OpenCode Go 的实际 HTTP 请求记录 `agent.opencode_request_usage`。每条记录包含请求标识、可用的上游请求标识，以及相关运行、尝试和 Memory 阶段。按同一个请求标识关联 `started` 和 `finished` 两条记录。请求中断时可用开始记录统计一次请求，计量字段按未知处理。标准 API token 计数与 OpenCode 报告的未缓存输入、缓存读写、输出和推理计数分开记录。Go 套餐扣量以 `allowanceUsd` 记录，取自供应商回执。缺失字段为 `null`。记录沿用本机日志保留规则，不含密钥、请求正文或模型回答。参考 [OpenCode 计量说明](https://opencode.ai/docs/console/api/inference/#cost)。
 
 OpenCode Go 的 Memory 提取和独立复核使用各自的会话标识。同一授权范围和输入版本内的同一阶段重试沿用该阶段标识。两个阶段可以复用相同的原文前缀，实际命中以逐请求缓存读量为准。参考 [DeepSeek 前缀缓存](https://api-docs.deepseek.com/guides/kv_cache/) 和 [OpenCode Go 会话标识](https://opencode.ai/docs/console/go/#where-can-i-use-it)。
 

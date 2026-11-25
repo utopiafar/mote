@@ -87,8 +87,13 @@ test('OpenCode records one correlated report per send and keeps absent counters 
   const send = body => transport(baseUrl+'/chat/completions',{method:'POST',body:JSON.stringify(body)});
   assert.equal(await (await send({stream:true,stream_options:{include_usage:false,generated:true}})).text(),frames);
   await (await send({stream:false})).text();
-  assert.equal(records.length,2);
-  const [first,second]=records;
+  assert.equal(records.length,4);
+  const [firstStart,first,secondStart,second]=records;
+  assert.equal(firstStart.requestState,'started');
+  assert.equal(firstStart.modelRequestId,first.modelRequestId);
+  assert.equal(secondStart.modelRequestId,second.modelRequestId);
+  assert.equal(firstStart.allowanceUsd,null);
+  assert.equal(first.requestState,'finished');
   assert.notEqual(first.modelRequestId,second.modelRequestId);
   assert.equal(first.upstreamRequestId,'chatcmpl-generated');
   assert.equal(first.httpStatus,200);
@@ -118,11 +123,32 @@ test('OpenCode logs a provider failure with unknown usage and leaves custom prov
   };
   assert.equal(await send('opencode-go'),'generated');
   assert.equal(await send('custom'),'generated');
-  assert.equal(records.length,1);
-  assert.equal(records[0].httpStatus,429);
-  assert.equal(records[0].upstreamRequestId,'req-limited');
-  assert.equal(records[0].promptTokens,null);
-  assert.equal(records[0].allowanceUsd,null);
+  assert.equal(records.length,2);
+  assert.equal(records[0].requestState,'started');
+  assert.equal(records[1].requestState,'finished');
+  assert.equal(records[0].modelRequestId,records[1].modelRequestId);
+  assert.equal(records[1].httpStatus,429);
+  assert.equal(records[1].upstreamRequestId,'req-limited');
+  assert.equal(records[1].promptTokens,null);
+  assert.equal(records[1].allowanceUsd,null);
+});
+
+test('an interrupted OpenCode send is represented before a usage response exists',async()=>{
+ const baseUrl='https://opencode.ai/inference/go/openai/v1', records=[];
+ const abort=new AbortController();
+ const transport=boundedModelFetch(async(_url,init)=>new Promise((_resolve,reject)=>{
+   if(init.signal.aborted)reject(init.signal.reason);
+   else init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true});
+ }),bridge,1024,{provider:'opencode-go',protocol:'openai-completions',baseUrl},undefined,undefined,usage=>{
+   records.push(usage);
+   if(usage.requestState==='started')setImmediate(()=>abort.abort());
+ });
+ await assert.rejects(transport(baseUrl+'/chat/completions',{method:'POST',body:'{"stream":true}',signal:abort.signal}),{name:'AbortError'});
+ assert.equal(records.length,2);
+ assert.equal(records[0].requestState,'started');
+ assert.equal(records[0].modelRequestId,records[1].modelRequestId);
+ assert.equal(records[1].requestState,'finished');
+ assert.equal(records[1].billedOutputTokens,null);
 });
 
 test('native DeepSeek rejects Files I/O before admission and preserves inline Messages',async()=>{
