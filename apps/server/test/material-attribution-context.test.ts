@@ -16,6 +16,7 @@ import {FileStore} from '../src/files.js';
 import {sha256} from '../src/evidence-store.js';
 import {memoryEvidenceFingerprint,type MemoryStore} from '../src/memory.js';
 import type {CaptureRecord} from '@mote/shared';
+import {fixtureMemoryResult} from './fixtures/memory-result.js';
 
 async function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-attribution-')),store=new Store(directory),materials=new MaterialStore(store),sources=new SourceStore(store);
@@ -79,6 +80,26 @@ test('Agent evidence shares Material exposure within a read and rechecks it afte
   assert.equal(exposures.mock.callCount(),1);
   materials.retire(material.id,{expectedRevision:material.revision});
   assert.deepEqual(await agent.evidence({ids}),[]);
+});
+
+test('Memory proof checks share one Material route decision within a pass and recheck it on the next pass',async t=>{
+  const {reader,materials,draft,item}=await fixture(t);
+  const blocks=Array.from({length:48},(_,index)=>({...draft.blocks[0]!,id:`generated-${index}`,text:`Generated exact original segment ${index}.`}));
+  const material=materials.publish({...draft,blocks,artifacts:[{key:'body',state:'ready',blockIds:blocks.map(block=>block.id)}]});
+  const ids=materials.evidenceIds(material.ref);
+  assert.equal(ids.length,48);
+  const cards=[ids.slice(0,24),ids.slice(24)].map((evidenceIds,index)=>{
+    const title=`Generated Memory ${index}`,result={answer:JSON.stringify({memories:[{title,statement:title+' '+evidenceIds.map(id=>`[${id}]`).join(' '),uncertainty:'Generated evidence only',evidenceIds}]}),citations:evidenceIds.map(id=>({id,capturedAt:item.observedAt,appName:'Generated',excerpt:''})),trace:[],runId:randomUUID()};
+    const saved=reader.memories.extract(fixtureMemoryResult(reader.memories,result),'generated').items[0];
+    return reader.memories.publish(saved.id,saved.version);
+  });
+  const exposures=t.mock.method(reader as unknown as {materialExposure:()=>boolean},'materialExposure');
+  reader.assertMemoryReadable(cards);
+  assert.equal(exposures.mock.callCount(),1,'48 exact anchors on two cards share the same current Material readiness check');
+  reader.assertMemoryReadable(cards);
+  assert.equal(exposures.mock.callCount(),2,'a new send reevaluates the source route');
+  materials.retire(material.id,{expectedRevision:material.revision});
+  assert.throws(()=>reader.assertMemoryReadable(cards),{statusCode:409});
 });
 
 test('source prose, document declarations and draft context cannot grant owner attribution',async t=>{
