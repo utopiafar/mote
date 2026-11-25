@@ -49,6 +49,25 @@ test('a completed DSH run writes one completed receipt',async t=>{
   assert.equal(receipts[0].operation,'query');
 });
 
+test('a real Host tool delivery is counted on the owner statistics page with diagnostics disabled',async t=>{
+  let stage=0;
+  const f=await fixture(t,response=>{
+    if(stage++===0)writeMessagesResponse(response,{stage:0,tool:{name:'search_context',args:{query:'generated lookup'}}});
+    else writeMessagesResponse(response,{stage:1,text:JSON.stringify({answer:'Generated DSH answer.',citationIds:[]})});
+  });
+  const day=new Date().toISOString().slice(0,10);
+  const response=await f.post('/api/query',{question:'Generated recorded tool round trip'});
+  assert.equal(response.statusCode,200,response.body);
+  const statistics=await f.get(`/api/usage-statistics?from=${day}&to=${day}&timeZone=UTC`);
+  assert.equal(statistics.statusCode,200,statistics.body);
+  assert.equal(statistics.json().total.toolCalls.value,1);
+  assert.equal(statistics.json().total.toolFailures.value,0);
+  const activity=await f.get(`/api/usage-statistics/day?day=${day}&timeZone=UTC&kind=tool`);
+  assert.equal(activity.statusCode,200,activity.body);
+  assert.deepEqual(activity.json().items.map(({name,state}:{name:string;state:string})=>({name,state})),[{name:'search_context',state:'completed'}]);
+  assert.doesNotMatch(activity.body,/generated lookup|recorded tool round trip/);
+});
+
 test('a failed DSH run writes one failed receipt',async t=>{
   const f=await fixture(t,response=>{
     response.writeHead(400,{'content-type':'application/json'});

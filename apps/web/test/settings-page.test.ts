@@ -37,7 +37,7 @@ test('ST1-01 the settings landing groups destinations without sending a model pr
  await act(async()=>root.render(React.createElement(SettingsDirectory,{api,status,onPage:page=>destinations.push(page)} as never)));
  assert.equal(reads.some(path=>path.endsWith('/models')||path.endsWith('/test')),false,'the landing must not probe model providers');
  const labels=Array.from(d.querySelectorAll('.processing-entry-row strong')).map(value=>value.textContent);
- assert.deepEqual(labels,['模型','后台处理','外观','语言','通知','存储','用量与费用','诊断','关于与更新']);
+ assert.deepEqual(labels,['模型','后台处理','外观','语言','通知','存储','使用统计','诊断','关于与更新']);
  assert.match(d.body.textContent!,/22:00–08:00 安静/);
  assert.match(d.body.textContent!,/38\.37 GB/);
  await act(async()=>button(d,'通知').click());assert.deepEqual(destinations,['notifications']);

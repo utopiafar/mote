@@ -80,7 +80,17 @@ if(['workspace','memory-ask','home-search-questions'].includes(process.argv[3]))
  }
 }
 if(process.argv[3]==='maintenance'){
- const ledger=runtime.featureServices.usageLedger;
+ const at=new Date().toISOString(),screenshot=(await sharp({create:{width:240,height:160,channels:3,background:'#806b96'}}).png().toBuffer()).toString('base64');
+ await runtime.store.ingest({id:randomUUID(),deviceId:'generated-phone',deviceName:'本轮生成手机',platform:'android',capturedAt:at,durationMs:0,source:'screen',
+   appId:'generated.calendar',appName:'本轮生成日历',imageMime:'image/png',imageBase64:screenshot,metadata:{version:1,observedAt:at,collector:{method:'media_projection'}}});
+ const turn=runtime.conversations.receive({question:'Generated statistics turn'});
+ runtime.conversations.fail(turn.id,{code:'timeout',message:'Generated statistics failure'},{expectedVersion:turn.version});
+ const tool=runtime.store.db.prepare('INSERT INTO usage_tool_attempts(id,run_id,attempt_id,tool,started_at,result,duration_ms,reason,retry) VALUES(?,?,?,?,?,?,?,?,?)');
+ const run=randomUUID();
+ tool.run(randomUUID(),run,randomUUID(),'search_context',at,'failed',184,'invalid_tool_arguments','completed');
+ tool.run(randomUUID(),run,randomUUID(),'evidence',at,'completed',26,null,null);
+ tool.run(randomUUID(),randomUUID(),randomUUID(),'timeline',at,'failed',300,'timeout',null);
+ const ledger=runtime.observabilityAssembly.usage;
  ledger.setPrice({provider:'generated-fixture',model:'generated-priced',currency:'USD',input:2,output:3,cacheRead:1,cacheWrite:1});
  for(let index=0;index<12;index++){
   const meter=ledger.start('generated-fixture',index%3?'generated-priced':'generated-unpriced','query',{agentId:'context-query',moduleId:['conversations','memories','insights','files','imports'][index%5],skillId:null});

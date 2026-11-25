@@ -387,7 +387,9 @@ test('staged delivery is discarded immediately after confirmation or sender fail
   for (const mode of ['success', 'sender_failure', 'discard_failure']) {
     const fail = mode !== 'success', senderFails = mode === 'sender_failure';
     const primary = Error('Generated sender failure'), secondary = Error('Generated discard cleanup failure'); let confirmed = 0, discarded = 0;
-    const f = fixture({readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; if (fail) throw secondary; }}),
+    const observations = [];
+    const f = fixture({input: {onHostToolAttempt(event) { observations.push(event); throw Error('Generated observer failure'); }},
+      readTool: async () => ({payload: {text: 'Generated stage'}, confirm() { confirmed++; }, discard() { discarded++; if (fail) throw secondary; }}),
       run: async (request, host) => {
         const result = host.tools.deliver(request.attempt, {callId: 'generated', name: tools[0].name, arguments: {}}, async () => { if (senderFails) throw primary; return 42; });
         if (fail) await assert.rejects(result, error => error === (senderFails ? primary : secondary)); else assert.equal(await result, 42);
@@ -399,6 +401,14 @@ test('staged delivery is discarded immediately after confirmation or sender fail
     if (fail) await assert.rejects(session.execute(), {name: 'AgentProviderError'}); else await session.execute();
     assert.equal(confirmed, senderFails ? 0 : 1); assert.equal(discarded, 1);
     if (fail) assert.deepEqual(f.cleanupErrors, [secondary]);
+    const [start, finish] = observations;
+    assert.equal(observations.length, 2);
+    assert.equal(start.kind, 'started'); assert.equal(start.tool, tools[0].name);
+    assert.equal(finish.kind, 'finished'); assert.equal(finish.id, start.id);
+    assert.equal(finish.result, fail ? 'failed' : 'completed');
+    assert.equal(finish.reason, fail ? 'tool_delivery_failed' : undefined);
+    assert.ok(Number.isInteger(finish.durationMs));
+    assert.ok(!JSON.stringify(observations).includes('Generated'), 'Tool payload and error text stay private');
   }
 });
 

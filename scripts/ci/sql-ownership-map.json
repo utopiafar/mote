@@ -188,6 +188,13 @@
    "file": "apps/server/src/execution-schema.ts"
   },
   {
+   "declaration": "usageStatisticsSchemaInstallation",
+   "owner": "usage-statistics",
+   "fn": "usageStatisticsSchemaInstallation.install",
+   "inline": true,
+   "file": "apps/server/src/usage-statistics.ts"
+  },
+  {
    "declaration": "operationProjectionSchemaInstallation",
    "owner": "operation-projection",
    "fn": "operationProjectionSchema",
@@ -1825,6 +1832,16 @@
    "owner": "todo",
    "file": "apps/server/src/todo-schema.ts",
    "installer": "todoSchemaInstallation"
+  },
+  "usage_tool_attempts": {
+   "owner": "usage-statistics",
+   "file": "apps/server/src/usage-statistics.ts",
+   "installer": "usageStatisticsSchemaInstallation"
+  },
+  "usage_tool_coverage": {
+   "owner": "usage-statistics",
+   "file": "apps/server/src/usage-statistics.ts",
+   "installer": "usageStatisticsSchemaInstallation"
   }
  }
 }

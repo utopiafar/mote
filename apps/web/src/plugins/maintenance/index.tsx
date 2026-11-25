@@ -9,6 +9,7 @@ import {MaintenanceContext} from './context';
 import {MaintenanceController,createMaintenanceController} from './controller';
 import {StorageStatistics} from './StorageStatistics';
 import {Usage} from './Usage';
+import {UsageStatistics} from './UsageStatistics';
 import {Vault} from './Vault';
 
 export {ContentStorage} from './ContentStorage';
@@ -75,6 +76,7 @@ const storagePages:PageEntry[]=[
 ];
 
 const usagePages:PageEntry[]=[
+  {id:'usageStatistics',route:'system/usage-statistics',get label(){return moteText('使用统计');},section:'system',order:5,featureId:'mote.usage',render:({api,onOpen}:PageProps)=><><MaintenanceStyles/><link rel="stylesheet" href={statisticsStyle} precedence="default"/><MaintenancePage api={api}><UsageStatistics api={api} onOpen={onOpen}/></MaintenancePage></>},
   {id:'usage',route:'system/usage',label:moteText('用量与费用'),section:'system',order:5,featureId:'mote.usage',render:({api}:PageProps)=><><MaintenanceStyles/><MaintenancePage api={api}><Usage api={api}/></MaintenancePage></>},
 ];
 
@@ -82,6 +84,7 @@ const maintenanceStyles=[
   new URL('../../owner-maintenance.css?no-inline',import.meta.url).href,
   new URL('../../settings-ui.css?no-inline',import.meta.url).href,
 ];
+const statisticsStyle=new URL('../../usage-statistics.css?no-inline',import.meta.url).href;
 function MaintenanceStyles(){return <>{maintenanceStyles.map(href=><link key={href} rel="stylesheet" href={href} precedence="default"/>)}</>;}
 
 /** The maintenance package keeps the former storage and usage package

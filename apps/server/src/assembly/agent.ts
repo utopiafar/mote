@@ -79,6 +79,7 @@ export async function assembleAgent(dependencies:AgentAssemblyDependencies){
       modelContext:dependencies.modelContext,modelOperation:dependencies.modelOperation,archiveImagesEnabled:dependencies.allowQueryImages,
       retainSnapshot:input=>dependencies.observeMemory(input,'catalog_snapshot',()=>dependencies.evidenceReader.retainMemorySnapshot(input)),
       releaseSnapshot:input=>dependencies.evidenceReader.releaseMemorySnapshot(input),agentStarted:()=>dependencies.queryAccounting.getStore()?.agentStarted(),
+      toolStatistics:dependencies.toolStatistics,
       recordTiming:(input,timing)=>diagnostics.record('agent.fragment_timing',{jobId:input.traceContext?.jobId,batchId:input.traceContext?.batchId,unit:'agent_fragment',...timing},'info'),
     },
     routes:{

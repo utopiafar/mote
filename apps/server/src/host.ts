@@ -24,7 +24,7 @@ import {AssistantTasks} from './assistant-tasks.js';
 import {AssistantRoutines} from './assistant-routines.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
-import {assemblePlatform} from './assembly/platform.js';
+import {assemblePlatform,prepareUsageStatistics} from './assembly/platform.js';
 import {assembleSources,prepareDevicesDomain,prepareSourceFeatureRoutes} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
@@ -183,6 +183,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const {indexer,materialOrganizer,evidenceContext,contextTrees,evidenceReader,sourceContexts,materialContext,setMaterialConsumerTick}=await assembleMaterials({bootstrap,store,embedding,diagnostics,executor,usageLedger,modelContext,modelAuthorization,modelAuthorizationHost,materials,materialMemoryWork,backendContext,resources,sources,sourcePipelines,files,fileEvidence,disableCatalogChanges:()=>{catalogChangesEnabled=false;}});
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids.map(id=>formatEvidenceRef('capture',id)));
   const memories=evidenceReader.memories,{conversations}=await prepareConversations({bootstrap,store,resources,backendContext,modelAuthorizationHost});
+  const usageStatistics=prepareUsageStatistics(store);
   const assistantDrafts=new AssistantDrafts(conversations);
   const assistantMatters=new AssistantMatters(store);
   const assistantCards=new AssistantCards(store,evidenceReader);
@@ -301,7 +302,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     runModelFor,authorizeModelRequest,assertPurpose:assertModelPurpose,assertEvidence:assertModelEvidence,assertEvidenceAsync:assertModelEvidenceAsync,pinEvidence:pinProcessingEvidence,
     agentGate,llmGate,interactiveGate,interactiveModelGate,modelContext,modelOperation,queryAccounting,providerAdmission,
     insightSettings:()=>lifecycle.settings().insights,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,delegatedSnapshot:()=>executor.poolSnapshot('delegated-agents'),wakeMemory:()=>memoryPipeline.wake(),
-    allowQueryImages:()=>perception.settings().allowQueryImages,observeMemory,evidenceReader,agent:dependencies?.agent,
+    allowQueryImages:()=>perception.settings().allowQueryImages,observeMemory,evidenceReader,agent:dependencies?.agent,toolStatistics:usageStatistics.recorder,
   });
   const modelSettings=configurationPlatform.modelSettings;
   let additionalModelConnections=():ModelConnection[]=>[];
@@ -623,6 +624,10 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
       buildInfo:()=>({serverVersion,webVersion,consistent:webVersion===serverVersion}),
     },
     diagnostics:diagnosticProjection,
+  });
+  usageStatistics.routes(app,request=>{
+    assertRequestActive(request);
+    if(credential(request))throw new StoreError('Owner access required',403);
   });
 
   // C02 stops the worker before content accessors; DB remains alive until every
