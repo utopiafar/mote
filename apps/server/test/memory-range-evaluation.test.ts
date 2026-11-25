@@ -91,6 +91,31 @@ test('coverage validation locates an unsupported candidate and an unknown target
  ]);
 });
 
+test('oversized candidate evidence receives the actual schema limit while retaining complete range accounting',async t=>{
+ const texts=facts(31),f=await fixture(t,texts);
+ f.setGenerate(async input=>{
+  const members=work(input).members;
+  assert.equal(members.length,31);
+  const valid=result(input,[{member:members[0],quote:texts[0]}]);
+  const body=JSON.parse(valid.answer);
+  body.memories[0].evidenceIds=members.map(member=>member.id);
+  const feedback=await input.validateOutput!({...valid,answer:JSON.stringify(body)});
+  assert.ok(feedback instanceof MemoryOutputValidationError);
+  assert.equal(feedback.code,'schema');
+  assert.deepEqual(feedback.details,{workContract:contract,fieldPath:'memories[0].evidenceIds',problem:'too_big',candidateIndex:0,maxItems:30});
+  assert.match(feedback.repairInstruction,/Use at most 30 entries in this field\./);
+  assert.ok(!feedback.repairInstruction.includes(texts[0])&&members.every(member=>!feedback.repairInstruction.includes(member.id)));
+  assert.equal(f.memories.list().length,0);
+  return valid;
+ });
+ const complete=await f.pipeline.run(f.create().id);
+ assert.equal(complete.status,'completed');
+ assert.equal(complete.batches[0].evaluation?.assessedTargets,31);
+ assert.equal(complete.batches[0].reviewReceipt?.decision,'independent');
+ assert.equal(complete.batches[0].validationFailures?.[0].details?.maxItems,30);
+ assert.equal(complete.memoryIds.length,1);
+});
+
 for(const count of [8,32,80])test(`${count} selected exact-quoted candidates complete one fully assessed range without count-driven subdivision`,async t=>{
  const lines=facts(count),f=await fixture(t,[lines.join('\n')]);
  f.setGenerate(async input=>{assert.equal(work(input).workContract,contract);assert.equal(work(input).maxCandidates,undefined);return result(input,lines.map((quote,index)=>({member:work(input).members[0],quote,index})));});
