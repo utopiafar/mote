@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {
   assistantDraftCommandSchema,
   assistantDraftSchema,
+  type CurrentArchiveTaskProposal,
   queryScopeSchema,
   type AssistantDraft,
   type AssistantDraftCapability,
@@ -11,6 +12,21 @@ import {
 import type {ConversationTurn} from './conversations.js';
 import type {ConversationRepository} from './plugins/central-contracts.js';
 import {StoreError} from './evidence-store.js';
+import {scopeContainsHistory} from './query-scope.js';
+
+export function currentArchiveTaskScope(upper:QueryScope,requested:CurrentArchiveTaskProposal['archiveScope'],
+  allowedSources:(ids:readonly string[])=>string[]):QueryScope|undefined {
+  const sourceIds=requested.sourceIds?[...new Set(requested.sourceIds)]:upper.kind==='selection'?upper.sourceIds:undefined;
+  if(sourceIds?.length&&allowedSources(sourceIds).length!==sourceIds.length)return;
+  const resolved=queryScopeSchema.safeParse({
+    ...upper,after:requested.after??upper.after,before:requested.before??upper.before,
+    ...(sourceIds?{kind:'selection',sourceIds}:{}),
+  });
+  if(!resolved.success||!scopeContainsHistory(upper,resolved.data))return;
+  const {after,before,evidenceIds}=resolved.data;
+  if(sourceIds===undefined&&evidenceIds===undefined&&!(after&&before))return;
+  return resolved.data;
+}
 
 /** Flat host scope used by the accepted query. Anchored questions cannot be
  * represented by the shared task scope, so the host offers no draft for them. */
@@ -65,10 +81,10 @@ export class AssistantDrafts {
 
   setVersionValidator(validate:(context:AssistantDraftCommandContext)=>void){this.validateVersion=validate;}
 
-  issue(input:{goal:string;scope:QueryScope;currentInstruction?:{requestId:string}}):AssistantDraft{
+  issue(input:{goal:string;scope:QueryScope;currentInstruction?:{requestId:string;input?:NonNullable<AssistantDraft['input']>}}):AssistantDraft{
     const capabilities=this.capabilities();
     if(!capabilities.length)throw new StoreError('No assistant draft command is available',503);
-    return assistantDraftSchema.parse({requestId:input.currentInstruction?.requestId??randomUUID(),revision:1,goal:input.goal.trim(),scope:input.scope,...(input.currentInstruction?{input:'current-instruction'}:{}),capabilities:input.currentInstruction?capabilities.filter(capability=>capability==='assistant.task.preview'):capabilities});
+    return assistantDraftSchema.parse({requestId:input.currentInstruction?.requestId??randomUUID(),revision:1,goal:input.goal.trim(),scope:input.scope,...(input.currentInstruction?{input:input.currentInstruction.input??'current-instruction'}:{}),capabilities:input.currentInstruction?capabilities.filter(capability=>capability==='assistant.task.preview'):capabilities});
   }
 
   async command(raw:unknown):Promise<unknown>{

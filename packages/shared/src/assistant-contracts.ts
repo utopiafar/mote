@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {workStateSchema} from './activity.js';
 import {evidenceDependenciesSchema} from './evidence-dependencies.js';
 import {queryScopeSchema} from './query-scope.js';
-import {provenanceSchema} from './sources.js';
+import {provenanceSchema,sourceIdSchema} from './sources.js';
 import {sourceContextDeclarationSchema} from './material-context.js';
 import {actionProposalTargetSchema,calendarDraftSchema,calendarEventSchema,messageSendDraftSchema,todoInputSchema,type ActionProposalTarget,type ActionStatus} from './actions.js';
 
@@ -75,7 +75,16 @@ export type ConversationTaskStatus={
  * The host binds the remaining fields after validating the current answer. */
 export const currentCalendarProposalSchema=z.object({goal:ownerText,input:z.literal('current-action'),action:z.object({kind:z.enum(['calendar.create','calendar.update','calendar.cancel']),event:calendarEventSchema,targetId:uuid}).strict()}).strict();
 export type CurrentCalendarProposal=z.infer<typeof currentCalendarProposalSchema>;
-export const assistantDraftProposalSchema=z.union([z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict(),currentCalendarProposalSchema]);
+export const currentArchiveTaskProposalSchema=z.object({
+  goal:ownerText,input:z.literal('current-archive-task'),
+  archiveScope:z.object({
+    sourceIds:z.array(sourceIdSchema).min(1).max(24).nullable(),
+    after:z.string().datetime({offset:true}).nullable(),
+    before:z.string().datetime({offset:true}).nullable(),
+  }).strict(),
+}).strict();
+export type CurrentArchiveTaskProposal=z.infer<typeof currentArchiveTaskProposalSchema>;
+export const assistantDraftProposalSchema=z.union([z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict(),currentArchiveTaskProposalSchema,currentCalendarProposalSchema]);
 export type AssistantDraftProposal=z.infer<typeof assistantDraftProposalSchema>;
 /** A Host-issued link to the existing Action receipt, never an authorization. */
 export type CurrentActionReference={id:string;kind:CurrentCalendarProposal['action']['kind']};
@@ -88,7 +97,7 @@ export type AssistantDraftCapability=z.infer<typeof assistantDraftCapabilitySche
 /** One host-validated draft attached to a completed answer. `requestId` is
  * stable for retries; `revision` changes only for an explicit owner edit. */
 export const assistantDraftSchema=z.object({
-  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,input:z.literal('current-instruction').optional(),
+  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,input:z.enum(['current-instruction','current-archive-task']).optional(),
   capabilities:z.array(assistantDraftCapabilitySchema).min(1).refine(values=>new Set(values).size===values.length,{message:'Draft capabilities must be unique'}),
 }).strict();
 export type AssistantDraft=z.infer<typeof assistantDraftSchema>;

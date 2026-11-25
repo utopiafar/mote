@@ -73,6 +73,7 @@ export const french: Readonly<Record<string, string>> = {
   "未读": "Non lu",
   "补充": "Compléter",
   "补充任务": "Compléter la tâche",
+  "要整理哪些资料？": "Quels documents dois-je organiser ?",
   "查看任务": "Voir la tâche",
   "原因": "Raison",
   "部分可用": "Partiellement disponible",

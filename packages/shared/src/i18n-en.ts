@@ -73,6 +73,7 @@ export const english: Readonly<Record<string, string>> = {
   "未读": "Unread",
   "补充": "Add input",
   "补充任务": "Add input to task",
+  "要整理哪些资料？": "Which material should I organize?",
   "查看任务": "View task",
   "原因": "Reason",
   "部分可用": "Partially available",

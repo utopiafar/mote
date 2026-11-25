@@ -209,7 +209,7 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
         // omitting the array from the agent input. Restore the owner's actual
         // accepted scope on a draft before it becomes a product command.
         const stored=evidenceIds?.length===0?{...result,evidenceDependencies:{version:1 as const,complete:true,ids:[]},
-          ...(result.draft?{draft:{...result.draft,scope:{kind:'selection' as const,evidenceIds:[],
+          ...(result.draft&&result.draft.input!=='current-archive-task'?{draft:{...result.draft,scope:{kind:'selection' as const,evidenceIds:[],
             ...(message.scope.after?{after:message.scope.after}:{}),...(message.scope.before?{before:message.scope.before}:{}),
             ...(message.scope.deviceId?{deviceId:message.scope.deviceId}:{}),...(message.scope.timeZone?{timeZone:message.scope.timeZone}:{})}}}:{})}:result;
         conversations.complete(message.id,stored,{expectedVersion:message.version});
@@ -221,12 +221,12 @@ function createRunCallbacks(dependencies:QueryRunDependencies,runtime:Delegation
           ownerActions.acceptOwnerCalendar(message.id,stored.currentAction,stored.runId);
           ownerActions.wakeOwnerCalendar(stored.currentAction.id);
         }
-        if(stored.draft?.input==='current-instruction'){
+        if(stored.draft?.input==='current-instruction'||stored.draft?.input==='current-archive-task'){
           if(!dependencies.acceptCurrentInstruction||!prepared.modelProfileId||!prepared.modelOverride||!stored.configuration)throw new StoreError('Current instruction handoff is unavailable',409);
           const profile=modelSettings.select('chat',prepared.modelProfileId),settings={...profile.settings,model:prepared.modelOverride};
           if(modelConfiguration(profile.id,settings,modelSettings.view().revision).fingerprint!==stored.configuration.fingerprint||stored.configuration.fingerprint!==saved.configurationFingerprint)throw new StoreError('Current instruction model selection changed',409);
           const connection=agentModelConnection({kind:'profile',id:profile.id},settings);modelAuthorizationHost.control.assertCurrent(connection);
-          const accepted=dependencies.acceptCurrentInstruction(message.id,{modelProfileId:profile.id,modelOverride:settings.model,connection});
+          const accepted=dependencies.acceptCurrentInstruction(message.id,{modelProfileId:profile.id,modelOverride:settings.model,connection,configurationFingerprint:stored.configuration.fingerprint});
           if(accepted&&typeof (accepted as Promise<unknown>).then==='function'){void Promise.resolve(accepted).catch(()=>{});throw new StoreError('Current instruction handoff must be synchronous',409);}
         }
         return {conversationId:message.conversationId,turnId:message.id};

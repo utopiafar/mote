@@ -190,7 +190,7 @@ function App() {
   const [timelineRevision, setTimelineRevision] = useState(0);
   const clearConnection = useCallback(() => {
     connectionGeneration.current++;
-    clearSession();clearChatReloadDraft();
+    clearSession();clearChatReloadDraft(apiRef.current??undefined);
     log('auth.session_cleared','info');
     setPeriod("week");
     setConnection(null);

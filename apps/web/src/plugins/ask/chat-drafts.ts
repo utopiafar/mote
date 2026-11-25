@@ -79,6 +79,7 @@ export function preserveChatForLanguageReload(api: Api) {
   } catch { return false; }
 }
 
-export function clearChatReloadDraft() {
+export function clearChatReloadDraft(api?: Api) {
+  if (api) scopes.delete(api);
   try {sessionStorage.removeItem(reloadKey); sessionStorage.removeItem(tabKey);} catch {}
 }

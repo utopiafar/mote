@@ -68,7 +68,7 @@ export function AssistantDraftActions({api,conversationId,turnId,draft,renderAns
       else setError(moteText('草稿提交失败，重试。'));
     }finally{setBusy(false);}
   };
-  if(draft.input==='current-instruction')return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>
+  if(draft.input)return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>
     {renderAnswer&&onOpen&&<AssistantTaskResults api={api} conversationId={conversationId} turnId={turnId} scope={draft.scope}
       refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found} footerTaskIds={footerTaskIds}/>}
   </section>;

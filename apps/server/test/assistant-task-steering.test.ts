@@ -3,6 +3,57 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {taskSteeringFixture as fixture,until} from './fixtures/assistant-task-steering.js';
 
+test('a scoped archive request takes a background Task before reading, freezes originals and keeps citations on the original Task',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ const owner=f.node.assistantTasks;
+ const prepareEvidence=owner.prepareEvidence.bind(owner);
+ let unlock!:()=>void;
+ const held=new Promise<void>(resolve=>{unlock=resolve;});
+ t.after(unlock);
+ owner.prepareEvidence=async(...args)=>{await held;return prepareEvidence(...args);};
+ const scope={kind:'all',after:new Date(Date.now()-86400000).toISOString(),before:new Date(Date.now()+60000).toISOString()};
+ const request=await f.post('整理上周例会并生成跟进清单',randomUUID(),scope);
+ const accepted=await f.settle(request.message.id);
+ assert.equal(accepted.result?.draft?.input,'current-archive-task');assert.deepEqual(accepted.result.draft.scope,scope);
+ const items=()=>f.node.assistantTasks.byConversation(f.id).items;
+ const task=items()[0].task;
+ assert.equal(items().length,1);assert.equal(items()[0].turnId,request.message.id);
+ assert.equal(f.node.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(task.id)!.snapshot_json,null);
+ assert.equal(f.rpc().filter(row=>row.method==='turn/start').length,1,'reading has not started in the reply path');
+ const b=await f.post('GENERATED-UNRELATED');
+ assert.equal((await f.settle(b.message.id)).status,'completed');
+ assert.notEqual(f.task(task.id).state,'succeeded');
+ unlock();
+ await until(()=>f.rpc().find(row=>row.method==='item/tool/call'||row.id===9000),'the task reads the generated original');
+ assert.equal(typeof f.node.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(task.id)!.snapshot_json,'string');
+ const alternate=await f.node.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:{
+  id:randomUUID(),deviceId:'generated-task-device',deviceName:'Generated task fixture',platform:'import',capturedAt:new Date().toISOString(),text:'Generated separate later addition.',
+ }});
+ assert.equal(alternate.statusCode,201,alternate.body);
+ await f.restart();f.release();
+ await until(()=>f.task(task.id).state==='succeeded'?true:undefined,'the archived task completing after restart');
+ assert.equal(items().filter(item=>item.resultAvailable).length,1);
+ assert.deepEqual(f.node.assistantTasks.get(task.id,scope as typeof f.scope).result!.citations.map(c=>c.id),[f.evidenceId]);
+ const replay=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers:f.headers,payload:request.payload});
+ assert.equal(replay.statusCode,202,replay.body);assert.equal(replay.json().id,request.message.id);
+ assert.equal(items().length,1);
+});
+
+test('an archive request with no permitted originals does not run a Task model or widen the scope',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ const empty=await f.post('整理上周例会并生成跟进清单',randomUUID(),{kind:'selection',evidenceIds:[]});
+ assert.equal((await f.settle(empty.message.id)).result?.draft?.input,'current-archive-task');
+ const items=()=>f.node.assistantTasks.byConversation(f.id).items;
+ await until(()=>items().find(item=>item.error==='no_usable_evidence'),'task with no usable original');
+ assert.equal(items()[0].task.state,'needs_input');assert.equal(items()[0].resultAvailable,false);
+ assert.equal(f.rpc().filter(row=>row.method==='turn/start').length,1);
+ const outside=await f.post('GENERATED-OUTSIDE-ARCHIVE-SOURCE',randomUUID(),{kind:'all'});
+ const refused=await f.settle(outside.message.id);
+ assert.equal(refused.status,'completed');assert.equal(refused.result?.draft,undefined);
+ assert.notEqual(refused.result?.answer,'Generated proposed task');
+ assert.equal(items().length,1);
+});
+
 test('the main conversation keeps an explicit supplement and one result on the original task across independent work and restart',{timeout:30000},async t=>{
  const f=await fixture(t);
  f.setMode('hold-terminal');

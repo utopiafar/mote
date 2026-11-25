@@ -58,8 +58,8 @@ function TaskProgress({api, conversationId, item, refresh, onOpen, onSupplement}
   const [stopping, setStopping] = useState(false);
   const [failed, setFailed] = useState(false);
   const state = task.state;
-  const canSupplement = Boolean(task.scope) && ['waiting','running','needs_input'].includes(state);
-  const canStop = canSupplement || state === 'failed';
+  const canStop = ['waiting','running','needs_input','failed'].includes(state);
+  const canSupplement = Boolean(task.scope) && state !== 'failed' && canStop && error !== 'no_usable_evidence';
   const label = {waiting: '排队中', running: '正在进行', needs_input: '待补充', failed: '未完成',
     cancelled: '已停止', stale: '已失效', excluded: '未完成', completed: '已完成'} as const;
 

@@ -396,13 +396,17 @@ export class Conversations {
   private rewriteTerminal(conversationId:string,message:ConversationTurn,previous:string){
     const now=new Date().toISOString(),json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
     this.store.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(json,message.id);
-    const currentScope=this.store.db.prepare(`SELECT json_extract(json,'$.scope') AS scope FROM conversation_turns WHERE conversation_id=?
-      AND ${terminalStatus} AND json_extract(json,'$.steering') IS NULL AND json_extract(json,'$.taskSteering') IS NULL
-      AND json_extract(json,'$.supplementTask') IS NULL ORDER BY idx DESC LIMIT 1`).get(conversationId)?.scope;
-    this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(coalesce(?,json_extract(json,'$.scope'))),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1),'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,currentScope??null,growth,conversationId,conversationId);
+    const currentScope=this.newestIndependentScope(conversationId)??JSON.stringify(message.scope);
+    this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(?),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1),'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,currentScope,growth,conversationId,conversationId);
     inheritRetiredConversationRoots(this.store,conversationId,message);
     if(message.status!=='cancelled')this.onTurnReceived?.(message.id,conversationId);
     return message;
+  }
+  private newestIndependentScope(conversationId:string){
+    const row=this.store.db.prepare(`SELECT json_extract(json,'$.scope') AS scope FROM conversation_turns WHERE conversation_id=?
+      AND ${terminalStatus} AND json_extract(json,'$.steering') IS NULL AND json_extract(json,'$.taskSteering') IS NULL
+      AND json_extract(json,'$.supplementTask') IS NULL ORDER BY idx DESC LIMIT 1`).get(conversationId);
+    return typeof row?.scope==='string'?row.scope:undefined;
   }
   private transaction<T>(write:()=>T):T{
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');

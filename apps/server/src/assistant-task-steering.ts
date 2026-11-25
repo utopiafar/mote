@@ -76,7 +76,7 @@ export class AssistantTaskSteering {
    return [{messageId:message.id,question:message.question,hostRunId:receipt.receipt?.identity.runId,key:this.amendmentKey(message)}];
   });
  }
- prepare(input:QueryInput,work:AssistantTaskSteeringWork){
+ withAmendments(input:QueryInput,work:AssistantTaskSteeringWork){
   const pin=this.runtimePin(work.task.id);
   if(!pin&&this.messages(work.task.id).some(message=>message.taskSteering?.state!=='cancelled'))throw new ExecutionFailure('blocked','assistant_task_selection_unavailable');
   const amendments=this.amendments(work);if(!amendments.length)return input;
@@ -125,7 +125,7 @@ export class AssistantTaskSteering {
   const pin=this.runtimePin(work.task.id);if(!pin)throw new ExecutionFailure('blocked','assistant_task_selection_unavailable');
   // A newly admitted queued Task has no actual model selection yet. Wait on
   // its existing executor; neither this message nor its classifier may pin it.
-  if(!message.taskSteering&&!['waiting','running','blocked'].includes(work.task.state))throw new StoreError('Assistant task has already finished',409);
+  if(!message.taskSteering&&(!work.batchId||!['waiting','running','blocked'].includes(work.task.state)))throw new StoreError('Assistant task cannot receive a supplement',409);
   if(!pin.profile_id)throw new ExecutionFailure('waiting','assistant_task_selection_pending',1000);
   const checkModel=()=>{
    if(message.supplementTask&&assertTaskModel&&pin.model_id&&pin.configuration_fingerprint)assertTaskModel(pin.profile_id!,pin.model_id,pin.configuration_fingerprint);

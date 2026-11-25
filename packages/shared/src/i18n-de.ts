@@ -73,6 +73,7 @@ export const german: Readonly<Record<string, string>> = {
   "未读": "Ungelesen",
   "补充": "Ergänzen",
   "补充任务": "Aufgabe ergänzen",
+  "要整理哪些资料？": "Welche Unterlagen soll ich aufbereiten?",
   "查看任务": "Aufgabe anzeigen",
   "原因": "Grund",
   "部分可用": "Teilweise verfügbar",

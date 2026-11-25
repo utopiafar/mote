@@ -1103,7 +1103,7 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
                     if (!ui.isWorking) openChatResult(resultPath, id, title, path == null)
                 })
             }
-            if (status in setOf("waiting", "running", "needs_input") && taskScope != null) {
+            if (status in setOf("waiting", "running", "needs_input") && taskScope != null && row.optString("error") != "no_usable_evidence") {
                 actions.addView(MoteComponents.button(ui, MoteI18n.text("补充"), MoteUi.ButtonRole.TEXT) {
                     ask.selectSupplement(task); controlsAsk(); question?.requestFocus()
                 }.apply { tag = "chat-task-supplement:$id" })
