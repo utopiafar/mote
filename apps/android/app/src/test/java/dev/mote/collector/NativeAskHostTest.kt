@@ -150,6 +150,7 @@ class NativeAskHostTest {
             "/api/capture-browser/$evidence" -> JSONObject().put("id", evidence).put("source", "note").put("libraryVersion", "generated-version")
                 .put("deviceId", "generated-phone").put("capturedAt", "2026-11-20T08:00:00Z").put("ocrText", "Generated original\n$excerpt")
             "/api/conversations/$conversation/messages/$turn/assistant-tasks" -> JSONObject().put("items", tasks)
+            "/api/conversations/$conversation/assistant-tasks" -> JSONObject().put("items", JSONArray())
             calendar?.let { "/api/actions/" + it.getString("id") } -> requireNotNull(calendar)
             else -> error("Unexpected generated request $method $path")
         }

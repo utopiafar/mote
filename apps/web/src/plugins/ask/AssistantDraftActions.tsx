@@ -10,9 +10,10 @@ type Receipt={requestId?:string};
 /** The smallest owner entry for a host-validated draft. It can preview the
  * frozen scope without effects; start is only offered when the server reports
  * an installed task handler. Editing creates one new explicit command version. */
-export function AssistantDraftActions({api,conversationId,turnId,draft,renderAnswer,onOpen}:{
+export function AssistantDraftActions({api,conversationId,turnId,draft,renderAnswer,onOpen,footerTaskIds}:{
   api:Api;conversationId:string;turnId:string;draft:AssistantDraft;
   renderAnswer?:(answer:Answer,open:(ref:string)=>void)=>ReactNode;onOpen?:(ref:string)=>void;
+  footerTaskIds?:ReadonlySet<string>;
 }){
   const [goal,setGoal]=useState(draft.goal),[busy,setBusy]=useState(false),[started,setStarted]=useState(false);
   const [refresh,setRefresh]=useState(0);
@@ -67,9 +68,9 @@ export function AssistantDraftActions({api,conversationId,turnId,draft,renderAns
       else setError(moteText('草稿提交失败，重试。'));
     }finally{setBusy(false);}
   };
-  if(draft.input==='current-instruction')return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>
+  if(draft.input)return <section className="assistant-draft assistant-current-instruction" aria-label={moteText('任务状态')}>
     {renderAnswer&&onOpen&&<AssistantTaskResults api={api} conversationId={conversationId} turnId={turnId} scope={draft.scope}
-      refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found}/>}
+      refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found} footerTaskIds={footerTaskIds}/>}
   </section>;
   return <section className="assistant-draft" aria-label={moteText('建议的下一步')} aria-busy={busy}>
     <div className="assistant-draft-heading"><Sparkles size={14}/><strong>{moteText('建议的下一步')}</strong></div>
@@ -89,6 +90,6 @@ export function AssistantDraftActions({api,conversationId,turnId,draft,renderAns
     {status&&<p className="assistant-draft-status" role="status">{status}</p>}
     {error&&<p className="assistant-draft-status error" role="alert">{error}</p>}
     {canStart&&renderAnswer&&onOpen&&<AssistantTaskResults api={api} conversationId={conversationId} turnId={turnId} scope={draft.scope}
-      refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found}/>}
+      refresh={refresh} renderAnswer={renderAnswer} onOpen={onOpen} onFound={found} footerTaskIds={footerTaskIds}/>}
   </section>;
 }

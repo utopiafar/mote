@@ -23,8 +23,8 @@ export type PendingQuery=OwnedQuery|AdoptedQuery;
 interface OwnerState {pending?:PendingQuery;draftVersion:number;contextVersion:number;listeners:Set<()=>void>}
 const owners=new WeakMap<Api,OwnerState>();
 function state(api:Api){let value=owners.get(api);if(!value){value={draftVersion:0,contextVersion:0,listeners:new Set()};owners.set(api,value);}return value;}
-/** Session-only recovery belongs to the authenticated API, just like unsent drafts.
- * It survives workspace unmounts; no credential or request is written to storage. */
+/** Recovery belongs to the authenticated API. The chat tab can restore its
+ * exact retained admission after a reload within the same owner view. */
 export const queryRecovery={
  get:(api:Api)=>state(api).pending,
  subscribe:(api:Api,listener:()=>void)=>{const value=state(api);value.listeners.add(listener);return()=>{value.listeners.delete(listener);};},
@@ -32,4 +32,9 @@ export const queryRecovery={
  draftEdited:(api:Api)=>{state(api).draftVersion++;},
  contextChanged:(api:Api)=>{const value=state(api);value.contextVersion++;value.draftVersion++;},
  versions:(api:Api)=>{const value=state(api);return{draftVersion:value.draftVersion,contextVersion:value.contextVersion};},
+ restore:(api:Api,pending:OwnedQuery,versions:{draftVersion:number;contextVersion:number})=>{
+  const value=state(api);if(value.pending)return;
+  value.draftVersion=versions.draftVersion;value.contextVersion=versions.contextVersion;
+  value.pending={...pending,unknown:true};
+ },
 };

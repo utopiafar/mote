@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
-import {conversationSettingsSchema, pageHash, type ServerConfiguration} from '@mote/shared';
+import {conversationSettingsSchema, pageHash, type ConversationTaskStatus, type ServerConfiguration} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import type {Answer, Api, Device} from '../../api';
 import {Loading, LoadingText} from '../../Loading';
@@ -17,7 +17,8 @@ import {ChatAboutReference,ChatAboutTag,readChatAbout,useChatAbout,verifyChatAbo
 import {ChatRevisionChanged, ChatSearch, chatPath, chatRevoked, mergeChatPages, readChatPage, samePage,
   type ChatPage, type ChatScope, type ChatTurn} from './ChatHistory';
 import {ChatMessage} from './ChatMessage';
-import {unsentDrafts} from './chat-drafts';
+import {ConversationTasks} from './ConversationTasks';
+import {chatTabs, persistChatTab, unsentDrafts} from './chat-drafts';
 import {useChatAttachments} from './chat-attachments';
 import {OnboardingChatProgress} from '../sources/OnboardingScan';
 import {admitConversationMessage, definiteAdmissionFailure, pendingMessageStatus, readConversationMessage,
@@ -71,6 +72,10 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const main = useResource<{id: string}>(api, '/api/conversations/main');
   const path = main.data ? chatPath(main.data.id) : null;
   const detail = useResource<ChatPage>(api, path);
+  const tasks = useResource<{items: ConversationTaskStatus[]}>(api, path ? path + '/assistant-tasks' : null, 3000, detail.data?.revision);
+  const taskItems = tasks.error === undefined && Array.isArray(tasks.data?.items) ? tasks.data.items : [];
+  const footerTaskIds = useMemo(() => new Set(taskItems.map(item => item.task.id)), [taskItems]);
+  const [supplement, setSupplement] = useState(() => chatTabs.get(api)?.supplement);
   const feedError = useOperationUpdates(api);
   const [revoked, setRevoked] = useState<ChatPage>();
   const head = detail.data?.id === main.data?.id && detail.data !== revoked ? detail.data : undefined;
@@ -101,6 +106,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const referenceKey = useRef(reference.key);
   const [draft] = useState(() => createChatDraft(unsentDrafts.get(api)?.question ?? '', question => {
     unsentDrafts.set(api, {question, attachments: unsentDrafts.get(api)?.attachments ?? []});
+    persistChatTab(api);
   }));
   const files = useChatAttachments(api, setError);
   const operation = useRef<AbortController | undefined>(undefined);
@@ -108,7 +114,9 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const cancelRequest = useRef<AbortController | undefined>(undefined);
   const citeRequest = useRef<AbortController | undefined>(undefined);
   const viewport = useRef<HTMLDivElement>(null);
-  const scrollToBottom = useRef(true);
+  const restorePosition = useRef(chatTabs.get(api)?.position);
+  const scrollToBottom = useRef(restorePosition.current?.atEnd ?? true);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const growth = useRef<{height: number; top: number} | undefined>(undefined);
   const latest = useRef({head, thread});
   latest.current = {head, thread};
@@ -138,10 +146,18 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const readError = main.error ?? detail.error ?? receiptError ?? feedError;
   const offline = readError instanceof TypeError;
 
+  function selectSupplement(task: ConversationTaskStatus['task'] | undefined) {
+    setSupplement(task);
+    chatTabs.set(api, {...chatTabs.get(api), supplement: task});
+    persistChatTab(api);
+  }
+
   useEffect(() => () => {
     operation.current?.abort();
     const retained = queryRecovery.get(api);
     if (retained) queryRecovery.set(api, {...retained, unknown: true});
+    clearTimeout(scrollTimer.current);
+    persistChatTab(api);
   }, [api]);
   useEffect(() => {
     setCancelling(undefined);
@@ -237,12 +253,40 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   useLayoutEffect(() => {
     const container = viewport.current;
     if (!container) return;
+    const position = restorePosition.current;
+    if (position && thread) {
+      if (position.conversationId !== thread.id || position.atEnd || target) restorePosition.current = undefined;
+      else {
+        const turn = position.turnId && document.getElementById('conversation-turn-' + position.turnId);
+        if (position.turnId && !turn) return;
+        container.scrollTop = turn
+          ? container.scrollTop + turn.getBoundingClientRect().top - container.getBoundingClientRect().top - (position.offset ?? 0)
+          : position.top;
+        restorePosition.current = undefined;
+        return;
+      }
+    }
     if (growth.current) {
       const {height, top} = growth.current;
       growth.current = undefined;
       container.scrollTop = top + container.scrollHeight - height;
     } else if (!target && scrollToBottom.current) container.scrollTop = container.scrollHeight;
   }, [thread?.turns.length, target]);
+
+  useEffect(() => {
+    const position = restorePosition.current;
+    if (!position?.turnId || position.atEnd || position.conversationId !== head?.id || target ||
+      thread?.turns.some(turn => turn.id === position.turnId)) return;
+    const controller = new AbortController();
+    void readChatPage(api, head, new URLSearchParams({anchor: position.turnId}), controller.signal).then(page => {
+      if (samePage(latest.current.head, head)) setOlder(page);
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      restorePosition.current = undefined;
+      if (viewport.current) viewport.current.scrollTop = position.top;
+    });
+    return () => controller.abort();
+  }, [api, head, target]);
 
   useEffect(() => {
     const container = viewport.current;
@@ -347,8 +391,11 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
           draft.set('');
           files.clear();
         }
-        if (versions.contextVersion === retained.contextVersion && reference.key) reference.clear();
+        if (input.supplementTaskId) {
+          if (chatTabs.get(api)?.supplement?.id === input.supplementTaskId) selectSupplement(undefined);
+        } else if (versions.contextVersion === retained.contextVersion && reference.key) reference.clear();
         queryRecovery.set(api, undefined);
+        persistChatTab(api);
         setReceiptError(undefined);
         detail.refresh();
         return;
@@ -356,11 +403,13 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
         if (signal.aborted) return;
         if (!unknown && definiteAdmissionFailure(reason)) {
           queryRecovery.set(api, undefined);
+          persistChatTab(api);
           setError(moteText('发送失败'));
           return;
         }
         unknown = true;
         queryRecovery.set(api, {...retained, unknown});
+        persistChatTab(api);
         if (attempt === 1) setReceiptError(reason);
       }
     }
@@ -368,7 +417,10 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
 
   async function submit(original?: ChatTurn) {
     const question = (original?.question ?? draft.read()).trim();
-    if (!head || !question || !configured || !reference.ready || files.uploading || files.pending.length ||
+    const target = original ? taskItems.find(item => item.task.id === original.supplementTaskId)?.task : supplement;
+    if (original?.supplementTaskId && !target?.scope) return;
+    if (!head || !question || !configured || !target && !reference.ready || files.uploading || files.pending.length ||
+      target && files.attachments.length ||
       operation.current || queryRecovery.get(api)) return;
     const controller = new AbortController();
     operation.current = controller;
@@ -376,24 +428,25 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
     setError('');
     setHighlight(undefined);
     if (routeTurn) setRouteTurn(null);
-    scrollToBottom.current = true;
+    // A new message or a task update must not move a reader off older turns.
     try {
-      const scope = original?.scope ? admissionScope(original.scope, undefined) : outgoingScope;
-      if (!original && !scopeChoice) {
+      const scope = target?.scope ?? (original?.scope ? admissionScope(original.scope, undefined) : outgoingScope);
+      if (!target && !original && !scopeChoice) {
         if (about?.status === 'ready') await verifyChatAbout(api,about,controller.signal);
         else await reference.verify(controller.signal);
       }
       controller.signal.throwIfAborted();
-      const anchor = original ? original.scope : scopeChoice ? undefined : about ? aboutAnchor
+      const anchor = target ? undefined : original ? original.scope : scopeChoice ? undefined : about ? aboutAnchor
         : reference.origin
           ? {anchorMaterialRef: reference.materialRef, anchorEvidenceIds: reference.ids.length ? reference.ids : undefined}
           : storedScope;
-      const attachments = original ? original.attachments ?? [] : unsentDrafts.get(api)?.attachments ?? [];
+      const attachments = target ? [] : original ? original.attachments ?? [] : unsentDrafts.get(api)?.attachments ?? [];
       const clientRequestId = crypto.randomUUID();
-      const modelProfileId = original ? original.modelProfileId : model;
-      const modelOverride = original ? original.modelOverride : override;
+      const modelProfileId = target ? undefined : original ? original.modelProfileId : model;
+      const modelOverride = target ? undefined : original ? original.modelOverride : override;
       const input: ConversationMessageInput = {
         conversationId: head.id, clientRequestId, question, scope,
+        ...(target ? {supplementTaskId: target.id} : {}),
         ...(anchor?.anchorMaterialRef ? {anchorMaterialRef: anchor.anchorMaterialRef} :
           anchor?.anchorEvidenceIds?.length ? {anchorEvidenceIds: anchor.anchorEvidenceIds} : {}),
         ...(attachments.length ? {attachmentIds: attachments.map(item => item.id)} : {}),
@@ -403,6 +456,7 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
       const retained: OwnedQuery = {kind: 'owned', id: clientRequestId, body: JSON.stringify(input),
         question, attachments, ...queryRecovery.versions(api), conversationId: head.id, unknown: false};
       queryRecovery.set(api, retained);
+      persistChatTab(api);
       await post(retained, controller.signal);
     } catch {
       if (!controller.signal.aborted) setError(moteText('发送失败'));
@@ -490,6 +544,14 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
     <div className="chat-viewport" ref={viewport} onScroll={event => {
       const element = event.currentTarget;
       scrollToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+      if (!head || restorePosition.current) return;
+      const bounds = element.getBoundingClientRect();
+      const first = scrollToBottom.current ? undefined : [...element.querySelectorAll<HTMLElement>('article.chat-message')]
+        .find(turn => turn.getBoundingClientRect().bottom > bounds.top);
+      chatTabs.set(api, {...chatTabs.get(api), position: {conversationId: head.id, top: element.scrollTop, atEnd: scrollToBottom.current,
+        ...(first ? {turnId: first.id.replace(/^conversation-turn-/, ''), offset: first.getBoundingClientRect().top - bounds.top} : {})}});
+      clearTimeout(scrollTimer.current);
+      scrollTimer.current = setTimeout(() => persistChatTab(api), 150);
     }}>
       <div className="conversation-messages chat-thread">
         {about && <ChatAboutReference about={about}/>}
@@ -500,9 +562,17 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
         </button>}
         {thread?.turns.map((turn, index, turns) => <ChatMessage key={turn.id} api={api} conversationId={thread.id} turn={turn}
           previous={turns[index - 1]} pending={pending} turns={turns} highlighted={target === turn.id} cancelling={cancelling !== undefined}
-          canRetry={!busy && Boolean(head) && configured && !recovery}
+          canRetry={!busy && Boolean(head) && configured && !recovery && (!turn.supplementTaskId || taskItems.some(item => item.task.id === turn.supplementTaskId && ['waiting','running','needs_input'].includes(item.task.state)))}
+          footerTaskIds={footerTaskIds}
           onCancel={() => void cancel(turn)} onRetry={() => void submit(turn)} onOpen={onOpen}
           openReference={ref => void openReference(ref, turn)} renderAnswer={renderAnswer}/>)}
+        {head && <ConversationTasks api={api} conversationId={head.id} items={taskItems} refresh={tasks.refresh}
+          onOpen={onOpen} renderAnswer={renderAnswer} onSupplement={task => {
+            if (busy || recovery || !task.scope) return;
+            queryRecovery.contextChanged(api);
+            selectSupplement(task);
+            document.querySelector<HTMLTextAreaElement>('.chat-compose-form textarea')?.focus({preventScroll: true});
+          }}/>}
       </div>
     </div>
     {unavailableReference && <ConversationDialog open title={moteText('引用不可用')} onClose={() => setUnavailableReference(false)}
@@ -530,8 +600,9 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
       {!configured && onSettings && <div className="chat-error" role="status">
         <span>{moteText('未连接模型')}</span><button className="text-button" onClick={onSettings}>{moteText('打开模型设置')}</button>
       </div>}
-      <ChatComposer api={api} draft={draft} files={files} busy={busy} preparing={preparing}
-        blocked={preparing || !configured || !reference.ready || about?.status === 'loading' || Boolean(recovery)} model={model} override={override}
+      <ChatComposer api={api} draft={draft} files={files} busy={busy} preparing={preparing} supplement={Boolean(supplement)}
+        blocked={preparing || !configured || (!supplement && (!reference.ready || about?.status === 'loading')) ||
+          Boolean(supplement && files.attachments.length) || Boolean(recovery)} model={model} override={override}
         onModel={changeModel} onOverride={changeOverride}
         onEdit={value => {queryRecovery.draftEdited(api); draft.set(value);}}
         onSend={() => void submit()}
@@ -539,8 +610,14 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
           <ConversationSourceScope api={api} scope={outgoingScope} onChange={changeScope} disabled={preparing || busy}/>
           <button type="button" className="text-button" onClick={() => setContextSettings(true)}>{moteText('上下文设置')}</button>
         </>}
-        scopeTag={about ? <ChatAboutTag about={about} onClear={clearAbout} disabled={busy}/> : undefined}
-        reference={referenceOrigin ? <nav className="filter-bar ask-original-reference" aria-label={moteText('参考记录')}>
+        scopeTag={!supplement && about ? <ChatAboutTag about={about} onClear={clearAbout} disabled={busy}/> : undefined}
+        reference={supplement ? <nav className="filter-bar" aria-label={moteText('补充任务')}>
+          <span>{moteText('补充任务')} · {supplement.goal}</span>
+          <button type="button" className="text-button" disabled={busy || Boolean(recovery)} onClick={() => {
+            queryRecovery.contextChanged(api);
+            selectSupplement(undefined);
+          }}>{moteText('取消')}</button>
+        </nav> : referenceOrigin ? <nav className="filter-bar ask-original-reference" aria-label={moteText('参考记录')}>
           <span>{reference.title || moteText('参考资料')}</span>
           {reference.loading && <LoadingText/>}
           {reference.error && <span role="alert">{moteText('引用不可用')}</span>}

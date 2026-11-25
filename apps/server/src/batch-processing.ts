@@ -19,7 +19,8 @@ export const BATCH_CONTEXT_MAX_BYTES=48000;
 // Tens of thousands of grants can fit the paged model catalog and exceed the
 // general task payload limit. This budget is for private persisted inputs.
 export const BATCH_TASK_INPUT_MAX_BYTES=8_000_000;
-type FrozenQuery=BatchQuery & {processingEvidence:Record<string,string>};
+export type BatchEvidence={evidenceIds:string[];processingEvidence:Record<string,string>};
+type FrozenQuery=BatchQuery & BatchEvidence;
 type Plan={items:string[];contextTime:string;reduce?:string};
 type StepInput={batchId:string;itemId?:string;index?:number;revision:number};
 export type BatchAdmission={kind:'automatic';purpose:AutomaticModelPurpose;roots:readonly string[]}|{kind:'manual';identities:readonly string[];connections:ModelConnection[]}|{kind:'continuation';parentStepId:string};
@@ -30,6 +31,10 @@ export type BatchProductProjection={
    * The query's read grants still have to be current in frozen() and pins().
    * A successful check covers those IDs for the same operation in that read snapshot. */
   assertDependencies?(taskId:string,ids:readonly string[]):boolean;
+  /** The owning product can freeze a previously authorized read selection at
+   * execution time. Every retry and result fence reads the same saved pins. */
+  prepareEvidence?(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<void>;
+  frozenEvidence?(step:ExecutionStep):BatchEvidence|undefined;
   valid(step:ExecutionStep):boolean;
   project(step:ExecutionStep):void;
   commit(step:ExecutionStep,result:QueryResult):void;
@@ -116,6 +121,11 @@ export class BatchProcessing {
       throw new StoreError('Batch evidence changed',409);
     this.assertCurrent(input.evidenceIds);
   }
+  private itemInput(step:ExecutionStep,item:TaskRecord,assertCurrent:AssertTaskCurrent):FrozenQuery{
+    const input=this.tasks.input<FrozenQuery>(item.id,item.revision,assertCurrent);
+    const evidence=this.product?.frozenEvidence?.(step);
+    return evidence?{...input,...evidence}:input;
+  }
   private batch(id:string){const task=this.tasks.get(id);if(task.kind!=='batch')throw new StoreError('Batch not found',404);return task;}
   private parent(step:ExecutionStep){
     const input=step.input as StepInput,task=this.batch(input.batchId);
@@ -133,7 +143,7 @@ export class BatchProcessing {
       this.tasks.evidenceDependencies(parent.id,parent.revision,authority.parent);
       if(input.itemId){
         const item=this.tasks.get(input.itemId);if(item.state!=='waiting'&&item.state!=='running')return false;
-        this.pins(this.tasks.input<FrozenQuery>(item.id,item.revision,authority.item(item)));
+        this.pins(this.itemInput(step,item,authority.item(item)));
       }
       return this.product?.valid(step)??true;
     });}catch{return false;}
@@ -152,10 +162,11 @@ export class BatchProcessing {
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
     const started=performance.now(),input=step.input as StepInput;
+    if(input.itemId)await this.product?.prepareEvidence?.(step,signal,assertGrant);
     const {parent,plan,itemInput}=this.transaction(()=>{
       const parent=this.parent(step),authority=this.readAuthority(parent);
       const plan=this.tasks.input<Plan>(parent.id,parent.revision,authority.parent),item=input.itemId?this.tasks.get(input.itemId):undefined;
-      return {parent,plan,itemInput:item&&this.tasks.input<FrozenQuery>(item.id,item.revision,authority.item(item))};
+      return {parent,plan,itemInput:item&&this.itemInput(step,item,authority.item(item))};
     });
     let frozen:FrozenQuery,taskContext:QueryInput['taskContext'],sourceContexts:QueryInput['contextSourceContextDependencies'];
     let inputs:QueryResult[]=[];
@@ -202,7 +213,7 @@ export class BatchProcessing {
     const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.current(parent.id));
     this.assertResultCurrent(result);const dependencies=deps(result.evidenceDependencies!.ids);
     if(input.itemId){
-      const item=this.tasks.get(input.itemId),frozen=this.tasks.input<FrozenQuery>(item.id,item.revision,this.current(item.id));this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
+      const item=this.tasks.get(input.itemId),frozen=this.itemInput(step,item,this.current(item.id));this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
       this.tasks.saveResult(item.id,item.revision,result,dependencies,this.current(item.id));
       if(plan.reduce===undefined)this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.current(parent.id));
     }else{

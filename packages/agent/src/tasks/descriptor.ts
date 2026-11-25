@@ -39,6 +39,10 @@ export const CURRENT_INSTRUCTION_OUTPUT_SCHEMA: Readonly<Record<string,unknown>>
     {type:'object',properties:{goal:{type:'string'}},required:['goal'],additionalProperties:false},
     {type:'object',properties:{goal:{type:'string'},input:{type:'string',enum:['current-action']},action:{type:'object',properties:{kind:{type:'string',enum:['calendar.create','calendar.update','calendar.cancel']},targetId:{type:'string'},event:{type:'object',properties:{title:{type:'string'},start:{type:'string'},end:{type:'string'},timeZone:{type:'string'},allDay:{type:'boolean'},location:{type:'string'},description:{type:'string'}},required:['title','start','end','timeZone','allDay','location','description'],additionalProperties:false}},required:['kind','targetId','event'],additionalProperties:false}},required:['goal','input','action'],additionalProperties:false},
     {type:'object',properties:{goal:{type:'string'},input:{type:'string',enum:['current-instruction']}},required:['goal','input'],additionalProperties:false},
+    {type:'object',properties:{goal:{type:'string'},input:{type:'string',enum:['current-archive-task']},
+      archiveScope:{type:'object',properties:{sourceIds:{type:['array','null'],items:{type:'string'}},after:{type:['string','null']},before:{type:['string','null']}},
+        required:['sourceIds','after','before'],additionalProperties:false}},
+      required:['goal','input','archiveScope'],additionalProperties:false},
   ]}},
 });
 

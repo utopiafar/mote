@@ -73,7 +73,7 @@ export class AssistantTaskQuestions {
  /** Read-only validation shared with the completed-result adapter. A question
   * is an alternative response, not a completed action-bearing result. */
  isQuestion(work:Work,result:Pick<QueryResult,'answer'|'citations'>){return Boolean(this.proposal(result.answer,work,result.citations));}
- prepare(input:QueryInput,work:Work):QueryInput{
+ withOwnerQuestions(input:QueryInput,work:Work):QueryInput{
   assertSourceContextDependencies(this.contexts,input.contextSourceContextDependencies);
   return {...input,question:instruction+input.question,
    assertContextAuthority:()=>{input.assertContextAuthority?.();assertSourceContextDependencies(this.contexts,input.contextSourceContextDependencies);

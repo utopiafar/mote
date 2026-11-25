@@ -332,7 +332,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   let assistantFollowup:AssistantFollowup|undefined;
   let tickAssistantFollowup=()=>{};
   const batchProcessing=new BatchProcessing(store,executor,modelAuthorization,input=>{
-    const prepared=assistantTasks?assistantTasks.prepareQuery(assistantTasks.prepare(input)):input;
+    const prepared=assistantTasks?assistantTasks.prepareQuery(assistantTasks.withTaskContext(input)):input;
     const execute=(value:QueryInput)=>query.queryAgent(assistantFollowup?assistantFollowup.prepareQuery(value):value,'query','conversations');
     return assistantTasks?assistantTasks.execute(prepared,execute,pin=>{
       const select=(id?:string)=>{try{return modelSettings.select('chat',id);}catch(error){if(error instanceof ModelSettingsError&&error.code==='model_profile_missing')throw Object.assign(new ExecutionFailure('blocked','assistant_task_model_unavailable'),{cause:error});throw error;}};
@@ -349,6 +349,8 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   },ids=>modelAuthorizationHost.assertEvidence(ids),result=>assertSourceContextDependencies(sourceContexts,result.sourceContextDependencies??[]),
     ()=>agent.configured?undefined:new ExecutionFailure('blocked','model_not_configured'),()=>1,true,evidenceReader.memories,{
       assertDependencies:(id,ids)=>assistantFollowup?.assertBatchDependencies(id,ids)??false,
+      prepareEvidence:async(step,signal,assertGrant)=>{await assistantTasks?.prepareEvidence(step,signal,assertGrant);},
+      frozenEvidence:step=>assistantTasks?.frozenEvidence(step),
       valid:step=>assistantTasks?.valid(step)??true,project:step=>assistantTasks?.project(step),commit:(step,result)=>{
         assistantTasks?.commit(step,result);executor.localEffect(()=>queueMicrotask(()=>tickAssistantFollowup()));
       },

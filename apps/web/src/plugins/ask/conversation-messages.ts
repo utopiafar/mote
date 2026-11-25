@@ -27,6 +27,7 @@ export interface ConversationMessage extends Pick<StoredConversationMessage,'ste
   runId?:string;
   modelProfileId?:string;
   modelOverride?:string;
+  supplementTaskId?:string;
   attachmentIds?:string[];
   anchorEvidenceIds?:string[];
   anchorMaterialRef?:string;
@@ -42,6 +43,7 @@ export type ConversationMessageInput={
   anchorMaterialRef?:string;
   modelProfileId?:string;
   modelOverride?:string;
+  supplementTaskId?:string;
 };
 
 export function pendingMessageStatus(status:ConversationMessageState):boolean{
@@ -65,6 +67,7 @@ function validReceipt(value:unknown,input:ConversationMessageInput):value is Con
   return typeof message.id==='string'
     &&message.conversationId===input.conversationId
     &&message.clientRequestId===input.clientRequestId
+    &&message.supplementTaskId===input.supplementTaskId
     &&typeof message.seq==='number'
     &&['accepted','queued','running','completed','failed','cancelled'].includes(String(message.status))
     &&typeof message.createdAt==='string';

@@ -190,7 +190,7 @@ function App() {
   const [timelineRevision, setTimelineRevision] = useState(0);
   const clearConnection = useCallback(() => {
     connectionGeneration.current++;
-    clearSession();clearChatReloadDraft();
+    clearSession();clearChatReloadDraft(apiRef.current??undefined);
     log('auth.session_cleared','info');
     setPeriod("week");
     setConnection(null);
@@ -243,7 +243,10 @@ function App() {
   const api = useMemo(
     () => {
       const generation = connectionGeneration.current;
-      return connection ? createApi(connection, unauthorized, () => generation === connectionGeneration.current) : null;
+      if (!connection) return null;
+      const next = createApi(connection, unauthorized, () => generation === connectionGeneration.current);
+      associateChatScope(next, connection.viewScope);
+      return next;
     },
     [connection, unauthorized],
   );
@@ -267,7 +270,6 @@ function App() {
     };
     document.addEventListener('click',capture,true);return()=>document.removeEventListener('click',capture,true);
   },[api]);
-  useEffect(()=>{if(api)associateChatScope(api,connection?.viewScope);},[api,connection?.viewScope]);
   const range: Range = useMemo(() => {
     if (period === "all") return {};
     const now = new Date();

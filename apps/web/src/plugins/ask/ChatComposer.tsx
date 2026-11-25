@@ -26,7 +26,7 @@ export function createChatDraft(initial: string, onChange: (value: string) => vo
 const StableModelSelector = memo(ModelSelector);
 
 export function ChatComposer({api, draft, files, busy, blocked, preparing, model, override, onModel, onOverride,
-  onEdit, onSend, options, reference, scopeTag}: {
+  onEdit, onSend, options, reference, scopeTag, supplement}: {
   api: Api;
   draft: ReturnType<typeof createChatDraft>;
   files: AttachmentDraft;
@@ -42,6 +42,7 @@ export function ChatComposer({api, draft, files, busy, blocked, preparing, model
   options: ReactNode;
   reference: ReactNode;
   scopeTag?: ReactNode;
+  supplement?: boolean;
 }) {
   const question = useSyncExternalStore(draft.subscribe, draft.read, draft.read);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -84,7 +85,7 @@ export function ChatComposer({api, draft, files, busy, blocked, preparing, model
         </span>)}
       </div>}
       <div className="chat-compose-row">
-        <details className="chat-add" ref={add} open={menuOpen}
+        {!supplement && <details className="chat-add" ref={add} open={menuOpen}
           onKeyDown={event => {if (event.key === 'Escape' && add.current?.open) {
             event.stopPropagation();
             setMenuOpen(false);
@@ -106,7 +107,7 @@ export function ChatComposer({api, draft, files, busy, blocked, preparing, model
                 model={override} onModelChange={onOverride} disabled={busy || preparing} detachedFromForm/>}
             </details>
           </div>
-        </details>
+        </details>}
         <input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden
           onChange={event => {if (!busy && !preparing) files.add(event.target.files); event.target.value = '';}}/>
         {scopeTag}

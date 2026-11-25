@@ -10,6 +10,8 @@ import {scopeContainsHistory} from './query-scope.js';
 import {ExecutionFailure} from './execution-engine.js';
 import {StoreError,sha256} from './evidence-store.js';
 import {isDeepStrictEqual} from 'node:util';
+import {modelConfiguration} from './model-configuration.js';
+import {moteText} from './i18n.js';
 
 const decisionSchema=z.discriminatedUnion('kind',[
   z.object({kind:z.literal('independent')}).strict(),
@@ -64,6 +66,10 @@ export function createConversationSteering(dependencies:QueryRunDependencies,run
       }catch{return false;}
     };
     let message=assertCurrent();
+    if(message.supplementTask&&!message.disposition){
+      const acknowledgement:QueryResult={runId:id!,answer:moteText('已应用'),citations:[],trace:[],evidenceDependencies:{version:1,complete:true,ids:[]}};
+      message=conversations.disposition(message.id,{kind:'task-supplement',...message.supplementTask,acknowledgement});
+    }
     if(!message.disposition){
       const candidates=conversations.pendingHeads({parallel:true}).filter(compatible);
       const tasks=dependencies.taskSteering?.candidates(message,input,runtime.journal.payload<{configurationFingerprint?:string}>(work.id).configurationFingerprint)??[];
@@ -83,7 +89,10 @@ export function createConversationSteering(dependencies:QueryRunDependencies,run
     const decision=message.disposition!;if(decision.kind==='independent')return perform(input);
     if(decision.kind==='task-supplement'){
       if(!dependencies.taskSteering)throw new ExecutionFailure('blocked','assistant_task_unavailable');
-      return dependencies.taskSteering.apply(message,input,assertCurrent,runtime.journal.payload<{configurationFingerprint?:string}>(work.id).configurationFingerprint);
+      return dependencies.taskSteering.apply(message,input,assertCurrent,runtime.journal.payload<{configurationFingerprint?:string}>(work.id).configurationFingerprint,(profileId,model,fingerprint)=>{
+        const profile=dependencies.modelSettings.select('chat',profileId);
+        if(modelConfiguration(profile.id,{...profile.settings,model},dependencies.modelSettings.view().revision).fingerprint!==fingerprint)throw new StoreError('Assistant task model selection changed',409);
+      });
     }
     const target=conversations.message(decision.targetMessageId),base={targetMessageId:target.id,targetRunId:decision.targetRunId};
     if(message.steering?.state==='pending'){

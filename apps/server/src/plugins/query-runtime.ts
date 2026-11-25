@@ -36,7 +36,7 @@ import type {createModelEvidenceAuthority} from '../model-evidence-authority.js'
 import type {SourceContextStore} from '../source-context.js';
 import type {Conversations} from '../conversations.js';
 import type {ObservabilityAssembly} from './observability-platform.js';
-import {assistantDraftScope,type AssistantDrafts} from '../assistant-drafts.js';
+import {assistantDraftScope,currentArchiveTaskScope,type AssistantDrafts} from '../assistant-drafts.js';
 import {currentInstructionRequestId} from '../assistant-current-instruction.js';
 import type {OwnerCalendarPort} from '../owner-calendar-instructions.js';
 import {createOwnerCalendarControl} from '../owner-calendar-control.js';
@@ -72,7 +72,7 @@ export interface QueryRuntimeDependencies {
   readonly conversationSettings:()=>ConversationSettings;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
-  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'ownerChatMemoryScope'|'assertOwnerChatMemoryBodies'|'pinProcessingEvidence'>;
+  readonly modelEvidenceAuthority:Pick<ReturnType<typeof createModelEvidenceAuthority>,'contextDependencies'|'sourceContextDependencies'|'ownerChatMemoryScope'|'assertOwnerChatMemoryBodies'|'pinProcessingEvidence'|'selectedQuerySources'>;
   readonly assertModelEvidence:(input:QueryInput|undefined)=>void;
   readonly sourceContexts:SourceContextStore;
   readonly conversations:Pick<Conversations,'assertHistoryContext'|'historyOriginalDependencies'|'message'|'messageForRun'>;
@@ -164,7 +164,9 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         const prepared=prepareTaskContext({...input,assistantDraft:true});
         if(prepared.responseMode==='answer'&&Object.hasOwn((prepared.outputSchema.properties??{}) as Record<string,unknown>,'draft')){
           draftScope=scope;const operation=input.traceContext?.operationId,current=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
-          const live=current?.status==='running'&&current.question.trim()===input.question&&!current.attachments?.length&&(assistantDrafts.capabilities().includes('assistant.task.start')||ownerActions);
+          const live=current?.status==='running'&&current.question.trim()===input.question&&!current.attachments?.length&&
+            !current.supersededBy?.length&&!current.amendedBy?.length&&!current.steering&&!current.taskSteering&&!current.supplementTask&&
+            (assistantDrafts.capabilities().includes('assistant.task.start')||ownerActions);
           input={...input,assistantDraft:true,...(live?{assistantCurrentInstruction:true,...(ownerActions?{ownerActionTargets:ownerActions.offerOwnerCalendar(current!.id,(input as ReaderQueryScope).sourceIds)}:{})}:{})};
           if(live&&ownerActions&&input.ownerActionTargets?.some(target=>target.kind==='calendar.create')){
             calendarControl=createOwnerCalendarControl({ownerActions,messageId:current!.id,sourceIds:(input as ReaderQueryScope).sourceIds,channel:input.hostControlChannel});
@@ -340,8 +342,15 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         currentAction=ownerActions.proposeOwnerCalendar(message.id,proposal,result.runId);
       }else if(proposal&&input.assistantDraft&&draftScope)try{
         const operation=input.traceContext?.operationId,message=operation?.startsWith('query:')?conversations.messageForRun(operation.slice(6)):undefined;
-        const current=proposal.input==='current-instruction'&&input.assistantCurrentInstruction&&message?.status==='running'&&message.question.trim()===input.question;
-        draft=assistantDrafts.issue({goal:proposal.goal,scope:draftScope,...(current?{currentInstruction:{requestId:currentInstructionRequestId(message)}}:{})});
+        const current=input.assistantCurrentInstruction&&message?.status==='running'&&message.question.trim()===input.question&&
+          assistantDrafts.capabilities().includes('assistant.task.start')&&!message.supersededBy?.length&&!message.amendedBy?.length&&
+          !message.steering&&!message.taskSteering&&!message.supplementTask;
+        if(proposal.input==='current-archive-task'){
+          const upper=current?assistantDraftScope(message.scope):undefined;
+          const scope=upper&&currentArchiveTaskScope(upper,proposal.archiveScope,dependencies.modelEvidenceAuthority.selectedQuerySources);
+          if(scope&&current)draft=assistantDrafts.issue({goal:proposal.goal,scope,currentInstruction:{requestId:currentInstructionRequestId(message),input:proposal.input}});
+          else answerResult.answer=moteText('要整理哪些资料？');
+        }else draft=assistantDrafts.issue({goal:proposal.goal,scope:draftScope,...(current&&proposal.input==='current-instruction'?{currentInstruction:{requestId:currentInstructionRequestId(message)}}:{})});
       }catch{/* A malformed proposal cannot fail a valid answer. */}
       return {...answerResult,originalEvidenceDependencies,...(draft?{draft}:{}),...(currentAction?{currentAction}:{}),...(evidenceDependencies?{evidenceDependencies}:{}),...(sourcePins.length?{sourceContextDependencies:sourcePins}:{}),configuration,...(completedUsage?{usage:completedUsage}:{})};
     }).catch(error=>{

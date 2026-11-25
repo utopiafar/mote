@@ -73,7 +73,7 @@ export interface QueryRunsAssemblyDependencies extends Omit<QueryRunDependencies
   readonly resources:ServerResources;
   readonly availableModelConnections:()=>ModelConnection[];
   readonly assistantDrafts:Pick<AssistantDrafts,'command'>;
-  readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'get'|'acceptSuggestion'|'acceptCurrentInstruction'|'steering'>;
+  readonly assistantTasks:Pick<AssistantTasks,'byTurn'|'byConversation'|'stopInConversation'|'get'|'acceptSuggestion'|'acceptCurrentInstruction'|'steering'>;
   readonly assistantRoutines:Pick<AssistantRoutines,'create'|'update'|'get'>;
   readonly assistantOwner:(request:FastifyRequest)=>void;
 }

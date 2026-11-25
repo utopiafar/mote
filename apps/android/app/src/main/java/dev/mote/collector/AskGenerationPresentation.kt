@@ -2,8 +2,8 @@ package dev.mote.collector
 
 import org.json.JSONObject
 
-/** One composer state for a saved or draft question. Generation exposes only
- * stop; an unreachable Central owner replaces it with the retry banner. */
+/** Sending locks the composer until Central acknowledges the message. Each
+ * accepted answer keeps its own stop control while the composer is available. */
 internal object AskGenerationPresentation {
     data class State(
         val busy: Boolean,
@@ -24,14 +24,13 @@ internal object AskGenerationPresentation {
         val status = state.optString("runStatus")
         val active = status in NativeAskRunState.active
         val pending = state.has("pending")
-        val busy = active || pending
         // An adopted message has no local request. Keep the check action reachable
         // instead of inventing a request body or a terminal state.
         val adopted = active && !state.has("activeRequest") && NativeAskRunState.messageId(state).isNotBlank()
         return State(
-            busy = busy,
+            busy = pending,
             offline = offline,
-            canSend = allowed && !busy && !offline && text.isNotBlank() && !imagesPending,
+            canSend = allowed && !pending && !offline && text.isNotBlank() && !imagesPending,
             stop = !offline && active && !pending && NativeAskRunState.messageId(state).isNotBlank(),
             retry = !offline && pending,
             check = !offline && (pending || adopted),

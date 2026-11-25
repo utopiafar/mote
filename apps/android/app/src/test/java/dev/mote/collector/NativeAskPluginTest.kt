@@ -64,12 +64,14 @@ class NativeAskPluginTest {
 
         val recreated = NativeAskController(storage(directory))
         val restored = recreated.restore()
-        assertTrue(recreated.busy())
+        assertFalse(recreated.busy())
         assertEquals(admitted.getString("conversationId"), restored.getString("conversationId"))
         assertEquals("running", restored.getString("runStatus"))
         assertTrue(recreated.messageId().isNotBlank())
         assertFalse("an accepted message has no pending retry body", restored.has("pending"))
-        assertNull("a running message cannot submit a second request", recreated.admission("Generated later question", "UTC"))
+        assertEquals("", restored.getString("question"))
+        val next = requireNotNull(recreated.admission("Generated later question", "UTC"))
+        assertNotEquals(admitted.getString("clientRequestId"), next.getString("clientRequestId"))
         assertEquals("the recreated view did not repeat the admission", conversation, restored.getString("conversationId"))
     }
 
@@ -134,12 +136,13 @@ class NativeAskPluginTest {
         controller.replace(JSONObject()
             .put("conversationId", conversation).put("messageId", message).put("runStatus", "running"))
         val restored = controller.state
-        assertTrue(controller.busy())
+        assertFalse(controller.busy())
         assertEquals(message, controller.currentId())
         assertEquals(conversation, restored.getString("conversationId"))
         assertFalse(restored.has("pending"))
         assertFalse("an adopted message has no local body to retry", controller.missingRun())
-        assertNull("an adopted running message cannot submit a second request", controller.admission("Generated unrelated question", "UTC"))
+        val next = requireNotNull(controller.admission("Generated unrelated question", "UTC"))
+        assertNotEquals(message, next.getString("clientRequestId"))
     }
 
     @Test fun draftsStayInsideTheirConversationAndNeverAdoptAnotherConversationsMessage() = temporary { directory ->

@@ -26,9 +26,10 @@ function TaskStatus({task}:{task:Item['task']}){
 }
 
 /** Re-read the durable task, including after a lost response or a reload. */
-export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,renderAnswer,onOpen,onFound}:{
+export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,renderAnswer,onOpen,onFound,footerTaskIds}:{
  api:Api;conversationId:string;turnId:string;scope:QueryScope;refresh:number;
  renderAnswer:(answer:Answer,open:(ref:string)=>void)=>ReactNode;onOpen:(ref:string)=>void;onFound:(items:Item[])=>void;
+ footerTaskIds?:ReadonlySet<string>;
 }){
  const scopeJson=JSON.stringify(scope);
  const path=`/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(turnId)}/assistant-tasks?${new URLSearchParams({scope:scopeJson})}`;
@@ -60,7 +61,7 @@ export function AssistantTaskResults({api,conversationId,turnId,scope,refresh,re
   finally{if(openRequest.current===controller)openRequest.current=null;}
  })();};
  return <>
-  {items.map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id} data-state={task.state}>
+  {items.filter(item=>!footerTaskIds?.has(item.task.id)).map(({task,workId,result,error:reason,actionDrafts})=><section className="assistant-task-result" key={task.id} data-state={task.state}>
    {(task.state!=='completed'||!result)&&<TaskStatus task={task}/>}
    {task.state==='stale'&&<p>{moteText('资料已变化，这项任务的结果已失效。')}</p>}
    {reason==='no_usable_evidence'&&<p>{moteText('当前范围没有可用正文，任务尚未执行。')}</p>}

@@ -9,7 +9,7 @@ import {StoreError} from '../../evidence-store.js';
 /** Owner command envelope for a validated answer draft. Capability selection
  * and domain effects stay in the registered handler, never in model text. */
 export function registerAssistantCommandRoutes(app:FastifyInstance,commands:Pick<AssistantDrafts,'command'>,
-  tasks:Pick<AssistantTasks,'byTurn'|'get'|'acceptSuggestion'>,owner:(request:FastifyRequest)=>void,routines:Pick<AssistantRoutines,'create'|'update'|'get'>){
+  tasks:Pick<AssistantTasks,'byTurn'|'byConversation'|'stopInConversation'|'get'|'acceptSuggestion'>,owner:(request:FastifyRequest)=>void,routines:Pick<AssistantRoutines,'create'|'update'|'get'>){
   app.post('/api/assistant/commands',{bodyLimit:65536},async request=>{owner(request);return commands.command(request.body);});
   // The card command lends no model authority. The task service owns acceptance,
   // creation and enqueue transaction, including retries after a lost response.
@@ -25,6 +25,14 @@ export function registerAssistantCommandRoutes(app:FastifyInstance,commands:Pick
     const query=z.object({scope:z.string().max(16000)}).strict().parse(request.query);
     let value:unknown;try{value=JSON.parse(query.scope);}catch{throw new StoreError('Invalid assistant task scope');}
     return tasks.byTurn(id,messageId,queryScopeSchema.parse(value));
+  });
+  app.get('/api/conversations/:id/assistant-tasks',async request=>{
+    owner(request);const {id}=z.object({id:z.string().uuid()}).parse(request.params);
+    return tasks.byConversation(id);
+  });
+  app.post('/api/conversations/:id/assistant-tasks/:taskId/cancel',async request=>{
+    owner(request);const {id,taskId}=z.object({id:z.string().uuid(),taskId:z.string().uuid()}).parse(request.params);
+    return tasks.stopInConversation(id,taskId);
   });
   app.get('/api/assistant/tasks/:id',async request=>{
     owner(request);const {id}=z.object({id:z.string().uuid()}).parse(request.params);

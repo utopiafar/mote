@@ -170,7 +170,7 @@ internal class NativeAskController(
     private fun clearConversationState() {
         listOf(
             "runId", "runStatus", "messageId", "activeRequest", "failureDetails", "evidenceIds", "anchorEvidenceIds",
-            "anchorMaterialRef", "scopeDirty", "scopeLabel", "imageUploads",
+            "anchorMaterialRef", "scopeDirty", "scopeLabel", "imageUploads", "supplementTask", "recoveringAcceptedMessage", "scroll",
         ).forEach(state::remove)
     }
 
@@ -203,6 +203,14 @@ internal class NativeAskController(
     }
 
     fun clearScope(): Boolean = NativeAskEvidenceScope.clear(state)
+    fun supplementTask(): JSONObject? = state.optJSONObject("supplementTask")
+    fun selectSupplement(task: JSONObject?) {
+        if (busy()) return
+        if (task == null) state.remove("supplementTask")
+        else state.put("supplementTask", JSONObject().put("id", task.getString("id")).put("title", task.optString("goal"))
+            .put("scope", JSONObject(task.getJSONObject("scope").toString())))
+        persist()
+    }
     fun scopeLabel(): String? = state.optString("scopeLabel").takeIf(String::isNotBlank)
     /** Restored material scopes carry only the immutable ref; the screen resolves
      * its readable title from the same Central origin before showing the chip. */
@@ -249,8 +257,7 @@ internal class NativeAskController(
     }
 
     /** Build the one retryable queue admission for the current draft. An
-     * existing uncertain admission keeps its exact identity; accepted or active
-     * messages never create a second admission. */
+     * accepted message owns its receipt while later drafts can be submitted. */
     fun admission(text: String, timeZone: String): JSONObject? {
         state.optJSONObject("pending")?.let { return it }
         if (NativeAskRunState.busy(state)) return null
@@ -260,6 +267,11 @@ internal class NativeAskController(
         if (question.isBlank()) return null
         state.put("question", question)
         val body = messageBody(conversationId, newId(), question, timeZone)
+        supplementTask()?.let { target ->
+            if (imageCount() != 0) return null
+            body.put("supplementTaskId", target.getString("id")).put("scope", JSONObject(target.getJSONObject("scope").toString()))
+            return body.also { state.put("pending", it) }
+        }
         val scope = body.getJSONObject("scope")
         val material = material()
         val anchored = state.optJSONArray("anchorEvidenceIds")
@@ -301,13 +313,14 @@ internal class NativeAskController(
     fun rejectedAdmission() {
         state.remove("pending")
         state.remove("localRequestId")
+        state.remove("recoveringAcceptedMessage")
         persist()
     }
 
     data class RunUpdate(val messageId: String, val status: String, val conversationId: String?, val clearDraft: Boolean)
 
-    /** Apply the exact accepted message receipt. Completion clears only the
-     * draft that produced this request, never a newer unsent question or image set. */
+    /** Apply the exact accepted message receipt. Subsequent progress updates do
+     * not own the composer, even when a new draft happens to contain the same text. */
     fun receive(receipt: JSONObject, admitted: JSONObject? = null): RunUpdate {
         NativeAskRunState.validate(receipt, admitted)
         val value = CentralConversationMessage.read(receipt)
@@ -317,13 +330,19 @@ internal class NativeAskController(
             state.put("failureDetails", JSONObject().put("requestId", value.id).put("error", it))
         }
         val localSubmission = value.clientRequestId == state.optString("localRequestId")
+        val clearDraft = admitted != null && !localSubmission && !state.optBoolean("recoveringAcceptedMessage") &&
+            NativeAskRunState.matchesSubmittedDraft(state, admitted)
         state.remove("pending")
-        if (!localSubmission) state.remove("scopeDirty")
+        if (admitted != null) state.remove("recoveringAcceptedMessage")
+        if (clearDraft && !admitted!!.has("supplementTaskId")) state.remove("scopeDirty")
         state.put("messageId", value.id).put("runStatus", value.status)
-        val clearDraft = !localSubmission && value.status == "completed" && NativeAskRunState.completesCurrentDraft(state, value.id)
+        if (admitted != null) state.remove("runId")
         value.runId?.let { state.put("runId", it) }
         state.put("conversationId", value.conversationId)
-        if (clearDraft) state.put("question", "").put("attachments", JSONArray())
+        if (clearDraft) {
+            state.put("question", "").put("attachments", JSONArray())
+            state.remove("supplementTask")
+        }
         if (value.status in NativeAskRunState.terminal) {
             state.remove("activeRequest")
             state.remove("localRequestId")

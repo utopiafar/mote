@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {workStateSchema} from './activity.js';
 import {evidenceDependenciesSchema} from './evidence-dependencies.js';
 import {queryScopeSchema} from './query-scope.js';
-import {provenanceSchema} from './sources.js';
+import {provenanceSchema,sourceIdSchema} from './sources.js';
 import {sourceContextDeclarationSchema} from './material-context.js';
 import {actionProposalTargetSchema,calendarDraftSchema,calendarEventSchema,messageSendDraftSchema,todoInputSchema,type ActionProposalTarget,type ActionStatus} from './actions.js';
 
@@ -28,6 +28,7 @@ export type SourceEvidenceRevision=z.infer<typeof sourceEvidenceRevisionSchema>;
  * for the same key and input, and reject the same key with different input. */
 const conversationMessageFields={
   conversationId:uuid,clientRequestId:uuid,question:ownerText,scope:queryScopeSchema,
+  supplementTaskId:uuid.optional(),
   attachmentIds:z.array(uuid).max(4).optional(),
   anchorEvidenceIds:z.array(uuid).min(1).max(30).optional(),
   anchorMaterialRef:z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/).optional(),
@@ -36,7 +37,8 @@ const conversationMessageFields={
   modelOverride:z.string().trim().min(1).max(512).refine(value=>!/[\u0000-\u001f\u007f]/.test(value)).optional(),
 };
 const singleAnchor=(value:{anchorEvidenceIds?:string[];anchorMaterialRef?:string})=>!(value.anchorEvidenceIds&&value.anchorMaterialRef);
-export const conversationMessageInputSchema=z.object(conversationMessageFields).strict().refine(singleAnchor,{message:'Choose one anchor'});
+export const conversationMessageInputSchema=z.object(conversationMessageFields).strict().refine(singleAnchor,{message:'Choose one anchor'})
+  .refine(value=>!value.supplementTaskId||!(value.attachmentIds?.length||value.anchorEvidenceIds||value.anchorMaterialRef||value.modelProfileId||value.modelOverride),{message:'Task supplements use the original task scope and model'});
 export type ConversationMessageInput=z.infer<typeof conversationMessageInputSchema>;
 export const conversationMessageStateSchema=z.enum(['accepted','queued','running','completed','failed','cancelled']);
 export const conversationSteeringSchema=z.object({targetMessageId:uuid,targetRunId:z.string().min(1).max(200),state:z.enum(['pending','accepted','continuation','unknown','cancelled'])}).strict();
@@ -64,12 +66,25 @@ export const assistantTaskRecordSchema=z.object({
   sourceContextDependencies:z.array(sourceContextDeclarationSchema).optional(),
 }).strict();
 export type AssistantTaskRecord=z.infer<typeof assistantTaskRecordSchema>;
+export type ConversationTaskStatus={
+  task:Pick<AssistantTaskRecord,'id'|'state'|'revision'> & Partial<Pick<AssistantTaskRecord,'goal'|'scope'>>;
+  turnId:string;workId?:string;error?:string;resultAvailable:boolean;
+};
 
 /** A model may propose a goal, never an identity, scope, permission or effect.
  * The host binds the remaining fields after validating the current answer. */
 export const currentCalendarProposalSchema=z.object({goal:ownerText,input:z.literal('current-action'),action:z.object({kind:z.enum(['calendar.create','calendar.update','calendar.cancel']),event:calendarEventSchema,targetId:uuid}).strict()}).strict();
 export type CurrentCalendarProposal=z.infer<typeof currentCalendarProposalSchema>;
-export const assistantDraftProposalSchema=z.union([z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict(),currentCalendarProposalSchema]);
+export const currentArchiveTaskProposalSchema=z.object({
+  goal:ownerText,input:z.literal('current-archive-task'),
+  archiveScope:z.object({
+    sourceIds:z.array(sourceIdSchema).min(1).max(24).nullable(),
+    after:z.string().datetime({offset:true}).nullable(),
+    before:z.string().datetime({offset:true}).nullable(),
+  }).strict(),
+}).strict();
+export type CurrentArchiveTaskProposal=z.infer<typeof currentArchiveTaskProposalSchema>;
+export const assistantDraftProposalSchema=z.union([z.object({goal:ownerText,input:z.literal('current-instruction').optional()}).strict(),currentArchiveTaskProposalSchema,currentCalendarProposalSchema]);
 export type AssistantDraftProposal=z.infer<typeof assistantDraftProposalSchema>;
 /** A Host-issued link to the existing Action receipt, never an authorization. */
 export type CurrentActionReference={id:string;kind:CurrentCalendarProposal['action']['kind']};
@@ -82,7 +97,7 @@ export type AssistantDraftCapability=z.infer<typeof assistantDraftCapabilitySche
 /** One host-validated draft attached to a completed answer. `requestId` is
  * stable for retries; `revision` changes only for an explicit owner edit. */
 export const assistantDraftSchema=z.object({
-  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,input:z.literal('current-instruction').optional(),
+  requestId:uuid,revision,goal:ownerText,scope:queryScopeSchema,input:z.enum(['current-instruction','current-archive-task']).optional(),
   capabilities:z.array(assistantDraftCapabilitySchema).min(1).refine(values=>new Set(values).size===values.length,{message:'Draft capabilities must be unique'}),
 }).strict();
 export type AssistantDraft=z.infer<typeof assistantDraftSchema>;

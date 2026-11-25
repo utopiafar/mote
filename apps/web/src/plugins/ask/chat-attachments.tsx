@@ -4,7 +4,7 @@ import {formatEvidenceRef} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import type {Api} from '../../api';
 import {uploadChatImage} from '../notes/note-attachments';
-import {unsentDrafts, unsentImages, type ChatAttachment, type ChatImageUpload} from './chat-drafts';
+import {persistChatTab, unsentDrafts, unsentImages, type ChatAttachment, type ChatImageUpload} from './chat-drafts';
 import {queryRecovery} from './query-recovery';
 
 const imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
@@ -20,6 +20,7 @@ export function useChatAttachments(api: Api, setError: (value: string) => void) 
 
   function saveAttachments(value: ChatAttachment[]) {
     unsentDrafts.set(api, {question: unsentDrafts.get(api)?.question ?? '', attachments: value});
+    persistChatTab(api);
     setAttachments(value);
   }
 

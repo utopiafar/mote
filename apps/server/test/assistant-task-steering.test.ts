@@ -3,6 +3,98 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {taskSteeringFixture as fixture,until} from './fixtures/assistant-task-steering.js';
 
+test('a scoped archive request takes a background Task before reading, freezes originals and keeps citations on the original Task',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ const owner=f.node.assistantTasks;
+ const prepareEvidence=owner.prepareEvidence.bind(owner);
+ let unlock!:()=>void;
+ const held=new Promise<void>(resolve=>{unlock=resolve;});
+ t.after(unlock);
+ owner.prepareEvidence=async(...args)=>{await held;return prepareEvidence(...args);};
+ const scope={kind:'all',after:new Date(Date.now()-86400000).toISOString(),before:new Date(Date.now()+60000).toISOString()};
+ const request=await f.post('整理上周例会并生成跟进清单',randomUUID(),scope);
+ const accepted=await f.settle(request.message.id);
+ assert.equal(accepted.result?.draft?.input,'current-archive-task');assert.deepEqual(accepted.result.draft.scope,scope);
+ const items=()=>f.node.assistantTasks.byConversation(f.id).items;
+ const task=items()[0].task;
+ assert.equal(items().length,1);assert.equal(items()[0].turnId,request.message.id);
+ assert.equal(f.node.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(task.id)!.snapshot_json,null);
+ assert.equal(f.rpc().filter(row=>row.method==='turn/start').length,1,'reading has not started in the reply path');
+ const b=await f.post('GENERATED-UNRELATED');
+ assert.equal((await f.settle(b.message.id)).status,'completed');
+ assert.notEqual(f.task(task.id).state,'succeeded');
+ unlock();
+ await until(()=>f.rpc().find(row=>row.method==='item/tool/call'||row.id===9000),'the task reads the generated original');
+ assert.equal(typeof f.node.store.db.prepare('SELECT snapshot_json FROM assistant_task_scopes WHERE task_id=?').get(task.id)!.snapshot_json,'string');
+ const alternate=await f.node.app.inject({method:'POST',url:'/api/notes',headers:f.headers,payload:{
+  id:randomUUID(),deviceId:'generated-task-device',deviceName:'Generated task fixture',platform:'import',capturedAt:new Date().toISOString(),text:'Generated separate later addition.',
+ }});
+ assert.equal(alternate.statusCode,201,alternate.body);
+ await f.restart();f.release();
+ await until(()=>f.task(task.id).state==='succeeded'?true:undefined,'the archived task completing after restart');
+ assert.equal(items().filter(item=>item.resultAvailable).length,1);
+ assert.deepEqual(f.node.assistantTasks.get(task.id,scope as typeof f.scope).result!.citations.map(c=>c.id),[f.evidenceId]);
+ const replay=await f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers:f.headers,payload:request.payload});
+ assert.equal(replay.statusCode,202,replay.body);assert.equal(replay.json().id,request.message.id);
+ assert.equal(items().length,1);
+});
+
+test('an archive request with no permitted originals does not run a Task model or widen the scope',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ const empty=await f.post('整理上周例会并生成跟进清单',randomUUID(),{kind:'selection',evidenceIds:[]});
+ assert.equal((await f.settle(empty.message.id)).result?.draft?.input,'current-archive-task');
+ const items=()=>f.node.assistantTasks.byConversation(f.id).items;
+ await until(()=>items().find(item=>item.error==='no_usable_evidence'),'task with no usable original');
+ assert.equal(items()[0].task.state,'needs_input');assert.equal(items()[0].resultAvailable,false);
+ assert.equal(f.rpc().filter(row=>row.method==='turn/start').length,1);
+ const outside=await f.post('GENERATED-OUTSIDE-ARCHIVE-SOURCE',randomUUID(),{kind:'all'});
+ const refused=await f.settle(outside.message.id);
+ assert.equal(refused.status,'completed');assert.equal(refused.result?.draft,undefined);
+ assert.notEqual(refused.result?.answer,'Generated proposed task');
+ assert.equal(items().length,1);
+});
+
+test('the main conversation keeps an explicit supplement and one result on the original task across independent work and restart',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ f.setMode('hold-terminal');
+ const a=await f.start(),taskPath=`/api/conversations/${f.id}/assistant-tasks`;
+ const read=async()=>{const response=await f.node.app.inject({url:taskPath,headers:f.headers});assert.equal(response.statusCode,200,response.body);return response.json().items;};
+ assert.deepEqual((await read()).map((item:any)=>[item.task.id,item.task.state]),[[a.taskId,'running']]);
+ const b=await f.post('GENERATED-UNRELATED',randomUUID(),{kind:'all'});
+ assert.match((await f.settle(b.message.id)).result!.answer,/independent answer/);
+ assert.equal(f.task(a.taskId).state,'running');
+ const send=async(payload:unknown)=>f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers:f.headers,payload});
+ const before=f.rpc().filter(row=>row.method==='turn/start').length;
+ const wrongScope=await send({conversationId:f.id,clientRequestId:randomUUID(),question:'Generated out-of-scope supplement',scope:{kind:'all'},supplementTaskId:a.taskId});
+ assert.equal(wrongScope.statusCode,409,wrongScope.body);
+ const supplement=await f.post('Generated explicit supplement',randomUUID(),a.draft.scope,{supplementTaskId:a.taskId});
+ const receipt=await f.settle(supplement.message.id);
+ assert.equal(receipt.status,'completed',JSON.stringify(receipt));assert.equal(receipt.taskSteering?.targetTaskId,a.taskId);
+ assert.equal(receipt.taskSteering?.state,'accepted');
+ assert.equal(f.rpc().filter(row=>row.method==='turn/start').length,before,'a selected target needs no extra model turn');
+ assert.equal(f.task(a.taskId).state,'running');
+ await f.restart();
+ await until(()=>f.task(a.taskId).state==='succeeded'?true:undefined,'original task with its accepted supplement');
+ const items=await read();assert.deepEqual(items.map((item:any)=>[item.task.id,item.turnId,item.resultAvailable]),[[a.taskId,a.turn.id,true]]);
+ assert.equal(items[0].result,undefined,'the footer is a short entry');
+ const result=f.node.assistantTasks.get(a.taskId,a.draft.scope).result!;
+ assert.match(result.answer,/Generated explicit supplement/);assert.deepEqual(result.citations.map(c=>c.id),[f.evidenceId]);
+ const repeat=await send(supplement.payload);assert.equal(repeat.statusCode,202,repeat.body);assert.equal(repeat.json().id,receipt.id);
+ assert.equal(f.rpc().filter(row=>row.method==='turn/steer').length,1);
+ assert.deepEqual(f.node.conversations.get(f.id).scope,{kind:'all'});
+});
+
+test('stopping a task from its conversation fences a held result and is idempotent',{timeout:30000},async t=>{
+ const f=await fixture(t),a=await f.start();
+ const stop=()=>f.node.app.inject({method:'POST',url:`/api/conversations/${f.id}/assistant-tasks/${a.taskId}/cancel`,headers:f.headers});
+ const receipt=await stop();assert.equal(receipt.statusCode,200,receipt.body);
+ assert.deepEqual(receipt.json(),{id:a.taskId,state:'cancelled'});
+ f.release();await f.restart();
+ assert.deepEqual((await stop()).json(),receipt.json());
+ assert.equal(f.node.assistantTasks.get(a.taskId,a.draft.scope).task.state,'cancelled');
+ assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(a.taskId)!.result_json,null);
+});
+
 test('owner HTTP adjusts a real accepted assistant task through its own native turn and preserves the task/result conversation link',{timeout:30000},async t=>{
  const f=await fixture(t),original=await f.start();assert.equal(f.task(original.taskId).state,'running');
  const amendment=await f.post('GENERATED-FORMAL-TASK-CORRECTION');await until(()=>f.rpc().find(row=>row.method==='turn/steer'),'formal task native steering');

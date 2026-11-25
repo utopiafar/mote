@@ -41,6 +41,12 @@ export class AssistantTaskSteering {
  private messages(id:string){return this.store.db.prepare("SELECT id FROM conversation_turns WHERE json_extract(json,'$.taskSteering.targetTaskId')=? ORDER BY rowid").all(id).map(row=>this.conversations.message(String(row.id)));}
  private amendmentKey(message:ConversationMessage){const value=message.taskSteering!;return sha256(JSON.stringify([message.id,conversationInputIdentity(message),value.targetTaskId,value.targetOperationId,value.targetRevision,value.targetBatchId,value.taskInputHash,value.target,value.receipt,value.continuationBatchId]));}
  private visible(message:ConversationMessage,work:AssistantTaskSteeringWork){return conversationSteeringScopeContains(message.scope,work.scope)&&conversationSteeringScopeContains(work.scope,message.scope)&&!message.attachments?.length&&!message.scope.anchorEvidenceIds?.length&&!message.scope.anchorMaterialRef;}
+ explicitReference(taskId:string,conversationId:string,scope:QueryScope):TaskSteeringReference {
+  const work=this.owner.work(taskId),pin=this.runtimePin(taskId);
+  if(work.origin?.conversationId!==conversationId||!work.batchId||!pin||!['waiting','running','blocked'].includes(work.task.state)||
+   !isDeepStrictEqual(scope,work.scope)||pin.input_hash!==this.inputHash(taskId))throw new StoreError('Task cannot receive a supplement',409);
+  return {targetTaskId:taskId,targetOperationId:work.task.operationId,targetRevision:work.task.revision,targetBatchId:work.batchId,taskInputHash:pin.input_hash};
+ }
  candidates(message:ConversationMessage,input:QueryInput,configurationFingerprint?:string){
   return this.store.db.prepare("SELECT id FROM task_records WHERE kind='assistant.task' AND state IN ('waiting','running','blocked') ORDER BY created_at,id").all().flatMap(row=>{
    try{const work=this.owner.work(String(row.id)),pin=this.runtimePin(work.task.id);if(!work.batchId||!pin||pin.input_hash!==this.inputHash(work.task.id)||!this.visible(message,work))return [];
@@ -70,7 +76,7 @@ export class AssistantTaskSteering {
    return [{messageId:message.id,question:message.question,hostRunId:receipt.receipt?.identity.runId,key:this.amendmentKey(message)}];
   });
  }
- prepare(input:QueryInput,work:AssistantTaskSteeringWork){
+ withAmendments(input:QueryInput,work:AssistantTaskSteeringWork){
   const pin=this.runtimePin(work.task.id);
   if(!pin&&this.messages(work.task.id).some(message=>message.taskSteering?.state!=='cancelled'))throw new ExecutionFailure('blocked','assistant_task_selection_unavailable');
   const amendments=this.amendments(work);if(!amendments.length)return input;
@@ -112,14 +118,20 @@ export class AssistantTaskSteering {
   if(this.messages(task.id).some(message=>message.taskSteering?.state==='cancelled'&&(message.taskSteering.target?.identity.runId===result.runId||proof.keys.includes(this.amendmentKey(message)))))throw new StoreError('Assistant task result used a withdrawn amendment',409);
   if(this.amendments(this.owner.work(task.id)).some(item=>item.hostRunId!==result.runId&&!proof.keys.includes(item.key)))throw new StoreError('A late task result missed an accepted owner amendment',409);
  }
- async apply(message:ConversationMessage,input:QueryInput,assertCurrent:()=>ConversationMessage,configurationFingerprint?:string):Promise<QueryResult>{
+ async apply(message:ConversationMessage,input:QueryInput,assertCurrent:()=>ConversationMessage,configurationFingerprint?:string,
+  assertTaskModel?:(profileId:string,model:string,fingerprint:string)=>void):Promise<QueryResult>{
   const decision=message.disposition;if(decision?.kind!=='task-supplement')throw new StoreError('Assistant task disposition is unavailable',409);
   let work=this.current(decision);if(!this.visible(message,work))throw new StoreError('Assistant task is outside the owner message scope',409);
   const pin=this.runtimePin(work.task.id);if(!pin)throw new ExecutionFailure('blocked','assistant_task_selection_unavailable');
   // A newly admitted queued Task has no actual model selection yet. Wait on
   // its existing executor; neither this message nor its classifier may pin it.
+  if(!message.taskSteering&&(!work.batchId||!['waiting','running','blocked'].includes(work.task.state)))throw new StoreError('Assistant task cannot receive a supplement',409);
   if(!pin.profile_id)throw new ExecutionFailure('waiting','assistant_task_selection_pending',1000);
-  if(pin.profile_id!==input.modelProfileId||pin.model_id!==input.modelOverride||pin.configuration_fingerprint!==configurationFingerprint)throw new StoreError('Assistant task model selection changed',409);
+  const checkModel=()=>{
+   if(message.supplementTask&&assertTaskModel&&pin.model_id&&pin.configuration_fingerprint)assertTaskModel(pin.profile_id!,pin.model_id,pin.configuration_fingerprint);
+   else if(pin.profile_id!==input.modelProfileId||pin.model_id!==input.modelOverride||pin.configuration_fingerprint!==configurationFingerprint)throw new StoreError('Assistant task model selection changed',409);
+  };
+  checkModel();
   if(message.taskSteering?.state==='pending'){this.conversations.recordTaskSteering(message.id,{...message.taskSteering,state:'unknown'});throw new ExecutionFailure('permanent','steering_delivery_unknown');}
   if(message.taskSteering?.state==='unknown'||message.taskSteering?.state==='cancelled')throw new ExecutionFailure('permanent','steering_delivery_unknown');
   if(message.taskSteering?.state==='accepted')return decision.acknowledgement;
@@ -131,12 +143,12 @@ export class AssistantTaskSteering {
    if((!control&&step&&typeof step.fence==='string'&&this.authority.isCurrentGrant(String(step.id),step.fence))||(control?.supported&&!native))throw new ExecutionFailure('waiting','steering_turn_pending',100);
    if(control&&native){
     const selection=this.selections.get(work.task.operationId);
-    if(!selection||selection.registrationId!==control.registrationId||selection.profileId!==input.modelProfileId||selection.model!==input.modelOverride||native.identity.model.modelId!==selection.model)throw new StoreError('Assistant task model selection changed',409);
+    if(!selection||selection.registrationId!==control.registrationId||selection.profileId!==pin.profile_id||selection.model!==pin.model_id||native.identity.model.modelId!==selection.model)throw new StoreError('Assistant task model selection changed',409);
     if(!step||typeof step.fence!=='string'||!this.authority.isCurrentGrant(String(step.id),step.fence))throw new StoreError('Assistant task native attempt expired',409);
     const pending:ConversationTaskSteering={targetTaskId:decision.targetTaskId,targetOperationId:decision.targetOperationId,targetRevision:work.task.revision,targetBatchId:decision.targetBatchId,taskInputHash:decision.taskInputHash,scope:structuredClone(work.scope),...(work.origin?{origin:work.origin}:{}),state:'pending',stepId:String(step.id),stepFence:step.fence,registrationId:control.registrationId,target:native};
     this.conversations.recordTaskSteering(message.id,pending);
-    try{assertCurrent();await control.steer(native,message.question,receipt=>{
-     assertCurrent();const current=this.current(decision,true);if(current.task.revision!==pending.targetRevision||this.controls.get(work.task.operationId)!==control||!this.authority.isCurrentGrant(pending.stepId!,pending.stepFence!))throw new StoreError('Assistant task native attempt changed',409);
+    try{assertCurrent();checkModel();await control.steer(native,message.question,receipt=>{
+     assertCurrent();checkModel();const current=this.current(decision,true);if(current.task.revision!==pending.targetRevision||this.controls.get(work.task.operationId)!==control||!this.authority.isCurrentGrant(pending.stepId!,pending.stepFence!))throw new StoreError('Assistant task native attempt changed',409);
      this.conversations.recordTaskSteering(message.id,{...pending,state:'accepted',receipt});
     });assertCurrent();return decision.acknowledgement;}
     catch(error){try{const current=this.conversations.message(message.id);if(current.status==='running'&&current.taskSteering?.state==='pending')this.conversations.recordTaskSteering(message.id,{...pending,state:'unknown'});}catch{/* Retain the durable pending record if this write also fails. */}
@@ -150,7 +162,9 @@ export class AssistantTaskSteering {
     return this.conversations.recordTaskSteering(message.id,{...reference,state:'continuation',continuationBatchId:continuation});
    });
   }
-  assertCurrent();const result=this.owner.result(work.task.id);if(result)return result;
+  assertCurrent();
+  if(['cancelled','stale'].includes(work.task.state))throw new ExecutionFailure('permanent','steering_target_unavailable');
+  const result=this.owner.result(work.task.id);if(result)return message.supplementTask?decision.acknowledgement:result;
   throw new ExecutionFailure('waiting','assistant_task_continuation',1000);
  }
  cancel(message:ConversationMessage){
