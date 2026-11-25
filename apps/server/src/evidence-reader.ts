@@ -284,7 +284,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   /** One visibility rule for live cards, frozen snapshots and integration admission.
    * An ancestor is a revocation dependency, not a grant to read its raw body.
    * Only the exact current evidence cited by this card can cover that ancestor. */
-  private memoryLineageVisible(memoryId:string,lineage:NonNullable<MemoryReadSnapshot['lineage'][string]>,scope:Range,ownerArchive:boolean,exposure:MemoryExposure,strictProof=true){
+  private memoryLineageVisible(memoryId:string,lineage:NonNullable<MemoryReadSnapshot['lineage'][string]>,scope:Range,ownerArchive:boolean,exposure:MemoryExposure,strictProof=true,materialAccess=new Map<string,boolean>()){
     const ids=[...new Set(lineage.dependencyIds)];if(!ids.length)return false;
     if(!this.memoryCodingScopeMatches(scope,lineage.scopeRefs))return false;
     const card=this.memories.get(memoryId),retained=(id:string,representation?:EvidenceRepresentation)=>{
@@ -306,7 +306,7 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const readableFile=(id:string)=>allowPausedSource?this.files?.retainedMemoryFile(id):this.files?.readableFile(id);
     const currentEvidence=(id:string)=>this.memories.isCurrentEvidence(id)||allowPausedSource&&Boolean(readableFile(id));
     const captureAllowed=(record:CaptureRecord,operation=exposure.operation,screenOriginalGrant=false,metadataOnly=false)=>
-      this.captureExposure(record,operation,exposure.policy,'capture',screenOriginalGrant,metadataOnly,undefined,allowPausedSource);
+      this.captureExposure(record,operation,exposure.policy,'capture',screenOriginalGrant,metadataOnly,materialAccess,allowPausedSource);
     const anchors=allowPausedSource?this.memories.readEvidence(lineage.evidenceIds):this.memories.readEvidenceIfCurrent(lineage.evidenceIds);
     if(!anchors||lineage.evidenceIds.some(id=>!anchors.some(anchor=>anchor.id===id)&&!retained(id))||anchors.some(anchor=>anchor.privacy.excluded))return false;
     if(lineage.evidence.some(proof=>{const anchor=anchors.find(value=>value.id===proof.id);return anchor?(strictProof||allowPausedSource||anchor.provenance?.uri?.startsWith('material:'))&&memoryEvidenceFingerprint(anchor)!==proof.contentHash:!retained(proof.id);}))return false;
@@ -368,10 +368,17 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   /** Host preflight/transport check. Reads only the selected card's exact proof;
    * no source route is added, no unused raw body is loaded, and no model is run. */
   assertMemoryReadable(cards:readonly Memory[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy){
-    for(const card of cards){
-      const dependencyIds=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(card.id).map(row=>String(row.evidence_id));
-      if(!this.memoryLineageVisible(card.id,{dependencyIds,evidenceIds:card.evidenceIds,evidence:card.evidence.map(value=>({id:value.id,contentHash:value.contentHash})),scopeRefs:card.scopeRefs},{},false,{policy,operation:'memory'}))throw new StoreError('Integration Memory or its exact original proof is not readable',409);
-    }
+    const check=()=>{
+      // Topic and integration guards often receive many exact anchors from
+      // one recording. Share its route check only inside this synchronous
+      // pass. Every send still checks the current source and anchor proofs.
+      const materialAccess=new Map<string,boolean>();
+      for(const card of cards){
+        if(!this.memoryLineageVisible(card.id,this.memoryLineage(card),{},false,{policy,operation:'memory'},true,materialAccess))throw new StoreError('Integration Memory or its exact original proof is not readable',409);
+      }
+    };
+    if(this.materials)this.materials.withReadMetadata(check);
+    else check();
   }
   /** Opening leads are saved with accepted queries. Recheck them before each
    * model boundary so a correction cannot replay an obsolete interpretation. */
@@ -1065,9 +1072,10 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!current||!this.materials?.isCurrentEvidence(record.id))return false;
       // A single synchronous evidence read can share the current Material's
       // policy result. Each anchor still proves its own currentness.
-      const cached=materialAccess?.get(current.ref);if(cached!==undefined)return cached;
+      const key=JSON.stringify([current.ref,operation,metadataOnly,allowPausedSource]);
+      const cached=materialAccess?.get(key);if(cached!==undefined)return cached;
       const allowed=this.materialExposure(current,operation,policy,undefined,false,undefined,metadataOnly,allowPausedSource);
-      materialAccess?.set(current.ref,allowed);return allowed;
+      materialAccess?.set(key,allowed);return allowed;
     }
     // A tombstone revokes model access to every historical revision of that
     // source item. Owner archive/history APIs can still inspect those bytes.
