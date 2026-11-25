@@ -8,7 +8,7 @@ import {AgentNotConfiguredError,AgentYieldError,prepareTaskContext,type AgentPro
 import {ProviderFailure,errorDiagnostics,type AssistantDraftProposal,type ConversationSettings,type InsightSnapshot,type QueryResult} from '@mote/shared';
 import type {QueryScope as ReaderQueryScope} from '../query-scope.js';
 import type {DelegationRuntime} from '../delegation-runtime.js';
-import type {AgentRunFinalizer,QueryRunLease} from '../query-agent.js';
+import type {AgentRunFinalizer,ModelQueryInput,QueryRunLease} from '../query-agent.js';
 import {StoreError} from '../evidence-store.js';
 import type {ExecutionEngine} from '../execution-engine.js';
 import {ExecutionFailure} from '../execution-engine.js';
@@ -68,7 +68,7 @@ export interface QueryRuntimeDependencies {
   readonly modelAuthorizationHost:Pick<ModelAuthorizationHost,'automatic'|'evidenceTriggers'|'queryTriggers'|'manual'>;
   readonly executor:Pick<ExecutionEngine,'get'>;
   readonly agentGate:Pick<ConcurrencyGate,'snapshot'>;
-  readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'>;
+  readonly modelSettings:Pick<ModelSettingsStore,'select'|'view'|'memoryRequestBudget'>;
   readonly conversationSettings:()=>ConversationSettings;
   readonly agent:Pick<AgentRuntimeRegistry,'configured'|'query'>;
   readonly observabilityAssembly:Pick<ObservabilityAssembly,'admittedUsage'>;
@@ -173,11 +173,14 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         }
       }
     }
-    const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
+    const feature=input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat';
+    const profile=modelSettings.select(feature,input.modelProfileId);
     if(!input.modelBudget&&moduleId==='conversations')input={...input,modelBudget:queryModelBudget(profile.settings.maxTokens,dependencies.conversationSettings().context)};
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     if(input.contextEvidenceDependencies)input={...input,contextEvidenceDependencies:resolveDependencies(store,input.contextEvidenceDependencies)};
-    const configuration=modelConfiguration(profile.id,{...profile.settings,model:input.modelOverride!},modelSettings.view().revision);
+    const settings={...profile.settings,model:input.modelOverride!};
+    const configuration=modelConfiguration(profile.id,settings,modelSettings.view().revision);
+    const memoryRequestBudget=feature==='memory'?modelSettings.memoryRequestBudget(settings):undefined;
     const traceContext:AgentTraceContext={...input.traceContext,traceId:randomUUID(),requestId:diagnostics.requestId(),operation,moduleId,profileId:profile.id,provider:profile.settings.provider,protocol:profile.settings.protocol,model:input.modelOverride??profile.settings.model};
     const startedAt=Date.now();let lastActivity=startedAt,failureRunId:string|undefined;
     const trace=(event:AgentTraceEvent)=>{
@@ -224,7 +227,7 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
     const ownerChatContext=ownerChatScope?{...ownerChatScope,traceContext:input.traceContext}:{};
     const memoryPins=new Map<string,{version?:number;fingerprint:string}>();
     const assertMemoryPins=()=>{for(const [id,pin] of memoryPins){const row=store.db.prepare('SELECT json FROM memories WHERE id=?').get(id);if(!row)throw contextFailure('context_evidence_restricted');const current=JSON.parse(String(row.json));if(current.fingerprint!==pin.fingerprint||pin.version!==undefined&&current.version!==pin.version)throw contextFailure('context_evidence_restricted');}};
-    const observed:QueryInput&{processingDisclosedEvidenceIds?:string[]}={...input,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
+    const observed:ModelQueryInput&{processingDisclosedEvidenceIds?:string[]}={...input,memoryRequestBudget,contextSourceContextDependencies:disclosedSourcePins,signal:taskSignal,traceContext,
       assertContextAuthority:()=>{input.assertContextAuthority?.();assertMemoryPins();},
       onMemoryBodies:cards=>{assertMemoryPins();for(const card of cards){const prior=memoryPins.get(card.id);if(prior&&(prior.fingerprint!==card.fingerprint||prior.version!==card.version))throw contextFailure('context_evidence_restricted');memoryPins.set(card.id,{version:card.version,fingerprint:card.fingerprint});}assertMemoryPins();input.onMemoryBodies?.(cards);},
       ...(input.responseMode==='memory-extraction'&&input.evidenceIds!==undefined?{processingDisclosedEvidenceIds:disclosedProcessingIds}:{}),

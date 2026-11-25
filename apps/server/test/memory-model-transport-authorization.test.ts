@@ -13,6 +13,7 @@ import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 import {FileAttachments} from '../src/file-attachments.js';
 import {createModelAgent} from '../src/model-agent.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
+import type {ModelSettingsView} from '@mote/shared/models';
 
 const mutations=['unchanged','deleted-original','owner-declaration','formal-input','after-admission'] as const;
 for(const adapter of ['http','codex'] as const)for(const mutation of mutations.filter(value=>adapter==='http'||value!=='after-admission'))test(`${adapter} Memory model transport revalidates a delivered seed after ${mutation}`,async t=>{
@@ -123,4 +124,45 @@ test('HTTP Memory transport fences a context-only original actually disclosed by
  diagnostics.agentTrace=(event,context)=>{events.push({type:event.type,tool:event.tool,status:event.status});if(event.type==='progress'&&event.tool==='context_evidence'&&event.phase==='completed'){contextRead=true;if(!revoked){revoked=true;node.store.delete(contextParent);}}trace(event,context);};
  const done=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id));assert.equal(contextRead,true,JSON.stringify({starts,events,execution:node.store.db.prepare("SELECT state,error FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").all('memory:'+job.id)}));assert.equal(revoked,true);assert.equal(starts,1,'the successful first read revokes the already-loaded context before SDK continuation');assert.equal(done.completedBatches,0);assert.equal(done.memoryIds.length,0);
  assert.deepEqual(node.store.db.prepare("SELECT state,error FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").all('memory:'+job.id).map(row=>({state:row.state,error:row.error})),[{state:'failed',error:'context_evidence_restricted'}]);
+});
+
+
+test('the Memory budget preset changes the actual HTTP allowance on the existing connection',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-request-budget-')),token='generated-budget-owner',requests:number[]=[];
+ const endpoint=createServer(async(req,res)=>{
+  let raw='';for await(const bytes of req)raw+=bytes;
+  requests.push(JSON.parse(raw).max_tokens);
+  res.writeHead(401,{'Content-Type':'application/json'}).end('{"error":{"message":"Generated refusal"}}');
+ });
+ await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
+ t.after(async()=>{endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));});
+ const deployment={model:'generated-provider',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:'+(endpoint.address() as {port:number}).port+'/v1',apiKey:'generated-only',headers:{},extraBody:{},allowUnauthenticatedLocal:false,reasoningEffort:'high',maxTokens:16384,contextWindow:256000,modelRequestTimeoutMs:20000,agentTimeoutMs:20000};
+ const config:ConfigurationPlatformOptions={path:join(directory,'mote.yaml'),privateCredential:{token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment,profiles:[
+  {id:'generated-long',name:'Generated long budget',settings:{...deployment,maxTokens:128000,contextWindow:1_000_000}},
+  {id:'generated-other',name:'Generated different model',settings:{...deployment,model:'another-generated-model'}},
+ ]},diagnostics:{enabled:false,traceEnabled:false,level:'silent'}}};
+ const node=await buildApp(config,{backgroundWorker:false});await node.app.ready();
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const headers={authorization:'Bearer '+token};
+ const view=(await node.app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>();
+ const budget=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:view.revision,defaults:view.defaults,defaultModels:view.defaultModels,memoryBudgetProfileId:'generated-long'}});
+ assert.equal(budget.statusCode,200,budget.body);
+ assert.deepEqual(budget.json<ModelSettingsView>().defaults,view.defaults);
+ assert.equal((await node.app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>().memoryBudgetProfileId,'generated-long');
+ await authorizeFixtureModels(node);
+ const sourceId='generated-request-budget';
+ node.sources.register({id:sourceId,name:'Generated budget source',kind:'custom',deviceId:'generated',platform:'import'});
+ await node.sources.upsert(sourceId,{externalId:'example',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'file',layer:'original',text:'Generated original for budget transport.'});
+ await node.materialOrganizer.tick();
+ const material=node.materials.get(materialId(sourceId,'example'));
+ assert.ok(material);
+ for(const [modelProfileId,maxTokens] of [[undefined,128000],['generated-other',16384]] as const){
+  const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:node.materials.evidenceIds(material.ref),modelProfileId,recipes:[{id:'mote.personal-memory',version:'5'}]}});
+  assert.equal(created.statusCode,202,created.body);
+  const done=await node.memoryPipeline.run(created.json().id);
+  assert.equal(done.errorCode,'provider_authentication','existing authorization must permit the actual send');
+  assert.equal(requests.at(-1),maxTokens);
+ }
+ await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated Chat question'}});
+ assert.deepEqual(requests,[128000,16384,16384],'Memory budget is isolated to the matching model connection');
 });

@@ -204,7 +204,10 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
   const requestCapacity=(profileId?:string,modelOverride?:string):MemoryRequestCapacity|undefined=>{
     const settings=modelSettings.select('memory',profileId).settings;
     if(settings.protocol==='codex-app-server')return nativeRequestCapacity(settings,modelOverride);
-    if(settings.provider===OPENCODE_GO_PROVIDER.id)return httpMemoryRequestCapacity(settings);
+    if(settings.provider===OPENCODE_GO_PROVIDER.id){
+      const requested={...settings,model:modelOverride??settings.model};
+      return httpMemoryRequestCapacity({...requested,...modelSettings.memoryRequestBudget(requested)});
+    }
   };
   const boundedQuery:typeof query=async input=>{
     const settings=modelSettings.select('memory',input.modelProfileId).settings;

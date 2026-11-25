@@ -408,7 +408,12 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
   const {perception}=assemblePerception({store,configService,executor,resources,materials,mediaAssets,processing,mediaModelAuthority,resolveFileModel,modelSettings,factory,agent,admittedUsage});
   additionalModelConnections=()=>[...processing.modelConnections(),...configService.current(processingConfigDomain).policy.services.filter(service=>service.kind==='model').map(service=>{const resolved=resolveFileModel({...processing.currentSettings(),analysisModel:service});return agentModelConnection(resolved.identity,resolved.settings);})];
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
-  workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return query.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
+  workflows.registry.register(semanticProcessor({store,memories,query:input=>{
+    const selected=modelSettings.select('memory',input.modelProfileId),model=input.modelOverride??selected.settings.model;
+    const traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model};
+    const memoryRequestBudget=modelSettings.memoryRequestBudget({...selected.settings,model});
+    return query.withQueryModelAuthority(input,'semantic',signal=>agent.query({...input,signal,memoryRequestBudget,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}}));
+  },records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   workflows.registry.register(conversationUnderstandingProcessor({memories,usage:usageLedger,
     resolveMemoryPreparation:contract=>memoryPipeline.conversationPreparation(contract),
     selection:config=>{const selected=modelSettings.select('memory',typeof config?.profileId==='string'?config.profileId:undefined);

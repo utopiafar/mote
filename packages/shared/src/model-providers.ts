@@ -80,6 +80,8 @@ export interface ModelSettingsView {
   defaults: ModelFeatureDefaults;
   /** An omitted entry follows the selected preset's default model. */
   defaultModels: ModelFeatureModels;
+  /** Owner-selected request budget for Memory on the same model connection. */
+  memoryBudgetProfileId?: string;
 }
 export const MODEL_FEATURES = ['chat', 'memory', 'insight', 'import', 'file'] as const;
 export type ModelFeature = typeof MODEL_FEATURES[number];

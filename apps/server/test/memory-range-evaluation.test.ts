@@ -31,12 +31,12 @@ function result(input:QueryInput,picks:Pick[]=[],runId=randomUUID()):QueryResult
  const coverage=work(input).members.map(member=>{const candidateIndexes=picks.flatMap((pick,index)=>pick.member.key===member.key?[index]:[]);return {key:member.key,state:candidateIndexes.length?'checked':'no_candidates',candidateIndexes};});
  return {runId,answer:JSON.stringify({memories,coverage,...(work(input).workContract===contract?{}:{capacity:{saturated:false}})}),citations:[...new Set(picks.map(pick=>pick.member.id))].map(id=>({id,capturedAt:at,appName:'Generated',excerpt:''})),trace:[]};
 }
-async function fixture(t:TestContext,texts:string[],batchCharacters=12000,reviewEnabled=true){
+async function fixture(t:TestContext,texts:string[],batchCharacters=12000,reviewEnabled=true,modelCapacity?:NonNullable<ConstructorParameters<typeof MemoryPipeline>[0]['models']['capacity']>){
  const directory=mkdtempSync(join(tmpdir(),'mote-range-evaluation-'));
  let store:Store,sources:SourceStore,memories:MemoryStore,pipeline:MemoryPipeline;
  const extracts:MemoryPipelineQuery[]=[],reviews:MemoryPipelineQuery[]=[];
  let generate:(input:MemoryPipelineQuery)=>Promise<QueryResult>=async input=>result(input),review:(input:MemoryPipelineQuery,draft:QueryResult)=>Promise<QueryResult>=async(_input,draft)=>({...draft,runId:randomUUID()});
- function open(){store=new Store(directory);sources=new SourceStore(store);memories=new MemoryStore(store);pipeline=new MemoryPipeline({store,memories,batchCharacters,requireAdmission:true,models:{configured:()=>true,model:()=> 'generated-range-model'},phases:{query:async input=>{extracts.push(input);return generate(input);},...(reviewEnabled?{review:(input:MemoryPipelineQuery,draft:QueryResult,strategy:NonNullable<Parameters<typeof reviewMemory>[3]>['strategy'],draftOrigin:NonNullable<Parameters<typeof reviewMemory>[3]>['draftOrigin'])=>reviewMemory(input,draft,async request=>{reviews.push(request as MemoryPipelineQuery);return review(request as MemoryPipelineQuery,draft);},{strategy,draftOrigin})}:{})}});}
+ function open(){store=new Store(directory);sources=new SourceStore(store);memories=new MemoryStore(store);pipeline=new MemoryPipeline({store,memories,batchCharacters,requireAdmission:true,models:{configured:()=>true,model:()=> 'generated-range-model',capacity:modelCapacity},phases:{query:async input=>{extracts.push(input);return generate(input);},...(reviewEnabled?{review:(input:MemoryPipelineQuery,draft:QueryResult,strategy:NonNullable<Parameters<typeof reviewMemory>[3]>['strategy'],draftOrigin:NonNullable<Parameters<typeof reviewMemory>[3]>['draftOrigin'])=>reviewMemory(input,draft,async request=>{reviews.push(request as MemoryPipelineQuery);return review(request as MemoryPipelineQuery,draft);},{strategy,draftOrigin})}:{})}});}
  open();sources!.register({id:'generated-ranges',name:'Generated ranges',kind:'custom',deviceId:'generated',platform:'import'});
  const ids:string[]=[];for(const [index,text] of texts.entries())ids.push((await sources!.upsert('generated-ranges',{externalId:String(index),revision:'1',text,observedAt:at,kind:'file',layer:'original'})).id);
  async function close(){await pipeline.close();store.close();}
@@ -414,6 +414,35 @@ test('an actual output-limit error remains failed and one explicit retry preserv
  await f.restart();fail=false;const done=await f.pipeline.retry(job.id);
  assert.equal(done.status,'completed');assert.equal(f.extracts.length,before+1);assert.equal(done.batches.find(batch=>batch.id===completed.id)!.attempts,completed.attempts);
  assert.ok(checkpoint.every(row=>f.store.db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(row.key)));assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2);
+});
+
+test('an output budget increase resumes independent review from the saved extraction',async t=>{
+ const quote='Generated preference with exact evidence.';
+ let maxOutputTokens=16384,reviewFailed=true;
+ const f=await fixture(t,[quote,'Generated neutral range.'],12000,true,()=>({contextWindow:1_000_000,maxOutputTokens,draftTokens:maxOutputTokens}));
+ f.setGenerate(async input=>result(input,[{member:work(input).members[0],quote}]));
+ f.setReview(async(_input,draft)=>{
+  if(reviewFailed)throw new AgentResponseError('Generated review exhausted its output tokens','output_limit');
+  return {...draft,runId:'generated-budget-verified-review'};
+ });
+ const job=f.create(),failed=await f.pipeline.run(job.id),batch=failed.batches[0];
+ assert.equal(batch.errorCode,'model_output_capacity');
+ const extraction=()=>f.store.db.prepare("SELECT input_hash,output_hash FROM memory_phase_outputs WHERE batch_id=? AND phase='extract'").all(batch.id);
+ const checkpoint=extraction();
+ assert.equal(checkpoint.length,1);
+ const previousReview=f.reviews[0];
+ await f.restart();
+ maxOutputTokens=128000;
+ reviewFailed=false;
+ const completed=await f.pipeline.retry(job.id);
+ assert.equal(completed.status,'completed');
+ assert.equal(completed.batches[0].reviewReceipt?.decision,'independent');
+ assert.deepEqual(completed.batches[0].evidenceRanges,batch.evidenceRanges);
+ assert.equal(f.extracts.length,1,'a budget change must not run extraction again');
+ assert.deepEqual(extraction(),checkpoint);
+ assert.deepEqual(f.reviews.at(-1)?.evidenceReadRanges,previousReview.evidenceReadRanges);
+ assert.equal(completed.batches[0].evaluation?.assessedTargets,2);
+ assert.equal(f.memories.get(completed.memoryIds[0]).evidence![0].quote,quote);
 });
 
 test('an oversized adapter answer is rejected rather than trimmed into apparent complete evaluation',async t=>{
