@@ -33,6 +33,24 @@ test('proposal lifecycle has one instruction contract while the envelope supplie
  assert.match(ordinary,/Directly retrieve sufficient evidence and answer as the normal path/);
 });
 
+test('same Memory extract and review originals precede phase-specific instructions and draft',()=>{
+ const id='00000000-0000-4000-8000-000000000001',background='00000000-0000-4000-8000-000000000002',text='Generated original. '.repeat(250);
+ const range={id,offset:0,length:text.length},work={members:[{...range,key:'a'.repeat(64)}],contextMembers:[],authorizedMembers:[],workContract:'range-evaluation@1'};
+ const seed={id,capturedAt:'2026-09-18T00:00:00Z',appName:'Generated',ocrText:text,textRange:{start:0,end:text.length},provenance:{sourceId:'generated',revision:'v1'}};
+ const input={question:'Extract distinct memories',skill:'memory-strategy',responseMode:'memory-extraction',evidenceIds:[id],evidenceRanges:[range],
+  evidenceReadRanges:[range,{id:background,offset:0,length:256}],evidenceReadRangeFormat:'paged',taskContext:{turns:[],memoryWork:work}};
+ const a=assembleHostContext(input,[seed]),b=assembleHostContext({...input,question:'Independent review',taskContext:{...input.taskContext,untrustedMemoryDraft:{memories:[]}}},[seed]);
+ assert.equal(a.system,b.system);
+ assert.deepEqual(a.tools,b.tools);
+ const beforeSpecific=b.prompt.indexOf(',"untrustedMemoryDraft"');
+ assert.ok(beforeSpecific>text.length);
+ assert.equal(a.prompt.slice(0,beforeSpecific),b.prompt.slice(0,beforeSpecific));
+ assert.deepEqual(JSON.parse(b.prompt).untrustedEvidence,JSON.parse(a.prompt).untrustedEvidence);
+ assert.equal(JSON.parse(b.prompt).authorizedContextRanges.count,2);
+ assert.equal(JSON.parse(b.prompt).authorizedContextRanges.ranges,undefined,'original read permissions stay in the authorized catalog');
+ assert.ok(b.tools.some(([name])=>name==='context_evidence_catalog'));
+});
+
 test('durable task retries keep their host-owned time even across a clock boundary',()=>{
  const input={question:'Review a proposed event',contextTime:'2026-09-01T23:59:59Z',timeZone:'UTC'};
  const first=buildContextEnvelope(input,[],'2026-09-01T23:59:59Z'),retry=buildContextEnvelope(input,[],'2026-09-02T00:00:01Z');

@@ -22,22 +22,25 @@ function escapeJsonStringControls(raw: string): string {
   return normalized;
 }
 
-export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>, options: {draft?: boolean;currentInstruction?:boolean;currentAction?:boolean} = {}) {
+/** Parse the common outer response before resolving citations against the Host ledger. */
+export function readAnswerEnvelope(raw: string): unknown {
   if (typeof raw !== 'string' || raw.length > 1_000_000)
     throw new AgentResponseError('The model response exceeds the answer size limit.', 'response_too_large');
   const clean = raw
     .trim()
     .replace(/^```(?:json)?\s*\n?/, "")
     .replace(/\n?```$/, "");
-  let result: unknown;
   try {
-    result = JSON.parse(escapeJsonStringControls(clean));
+    return JSON.parse(escapeJsonStringControls(clean));
   } catch {
     throw new AgentResponseError(
       "The model did not return a valid evidence-backed response. Please retry.", 'invalid_json',
     );
   }
-  const value = result as { answer?: unknown; citationIds?: unknown; draft?: unknown };
+}
+
+export function parseAnswer(raw: string, records: ReadonlyMap<string, ContextRecord>, options: {draft?: boolean;currentInstruction?:boolean;currentAction?:boolean} = {}) {
+  const value = readAnswerEnvelope(raw) as { answer?: unknown; citationIds?: unknown; draft?: unknown };
   if (
     !value ||
     typeof value.answer !== "string" ||

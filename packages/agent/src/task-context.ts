@@ -103,6 +103,17 @@ export function buildContextEnvelope(input:QueryInput,seedEvidence:ContextRecord
   // current question and changing observations. This preserves identical
   // serialized prefixes without claiming that entire requests are prefixes.
   const {language,taskId,taskVersion,languageInstruction,disclosurePolicy,retrievalInstruction,taskProfile,progressUpdates,responseMode,requiredSkill,procedure,procedureInstruction,conversation,...dynamic}=envelope;
+  if(prepared.responseMode==='memory-extraction'&&taskContext?.memoryWork&&seedEvidence.length){
+    // The phase's question/draft follows the shared exact evidence. The
+    // authority and source versions still come from the original Host ledger.
+    const {untrustedEvidence,evidenceContexts,evidenceScope,authorizedContextRanges,untrustedTaskContext,request,...rest}=dynamic;
+    const {untrustedMemoryDraft,...stableTask}=untrustedTaskContext??{};
+    return {untrustedEvidence,evidenceContexts,evidenceScope,authorizedContextRanges,
+      untrustedTaskContext:{...stableTask,...(untrustedMemoryDraft?{untrustedMemoryDraft}:{})},
+      language,taskId,taskVersion,languageInstruction,disclosurePolicy,
+      taskProfile,progressUpdates,responseMode,requiredSkill,procedure,procedureInstruction,
+      ...(retrievalInstruction?{retrievalInstruction}:{}),...(conversation?{conversation}:{}),...rest,request};
+  }
   return {language,taskId,taskVersion,languageInstruction,disclosurePolicy,...(retrievalInstruction?{retrievalInstruction}:{}),taskProfile,progressUpdates,responseMode,
     ...(requiredSkill?{requiredSkill,procedure,procedureInstruction}:{}),...(conversation?{conversation}:{}),...dynamic};
 }

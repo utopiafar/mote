@@ -109,6 +109,8 @@ export function boundedModelFetch(transport:FetchTransport,bridge:string,maximum
     const send=async()=>{
       await authorize();
       measurement=openCodeGo&&reportOpenCodeUsage?openCodeRequestMeasurement(reportOpenCodeUsage):undefined;
+      // Report the dispatch without inserting an await after the authorization fence.
+      measurement?.begin();
       let response:Response;
       try{response=await transport(input,requestInit);}catch(error){
         await measurement?.finish();
@@ -244,8 +246,9 @@ export async function observeModelTransport(authorize?:()=>void|Promise<void>,au
    if(req.url==='/usage'){
     const usage=normalizeOpenCodeRequestUsage(value);
     if(!usage){res.writeHead(400).end();return;}
-    if(!usageRequests.has(usage.modelRequestId)){
-      usageRequests.add(usage.modelRequestId);
+    const sample=usage.modelRequestId+':'+usage.requestState;
+    if(!usageRequests.has(sample)){
+      usageRequests.add(sample);
       try{await reportUsage?.(usage);}catch{/* Observation cannot stop the model. */}
     }
     res.writeHead(204).end();

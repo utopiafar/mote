@@ -30,7 +30,7 @@ import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_
 
 import type {MemoryValidationDetails} from './memory-validation.js';
 import type {ModelConfiguration} from './model-configuration.js';
-import {memoryReviewReceipt,memoryReviewQuestion,type MemoryDraftOrigin} from './memory-review.js';
+import {memoryReviewReceipt,memoryReviewQuestion,memoryReviewRequestSuffix,memoryReviewSupportsEdits,type MemoryDraftOrigin} from './memory-review.js';
 import {memoryRequestSizer,type MemoryRequestCapacity} from './memory-request-budget.js';
 import type {Memory} from './memory-schema.js';
 import {memoryReviewReceiptSchema,type MemoryReviewReceipt} from './memory-schema.js';
@@ -57,7 +57,7 @@ export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryJobState=Pick<MemoryJob,'id'|'status'|'errorCode'|'availableAt'>;
 const schedulingFields=['status','errorCode','availableAt','totalBatches','completedBatches','failedBatches','runningBatches','pendingBatches'] as const;
 type MemorySchedulingState=Pick<MemoryJob,'id'|typeof schedulingFields[number]>;
-export type MemoryPipelineQuery={processingImages?:QueryInput['processingImages'];memoryReviewQuestion?:string;memoryReviewRepair?:string;taskContext?:QueryInput['taskContext'];processingMaterialInputs?:QueryInput['processingMaterialInputs'];processingEvidence?:QueryInput['processingEvidence'];contextTime?:string;signal?:AbortSignal;language?:Locale;modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory'|'memory-strategy';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];evidenceReadRanges?:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
+export type MemoryPipelineQuery={processingImages?:QueryInput['processingImages'];memoryReviewQuestion?:string;memoryReviewRepair?:string;taskContext?:QueryInput['taskContext'];processingMaterialInputs?:QueryInput['processingMaterialInputs'];processingEvidence?:QueryInput['processingEvidence'];contextTime?:string;signal?:AbortSignal;language?:Locale;modelProfileId?:string;modelOverride?:string;modelSessionId?:string;evidenceReadRangeFormat?:QueryInput['evidenceReadRangeFormat'];question:string;skill:'memory-extraction'|'coding-memory'|'memory-strategy';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];evidenceReadRanges?:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
 export type ConversationPreparation={generationContract:string;memoryWork?:{package:{goal:string;instruction:string};members:MemoryWorkMember[];contextMembers:MemoryWorkMember[];authorizedMembers:MemoryWorkMember[];history:MemoryWorkInspection[];workContract:MemoryWorkContract;instruction:string};candidatePolicy?:{prompt:string;profile:'personal'|'coding';fingerprint:string};job:MemoryJob;ranges:EvidenceRange[];materialRefs:Record<string,string>;materialInputs:MaterialInputPin[];signal:AbortSignal;parentGrant:{stepId:string;fence:string}};
 export interface MemoryModelSelection {
   capacity?:(profileId?:string,modelOverride?:string)=>MemoryRequestCapacity|undefined;
@@ -572,7 +572,7 @@ export class MemoryPipeline {
     const fits=function*(batch:StoredBatch):Generator<void,boolean,void>{
       yield;
       const input=pipeline.modelInput(job,batch,batch.chunks,records,sizing),strategy=batch.strategy?pipeline.strategies.resolvePinned(batch.strategy).review:undefined,review=Boolean(pipeline.options.phases.review&&strategy!==null);
-      const planned=review?{...input,question:memoryReviewQuestion(input,strategy??undefined),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
+      const planned=review?{...input,question:memoryReviewQuestion(input,strategy??undefined)+memoryReviewRequestSuffix(input,{readBackground:input.evidenceReadRangeFormat==='paged'&&memoryReviewSupportsEdits(input),compact:memoryReviewSupportsEdits(input)}),taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:{memories:[],coverage:[]}}}:input;
       return measure(planned,review?capacity.draftTokens:0).fits;
     };
     const bound=function*(batch:StoredBatch,requiredOnly=false):Generator<void,StoredBatch[],void>{
@@ -654,7 +654,9 @@ export class MemoryPipeline {
     const imageInputs=this.contextReadMaterialInputs(job,readScope.chunks),processingImages=sizing?sizing.grants.filter(grant=>imageInputs.some(pin=>pin.materialId===grant.materialId&&pin.fingerprint===grant.fingerprint&&JSON.stringify(pin.required)===JSON.stringify(grant.required)&&pin.evidenceIds.includes(grant.id))):memoryImageGrants(this.store,imageInputs);
     return {processingImages,processingEvidence:Object.fromEntries([...processingChunks,...readScope.chunks].map(chunk=>[chunk.id,chunk.fingerprint])),...(contract?{memoryReviewQuestion:question}:{}),
       ...(members||summaries.length?{taskContext:{turns:[],...(summaries.length?{untrustedInterpretations:JSON.stringify(summaries).slice(0,12000)}:{}),...(members?{memoryWork:{package:this.workPackageContext(job,batch),contextMembers:this.workMembers(job,batch,batch.contextChunks??[],snapshot,sizing).map(({scope:_scope,...member})=>member),members:members.map(({scope:_scope,...member})=>member),authorizedMembers:this.authorizedMembers(job,batch,snapshot,sizing),history:this.inspectionHistory(job,batch,snapshot,sizing),workContract:contract,instruction:memoryWorkInstruction(members)}}:{})}}:{}),
-      processingMaterialInputs:imageInputs,contextTime:members?.[0]?.contextTime??job.contextTime,language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:job.configuration?.model??job.modelOverride??this.options.models.model(job.modelProfileId),question:question+(processingImages.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:''),skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(processingChunks.map(chunk=>chunk.id))],evidenceRanges:ranges,evidenceReadRanges:readRanges,timeZone:job.timeZone};
+      processingMaterialInputs:imageInputs,contextTime:members?.[0]?.contextTime??job.contextTime,language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:job.configuration?.model??job.modelOverride??this.options.models.model(job.modelProfileId),question:question+(processingImages.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:''),skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(processingChunks.map(chunk=>chunk.id))],evidenceRanges:ranges,evidenceReadRanges:readRanges,
+      ...(contract==='range-evaluation@1'&&readRanges.some(range=>!ranges.some(seed=>seed.id===range.id&&range.offset>=seed.offset&&range.offset+range.length<=seed.offset+seed.length))?{evidenceReadRangeFormat:'paged' as const}:{}),
+      timeZone:job.timeZone};
   }
   /** Reuse the existing bounded original catalog, prioritizing current
    * originals. Target subdivision never narrows their frozen input ranges. */
@@ -1230,7 +1232,8 @@ export class MemoryPipeline {
             }
             catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return error;}
           };
-          const input:MemoryPipelineQuery={...this.modelInput(job,batch,chunks),signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
+          const modelSessionId='memory:'+id+':'+batch.id+':'+generationContract;
+          const input:MemoryPipelineQuery={...this.modelInput(job,batch,chunks),modelSessionId:modelSessionId+':extract',signal,validateOutput,onProgress:event=>observe(event.stage),onTrace:()=>observe(),traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
           const draftKey=sha256(JSON.stringify(['memory-extraction-draft@2',generationContract,(batch.artifactRefs??[]).map(ref=>({...ref})).sort((a,b)=>a.id.localeCompare(b.id)),summaries.slice().sort((a,b)=>a.id.localeCompare(b.id))]));
           // Direct extraction also contains deletion admission. A changed
           // deletion policy must recheck the raw draft, not replay its verdict.
@@ -1302,7 +1305,7 @@ export class MemoryPipeline {
               for(let reviewAttempt=0;reviewAttempt<2;reviewAttempt++){
                 reviewAttemptNumber=reviewAttempt+1;
                 try{
-                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,signal:stageSignal},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
+                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,modelSessionId,signal:stageSignal},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
                   const failure=await validateOutput({...result,trace:[]});if(failure)throw new MemoryOutputValidationError(failure.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory review failed host validation',{workContract:contract});
                   // An incomplete text verdict may confuse a referenced original
                   // with this exact target. Let the model reconsider once within

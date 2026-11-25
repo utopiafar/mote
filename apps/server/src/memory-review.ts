@@ -1,4 +1,4 @@
-import {extractionSeedScopeValid,type QueryInput} from '@mote/agent';
+import {extractionSeedScopeValid,memoryReviewEditsInstruction,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryOutputValidationError,MEMORY_ADMISSION_PROMPT} from './memory.js';
 import {StoreError,sha256} from './evidence-store.js';
@@ -17,6 +17,16 @@ export function memoryReviewReceipt(result:QueryResult){return receipts.get(resu
 export type MemoryDraftOrigin='mote'|'native-engine';
 type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy|null;recipe?:MemoryRecipeBinding;taskInstructions?:string};
 
+export const memoryReviewSupportsEdits=(input:QueryInput)=>
+  (input.taskContext?.memoryWork as {workContract?:MemoryWorkContract}|undefined)?.workContract==='range-evaluation@1'&&!input.processingImages?.length;
+
+const reviewBackgroundRead='\nStart with the same target originals. The draft may cite background pages that are not in your initial evidence. Independently read necessary authorized pages with context_evidence before retaining claims that rely on them. This does not add targets.';
+
+export function memoryReviewRequestSuffix(input:QueryInput,{readBackground=false,compact=false}={}){
+  return (readBackground?reviewBackgroundRead+(input.evidenceReadRangeFormat==='paged'?' Use context_evidence_catalog if the exact range is not already known.':''):'')+
+    (compact?'\n'+memoryReviewEditsInstruction:'');
+}
+
 /** Shared by request planning and the actual independent review. */
 export function memoryReviewQuestion(input:QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string},strategy?:MemoryReviewStrategy,taskInstructions?:string){
   const workPackage=Boolean(input.taskContext?.memoryWork),contract=(input.taskContext?.memoryWork as {workContract?:MemoryWorkContract}|undefined)?.workContract;
@@ -31,12 +41,16 @@ export function memoryReviewQuestion(input:QueryInput&{memoryReviewQuestion?:str
 export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string},draft:QueryResult,query:(input:QueryInput)=>Promise<QueryResult>,options?:ReviewOptions):Promise<QueryResult> {
   input.signal?.throwIfAborted();
   let contextPagesRequired=false;
+  const readContextOnDemand=memoryReviewSupportsEdits(input);
   // Re-disclose extraction's actual original reads to the independent reviewer;
   // the broader grant remains available for its own autonomous inspection.
   if(input.evidenceReadRanges){
     const ranges=memoryReadRanges(draft,input.evidenceRanges??[],input.evidenceReadRanges);
     const ids=[...new Set([...(input.evidenceIds??[]),...ranges.map(range=>range.id)])];
-    if(extractionSeedScopeValid(ids,ranges))input={...input,evidenceIds:ids,evidenceRanges:ranges};
+    if(readContextOnDemand){
+      const seeds=input.evidenceRanges??[];
+      contextPagesRequired=ranges.some(range=>!seeds.some(seed=>seed.id===range.id&&range.offset>=seed.offset&&range.offset+range.length<=seed.offset+seed.length));
+    }else if(extractionSeedScopeValid(ids,ranges))input={...input,evidenceIds:ids,evidenceRanges:ranges};
     else contextPagesRequired=true;
   }
   const strategy=options?.strategy?memoryReviewStrategySchema.parse(options.strategy):undefined;
@@ -71,12 +85,11 @@ export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:strin
     return result;
   }
   const native=options?.draftOrigin==='native-engine';
-  if(!value.memories.length&&!workPackage&&!native)return receipt(await finish({...draft}),'empty');
   // Only fixed, bounded extraction tools may reuse a verdict. Consolidation and
   // open retrieval can see changing context outside the supplied originals.
   const bounded=options?.cache&&options.snapshot&&input.validateOutput&&input.contextTime&&input.evidenceIds?.length&&input.evidenceRanges?.length&&['memory-extraction','coding-memory','memory-strategy'].includes(input.skill??'');
   const snapshot=bounded?options!.snapshot!():undefined;
-  const {signal,validateOutput,onProgress,onTrace,onUsage,traceContext,...semanticInput}=input;
+  const {signal,validateOutput,onProgress,onTrace,onUsage,traceContext,modelSessionId,...semanticInput}=input;
   const key=bounded?sha256(JSON.stringify(['bounded-exact-review@1',native?'native-engine':'mote',strategy??defaultMemoryReviewStrategy,options?.taskInstructions,semanticInput,value,draft.citations,snapshot,deletionSnapshot,...(contextPagesRequired?['review-context-pages-required@1']:[])])):undefined;
   const validate=async(result:QueryResult)=>{
     signal?.throwIfAborted();
@@ -119,8 +132,10 @@ export async function reviewMemory(input:QueryInput&{memoryReviewQuestion?:strin
   }
   // Keep one authoritative policy and the complete task without duplicating it.
   const question=memoryReviewQuestion(input,strategy,options?.taskInstructions);
-  const contextReading=contextPagesRequired?'\nThe extractor\'s additional original page ranges do not form a valid initial evidence scope for this review. This review starts with the original target seeds and retains the same context read grant. Use context_evidence to read the necessary original pages before retaining claims that rely on them. Quoted text in the untrusted draft and the extractor\'s reading do not establish that this reviewer read those originals. Only originals actually delivered in this review support its citations; additional context does not add targets or complete other coverage. If necessary context cannot be inspected, preserve the specific uncertainty or omit unsupported claims without inventing absence.':'';
-  const reviewed=await query({...input,traceContext:{...traceContext,phase:'review'},taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:draftImages.length?{...value,imageViews:draftImages}:value},question:question+contextReading+(draftImages.length||input.processingImages?.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:'')});
+  const contextReading=contextPagesRequired&&!readContextOnDemand?'\nThe extractor\'s additional original page ranges do not form a valid initial evidence scope for this review. This review starts with the original target seeds and retains the same context read grant. Use context_evidence to read the necessary original pages before retaining claims that rely on them. Quoted text in the untrusted draft and the extractor\'s reading do not establish that this reviewer read those originals. Only originals actually delivered in this review support its citations; additional context does not add targets or complete other coverage. If necessary context cannot be inspected, preserve the specific uncertainty or omit unsupported claims without inventing absence.':'';
+  const compactReview=Boolean(memoryReviewSupportsEdits(input)&&!native&&value.memories.length&&!draftImages.length);
+  const reviewed=await query({...input,...(modelSessionId?{modelSessionId:modelSessionId+':review'}:{}),
+    ...(compactReview?{memoryReviewDraft:{answer:draft.answer,citationIds:draft.citations.map(citation=>citation.id)}}:{}),traceContext:{...traceContext,phase:'review'},taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:draftImages.length?{...value,imageViews:draftImages}:value},question:question+contextReading+memoryReviewRequestSuffix(input,{readBackground:contextPagesRequired&&readContextOnDemand,compact:compactReview})+(draftImages.length||input.processingImages?.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:'')});
   await validate(reviewed);
   // An explicit incomplete assessment is a recoverable failure, not a reusable
   // verdict. A later owner retry still needs a fresh independent review.

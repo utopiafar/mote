@@ -96,6 +96,7 @@ export interface HostRunPort {
   readonly identity: RuntimeRunIdentity;
   /** Exact Host-assembled system policy, fixed before runtime prepare. */
   readonly systemPrompt: string;
+  readonly modelSessionId?: string;
   readonly signal: AbortSignal;
   readonly tools: HostToolPort;
   /** Host-owned diagnostic sink for provider protocol observations. It grants

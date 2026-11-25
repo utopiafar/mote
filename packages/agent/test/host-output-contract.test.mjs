@@ -152,6 +152,55 @@ test('unread/truncated citations and malformed JSON remain model-authored repair
   await (await f.create()).execute(); assert.equal(f.calls.filter(c => c === 'repair').length, 1);
 });
 
+test('a scoped Memory quote correction keeps the sibling and revalidates the assembled response',async()=>{
+ const ledger=empty();ledger.records.set(id,record);
+ const encode=(answer,citationIds=[id])=>JSON.stringify({answer:JSON.stringify(answer),citationIds});
+ const keep={title:'Keep this generated candidate',statement:'Supported original ['+id+']',evidenceIds:[id],evidence:[{id,quote:'READ_ONLY'}]};
+ const first={...keep,title:'Correct this generated candidate',evidence:[{id,quote:'not in the original'}]};
+ const coverage=[{key:'generated-target',state:'checked',candidateIndexes:[0,1]}];
+ const before={memories:[first,keep],coverage};
+ let validations=0;
+ const f=fixture({input:{responseMode:'memory-extraction',validateOutput(result){
+   validations++;
+   const value=JSON.parse(result.answer);
+   assert.deepEqual(value.coverage,coverage);
+   assert.deepEqual(value.memories[1],keep);
+   if(value.memories[0].evidence[0].quote!=='READ_ONLY')return {code:'quote_not_found',feedback:'Use an exact original quote.',
+     memoryRepair:{section:'memories',index:0,spanIndex:0,feedback:'Use an exact original quote.'}};
+ }},evidence:()=>ledger,run:async()=>outcome(encode(before)),repair:async request=>{
+   const prompt=JSON.parse(request.prompt);
+   assert.deepEqual(prompt.location,{section:'memories',index:0,spanIndex:0});
+   const patch=encode({replacement:{id,quote:'READ_ONLY'}},[]);
+   assert.ok(patch.length<encode(before).length);
+   return outcome(patch);
+ }});
+ const result=await (await f.create()).execute();
+ assert.equal(validations,2);
+ assert.deepEqual(JSON.parse(result.answer),{memories:[{...first,evidence:[{id,quote:'READ_ONLY'}]},keep],coverage});
+ assert.deepEqual(result.citations.map(c=>c.id),[id]);
+});
+
+test('compact independent review must have received the original evidence for retained rows',async()=>{
+ const encode=(answer,citationIds=[])=>JSON.stringify({answer:JSON.stringify(answer),citationIds});
+ const before={memories:[{title:'Generated context',statement:'Owner note ['+id+']',evidenceIds:[id],evidence:[{id,quote:'READ_ONLY'}]}],
+  coverage:[{key:'generated-target',state:'checked',candidateIndexes:[0]}]};
+ const compact=encode({memoryChanges:[],coverageChanges:[]});
+ assert.ok(compact.length<encode(before,[id]).length);
+ let validated=0;
+ const input={responseMode:'memory-extraction',memoryReviewDraft:{answer:JSON.stringify(before),citationIds:[id]},validateOutput(result){
+  validated++;
+  assert.deepEqual(JSON.parse(result.answer),before);
+  assert.deepEqual(result.citations.map(c=>c.id),[id]);
+ }};
+ const ledger=empty();ledger.records.set(id,record);
+ const success=fixture({input,evidence:()=>ledger,run:async()=>outcome(compact)});
+ await (await success.create()).execute();
+ assert.equal(validated,1);
+ const denied=fixture({input,run:async()=>outcome(compact),repair:async()=>outcome(compact)});
+ await assert.rejects((await denied.create()).execute(),error=>error instanceof AgentResponseError&&error.reason==='unretrieved_citation');
+ assert.equal(validated,1,'inherited draft citations never become fresh read receipts');
+});
+
 test('output_limit is rejected even with valid JSON, then requests a shorter complete model response', async () => {
   const f = fixture({run: async () => ({...outcome(), terminal: {kind: 'output_limit'}}), repair: async request => {
     const prompt = JSON.parse(request.prompt); assert.equal(request.validation.reason, 'output_limit'); assert.match(prompt.recovery, /shorter/); return outcome();

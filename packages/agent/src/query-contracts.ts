@@ -74,6 +74,8 @@ export interface QueryExecutionContext {
   /** Host-selected saved connection; never interpreted as prompt content. */
   modelProfileId?: string;
   modelOverride?: string;
+  /** Host-issued identity for a retry of the same logical provider session. */
+  modelSessionId?: string;
   signal?: AbortSignal;
   /** Host-only correlation data for logs; never serialized into model prompts or tool arguments. */
   traceContext?: AgentTraceContext;
@@ -126,6 +128,13 @@ export interface QueryGrants {
   historicalSelection?:{evidenceIds?:string[];anchorEvidenceIds?:string[]};
 }
 
+export interface HostOutputIssue {
+  code:string;
+  feedback:string;
+  requiresToolUse?:boolean;
+  memoryRepair?:import('./host/memory-output-edits.js').MemoryRepairScope;
+}
+
 /** Host callbacks; observation never grants model authority. */
 export interface QueryHooks {
   onContextCapabilities?:(snapshot:readonly {name:string;version:string;fingerprint:string}[])=>void;
@@ -139,7 +148,9 @@ export interface QueryHooks {
   /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here.
    * `requiresToolUse` marks a rejection that cannot be repaired by rewriting the answer alone: the model must call
    * the required read-only tool (for example read_image) again before returning the product. */
-  validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string;requiresToolUse?:boolean}|undefined> | {code:string;feedback:string;requiresToolUse?:boolean}|undefined;
+  validateOutput?: (answer: AgentAnswer) => Promise<HostOutputIssue|undefined> | HostOutputIssue | undefined;
+  /** A validated extraction used by independent Memory review for compact edits. */
+  memoryReviewDraft?: import('./host/memory-output-edits.js').MemoryReviewDraft;
   /** Host-only live fact for repair prompts. While true, even an output-limit repair must allow the read-only
    * tool call that is still required (for example an image whose pixels were never inspected). */
   repairRequiresToolUse?: () => boolean;
