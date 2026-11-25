@@ -1205,7 +1205,7 @@ export class MemoryPipeline {
             // result. Its authoritative failure already has the reviewer run ID;
             // a surrounding catch still holds the valid extraction draft.
             if(phase==='review'&&fallback&&recordedReviewFailures.has(reviewKey))return;
-            const failureKey=JSON.stringify([phase,batch.attempts,reviewAttemptNumber,result.runId,error.code]);if(recordedFailures.has(failureKey))return;recordedFailures.add(failureKey);
+            const failureKey=JSON.stringify([phase,batch.attempts,reviewAttemptNumber,result.runId,error.code,error.details]);if(recordedFailures.has(failureKey))return;recordedFailures.add(failureKey);
             if(phase==='review')recordedReviewFailures.add(reviewKey);
             const failure:MemoryValidationFailure={at:new Date().toISOString(),code:error.code,phase,attempt:batch.attempts+Math.max(0,reviewAttemptNumber-1),runId:result.runId,details:error.details};
             if(!observeCurrent(()=>{batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);}))return;

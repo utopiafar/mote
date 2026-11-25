@@ -91,6 +91,47 @@ test('coverage validation locates an unsupported candidate and an unknown target
  ]);
 });
 
+test('successive coverage errors in one extraction each identify the existing row to repair',async t=>{
+ const f=await fixture(t,facts(3));
+ f.setGenerate(async input=>{
+  const [first,shared,unrelated]=work(input).members;
+  const read=(member:MemoryWorkMember)=>f.memories.readEvidence([member.id])[0].ocrText;
+  const valid=result(input,[{member:first,quote:read(first)},{member:shared,quote:read(shared)}]);
+  const body=JSON.parse(valid.answer);
+  body.memories[0].statement+=' '+read(shared)+' ['+shared.id+']';
+  body.memories[0].evidenceIds.push(shared.id);
+  body.memories[0].evidence.push({id:shared.id,quote:read(shared)});
+  assert.equal(body.coverage[2].key,unrelated.key);
+  const original=body.coverage[2];
+  body.coverage[2]={...original,state:'checked',candidateIndexes:[0]};
+  const wrongLink=await input.validateOutput!({...valid,answer:JSON.stringify(body)});
+  assert.ok(wrongLink instanceof MemoryOutputValidationError);
+  assert.equal(wrongLink.memoryRepair?.index,2);
+  body.coverage[2]=original;
+
+  const missingLink=await input.validateOutput!({...valid,answer:JSON.stringify(body)});
+  assert.ok(missingLink instanceof MemoryOutputValidationError);
+  assert.deepEqual(missingLink.details,{workContract:contract,fieldPath:'coverage[1].candidateIndexes',
+   problem:'missing_candidate_for_supporting_target',candidateIndex:0});
+  assert.equal(missingLink.memoryRepair?.section,'coverage');
+  assert.equal(missingLink.memoryRepair?.index,1);
+  assert.match(missingLink.repairInstruction,/Candidate index: 0/);
+  assert.ok(!missingLink.repairInstruction.includes(read(shared))&&!missingLink.repairInstruction.includes(shared.key));
+  await input.validateOutput!({...valid,answer:JSON.stringify(body)});
+  assert.equal(f.memories.list().length,0);
+
+  body.coverage[1].candidateIndexes=[0,1];
+  return {...valid,answer:JSON.stringify(body)};
+ });
+ const done=await f.pipeline.run(f.create().id);
+ assert.equal(done.status,'completed');
+ assert.equal(done.memoryIds.length,2);
+ assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+ assert.deepEqual(done.batches[0].validationFailures?.map(failure=>failure.details?.fieldPath),[
+  'coverage[2].candidateIndexes[0]','coverage[1].candidateIndexes',
+ ]);
+});
+
 test('oversized candidate evidence receives the actual schema limit while retaining complete range accounting',async t=>{
  const texts=facts(31),f=await fixture(t,texts);
  f.setGenerate(async input=>{
