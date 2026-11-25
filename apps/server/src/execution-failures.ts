@@ -32,3 +32,4 @@ export function retainFailureContext<T>(error:T,value:FailureContext):T {
 export function recoverableProviderFailure(error:ProviderFailure):boolean {
  return error.details.category==='transient'&&['rate_limited','provider_network','provider_unavailable','provider_timeout'].includes(error.details.code);
 }
+export function isProviderQuotaWait(code:string|undefined){return code==='rate_limited'||code==='provider_quota';}

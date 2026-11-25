@@ -6,12 +6,71 @@ import {join} from 'node:path';
 import {setTimeout} from 'node:timers/promises';
 import {randomUUID} from 'node:crypto';
 import {AgentResponseError} from '@mote/agent';
+import {ProviderFailure} from '@mote/shared';
 import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {authorizeFixtureModels,fixtureTopicResult} from './fixtures/model-authorization.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
 import {readAgentCredential} from './login-fixture.js';
+
+test('an explicit provider switch clears only the previous provider quota wait for an unfinished extraction',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-quota-fallback-'));
+ const token='generated-memory-fallback-owner',headers={authorization:'Bearer '+token,'X-Mote-Ingress-Version':'2'};
+ const config:ConfigurationPlatformOptions={path:join(directory,'mote.yaml'),privateCredential:{token,tokenPath:'fixture'},initialDocument:{
+  version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
+  execution:{insightIntervalHours:0},models:{deployment:{model:'generated-quota-model',provider:'custom',protocol:'openai-completions',
+   baseUrl:'https://generated-old.invalid/v1',apiKey:'generated-unused',allowUnauthenticatedLocal:false,reasoningEffort:'high'}},
+  diagnostics:{enabled:false,traceEnabled:false,level:'silent'}
+ }};
+ const calls:{provider:string;phase?:string}[]=[];
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
+  calls.push({provider:settings.provider,phase:input.traceContext?.phase});
+  if(settings.provider==='custom')throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:3600000,executionStarted:false});
+  const bridge=await startBridge(reader,input);
+  try{return {runId:randomUUID(),answer:generatedMemoryOutput(input),citations:[],trace:bridge.trace,evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};}
+  finally{await bridge.close();}
+ }})});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ await node.app.ready();
+ const readSettings=()=>node.modelSettings.view();
+ const save=async(id:string,settings:ReturnType<typeof node.modelSettings.select>['settings'])=>{
+  const result=await node.app.inject({method:'PUT',url:'/api/model-settings/profiles/'+id,headers,payload:{revision:readSettings().revision,name:id,settings}});
+  assert.equal(result.statusCode,200,result.body);
+ };
+ const originalSettings=node.modelSettings.select('memory').settings;
+ await save('same-provider',{...originalSettings,model:'generated-same-provider-model'});
+ await save('fallback-provider',{...originalSettings,provider:'deepseek',protocol:'deepseek',baseUrl:'https://generated-new.invalid/v1',model:'generated-fallback-model'});
+ const noteId=randomUUID();
+ const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id:noteId,deviceId:'generated-provider-switch',deviceName:'Generated',platform:'import',capturedAt:'2026-05-01T00:00:00Z',text:'Generated original with a source identity that survives a provider switch.'}});
+ assert.equal(note.statusCode,201,note.body);
+ const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[noteId]}});
+ assert.equal(response.statusCode,202,response.body);
+ const id=response.json().id,path='/api/memory-jobs/'+id;
+ const until=Date.now()+8000;
+ while(Date.now()<until&&node.memoryPipeline.get(id).batches[0]?.errorCode!=='rate_limited')await setTimeout(20);
+ const blocked=node.memoryPipeline.get(id),batch=blocked.batches[0];
+ assert.equal(batch.errorCode,'rate_limited');
+ assert.ok(batch.availableAt!>Date.now()+1000);
+ const pause=await node.app.inject({method:'POST',url:path+'/pause',headers});
+ assert.equal(pause.json().status,'paused');
+ const retry=(modelProfileId?:string)=>node.app.inject({method:'POST',url:path+'/retry',headers,payload:modelProfileId?{modelProfileId}:{}});
+ for(const model of [undefined,'same-provider']){
+  const refused=await retry(model);
+  assert.equal(refused.json().error,'rate_limited');
+  assert.equal(node.memoryPipeline.get(id).batches[0].availableAt,batch.availableAt);
+ }
+ const accepted=await retry('fallback-provider');
+ assert.equal(accepted.statusCode,202,accepted.body);
+ const done=await node.memoryPipeline.run(id);
+ assert.equal(done.status,'completed');
+ assert.equal(done.configuration?.provider,'deepseek');
+ assert.equal(done.batches[0].id,batch.id);
+ assert.deepEqual(done.batches[0].evidenceRanges,batch.evidenceRanges);
+ assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+ assert.deepEqual(calls,[{provider:'custom',phase:'extract'},{provider:'deepseek',phase:'extract'},{provider:'deepseek',phase:'review'}]);
+});
 
 test('A1-30: an excluded source Memory waits durably without invoking a model and completes once after re-inclusion',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-authorization-wait-'));
