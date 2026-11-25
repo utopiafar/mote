@@ -182,7 +182,11 @@ function fields(raw:unknown,event?:string):EventFields {
   if(typeof value.toolErrorCode==='string'&&['evidence_changed','invalid_tool_arguments','evidence_budget_exceeded','tool_budget_exceeded','evidence_scope_denied','invalid_evidence_range','evidence_range_exceeded','invalid_changes_view','context_tool_failed','repeated_tool_failure','image_disclosure_disabled'].includes(value.toolErrorCode))out.toolErrorCode=value.toolErrorCode;
   if(value.validationPhase==='extract'||value.validationPhase==='review')out.validationPhase=value.validationPhase;
   if(typeof value.fieldPath==='string'&&value.fieldPath.length<=200&&/^[a-zA-Z_][a-zA-Z0-9_.\[\]]*$/.test(value.fieldPath)){const path=value.fieldPath.replace(/\[(\d+)\]/g,'.$1').split('.').map(key=>/^\d+$/.test(key)?Number(key):key);if(validationLocation(path)===value.fieldPath)out.fieldPath=value.fieldPath;}
-  if(typeof value.problem==='string'&&['invalid_uuid','invalid_pattern','missing_required_field','invalid_type','invalid_string','invalid_enum_value','unrecognized_keys','too_big','too_small','custom'].includes(value.problem))out.problem=value.problem;
+  if(typeof value.problem==='string'&&[
+    'invalid_uuid','invalid_pattern','missing_required_field','invalid_type','invalid_string','invalid_enum_value',
+    'unrecognized_keys','too_big','too_small','custom',
+    'unsupported_candidate_for_target','unknown_target_key','duplicate_target_key',
+  ].includes(value.problem))out.problem=value.problem;
   if(typeof value.method==='string'&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(value.method))out.method=value.method as EventFields['method'];
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;
   if(typeof value.route==='string'&&routes.has(value.route))out.route=value.route;
