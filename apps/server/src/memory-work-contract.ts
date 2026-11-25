@@ -35,17 +35,17 @@ export function readMemoryWorkCoverage(result:QueryResult,members:MemoryWorkMemb
  try{imageReads=memoryImageReadReceipts(result);}catch{throw new MemoryOutputValidationError('image_evidence','Invalid original-image delivery receipt');}
  const parsed=memoryRangeEvaluationCoverageSchema.safeParse(value.coverage);
  if(!Array.isArray(value.memories)||!parsed.success){const issue=!parsed.success?parsed.error.issues[0]:undefined,field=!Array.isArray(value.memories)?'memories':'coverage';throw new MemoryOutputValidationError('coverage','Memory work requires member coverage',{fieldPath:validationLocation([field,...(issue?.path??[])]),problem:issue?validationProblem(issue):'invalid_type',workContract:'range-evaluation@1'});}
- const seen=new Set<string>();
+ const coverageRowIndexes=new Map<string,number>();
  for(const [rowIndex,row] of parsed.data.entries()){
   const member=members.find(member=>member.key===row.key);
-  if(!member||seen.has(row.key)){
+  if(!member||coverageRowIndexes.has(row.key)){
    throw new MemoryOutputValidationError('coverage','Unknown or duplicate Memory coverage member',{
     workContract:'range-evaluation@1',
     fieldPath:validationLocation(['coverage',rowIndex,'key']),
     problem:member?'duplicate_target_key':'unknown_target_key',
    });
   }
-  seen.add(row.key);
+  coverageRowIndexes.set(row.key,rowIndex);
   if(row.question)for(const span of row.question.evidence){
    if(span.id!==member.id)throw new MemoryOutputValidationError('coverage','Owner question evidence must belong to its target member',{workContract:'range-evaluation@1'});
    if(!readText)continue;
@@ -71,9 +71,20 @@ export function readMemoryWorkCoverage(result:QueryResult,members:MemoryWorkMemb
  if(readText)for(const [index,candidate] of value.memories.entries())for(const member of members){
   const text=readText(member.id);if(typeof text!=='string'||!Array.isArray(candidate.evidence))continue;
   const supports=candidate.evidence.some((span:any)=>span.id===member.id&&(hasMemoryImageProof(imageReads,span)||typeof span.quote==='string'&&span.quote.length>0&&(Number.isSafeInteger(span.offset)?span.offset>=member.offset&&span.offset+span.quote.length<=member.offset+member.length&&text.slice(span.offset,span.offset+span.quote.length)===span.quote:text.slice(member.offset,member.offset+member.length).includes(span.quote))));
-  if(supports&&!parsed.data.find(row=>row.key===member.key)?.candidateIndexes.includes(index))throw new MemoryOutputValidationError('coverage','Every supporting target must declare the candidate context ownership',{workContract:'range-evaluation@1'});
+  if(!supports)continue;
+  const rowIndex=coverageRowIndexes.get(member.key);
+  if(rowIndex===undefined||!parsed.data[rowIndex]!.candidateIndexes.includes(index)){
+   throw new MemoryOutputValidationError('coverage','Every supporting target must declare the candidate context ownership',{
+    workContract:'range-evaluation@1',
+    ...(rowIndex===undefined?{}:{
+     fieldPath:validationLocation(['coverage',rowIndex,'candidateIndexes']),
+     problem:'missing_candidate_for_supporting_target',
+     candidateIndex:index,
+    }),
+   });
+  }
  }
  const consumed=new Set(parsed.data.flatMap(row=>row.candidateIndexes));if(value.memories.some((_candidate:unknown,index:number)=>!consumed.has(index)))throw new MemoryOutputValidationError('coverage','Every candidate must be supported by a target coverage member',{workContract:'range-evaluation@1'});
- const missing=members.filter(member=>!seen.has(member.key));
+ const missing=members.filter(member=>!coverageRowIndexes.has(member.key));
  return {coverage:parsed.data,missing,needsOwnerInput:parsed.data.filter(row=>row.state==='needs_owner_input'),notAssessed:parsed.data.filter(row=>row.state==='incomplete'),incomplete:missing.length>0||parsed.data.some(row=>row.state==='needs_context'||row.state==='needs_owner_input'||row.state==='incomplete')};
 }

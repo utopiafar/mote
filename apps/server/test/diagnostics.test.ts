@@ -651,6 +651,7 @@ test('memory validation diagnostics survive reload without trace opt-in and reje
   d.record('agent.memory_validation_failed',{batchId,runId,evidenceId,validationCode:'quote_ambiguous',validationPhase:'extract',candidateIndex:0,spanIndex:1,authorizedMatches:2,...{quote:marker,source:marker,message:marker}},'warn');
   const coverageDetails=[
     {fieldPath:'coverage[1].candidateIndexes[0]',problem:'unsupported_candidate_for_target',candidateIndex:0},
+    {fieldPath:'coverage[2].candidateIndexes',problem:'missing_candidate_for_supporting_target',candidateIndex:1},
     {fieldPath:'coverage[2].key',problem:'unknown_target_key'},
     {fieldPath:'coverage[3].key',problem:'duplicate_target_key'},
   ];
@@ -660,7 +661,7 @@ test('memory validation diagnostics survive reload without trace opt-in and reje
   d.record('agent.memory_validation_failed',{batchId:marker,validationCode:marker,validationPhase:marker,declaredOffset:-1,problem:marker} as never,'warn');
   await d.close();const raw=await readFile(filePath(directory),'utf8');assert.ok(!raw.includes(marker));
   const reloaded=new ServerDiagnostics({directory});await reloaded.init();t.after(()=>reloaded.close());
-  const events=reloaded.events().items;assert.equal(events.length,5);assert.equal(events[0].batchId,batchId);assert.equal(events[0].runId,runId);assert.equal(events[0].evidenceId,evidenceId);assert.equal(events[0].validationCode,'quote_ambiguous');assert.equal(events[0].validationPhase,'extract');assert.equal(events[0].authorizedMatches,2);assert.equal(events[0].stage,'agent');
+  const events=reloaded.events().items;assert.equal(events.length,coverageDetails.length+2);assert.equal(events[0].batchId,batchId);assert.equal(events[0].runId,runId);assert.equal(events[0].evidenceId,evidenceId);assert.equal(events[0].validationCode,'quote_ambiguous');assert.equal(events[0].validationPhase,'extract');assert.equal(events[0].authorizedMatches,2);assert.equal(events[0].stage,'agent');
   for(const [index,details] of coverageDetails.entries()){
     const event=events[index+1];
     assert.equal(event.validationPhase,'review');

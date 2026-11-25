@@ -185,7 +185,7 @@ function fields(raw:unknown,event?:string):EventFields {
   if(typeof value.problem==='string'&&[
     'invalid_uuid','invalid_pattern','missing_required_field','invalid_type','invalid_string','invalid_enum_value',
     'unrecognized_keys','too_big','too_small','custom',
-    'unsupported_candidate_for_target','unknown_target_key','duplicate_target_key',
+    'unsupported_candidate_for_target','missing_candidate_for_supporting_target','unknown_target_key','duplicate_target_key',
   ].includes(value.problem))out.problem=value.problem;
   if(typeof value.method==='string'&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(value.method))out.method=value.method as EventFields['method'];
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;
