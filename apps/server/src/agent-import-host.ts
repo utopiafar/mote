@@ -69,10 +69,11 @@ export function createAgentImportHost(dependencies:AgentImportHostDependencies):
       runtime=createCapability({...settings,codex:dependencies.codex,runModel:dependencies.runModelFor(settings,connection),
         authorizeModelRequest:()=>{lease();dependencies.authorizeModelRequest();}});
       active.add(runtime);
-      const {signal:_signal,operationId:_operationId,...request}=prepared;
+      const {signal:_signal,operationId:_operationId,...preparedRequest}=prepared;
+      const request:ImportAgentInput={...preparedRequest,modelSessionId:operationId,
+        onOpenCodeUsage:(usage,runId)=>dependencies.diagnostics?.record('agent.opencode_request_usage',{...usage,runId,operationId,operation:'import'})};
       const result=await meter.run(()=>dependencies.agentGate.run(()=>dependencies.modelOperation.run(operationId,
-        ()=>dependencies.providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN',modelSessionId:operationId,
-          onOpenCodeUsage:(usage,runId)=>dependencies.diagnostics?.record('agent.opencode_request_usage',{...usage,runId,operationId,operation:'import'})},
+        ()=>dependencies.providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},
           dependencies.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>meter.update(usage)))),
       input.signal,input.operationId));
       // A late preview from a cancelled or revoked preparation cannot become
