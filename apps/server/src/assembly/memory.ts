@@ -1,6 +1,6 @@
 import type {AgentOptions,QueryInput} from '@mote/agent';
 import {skillCatalog,codexContextCapacity} from '@mote/agent';
-import {assertMemoryRequestFits,httpMemoryRequestCapacity,type MemoryRequestCapacity} from '../memory-request-budget.js';
+import {assertMemoryRequestFits,httpMemoryRequestCapacity,memoryRequestUsage,type MemoryRequestCapacity} from '../memory-request-budget.js';
 import type {CentralDomainPlugin} from '../bootstrap.js';
 import type {QueryResult} from '@mote/shared';
 import {OPENCODE_GO_PROVIDER,type ModelSettings} from '@mote/shared/models';
@@ -226,6 +226,11 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
     const result=await memoryProviderAdapters.port.engine(namespace.instanceId,namespace).prepare({namespace,opId:context.opId,phase:context.phase,evidence,relatedMemories:context.relatedMemories,signal:input.signal});assert();input.onEvidence?.(originals);if(context.relatedMemories?.length)input.onMemoryBodies?.(context.relatedMemories);return result;})},batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,strategies:memoryStrategies,executor,store,memories,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,admission:{materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:id=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy()),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),automaticAllowed:job=>materialMemoryWork.authorized(job)&&[...(job.automaticGrants??[]),...(job.automaticGrant?[job.automaticGrant]:[])].every(grant=>sourcePipelines.memoryAllowed(grant.sourceId)),deletionEvidenceAllowedForMemory:id=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy()),materialAllowedForMemory:(ref,profileId,required,selectionReady)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy(),required,selectionReady)},models:{capacity:requestCapacity,configuration:memoryConfiguration,model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}}},phases:{understand,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),query:boundedQuery,skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`}};
   let memoryPhasePipeline!:MemoryPhasePipelinePlatform;
   memoryPhasePipeline=createMemoryPhasePipeline({pipeline:memoryPipelineOptions,review:{query:boundedQuery,deletions:memories.deletions,
+    fitsResumedReview:input=>{
+      const settings=modelSettings.select('memory',input.modelProfileId).settings;
+      const capacity=settings.protocol==='codex-app-server'?nativeRequestCapacity(settings,input.modelOverride):undefined;
+      return Boolean(capacity&&memoryRequestUsage(input,memories.readEvidence(input.evidenceIds??[]),capacity).fits);
+    },
     authorizeDeletionEvidence:(input,ids)=>memoryPhasePipeline.pipeline.inputs.assertDeletion(ids,input.modelProfileId),
     snapshot:(input,result)=>{
       const ids=input.evidenceReadRanges?[...new Set([...(input.evidenceIds??[]),...memoryReadRanges(result,input.evidenceRanges??[],input.evidenceReadRanges).map(range=>range.id)])]:input.evidenceIds??[];

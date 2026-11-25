@@ -5,7 +5,7 @@ import type {FastifyInstance} from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryPipeline,type MemoryPhasePorts,type MemoryPipelineOptions} from '../memory-pipeline.js';
-import {reviewMemory,type MemoryDraftOrigin} from '../memory-review.js';
+import {reviewMemory,type MemoryDraftOrigin,type MemoryReviewInput} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
 import type {MemoryDeletions} from './memory-deletions.js';
 import type {MemoryRecipeBinding,MemoryReviewStrategy} from '../memory-strategy-contract.js';
@@ -38,6 +38,7 @@ export const memoryPhasePipelineReplacement='hot' as const;
 export type MemoryPhasePipelineOptions=Omit<MemoryPipelineOptions,'phases'>&{readonly phases:Omit<MemoryPhasePorts,'review'>};
 export interface MemoryPhaseReviewDependencies {
   readonly query:(input:QueryInput)=>Promise<QueryResult>;
+  readonly fitsResumedReview?:(input:QueryInput)=>boolean;
   readonly deletions?:MemoryDeletions;
   readonly authorizeDeletionEvidence?:(input:QueryInput,ids:string[])=>void;
   /** Exact current original/model snapshot for bounded verdict reuse. */
@@ -55,7 +56,7 @@ export interface MemoryPhasePipelineDependencies {
    * admission poll and stops it on quiesce. */
   readonly scheduling?:{readonly automatic:boolean;readonly drain:()=>Promise<void>;readonly intervalMs?:number};
 }
-export type MemoryPhaseReview=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy|null,draftOrigin?:MemoryDraftOrigin,recipe?:MemoryRecipeBinding)=>Promise<QueryResult>;
+export type MemoryPhaseReview=(input:MemoryReviewInput,result:QueryResult,strategy?:MemoryReviewStrategy|null,draftOrigin?:MemoryDraftOrigin,recipe?:MemoryRecipeBinding)=>Promise<QueryResult>;
 export type MemoryPhaseDelegationDependencies=Omit<MemoryDelegationOptions,'pipeline'>;
 export interface MemoryPhasePipelineBindings { readonly phase:ServiceBinding }
 export interface MemoryPhasePipelinePort {
@@ -140,6 +141,7 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
     const {reviews:pipelineReviews}=readable();
     return reviewMemory(input,result,dependencies.review.query,{
       draftOrigin,strategy,recipe,deletions:dependencies.review.deletions,
+      fitsResumedReview:dependencies.review.fitsResumedReview,
       authorizeDeletionEvidence:ids=>dependencies.review.authorizeDeletionEvidence?.(input,ids),
       cache:pipelineReviews,snapshot:dependencies.review.snapshot?()=>dependencies.review.snapshot!(input,result):undefined,
       taskInstructions:dependencies.review.taskInstructions,

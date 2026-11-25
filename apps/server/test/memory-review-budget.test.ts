@@ -58,3 +58,27 @@ test('all valid extraction receipts become reviewer seeds while unread quote aut
  const reused=await reviewMemory(input,draft!,async()=>{throw Error('An identical exact reviewed verdict should be reusable');},options);assert.equal(memoryReviewReceipt(reused)?.decision,'reused');assert.deepEqual(reused.evidenceReadRanges,reviewed.evidenceReadRanges);
  assert.equal(memories.readEvidence([id])[0].ocrText,text,'budget handling never rewrites generated originals');
 });
+
+test('a resumed review keeps on-demand context when prior original pages exceed the request budget',async()=>{
+ const target={id:'generated-target',offset:0,length:48},priorPage={id:'generated-context',offset:24,length:48};
+ const grant=[target,{id:priorPage.id,offset:0,length:120}];
+ const draft:QueryResult={answer:JSON.stringify({memories:[],coverage:[]}),citations:[],trace:[],runId:'generated-extract',evidenceReadRanges:[target,priorPage]};
+ let measurements=0,calls=0;
+ const result=await reviewMemory({
+  question:'Assess the generated target',skill:'memory-strategy',responseMode:'memory-extraction',
+  evidenceIds:[target.id],evidenceRanges:[target],evidenceReadRanges:grant,resumeReviewFromExtraction:true,
+  taskContext:{turns:[],memoryWork:{workContract:'range-evaluation@1'}},
+ },draft,async request=>{
+  calls++;
+  assert.deepEqual(request.evidenceRanges,[target]);
+  assert.deepEqual(request.evidenceReadRanges,grant);
+  return {...draft,runId:'generated-review',evidenceReadRanges:[target]};
+ },{fitsResumedReview:request=>{
+  measurements++;
+  assert.deepEqual(request.evidenceRanges,[target,priorPage]);
+  return false;
+ }});
+ assert.equal(measurements,1);
+ assert.equal(calls,1);
+ assert.equal(memoryReviewReceipt(result)?.decision,'independent');
+});
