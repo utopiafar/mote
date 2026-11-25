@@ -227,7 +227,7 @@ internal class MoteTabBar(private val activity: Activity, private val onSelect: 
 
     private inner class TabView(val item: MoteNavItem) : LinearLayout(activity) {
         private val icon = ImageView(activity).apply { setImageResource(item.glyph.drawable); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
-        private val label = TextView(activity).apply { text = MoteI18n.text(item.label); MoteUi.type(this, NativeFontRole.META) }
+        private val label = TextView(activity).apply { text = MoteI18n.text(item.label); gravity = Gravity.CENTER; MoteUi.type(this, NativeFontRole.META) }
         private val badge = TextView(activity).apply {
             visibility = GONE; gravity = Gravity.CENTER; minWidth = activity.moteDp(18); minHeight = activity.moteDp(18)
             tag = "local-tab-badge:${item.id}"

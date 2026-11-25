@@ -251,7 +251,7 @@ internal object MoteComponents {
         isFocusable = true
         setOnClickListener(onClick)
         val visual = Button(context).apply {
-            text = MoteI18n.text(label); isAllCaps = false
+            text = MoteI18n.text(label); isAllCaps = false; gravity = Gravity.CENTER
             minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
             includeFontPadding = false; isFocusable = false; isClickable = false
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -348,7 +348,7 @@ internal object MoteComponents {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         actionLabel?.let { label ->
             addView(Button(context).apply {
-                this.text = label; isAllCaps = false
+                this.text = label; isAllCaps = false; gravity = Gravity.CENTER
                 MoteUi.type(this, NativeFontRole.ACTION, medium = true); MoteUi.textColor(this, NativeColorRole.PRIMARY_INK)
                 minimumHeight = context.moteDp(MoteTheme.controlHeight); minHeight = minimumHeight
                 setPadding(context.moteDp(12), 0, context.moteDp(18), 0)
