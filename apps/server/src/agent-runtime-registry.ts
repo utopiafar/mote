@@ -15,6 +15,7 @@ import type {ProviderAdmission} from './provider-admission.js';
 import type {ModelRequestBudget,QueryAgent,QueryRunLease} from './query-agent.js';
 import {StoreError} from './evidence-store.js';
 import {dshSelectionBoundary} from './dsh-native.js';
+import type {UsageStatistics} from './usage-statistics.js';
 
 export interface AgentRuntimeRegistryDependencies {
   readonly codex:AgentOptions['codex'];
@@ -39,6 +40,7 @@ export interface AgentRuntimeRegistryDependencies {
   readonly retainSnapshot:(input:QueryInput)=>void;
   readonly releaseSnapshot:(input:QueryInput)=>void;
   readonly agentStarted:()=>void;
+  readonly toolStatistics?:Pick<UsageStatistics,'observeTool'|'observeRun'>;
   readonly recordTiming:(input:QueryInput,timing:{lane:'interactive'|'background';queueWaitMs:number;durationMs:number;status:'completed'|'failed'|'yielded'})=>void;
 }
 
@@ -244,6 +246,12 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
         const connection=agentModelConnection(identity,settings);d.authorization.assertCurrent(connection);
         d.assertPurpose(input);await d.assertEvidenceAsync(input);assertOpen();
         input=d.pinEvidence(input);input.signal?.throwIfAborted();d.admission.check(settings);
+        const statistics=d.toolStatistics;
+        if(statistics&&identity.kind!=='probe'){
+          const {onHostToolAttempt,onHostRunEvent}=input;
+          input.onHostToolAttempt=event=>{statistics.observeTool(event);onHostToolAttempt?.(event);};
+          input.onHostRunEvent=event=>{statistics.observeRun(event);onHostRunEvent?.(event);};
+        }
         input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
         const queuedAt=performance.now(),lane=input.executionLane==='interactive'?'interactive':'background';
         return (lane==='interactive'?d.interactiveGate:d.agentGate).run(async()=>{

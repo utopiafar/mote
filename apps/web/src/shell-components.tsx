@@ -169,6 +169,8 @@ export function CentralStatusPill({
   );
 }
 
+type AuthImagePreview = Pick<CapturePreview,'id'|'capturedAt'|'appName'|'hasImage'> & Partial<Pick<CapturePreview,'source'|'textPreview'|'media'>>;
+
 export function AuthImage({
   api,
   capture,
@@ -176,7 +178,7 @@ export function AuthImage({
   full = false,
 }: {
   api: Api;
-  capture: Capture | CapturePreview;
+  capture: Capture | AuthImagePreview;
   className?: string;
   full?: boolean;
 }) {
@@ -185,8 +187,8 @@ export function AuthImage({
   const [src, setSrc] = useState("");
   const [error, setError] = useState("");
   const hasImage = 'hasImage' in capture ? capture.hasImage : Boolean(capture.blobHash);
-  const text = 'textPreview' in capture ? capture.textPreview : capture.ocrText;
-  const media = 'textPreview' in capture ? capture.media : capture.metadata?.media;
+  const text = 'hasImage' in capture ? capture.textPreview ?? '' : capture.ocrText;
+  const media = 'hasImage' in capture ? capture.media : capture.metadata?.media;
   useEffect(() => {
     if (full || visible || !ref.current) return;
     const observer = new IntersectionObserver(

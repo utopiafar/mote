@@ -48,14 +48,14 @@ export function SettingsDirectory({api,status,onPage}:PageProps) {
     ],
     [
       {icon:HardDrive,label:moteText('存储'),value:status?bytes(status.storage.bytes):'',page:'vault'},
-      {icon:BarChart3,label:moteText('用量与费用'),page:'usage'},
+      {icon:BarChart3,label:moteText('使用统计'),page:'usageStatistics'},
     ],
     [
       {icon:Wrench,label:moteText('诊断'),page:'developer'},
       {icon:Info,label:moteText('关于与更新'),value:typeof __MOTE_WEB_VERSION__==='string'?__MOTE_WEB_VERSION__:packageVersion,page:'help'},
     ],
   ];
-  const known=new Set(['about','settings','localPreferences','notifications','vault','usage','developer','help','ask','actions','activity','processing','search','coding','statistics','agentView']);
+  const known=new Set(['about','settings','localPreferences','notifications','vault','usage','usageStatistics','developer','help','ask','actions','activity','processing','search','coding','statistics','agentView']);
   const extra=webFeatures.pages().filter(entry=>(entry.section==='system'||!entry.section)&&!known.has(entry.id)&&!assistantEntrypoints.some(value=>value.pageId===entry.id));
   const row=({icon:Icon,label,value,page,hash}:SettingsRow)=><button key={label} type="button" className="processing-entry-row" onClick={()=>{if(hash)window.location.hash=hash;else if(page)onPage(page);}}><span className="model-profile-symbol"><Icon size={18}/></span><span><strong>{label}</strong></span>{value&&<span className="processing-current">{value}</span>}<ChevronRight size={15}/></button>;
   const detailRow=(id:string,label:string,description:string,href?:string)=>{

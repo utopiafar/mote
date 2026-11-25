@@ -8,6 +8,7 @@ import {parseRuntimeOutcome, RuntimeContractError,RuntimeSteeringUnavailable, ty
 import {AgentInputError, AgentProviderError, AgentResponseError, AgentTimeoutError, MAX_OUTPUT_REPAIRS, reportProgress, reportTrace, type AgentAnswer, type AgentTraceEvent, type QueryInput} from '../types.js';
 import {AgentYieldError} from '../host-controls.js';
 import {ContextToolError} from '../tool-errors.js';
+import type {HostToolAttemptObservation} from '../query-contracts.js';
 import {systemInstructions} from '../instructions.js';
 import {assembleContext, taskTools} from '../task-context.js';
 import {prepareTaskContext} from '../tasks/context-assembly.js';
@@ -224,33 +225,35 @@ class ManagedHostRunSession implements HostRunSession {
       tools: {definitions: dependencies.tools.definitions, deliver: (attempt, call, sender) => this.track(async () => {
         this.assertAttempt(attempt);
         if (typeof call.callId !== 'string' || !call.callId || !dependencies.tools.definitions.some(tool => tool.name === call.name)) throw new RuntimeContractError();
-        let delivery: Awaited<ReturnType<HostSessionAssembly['readTool']>>;
-        try { delivery = await assembly.readTool(call, signal); }
-        catch (error) {
-          if (error instanceof AgentResponseError || error instanceof AgentYieldError || error instanceof ContextToolError && error.recovery === 'stop') this.hostToolFailure ??= {error};
-          throw error;
-        }
-        let primary = false;
-        try {
-          let pause = this.yieldBackgroundTurn();
-          if (pause) await pause;
-          this.assertAttempt(attempt);
-          const result = await sender(delivery.payload);
-          pause = this.yieldBackgroundTurn();
-          if (pause) await pause;
-          this.assertAttempt(attempt);
-          try { delivery.confirm(); }
-          catch (error) { this.hostToolFailure ??= {error}; throw error; }
-          return result;
-        } catch (error) { primary = true; throw error; }
-        finally {
-          try { delivery.discard(); }
+        return this.measureToolAttempt(attempt, call.name, async () => {
+          let delivery: Awaited<ReturnType<HostSessionAssembly['readTool']>>;
+          try { delivery = await assembly.readTool(call, signal); }
           catch (error) {
-            this.deliveryCleanupErrors.push(error);
-            reportTrace(dependencies.input, {type: 'run.cleanup_failed', runId: dependencies.identity.runId, status: 'failed', payload: {count: 1, resource: 'tool_delivery'}});
-            if (!primary) throw error;
+            if (error instanceof AgentResponseError || error instanceof AgentYieldError || error instanceof ContextToolError && error.recovery === 'stop') this.hostToolFailure ??= {error};
+            throw error;
           }
-        }
+          let primary = false;
+          try {
+            let pause = this.yieldBackgroundTurn();
+            if (pause) await pause;
+            this.assertAttempt(attempt);
+            const result = await sender(delivery.payload);
+            pause = this.yieldBackgroundTurn();
+            if (pause) await pause;
+            this.assertAttempt(attempt);
+            try { delivery.confirm(); }
+            catch (error) { this.hostToolFailure ??= {error}; throw error; }
+            return result;
+          } catch (error) { primary = true; throw error; }
+          finally {
+            try { delivery.discard(); }
+            catch (error) {
+              this.deliveryCleanupErrors.push(error);
+              reportTrace(dependencies.input, {type: 'run.cleanup_failed', runId: dependencies.identity.runId, status: 'failed', payload: {count: 1, resource: 'tool_delivery'}});
+              if (!primary) throw error;
+            }
+          }
+        });
       })},
       observe: event => this.lifecycle.commitEvent(() => {
         try { this.assembly.trace?.({...event, runId: dependencies.identity.runId}); } catch { /* Diagnostics never change execution. */ }
@@ -383,6 +386,28 @@ class ManagedHostRunSession implements HostRunSession {
   private assertAttempt(attempt: RuntimeAttempt) {
     this.assertCurrent();
     if (!this.attempt || this.attempt !== attempt || this.lifecycle.phase !== 'running') throw new RuntimeContractError();
+  }
+  private async measureToolAttempt<T>(attempt: RuntimeAttempt, tool: string, deliver: () => Promise<T>): Promise<T> {
+    const observe = this.dependencies.input.onHostToolAttempt;
+    if (!observe) return deliver();
+    const id = randomUUID(), started = performance.now();
+    const emit = (event: HostToolAttemptObservation) => {
+      try { observe(event); } catch { /* Accounting cannot change delivery or its error. */ }
+    };
+    emit({kind: 'started', id, runId: this.dependencies.identity.runId, attemptId: attempt.id, tool});
+    let result: 'completed' | 'failed' | 'cancelled' = 'completed', reason: string | undefined;
+    try { return await deliver(); }
+    catch (error) {
+      if (error instanceof AgentTimeoutError) { result = 'failed'; reason = 'timeout'; }
+      else if (this.port.signal.aborted || error instanceof AgentYieldError) result = 'cancelled';
+      else {
+        result = 'failed';
+        reason = error instanceof ContextToolError ? error.code : error instanceof AgentResponseError ? error.reason : 'tool_delivery_failed';
+      }
+      throw error;
+    } finally {
+      emit({kind: 'finished', id, result, durationMs: Math.round(performance.now() - started), ...(reason ? {reason} : {})});
+    }
   }
   private yieldBackgroundTurn(): Promise<void> | undefined {
     // Several proof checks can run in consecutive microtasks with already

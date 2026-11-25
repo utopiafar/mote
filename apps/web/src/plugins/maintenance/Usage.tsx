@@ -38,10 +38,12 @@ export function UsageGroups({ groups, totalTokens, onSelect }: {
   </tr>)}</tbody></table></div>;
 }
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-export function Usage({ api }: {
+export function Usage({ api, initialRange, embedded=false }: {
     api: Api;
+    initialRange?:{from:string;to:string};
+    embedded?:boolean;
 }) {
-    const [from, setFrom] = useState(() => localDate(new Date(Date.now() - 6 * 86400000))), [to, setTo] = useState(() => localDate(new Date()));
+    const [from, setFrom] = useState(() => initialRange?.from??localDate(new Date(Date.now() - 6 * 86400000))), [to, setTo] = useState(() => initialRange?.to??localDate(new Date()));
     const [data, setData] = useState<UsageSummary>(), [error, setError] = useState(''), [loading, setLoading] = useState(false), [reload, setReload] = useState(0), [saving, setSaving] = useState(false), [notice, setNotice] = useState('');
     const [price, setPrice] = useState<ModelPrice>({ provider: '', model: '', currency: 'USD', input: NaN, output: NaN, cacheRead: NaN, cacheWrite: NaN });
     const [groupBy, setGroupBy] = useState<UsageGroupBy>('module'), [filters, setFilters] = useState<UsageFilters>({});
@@ -82,7 +84,7 @@ export function Usage({ api }: {
         delete next[field]; return next; }); }
     const selectGroup=(selected:UsageFilters)=>{setFilters(old=>({...old,...selected}));if(groupBy==='provider')setGroupBy('model');};
     const groupLabels:Record<UsageGroupBy,string>={module:moteText('按功能'),model:moteText('按模型'),provider:moteText('按服务连接'),agent:moteText('按 Agent'),skill:moteText('按主流程')};
-    return <MaintenanceFrame className="usage-page" title={moteText('用量与费用')}>
+    const content=<>
     <div className="owner-filter-line"><div className="owner-presets" role="group" aria-label={moteText('时间范围')}>{[1,7,30].map(days=><button key={days} aria-pressed={to===localDate(new Date())&&from===localDate(new Date(Date.now()-(days-1)*86400000))} onClick={()=>preset(days)}>{days===1?moteText('今天'):moteText('近 {0} 天',days)}</button>)}</div><small>{timeZone}</small></div>
     {loading && <Loading label={moteText('正在读取用量…')}/>}{error && <p className="notice error" role="alert">{error}</p>}
     {error&&<button className="button" onClick={()=>setReload(value=>value+1)}>{moteText('重新读取')}</button>}
@@ -110,5 +112,6 @@ export function Usage({ api }: {
     {data?.prices.map(p => <button className="button subtle" key={`${p.provider}/${p.model}`} onClick={() => setPrice(p)}>{p.provider} · {p.model}</button>)}
     <form onSubmit={e => { e.preventDefault(); void savePrice(); }}><fieldset disabled={saving} className="usage-price-fields"><label>{moteText("服务 ID")}<input required value={price.provider} onChange={e => setPrice(p => ({ ...p, provider: e.target.value }))}/></label><label>{moteText("模型 ID")}<input required value={price.model} onChange={e => setPrice(p => ({ ...p, model: e.target.value }))}/></label><label>{moteText("币种")}<select value={price.currency} onChange={e => setPrice(p => ({ ...p, currency: e.target.value as 'USD' | 'CNY' }))}><option>USD</option><option>CNY</option></select></label>{(['input', 'output', 'cacheRead', 'cacheWrite'] as const).map(k => <label key={k}>{{ input: moteText("未缓存输入"), output: moteText("输出"), cacheRead: moteText("缓存读取"), cacheWrite: moteText("缓存写入") }[k]}<input required type="number" min="0" max="1000000" step="any" value={Number.isFinite(price[k]) ? price[k] : ''} onChange={e => setPrice(p => ({ ...p, [k]: e.target.value === '' ? NaN : Number(e.target.value) }))}/></label>)}<button className="button primary">{saving ? moteText("正在保存…") : moteText("保存价格")}</button></fieldset></form>{notice && <p role="status">{notice}</p>}
   </details>
-  </MaintenanceFrame>;
+  </>;
+    return embedded?<div className="usage-page">{content}</div>:<MaintenanceFrame className="usage-page" title={moteText('用量与费用')}>{content}</MaintenanceFrame>;
 }

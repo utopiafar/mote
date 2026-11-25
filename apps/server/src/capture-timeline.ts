@@ -3,27 +3,12 @@ import {z} from 'zod';
 import type {CapturePreview,CaptureTimelineGroup,CaptureTimelinePage,CaptureTimelineMembers} from '@mote/shared';
 import {EvidenceStore as Store,StoreError,type Range} from './evidence-store.js';
 import {captureSessionMembersSql} from './capture-session-members.js';
+import {dayBuckets} from './civil-dates.js';
 
 export type TimelineRange=Pick<Range,'deviceId'|'appId'|'source'|'collection'|'ocrStatus'>&{after:string;before:string;timeZone:string;limit:number;cursor?:string};
 type Position={type:'group'|'groups-page'|'members-page';scope:string;revision:string;key?:string;at?:string;id?:string};
 const positionSchema=z.object({type:z.enum(['group','groups-page','members-page']),scope:z.string().length(64),revision:z.string().length(64),key:z.string().max(2048).optional(),at:z.string().datetime().optional(),id:z.string().max(2048).optional()}).strict();
 type GroupRow={group_key:string;kind:'record'|'screen-session'|'source';source:CapturePreview['source'];device_id:string;day:string;first_at:string;last_at:string;record_count:number;image_count:number;sample_count:number|null;representative:string};
-
-/** Split civil dates by actual instants, including 23/25-hour DST days. */
-function dayBuckets(after:string,before:string,timeZone:string){
- let formatter:Intl.DateTimeFormat;try{formatter=new Intl.DateTimeFormat('en',{timeZone,calendar:'iso8601',numberingSystem:'latn',year:'numeric',month:'2-digit',day:'2-digit'});}catch{throw new StoreError('Invalid timeline time zone');}
- const day=(at:number)=>{const p=Object.fromEntries(formatter.formatToParts(new Date(at)).map(part=>[part.type,part.value]));return `${p.year}-${p.month}-${p.day}`;};
- const end=Date.parse(before),result:{day:string;after:string;before:string}[]=[];let at=Date.parse(after);
- while(at<end){
-  const label=day(at);let low=at,high=Math.min(end,at+6*3600000);
-  while(high<end&&day(high)===label){low=high;high=Math.min(end,high+6*3600000);}
-  if(day(high-1)===label&&high===end){result.push({day:label,after:new Date(at).toISOString(),before});break;}
-  while(high-low>1){const middle=Math.floor((low+high)/2);if(day(middle)===label)low=middle;else high=middle;}
-  result.push({day:label,after:new Date(at).toISOString(),before:new Date(high).toISOString()});at=high;
-  if(result.length>40)throw new StoreError('Choose a shorter timeline range');
- }
- return result;
-}
 
 /** Read-only grouping of existing observations; no inferred document identity. */
 export class CaptureTimeline {

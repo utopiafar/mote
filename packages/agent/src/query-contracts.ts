@@ -163,7 +163,13 @@ export interface QueryHooks {
    * Never model input or a wire field. Observer errors are isolated: execution
    * guards and terminal ownership must not depend on throwing from this hook. */
   onHostRunEvent?: (event: import('./host/run-contracts.js').HostRunEvent) => void;
+  /** Metadata-only observation of the Host-owned tool delivery boundary. */
+  onHostToolAttempt?: (event: HostToolAttemptObservation) => void;
 }
+
+export type HostToolAttemptObservation =
+  | {readonly kind: 'started'; readonly id: string; readonly runId: string; readonly attemptId: string; readonly tool: string}
+  | {readonly kind: 'finished'; readonly id: string; readonly result: 'completed' | 'failed' | 'cancelled'; readonly durationMs: number; readonly reason?: string};
 
 /** Flat host API retained for existing adapters; its authority is never parsed from model text. */
 export interface QueryInput extends QueryRequest,QueryExecutionContext,QueryGrants,QueryHooks {}

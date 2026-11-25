@@ -15,6 +15,13 @@ import {createAuthorizationPlatform,authorizationPlatformContribution,authorizat
 import {observabilityPlatformContribution,observabilityPlatformDeclaration,observabilityPlatformReplacement} from '../plugins/observability-platform.js';
 import {createExecutionPlatform,executionPlatformContribution,executionPlatformDeclaration,executionPlatformReplacement} from '../plugins/execution-platform.js';
 import {pluginControlContribution,pluginControlDeclaration} from '../plugin-center.js';
+import {UsageStatistics} from '../usage-statistics.js';
+import {registerUsageStatisticsRoutes} from '../usage-statistics-routes.js';
+
+export function prepareUsageStatistics(store:ConstructorParameters<typeof UsageStatistics>[0]) {
+  const recorder=new UsageStatistics(store);
+  return {recorder,routes:(app:Parameters<typeof registerUsageStatisticsRoutes>[0],owner:Parameters<typeof registerUsageStatisticsRoutes>[2])=>registerUsageStatisticsRoutes(app,recorder,owner)};
+}
 
 /** Declared build-time domain plugins the platform assembly wires; the
  * distribution concatenates each domain's list into one selected table. */
