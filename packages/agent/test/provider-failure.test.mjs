@@ -50,31 +50,35 @@ test('real Harness preserves HTTP recovery facts and does not retry opaque provi
 });
 
 test('DSH terminal failure retains safe SDK and upstream facts in the model attempt trace', async t => {
-  let rpcFailure=false;
+  let rpcFailure=false, sdkCode='EMPTY_RESPONSE';
   t.mock.method(DeepSeekHarness.prototype,'run',async()=>{
     if(rpcFailure)throw new JsonRpcResponseError(-32603,'generated private SDK message',{credential:'generated private RPC data'});
     return {finalResponse:'',events:[{
       type:'turn/end',data:{reason:{kind:'error',error:{
-        code:'EMPTY_RESPONSE',status:200,requestId:'req_generated_sdk',message:'generated private SDK message',
+        code:sdkCode,status:200,requestId:'req_generated_sdk',message:'generated private SDK message',
       }}},
     }]};
   });
   const events=[];
   const agent=createAgent({reader,protocol:'openai-completions',model:'fixture',apiKey:'generated',
     baseUrl:'http://127.0.0.1:1/v1',agentTimeoutMs:15000});
-  const diagnostic={source:'runtime',stage:'model',sdkTerminal:'error',sdkErrorCode:'EMPTY_RESPONSE',
-    httpStatus:200,upstreamRequestId:'req_generated_sdk'};
   try {
-    await assert.rejects(agent.query({question:'Generated SDK terminal check',onTrace:event=>events.push(event)}),error=>{
-      assert.ok(error instanceof AgentProviderError);
-      assert.equal(error.details.code,'provider_failed');
-      assert.deepEqual(error.diagnostic,diagnostic);
-      return true;
-    });
-    const failed=events.find(event=>event.type==='model.failed');
-    assert.ok(failed?.runId);
-    assert.equal(failed.step,1);
-    assert.deepEqual(failed.payload.diagnostic,diagnostic);
+    for(const code of ['EMPTY_RESPONSE','PI_AI_ERROR','STREAM_CLOSED','GENERATED_UNKNOWN_PRIVATE_CODE']){
+      sdkCode=code;
+      const diagnostic={source:'runtime',stage:'model',sdkTerminal:'error',
+        ...(code==='GENERATED_UNKNOWN_PRIVATE_CODE'?{}:{sdkErrorCode:code}),httpStatus:200,upstreamRequestId:'req_generated_sdk'};
+      const previous=events.length;
+      await assert.rejects(agent.query({question:'Generated SDK terminal check',onTrace:event=>events.push(event)}),error=>{
+        assert.ok(error instanceof AgentProviderError);
+        assert.equal(error.details.code,'provider_failed');
+        assert.deepEqual(error.diagnostic,diagnostic);
+        return true;
+      });
+      const failed=events.slice(previous).find(event=>event.type==='model.failed');
+      assert.ok(failed?.runId);
+      assert.equal(failed.step,1);
+      assert.deepEqual(failed.payload.diagnostic,diagnostic);
+    }
     rpcFailure=true;
     await assert.rejects(agent.query({question:'Generated SDK protocol check',onTrace:event=>events.push(event)}),error=>{
       assert.ok(error instanceof AgentProviderError);
@@ -84,7 +88,7 @@ test('DSH terminal failure retains safe SDK and upstream facts in the model atte
       assert.equal(error.diagnostic.sdkTerminal,undefined);
       return true;
     });
-    assert.doesNotMatch(JSON.stringify(events),/generated private SDK message|generated private RPC data/);
+    assert.doesNotMatch(JSON.stringify(events),/generated private SDK message|generated private RPC data|GENERATED_UNKNOWN_PRIVATE_CODE/);
   }finally{await agent.close();}
 });
 

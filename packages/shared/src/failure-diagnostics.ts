@@ -21,7 +21,8 @@ const sdkTerminals = ['completed', 'aborted', 'blocked', 'error', 'max-tokens', 
 // These are provider-neutral SDK codes. Provider bodies and arbitrary extension codes are excluded.
 const sdkCodes = new Set(['UNKNOWN', 'AUTH', 'RATE_LIMIT', 'SERVER', 'CLIENT', 'TIMEOUT', 'TRANSPORT', 'NO_ADAPTER',
   'CONTEXT_WINDOW_EXCEEDED', 'QUOTA', 'ACCOUNT_QUOTA', 'EMPTY_RESPONSE', 'INVALID_CREDENTIAL',
-  'MISSING_CREDENTIAL', 'IMAGE_OFFLOAD_REQUIRED', 'BAD_REQUEST', 'INVALID_ARGS', 'INVARIANT']);
+  'MISSING_CREDENTIAL', 'IMAGE_OFFLOAD_REQUIRED', 'BAD_REQUEST', 'INVALID_ARGS', 'INVARIANT',
+  'PI_AI_ERROR', 'STREAM_CLOSED']);
 
 export function safeUpstreamRequestId(value: unknown): string | undefined {
   if (typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value)
