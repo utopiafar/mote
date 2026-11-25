@@ -105,6 +105,8 @@ export interface HostRunPort {
   /** Host admission runs outside active-time accounting; all repairs share one active budget.
    * The DSH runtime additionally fences each observable HTTP attempt. Codex internal retries are not observable. */
   runModel<T>(attempt: RuntimeAttempt, task: () => Promise<T>): Promise<T>;
+  /** Account for replayed assistant text before granting more pages in this attempt. */
+  reserveAssistantContext?(attempt: RuntimeAttempt, tokens: number): void;
   /** Host validates its issued attempt, stamps identity, normalizes usage and isolates observers.
    * null is only for tool readiness during prepare; Host also rejects readiness after prepare.
    * Late/unknown attempts cannot update Host state. */

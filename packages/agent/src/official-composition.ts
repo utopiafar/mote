@@ -451,6 +451,11 @@ export function createOfficialAgent(original: AgentOptions, selection: OfficialA
       };
       const assembly = {systemPrompt: system, prompt, outputSchema, contextUsage: {...metrics, toolResults: 0}, maxTokens: options.maxTokens,
         evidence: () => bridge!, readTool: readHostTool,
+        reserveAssistantContext: (tokens: number) => {
+          // Newly delivered tool pages and the preceding assistant output can
+          // share the next request. Reserve both before confirming exact reads.
+          toolRemaining = Math.max(0, toolRemaining - tokens);
+        },
         admit: <T>(task: () => Promise<T>, admissionSignal: AbortSignal) => options.runModel ? options.runModel(task, admissionSignal) : task(),
         close: closeBridge, observe: observeHostRun, trace,
         cleanupFailed: (errors: readonly unknown[]) => trace({type: 'run.cleanup_failed', status: 'failed', payload: {count: errors.length}}),
