@@ -44,6 +44,53 @@ async function fixture(t:TestContext,texts:string[],batchCharacters=12000,review
  return {get store(){return store;},get sources(){return sources;},get memories(){return memories;},get pipeline(){return pipeline;},ids,extracts,reviews,setGenerate(fn:typeof generate){generate=fn;},setReview(fn:typeof review){review=fn;},create(extra:Partial<Parameters<MemoryPipeline['create']>[0]>={}){return pipeline.create({evidenceIds:ids,workPackage:{id:'generated-range-package',goal:'Assess every authorized generated range and select useful memories',instruction:'Assessment completeness is separate from the number of selected results'},...extra});},async restart(){await close();reviewEnabled=true;open();}};
 }
 
+test('coverage validation locates an unsupported candidate and an unknown target in extraction and review',async t=>{
+ const f=await fixture(t,facts(2));
+ const rejections:{code:string;feedback:string;omitted:string[]}[]=[];
+ f.setGenerate(async input=>{
+  const [supporting,unrelated]=work(input).members;
+  const quote=f.memories.readEvidence([supporting.id])[0].ocrText;
+  const valid=result(input,[{member:supporting,quote}]);
+  const incorrect=JSON.parse(valid.answer);
+  assert.equal(incorrect.coverage[1].key,unrelated.key);
+  incorrect.coverage[1].state='checked';
+  incorrect.coverage[1].candidateIndexes=[0];
+
+  const failure=await input.validateOutput!({...valid,answer:JSON.stringify(incorrect)});
+  assert.ok(failure);
+  rejections.push({code:failure.code,feedback:failure.feedback,omitted:[quote,unrelated.key]});
+  assert.equal(f.memories.list().length,0);
+  return valid;
+ });
+ f.setReview(async(input,draft)=>{
+  const valid={...draft,runId:randomUUID()};
+  const incorrect=JSON.parse(valid.answer);
+  const unknownKey='f'.repeat(64);
+  incorrect.coverage[1].key=unknownKey;
+
+  const failure=await input.validateOutput!({...valid,answer:JSON.stringify(incorrect)});
+  assert.ok(failure);
+  rejections.push({code:failure.code,feedback:failure.feedback,omitted:[unknownKey]});
+  assert.equal(f.memories.list().length,0);
+  return valid;
+ });
+ const done=await f.pipeline.run(f.create().id);
+ assert.equal(done.status,'completed');
+ assert.deepEqual(rejections.map(rejection=>rejection.code),['coverage','coverage']);
+ assert.match(rejections[0].feedback,/Host field: coverage\[1\]\.candidateIndexes\[0\]/);
+ assert.match(rejections[0].feedback,/unsupported_candidate_for_target/);
+ assert.match(rejections[0].feedback,/Candidate index: 0/);
+ assert.match(rejections[1].feedback,/Host field: coverage\[1\]\.key/);
+ assert.match(rejections[1].feedback,/unknown_target_key/);
+ for(const {feedback,omitted} of rejections)for(const value of omitted)assert.ok(!feedback.includes(value));
+ assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+ assert.equal(done.memoryIds.length,1);
+ assert.deepEqual(done.batches[0].validationFailures?.map(({phase,code,details})=>({phase,code,details})),[
+  {phase:'extract',code:'coverage',details:{workContract:contract,fieldPath:'coverage[1].candidateIndexes[0]',problem:'unsupported_candidate_for_target',candidateIndex:0}},
+  {phase:'review',code:'coverage',details:{workContract:contract,fieldPath:'coverage[1].key',problem:'unknown_target_key'}}
+ ]);
+});
+
 for(const count of [8,32,80])test(`${count} selected exact-quoted candidates complete one fully assessed range without count-driven subdivision`,async t=>{
  const lines=facts(count),f=await fixture(t,[lines.join('\n')]);
  f.setGenerate(async input=>{assert.equal(work(input).workContract,contract);assert.equal(work(input).maxCandidates,undefined);return result(input,lines.map((quote,index)=>({member:work(input).members[0],quote,index})));});

@@ -36,7 +36,16 @@ export function readMemoryWorkCoverage(result:QueryResult,members:MemoryWorkMemb
  const parsed=memoryRangeEvaluationCoverageSchema.safeParse(value.coverage);
  if(!Array.isArray(value.memories)||!parsed.success){const issue=!parsed.success?parsed.error.issues[0]:undefined,field=!Array.isArray(value.memories)?'memories':'coverage';throw new MemoryOutputValidationError('coverage','Memory work requires member coverage',{fieldPath:validationLocation([field,...(issue?.path??[])]),problem:issue?validationProblem(issue):'invalid_type',workContract:'range-evaluation@1'});}
  const seen=new Set<string>();
- for(const row of parsed.data){const member=members.find(member=>member.key===row.key);if(!member||seen.has(row.key))throw new MemoryOutputValidationError('coverage','Unknown or duplicate Memory coverage member',{workContract:'range-evaluation@1'});seen.add(row.key);
+ for(const [rowIndex,row] of parsed.data.entries()){
+  const member=members.find(member=>member.key===row.key);
+  if(!member||seen.has(row.key)){
+   throw new MemoryOutputValidationError('coverage','Unknown or duplicate Memory coverage member',{
+    workContract:'range-evaluation@1',
+    fieldPath:validationLocation(['coverage',rowIndex,'key']),
+    problem:member?'duplicate_target_key':'unknown_target_key',
+   });
+  }
+  seen.add(row.key);
   if(row.question)for(const span of row.question.evidence){
    if(span.id!==member.id)throw new MemoryOutputValidationError('coverage','Owner question evidence must belong to its target member',{workContract:'range-evaluation@1'});
    if(!readText)continue;
@@ -46,7 +55,16 @@ export function readMemoryWorkCoverage(result:QueryResult,members:MemoryWorkMemb
   const supportsMember=(index:number)=>{const candidate=value.memories[index];if(index>=value.memories.length||!candidate?.evidenceIds?.includes(member.id))return false;if(!readText)return true;
    const text=readText(member.id);return typeof text==='string'&&Array.isArray(candidate.evidence)&&candidate.evidence.some((span:any)=>span.id===member.id&&(hasMemoryImageProof(imageReads,span)||typeof span.quote==='string'&&span.quote.length>0&&(Number.isSafeInteger(span.offset)?span.offset>=member.offset&&span.offset+span.quote.length<=member.offset+member.length&&text.slice(span.offset,span.offset+span.quote.length)===span.quote:text.slice(member.offset,member.offset+member.length).includes(span.quote))));
   };
-  if(row.candidateIndexes.some(index=>!supportsMember(index))||new Set(row.candidateIndexes).size!==row.candidateIndexes.length||row.state==='checked'&&!row.candidateIndexes.length||row.state==='no_candidates'&&row.candidateIndexes.length||row.state==='needs_context'&&row.candidateIndexes.length)throw new MemoryOutputValidationError('coverage','Memory coverage does not match its candidate evidence',{workContract:'range-evaluation@1'});
+  const unsupportedPosition=row.candidateIndexes.findIndex(index=>!supportsMember(index));
+  if(unsupportedPosition!==-1){
+   throw new MemoryOutputValidationError('coverage','Memory coverage does not match its candidate evidence',{
+    workContract:'range-evaluation@1',
+    fieldPath:validationLocation(['coverage',rowIndex,'candidateIndexes',unsupportedPosition]),
+    problem:'unsupported_candidate_for_target',
+    candidateIndex:row.candidateIndexes[unsupportedPosition],
+   });
+  }
+  if(new Set(row.candidateIndexes).size!==row.candidateIndexes.length||row.state==='checked'&&!row.candidateIndexes.length||row.state==='no_candidates'&&row.candidateIndexes.length||row.state==='needs_context'&&row.candidateIndexes.length)throw new MemoryOutputValidationError('coverage','Memory coverage does not match its candidate evidence',{workContract:'range-evaluation@1'});
  }
  // Coverage is also the candidate context vector: every supporting target
  // range must declare the candidate, including cross-member conclusions.
