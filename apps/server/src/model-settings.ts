@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import { moteText } from './i18n.js';
 import {providerModels,codexModels} from './model-catalog.js';
 import { ConfigService, ConfigServiceError, type ConfigDomainReference, type PreparedConfigChange } from './config-service.js';
@@ -76,11 +77,16 @@ export const deploymentModelSettingsSchema=z.preprocess(raw=>{
 },settingsSchema);
 export const modelDomainSchema = z.object({
   deployment:deploymentModelSettingsSchema.default({}),profiles:z.array(profileSchema).max(30).default([]),defaults:defaultsSchema.default(defaultModelAssignments),defaultModels:defaultModelsSchema.default({}),
+  memoryBudgetProfileId:modelProfileIdSchema.optional(),
   embedding:z.object({model:line(512).default(''),baseUrl:line(4096).default(''),apiKey:apiKey.default('')}).strict().default({}),
   codex:z.object({executable:line(4096,1).optional(),home:line(4096,1).optional()}).strict().default({}),
 }).strict().superRefine((state,ctx)=>{
   const ids=[DEPLOYMENT_MODEL_PROFILE_ID,...state.profiles.map(p=>p.id)];
   if(new Set(ids).size!==ids.length||Object.values(state.defaults).some(id=>!ids.includes(id)))ctx.addIssue({code:'custom',message:'Invalid model references'});
+  if(state.memoryBudgetProfileId){
+    const budget=state.memoryBudgetProfileId===DEPLOYMENT_MODEL_PROFILE_ID?state.deployment:state.profiles.find(p=>p.id===state.memoryBudgetProfileId)?.settings;
+    if(!budget||budget.protocol==='codex-app-server')ctx.addIssue({code:'custom',path:['memoryBudgetProfileId'],message:'Memory request budget requires an HTTP model profile'});
+  }
   const embedding=state.embedding;
   if(embedding.model&&!embedding.baseUrl)ctx.addIssue({code:'custom',path:['embedding','baseUrl'],message:'Embedding endpoint is required'});
   if(embedding.baseUrl)try{const u=new URL(embedding.baseUrl);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)throw Error();}catch{ctx.addIssue({code:'custom',path:['embedding','baseUrl'],message:'Invalid embedding endpoint'});}
@@ -201,6 +207,7 @@ export class ModelSettingsStore {
       version: 1, revision: this.options.configService.revision, source: 'file',
       profiles:this.profiles().map(p=>({...p,settings:publicSettings(p.settings),readOnly:p.id===DEPLOYMENT_MODEL_PROFILE_ID,source:'file' as const})), defaults,
       defaultModels:{...state.defaultModels},
+      ...(state.memoryBudgetProfileId?{memoryBudgetProfileId:state.memoryBudgetProfileId}:{}),
       settings: publicSettings(settings),
     };
   }
@@ -217,6 +224,16 @@ export class ModelSettingsStore {
     if(!profile)throw new ModelSettingsError('model_profile_missing');
     const model = override === undefined ? this.requireState().defaultModels?.[feature] : undefined;
     return model ? {...profile, settings:{...profile.settings,model}} : profile;
+  }
+
+  /** The budget preset supplies capacity for the identical configured model.
+   * Requests keep the existing profile and authorization fingerprint. */
+  memoryRequestBudget(settings:ModelSettings){
+    const id=this.requireState().memoryBudgetProfileId;
+    if(!id||settings.protocol==='codex-app-server')return;
+    const {maxTokens,contextWindow,...reference}=this.select('memory',id).settings;
+    const {maxTokens:currentMax,contextWindow:currentWindow,...connection}=settings;
+    if((maxTokens!==currentMax||contextWindow!==currentWindow)&&isDeepStrictEqual(reference,connection))return {maxTokens,contextWindow};
   }
 
   /** Ordinary plugin selection is descriptive. Credentials and endpoints stay with trusted AGENT assembly. */
@@ -263,10 +280,12 @@ export class ModelSettingsStore {
     catch{throw new ModelSettingsError('model_settings_prepare_failed');}
   }
 
-  private async commit(registry: Pick<ModelDomain,'profiles'|'defaults'|'defaultModels'>): Promise<ModelSettingsView> {
+  private async commit(registry: Pick<ModelDomain,'profiles'|'defaults'|'defaultModels'>&{memoryBudgetProfileId?:string|null}): Promise<ModelSettingsView> {
     this.requireState();
     const revision=this.options.configService.revision,saved=this.options.configService.saved<ModelDomain>('models');
     const next={...saved,profiles:registry.profiles,defaults:registry.defaults,defaultModels:registry.defaultModels};
+    if(registry.memoryBudgetProfileId===null)delete next.memoryBudgetProfileId;
+    else if(registry.memoryBudgetProfileId!==undefined)next.memoryBudgetProfileId=registry.memoryBudgetProfileId;
     if(!modelDomainSchema.safeParse(next).success)throw new ModelSettingsError('model_settings_invalid');
     try{await this.options.configService.replace('models',next,revision);}
     catch(error){throw this.configurationError(error);}
@@ -343,19 +362,19 @@ export class ModelSettingsStore {
       this.expectedRevision(parsed.data.revision);
       const state=this.requireState();
       this.select('chat',id);
-      if(Object.values(state.defaults??{}).includes(id))throw new ModelSettingsError('model_profile_in_use');
+      if(state.memoryBudgetProfileId===id||Object.values(state.defaults??{}).includes(id))throw new ModelSettingsError('model_profile_in_use');
       return this.commit({...state,profiles:state.profiles?.filter(p=>p.id!==id)});
     });
   }
   updateDefaults(body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
-      const parsed=z.object({revision:revisionSchema,defaults:defaultsSchema,defaultModels:defaultModelsSchema}).strict().safeParse(body);
+      const parsed=z.object({revision:revisionSchema,defaults:defaultsSchema,defaultModels:defaultModelsSchema,memoryBudgetProfileId:modelProfileIdSchema.nullable().optional()}).strict().safeParse(body);
       if(!parsed.success)throw new ModelSettingsError('model_settings_invalid');
       this.expectedRevision(parsed.data.revision);
       for(const feature of MODEL_FEATURES)this.select(feature,parsed.data.defaults[feature]);
       const state=this.requireState();
       const defaultModels=parsed.data.defaultModels;
-      return this.commit({profiles:state.profiles,defaults:parsed.data.defaults,defaultModels});
+      return this.commit({profiles:state.profiles,defaults:parsed.data.defaults,defaultModels,memoryBudgetProfileId:parsed.data.memoryBudgetProfileId});
     });
   }
 

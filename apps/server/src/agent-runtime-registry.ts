@@ -12,7 +12,7 @@ import {createAgentModelHost} from './agent-model-host.js';
 import {agentModelConnection} from './model-authorization-host.js';
 import type {PreparedModelSettings} from './model-settings.js';
 import type {ProviderAdmission} from './provider-admission.js';
-import type {QueryAgent,QueryRunLease} from './query-agent.js';
+import type {ModelRequestBudget,QueryAgent,QueryRunLease} from './query-agent.js';
 import {StoreError} from './evidence-store.js';
 import {dshSelectionBoundary} from './dsh-native.js';
 
@@ -189,16 +189,24 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
   readonly factory:ModelAgentFactory=(settings,reader,_hooks,identity)=>{
     this.assertOpen();
     if(!identity)throw new StoreError('Model host identity is missing',409);
-    const pending=this.create(settings,reader,identity);
+    return this.prepareAdapter(settings,reader,identity);
+  };
+
+  private prepareAdapter(settings:ModelSettings,reader:ContextReader,identity:ModelAgentIdentity,budget?:ModelRequestBudget){
+    this.assertOpen();
+    const pending=this.create(settings,reader,identity,budget);
     this.preparing.add(pending);
     void pending.then(()=>this.preparing.delete(pending),()=>this.preparing.delete(pending));
     return pending;
-  };
+  }
 
-  private async create(settings:ModelSettings,reader:ContextReader,identity:ModelAgentIdentity){
+  private async create(settings:ModelSettings,reader:ContextReader,identity:ModelAgentIdentity,budget?:ModelRequestBudget){
     const d=this.dependencies,connection=agentModelConnection(identity,settings);
+    // Only request capacity can vary. The exact authorized model and host
+    // connection remain the same for admission and each physical request.
+    const runtimeSettings=budget?{...settings,maxTokens:budget.maxTokens,contextWindow:budget.contextWindow}:settings;
     const host={...createAgentModelHost(settings,connection,d),...(identity.kind==='profile'?{nativeDsh:d.nativeDshForProfile?.(identity.id)}:{})};
-    const inner=await (d.createModelAgent?d.createModelAgent(settings,reader,host,identity):createModelAgent(settings,reader,d.codex,host.runModel,host.authorizeModelRequest,host.nativeDsh));
+    const inner=await (d.createModelAgent?d.createModelAgent(runtimeSettings,reader,host,identity):createModelAgent(runtimeSettings,reader,d.codex,host.runModel,host.authorizeModelRequest,host.nativeDsh));
     if(this.shuttingDown||this.isClosed){
       const primary=new StoreError('Agent runtime registry is closed',503);
       try{await inner.close();}catch(cleanup){this.lateCleanupErrors.push(cleanup);throw new AggregateError([primary,cleanup],'Agent startup was stopped and cleanup failed',{cause:primary});}
@@ -273,7 +281,7 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
   }
 
   private async createModelRegistry(profiles:ModelProfile[],reader:ContextReader,initial:QueryAgent|undefined,defaultProfileId:string):Promise<QueryAgent>{
-    const agents=new Map<string,QueryAgent>(),create=this.factory;
+    const agents=new Map<string,QueryAgent>(),create=this.factory,prepareAdapter=this.prepareAdapter.bind(this);
     try {
       for(const profile of profiles)agents.set(profile.id,profile.id===defaultProfileId&&initial?initial:await create(profile.settings,reader,undefined,{kind:'profile',id:profile.id}));
     } catch(error) {await Promise.allSettled([...agents.values()].map(agent=>agent.close()));throw error;}
@@ -283,9 +291,11 @@ export class AgentRuntimeRegistry extends ReloadableAgent {
       async query(input,lease){
         const id=input.modelProfileId??defaultProfileId,agent=agents.get(id),profile=profiles.find(p=>p.id===id);
         if(!agent||!profile||!agent.configured)throw new AgentNotConfiguredError();
-        const {modelProfileId:_,modelOverride,...request}=input;
+        const {modelProfileId:_,modelOverride,memoryRequestBudget,...request}=input;
         const model=modelOverride??profile.settings.model;
-        const temporary=model!==profile.settings.model?await create({...profile.settings,model},reader,undefined,{kind:'profile',id:profile.id}):undefined;
+        const temporary=model!==profile.settings.model||memoryRequestBudget
+          ?await prepareAdapter({...profile.settings,model},reader,{kind:'profile',id:profile.id},memoryRequestBudget)
+          :undefined;
         try {
           const result=await (temporary??agent).query(request,lease);
           return {...result,modelSelection:{profileId:id,profileName:profile.name,provider:profile.settings.provider,model}};

@@ -922,14 +922,14 @@ export class MemoryPipeline {
           batch.splitForCapacityRetry=true;
         }
         batch.status='pending';delete batch.errorCode;
-        if(active&&capacity)delete batch.readRanges;
+        if(active&&capacity&&!this.phaseOutputs.hasExtraction(batch.id))delete batch.readRanges;
         this.saveBatch(batch);
         if(active&&!step)this.prepareBatch(id,batch);
       }
       // Reopen failed phases against their saved exact generation first. Then
       // the retry can plan unfinished work using the current allowance, even
       // when the original job predates request-aware partitioning.
-      if(!active&&capacity)for(const batch of batches)if(batch.status==='pending'){
+      if(!active&&capacity)for(const batch of batches)if(batch.status==='pending'&&!this.phaseOutputs.hasExtraction(batch.id)){
         if(modelProfileId!==undefined&&previousConfiguration!==job.configuration?.fingerprint)delete batch.splitForCapacityRetry;
         delete batch.readRanges;this.saveBatch(batch);
       }
@@ -1117,7 +1117,7 @@ export class MemoryPipeline {
       catch(error){if(own){if(db.isTransaction){db.exec('ROLLBACK');}}throw error;}
     };
     const job=this.storedJob(id),batch=this.batch(batchId),currentSkill=this.options.phases.skillVersion??MEMORY_SKILL_VERSION;
-    if(!batch.feedbackOnly&&batch.readRanges===undefined&&this.options.models.capacity?.(job.modelProfileId,job.modelOverride)){
+    if(!batch.feedbackOnly&&batch.readRanges===undefined&&this.options.models.capacity?.(job.modelProfileId,job.modelOverride)&&!this.phaseOutputs.hasExtraction(batch.id)){
       this.admitBatch(job,batch);this.assertStrategies(batch);this.assertConfiguration(job);
       const records=new Map(this.options.memories.readEvidence([...new Set(job.authorizedChunks.map(chunk=>chunk.id))]).map(record=>[record.id,record]));
       const planned=await this.budgetRecoveredBatch(job,batch,records,assertGrant);assertGrant();
