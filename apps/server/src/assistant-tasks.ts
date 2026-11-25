@@ -1,7 +1,7 @@
 import {assistantTaskStorageSchemaInstallation} from './chat-storage-schema.js';
 import {isDeepStrictEqual} from 'node:util';
 import type {QueryInput} from '@mote/agent';
-import {assistantTaskRecordSchema,assistantTaskOutputSchema,actionEvidenceText,formatEvidenceRef,type AssistantTaskInput,type CaptureRecord,type QueryResult,type QueryScope,type WorkState} from '@mote/shared';
+import {assistantTaskRecordSchema,assistantTaskOutputSchema,actionEvidenceText,formatEvidenceRef,type AssistantTaskInput,type CaptureRecord,type ConversationTaskStatus,type QueryResult,type QueryScope,type WorkState} from '@mote/shared';
 import {AssistantTaskAcceptance,type FrozenDraftTask} from './assistant-task-acceptance.js';
 import type {AssistantDraftCommandContext} from './assistant-drafts.js';
 import type {AssistantCards} from './assistant-cards.js';
@@ -404,6 +404,36 @@ export class AssistantTasks implements BatchProductProjection {
   const hash=this.scopeHash(scope);
   const rows=this.store.db.prepare('SELECT task_id,draft_revision FROM assistant_task_turns WHERE conversation_id=? AND turn_id=? AND scope_hash=? ORDER BY draft_revision').all(conversationId,turnId,hash);
   return {items:rows.map(row=>this.view(this.tasks.get(String(row.task_id)),Number(row.draft_revision)))};
+ }
+ byConversation(conversationId:string):{items:ConversationTaskStatus[]}{
+  const rows=this.store.db.prepare(`SELECT link.task_id,link.turn_id FROM assistant_task_turns link
+   JOIN task_records task ON task.id=link.task_id WHERE link.conversation_id=?
+   ORDER BY (task.state IN ('waiting','running','blocked')) DESC,task.updated_at DESC,task.id DESC LIMIT 24`).all(conversationId);
+  return {items:rows.reverse().map(row=>{
+   const status=this.view(this.tasks.get(String(row.task_id)));
+   const {id,state,revision}=status.task;
+   return {task:{id,state,revision,...('scope' in status.task?{goal:status.task.goal,scope:status.task.scope}:{})},
+    turnId:String(row.turn_id),...('workId' in status?{workId:status.workId}:{}),...('error' in status?{error:status.error}:{}),
+    resultAvailable:state==='completed'&&'result' in status&&Boolean(status.result)};
+  })};
+ }
+ stopInConversation(conversationId:string,taskId:string){
+  const db=this.store.db;
+  db.exec('BEGIN IMMEDIATE');
+  try{
+   if(!db.prepare('SELECT 1 FROM assistant_task_turns WHERE conversation_id=? AND task_id=?').get(conversationId,taskId))
+    throw new StoreError('Assistant task not found in this conversation',404);
+   let task=this.tasks.get(taskId);
+   if(task.state!=='cancelled'){
+    if(!['waiting','running','blocked','failed'].includes(task.state))throw new StoreError('Assistant task has already finished',409);
+    const batch=this.currentBatch(task.operationId);
+    if(batch)this.batch().supersede(batch);
+    task=this.tasks.get(taskId);
+    if(task.state!=='cancelled')task=this.tasks.setState(taskId,task.revision,'cancelled');
+   }
+   db.exec('COMMIT');
+   return {id:task.id,state:task.state};
+  }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
  }
  get(id:string,scope:QueryScope){
   const row=this.store.db.prepare('SELECT scope_hash FROM assistant_task_scopes WHERE task_id=?').get(id);

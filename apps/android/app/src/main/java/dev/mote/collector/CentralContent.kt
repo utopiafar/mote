@@ -371,7 +371,7 @@ internal class CentralContent(
         accessReady = true
         pendingResult?.let { (request, result, data) -> pendingResult = null; activityResult(request, result, data) }
     }
-    fun pause() { resumed = false; foregroundRevision++; accessReady = false; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
+    fun pause() { screens?.rememberAskScroll(); resumed = false; foregroundRevision++; accessReady = false; pending.clear(); workPolling.stop(); handler.removeCallbacks(refreshLogin); handler.removeCallbacks(refreshRun); disposePluginView(); screens?.pauseInsights(); screens?.close() }
     fun close() { cancelAdvancedWeb(); disposePluginView(); pause(); pending.clear() }
     fun saveState(state: Bundle) {
         state.putLong("browserDurationMs", browserDurationMs)
@@ -492,6 +492,7 @@ internal class CentralContent(
 
 
     internal fun navigate(next: String, remember: Boolean = true) {
+        if (page == "ask" && next != "ask") screens?.rememberAskScroll()
         cancelAdvancedWeb()
         if (remember && next != page) pageHistory.add(page)
         insightMoreAction = null
@@ -515,6 +516,7 @@ internal class CentralContent(
         navigate("insights")
     }
     internal fun contentScroll() = scroll.scrollY
+    internal fun askScrollPosition(): Int = if (!scroll.canScrollVertically(1)) Int.MAX_VALUE else scroll.scrollY
     internal fun restoreContentScroll(position: Int) { val stamp = revision; scroll.post { if (stamp == revision) scroll.scrollTo(0, position.coerceAtLeast(0)) } }
     internal fun openWorkDestination(page: String) {
         if (openLocalPage != null && page == "ask") localPage("ASK")

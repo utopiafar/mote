@@ -36,12 +36,12 @@ class NativeAskEvidenceScopeTest {
         assertFalse(NativeAskEvidenceScope.selectOnly(state, other)); assertEquals(before, state.toString())
         assertTrue(NativeAskEvidenceScope.selectOnly(state, first)); assertEquals(before, state.toString())
     }
-    @Test fun `running question stays scoped and completed composer accepts a new explicit record`() {
+    @Test fun `running question keeps its accepted scope while the next draft selects a record`() {
         val first = UUID.randomUUID().toString(); val other = UUID.randomUUID().toString()
         val state = JSONObject().put("runStatus", "running").put("evidenceIds", JSONArray().put(first))
-        assertFalse(NativeAskEvidenceScope.selectOnly(state, other)); assertEquals(first, state.getJSONArray("evidenceIds").getString(0))
-        state.put("runStatus", "completed")
+        state.put("activeRequest", JSONObject().put("scope", JSONObject().put("evidenceIds", JSONArray().put(first))))
         assertTrue(NativeAskEvidenceScope.selectOnly(state, other)); assertEquals(other, state.getJSONArray("evidenceIds").getString(0))
+        assertEquals(first, state.getJSONObject("activeRequest").getJSONObject("scope").getJSONArray("evidenceIds").getString(0))
     }
     @Test fun `wire distinguishes inherited scope from explicit clear and selected record`() {
         val state = JSONObject(); val inherited = JSONObject()
@@ -58,8 +58,8 @@ class NativeAskEvidenceScopeTest {
         NativeAskEvidenceScope.clear(state); NativeAskEvidenceScope.restore(state, conversation); assertTrue(state.isNull("evidenceIds"))
         state.remove("scopeDirty"); NativeAskEvidenceScope.restore(state, conversation); assertEquals(id, state.getJSONArray("evidenceIds").getString(0))
     }
-    @Test fun `clear while answering leaves accepted request and scope untouched`() {
-        val state = JSONObject().put("runStatus", "running").put("evidenceIds", JSONArray().put(UUID.randomUUID().toString()))
+    @Test fun `clear while submitting leaves the exact request and scope untouched`() {
+        val state = JSONObject().put("pending", JSONObject()).put("evidenceIds", JSONArray().put(UUID.randomUUID().toString()))
         val before = state.toString(); assertFalse(NativeAskEvidenceScope.clear(state)); assertEquals(before, state.toString())
     }
 

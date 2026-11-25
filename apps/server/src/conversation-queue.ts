@@ -14,6 +14,9 @@ import type {DelegatedQueryRuns} from './delegated-query-runs.js';
 /** Convert a persisted product scope to the existing query input. An explicit
  * empty intersection stays empty, and no source list becomes a bulk prompt. */
 export function conversationQueryInput(dependencies:QueryRunDependencies,message:ConversationMessage){
+  // Explicit supplements go to the Task's existing execution grant. The
+  // message's query receipt has no archive input or semantic routing call.
+  if(message.supplementTask)return {conversationId:message.conversationId,question:message.question,evidenceIds:[],anchorEvidenceIds:null,anchorMaterialRef:null};
   const {store,evidenceReader}=dependencies,{kind,sourceIds,anchorEvidenceIds,anchorMaterialRef,evidenceIds,...range}=message.scope;
   let ids=evidenceIds&&[...new Set(evidenceIds)];
   if(kind==='selection'&&sourceIds!==undefined){
@@ -68,7 +71,7 @@ export class ConversationQueue {
     const prior=conversations.messageByClientRequestId(input.clientRequestId);
     if(prior){
       const {anchorEvidenceIds,anchorMaterialRef,...priorScope}=prior.scope;
-      if(prior.conversationId!==input.conversationId||prior.question!==input.question||prior.modelProfileId!==input.modelProfileId||prior.modelOverride!==input.modelOverride||!isDeepStrictEqual(priorScope,input.scope)||!isDeepStrictEqual(anchorEvidenceIds,input.anchorEvidenceIds)||anchorMaterialRef!==input.anchorMaterialRef||!isDeepStrictEqual(prior.attachments?.map(item=>item.id)??[],input.attachmentIds??[]))throw new StoreError('clientRequestId belongs to a different message',409);
+      if(prior.conversationId!==input.conversationId||prior.question!==input.question||prior.modelProfileId!==input.modelProfileId||prior.modelOverride!==input.modelOverride||!isDeepStrictEqual(priorScope,input.scope)||!isDeepStrictEqual(anchorEvidenceIds,input.anchorEvidenceIds)||anchorMaterialRef!==input.anchorMaterialRef||!isDeepStrictEqual(prior.attachments?.map(item=>item.id)??[],input.attachmentIds??[])||prior.supplementTask?.targetTaskId!==input.supplementTaskId)throw new StoreError('clientRequestId belongs to a different message',409);
       this.suspended.clear();this.wake();return this.view(prior);
     }
     if(this.closed)throw new StoreError('Conversation query admission is unavailable',503);
@@ -89,7 +92,9 @@ export class ConversationQueue {
     });
     const profile=modelSettings.select('chat',input.modelProfileId),connections=[...this.dependencies.availableModelConnections(),agentModelConnection({kind:'profile',id:profile.id},{...profile.settings,model:input.modelOverride??profile.settings.model})];
     const message=this.transaction(()=>{
-      let saved=conversations.receive({conversationId:input.conversationId,clientRequestId:input.clientRequestId,question:input.question,...scope,...(input.modelProfileId?{modelProfileId:input.modelProfileId}:{}),...(input.modelOverride?{modelOverride:input.modelOverride}:{}),...(attachments.length?{attachments}:{})});
+      const supplementTask=input.supplementTaskId&&this.dependencies.taskSteering?.explicitReference(input.supplementTaskId,input.conversationId,input.scope);
+      if(input.supplementTaskId&&!supplementTask)throw new StoreError('Task cannot receive a supplement',409);
+      let saved=conversations.receive({conversationId:input.conversationId,clientRequestId:input.clientRequestId,question:input.question,...scope,...(input.modelProfileId?{modelProfileId:input.modelProfileId}:{}),...(input.modelOverride?{modelOverride:input.modelOverride}:{}),...(attachments.length?{attachments}:{}),...(supplementTask?{supplementTask}:{})});
       // This owner command and its manual model authority commit together. A
       // restart can resume it without inventing automatic permission.
       modelAuthorizationHost.control.manual('owner-query:'+saved.id,'manual',[],connections);
@@ -106,6 +111,7 @@ export class ConversationQueue {
       scope:{kind:kind??'all',...filters,...(kind==='selection'&&sourceIds!==undefined?{sourceIds}:{})},revision:message.version,status:message.status,seq:message.seq,createdAt:message.createdAt,
       ...(anchorEvidenceIds?{anchorEvidenceIds}:{}),...(anchorMaterialRef?{anchorMaterialRef}:{}),...(attachmentIds?.length?{attachmentIds}:{}),
       ...(message.modelProfileId?{modelProfileId:message.modelProfileId}:{}),...(message.modelOverride?{modelOverride:message.modelOverride}:{}),
+      ...(message.supplementTask?{supplementTaskId:message.supplementTask.targetTaskId}:{}),
       ...(message.steering?{steering:{targetMessageId:message.steering.targetMessageId,targetRunId:message.steering.targetRunId,state:message.steering.state}}:{}),...(message.amendedBy?{amendedBy:message.amendedBy}:{}),...(message.supersededBy?{supersededBy:message.supersededBy}:{}),
       ...(message.taskSteering?{taskSteering:{targetTaskId:message.taskSteering.targetTaskId,targetOperationId:message.taskSteering.targetOperationId,targetRevision:message.taskSteering.targetRevision,scope:message.taskSteering.scope,...(message.taskSteering.origin?{origin:message.taskSteering.origin}:{}),state:message.taskSteering.state}}:{}),
       ...(message.runId?{runId:message.runId}:{}),...(message.evidenceDeleted?{evidenceDeleted:true}:{}),...(message.evidenceStale?{evidenceStale:true}:{}),...(message.evidenceUnavailable?{evidenceUnavailable:true}:{}),...(message.historyEvidenceDependencies?{historyEvidenceDependencies:message.historyEvidenceDependencies}:{})});

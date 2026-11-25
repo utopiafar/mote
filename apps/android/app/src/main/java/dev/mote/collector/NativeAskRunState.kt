@@ -11,8 +11,7 @@ internal object NativeAskRunState {
     val terminal = CentralConversationMessage.terminal
     val statuses = CentralConversationMessage.statuses
 
-    fun busy(state: JSONObject): Boolean =
-        state.has("pending") || state.optString("runStatus") in active
+    fun busy(state: JSONObject): Boolean = state.has("pending")
 
     fun messageId(state: JSONObject): String =
         state.optString("messageId").takeIf { it.matches(UUID_PATTERN) }.orEmpty()
@@ -27,7 +26,8 @@ internal object NativeAskRunState {
         val value = CentralConversationMessage.read(receipt)
         if (admitted != null) {
             check(value.clientRequestId == admitted.optString("clientRequestId") &&
-                value.conversationId == admitted.optString("conversationId")) {
+                value.conversationId == admitted.optString("conversationId") &&
+                receipt.optString("supplementTaskId") == admitted.optString("supplementTaskId")) {
                 MoteI18n.text("请求尚未确认，可重试同一请求。")
             }
         } else if (!expectedClientRequestId.isNullOrBlank()) {
@@ -44,13 +44,13 @@ internal object NativeAskRunState {
         val request = state.optJSONObject("activeRequest") ?: return false
         if (messageId(state).isBlank()) return false
         state.put("pending", JSONObject(request.toString()))
+        state.put("recoveringAcceptedMessage", true)
         return true
     }
 
-    fun completesCurrentDraft(state: JSONObject, id: String): Boolean {
-        if (messageId(state) != id) return false
-        val request = state.optJSONObject("activeRequest") ?: return false
+    fun matchesSubmittedDraft(state: JSONObject, request: JSONObject): Boolean {
         if (state.optString("question").trim() != request.optString("question")) return false
+        if (state.optJSONObject("supplementTask")?.optString("id").orEmpty() != request.optString("supplementTaskId")) return false
         val current = state.optJSONArray("attachments")
         val expected = request.optJSONArray("attachmentIds")
         val currentIds = if (current == null) emptyList() else (0 until current.length()).map { current.getJSONObject(it).getString("id") }

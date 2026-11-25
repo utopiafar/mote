@@ -12,19 +12,19 @@ class AskGenerationPresentationTest {
             if (!adopted) put("activeRequest", JSONObject().put("clientRequestId", UUID.randomUUID().toString()))
         }
 
-    @Test fun `an answering run offers only stop`() {
+    @Test fun `an answering run can be stopped while the next draft can be sent`() {
         val state = AskGenerationPresentation.read(running(), text = "下一问", imagesPending = false, offline = false)
-        assertTrue(state.busy)
+        assertFalse(state.busy)
         assertTrue(state.stop)
         assertFalse(state.retry)
         assertFalse(state.check)
-        assertFalse(state.canSend)
+        assertTrue(state.canSend)
     }
 
     @Test fun `accepted and queued messages also offer stop without inventing a retry body`() {
         for (status in listOf("accepted", "queued")) {
             val state = AskGenerationPresentation.read(running(status), text = "", imagesPending = false, offline = false)
-            assertTrue(status, state.busy)
+            assertFalse(status, state.busy)
             assertTrue(status, state.stop)
             assertFalse(status, state.retry)
             assertFalse(status, state.check)

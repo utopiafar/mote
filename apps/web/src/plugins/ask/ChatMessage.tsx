@@ -97,7 +97,9 @@ function TaskAmendment({api, turn, cancelling, onCancel}: {api: Api; turn: ChatT
     stale: moteText('已失效'), cancelled: moteText('已取消'), failed: moteText('未完成'),
     needs_input: moteText('待补充'), excluded: moteText('未完成')};
   const canCancel = state && ['waiting', 'running', 'needs_input', 'failed'].includes(state) && receipt.state !== 'cancelled';
+  const applied = receipt.state === 'accepted' || receipt.state === 'continuation' && turn.status === 'completed';
   return <section className="chat-message-status conversation-task-amendment" aria-label={moteText('任务状态')}>
+    <span>{moteText(applied ? '已应用' : receipt.state === 'unknown' ? '发送结果待确认' : receipt.state === 'cancelled' ? '已取消' : '已收到')}</span>
     <span role={read.error ? 'alert' : 'status'}>{state ? labels[state] : read.error ? moteText('读取失败') : moteText('正在读取…')}</span>
     {read.error !== undefined && <button className="text-button" onClick={read.refresh}>{moteText('重试')}</button>}
     {state && receipt.origin && <a className="text-button" href={pageHash('chat', {
@@ -153,20 +155,21 @@ function startsGroup(turn: ChatTurn, previous?: ChatTurn) {
     Date.parse(turn.createdAt) - Date.parse(previous.createdAt) >= 30 * 60 * 1000;
 }
 
-export function ChatMessage({api, turn, previous, conversationId, pending, turns, highlighted, cancelling, canRetry,
+export function ChatMessage({api, turn, previous, conversationId, pending, turns, highlighted, cancelling, canRetry, footerTaskIds,
   onCancel, onRetry, onOpen, openReference, renderAnswer}: {
   api: Api; turn: ChatTurn; previous?: ChatTurn; conversationId: string; pending: ChatTurn[];
   turns: ChatTurn[]; highlighted: boolean; cancelling: boolean; canRetry: boolean; onCancel: () => void; onRetry: () => void;
+  footerTaskIds?: ReadonlySet<string>;
   onOpen: (ref: string) => void; openReference: (ref: string) => void;
   renderAnswer: (answer: Answer, open: (ref: string) => void) => ReactNode;
 }) {
   const open = useRef(openReference);
   open.current = openReference;
   const openCitation = useCallback((ref: string) => open.current(ref), []);
-  const result = hiddenAnswer(turn) ? undefined : turn.result;
+  const result = hiddenAnswer(turn) || turn.taskSteering || turn.supplementTaskId ? undefined : turn.result;
   const {status} = turn;
   const inFlight = pendingMessageStatus(status);
-  const amended = Boolean(turn.steering || turn.taskSteering);
+  const amended = Boolean(turn.steering || turn.taskSteering || turn.supplementTaskId);
   const showProgress = !amended && (status === 'accepted' || status === 'running');
   const canStopSupplement = turn.steering?.state === 'accepted' && pending.some(item => item.id === turn.steering?.targetMessageId);
   const linkedIds = new Set([...(turn.amendedBy ?? []), ...(turn.supersededBy ?? []),
@@ -186,8 +189,8 @@ export function ChatMessage({api, turn, previous, conversationId, pending, turns
     </div>
     {hiddenAnswer(turn) ? <p className="chat-message-status" role="status" data-message-kind="stale">{moteText('已失效')}</p>
       : showProgress ? <ProgressRow api={api} runId={turn.runId} state={status} cancelling={cancelling} onCancel={onCancel}/>
-      : inFlight ? <div className="chat-message-status" role="status">
-        <span>{messageStateLabel(status)}</span>
+      : inFlight && !turn.taskSteering ? <div className="chat-message-status" role="status">
+        <span>{turn.supplementTaskId ? moteText('已收到') : messageStateLabel(status)}</span>
         <button className="text-button" aria-label={moteText('停止这条回答')} disabled={cancelling} onClick={onCancel}>{moteText('停止')}</button>
       </div>
       : status === 'cancelled' ? amended
@@ -201,7 +204,7 @@ export function ChatMessage({api, turn, previous, conversationId, pending, turns
         {action ? <CalendarReceipt key={action.id} api={api} reference={action} conversationId={conversationId} turnId={turn.id}/>
           : <div className="chat-answer">{renderAnswer(result, openCitation)}</div>}
         {draft && <AssistantDraftActions key={draft.requestId} api={api} conversationId={conversationId} turnId={turn.id}
-          draft={draft} renderAnswer={renderAnswer} onOpen={onOpen}/>}
+          draft={draft} renderAnswer={renderAnswer} onOpen={onOpen} footerTaskIds={footerTaskIds}/>}
         {canStopSupplement && <button className="text-button" disabled={cancelling} onClick={onCancel}>{moteText('停止这条回答')}</button>}
         <AnswerActions key={result.runId} api={api} conversationId={conversationId} turn={turn} answer={result} onOpen={onOpen}
           openReference={openCitation}/>

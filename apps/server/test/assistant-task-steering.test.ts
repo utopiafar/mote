@@ -3,6 +3,47 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {taskSteeringFixture as fixture,until} from './fixtures/assistant-task-steering.js';
 
+test('the main conversation keeps an explicit supplement and one result on the original task across independent work and restart',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ f.setMode('hold-terminal');
+ const a=await f.start(),taskPath=`/api/conversations/${f.id}/assistant-tasks`;
+ const read=async()=>{const response=await f.node.app.inject({url:taskPath,headers:f.headers});assert.equal(response.statusCode,200,response.body);return response.json().items;};
+ assert.deepEqual((await read()).map((item:any)=>[item.task.id,item.task.state]),[[a.taskId,'running']]);
+ const b=await f.post('GENERATED-UNRELATED',randomUUID(),{kind:'all'});
+ assert.match((await f.settle(b.message.id)).result!.answer,/independent answer/);
+ assert.equal(f.task(a.taskId).state,'running');
+ const send=async(payload:unknown)=>f.node.app.inject({method:'POST',url:'/api/conversations/messages',headers:f.headers,payload});
+ const before=f.rpc().filter(row=>row.method==='turn/start').length;
+ const wrongScope=await send({conversationId:f.id,clientRequestId:randomUUID(),question:'Generated out-of-scope supplement',scope:{kind:'all'},supplementTaskId:a.taskId});
+ assert.equal(wrongScope.statusCode,409,wrongScope.body);
+ const supplement=await f.post('Generated explicit supplement',randomUUID(),a.draft.scope,{supplementTaskId:a.taskId});
+ const receipt=await f.settle(supplement.message.id);
+ assert.equal(receipt.status,'completed',JSON.stringify(receipt));assert.equal(receipt.taskSteering?.targetTaskId,a.taskId);
+ assert.equal(receipt.taskSteering?.state,'accepted');
+ assert.equal(f.rpc().filter(row=>row.method==='turn/start').length,before,'a selected target needs no extra model turn');
+ assert.equal(f.task(a.taskId).state,'running');
+ await f.restart();
+ await until(()=>f.task(a.taskId).state==='succeeded'?true:undefined,'original task with its accepted supplement');
+ const items=await read();assert.deepEqual(items.map((item:any)=>[item.task.id,item.turnId,item.resultAvailable]),[[a.taskId,a.turn.id,true]]);
+ assert.equal(items[0].result,undefined,'the footer is a short entry');
+ const result=f.node.assistantTasks.get(a.taskId,a.draft.scope).result!;
+ assert.match(result.answer,/Generated explicit supplement/);assert.deepEqual(result.citations.map(c=>c.id),[f.evidenceId]);
+ const repeat=await send(supplement.payload);assert.equal(repeat.statusCode,202,repeat.body);assert.equal(repeat.json().id,receipt.id);
+ assert.equal(f.rpc().filter(row=>row.method==='turn/steer').length,1);
+ assert.deepEqual(f.node.conversations.get(f.id).scope,{kind:'all'});
+});
+
+test('stopping a task from its conversation fences a held result and is idempotent',{timeout:30000},async t=>{
+ const f=await fixture(t),a=await f.start();
+ const stop=()=>f.node.app.inject({method:'POST',url:`/api/conversations/${f.id}/assistant-tasks/${a.taskId}/cancel`,headers:f.headers});
+ const receipt=await stop();assert.equal(receipt.statusCode,200,receipt.body);
+ assert.deepEqual(receipt.json(),{id:a.taskId,state:'cancelled'});
+ f.release();await f.restart();
+ assert.deepEqual((await stop()).json(),receipt.json());
+ assert.equal(f.node.assistantTasks.get(a.taskId,a.draft.scope).task.state,'cancelled');
+ assert.equal(f.node.store.db.prepare('SELECT result_json FROM task_records WHERE id=?').get(a.taskId)!.result_json,null);
+});
+
 test('owner HTTP adjusts a real accepted assistant task through its own native turn and preserves the task/result conversation link',{timeout:30000},async t=>{
  const f=await fixture(t),original=await f.start();assert.equal(f.task(original.taskId).state,'running');
  const amendment=await f.post('GENERATED-FORMAL-TASK-CORRECTION');await until(()=>f.rpc().find(row=>row.method==='turn/steer'),'formal task native steering');

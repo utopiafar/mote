@@ -84,7 +84,7 @@ export interface QueryRunDependencies {
   /** Synchronous Host handoff in the accepted query's actual commit transaction. */
   readonly acceptCurrentInstruction?:(messageId:string,model:CurrentInstructionModel)=>unknown;
   readonly ownerActions?:()=>import('../owner-calendar-instructions.js').OwnerCalendarPort|undefined;
-  readonly taskSteering?:Pick<AssistantTaskSteering,'candidates'|'apply'|'cancel'>;
+  readonly taskSteering?:Pick<AssistantTaskSteering,'candidates'|'explicitReference'|'apply'|'cancel'>;
 }
 
 interface Generation {readonly runtime:DelegationRuntime;readonly runs:DelegatedQueryRuns;readonly queue:ConversationQueue}

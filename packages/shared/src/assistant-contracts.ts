@@ -28,6 +28,7 @@ export type SourceEvidenceRevision=z.infer<typeof sourceEvidenceRevisionSchema>;
  * for the same key and input, and reject the same key with different input. */
 const conversationMessageFields={
   conversationId:uuid,clientRequestId:uuid,question:ownerText,scope:queryScopeSchema,
+  supplementTaskId:uuid.optional(),
   attachmentIds:z.array(uuid).max(4).optional(),
   anchorEvidenceIds:z.array(uuid).min(1).max(30).optional(),
   anchorMaterialRef:z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/).optional(),
@@ -36,7 +37,8 @@ const conversationMessageFields={
   modelOverride:z.string().trim().min(1).max(512).refine(value=>!/[\u0000-\u001f\u007f]/.test(value)).optional(),
 };
 const singleAnchor=(value:{anchorEvidenceIds?:string[];anchorMaterialRef?:string})=>!(value.anchorEvidenceIds&&value.anchorMaterialRef);
-export const conversationMessageInputSchema=z.object(conversationMessageFields).strict().refine(singleAnchor,{message:'Choose one anchor'});
+export const conversationMessageInputSchema=z.object(conversationMessageFields).strict().refine(singleAnchor,{message:'Choose one anchor'})
+  .refine(value=>!value.supplementTaskId||!(value.attachmentIds?.length||value.anchorEvidenceIds||value.anchorMaterialRef||value.modelProfileId||value.modelOverride),{message:'Task supplements use the original task scope and model'});
 export type ConversationMessageInput=z.infer<typeof conversationMessageInputSchema>;
 export const conversationMessageStateSchema=z.enum(['accepted','queued','running','completed','failed','cancelled']);
 export const conversationSteeringSchema=z.object({targetMessageId:uuid,targetRunId:z.string().min(1).max(200),state:z.enum(['pending','accepted','continuation','unknown','cancelled'])}).strict();
@@ -64,6 +66,10 @@ export const assistantTaskRecordSchema=z.object({
   sourceContextDependencies:z.array(sourceContextDeclarationSchema).optional(),
 }).strict();
 export type AssistantTaskRecord=z.infer<typeof assistantTaskRecordSchema>;
+export type ConversationTaskStatus={
+  task:Pick<AssistantTaskRecord,'id'|'state'|'revision'> & Partial<Pick<AssistantTaskRecord,'goal'|'scope'>>;
+  turnId:string;workId?:string;error?:string;resultAvailable:boolean;
+};
 
 /** A model may propose a goal, never an identity, scope, permission or effect.
  * The host binds the remaining fields after validating the current answer. */

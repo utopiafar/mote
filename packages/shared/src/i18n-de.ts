@@ -71,6 +71,8 @@ export const german: Readonly<Record<string, string>> = {
   "动态": "Neuigkeiten",
   "动态与建议": "Neuigkeiten und Vorschläge",
   "未读": "Ungelesen",
+  "补充": "Ergänzen",
+  "补充任务": "Aufgabe ergänzen",
   "查看任务": "Aufgabe anzeigen",
   "原因": "Grund",
   "部分可用": "Teilweise verfügbar",

@@ -41,19 +41,20 @@ class NativeAskRunStateTest {
             NativeAskRunState.validate(receipt(id,UUID.randomUUID().toString(),"running",conversation),request(client,conversation))
         }
     }
-    @Test fun `completion clears only its own unchanged composer draft and images`() {
+    @Test fun `admission recognizes only its own unchanged composer draft and images`() {
         val id=UUID.randomUUID().toString();val message=UUID.randomUUID().toString();val image=UUID.randomUUID().toString()
         val body=request(id).put("attachmentIds",JSONArray().put(image))
         val state=JSONObject().put("messageId",message).put("activeRequest",body).put("question","Generated admitted question").put("attachments",JSONArray().put(JSONObject().put("id",image)))
-        assertTrue(NativeAskRunState.completesCurrentDraft(state,message))
-        state.put("question","Generated later draft");assertFalse(NativeAskRunState.completesCurrentDraft(state,message))
-        state.put("question","Generated admitted question").put("attachments",JSONArray().put(JSONObject().put("id",UUID.randomUUID().toString())));assertFalse(NativeAskRunState.completesCurrentDraft(state,message))
-        state.remove("activeRequest");assertFalse(NativeAskRunState.completesCurrentDraft(state,message))
-        assertFalse(NativeAskRunState.completesCurrentDraft(state,UUID.randomUUID().toString()))
+        assertTrue(NativeAskRunState.matchesSubmittedDraft(state,body))
+        state.put("question","Generated later draft");assertFalse(NativeAskRunState.matchesSubmittedDraft(state,body))
+        state.put("question","Generated admitted question").put("attachments",JSONArray().put(JSONObject().put("id",UUID.randomUUID().toString())));assertFalse(NativeAskRunState.matchesSubmittedDraft(state,body))
+        state.put("attachments",JSONArray().put(JSONObject().put("id",image)))
+        body.put("supplementTaskId",UUID.randomUUID().toString())
+        assertFalse(NativeAskRunState.matchesSubmittedDraft(state,body))
     }
-    @Test fun `busy covers pending and every accepted server state`() {
+    @Test fun `only an unconfirmed admission locks the composer`() {
         val pending=JSONObject().put("pending",request(UUID.randomUUID().toString()));assertTrue(NativeAskRunState.busy(pending))
-        for(status in NativeAskRunState.active)assertTrue(NativeAskRunState.busy(JSONObject().put("runStatus",status)))
+        for(status in NativeAskRunState.active)assertFalse(NativeAskRunState.busy(JSONObject().put("runStatus",status)))
         for(status in NativeAskRunState.terminal)assertFalse(NativeAskRunState.busy(JSONObject().put("runStatus",status)))
     }
 }

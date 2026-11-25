@@ -71,6 +71,8 @@ export const spanish: Readonly<Record<string, string>> = {
   "动态": "Novedades",
   "动态与建议": "Novedades y sugerencias",
   "未读": "Sin leer",
+  "补充": "Añadir información",
+  "补充任务": "Añadir información a la tarea",
   "查看任务": "Ver tarea",
   "原因": "Motivo",
   "部分可用": "Parcialmente disponible",

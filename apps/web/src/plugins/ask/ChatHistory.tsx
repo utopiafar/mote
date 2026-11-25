@@ -9,7 +9,7 @@ import type {ConversationMessage, ConversationMessageInput, ConversationMessageS
 
 export type ChatScope = Partial<ConversationMessageScope> & Pick<ConversationMessageInput, 'anchorEvidenceIds' | 'anchorMaterialRef'>;
 export type ChatTurn = Pick<ConversationMessage, 'id' | 'question' | 'status' | 'createdAt' | 'runId' | 'error' |
-  'modelProfileId' | 'modelOverride' | 'steering' | 'taskSteering' | 'amendedBy' | 'supersededBy'> & {
+  'modelProfileId' | 'modelOverride' | 'steering' | 'taskSteering' | 'amendedBy' | 'supersededBy' | 'supplementTaskId'> & {
   seq?: number;
   version?: number;
   scope?: ChatScope;

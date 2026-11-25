@@ -19,9 +19,9 @@ export type TaskSteeringReference={targetTaskId:string;targetOperationId:string;
 export type ConversationDisposition={kind:'independent'}|{kind:'supplement';targetMessageId:string;targetRunId:string;targetVersion:number;acknowledgement:QueryResult}|({kind:'task-supplement';acknowledgement:QueryResult}&TaskSteeringReference);
 export type ConversationSteering={targetMessageId:string;targetRunId:string;state:'pending'|'accepted'|'continuation'|'unknown'|'cancelled';registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget};
 export type ConversationTaskSteering=Omit<TaskSteeringReference,'taskInputHash'|'targetBatchId'>&{taskInputHash?:string;targetBatchId?:string;scope:QueryScope;origin?:{conversationId:string;turnId:string};state:ConversationSteering['state'];stepId?:string;stepFence?:string;registrationId?:string;target?:HostSteeringTarget;receipt?:HostSteeringTarget;continuationBatchId?:string};
-export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[];disposition?:ConversationDisposition;steering?:ConversationSteering;taskSteering?:ConversationTaskSteering;amendedBy?:string[];supersededBy?:string[]};
+export type ConversationTurn = {id:string;seq:number;question:string;scope:ConversationScope;result?:QueryResult;status:ConversationStatus;version:number;clientRequestId?:string;runId?:string;error?:Failure;createdAt:string;modelProfileId?:string;modelOverride?:string;evidenceDeleted?:boolean;evidenceStale?:boolean;evidenceUnavailable?:boolean;unavailableEvidenceIds?:string[];historyEvidenceDependencies?:QueryResult['evidenceDependencies'];attachments?:Attachment[];disposition?:ConversationDisposition;supplementTask?:TaskSteeringReference;supplementTaskId?:string;steering?:ConversationSteering;taskSteering?:ConversationTaskSteering;amendedBy?:string[];supersededBy?:string[]};
 /** Mutable execution/steering receipts never alter the owner's accepted input. */
-export function conversationInputIdentity(message:ConversationMessage){return {id:message.id,conversationId:message.conversationId,seq:message.seq,clientRequestId:message.clientRequestId,question:message.question,scope:message.scope,attachments:message.attachments,modelProfileId:message.modelProfileId,modelOverride:message.modelOverride};}
+export function conversationInputIdentity(message:ConversationMessage){return {id:message.id,conversationId:message.conversationId,seq:message.seq,clientRequestId:message.clientRequestId,question:message.question,scope:message.scope,attachments:message.attachments,modelProfileId:message.modelProfileId,modelOverride:message.modelOverride,supplementTask:message.supplementTask};}
 export type ConversationMessage = ConversationTurn & {conversationId:string};
 export type ConversationSummary = {id:string;title:string;createdAt:string;updatedAt:string;turnCount:number;scope:ConversationScope;status:ConversationStatus};
 export type Conversation = ConversationSummary & {turns:ConversationTurn[];revision?:number};
@@ -129,10 +129,11 @@ export class Conversations {
     return {...value,firstIndex:oldest??0,nextCursor:hasMore&&oldest!==undefined?String(oldest):null};
   }
   private visibleTurn(value:ConversationTurn):ConversationTurn {
-    const {disposition:_,steering,taskSteering,...publicTurn}=value;
+    const {disposition:_,supplementTask,steering,taskSteering,...publicTurn}=value;
     // Routing inputs, model receipts and native fences are private execution
     // state. History/catalog consumers receive only the actual relationship.
     let turn:ConversationTurn={...publicTurn,...(steering?{steering:{targetMessageId:steering.targetMessageId,targetRunId:steering.targetRunId,state:steering.state}}:{}),...(taskSteering?{taskSteering:{targetTaskId:taskSteering.targetTaskId,targetOperationId:taskSteering.targetOperationId,targetRevision:taskSteering.targetRevision,scope:taskSteering.scope,...(taskSteering.origin?{origin:taskSteering.origin}:{}),state:taskSteering.state}}:{})};
+    if(supplementTask)turn.supplementTaskId=supplementTask.targetTaskId;
     // A submitted reference is dialogue input even when no retrieval tool was
     // called. Derive missing pins at read time as well as at publication, so
     // existing user messages cannot become untracked summary inputs.
@@ -179,8 +180,8 @@ export class Conversations {
    * response may retry the same clientRequestId; a different body is a conflict.
    * Sequence numbers are assigned inside the write transaction and are unique
    * per conversation, including accepted messages that are not yet answers. */
-  receive(input:ConversationScope&{question:string;conversationId?:string;clientRequestId?:string;attachments?:Attachment[];modelProfileId?:string;modelOverride?:string}):ConversationMessage {
-    const question=input.question,scope=scopeOf(input),modelProfileId=input.modelProfileId,modelOverride=input.modelOverride;
+  receive(input:ConversationScope&{question:string;conversationId?:string;clientRequestId?:string;attachments?:Attachment[];modelProfileId?:string;modelOverride?:string;supplementTask?:TaskSteeringReference}):ConversationMessage {
+    const {question,modelProfileId,modelOverride,supplementTask}=input,scope=scopeOf(input);
     const attachments=input.attachments?.length?input.attachments.map(item=>({...item})):undefined;
     if(typeof question!=='string'||!question.trim())throw new StoreError('Conversation message requires a question',400);
     if(input.clientRequestId!==undefined&&(typeof input.clientRequestId!=='string'||!input.clientRequestId||input.clientRequestId.length>200))throw new StoreError('Invalid client request id',400);
@@ -190,14 +191,14 @@ export class Conversations {
         const existing=this.store.db.prepare("SELECT conversation_id,json FROM conversation_turns WHERE json_extract(json,'$.clientRequestId')=? LIMIT 1").get(input.clientRequestId) as {conversation_id:string;json:string}|undefined;
         if(existing){
           const message=JSON.parse(existing.json) as ConversationTurn;
-          if((input.conversationId&&input.conversationId!==existing.conversation_id)||message.question!==question||JSON.stringify(scopeOf(message.scope))!==JSON.stringify(scope)||JSON.stringify(message.attachments??null)!==JSON.stringify(attachments??null)||message.modelProfileId!==modelProfileId||message.modelOverride!==modelOverride)throw new StoreError('clientRequestId belongs to a different message',409);
+          if((input.conversationId&&input.conversationId!==existing.conversation_id)||message.question!==question||JSON.stringify(scopeOf(message.scope))!==JSON.stringify(scope)||JSON.stringify(message.attachments??null)!==JSON.stringify(attachments??null)||message.modelProfileId!==modelProfileId||message.modelOverride!==modelOverride||JSON.stringify(message.supplementTask)!==JSON.stringify(supplementTask))throw new StoreError('clientRequestId belongs to a different message',409);
           return {conversationId:existing.conversation_id,...message};
         }
       }
       const conversationId=input.conversationId??randomUUID();
       const conversation=input.conversationId?this.store.db.prepare('SELECT json FROM conversations WHERE id=?').get(conversationId) as {json:string}|undefined:undefined;
       if(input.conversationId&&!conversation)throw new StoreError('Conversation not found',404);
-      const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(modelProfileId?{modelProfileId}:{}),...(modelOverride?{modelOverride}:{}),...(attachments?.length?{attachments}:{}),createdAt:now};
+      const message:ConversationTurn={id:randomUUID(),seq:this.nextSeq(conversationId),question,scope,status:'accepted',version:1,...(input.clientRequestId?{clientRequestId:input.clientRequestId}:{}),...(modelProfileId?{modelProfileId}:{}),...(modelOverride?{modelOverride}:{}),...(attachments?.length?{attachments}:{}),...(supplementTask?{supplementTask}:{}),createdAt:now};
       const json=JSON.stringify(message),size=Buffer.byteLength(json);
       if(conversation)this.store.db.prepare("UPDATE conversations SET title=CASE WHEN title='' THEN ? ELSE title END,updated_at=?,json=json_set(json,'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.status','accepted','$.nextSeq',?) WHERE id=?").run(Array.from(question).slice(0,80).join(''),now,size,message.seq+1,conversationId);
       else this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?)').run(conversationId,Array.from(question).slice(0,80).join(''),now,now,JSON.stringify({scope,turnCount:0,status:'accepted',bytes:size,revision:0,nextSeq:message.seq+1}));
@@ -395,7 +396,10 @@ export class Conversations {
   private rewriteTerminal(conversationId:string,message:ConversationTurn,previous:string){
     const now=new Date().toISOString(),json=JSON.stringify(message),growth=Buffer.byteLength(json)-Buffer.byteLength(previous);
     this.store.db.prepare('UPDATE conversation_turns SET json=? WHERE id=?').run(json,message.id);
-    this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(?),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1),'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,JSON.stringify(message.scope),growth,conversationId,conversationId);
+    const currentScope=this.store.db.prepare(`SELECT json_extract(json,'$.scope') AS scope FROM conversation_turns WHERE conversation_id=?
+      AND ${terminalStatus} AND json_extract(json,'$.steering') IS NULL AND json_extract(json,'$.taskSteering') IS NULL
+      AND json_extract(json,'$.supplementTask') IS NULL ORDER BY idx DESC LIMIT 1`).get(conversationId)?.scope;
+    this.store.db.prepare("UPDATE conversations SET updated_at=?,json=json_set(json,'$.scope',json(coalesce(?,json_extract(json,'$.scope'))),'$.bytes',coalesce(json_extract(json,'$.bytes'),0)+?,'$.turnCount',coalesce(json_extract(json,'$.turnCount'),0)+1,'$.status',(SELECT coalesce(json_extract(json,'$.status'),'completed') FROM conversation_turns WHERE conversation_id=? ORDER BY idx DESC LIMIT 1),'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(now,currentScope??null,growth,conversationId,conversationId);
     inheritRetiredConversationRoots(this.store,conversationId,message);
     if(message.status!=='cancelled')this.onTurnReceived?.(message.id,conversationId);
     return message;
