@@ -3,6 +3,7 @@ import {AgentNotConfiguredError} from '../types.js';
 import type {HostRunPort, ModelLease} from '../runtime/contracts.js';
 import {modelConnection, validateModelOptions} from './provider-registry.js';
 import {observeModelTransport} from './http-transport.js';
+import type {ObserveOpenCodeUsage} from './opencode-usage.js';
 
 export const DSH_MODEL_ADAPTER_DESCRIPTOR = Object.freeze({id: 'mote.model.dsh', version: '1'});
 
@@ -29,14 +30,14 @@ export function createDshModelAdapter(model: ModelLease<DshModelAdapter>, host: 
     descriptor: DSH_MODEL_ADAPTER_DESCRIPTOR,
     value,
     connection: modelConnection(value),
-    async start() {
+    async start(observeUsage?: ObserveOpenCodeUsage) {
       observer ??= await observeModelTransport(async () => {
         host.assertCurrent();
         model.assertCurrent();
         await authorize?.();
         host.assertCurrent();
         model.assertCurrent();
-      },value.requestTimeoutMs??undefined);
+      },value.requestTimeoutMs??undefined,observeUsage);
       return observer;
     },
     async dispose() { await observer?.close(); },

@@ -1,5 +1,5 @@
 import type {Cancellation, ServiceBinding, ServiceContract, ServiceLease} from '@mote/plugin-api/contracts';
-import {sanitizeFailureDiagnostics,type FailureDiagnostics,type ProviderFailureDetails,type TokenUsage} from '@mote/shared';
+import {sanitizeFailureDiagnostics,type FailureDiagnostics,type ProviderFailureDetails,type TokenUsage,type OpenCodeRequestUsage} from '@mote/shared';
 import type {AgentProgress, AgentTraceEvent} from '../query-contracts.js';
 
 export const RUNTIME_API_VERSION = '1';
@@ -88,7 +88,8 @@ export interface HostToolPort {
 export type RuntimeEvent =
   | {readonly type: 'tools.ready'; readonly tools: readonly RuntimeToolIdentity[]}
   | {readonly type: 'progress'; readonly progress: AgentProgress}
-  | {readonly type: 'usage'; readonly usage: TokenUsage};
+  | {readonly type: 'usage'; readonly usage: TokenUsage}
+  | {readonly type: 'opencode.request_usage'; readonly usage: OpenCodeRequestUsage};
 
 /** All callbacks are local trusted adapters, not RPC escape hatches or a sandbox. */
 export interface HostRunPort {

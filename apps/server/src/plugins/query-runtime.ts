@@ -259,6 +259,12 @@ export function createQueryRuntime(dependencies:QueryRuntimeDependencies):QueryR
         if(runState.runId===undefined)runState.runId=runId;
         else if(runState.runId!==runId){runState.violation??='run_identity_contradiction';return;}
         if(envelope.event.type==='run.terminal')runState.hostTerminal=true;
+        if(envelope.event.type==='opencode.request_usage'&&profile.settings.provider==='opencode-go'){
+          diagnostics.record('agent.opencode_request_usage',{...envelope.event.usage,runId,
+            attemptId:envelope.attemptId??undefined,operationId:traceContext.operationId,requestId:traceContext.requestId,
+            jobId:traceContext.jobId,batchId:traceContext.batchId,batchIndex:traceContext.batchIndex,
+            ...(feature==='memory'?{memoryPhase:traceContext.phase}:{})});
+        }
         if(hostMeter)(hostObserver??=createHostRunUsageObserver({runId,meter:hostMeter,diagnostics}))(envelope);
       }};
     observed.assertContextAuthority=()=>{

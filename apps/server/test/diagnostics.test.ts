@@ -45,6 +45,33 @@ function continuousWrites(t:import('node:test').TestContext,logger:ServerDiagnos
  return {stop:()=>{active=false;},get produced(){return produced;}};
 }
 
+test('OpenCode request usage persists safe counters without detailed tracing',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-opencode-usage-'));
+ const logger=new ServerDiagnostics({directory,traceEnabled:false});await logger.init();
+ t.after(async()=>{await logger.close();await rm(directory,{recursive:true,force:true});});
+ const modelRequestId=randomUUID(),runId=randomUUID(),attemptId=randomUUID(),batchId=randomUUID(),jobId=randomUUID();
+ const record={modelRequestId,runId,attemptId,batchId,jobId,memoryPhase:'review',operationId:'memory:'+jobId,
+   upstreamRequestId:'req-generated',durationMs:27,httpStatus:200,promptTokens:200,billedInputTokens:0,
+   billedCacheReadTokens:200,allowanceUsd:0.00000127,upstreamBody:marker};
+ logger.record('agent.opencode_request_usage',record);
+ await logger.close();
+ const raw=await allRaw(directory);
+ assert.ok(!raw.includes(marker));
+ const row=JSON.parse(raw.trim());
+ assert.equal(row.event,'agent.opencode_request_usage');
+ assert.equal(row.modelRequestId,modelRequestId);
+ assert.equal(row.runId,runId);
+ assert.equal(row.attemptId,attemptId);
+ assert.equal(row.batchId,batchId);
+ assert.equal(row.operationId,'memory:'+jobId);
+ assert.equal(row.memoryPhase,'review');
+ assert.equal(row.upstreamRequestId,'req-generated');
+ assert.equal(row.billedInputTokens,0);
+ assert.equal(row.billedCacheReadTokens,200);
+ assert.equal(row.billedCacheWrite1hTokens,null);
+ assert.equal(row.allowanceUsd,0.00000127);
+});
+
 test('sustained debug arrivals and a bounded burst persist in order without filling the diagnostic queue',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-arrivals-')),now=Date.now();
  // Real metadata work across both writers' ordinary channels, using generated

@@ -6,7 +6,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import type {PluginDefinition} from '@mote/plugin-host';
 import type {Cancellation, ScopeIdentity, ServiceBinding} from '@mote/plugin-api/contracts';
-import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS,OPENCODE_GO_PROVIDER} from '@mote/shared/models';
 import {ProviderFailure,errorDiagnostics,sanitizeFailureDiagnostics,type FailureDiagnostics} from '@mote/shared';
 import {AgentProviderError, AgentResponseError, AgentTimeoutError} from '../../types.js';
 import {createDshModelAdapter, type DshModelAdapter} from '../../models/dsh-adapter.js';
@@ -100,7 +100,9 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
         host.signal.addEventListener('abort', abort, {once: true});
         try {
           channel = await createDshHostChannel(host,sessionId);
-          observer = await modelAdapter.start();
+          observer = await modelAdapter.start(adapter.provider === OPENCODE_GO_PROVIDER.id ? usage => {
+            if (active) host.emit({type: 'opencode.request_usage', usage}, active);
+          } : undefined);
           const workspace=application?.workspace??join(root,'workspace'),home=application?.home??join(root,'home');
           await mkdir(workspace,{recursive:true});
           const patch = join(root, 'runtime.patch.json');
@@ -123,7 +125,7 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
           });
           await Promise.race([harness.start(), channel.failure, observer.failure]);
           host.assertCurrent(); if (stopped) throw new AgentProviderError();
-          const usage = observeHarness({question: '', onUsage(value) { if (active) host.emit({type: 'usage', usage: value}, active); }, onProgress(value) { if (active) host.emit({type: 'progress', progress: value}, active); }}, host.identity.runId, connection.protocol !== 'deepseek');
+          const usage = observeHarness({question: '', onUsage(value) { if (active) host.emit({type: 'usage', usage: value}, active); }, onProgress(value) { if (active) host.emit({type: 'progress', progress: value}, active); }}, sessionId, connection.protocol !== 'deepseek');
           const notification = (value: HarnessNotification) => {
             if (value.method !== 'session.event' || value.params.sessionId !== sessionId) return;
             const event = value.params.event as {type: string; data?: {
