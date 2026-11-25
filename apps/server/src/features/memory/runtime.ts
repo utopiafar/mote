@@ -141,12 +141,21 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
         return reply.code(202).send(job);
       }
       if(modelProfileId!==undefined)dependencies.modelSettings.select('memory',modelProfileId);
-      // This owner action covers only the selected job. Existing steps retain
-      // their original authority; previously denied steps have none to resume.
+      // The retry can select a different model. Renew the owner grant for the
+      // exact batch being retried, and for a parked phase of its current generation.
+      const batches=new Map(job.batches.map(batch=>[batch.id,batch]));
       const accepted=control.manualCommand('owner-memory-retry:'+randomUUID(),[operationId],dependencies.availableModelConnections(),()=>{
         for(const row of dependencies.store.db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND (kind='memory.batch' OR kind LIKE 'memory.phase.%' OR kind='memory.input') AND state IN ('waiting','blocked','failed')").all(operationId)){
           const step=pipeline.engine.get(String(row.id));
-          if(step&&!control.stepAuthority(step.id))control.bindCurrentStep(step);
+          if(!step)continue;
+          if(!control.stepAuthority(step.id)){control.bindCurrentStep(step);continue;}
+          const parent=step.kind==='memory.batch';
+          const batch=batches.get(parent?step.id:String(step.input.batchId??''));
+          const selectingModel=parent&&modelProfileId!==undefined&&batch?.status==='failed'&&batch.errorCode!=='memory_context_required';
+          const currentPhase=step.kind.startsWith('memory.phase.')&&batch?.generationContract!==undefined&&step.input.generation===batch.generationContract;
+          const waitingForAuthority=(parent||currentPhase)&&batch?.status==='pending'&&batch.errorCode==='background_model_authorization_required'&&
+            step.state==='waiting'&&step.error==='background_model_authorization_required';
+          if(selectingModel||waitingForAuthority)control.renewMemoryRetryAuthority(step);
         }
         return pipeline.acceptRetry(id,true,modelProfileId);
       });

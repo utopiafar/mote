@@ -243,6 +243,18 @@ export class BackgroundModelAuthorization {
     const id=this.stepAuthority(parentId),work=id&&this.saved(id);if(!id||!work)throw pending();this.assert(work);this.bindStep(childId,id);
   }
   bindCurrentStep(step:ExecutionStep){return this.transaction(()=>this.captureStep(step));}
+  /** A fresh owner command can renew an idle Memory retry for the same job. */
+  renewMemoryRetryAuthority(step:ExecutionStep){
+    const current=this.context.getStore()?.work;
+    if(!this.store.db.isTransaction||current?.kind!=='manual'||!same(current.roots,[step.operationId])||
+      !step.operationId.startsWith('memory:')||!['failed','blocked','waiting'].includes(step.state)||
+      (step.kind!=='memory.batch'&&!step.kind.startsWith('memory.phase.')))throw new StoreError('Memory retry authority is unavailable',409);
+    const priorId=this.stepAuthority(step.id),prior=priorId?this.saved(priorId):undefined;
+    // The first owner-run grant can be scoped by its step alone. Any explicit
+    // roots must still belong to this same operation. Automatic work keeps its grant.
+    if(prior?.kind!=='manual'||prior.id===current.id||(prior.roots.length&&!same(prior.roots,current.roots)))return;
+    this.store.db.prepare('UPDATE background_model_step_authority SET work_id=? WHERE step_id=? AND work_id=?').run(current.id,step.id,prior.id);
+  }
   captureStep(step:ExecutionStep){const id=this.currentId;if(id)this.bindStep(step.id,id);}
   assertStep(step:ExecutionStep){for(const row of this.store.db.prepare('SELECT work_id FROM background_model_step_authority WHERE step_id=?').all(step.id)){const work=this.saved(String(row.work_id));if(!work)throw pending();this.assert(work);}}
   commitStep<T>(step:ExecutionStep,task:()=>T):T{
