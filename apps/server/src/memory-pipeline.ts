@@ -30,7 +30,7 @@ import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_
 
 import type {MemoryValidationDetails} from './memory-validation.js';
 import type {ModelConfiguration} from './model-configuration.js';
-import {memoryReviewReceipt,memoryReviewQuestion,memoryReviewRequestSuffix,memoryReviewSupportsEdits,type MemoryDraftOrigin} from './memory-review.js';
+import {memoryReviewReceipt,memoryReviewQuestion,memoryReviewRequestSuffix,memoryReviewSupportsEdits,type MemoryDraftOrigin,type MemoryReviewInput} from './memory-review.js';
 import {memoryRequestSizer,type MemoryRequestCapacity} from './memory-request-budget.js';
 import type {Memory} from './memory-schema.js';
 import {memoryReviewReceiptSchema,type MemoryReviewReceipt} from './memory-schema.js';
@@ -68,7 +68,7 @@ export interface MemoryModelSelection {
 export interface MemoryPhasePorts {
   understand?:(input:ConversationPreparation)=>Promise<{id:string;revision:string}[]|undefined>;
   onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;
-  review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy|null,draftOrigin?:MemoryDraftOrigin,recipe?:MemoryRecipeBinding)=>Promise<QueryResult>;
+  review?:(input:MemoryPipelineQuery&Pick<MemoryReviewInput,'resumeReviewFromExtraction'>,result:QueryResult,strategy?:MemoryReviewStrategy|null,draftOrigin?:MemoryDraftOrigin,recipe?:MemoryRecipeBinding)=>Promise<QueryResult>;
   query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;
   skillVersion?:string;
 }
@@ -1248,6 +1248,7 @@ export class MemoryPipeline {
         type Extracted={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;draftOrigin:MemoryDraftOrigin;repair?:string;nativeDraft?:StoredBatch['nativeDraft'];engineDrafts?:MemoryEngineDraftPin[]};
         await yieldTurn();assertGrant();
         const phaseValid=()=>this.engine.isCurrentInputAuthority(batch.id)&&this.validateStep(this.engine.get(batch.id)!);
+        const resumeReviewFromExtraction=this.phaseOutputs.hasExtraction(batch.id,extractionPhaseKey);
         const extracted=await this.phaseOutputs.run<Extracted>({batchId:batch.id,jobId:id,phase:'extract',inputHash:extractionPhaseKey,generation:generationContract,signal,validate:phaseValid,
           assertCommit:()=>{validateArtifacts();},execute:async stageSignal=>{
           let feedback:MemoryOutputValidationError|undefined;
@@ -1311,7 +1312,7 @@ export class MemoryPipeline {
               for(let reviewAttempt=0;reviewAttempt<2;reviewAttempt++){
                 reviewAttemptNumber=reviewAttempt+1;
                 try{
-                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,modelSessionId,signal:stageSignal},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
+                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,modelSessionId,signal:stageSignal,...(resumeReviewFromExtraction?{resumeReviewFromExtraction:true as const}:{})},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
                   const failure=await validateOutput({...result,trace:[]});if(failure)throw new MemoryOutputValidationError(failure.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory review failed host validation',{workContract:contract});
                   // An incomplete text verdict may confuse a referenced original
                   // with this exact target. Let the model reconsider once within
