@@ -41,6 +41,8 @@ jobs:
     timeout-minutes: 120
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      MOTE_TEST_CODEX_BIN: ${{ github.workspace }}/packages/agent/native/codex.mjs
+      MOTE_TEST_DSH_JOURNEYS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -49,8 +51,10 @@ jobs:
         if: env.MOTE_CENTRAL_CHECKS == 'true'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends bubblewrap
-          bwrap --version
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          bwrap --unshare-user --unshare-net --ro-bind / / /usr/bin/true
       - name: Restore the pinned Codex App Server
         if: env.MOTE_CENTRAL_CHECKS == 'true'
         id: native
@@ -81,13 +85,22 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/mote-python-fixtures"
           "$RUNNER_TEMP/mote-python-fixtures/bin/python" -m pip install --only-binary=:all: Pillow==11.3.0
           echo "$RUNNER_TEMP/mote-python-fixtures/bin" >> "$GITHUB_PATH"
-      - name: Verify central workspaces and generated fixtures
+      - name: Verify Shared, Agent and Web workspaces
         if: env.MOTE_CENTRAL_CHECKS == 'true'
         timeout-minutes: 30
-        env:
-          MOTE_TEST_CODEX_BIN: ${{ github.workspace }}/packages/agent/native/codex.mjs
-          MOTE_TEST_DSH_JOURNEYS: '1'
-        run: node scripts/ci/run.mjs --task central-units
+        run: node scripts/ci/run.mjs --task central-workspaces
+      - name: Verify Server shards 1 and 2
+        if: env.MOTE_CENTRAL_CHECKS == 'true'
+        timeout-minutes: 30
+        run: node scripts/ci/run.mjs --task central-server-1-2
+      - name: Verify Server shards 3 and 4
+        if: env.MOTE_CENTRAL_CHECKS == 'true'
+        timeout-minutes: 30
+        run: node scripts/ci/run.mjs --task central-server-3-4
+      - name: Verify release tooling, image fixtures and Central supervisor
+        if: env.MOTE_CENTRAL_CHECKS == 'true'
+        timeout-minutes: 30
+        run: node scripts/ci/run.mjs --task central-release-tools
       - name: Package committed central source and verify archive metadata
         run: node scripts/release/source-package.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -52,6 +52,10 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
     assert.equal(withdrawn.statusCode,200,withdrawn.body);
     const response=await fetch(bridge.url+'/material_read',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({ref:catalog.data.items[0].ref,length:12000})});
     const rejected=await response.json();assert.notEqual(response.status,200,JSON.stringify(rejected));assert.doesNotMatch(JSON.stringify(rejected),/GENERATED_VISIBLE_BODY|generated-visible-path/);
+    if(restriction==='source-withdrawal'){
+      const rediscovery=await call('capability_discover',{name:'sources'});
+      assert.equal(rediscovery.data.version,sourceCall.version,'the static definition remains discoverable');
+    }
     const closed=await fetch(bridge.url+'/capability_execute',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(sourceCall)});
     const denial=await closed.json() as {data?:unknown;toolError?:{code:string}};
     assert.equal(closed.status,400,JSON.stringify(denial));

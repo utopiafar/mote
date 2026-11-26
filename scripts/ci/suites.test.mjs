@@ -26,6 +26,11 @@ test('generated image disclosure and authorization guards are selected by the re
   for (const guard of guards) assert.ok(rootTest.includes(guard), `npm test must include ${guard}`);
 });
 
+test('the staged Central release runs the whole Central plan in order', () => {
+  const stages = ['central-workspaces', 'central-server-1-2', 'central-server-3-4', 'central-release-tools'];
+  assert.deepEqual(stages.flatMap(stage => taskPlan(stage)), taskPlan('central-units'));
+});
+
 test('host changes select the light task that runs host lifecycle contracts once', () => {
   const selected = automaticTasks(selectScopes(['packages/plugin-host/src/host.ts']), 'pull_request').tasks;
   assert.ok(selected.includes('server-build'));

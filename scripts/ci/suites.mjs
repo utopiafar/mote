@@ -33,13 +33,20 @@ const libs = () => [sharedBuild(), agentBuild()];
 const imageAuditTests = () => node('--import', 'tsx', '--test', 'scripts/composed-image-disclosure.test.ts', 'scripts/test-image-context-live.test.ts');
 // Server runtime adapters consume plugin-host; its project references build plugin-api.
 const serverLibs = () => [npm('build', '-w', '@mote/plugin-host'), ...libs()];
+const centralServerChecks = (root, shards) => shards.map(shard => server(serverFiles(shard, root), '--test-skip-pattern', automaticSkipPattern));
+const centralChecks = {
+  'central-workspaces': () => [npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/web')],
+  'central-server-1-2': root => centralServerChecks(root, [1, 2]),
+  'central-server-3-4': root => centralServerChecks(root, [3, 4]),
+  'central-release-tools': root => [
+    node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root)),
+    imageAuditTests(), node('scripts/test-central-runner.mjs'),
+  ],
+};
 export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'architecture') return [node('scripts/ci/architecture.mjs')];
-  if (task === 'central-units') return [
-    npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/web'),
-    ...[1, 2, 3, 4].map(shard => server(serverFiles(shard, root), '--test-skip-pattern', automaticSkipPattern)),
-    node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root)), imageAuditTests(), node('scripts/test-central-runner.mjs'),
-  ];
+  if (task === 'central-units') return Object.values(centralChecks).flatMap(checks => checks(root));
+  if (Object.hasOwn(centralChecks, task)) return centralChecks[task](root);
   if (task === 'integration-units') return [
     npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/diagnostics', '-w', '@mote/desktop', '-w', '@mote/web'),
     ...[1, 2, 3, 4].map(shard => server(serverFiles(shard, root), '--test-skip-pattern', automaticSkipPattern)),
