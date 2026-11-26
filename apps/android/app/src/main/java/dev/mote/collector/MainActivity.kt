@@ -96,8 +96,7 @@ class MainActivity : MoteActivity() {
     private val tabCentrals = linkedMapOf<Page, CentralContent>()
     private val tabCentralStates = mutableMapOf<Page, Bundle>()
     private var localBadgeObserver: (() -> Unit)? = null
-    private var renderedTabs: String? = null
-    private var currentTabs: List<MoteNavItem> = emptyList()
+    private var renderedTabs: List<MoteNavItem>? = null
     private lateinit var statusStrip: StatusStrip
     private lateinit var todaySummary: TextView
     private var localLibraryBadge: (() -> Unit)? = null
@@ -339,13 +338,15 @@ class MainActivity : MoteActivity() {
     }
 
     private fun selectTab(item: MoteNavItem) {
-        when (item.id) {
-            "chat" -> showPage(Page.ASK)
-            "feed" -> showPage(Page.FEED)
-            "ideas" -> showPage(Page.IDEAS)
-            "goals" -> showPage(Page.GOALS)
-            "library" -> showPage(Page.LIBRARY)
+        val page = when (item.id) {
+            "chat" -> Page.ASK
+            "feed" -> Page.FEED
+            "ideas" -> Page.IDEAS
+            "goals" -> Page.GOALS
+            "library" -> Page.LIBRARY
+            else -> return
         }
+        if (page != currentPage) showPage(page)
     }
 
     /** A package that is neither registered in this build nor live contributes no entry. */
@@ -359,15 +360,15 @@ class MainActivity : MoteActivity() {
 
     private fun renderTabs() {
         if (!::tabBar.isInitialized || !::navigationCatalog.isInitialized) return
-        val daily = navigationCatalog.daily { it.packageId in navPackages() }
+        val packages = navPackages()
+        val daily = navigationCatalog.daily { it.packageId in packages }
         if (daily.none { it.id == selectedTabId }) selectedTabId = daily.firstOrNull()?.id ?: MoteNavigation.initialTabId()
         val shown = navBadges.copy(library = MoteLocalBadges.active("library"))
-        currentTabs = daily
-        val signature = TabLocalSignature.tabs(daily, shown)
-        if (signature != renderedTabs) {
-            renderedTabs = signature
+        if (daily != renderedTabs) {
+            renderedTabs = daily
             tabBar.render(daily, shown, selectedTabId)
         } else {
+            tabBar.setBadges(shown)
             tabBar.select(selectedTabId)
         }
     }
@@ -375,7 +376,6 @@ class MainActivity : MoteActivity() {
     private fun renderBadges() {
         if (!::tabBar.isInitialized) return
         val shown = navBadges.copy(library = MoteLocalBadges.active("library"))
-        renderedTabs = TabLocalSignature.tabs(currentTabs, shown)
         tabBar.setBadges(shown)
     }
 
@@ -2207,7 +2207,8 @@ class MainActivity : MoteActivity() {
             if (currentPage != Page.PERMISSIONS) permissionReturnPage = currentPage
             updatePermissionStatuses()
         }
-        if (currentPage != page) {
+        val pageChanged = currentPage != page
+        if (pageChanged) {
             if (pageControlValues().isNotEmpty()) discardPageDraft()
             else pages[currentPage]?.let { scrollPositions[currentPage] = it.scrollY }
             connectionOrigin = if (page == Page.CONNECTION) connectionEntryOrigin else null
@@ -2218,9 +2219,9 @@ class MainActivity : MoteActivity() {
             currentFocus?.clearFocus()
             getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(pagesHost.windowToken, 0)
         }
-        val enteringAsk = page == Page.ASK && currentPage != page
-        val enteringActivity = page == Page.ACTIVITY && currentPage != page
-        val enteringTabCentral = page in tabCentrals && currentPage != page
+        val enteringAsk = page == Page.ASK && pageChanged
+        val enteringActivity = page == Page.ACTIVITY && pageChanged
+        val enteringTabCentral = page in tabCentrals && pageChanged
         currentPage = page
         if (page in dailyTabPages) lastTabPage = page
         MoteNavigation.tabId(page.name)?.let { selectedTabId = it }
@@ -2265,7 +2266,9 @@ class MainActivity : MoteActivity() {
             view.visibility = if (key == page) View.VISIBLE else View.GONE
             view.importantForAccessibility = if (key == page) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
-        (pages[page] as? ScrollView)?.let { scroll -> scroll.post { scroll.scrollTo(0, scrollPositions[page] ?: 0) } }
+        if (pageChanged) (pages[page] as? ScrollView)?.let { scroll ->
+            scroll.post { if (currentPage == page) scroll.scrollTo(0, scrollPositions[page] ?: 0) }
+        }
         if (enteringAsk && resumed) centralContent?.resume()
         if (enteringActivity && resumed) activityContent?.resume()
         if (enteringTabCentral && resumed) tabCentrals[page]?.resume()

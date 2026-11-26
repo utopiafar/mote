@@ -617,7 +617,7 @@
 .preference-toggle strong {font-size:var(--mote-font-body);color:var(--mote-ink);}
 .preference-toggle small {display:block;font-size:var(--mote-font-meta);color:var(--mote-muted);line-height:1.7;margin-top:6px;}
 .preference-toggle input {appearance:none;width:40px;height:24px;min-width:40px;border-radius:var(--mote-radius-container);padding:0;background:var(--mote-border);position:relative;cursor:pointer;}
-.preference-toggle input:after {content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;background:var(--mote-surface);border-radius:50%;box-shadow:none;transition:transform .15s;}
+.preference-toggle input:after {content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;background:var(--mote-surface);border-radius:50%;box-shadow:none;transition:transform var(--mote-motion-feedback) var(--mote-motion-settle);}
 .preference-toggle input:checked {background:var(--mote-accent);border-color:var(--mote-accent);}
 .preference-toggle input:checked:after {transform:translateX(16px);}
 @media (prefers-reduced-motion:reduce){

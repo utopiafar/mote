@@ -9,11 +9,13 @@ async function run(){if(materialOnly){const hash=path=>require('node:crypto').cr
  const field=async(selector,value)=>{await js(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);await pause(80);};
  const snap=async(name,width=1440)=>{window.setSize(width,width===390?844:1000);await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride',{width,height:width===390?844:1000,deviceScaleFactor:1,mobile:width===390});await pause(120);const state=await js(`({width:innerWidth,theme:document.documentElement.dataset.theme,route:location.hash,overflow:document.documentElement.scrollWidth>innerWidth})`);assert.equal(state.overflow,false,name);if(width===390&&name==='ask-default-narrow')assert.equal(await js(`(()=>{const input=document.querySelector('.ask-form textarea').getBoundingClientRect(),send=document.querySelector('.send-button').getBoundingClientRect();return input.right<=send.left;})()`),true,'narrow composer and send do not overlap');writeFileSync(join(out,name+'.png'),(await wc.capturePage()).toPNG());report.screenshots.push({file:name+'.png',...state});};
  const http=async(path,method='GET')=>{const response=await fetch(fixture.url+path,{method,headers:{authorization:'Bearer '+fixture.token}});assert.ok(response.ok,method+' '+path+' returned '+response.status);return response.json();};
- const refresh=()=>until(()=>js(`(()=>{
-  const button=[...document.querySelectorAll('.shell-mobile-menu button')].find(item=>item.textContent==='刷新资料');
-  if(!button||button.disabled)return false;
-  button.click();return true;
- })()`),'global refresh action');
+ const refresh=()=>js(`(()=>{
+  Object.defineProperty(document,'hidden',{configurable:true,value:true});
+  document.dispatchEvent(new Event('visibilitychange'));
+  Object.defineProperty(document,'hidden',{configurable:true,value:false});
+  document.dispatchEvent(new Event('visibilitychange'));
+  delete document.hidden;
+ })()`);
  const completed=question=>until(()=>js(`[...document.querySelectorAll('.conversation-turn[data-state="completed"]')].some(row=>row.querySelector('.asked-question')?.textContent===${JSON.stringify(question)}&&row.querySelector('.markdown'))`),'saved answer for '+question);
  await window.loadURL(fixture.url+'/#/chat');await click('登录 Mote');await field('.connect-modal input[type=password]',fixture.token);await click('登录并继续');await until(()=>js(`!!document.querySelector('textarea[aria-label="向 Mote 提问"]')&&!document.querySelector('.connect-modal')`),'authenticated Ask');const {id:conversationId}=await http('/api/conversations/main');
  const conversationPath='/api/conversations/'+conversationId;

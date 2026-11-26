@@ -6,10 +6,12 @@ import SwiftUI
 struct CaptureSyncView: View {
     let presentation: CaptureSyncPresentation
     let onBack: (() -> Void)?
+    let canPerform: (CaptureSyncAction) -> Bool
     let onAction: (CaptureSyncAction) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingAddSource: Bool
     @State private var sendPaused: Bool
 
@@ -17,10 +19,12 @@ struct CaptureSyncView: View {
         presentation: CaptureSyncPresentation,
         initiallyShowingAddSource: Bool = false,
         onBack: (() -> Void)? = nil,
+        canPerform: @escaping (CaptureSyncAction) -> Bool = { _ in true },
         onAction: @escaping (CaptureSyncAction) -> Void = { _ in }
     ) {
         self.presentation = presentation
         self.onBack = onBack
+        self.canPerform = canPerform
         self.onAction = onAction
         self._showingAddSource = State(initialValue: initiallyShowingAddSource)
         self._sendPaused = State(initialValue: presentation.sendPaused)
@@ -45,7 +49,9 @@ struct CaptureSyncView: View {
 
                         sourceGroup
                         sendGroup.padding(.top, 24)
-                        storageGroup.padding(.top, 24)
+                        if presentation.storageText != nil || canPerform(.openStorage) {
+                            storageGroup.padding(.top, 24)
+                        }
                     }
                     .padding(.bottom, 34)
                 }
@@ -54,10 +60,11 @@ struct CaptureSyncView: View {
 
             if showingAddSource {
                 addSourceLayer
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: showingAddSource)
+        .animation(reduceMotion ? nil : MoteMotion.settle(showingAddSource ? MoteMotion.enter : MoteMotion.exit), value: showingAddSource)
+        .onChange(of: presentation.sendPaused) { _, paused in sendPaused = paused }
     }
 
     private var backBar: some View {
@@ -80,7 +87,9 @@ struct CaptureSyncView: View {
             ForEach(Array(presentation.sources.enumerated()), id: \.element.id) { index, source in
                 sourceRow(source, topDivider: index > 0)
             }
-            addSourceRow(topDivider: !presentation.sources.isEmpty)
+            if !availableAddKinds.isEmpty {
+                addSourceRow(topDivider: !presentation.sources.isEmpty)
+            }
         }
         .padding(.horizontal, MoteMetrics.pageMargin)
     }
@@ -148,43 +157,47 @@ struct CaptureSyncView: View {
                 minHeight: 60,
                 action: nil
             ) {
-                if let actionTitle = send.actionTitle, let action = send.action {
+                if let actionTitle = send.actionTitle, let action = send.action, canPerform(action) {
                     CaptureActionPill(title: actionTitle) {
                         onAction(action)
                     }
                 }
             }
 
-            CaptureSyncRow(
-                icon: .clock,
-                title: "发送方式",
-                subtitle: nil,
-                subtitleTone: .normal,
-                topDivider: true,
-                minHeight: 48,
-                action: { onAction(.openSendMethod) }
-            ) {
-                HStack(spacing: 8) {
-                    Text(presentation.sendMethod)
-                        .font(.system(size: 15))
-                        .foregroundStyle(MoteDesignTokens.muted.color)
-                    MoteChevron()
+            if canPerform(.openSendMethod) {
+                CaptureSyncRow(
+                    icon: .clock,
+                    title: "发送方式",
+                    subtitle: nil,
+                    subtitleTone: .normal,
+                    topDivider: true,
+                    minHeight: 48,
+                    action: { onAction(.openSendMethod) }
+                ) {
+                    HStack(spacing: 8) {
+                        Text(presentation.sendMethod)
+                            .font(.system(size: 15))
+                            .foregroundStyle(MoteDesignTokens.muted.color)
+                        MoteChevron()
+                    }
                 }
             }
 
-            CaptureSyncRow(
-                icon: .pause,
-                title: "暂停发送",
-                subtitle: nil,
-                subtitleTone: .normal,
-                topDivider: true,
-                minHeight: 48,
-                action: nil
-            ) {
-                CaptureSwitch(isOn: $sendPaused)
-                    .onChange(of: sendPaused) { _, paused in
-                        onAction(.setSendPaused(paused))
+            if canPerform(.setSendPaused(!sendPaused)) {
+                CaptureSyncRow(
+                    icon: .pause,
+                    title: "暂停发送",
+                    subtitle: nil,
+                    subtitleTone: .normal,
+                    topDivider: true,
+                    minHeight: 48,
+                    action: nil
+                ) {
+                    CaptureSwitch(isOn: sendPaused) {
+                        sendPaused.toggle()
+                        onAction(.setSendPaused(sendPaused))
                     }
+                }
             }
         }
         .padding(.horizontal, MoteMetrics.pageMargin)
@@ -199,7 +212,7 @@ struct CaptureSyncView: View {
                 subtitleTone: .normal,
                 topDivider: false,
                 minHeight: 48,
-                action: { onAction(.openStorage) }
+                action: canPerform(.openStorage) ? { onAction(.openStorage) } : nil
             ) {
                 HStack(spacing: 8) {
                     if let storageText = presentation.storageText {
@@ -207,7 +220,7 @@ struct CaptureSyncView: View {
                             .font(.system(size: 15))
                             .foregroundStyle(MoteDesignTokens.muted.color)
                     }
-                    MoteChevron()
+                    if canPerform(.openStorage) { MoteChevron() }
                 }
             }
         }
@@ -222,7 +235,7 @@ struct CaptureSyncView: View {
             subtitleTone: .normal,
             topDivider: topDivider,
             minHeight: 48,
-            action: { withAnimation(.easeOut(duration: 0.2)) { showingAddSource = true } },
+            action: { showingAddSource = true },
             titleColor: MoteDesignTokens.accent.color,
             iconColor: MoteDesignTokens.accent.color
         ) {
@@ -236,7 +249,7 @@ struct CaptureSyncView: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    withAnimation(.easeOut(duration: 0.2)) { showingAddSource = false }
+                    showingAddSource = false
                 }
                 .accessibilityHidden(true)
 
@@ -247,7 +260,7 @@ struct CaptureSyncView: View {
                         .foregroundStyle(MoteDesignTokens.ink.color)
                     Spacer(minLength: 0)
                     MoteIconButton(icon: .close, label: "关闭", style: .muted) {
-                        withAnimation(.easeOut(duration: 0.2)) { showingAddSource = false }
+                        showingAddSource = false
                     }
                 }
                 .padding(.leading, 20)
@@ -255,7 +268,7 @@ struct CaptureSyncView: View {
                 .frame(height: 44)
 
                 MoteGroup {
-                    ForEach(Array(presentation.addSourceKinds.enumerated()), id: \.element) { index, kind in
+                    ForEach(Array(availableAddKinds.enumerated()), id: \.element) { index, kind in
                         CaptureSyncRow(
                             icon: icon(for: kind),
                             title: kind.title,
@@ -264,8 +277,8 @@ struct CaptureSyncView: View {
                             topDivider: index > 0,
                             minHeight: 48,
                             action: {
+                                showingAddSource = false
                                 onAction(kind.opensExternal ? .openCentralSources : .addSource(kind))
-                                withAnimation(.easeOut(duration: 0.2)) { showingAddSource = false }
                             }
                         ) {
                             MoteIcon(kind.opensExternal ? .external : .chev, size: 16)
@@ -282,6 +295,10 @@ struct CaptureSyncView: View {
             .ignoresSafeArea(edges: .bottom)
             .accessibilityAddTraits(.isModal)
         }
+    }
+
+    private var availableAddKinds: [AddSourceKind] {
+        presentation.addSourceKinds.filter { canPerform($0.opensExternal ? .openCentralSources : .addSource($0)) }
     }
 
     private var scrimColor: Color {
@@ -426,12 +443,12 @@ private struct CaptureActionPill: View {
 
 /// The canvas switch: 51 × 31 with a 27pt knob and a 44pt hit target.
 private struct CaptureSwitch: View {
-    @Binding var isOn: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isOn: Bool
+    let action: () -> Void
 
     var body: some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.15)) { isOn.toggle() }
-        } label: {
+        Button(action: action) {
             ZStack {
                 Capsule()
                     .fill(isOn ? MoteDesignTokens.accent.color : MoteDesignTokens.border.color)
@@ -446,6 +463,7 @@ private struct CaptureSwitch: View {
             .frame(width: 51, height: 31)
             .frame(height: 44)
             .contentShape(Rectangle())
+            .animation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.feedback), value: isOn)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("暂停发送"))

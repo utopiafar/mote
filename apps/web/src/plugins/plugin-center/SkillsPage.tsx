@@ -177,7 +177,7 @@ const skillsStyles=`
 .skills-pin {display:inline-flex;align-items:center;gap:8px;color:var(--mote-muted);}
 .skills-switch {position:relative;flex:none;width:44px;height:26px;padding:0;border:0;border-radius:999px;background:var(--mote-hair);cursor:pointer;}
 .skills-switch[aria-checked=true] {background:var(--mote-accent);}
-.skills-switch::after {content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:999px;background:var(--mote-surface);transition:transform .15s;}
+.skills-switch::after {content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:999px;background:var(--mote-surface);transition:transform var(--mote-motion-feedback) var(--mote-motion-settle);}
 .skills-switch[aria-checked=true]::after {transform:translateX(18px);}
 .skills-switch:disabled {opacity:.5;cursor:default;}
 @media (max-width:760px) {.skills-row {grid-template-columns:24px minmax(0,1fr) auto;gap:9px;} .skills-page {max-width:none;}}

@@ -2,8 +2,9 @@ import {desktopIcon,desktopContentIcon} from './desktop-icon';
 import {renderReadableFailure} from './ui-diagnostic';
 import {moteText,getLocale} from '@mote/shared/i18n';
 import type {DesktopApi,Status} from './contracts';
-import type {ContentItem} from './contracts/content';
+import {localContentPageSize,type ContentItem} from './contracts/content';
 import {showSkeleton,showLoadingLine} from './loading-ui';
+import {updateListChildren} from './list-children';
 
 /** Reads the same complete local queue index as Content; each row opens the shared reader. */
 export function createWorkPendingUi(api:DesktopApi,open:(item:ContentItem)=>void,receipts:()=>void){
@@ -18,13 +19,90 @@ export function createWorkPendingUi(api:DesktopApi,open:(item:ContentItem)=>void
   for(const id of ['work-local-state','work-local-pending','work-local-jobs'])wrapper.append(document.getElementById(id)!);
   for(let next=section.nextElementSibling;next;){const following=next.nextElementSibling;wrapper.append(next);next=following;}
   wrapper.append(document.getElementById('work-refresh')!);root.append(section,actions,wrapper);
-  let version=0,active=false,next:number|undefined,reading=false,scope='',items:ContentItem[]=[];
-  function render(){list.replaceChildren();for(const item of items){const row=document.createElement('button');row.type='button';row.className='content-row home-content-row';const icon=document.createElement('span');icon.className='home-content-symbol';icon.append(desktopContentIcon(document,item.source));const copy=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small'),status=document.createElement('span');title.textContent=item.title;meta.textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale())].filter(Boolean).join(' · ');copy.className='content-row-copy';copy.append(title,meta);status.className=item.error?'content-state needs-attention':'content-state';status.textContent=item.error?moteText('需要处理'):moteText('本机待发送');const arrow=document.createElement('span');arrow.className='chevron';arrow.append(desktopIcon(document,'chevron-right',true));row.append(icon,copy,status,arrow);row.addEventListener('click',()=>open(item));list.append(row);}more.hidden=next===undefined;}
-  async function refresh(append=false){if(!active||reading)return;const revision=++version;reading=true;if(items.length)showLoadingLine(state);else showSkeleton(state);more.disabled=true;
-    try{const page=await api.localContent(append?next:0,undefined,true);if(revision!==version||!active)return;items=append?[...items,...page.items]:page.items;next=page.nextOffset;render();state.textContent=items.length?'':moteText('没有待发送内容');}
-    catch(error){if(revision===version&&active)renderReadableFailure(state,moteText('内容暂不可完整读取，重试。'),error instanceof Error?error.message:String(error));}
-    finally{if(revision===version){reading=false;more.disabled=false;}}
+  let version=0,active=false,reading=false,stale=false,scope='',queue='';
+  let items:ContentItem[]=[],next:number|undefined,visibleLimit=localContentPageSize;
+  function createRow(item:ContentItem){
+    const row=document.createElement('button'),icon=document.createElement('span'),copy=document.createElement('span');
+    const title=document.createElement('strong'),meta=document.createElement('small'),status=document.createElement('span');
+    const arrow=document.createElement('span');
+    row.type='button';
+    row.className='content-row home-content-row';
+    icon.className='home-content-symbol';
+    icon.append(desktopContentIcon(document,item.source));
+    copy.className='content-row-copy';
+    copy.append(title,meta);
+    status.className='content-state';
+    arrow.className='chevron';
+    arrow.append(desktopIcon(document,'chevron-right',true));
+    row.append(icon,copy,status,arrow);
+    const view={row,title,meta,status,item};
+    row.addEventListener('click',()=>open(view.item));
+    return view;
+  }
+  let rows=new Map<string,ReturnType<typeof createRow>>();
+  function render(){
+    const current=new Map<string,ReturnType<typeof createRow>>();
+    for(const item of items){
+      const view=rows.get(item.key)??createRow(item);
+      view.item=item;
+      const meta=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale())].filter(Boolean).join(' · ');
+      const status=item.error?moteText('需要处理'):moteText('本机待发送');
+      if(view.title.textContent!==item.title)view.title.textContent=item.title;
+      if(view.meta.textContent!==meta)view.meta.textContent=meta;
+      if(view.status.textContent!==status)view.status.textContent=status;
+      view.status.classList.toggle('needs-attention',Boolean(item.error));
+      current.set(item.key,view);
+    }
+    rows=current;
+    updateListChildren(list,Array.from(rows.values(),view=>view.row));
+    more.hidden=next===undefined;
+  }
+  async function refresh(append=false){
+    if(!active||reading||(append&&next===undefined))return;
+    const revision=++version;
+    reading=true;
+    stale=false;
+    if(items.length)showLoadingLine(state);else showSkeleton(state);
+    more.disabled=true;
+    try{
+      const limit=visibleLimit+(append?localContentPageSize:0);
+      const page=await api.localContent(0,undefined,true,limit);
+      if(revision!==version||!active)return;
+      items=page.items;
+      next=page.nextOffset;
+      visibleLimit=limit;
+      render();
+      state.textContent=items.length?'':moteText('没有待发送内容');
+    }catch(error){
+      if(revision!==version||!active)return;
+      renderReadableFailure(state,moteText('内容暂不可完整读取，重试。'),error instanceof Error?error.message:String(error));
+      const retry=document.createElement('button');
+      retry.type='button';retry.className='text-button';retry.textContent=moteText('重试');
+      retry.addEventListener('click',()=>void refresh(append));
+      state.append(' ',retry);
+    }finally{
+      if(revision===version){
+        reading=false;
+        more.disabled=false;
+        if(stale)void refresh();
+      }
+    }
   }
   more.addEventListener('click',()=>void refresh(true));pending.addEventListener('click',()=>void refresh());document.getElementById('work-refresh')!.addEventListener('click',()=>void refresh());
-  return {show(){active=true;void refresh();},hide(){active=false;version++;reading=false;},update(status:Status){const nextScope=JSON.stringify([status.authorizationGeneration,status.config.serverUrl,status.config.tokenConfigured,status.queueDepth,status.sync.pendingRecords]);if(scope&&scope!==nextScope){version++;reading=false;items=[];list.replaceChildren();if(active)void refresh();}scope=nextScope;}};
+  return {
+    show(){active=true;void refresh();},
+    hide(){active=false;version++;reading=false;},
+    update(status:Status){
+      const nextScope=JSON.stringify([status.authorizationGeneration,status.config.serverUrl,status.config.tokenConfigured,status.config.authSignedOut,status.config.authExpiresAt]);
+      const nextQueue=JSON.stringify([status.queueDepth,status.sync.pendingRecords]);
+      if(scope&&scope!==nextScope){
+        version++;reading=false;stale=false;items=[];next=undefined;visibleLimit=localContentPageSize;
+        render();state.replaceChildren();
+        if(active)void refresh();
+      }else if(queue&&queue!==nextQueue&&active){
+        if(reading)stale=true;else void refresh();
+      }
+      scope=nextScope;queue=nextQueue;
+    },
+  };
 }

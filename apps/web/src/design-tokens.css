@@ -83,6 +83,15 @@
   --mote-warning-tint: #f7eddb;
   --mote-danger-tint: #f7e6e3;
   --mote-focus-ring: #7651a4;
+  --mote-motion-press: 80ms;
+  --mote-motion-feedback: 140ms;
+  --mote-motion-enter: 180ms;
+  --mote-motion-exit: 140ms;
+  --mote-motion-loading-delay: 300ms;
+  --mote-motion-loading-cycle: 1800ms;
+  --mote-motion-progress-cycle: 1400ms;
+  --mote-motion-spin: 900ms;
+  --mote-motion-settle: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-color-scheme="light"]) { color-scheme: dark;

@@ -236,7 +236,10 @@
         "connectorTargets": [
           {
             "name": "示例日历",
-            "capability": {"id": "calendar.manage", "version": 1},
+            "capability": {
+              "id": "calendar.manage",
+              "version": 1
+            },
             "target": {
               "executionLocation": "central-connector",
               "packageId": "generated.calendar",
@@ -325,6 +328,12 @@
           "excluded": 0
         },
         "branches": []
+      }
+    },
+    "GET /api/conversations/10000000-0000-4000-8000-000000000001/assistant-tasks": {
+      "status": 200,
+      "body": {
+        "items": []
       }
     }
   }

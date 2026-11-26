@@ -31,6 +31,7 @@
 .app-shell[data-navigation] .sidebar nav button>svg
 .app-shell[data-navigation] .topbar
 .app-shell[data-navigation] .topbar-actions
+.app-shell[data-navigation]:not(:has(>.sidebar))>.main
 .app-shell[data-navigation]>.main
 .app-shell[data-navigation]>.sidebar
 .archive-welcome
@@ -90,6 +91,7 @@
 .connection-help p
 .connection-help summary
 .content
+.content[data-session=signed-out]>.settings-sign-in
 .conversation-dialog
 .conversation-dialog .button
 .conversation-dialog .text-button
@@ -159,6 +161,7 @@
 .evidence-heading p
 .evidence-heading>.icon-button
 .evidence-heading>div
+.evidence-identity
 .evidence-main
 .evidence-modal
 .evidence-number
@@ -283,6 +286,10 @@
 .material-detail dl
 .material-detail pre
 .material-detail>.button
+.material-reader-heading
+.material-reader-heading h2
+.material-reader-heading p
+.material-reader-heading>div
 .metadata-details
 .metadata-details dd
 .metadata-details dl
@@ -369,6 +376,16 @@
 .quick-note-dialog>.notice
 .quick-note-dialog>header
 .quick-note-dialog>header h2
+.reader-details-backdrop
+.reader-details-content
+.reader-details-content .reader-source-details>summary
+.reader-details-content :is(dl,pre,code)
+.reader-details-content pre
+.reader-details-panel
+.reader-details-panel>header
+.reader-details-panel>header .icon-button
+.reader-details-panel>header h2
+.reader-details-trigger
 .reader-menu
 .reader-menu .danger-text
 .reader-menu .evidence-source-actions
@@ -378,6 +395,7 @@
 .reader-menu [role=menuitem]:hover
 .reader-menu-note
 .reader-menu-separator
+.reader-status
 .record-id
 .report-more
 .report-more-menu
@@ -673,6 +691,12 @@
 @media (max-width:760px) | .page-heading>p
 @media (max-width:760px) | .period-select
 @media (max-width:760px) | .quick-note
+@media (max-width:760px) | .reader-details-backdrop
+@media (max-width:760px) | .reader-details-content
+@media (max-width:760px) | .reader-details-panel
+@media (max-width:760px) | .reader-details-panel>header .icon-button
+@media (max-width:760px) | .reader-details-trigger
+@media (max-width:760px) | .reader-details-trigger>span
 @media (max-width:760px) | .section-heading
 @media (max-width:760px) | .section-heading h2
 @media (max-width:760px) | .section-tabs
@@ -729,8 +753,6 @@
 @media (max-width:760px) | .workspace-tools>.workspace-context>.workspace-tool-links:only-child
 @media (max-width:760px) | .workspace-tools>.workspace-range select
 @media (max-width:760px) | html
-@media (max-width:900px) | .evidence-aside
-@media (max-width:900px) | .evidence-body
 @media (max-width:980px) | .citation-grid
 @media (max-width:980px) | .welcome .eyebrow
 @media (max-width:980px) | .welcome h1
@@ -754,9 +776,24 @@
 @media (prefers-color-scheme:dark) | :root:not([data-color-scheme=light])
 @media (prefers-contrast:more) | .button:not(.danger)
 @media (prefers-contrast:more) | :root
+@media (prefers-reduced-motion:no-preference) | .reader-details-backdrop
+@media (prefers-reduced-motion:no-preference) | .reader-details-backdrop[hidden]
+@media (prefers-reduced-motion:no-preference) | .reader-details-backdrop[hidden]>.reader-details-panel
+@media (prefers-reduced-motion:no-preference) | .reader-details-panel
+@media (prefers-reduced-motion:no-preference) | .shell-menu[open]>div
+@media (prefers-reduced-motion:no-preference) | :is(.connect-modal,.quick-note-dialog,.conversation-dialog,.report-more-menu)
+@media (prefers-reduced-motion:no-preference) | :is(.modal-backdrop:not(.evidence-reader-backdrop),.quick-note-backdrop,.conversation-dialog-backdrop)
+@media (prefers-reduced-motion:no-preference) | @starting-style  | .reader-details-backdrop:not([hidden])
+@media (prefers-reduced-motion:no-preference) | @starting-style  | .reader-details-backdrop:not([hidden])>.reader-details-panel
 @media (prefers-reduced-motion:reduce) | *
 @media (prefers-reduced-motion:reduce) | *:after
 @media (prefers-reduced-motion:reduce) | *:before
+@media (prefers-reduced-motion:reduce) | .button:not(:disabled):active
+@media (prefers-reduced-motion:reduce) | .image-skeleton
+@media (prefers-reduced-motion:reduce) | .loading.loading-line
+@media (prefers-reduced-motion:reduce) | .loading.loading-mark
+@media (prefers-reduced-motion:reduce) | .loading.loading-text
+@media (prefers-reduced-motion:reduce) | .loading.skeleton
 @media (prefers-reduced-motion:reduce) | .spin
 [hidden]
 a

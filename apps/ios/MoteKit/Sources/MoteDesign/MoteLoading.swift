@@ -52,25 +52,22 @@ public struct MoteLoadingTile: View {
     }
 }
 
-/// Holds a loading view back for 300 ms, then lets it breathe. With Reduce Motion it shows at once and holds still.
+/// Give fast reads time to finish before revealing the placeholder.
 private struct LoadingReveal: ViewModifier {
     let label: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
-    @State private var dimmed = false
 
     func body(content: Content) -> some View {
         content
-            .opacity(dimmed ? 0.45 : 1)
             .opacity(shown ? 1 : 0)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
-            .task {
-                guard !reduceMotion else { shown = true; return }
-                try? await Task.sleep(for: .milliseconds(300))
+            .task(id: reduceMotion) {
+                guard !shown else { return }
+                try? await Task.sleep(for: MoteMotion.loadingDelay)
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.2)) { shown = true }
-                withAnimation(.easeInOut(duration: 0.9).delay(0.2).repeatForever(autoreverses: true)) { dimmed = true }
+                withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.enter)) { shown = true }
             }
     }
 }

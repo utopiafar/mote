@@ -16,10 +16,15 @@ async function fixture(t:any){
  dom.window.scrollTo=()=>{};dom.window.HTMLElement.prototype.scrollIntoView=()=>{};const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,value] of previous){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,d:dom.window.document,w:dom.window};
 }
 test('global retrieval keyboard focuses search without opening a modal or issuing an empty query',async t=>{
- const {root,d,w}=await fixture(t),pages:string[]=[];
- await act(async()=>root.render(React.createElement(GlobalRetrieval,{onPage:page=>pages.push(page)})));
+ const {root,d,w}=await fixture(t);
+ await act(async()=>root.render(React.createElement(GlobalRetrieval)));
  w.dispatchEvent(new w.KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}));assert.equal(d.activeElement,d.querySelector('input'));
- await act(async()=>d.querySelector('form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(w.location.hash,'#/search?query=generated');assert.deepEqual(pages,[]);assert.equal(d.querySelector('[role=dialog]'),null);
+ await act(async()=>d.querySelector('form')!.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})));assert.equal(w.location.hash,'#/search?query=generated');assert.equal(d.querySelector('[role=dialog]'),null);
+ d.querySelector('form')!.setAttribute('inert','');(d.activeElement as HTMLElement).blur();
+ const shortcut=new w.KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true,cancelable:true});
+ w.dispatchEvent(shortcut);
+ assert.equal(shortcut.defaultPrevented,false);
+ assert.notEqual(d.activeElement,d.querySelector('input'));
 });
 test('search opens a pinned result with evidence then returns to its result list',async t=>{
  const {root,d}=await fixture(t),reads:string[]=[];

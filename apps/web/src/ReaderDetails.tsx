@@ -21,13 +21,14 @@ export function ReaderDetails({open, opener, onClose, children}: {
     return () => {
       restore();
       queueMicrotask(() => {
+        if (panel.current && !panel.current.closest('[hidden]')) return;
         if (trigger?.isConnected && !trigger.closest('[inert]')) trigger.focus({preventScroll:true});
       });
     };
   }, [open, opener]);
 
-  return createPortal(<div className="reader-details-backdrop" hidden={!open}
-    onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
+  return createPortal(<div className="reader-details-backdrop" hidden={!open} inert={!open}
+    onMouseDown={event => { if (open && event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();

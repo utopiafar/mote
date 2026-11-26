@@ -27,7 +27,7 @@ async function dialog(t:TestContext){
   }
   const {createRoot}=await import('react-dom/client'),{LoginDialog}=await import('../src/shell-components.js');
   const root=createRoot(dom.window.document.getElementById('root')!);let connected=0;
-  await act(async()=>root.render(React.createElement(LoginDialog,{destination:'资料库',onConnected:()=>connected++,onClose:()=>{}})));
+  await act(async()=>root.render(React.createElement(LoginDialog,{onConnected:()=>connected++,onClose:()=>{}})));
   const input=dom.window.document.querySelector('input')!;
   await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(input,'generated-owner-token');input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
   t.after(async()=>{await act(async()=>root.unmount());for(const[key,value]of before){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});

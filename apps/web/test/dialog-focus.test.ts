@@ -33,7 +33,7 @@ test('real login contains focus and restores its opener without sending credenti
  const {createRoot}=await import('react-dom/client');
  const d=dom.window.document,opener=d.querySelector<HTMLElement>('#opener')!,root=createRoot(d.querySelector('#mount')!);opener.focus();
  t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,previous]of globals){if(previous)Object.defineProperty(globalThis,key,previous);else Reflect.deleteProperty(globalThis,key);}});
- await act(async()=>root.render(React.createElement(LoginDialog,{destination:'Generated destination',onConnected:()=>assert.fail('no login request expected'),onClose:()=>{}})));
+ await act(async()=>root.render(React.createElement(LoginDialog,{onConnected:()=>assert.fail('no login request expected'),onClose:()=>{}})));
  assert.equal(d.querySelector('main')!.hasAttribute('inert'),true);assert.equal(d.querySelector('[role=dialog]')!.contains(d.activeElement),true);
  await act(async()=>root.render(null));assert.equal(d.querySelector('main')!.hasAttribute('inert'),false);assert.equal(d.activeElement,opener);
 });

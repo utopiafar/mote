@@ -154,6 +154,12 @@
       "body": {
         "items": []
       }
+    },
+    "GET /api/conversations/10000000-0000-4000-8000-000000000001/assistant-tasks": {
+      "status": 200,
+      "body": {
+        "items": []
+      }
     }
   }
 }

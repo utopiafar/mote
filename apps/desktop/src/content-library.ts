@@ -1,4 +1,4 @@
-import type { ContentItem, LocalContentPage, ContentDetail, CentralContentPage } from './contracts/content';
+import {localContentPageSize, type ContentItem, type LocalContentPage, type ContentDetail, type CentralContentPage} from './contracts/content';
 export type { ContentItem, LocalContentPage, ContentDetail, CentralContentPage } from './contracts/content';
 import {sourceSchema,sourceItemSchema} from '@mote/shared';
 import {noteBody} from './note-presentation';
@@ -11,14 +11,15 @@ import type { SyncSource } from './sync-history';
 const sourceKind=(kind:string):SyncSource=>kind==='local-calendar'?'calendar':kind==='coding-agent'?'coding':'file';
 /** All content is evidence. The bounded reading surface never executes or interprets its text. */
 function contentQuery(query?:string):string {if(query!==undefined&&(typeof query!=='string'||query.length>2000))throw Error(moteText('搜索内容过长'));return query?.trim().toLocaleLowerCase()??'';}
-export function localContentPage(queue:DurableQueue,sources:LocalSourceManager,offset=0,query?:string,sourceId?:string,pendingOnly=false,meetings:ContentItem[]=[]):LocalContentPage {
-  if(!Number.isSafeInteger(offset)||offset<0)throw Error(moteText('分页参数无效'));
+export function localContentPage(queue:DurableQueue,sources:LocalSourceManager,offset=0,query?:string,sourceId?:string,pendingOnly=false,meetings:ContentItem[]=[],limit=localContentPageSize):LocalContentPage {
+  if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||!Number.isSafeInteger(offset+limit))throw Error(moteText('分页参数无效'));
   if(typeof pendingOnly!=='boolean')throw Error(moteText('分页参数无效'));
   const needle=contentQuery(query),matches=(...values:(string|undefined)[])=>!needle||values.some(value=>value?.toLocaleLowerCase().includes(needle));
   const sourceRows=sources.pendingContentSummaries().filter(row=>
     (!sourceId||row.sourceId===sourceId&&row.item.blockedStatus===undefined)&&matches(row.item.title,row.item.text));
   const items:ContentItem[]=[...(!sourceId?meetings.filter(item=>(!pendingOnly||!item.archiveAcknowledgment)&&matches(item.title,item.sourceName)):[]),...(sourceId?[]:queue.contentSummaries()).filter(record=>(!pendingOnly||!record.archiveAcknowledgment)&&matches(record.appName,record.ocrText)).map(record=>({key:`queue:${record.id}`,source:record.source,title:record.source==='note'?record.ocrText?.split('\n')[0].slice(0,100)||moteText('记录'):record.appName,observedAt:record.capturedAt,preview:(record.ocrText??'').slice(0,160),sourceName:record.deviceName,error:record.syncError,archiveAcknowledgment:record.archiveAcknowledgment,localContentRelease:record.localContentRelease})),...sourceRows.map(({sourceId,sourceKind:kind,sourceName,item,key})=>({key:`source:${sourceId}:${key}`,source:sourceKind(kind),title:item.title,observedAt:item.observedAt,preview:item.text.slice(0,160),sourceName,error:item.localPolicy?moteText('当前本机来源范围已变更，旧待传版本已隔离，原输入保留。'):item.blockedStatus?moteText('本机待处理 {0} 项',1):undefined}))].sort((a,b)=>b.observedAt.localeCompare(a.observedAt)||a.key.localeCompare(b.key));
-  return {items:items.slice(offset,offset+30),total:items.length,...(offset+30<items.length?{nextOffset:offset+30}:{})};
+  const end=offset+limit;
+  return {items:items.slice(offset,end),total:items.length,...(end<items.length?{nextOffset:end}:{})};
 }
 export async function localContentDetail(queue:DurableQueue,sources:LocalSourceManager,key:string,image=false):Promise<ContentDetail>{
   if(typeof key!=='string'||key.length>160||typeof image!=='boolean')throw Error(moteText('记录标识无效'));

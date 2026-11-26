@@ -45,20 +45,22 @@ final class CaptureSyncModel {
         let centralURL = connection.flatMap { URL(string: $0.serverUrl) }
         let host = centralURL?.host ?? connection?.serverUrl ?? "未连接"
         let sendState: SendSyncState
-        if pending > 0 {
-            sendState = .pending(count: pending)
-        } else if connection != nil {
-            sendState = .synced(at: nil)
-        } else {
+        if connection == nil {
             sendState = .reconnect
+        } else if pending > 0 {
+            sendState = .pending(count: pending)
+        } else {
+            sendState = .synced(at: nil)
         }
         let facts = CaptureSyncFacts(
             notificationShortcutEnabled: notifications?.settings.setupPhase == .enabled,
             screenshotShortcutEnabled: screenshots?.settings.setupPhase == .enabled,
             notificationLastReceived: notifications?.received.first.flatMap { SourceReceiptTime.format($0.capturedAt) },
             screenshotLastReceived: screenshots?.received.first.flatMap { SourceReceiptTime.format($0.capturedAt) },
+            mediaAdded: false,
             centralHost: host,
             sendState: sendState,
+            sendPaused: MoteSendPause.isPaused(),
             storageBytes: storageBytes(fileManager: fileManager)
         )
         return State(presentation: CaptureSyncPresentation(facts: facts), centralURL: centralURL)

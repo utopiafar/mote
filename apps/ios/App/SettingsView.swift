@@ -18,6 +18,7 @@ struct SettingsScreen: View {
     @State private var page: Page
     @State private var confirmingDisconnect = false
     @State private var notice: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         model: SettingsModel = SettingsModel(),
@@ -61,13 +62,15 @@ struct SettingsScreen: View {
                     .padding(.horizontal, MoteMetrics.pageMargin)
                     .padding(.bottom, 24)
                     .frame(maxHeight: .infinity, alignment: .bottom)
+                    .transition(.opacity)
             }
         }
         .onAppear { model.refresh() }
         .task(id: notice) {
             guard notice != nil else { return }
             try? await Task.sleep(for: .seconds(2))
-            withAnimation { notice = nil }
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.exit)) { notice = nil }
         }
         .alert("断开连接", isPresented: $confirmingDisconnect) {
             Button("取消", role: .cancel) {}
@@ -80,7 +83,7 @@ struct SettingsScreen: View {
     private func disconnect() {
         model.disconnect()
         page = .settings
-        withAnimation { notice = "已断开连接，已有记录保留在本机" }
+        withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.enter)) { notice = "已断开连接，已有记录保留在本机" }
     }
 
     private static var version: String {

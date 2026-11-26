@@ -1,8 +1,8 @@
 import {
-  Brain, LayoutGrid, Lightbulb, MessageCircle, Newspaper, Plug, Puzzle, SlidersHorizontal, SquareCheck,
+  Brain, ChevronDown, LayoutGrid, Lightbulb, MessageCircle, Newspaper, Plug, Puzzle, SlidersHorizontal, SquareCheck,
   type LucideIcon,
 } from 'lucide-react';
-import {useContext,type ReactNode} from 'react';
+import {useContext,useEffect,useRef} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {moteBrand,navigationFor,type PinnedNavPage} from '@mote/shared';
 import {MoteMark} from './Loading';
@@ -91,20 +91,36 @@ export function WorkspaceSidebar({groups,page,onPage}:NavigationProps){
   </>;
 }
 
-export function WorkspaceMenu({groups,page,pageLabel,onPage,children}:NavigationProps & {
+export function WorkspaceMenu({groups,page,pageLabel,onPage}:Omit<NavigationProps,'onPage'> & {
   pageLabel:string;
-  children?:ReactNode;
+  onPage:(page:Page)=>boolean;
 }){
   const daily=withPinnedPages(groups.daily,usePinnedNavigation());
-  return <details className="shell-menu shell-mobile-menu">
-    <summary aria-label={moteText('主导航')}>{pageLabel}</summary>
-    <div onClick={event=>{
-      if(event.target instanceof Element&&event.target.closest('button')){
-        (event.currentTarget.parentElement as HTMLDetailsElement).open=false;
-      }
-    }}>
-      <NavLinks items={[...daily,...groups.manage]} page={page} onPage={onPage}/>
-      {children}
+  const menu=useRef<HTMLDetailsElement>(null);
+  const trigger=useRef<HTMLElement>(null);
+  useEffect(()=>{
+    const dismiss=(event:PointerEvent)=>{
+      const details=menu.current;
+      if(details?.open&&!details.contains(event.target as Node))details.open=false;
+    };
+    document.addEventListener('pointerdown',dismiss);
+    return ()=>document.removeEventListener('pointerdown',dismiss);
+  },[]);
+  function close() {
+    if(menu.current)menu.current.open=false;
+    trigger.current?.focus({preventScroll:true});
+  }
+  return <details ref={menu} className="shell-menu shell-mobile-menu" onKeyDown={event=>{
+    if(event.key!=='Escape'||!menu.current?.open)return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  }} onBlur={event=>{
+    if(event.relatedTarget&&!event.currentTarget.contains(event.relatedTarget))event.currentTarget.open=false;
+  }}>
+    <summary ref={trigger} aria-label={moteText('主导航')}>{pageLabel}<ChevronDown size={14} aria-hidden="true"/></summary>
+    <div>
+      <NavLinks items={[...daily,...groups.manage]} page={page} onPage={next=>{if(onPage(next))close();}}/>
     </div>
   </details>;
 }
@@ -160,6 +176,8 @@ const sidebarStyles=`
   color: var(--mote-accent);
   background: var(--mote-tint);
 }
+.shell-mobile-menu > summary > svg { flex:none; transition:transform var(--mote-motion-feedback) var(--mote-motion-settle); }
+.shell-mobile-menu[open] > summary > svg { transform:rotate(180deg); }
 @media (min-width: 761px) {
   html:has(.app-shell[data-navigation]:not([data-navigation=top]) > .workspace-sidebar) {
     --workspace-rail-width: 72px;

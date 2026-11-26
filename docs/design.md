@@ -26,6 +26,10 @@ Retain the existing warm graphite palette, purple accent and light, dark and sys
 
 Keep information and action meaning consistent across clients while respecting platform conventions for input, file pickers, permissions and touch. This page describes current design principles; code owns concrete layouts and values.
 
+### Motion
+
+Use the shared timing in [the token generator](../scripts/generate-design-tokens.mjs) for press feedback, selection, overlays and loading. Preserve the reader, scroll position and focus as content updates. Let a dismissed overlay release input immediately so it can be opened again during its exit. Keep ordinary background refresh quiet. Loading placeholders wait briefly and then hold still. Honor the platform's reduced-motion setting and keep scrolling, dragging and resizing under direct control.
+
 ### Navigation
 
 Put Chat, Feed, Ideas, Goals and Library in that order among daily entries. Group Memory, Skills, Connections and Settings together as management entries. Web and the Mac main window use a sidebar. Android keeps the five daily entries along the bottom and puts management in the `m` menu. Start in Chat. Keep search and actions close to the content they affect.

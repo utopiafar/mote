@@ -233,6 +233,7 @@ public struct CaptureSyncPresentation: Equatable, Sendable {
     }
 
     public func send(paused: Bool) -> SendGroupPresentation {
+        if send.status == .reconnect { return send }
         if paused {
             return SendGroupPresentation(host: send.host, status: .paused)
         }

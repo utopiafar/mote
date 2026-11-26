@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,6 +16,26 @@ import org.junit.runner.RunWith
 /** Generated detached shell; never reads the device display or settings. */
 @RunWith(AndroidJUnit4::class)
 class NativeAppShellKeyboardInstrumentedTest {
+    @Test fun badgesAndSelectionUpdateExistingTabControls() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val bar = MoteTabBar(activity) {}
+                val ideas = MoteNavItem("ideas", "点子", "daily", 30, "lightbulb", "mote.assistant", "ideas")
+                val library = MoteNavItem("library", "资料库", "daily", 50, "layout-grid", "mote.library")
+                bar.render(listOf(ideas, library), NavBadges(ideas = 6), "library")
+                val ideasControl = bar.findViewWithTag<View>("local-tab:ideas")
+                val libraryControl = bar.findViewWithTag<View>("local-tab:library")
+                bar.setBadges(NavBadges(ideas = 7, library = true))
+                bar.select("ideas")
+                assertTrue(ideasControl === bar.findViewWithTag<View>("local-tab:ideas"))
+                assertTrue(libraryControl === bar.findViewWithTag<View>("local-tab:library"))
+                assertTrue(ideasControl.isSelected)
+                assertEquals("7", bar.findViewWithTag<TextView>("local-tab-badge:ideas").text.toString())
+                assertEquals(View.VISIBLE, bar.findViewWithTag<View>("local-tab-dot:library").visibility)
+            }
+        }
+    }
+
     @Test fun bottomNavigationStaysDockedWhileContentYieldsToKeyboard() {
         ActivityScenario.launch(FixtureActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

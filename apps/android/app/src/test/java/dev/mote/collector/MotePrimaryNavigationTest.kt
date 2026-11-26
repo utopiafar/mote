@@ -100,13 +100,17 @@ class MotePrimaryNavigationTest {
         }
     }
 
-    @Test fun selectingATabOnlyMovesTheSelection() {
+    @Test fun tabClicksRequestNavigationAndConfirmedSelectionMovesInPlace() {
         val selected = mutableListOf<String>()
         val bar = MoteTabBar(activity) { selected += it.id }
         bar.render(catalog().daily(), NavBadges(ideas = 6), "chat")
-        bar.findViewWithTag<View>("local-tab:ideas")!!.performClick()
+        val ideas = bar.findViewWithTag<View>("local-tab:ideas")!!
+        ideas.performClick()
         assertEquals(listOf("ideas"), selected)
-        assertTrue(bar.findViewWithTag<View>("local-tab:ideas")!!.isSelected)
+        assertTrue(bar.findViewWithTag<View>("local-tab:chat")!!.isSelected)
+        bar.select("ideas")
+        assertSame(ideas, bar.findViewWithTag<View>("local-tab:ideas"))
+        assertTrue(ideas.isSelected)
         assertFalse(bar.findViewWithTag<View>("local-tab:chat")!!.isSelected)
         assertEquals(View.VISIBLE, bar.findViewWithTag<TextView>("local-tab-badge:ideas")!!.visibility)
     }
