@@ -80,6 +80,8 @@ test('tag-triggered release checks also avoid the broad server glob and manual p
   assert.ok(release.jobs.package.steps.indexOf(native) < release.jobs.package.steps.indexOf(checks[0]));
   const sandbox = release.jobs.package.steps.find(step => step.run?.includes('apt-get install') && step.run.includes('bubblewrap'));
   assert.equal(sandbox.if, checks[0].if);
+  assert.match(sandbox.run, /apparmor_parser -r \/etc\/apparmor\.d\/bwrap-userns-restrict/);
+  assert.match(sandbox.run, /bwrap --unshare-user --unshare-net --ro-bind/);
   assert.ok(release.jobs.package.steps.indexOf(sandbox) < release.jobs.package.steps.indexOf(native));
   assert.equal(checks[0]['timeout-minutes'], 30);
   assert.ok(!release.jobs.package.steps.some(step => /check:central|npm test|--suite/.test(step.run ?? '')));

@@ -49,8 +49,10 @@ jobs:
         if: env.MOTE_CENTRAL_CHECKS == 'true'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends bubblewrap
-          bwrap --version
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          bwrap --unshare-user --unshare-net --ro-bind / / /usr/bin/true
       - name: Restore the pinned Codex App Server
         if: env.MOTE_CENTRAL_CHECKS == 'true'
         id: native
