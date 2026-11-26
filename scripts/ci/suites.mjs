@@ -36,7 +36,11 @@ const imageAuditTests = () => node('--import', 'tsx', '--test', 'scripts/compose
 const serverLibs = () => [npm('build', '-w', '@mote/plugin-host'), ...libs()];
 // These exercise real recovery and HTTP deadlines. Give them exclusive use
 // of the verification runner so unrelated fixtures cannot use their CPU budget.
-const centralTimingFiles = ['apps/server/test/assistant-suggestion-context.test.ts', 'apps/server/test/memory-processing-health.test.ts'];
+const centralTimingFiles = [
+  'apps/server/test/assistant-suggestion-context.test.ts', 'apps/server/test/assistant-task-journey.test.ts',
+  'apps/server/test/memory-processing-health.test.ts', 'apps/server/test/plugin-official-feishu-sync.test.ts',
+  'apps/server/test/plugin-official-notion-connector.test.ts',
+];
 const centralServerShard = (root, shard) => [server(serverFiles(shard, root).filter(file => !centralTimingFiles.includes(file)), '--test-skip-pattern', automaticSkipPattern)];
 const centralChecks = {
   'central-workspaces': () => [npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/web')],

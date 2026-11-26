@@ -1275,6 +1275,8 @@ export class MemoryPipeline {
               if(canonical)this.options.memories.extract(result,model,{workContract:contract,profile:profile.id,requireAdmission:true,evidenceRanges:memoryReadRanges(result,ranges,readRanges),expectedFingerprints:expectedFingerprints(result),validateOnly:true});
               if(readRanges&&canonical)assertMemoryTargetSupport(result,chunks,id=>this.options.memories.readEvidence([id])[0]?.ocrText);
               if(workMembers&&canonical){const accounting=readMemoryWorkCoverage(result,workMembers,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage',{workContract:contract});}
+              // Let requests through between output validation and the durable draft write.
+              await yieldTurn();
               if(!observeCurrent(()=>{validateArtifacts();const readChunks=observedReadChunks(result);this.assertContextReadScope(job,batch,readChunks);this.retainReadDependencies(batch.id,readChunks);this.drafts.put(batch.id,draftKey,result,Boolean(selected)&&!native);} ))throw new ExecutionFailure('waiting','interrupted');
 
               }else{
@@ -1306,6 +1308,7 @@ export class MemoryPipeline {
           reviewReceipt=memoryReviewReceiptSchema.parse(extracted.reviewReceipt);
           if(reviewReceipt.decision!=='not_required'||reviewReceipt.resultHash!==sha256(result.answer))throw new ExecutionFailure('permanent','memory_phase_output_invalid');
         }else if(this.options.phases.review){
+          await yieldTurn();assertGrant();
           phase='review';batch.phase='review';observe('model');
           const reviewed=await this.phaseOutputs.run<{result:QueryResult;reviewReceipt?:MemoryReviewReceipt}>({batchId:batch.id,jobId:id,phase:'review',inputHash:sha256(JSON.stringify(['memory-review-phase@1',draftKey,extracted,selected?.review??defaultMemoryReviewStrategy])),generation:generationContract,signal,validate:phaseValid,assertCommit:()=>{validateArtifacts();},execute:async stageSignal=>{
             try{
@@ -1347,6 +1350,7 @@ export class MemoryPipeline {
             validateArtifacts();
             if(uninspectedMemoryImageTargets(processingImages,result,memoryReadRanges(result,ranges,readRanges),workMembers).length)throw new MemoryOutputValidationError('image_evidence','Original-image target requires complete original pixel delivery',{workContract:contract});
             this.options.memories.extract(result,model,{workContract:contract,profile:profile.id,requireAdmission:this.options.requireAdmission,evidenceRanges:memoryReadRanges(result,ranges,readRanges),expectedFingerprints:expectedFingerprints(result),validateOnly:true});
+            await yieldTurn();
             if(!observeCurrent(()=>{validateArtifacts();const readChunks=observedReadChunks(result);this.assertContextReadScope(job,batch,readChunks);this.retainReadDependencies(batch.id,readChunks);} ))throw new ExecutionFailure('waiting','interrupted');
             const accounting=workMembers?readMemoryWorkCoverage(result,workMembers,id=>this.options.memories.readEvidence([id])[0]?.ocrText):undefined;
             if(contract&&accounting)observeCurrent(()=>{if(accounting.notAssessed.length)batch.reviewReceipt=reviewReceipt;batch.evaluation={workContract:contract,selectedCandidates:JSON.parse(result.answer).memories.length,assessedTargets:accounting.coverage.filter(row=>row.state==='checked'||row.state==='no_candidates').length,incompleteTargets:accounting.notAssessed.length,reviewRunId:reviewReceipt?.reviewRunId,resultHash:sha256(result.answer),checkedAt:new Date().toISOString()};this.saveBatch(batch);});

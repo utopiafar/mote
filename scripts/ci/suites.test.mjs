@@ -35,7 +35,11 @@ test('the parallel Central release runs the whole Central plan and each automati
   const timing = taskPlan('central-server-timing')[0].args;
   assert.ok(timing.includes('--test-concurrency=1'));
   assert.ok(timing.includes('--test-timeout=120000'));
-  assert.deepEqual(timing.filter(arg => arg.endsWith('.test.ts')), ['apps/server/test/assistant-suggestion-context.test.ts', 'apps/server/test/memory-processing-health.test.ts']);
+  assert.deepEqual(timing.filter(arg => arg.endsWith('.test.ts')), [
+    'apps/server/test/assistant-suggestion-context.test.ts', 'apps/server/test/assistant-task-journey.test.ts',
+    'apps/server/test/memory-processing-health.test.ts', 'apps/server/test/plugin-official-feishu-sync.test.ts',
+    'apps/server/test/plugin-official-notion-connector.test.ts',
+  ]);
 });
 
 test('host changes select the light task that runs host lifecycle contracts once', () => {

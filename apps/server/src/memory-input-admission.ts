@@ -31,7 +31,7 @@ export interface MemoryInputAdmissionPort {
  * through any model, HTTP or MCP reader; those retain their exposure policy. */
 export class MemoryInputAdmission implements MemoryInputAdmissionPort {
   private materialTableStatement?:StatementSync;
-  private materialRefStatement?:StatementSync;
+  private materialRefsStatement?:StatementSync;
   constructor(private store:Store,private evidence:MemoryEvidenceLineage,private options:MemoryInputAdmissionOptions={},private resolveStrategy:(strategy:MemoryRecipeBinding)=>unknown=()=>{}){}
   private formalMaterialsEnabled(){return Boolean((this.materialTableStatement??=this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence'")).get());}
   rawSourceItem(id:string):boolean {
@@ -41,9 +41,13 @@ export class MemoryInputAdmission implements MemoryInputAdmissionPort {
     return Boolean(this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(sourceId));
   }
   currentMaterialRef(id:string):string|undefined {
-    if(!this.formalMaterialsEnabled())return;
-    const row=(this.materialRefStatement??=this.store.db.prepare(`SELECT h.id,h.revision,h.retired FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?`)).get(id) as {id:string;revision:string;retired:number}|undefined;
-    return row&&!row.retired?formatMaterialRef(row.id,row.revision):undefined;
+    return this.currentMaterialRefs([id]).get(id);
+  }
+  private currentMaterialRefs(ids:readonly string[]):Map<string,string> {
+    if(!ids.length||!this.formalMaterialsEnabled())return new Map();
+    const rows=(this.materialRefsStatement??=this.store.db.prepare(`SELECT e.id evidence_id,h.id,h.revision FROM material_evidence e
+      JOIN material_heads h ON h.id=e.material_id WHERE h.retired=0 AND e.id IN (SELECT value FROM json_each(?))`)).all(JSON.stringify(ids)) as {evidence_id:string;id:string;revision:string}[];
+    return new Map(rows.map(row=>[row.evidence_id,formatMaterialRef(row.id,row.revision)]));
   }
   sourceCurrent(pin:MaterialSourcePin,materialId:string){return Boolean(this.options.materialSourceCurrent?.(pin,materialId));}
   planAllowed(materialId:string,profileId?:string){return Boolean(this.options.materialPlanAllowed?.(materialId,profileId));}
@@ -61,9 +65,10 @@ export class MemoryInputAdmission implements MemoryInputAdmissionPort {
     }
     const byEvidence=new Map<string,MaterialInputPin[]>(),checked=new Map<MaterialInputPin,{ref:string;allowed:boolean}>();
     for(const input of inputs)for(const id of input.evidenceIds){const selected=byEvidence.get(id)??[];selected.push(input);byEvidence.set(id,selected);}
+    const materialRefs=this.currentMaterialRefs(ids);
     for(const id of ids){
       if(!this.evidenceAllowed(id,profileId))throw new StoreError('Memory evidence is not allowed for this model',409);
-      const ref=this.currentMaterialRef(id);
+      const ref=materialRefs.get(id);
       if(!ref){if(this.rawSourceItem(id))throw new StoreError('Source item Memory requires a published Material',409);if(pinned?.[id])throw new StoreError('Memory Material changed',409);continue;}
       const selections=byEvidence.get(id)??[];
       const allowed=selections.length?selections.every(input=>{

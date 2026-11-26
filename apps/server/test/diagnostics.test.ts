@@ -37,12 +37,15 @@ async function within<T>(task:Promise<T>,message:string):Promise<T> {
 // generated public record arrives, so every completed append has a successor.
 function continuousWrites(t:import('node:test').TestContext,logger:ServerDiagnostics) {
  let active=true,produced=0;const append=DiagnosticLogStore.prototype.append;
+ const first=Promise.withResolvers<void>();
  t.mock.method(DiagnosticLogStore.prototype,'append',async function(this:DiagnosticLogStore,records:Parameters<typeof append>[0]) {
   const files=await append.call(this,records);
-  if(active&&logger.accepts('debug')&&records.some(record=>JSON.parse(record.line).instanceId===logger.instanceId))logger.record('source.completed',{count:++produced},'debug');
+  if(active&&logger.accepts('debug')&&records.some(record=>JSON.parse(record.line).instanceId===logger.instanceId)){
+   logger.record('source.completed',{count:++produced},'debug');first.resolve();
+  }
   return files;
  });
- return {stop:()=>{active=false;},get produced(){return produced;}};
+ return {stop:()=>{active=false;},started:first.promise,get produced(){return produced;}};
 }
 
 test('OpenCode request usage persists safe counters without detailed tracing',async t=>{
@@ -123,6 +126,7 @@ test('diagnostic settings and disk-backed reads complete while debug producers r
  t.after(async()=>{producer.stop();await app.close();await rm(directory,{recursive:true,force:true});});
  const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();
  diagnostics.record('source.completed',{count:0},'debug');
+ await within(producer.started,'the generated diagnostic producer did not start');
  const unchanged=diagnostics.snapshot().lastSeq;diagnostics.agentTrace({type:'fixture.before-publication'});assert.equal(diagnostics.snapshot().lastSeq,unchanged);
  const saved=await within(app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...before,traceEnabled:true}}).then(response=>response),'settings save was starved by later debug records');
  assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().revision,before.revision+1);assert.equal(saved.json().traceEnabled,true);
