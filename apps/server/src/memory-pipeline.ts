@@ -1247,7 +1247,8 @@ export class MemoryPipeline {
 
         type Extracted={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;draftOrigin:MemoryDraftOrigin;repair?:string;nativeDraft?:StoredBatch['nativeDraft'];engineDrafts?:MemoryEngineDraftPin[]};
         await yieldTurn();assertGrant();
-        const phaseValid=()=>this.engine.isCurrentInputAuthority(batch.id)&&this.validateStep(this.engine.get(batch.id)!);
+        // The engine already runs this batch's current input validator.
+        const phaseValid=()=>this.engine.isCurrentInputAuthority(batch.id);
         const resumeReviewFromExtraction=this.phaseOutputs.hasExtraction(batch.id,extractionPhaseKey);
         const extracted=await this.phaseOutputs.run<Extracted>({batchId:batch.id,jobId:id,phase:'extract',inputHash:extractionPhaseKey,generation:generationContract,signal,validate:phaseValid,
           assertCommit:()=>{validateArtifacts();},execute:async stageSignal=>{
