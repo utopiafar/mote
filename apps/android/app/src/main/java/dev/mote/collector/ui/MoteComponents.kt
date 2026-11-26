@@ -22,7 +22,6 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
-import android.view.animation.PathInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -31,6 +30,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import dev.mote.collector.DesignTokens
 import dev.mote.collector.MoteI18n
+import dev.mote.collector.MoteMotion
 import dev.mote.collector.MoteTheme
 import dev.mote.collector.MoteUi
 import dev.mote.collector.NativeColorRole
@@ -419,14 +419,14 @@ internal object MoteComponents {
                 addView(skeletonBar(context, .34f, 11), LinearLayout.LayoutParams(-1, -2).apply { topMargin = context.moteDp(9) })
             }, LinearLayout.LayoutParams(-1, -2).apply { if (index > 0) topMargin = context.moteDp(20) })
         }
-        loadingMotion(this, breathe = true)
+        revealLoading(this)
     }
 
-    /** An image still on its way: its own frame, quietly breathing. */
+    /** An image still on its way: a quiet tile holds its place. */
     fun skeletonTile(context: Context, label: String): View = View(context).apply {
         tag = LOADING_TAG; contentDescription = label
         bind(this, "skeleton") { it.background = MoteUi.shape(context, NativeColorRole.FILL, NativeRadiusRole.CONTAINER, false) }
-        loadingMotion(this, breathe = true)
+        revealLoading(this)
     }
 
     private fun skeletonBar(context: Context, fraction: Float, heightDp: Int): View = LinearLayout(context).apply {
@@ -445,23 +445,28 @@ internal object MoteComponents {
             override fun onViewAttachedToWindow(view: View) { (mark.drawable as? AnimatedVectorDrawable)?.start() }
             override fun onViewDetachedFromWindow(view: View) { (mark.drawable as? AnimatedVectorDrawable)?.stop() }
         })
-        loadingMotion(this, breathe = false)
+        revealLoading(this)
     }
 
-    /** Nothing for the first 300 ms, then a slow breath; still when the system turns animation off. */
-    private fun loadingMotion(view: View, breathe: Boolean) {
-        if (!ValueAnimator.areAnimatorsEnabled()) return
+    /** Give fast reads time to finish before fading in a static placeholder. */
+    private fun revealLoading(view: View) {
         view.alpha = 0f
-        val motion = AnimatorSet().apply {
-            val appear = ObjectAnimator.ofFloat(view, View.ALPHA, 0f, 1f).apply { startDelay = 300; duration = 200 }
-            if (!breathe) play(appear)
-            else playSequentially(appear, ObjectAnimator.ofFloat(view, View.ALPHA, 1f, .45f, 1f).apply {
-                duration = 1800; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
-            })
+        val appear = ObjectAnimator.ofFloat(view, View.ALPHA, 0f, 1f).apply {
+            duration = MoteMotion.enter
+            interpolator = MoteMotion.settle
+        }
+        val reveal = Runnable {
+            if (ValueAnimator.areAnimatorsEnabled()) appear.start() else view.alpha = 1f
         }
         view.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(attached: View) { motion.start() }
-            override fun onViewDetachedFromWindow(detached: View) { motion.cancel() }
+            override fun onViewAttachedToWindow(attached: View) {
+                attached.alpha = 0f
+                attached.postDelayed(reveal, MoteMotion.loadingDelay)
+            }
+            override fun onViewDetachedFromWindow(detached: View) {
+                detached.removeCallbacks(reveal)
+                appear.cancel()
+            }
         })
     }
 
@@ -478,7 +483,10 @@ internal object MoteComponents {
         addView(runner, LinearLayout.LayoutParams(0, -1, if (still) 1f else .36f))
         if (!still) {
             val run = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 1400; repeatCount = ValueAnimator.INFINITE; interpolator = PathInterpolator(.45f, .05f, .25f, 1f)
+                startDelay = MoteMotion.loadingDelay
+                duration = MoteMotion.progressCycle
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
                 addUpdateListener { runner.translationX = runner.width * (-1f + 3.8f * (it.animatedValue as Float)) }
             }
             addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
@@ -486,7 +494,7 @@ internal object MoteComponents {
                 override fun onViewDetachedFromWindow(detached: View) { run.cancel() }
             })
         }
-        loadingMotion(this, breathe = false)
+        revealLoading(this)
     }
 
     /** Work past this long says what it is doing and for how long. */
@@ -543,14 +551,15 @@ internal object MoteComponents {
             if (!shown()) { view.removeOnAttachStateChangeListener(this); return }
             if (motion != null || !ValueAnimator.areAnimatorsEnabled()) return
             val appear = ValueAnimator.ofFloat(level, 1f).apply {
-                if (level == 0f) startDelay = 300
-                duration = 200; addUpdateListener { level = it.animatedValue as Float; frame() }
+                if (level == 0f) startDelay = MoteMotion.loadingDelay
+                duration = MoteMotion.enter; interpolator = MoteMotion.settle
+                addUpdateListener { level = it.animatedValue as Float; frame() }
             }
             val keep = if (turn) ValueAnimator.ofFloat(0f, 1f).apply {
-                startDelay = appear.startDelay; duration = 900; repeatCount = ValueAnimator.INFINITE; interpolator = LinearInterpolator()
+                startDelay = appear.startDelay; duration = MoteMotion.spin; repeatCount = ValueAnimator.INFINITE; interpolator = LinearInterpolator()
                 addUpdateListener { phase = it.animatedValue as Float; frame() }
             } else ValueAnimator.ofFloat(1f, .45f, 1f).apply {
-                duration = 1800; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
+                duration = MoteMotion.loadingCycle; repeatCount = ValueAnimator.INFINITE; interpolator = AccelerateDecelerateInterpolator()
                 addUpdateListener { level = it.animatedValue as Float; frame() }
             }
             motion = AnimatorSet().apply { if (turn) playTogether(appear, keep) else playSequentially(appear, keep); start() }

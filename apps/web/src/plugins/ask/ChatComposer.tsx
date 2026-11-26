@@ -1,8 +1,9 @@
 import {memo, useEffect, useRef, useState, useSyncExternalStore, type ReactNode} from 'react';
-import {ArrowUp, ImagePlus, LoaderCircle, Plus, X} from 'lucide-react';
+import {ArrowUp, ImagePlus, Plus, X} from 'lucide-react';
 import {moteText} from '@mote/shared/i18n';
 import type {Api} from '../../api';
 import {ModelSelector} from '../../ModelSelector';
+import {LoadingRing} from '../../Loading';
 import {ChatDraftThumbnail, type AttachmentDraft} from './chat-attachments';
 
 export function createChatDraft(initial: string, onChange: (value: string) => void) {
@@ -112,14 +113,14 @@ export function ChatComposer({api, draft, files, busy, blocked, preparing, model
           onChange={event => {if (!busy && !preparing) files.add(event.target.files); event.target.value = '';}}/>
         {scopeTag}
         <textarea aria-label={moteText('向 Mote 提问')} placeholder={moteText('发消息')} rows={1} maxLength={8000}
-          value={question} disabled={busy} onChange={event => onEdit(event.target.value)} onKeyDown={event => {
+          value={question} readOnly={busy} onChange={event => onEdit(event.target.value)} onKeyDown={event => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               send();
             }
           }}/>
-        <button type="submit" className="send-button" aria-label={moteText('发送')} disabled={sendDisabled}>
-          {busy ? <LoaderCircle size={18} className="spin"/> : <ArrowUp size={18}/>}
+        <button type="submit" className="send-button" aria-label={moteText(busy?'正在发送':'发送')} aria-busy={busy||undefined} disabled={sendDisabled}>
+          {busy ? <LoadingRing label={moteText('正在发送')}/> : <ArrowUp size={18} aria-hidden="true"/>}
         </button>
       </div>
     </form>

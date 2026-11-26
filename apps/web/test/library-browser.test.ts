@@ -79,7 +79,9 @@ test('explicit library navigation leads directly into rows and source details wi
   await act(async()=>button(d,'更多').click());
   assert.ok(button(d,'删除这条记录'),'the shared reader retains original deletion in More');
   await act(async()=>button(d,'更多').click());
-  assert.ok(d.querySelector('.reader-source-details'),'provenance stays available in the shared reader');
+  await act(async()=>button(d,'来源与处理').click());
+  assert.ok(d.querySelector('.reader-details-panel[role=dialog] .reader-source-details'),'provenance stays available in the shared reader');
+  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-details-panel [aria-label="关闭详情"]')!.click());
   assert.deepEqual(opened,[],'opening list detail no longer requires a second nested reader');
   await act(async()=>button(d,'返回资料列表').click());
   assert.equal(d.querySelector('.library-browser')?.classList.contains('has-selection'),false);

@@ -90,7 +90,7 @@ export function createLibraryWorkspacePlugin(options: LibraryWorkspaceOptions): 
             }, Number(offset ?? 0), image === true,authorize);
           }));
         register(libraryWorkspaceChannels.contentLocal, libraryReadCapability, args => local(() =>
-          localContentPage(options.queue,sources(),args[0] as number|undefined,args[1] as string|undefined,undefined,args[2] as boolean|undefined,meetingItems())));
+          localContentPage(options.queue,sources(),args[0] as number|undefined,args[1] as string|undefined,undefined,args[2] as boolean|undefined,meetingItems(),args[3] as number|undefined)));
         register(libraryWorkspaceChannels.contentLocalDetail, libraryReadCapability, args =>
           withConnection(async(config,authorize) => {
             const key = args[0], image = args[1];

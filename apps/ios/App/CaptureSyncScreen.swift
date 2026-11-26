@@ -34,7 +34,7 @@ struct CaptureSyncScreen: View {
                     onOpenOriginal: onOpenOriginal
                 )
             } else {
-                CaptureSyncView(presentation: model.presentation, onBack: onBack) { action in
+                CaptureSyncView(presentation: model.presentation, onBack: onBack, canPerform: canPerform) { action in
                     handle(action)
                 }
             }
@@ -44,6 +44,16 @@ struct CaptureSyncScreen: View {
         }
         .alert("此功能将在后续版本提供", isPresented: $showingUnavailable) {
             Button("好", role: .cancel) {}
+        }
+    }
+
+    private func canPerform(_ action: CaptureSyncAction) -> Bool {
+        switch action {
+        case .sendNow: AppSendPipeline.shared.canSend
+        case .setSendPaused(let paused): !paused || AppSendPipeline.shared.canSend
+        case .openCentralSources: model.centralURL != nil
+        case .openSource, .openShortcutSetup, .reconnect: true
+        case .handleMediaPermission, .openSendMethod, .openStorage, .addSource: false
         }
     }
 
@@ -61,13 +71,23 @@ struct CaptureSyncScreen: View {
                 showingUnavailable = true
             }
         case .openCentralSources:
-            if let url = model.centralURL {
+            if let centralURL = model.centralURL,
+               var destination = URLComponents(url: centralURL, resolvingAgainstBaseURL: false) {
+                destination.fragment = "/connections"
+                guard let url = destination.url else { return }
                 UIApplication.shared.open(url)
             } else {
                 showingUnavailable = true
             }
-        case .setSendPaused:
-            break
+        case .setSendPaused(let paused):
+            MoteSendPause.setPaused(paused)
+            model.refresh()
+            if !paused && AppSendPipeline.shared.canSend {
+                Task {
+                    await AppSendPipeline.shared.reconcileAndSend()
+                    model.refresh()
+                }
+            }
         case .openSource(let source):
             guard let kind = ShortcutSourceKind(source) else {
                 showingUnavailable = true

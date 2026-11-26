@@ -1,5 +1,6 @@
 package dev.mote.collector
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.content.res.AssetManager
@@ -165,6 +166,7 @@ internal val MoteNavItem.glyph: MoteGlyph
 internal class MoteTabBar(private val activity: Activity, private val onSelect: (MoteNavItem) -> Unit) : LinearLayout(activity) {
     private val row = LinearLayout(activity).apply { orientation = HORIZONTAL; isBaselineAligned = false; gravity = Gravity.CENTER }
     private val tabs = linkedMapOf<String, TabView>()
+    private val divider = Paint()
     private var selectedId: String? = null
     private var badges = NavBadges()
 
@@ -179,8 +181,9 @@ internal class MoteTabBar(private val activity: Activity, private val onSelect: 
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val line = Paint().apply { color = NativeColorRole.HAIR.color(); strokeWidth = resources.displayMetrics.density }
-        canvas.drawLine(0f, 0f, width.toFloat(), 0f, line)
+        divider.color = NativeColorRole.HAIR.color()
+        divider.strokeWidth = resources.displayMetrics.density
+        canvas.drawLine(0f, 0f, width.toFloat(), 0f, divider)
     }
 
     fun render(items: List<MoteNavItem>, badges: NavBadges, selected: String?) {
@@ -198,13 +201,15 @@ internal class MoteTabBar(private val activity: Activity, private val onSelect: 
     }
 
     fun setBadges(value: NavBadges) {
+        if (badges == value) return
         badges = value
         present()
     }
 
     fun select(id: String?) {
+        if (selectedId == id) return
         selectedId = id
-        present()
+        tabs.forEach { (tabId, tab) -> tab.present(tabId == id, badges, animateSelection = true) }
     }
 
     private fun present() {
@@ -247,7 +252,7 @@ internal class MoteTabBar(private val activity: Activity, private val onSelect: 
             orientation = VERTICAL; gravity = Gravity.CENTER; isFocusable = true; isClickable = true; isBaselineAligned = false
             tag = "local-tab:${item.id}"
             background = MoteUi.clickable(activity, NativeColorRole.TRANSPARENT, NativeRadiusRole.PILL, false)
-            setOnClickListener { select(item.id); onSelect(item) }
+            setOnClickListener { onSelect(item) }
             val iconFrame = FrameLayout(activity)
             iconFrame.addView(icon, FrameLayout.LayoutParams(activity.moteDp(23), activity.moteDp(23), Gravity.CENTER))
             iconFrame.addView(badge, FrameLayout.LayoutParams(-2, activity.moteDp(18), Gravity.TOP or Gravity.END))
@@ -262,20 +267,26 @@ internal class MoteTabBar(private val activity: Activity, private val onSelect: 
             }
         }
 
-        fun present(selected: Boolean, value: NavBadges) {
-            active = selected
-            isSelected = selected
-            icon.imageTintList = ColorStateList.valueOf((if (selected) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
-            label.setTextColor((if (selected) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
+        fun present(selected: Boolean, value: NavBadges, animateSelection: Boolean = false) {
+            if (active != selected) {
+                active = selected
+                isSelected = selected
+                icon.imageTintList = ColorStateList.valueOf((if (selected) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
+                label.setTextColor((if (selected) NativeColorRole.ACCENT else NativeColorRole.MUTED).color())
+                icon.animate().cancel()
+                icon.alpha = if (selected && animateSelection && ValueAnimator.areAnimatorsEnabled()) .65f else 1f
+                if (icon.alpha < 1f) icon.animate().alpha(1f).setDuration(MoteMotion.feedback).setInterpolator(MoteMotion.settle).start()
+            }
             val ideas = if (item.badge == "ideas") value.ideasLabel() else null
-            badge.text = ideas.orEmpty()
+            if (badge.text != ideas.orEmpty()) badge.text = ideas.orEmpty()
             badge.visibility = if (ideas == null) GONE else VISIBLE
             dot.visibility = if (item.badge == null && item.id == "library" && value.library) VISIBLE else GONE
-            contentDescription = listOfNotNull(
+            val description = listOfNotNull(
                 MoteI18n.text(item.label),
                 ideas,
                 if (dot.visibility == VISIBLE) MoteI18n.text("需要处理") else null,
             ).joinToString("，")
+            if (contentDescription != description) contentDescription = description
         }
     }
 }

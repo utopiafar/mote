@@ -5,6 +5,7 @@ import type {SourceStatus} from './contracts/sources';
 import type {ContentItem} from './contracts/content';
 import type {SourceContextState} from './source-context-outbox';
 import {skeleton,showSkeleton} from './loading-ui';
+import {updateListChildren} from './list-children';
 const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 function node<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string){const value=document.createElement(tag);if(text!==undefined)value.textContent=text;if(className)value.className=className;return value;}
 const retention=(row:SourceStatus)=>row.source.retention==='reference'?moteText('仅文件目录'):row.source.retention==='archive'?moteText('保留原件'):moteText('提取正文，不保留原件');
@@ -20,8 +21,35 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
   container.append(desktopIcon(document,name,true));
   return container;
  };
- const sourceRow=(row:SourceStatus)=>{const b=button('',()=>open(row.source.id),'source-list-row source-card');const icon=sourceIcon(row.source.kind==='coding-agent'?'code':row.source.kind==='local-calendar'?'calendar':'folder','source-symbol');const copy=node('span',undefined,'source-list-copy');copy.append(node('strong',row.source.name),node('small',`${retention(row)} · ${row.scanComplete?moteText('{0} 项内容',row.items):moteText('等待首次清点')}`));const state=node('span',label(row),'source-state');state.dataset.state=!row.source.enabled?'paused':row.state;const arrow=sourceIcon('chevron-right','chevron');b.append(icon,copy,state,arrow);return b;};
- function renderRows(){const list=el('source-list');list.replaceChildren();const ongoing=rows.filter(row=>row.source.syncContinuously!==false);for(const row of ongoing)list.append(sourceRow(row));if(!ongoing.length)list.append(node('p',moteText('尚未连接本地来源。选择只包含你希望归档资料的目录。'),'helper source-empty'));}
+ function createSourceRow(id:string,kind:SourceStatus['source']['kind']){
+  const element=button('',()=>open(id),'source-list-row source-card');
+  const icon=sourceIcon(kind==='coding-agent'?'code':kind==='local-calendar'?'calendar':'folder','source-symbol');
+  const copy=node('span',undefined,'source-list-copy'),title=node('strong'),summary=node('small'),state=node('span',undefined,'source-state');
+  copy.append(title,summary);
+  element.append(icon,copy,state,sourceIcon('chevron-right','chevron'));
+  return {kind,element,title,summary,state};
+ }
+ const sourceRows=new Map<string,ReturnType<typeof createSourceRow>>();
+ const emptySources=node('p',moteText('尚未连接本地来源。选择只包含你希望归档资料的目录。'),'helper source-empty');
+ function renderRows(){
+  const children:HTMLElement[]=[];
+  const ongoing=rows.filter(row=>row.source.syncContinuously!==false);
+  const current=new Set(ongoing.map(row=>row.source.id));
+  for(const id of sourceRows.keys())if(!current.has(id))sourceRows.delete(id);
+  for(const row of ongoing){
+   const {id,kind,name,enabled}=row.source;
+   let view=sourceRows.get(id);
+   if(!view||view.kind!==kind){view=createSourceRow(id,kind);sourceRows.set(id,view);}
+   const summary=`${retention(row)} · ${row.scanComplete?moteText('{0} 项内容',row.items):moteText('等待首次清点')}`;
+   const state=label(row),stateKind=enabled?row.state:'paused';
+   if(view.title.textContent!==name)view.title.textContent=name;
+   if(view.summary.textContent!==summary)view.summary.textContent=summary;
+   if(view.state.textContent!==state)view.state.textContent=state;
+   if(view.state.dataset.state!==stateKind)view.state.dataset.state=stateKind;
+   children.push(view.element);
+  }
+  updateListChildren(el('source-list'),children.length?children:[emptySources]);
+ }
  function renderStatus(){if(!status)return;const channels=[status.config.defaultCollection?.duration?moteText('记录时长'):'',status.config.defaultCollection?.screenshots?moteText('保存截图'):'',status.config.defaultCollection?.structured?moteText('结构化内容'):''].filter(Boolean);el('source-screen-summary').textContent=[channels.join('、')||moteText('按已保存的范围记录'),moteText('{0} 项应用规则',Object.keys(status.config.appCollectionRules??{}).length)].join(' · ');el('source-screen-state').textContent=status.running?moteText('采集中'):moteText('已停止');el('source-screen-state').dataset.state=status.running?'syncing':'paused';}
  async function pending(row:SourceStatus,root:HTMLElement,epoch:number){try{const page=await api.sourcePendingContent(row.source.id);if(epoch!==revision||selected!==row.source.id)return;root.replaceChildren();for(const item of page.items){const b=button('',()=>actions.read(item),'source-list-row');const copy=node('span',undefined,'source-list-copy');copy.append(node('strong',item.title),node('small',new Date(item.observedAt).toLocaleString(getLocale())));b.append(sourceIcon('file-text','source-symbol'),copy,node('span',moteText('本机待发送'),'source-state'),sourceIcon('chevron-right','chevron'));root.append(b);}if(!page.items.length)root.append(node('p',moteText('没有待发送内容'),'helper'));if(page.nextOffset!==undefined)root.append(button(moteText('查看全部待发送内容'),actions.content));}catch{if(epoch===revision)root.replaceChildren(node('p',moteText('本机内容暂不可读取，重试。'),'helper'),button(moteText('重试'),()=>void pending(row,root,epoch)));}}
  const archiveCurrent=(view:ArchiveView)=>archive===view&&view.epoch===revision&&selected===view.row.source.id;
@@ -29,7 +57,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
   if(!view.nextCursor||view.denied)view.root.querySelector('.source-archive-more-error')?.remove();
   const errors=Array.from(view.root.querySelectorAll<HTMLElement>('.source-archive-error'));
   const signature=JSON.stringify([view.items,view.nextCursor,view.denied]);if(signature===view.rendered)return;
-  view.rendered=signature;const focused=document.activeElement as HTMLElement|null,nodes=new Map<string,{signature:string;button:HTMLButtonElement}>(),children:HTMLElement[]=[];
+  view.rendered=signature;const nodes=new Map<string,{signature:string;button:HTMLButtonElement}>(),children:HTMLElement[]=[];
   for(const item of view.items){
    const signature=JSON.stringify(item),previous=view.nodes.get(item.key);let entry=previous?.signature===signature?previous:undefined;
    if(!entry){const b=button('',()=>actions.read(item),'source-list-row'),copy=node('span',undefined,'source-list-copy');copy.append(node('strong',item.title),node('small',new Date(item.observedAt).toLocaleString(getLocale())));b.append(sourceIcon('file-text','source-symbol'),copy,node('span',moteText('中央已收到'),'source-state'),sourceIcon('chevron-right','chevron'));entry={signature,button:b};}
@@ -38,8 +66,7 @@ export function createSourceWorkspaceUi(api:DesktopApi,actions:{openDetail():boo
   if(!children.length)children.push(node('p',view.denied?moteText('采集记录不可访问。检查中央连接权限。'):moteText('暂无中央归档内容'),'helper'));
   if(view.nextCursor)children.push(button(moteText('加载更多'),()=>void archivedContent(view,true)));
   children.push(...errors);
-  view.nodes=nodes;view.root.replaceChildren(...children);
-  if(focused&&view.root.contains(focused))focused.focus({preventScroll:true});
+  view.nodes=nodes;updateListChildren(view.root,children);
  }
  async function archivedContent(view:ArchiveView,more=false){
   if(!archiveCurrent(view)||document.hidden)return;

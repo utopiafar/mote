@@ -77,6 +77,7 @@ internal class StatusStrip(
     private var tabId: String? = null
     private var hasDraft = false
     private var attached = false
+    private var mode = StatusStripMode.HIDDEN
     private val observer: () -> Unit = { if (attached) present(RecordingSession.snapshot()) }
     private val tick = object : Runnable {
         override fun run() { if (attached) present(RecordingSession.snapshot()) }
@@ -160,10 +161,26 @@ internal class StatusStrip(
     }
 
     private fun present(snapshot: RecordingSnapshot) {
-        val mode = StatusStripPolicy.mode(tabId, snapshot, hasDraft)
-        visibility = if (mode == StatusStripMode.HIDDEN) GONE else VISIBLE
         handler.removeCallbacks(tick)
-        when (mode) {
+        val next = StatusStripPolicy.mode(tabId, snapshot, hasDraft)
+        if (mode != next) {
+            mode = next
+            presentMode(next)
+        }
+        if (mode != StatusStripMode.RECORDING) return
+        val label = StatusStripPolicy.label(snapshot.elapsedMs)
+        if (duration.text != label || contentDescription == null) {
+            duration.text = label
+            contentDescription = listOf(MoteI18n.text("回到编辑器"), MoteI18n.text(StatusStripPolicy.RECORDING_TITLE), label).joinToString("，")
+        }
+        if (snapshot.phase == RecordingPhase.RECORDING && windowVisibility == VISIBLE) {
+            handler.postDelayed(tick, StatusStripPolicy.TICK_MS)
+        }
+    }
+
+    private fun presentMode(next: StatusStripMode) {
+        visibility = if (next == StatusStripMode.HIDDEN) GONE else VISIBLE
+        when (next) {
             StatusStripMode.HIDDEN -> {
                 tag = "status-strip-hidden"
                 contentDescription = null
@@ -171,20 +188,15 @@ internal class StatusStrip(
             StatusStripMode.RECORDING -> {
                 tag = "status-strip-recording"
                 icon.setImageResource(MoteGlyph.WAVE.drawable)
-                icon.imageTintList = ColorStateList.valueOf(NativeColorRole.ACCENT.color())
+                contentDescription = null
                 title.text = MoteI18n.text(StatusStripPolicy.RECORDING_TITLE)
                 duration.visibility = VISIBLE
                 stop.visibility = VISIBLE
                 draftAction.visibility = GONE
-                val label = StatusStripPolicy.label(snapshot.elapsedMs)
-                duration.text = label
-                contentDescription = listOf(MoteI18n.text("回到编辑器"), MoteI18n.text(StatusStripPolicy.RECORDING_TITLE), label).joinToString("，")
-                if (snapshot.phase == RecordingPhase.RECORDING) handler.postDelayed(tick, StatusStripPolicy.TICK_MS)
             }
             StatusStripMode.DRAFT -> {
                 tag = "status-strip-draft"
                 icon.setImageResource(MoteGlyph.COMPOSE.drawable)
-                icon.imageTintList = ColorStateList.valueOf(NativeColorRole.ACCENT.color())
                 title.text = MoteI18n.text(StatusStripPolicy.DRAFT_TITLE)
                 duration.visibility = GONE
                 stop.visibility = GONE

@@ -8,6 +8,7 @@ final class AppSendPipeline {
     static let shared = AppSendPipeline()
 
     private var pipeline: SendPipeline?
+    var canSend: Bool { pipeline != nil }
     private let logger = Logger(subsystem: "dev.mote.ios", category: "send-pipeline")
 
     func register(_ pipeline: SendPipeline) {

@@ -11,7 +11,7 @@ import {recordDescriptions} from './note-material-render';
 import {formatEvidenceRef} from '@mote/shared';
 import {memorySourceRoute} from './memory-source-route';
 import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
-import { moteText, cjkLocale } from '@mote/shared/i18n';
+import { moteText } from '@mote/shared/i18n';
 import {
 ArrowLeft,
 ArrowRight,
@@ -321,13 +321,13 @@ export function CaptureCard({
   );
 }
 
-export function LoginDialog({ destination, onConnected, onClose }: {
-  destination: string;
+export function LoginDialog({ onConnected, onClose }: {
   onConnected: (value: Connection, lifetime: SessionLifetime) => void;
   onClose: () => void;
 }) {
   const [token, setToken] = useState("");
   const [lifetime, setLifetime] = useState<SessionLifetime>(readSessionLifetime);
+  const [showLifetimeInitially] = useState(lifetime!=='session');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
@@ -356,15 +356,15 @@ export function LoginDialog({ destination, onConnected, onClose }: {
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()} onKeyDown={e => e.key === "Escape" && onClose()}>
     <section ref={panel} className="modal connect-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title">
       <button className="icon-button close" aria-label={moteText("关闭登录")} onClick={onClose}><X size={19}/></button>
-      <div className="modal-icon"><ShieldCheck size={24}/></div>
-      <div className="eyebrow">{moteText("MOTE · 中央管理界面")}</div>
       <h2 id="connect-title">{moteText("登录 Mote")}</h2>
-      <p className="muted-copy">{moteText("验证管理令牌后，进入「")}{destination}{cjkLocale()?'」。':'”.'}</p>
       <form onSubmit={connect}>
         <p className="login-endpoint">{moteText("当前服务")}{' '}<strong>{window.location.origin}</strong></p>
         <label>{moteText("管理访问令牌")}<input ref={tokenInput} aria-label={moteText("管理访问令牌")} autoFocus type="password" autoComplete="off" placeholder={moteText("输入此节点的管理令牌")} value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
-        <label className="session-lifetime-control"><span>{moteText("登录会话有效期")}</span><select aria-label={moteText("登录会话有效期")} value={lifetime} onChange={e=>setLifetime(e.target.value as SessionLifetime)} disabled={busy}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label>
-        <div className="field-note"><ShieldCheck size={15}/>{lifetime==='session'?moteText("令牌只保留在当前标签页会话，退出登录后清除。"):moteText("令牌存在此浏览器，到期或退出登录时清除。")}</div>
+        <details className="connection-help" open={showLifetimeInitially||undefined}>
+          <summary>{moteText("登录会话有效期")}</summary>
+          <label className="session-lifetime-control"><select aria-label={moteText("登录会话有效期")} value={lifetime} onChange={e=>setLifetime(e.target.value as SessionLifetime)} disabled={busy}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label>
+          <div className="field-note"><ShieldCheck size={15} aria-hidden="true"/>{lifetime==='session'?moteText("令牌只保留在当前标签页会话，退出登录后清除。"):moteText("令牌存在此浏览器，到期或退出登录时清除。")}</div>
+        </details>
         {error && <ErrorNotice text={error}/>}
         <button className="button primary full" disabled={busy}>{busy ? <Spinner label={moteText("正在验证令牌…")}/> : <>{moteText("登录并继续")}<ArrowRight size={16}/></>}</button>
       </form>

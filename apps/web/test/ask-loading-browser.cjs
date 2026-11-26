@@ -46,6 +46,7 @@ async function run(){
      await delay(500);
      json(res,key==='main'?{id:mainId}:detail(mainId));
     }finally{pending.delete(req);}return;}
+    if(path===detailPath+'/assistant-tasks'){json(res,{items:[]});return;}
     if(path==='/api/captures'){json(res,{items:[],nextCursor:null});return;}
     if(path==='/api/insights'){json(res,{items:[]});return;}
     if(path==='/api/sources'){json(res,{items:[]});return;}
@@ -134,9 +135,13 @@ async function run(){
  assert.deepEqual(violations,[],'background refreshes preserve the loaded chat, draft and focus');
  assert.equal(counts.owner,0,'ordinary chat does not request the separate owner question list');
 
- const showRefresh=()=>js(`document.querySelector('.shell-mobile-menu').open=true`);
- const requestRefresh=()=>js(`[...document.querySelectorAll('.shell-mobile-menu button')].find(button=>button.textContent==='刷新资料').click()`);
- await showRefresh();
+ const requestRefresh=()=>js(`(()=>{
+  Object.defineProperty(document,'hidden',{configurable:true,value:true});
+  document.dispatchEvent(new Event('visibilitychange'));
+  Object.defineProperty(document,'hidden',{configurable:true,value:false});
+  document.dispatchEvent(new Event('visibilitychange'));
+  delete document.hidden;
+ })()`);
  const beforeRefresh={...counts};
  await requestRefresh();
  await until(()=>counts.main>beforeRefresh.main&&counts.detail>beforeRefresh.detail&&chatPending(),'explicit refresh reads main identity and detail');
@@ -145,13 +150,11 @@ async function run(){
  assert.equal(await js(`document.querySelector('.chat-page textarea').value`),draft);
  await until(()=>!chatPending(),'explicit refresh completes');
 
- // Exercise the real topbar action: it invalidates resources and advances both
+ // Exercise returning to a foreground Web window: it invalidates resources and advances both
  // the rolling time URL and timeline revision before the replacement read ends.
  async function checkLibraryRefresh({id,selector,row,text,release,rolling}){
   await js(`location.hash=${JSON.stringify('#/library?view='+id)}`);
   await until(()=>counts[id]&&js(`document.querySelector(${JSON.stringify(selector)})?.textContent.includes(${JSON.stringify(text)})`),'loaded '+id+' collection');
-  await showRefresh();
-  await until(()=>js(`[...document.querySelectorAll('.shell-mobile-menu button')].some(button=>button.textContent==='刷新资料'&&!button.disabled)`),'global refresh available for '+id);
   const initialPath=collectionPaths[id][0],before=counts[id];
   await js(`(()=>{const panel=document.querySelector(${JSON.stringify(selector)}),row=document.querySelector(${JSON.stringify(row)});if(!panel||!row)throw Error('Missing generated collection content');const state=window.__frontendRefreshCheck={panel,row,violations:[],active:true};const check=()=>{if(!state.active)return;const loading=[...document.querySelectorAll('.library-content [role="status"],.library-content .loading')].filter(element=>element.getClientRects().length&&/正在读取|正在找回/.test(element.textContent)).map(element=>element.textContent);const reasons=[...loading,...!panel.isConnected||document.querySelector(${JSON.stringify(selector)})!==panel?['loaded panel replaced']:[],...!row.isConnected||document.querySelector(${JSON.stringify(row)})!==row?['loaded row replaced']:[]];if(reasons.length)state.violations.push(reasons);};state.observer=new MutationObserver(check);state.observer.observe(document.body,{subtree:true,childList:true,attributes:true});state.timer=setInterval(check,16);check();})()`);await requestRefresh();
   await until(()=>counts[id]>before&&(!rolling||collectionPaths[id].some(path=>path!==initialPath))&&[...pending].some(req=>req.url.startsWith(initialPath.split('?')[0])),'delayed global '+id+' refresh');

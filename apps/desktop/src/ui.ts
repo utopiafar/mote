@@ -201,7 +201,7 @@ byId('setup-primary').addEventListener('click', () => {if(showPage('screen')){re
 byId('setup-current').addEventListener('click', () => { reviewCollectionSetup(); byId('start').focus(); });
 byId('pause-sending').addEventListener('click',()=>void perform(async()=>{ const updated=await desktopApi.setSyncPaused(!currentStatus.config.syncPaused); render(updated); }));
 function updateSettingsHint(): void {
-  byId('settings-save-bar').hidden = currentPage==='sync'||!settingsPages.has(currentPage)||currentPage==='chrome'||currentPage==='developer'||currentPage==='screen'&&!settingsDirty;
+  byId('settings-save-bar').hidden = !settingsDirty||currentPage==='sync'||!settingsPages.has(currentPage)||currentPage==='chrome'||currentPage==='developer';
   byId('settings-pending').hidden = !settingsDirty;
   byId('save-hint').textContent = settingsDirty ? moteText("有未保存的修改，离开前会提醒。保存后立即生效。") : currentStatus?.running ? moteText("保存后立即应用；必要时会短暂暂停并自动恢复采集。") : moteText("设置保存后立即生效；采集保持当前开停状态。");
   byId<HTMLButtonElement>('settings-reset').disabled = !settingsDirty || busy;
@@ -272,7 +272,8 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, revi
   byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString(getLocale())} · ${ocrLabel(item)}`;
   showSkeleton(byId('record-detail-text'), moteText("正在读取记录详情…"));
   byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
-  byId('record-detail-title').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  byId('record-detail-title').focus({preventScroll:true});
+  panel.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
   const id = item.id; panel.dataset.recordId = id;
   let detailRead = false;
   try {
@@ -480,7 +481,7 @@ function render(status: import('./contracts').Status): void {
   byId('start').hidden = status.running || (settingsApplying && wasRunningBeforeSave);
   byId('stop').hidden = !status.running && !(settingsApplying && wasRunningBeforeSave);
   // A source registration or settings update can need a flush even with no pending bodies.
-  byId('retry').hidden = false;
+  byId('retry').hidden = !hasCentralConnection || Boolean(status.config.syncPaused);
   byId<HTMLButtonElement>('retry').disabled = busy || Boolean(status.config.syncPaused) || (status.facts ? !status.facts.sync.allowedActions.includes('retry_sync') : status.sync.state === 'uploading' || status.sync.state === 'unconfigured');
   byId('retry').textContent = status.sync.state === 'error' ? moteText("重试上传") : moteText("立即发送");
   fields.disabled = busy;for(const control of Array.from(document.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('[form=settings]')))control.disabled=busy;

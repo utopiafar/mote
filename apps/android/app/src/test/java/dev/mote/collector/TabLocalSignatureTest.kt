@@ -312,17 +312,4 @@ class TabLocalSignatureTest {
         )
     }
 
-    @Test fun tabSignaturesTrackTheAuthoredRowsAndTheirVisibleBadges() {
-        val items = listOf(
-            MoteNavItem("ideas", "点子", "daily", 30, "lightbulb", "mote.assistant", "ideas"),
-            MoteNavItem("library", "资料库", "daily", 50, "layout-grid", "mote.library"),
-        )
-        val signature = TabLocalSignature.tabs(items, NavBadges(ideas = 6))
-        assertEquals("an unchanged table and badge do not rebuild", signature, TabLocalSignature.tabs(items, NavBadges(ideas = 6)))
-        assertNotEquals("a changed count rebuilds", signature, TabLocalSignature.tabs(items, NavBadges(ideas = 7)))
-        assertNotEquals("a local library dot rebuilds", signature, TabLocalSignature.tabs(items, NavBadges(ideas = 6, library = true)))
-        assertNotEquals("membership and order are part of the signature", signature, TabLocalSignature.tabs(items.reversed(), NavBadges(ideas = 6)))
-        assertNotEquals("an authored label is part of the signature", signature, TabLocalSignature.tabs(listOf(items[0].copy(label = "想法"), items[1]), NavBadges(ideas = 6)))
-    }
-
 }

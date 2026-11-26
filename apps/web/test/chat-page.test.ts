@@ -13,11 +13,12 @@ test('CH1-07 opens the current main conversation and leaves an empty thread abov
   const api = generatedApi(path => {
     requests.push(path);
     if (path.endsWith('/main')) return {id: chatId};
+    if (path === chatPath() + '/assistant-tasks') return {items: []};
     assert.equal(path, chatPath());
     return {id: chatId, scope: {}, revision: 1, turns: []};
   });
   await f.render(api);
-  assert.deepEqual(requests, ['/api/conversations/main', chatPath()]);
+  assert.deepEqual(requests, ['/api/conversations/main', chatPath(), chatPath() + '/assistant-tasks']);
   assert.equal(f.d.querySelector('.conversation-history, .new-conversation-button, .conversation-turn'), null);
   assert.equal(f.d.querySelector('.chat-thread')?.children.length, 0);
   assert.ok(f.d.querySelector('form.ask-form textarea'));
@@ -94,6 +95,7 @@ test('CH1-11 shows a retry on an offline main read and recovers the same page', 
     reads.push(path);
     if (offline) throw new TypeError('Generated offline');
     if (path.endsWith('/main')) return {id: chatId};
+    if (path === chatPath() + '/assistant-tasks') return {items: []};
     return {id: chatId, scope: {}, revision: 1,
       turns: [{id: turnId, status: 'completed', question: 'Generated persisted message', createdAt: at}]};
   });
@@ -103,7 +105,7 @@ test('CH1-11 shows a retry on an offline main read and recovers the same page', 
   assert.equal(f.element<HTMLButtonElement>('.send-button').disabled, true);
   offline = false;
   await f.click('.chat-error button');
-  assert.deepEqual(reads, ['/api/conversations/main', '/api/conversations/main', chatPath()]);
+  assert.deepEqual(reads, ['/api/conversations/main', '/api/conversations/main', chatPath(), chatPath() + '/assistant-tasks']);
   assert.ok(f.d.querySelector('.conversation-turn[data-state="completed"]'));
   assert.equal(f.d.querySelector('.chat-error'), null);
 });

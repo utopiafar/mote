@@ -17,6 +17,7 @@ struct LibraryMemoriesView: View {
     @State private var selectedOriginalID: String?
     @FocusState private var focusedField: FocusedField?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let onBack: () -> Void
     private let onOpenCapture: ((String) -> Void)?
@@ -94,10 +95,10 @@ struct LibraryMemoriesView: View {
             .padding(.bottom, 34)
 
             if model.filterPresented {
-                filterLayer
+                filterLayer.transition(.opacity).zIndex(1)
             }
             if model.datePickerPresented {
-                dateLayer
+                dateLayer.transition(.opacity).zIndex(2)
             }
         }
         .ignoresSafeArea(.container, edges: .vertical)
@@ -113,7 +114,7 @@ struct LibraryMemoriesView: View {
             Spacer(minLength: 0)
             MoteIconButton(icon: .sliders, label: "筛选") {
                 focusedField = nil
-                withAnimation(.easeOut(duration: 0.2)) { model.filterPresented = true }
+                withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.enter)) { model.filterPresented = true }
             }
             .accessibilityIdentifier("library-filter")
         }
@@ -488,8 +489,10 @@ struct LibraryMemoriesView: View {
             MoteGroup {
                 Button {
                     pendingDate = model.reviewDay ?? Date()
-                    dismissFilter()
-                    withAnimation(.easeOut(duration: 0.2)) { model.datePickerPresented = true }
+                    withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.enter)) {
+                        model.filterPresented = false
+                        model.datePickerPresented = true
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         MoteIcon(.calendar, size: 20)
@@ -600,7 +603,7 @@ struct LibraryMemoriesView: View {
     private var dateLayer: some View {
         ZStack(alignment: .bottom) {
             scrim.onTapGesture {
-                withAnimation(.easeOut(duration: 0.2)) { model.datePickerPresented = false }
+                withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.exit)) { model.datePickerPresented = false }
             }
             MoteBottomSheet {
                 HStack(spacing: 8) {
@@ -609,7 +612,7 @@ struct LibraryMemoriesView: View {
                         .foregroundStyle(MoteDesignTokens.ink.color)
                     Spacer(minLength: 0)
                     MoteIconButton(icon: .close, label: "关闭", style: .muted) {
-                        withAnimation(.easeOut(duration: 0.2)) { model.datePickerPresented = false }
+                        withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.exit)) { model.datePickerPresented = false }
                     }
                 }
                 .padding(.leading, 20)
@@ -642,7 +645,7 @@ struct LibraryMemoriesView: View {
     }
 
     private func applyReviewDay(_ day: Date?) {
-        withAnimation(.easeOut(duration: 0.2)) { model.datePickerPresented = false }
+        withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.exit)) { model.datePickerPresented = false }
         Task { await model.setReviewDay(day) }
     }
 
@@ -654,7 +657,7 @@ struct LibraryMemoriesView: View {
     }
 
     private func dismissFilter() {
-        withAnimation(.easeOut(duration: 0.2)) { model.filterPresented = false }
+        withAnimation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.exit)) { model.filterPresented = false }
     }
 
     private var scrim: some View {
@@ -668,6 +671,7 @@ struct LibraryMemoriesView: View {
 /// The canvas switch: a warm border track with a white thumb. The surrounding
 /// row owns the 44pt target and the accessibility value.
 private struct MoteSwitchIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isOn: Bool
 
     var body: some View {
@@ -685,6 +689,6 @@ private struct MoteSwitchIndicator: View {
                 .offset(x: isOn ? 20 : 0)
         }
         .frame(width: 51, height: 31)
-        .animation(.easeOut(duration: 0.15), value: isOn)
+        .animation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.feedback), value: isOn)
     }
 }

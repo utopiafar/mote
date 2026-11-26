@@ -46,7 +46,7 @@ public struct MoteCapsuleButton: View {
             .background(backgroundColor, in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotePressStyle())
     }
 
     private var foregroundColor: Color {
@@ -104,7 +104,7 @@ public struct MoteIconButton: View {
                 .background(backgroundColor, in: Circle())
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MotePressStyle())
         .accessibilityLabel(Text(label))
     }
 
@@ -122,6 +122,17 @@ public struct MoteIconButton: View {
         case .filled: MoteDesignTokens.fill.color
         case .solid: MoteDesignTokens.primaryBackground.color
         }
+    }
+}
+
+private struct MotePressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(enabled ? (configuration.isPressed ? 0.72 : 1) : 0.5)
+            .animation(reduceMotion ? nil : MoteMotion.settle(MoteMotion.press), value: configuration.isPressed)
     }
 }
 

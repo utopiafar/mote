@@ -55,6 +55,7 @@ type Props = {
   controller?: AskController;
 };
 const doNothing = () => {};
+const noTasks: ConversationTaskStatus[] = [];
 const readTurn = (hash: string) => new URLSearchParams(hash.split('?')[1]).get('turn');
 const readConversation = (hash: string) => new URLSearchParams(hash.split('?')[1]).get('conversation');
 
@@ -72,8 +73,9 @@ function Chat({api, configured, renderAnswer, onOpen, onSettings}: Omit<Props, '
   const main = useResource<{id: string}>(api, '/api/conversations/main');
   const path = main.data ? chatPath(main.data.id) : null;
   const detail = useResource<ChatPage>(api, path);
-  const tasks = useResource<{items: ConversationTaskStatus[]}>(api, path ? path + '/assistant-tasks' : null, 3000, detail.data?.revision);
-  const taskItems = tasks.error === undefined && Array.isArray(tasks.data?.items) ? tasks.data.items : [];
+  const taskPath = path && detail.data?.id === main.data?.id ? path + '/assistant-tasks' : null;
+  const tasks = useResource<{items: ConversationTaskStatus[]}>(api, taskPath, 3000, detail.data?.revision);
+  const taskItems = tasks.error === undefined && Array.isArray(tasks.data?.items) ? tasks.data.items : noTasks;
   const footerTaskIds = useMemo(() => new Set(taskItems.map(item => item.task.id)), [taskItems]);
   const [supplement, setSupplement] = useState(() => chatTabs.get(api)?.supplement);
   const feedError = useOperationUpdates(api);

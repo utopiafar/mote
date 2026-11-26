@@ -11,17 +11,6 @@ internal object TabLocalSignature {
     fun sources(rows: List<Triple<String, String, String>>): String =
         rows.joinToString("") { (id, name, status) -> fields(id, name, status) }
 
-    /** The authored tab row plus the badges it currently shows; selection is not a rebuild. */
-    fun tabs(items: List<MoteNavItem>, badges: NavBadges): String =
-        items.joinToString("") { item ->
-            val badge = when (item.badge) {
-                "ideas" -> badges.ideasLabel().orEmpty()
-                "connections" -> badges.connections.toString()
-                else -> ""
-            }
-            fields(item.id, item.label, item.icon, item.packageId, item.badge.orEmpty(), badge, if (item.id == "library" && badges.library) "1" else "0")
-        }
-
     /** Length-prefixed fields cannot collide no matter what the values contain. */
     private fun fields(vararg values: String): String = values.joinToString("") { "${it.length}:$it" }
 }

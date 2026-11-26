@@ -13,6 +13,7 @@ export interface BrowserPage { items: BrowserCapture[]; totalCount: number; next
 export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
 export type ContentSource = SyncSource | import('@mote/shared').CaptureRecord['source'];
 export interface ContentItem {localContentRelease?:{at:string;pending?:true}; archiveAcknowledgment?:{at:string;origin:string};key:string;source:ContentSource;title:string;observedAt:string;preview:string;sourceName?:string;error?:string; }
+export const localContentPageSize = 30;
 export interface LocalContentPage {items:ContentItem[];total:number;nextOffset?:number;}
 export interface ContentDetail {localContentRelease?:{at:string;pending?:true};canRelease?:boolean;canSaveOriginal?:boolean;sizeBytes?:number;text:string;description?:string;sourceName:string;metadata:string;hasImage?:boolean;image?:string;metadataOnly?:boolean;retainsOriginal?:boolean;truncated?:boolean;}
 export interface CentralContentPage {items:ContentItem[];total?:number;nextCursor?:string;authorizationDenied?:true;}

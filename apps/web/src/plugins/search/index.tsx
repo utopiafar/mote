@@ -10,12 +10,21 @@ export {SearchWorkspace} from './SearchWorkspace';
 export {SearchCache,SearchController,clearSearchCache,emptySearchSnapshot,emptySearchState,searchCache} from './controller';
 export type {SearchControllerOptions,SearchDevicePage,SearchMemoryPage,SearchSnapshot,SearchSnapshot as SearchResultSnapshot,SearchState,SearchState as SearchQueryState} from './controller';
 
-export function GlobalRetrieval({onPage}:{onPage:(page:string)=>void}) {
+export function GlobalRetrieval() {
   const [query,setQuery]=useState('');
   const input=useRef<HTMLInputElement>(null);
-  useEffect(()=>{const key=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();input.current?.focus();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
+  useEffect(()=>{
+    const key=(event:KeyboardEvent)=>{
+      const field=input.current;
+      if(!field||field.closest('[inert]')||event.defaultPrevented||!(event.metaKey||event.ctrlKey)||event.key.toLowerCase()!=='k')return;
+      event.preventDefault();
+      field.focus();
+    };
+    window.addEventListener('keydown',key);
+    return ()=>window.removeEventListener('keydown',key);
+  },[]);
   return <form className="global-retrieval" role="search" aria-label={moteText('搜索资料')} onSubmit={event=>{event.preventDefault();if(query.trim())window.location.hash='/search?query='+encodeURIComponent(query.trim());}}>
-  <input ref={input} aria-label={moteText('搜索资料')} placeholder={moteText('搜索资料')} value={query} onChange={event=>setQuery(event.target.value)} maxLength={500}/><kbd aria-hidden="true">⌘ K</kbd>
+  <input ref={input} type="search" aria-label={moteText('搜索资料')} placeholder={moteText('搜索资料')} value={query} onChange={event=>setQuery(event.target.value)} maxLength={500}/><kbd aria-hidden="true">⌘ K</kbd>
   </form>;
 }
 

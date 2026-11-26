@@ -120,6 +120,10 @@ public enum MoteSendPause {
     }
 
     public static func pause(defaults: UserDefaults? = UserDefaults(suiteName: MoteCore.appGroupIdentifier)) {
-        defaults?.set(true, forKey: defaultsKey)
+        setPaused(true, defaults: defaults)
+    }
+
+    public static func setPaused(_ value: Bool, defaults: UserDefaults? = UserDefaults(suiteName: MoteCore.appGroupIdentifier)) {
+        defaults?.set(value, forKey: defaultsKey)
     }
 }

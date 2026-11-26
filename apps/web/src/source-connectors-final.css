@@ -20,7 +20,7 @@
 .recording-scope-form .lark-range label:last-child { grid-column:auto; }
 }
 .discovery-source-grid>.discovery-source-card { border:var(--mote-border-width) solid var(--mote-hair); border-radius:var(--mote-radius-container); background:var(--mote-surface); box-shadow:none; }
-.discovery-source-grid>.discovery-source-card { padding:var(--mote-space-panel); transition:border-color .12s ease,background-color .12s ease; }
+.discovery-source-grid>.discovery-source-card { padding:var(--mote-space-panel); transition:border-color var(--mote-motion-feedback) var(--mote-motion-settle),background-color var(--mote-motion-feedback) var(--mote-motion-settle); }
 .discovery-source-grid>a.discovery-source-card:hover { border-color:var(--mote-control-border); background:var(--mote-surface-hover); }
 .discovery-source-grid { gap:var(--mote-space-item); }
 .discovery-source-grid>.discovery-source-card h3 { margin:var(--mote-space-item) 0 var(--mote-space-inline); }

@@ -6,18 +6,7 @@ import { ClientLoginApproval } from './plugins/agent-access/ClientLoginApproval'
 import {consumeLoginTicket,loginRequestId,removeLoginParameter} from './login-handoff';
 import {pageHash,pageRoutes} from '@mote/shared';
 import { getLocale,moteText } from '@mote/shared/i18n';
-import {
-ArrowRight,
-Database,
-FileText,
-Plus,
-Info,
-Link2,
-MessageSquare,
-ShieldCheck,
-Sparkles,
-X
-} from "lucide-react";
+import {Plus, Info, Link2, X} from "lucide-react";
 import React,{
 useCallback,
 useEffect,
@@ -284,6 +273,17 @@ function App() {
     setShellRevision((value) => value + 1);
     setTimelineRevision((value) => value + 1);
   }, [api, navState.refresh]);
+  useEffect(() => {
+    if (!api || !verified) return;
+    let hidden = document.hidden;
+    const visibility = () => {
+      const resumed = hidden && !document.hidden;
+      hidden = document.hidden;
+      if (resumed) refresh();
+    };
+    document.addEventListener('visibilitychange', visibility);
+    return () => document.removeEventListener('visibilitychange', visibility);
+  }, [api, verified, refresh]);
   const materialsChanged = useCallback(() => {
     if(api)invalidateLibraryResources(api);
   }, [api]);
@@ -358,11 +358,13 @@ function App() {
   },[api,page,routeHash]);
   function onPage(next: Page) {
     const target=canonicalDestination(next,archiveTabRef.current,collectionIds());
-    if(!webFeatures.page(target.page)&&target.page!=='extensions'){setNotice(moteText('当前服务未提供此入口'));return;}
+    if(!webFeatures.page(target.page)&&target.page!=='extensions'){setNotice(moteText('当前服务未提供此入口'));return false;}
+    const hash=workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?pageRoutes.skills:target.page),target.page==='archive'?target.collection:undefined);
+    if(hash===location.hash)return true;
     const retainImportOrigin=page==='archive'&&['materials','records'].includes(archiveTabRef.current)&&!hasUnsavedChanges();
-    if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return;
+    if ((target.page !== page || (target.page==='archive'&&target.collection!==archiveTabRef.current)) && !confirmNavigation()) return false;
     const origin=target.page==='imports'&&page!=='imports'&&api?rememberImportOrigin(api,currentHash.current,window.scrollY,document.activeElement,retainImportOrigin):undefined;
-    history.pushState(origin?{moteImportOrigin:origin.token}:null, '', workspaceHash(webFeatures.page(target.page)?.route??(target.page==='extensions'?pageRoutes.skills:target.page),target.page==='archive'?target.collection:undefined));
+    history.pushState(origin?{moteImportOrigin:origin.token}:null, '', hash);
     activeImportParent.current=undefined;
     currentHash.current=location.hash;
     currentHistoryState.current=history.state;
@@ -371,9 +373,10 @@ function App() {
     updateEvidenceId(null);
     setPage(target.page);
     window.scrollTo({ top: 0 });
+    return true;
   }
   function setArchiveTab(next:ArchiveTab) {
-    if(next!==archiveTabRef.current&&!confirmNavigation())return;
+    if(next===archiveTabRef.current||!confirmNavigation())return;
     archiveTabRef.current=next; updateArchiveTab(next);
     if(pageRef.current==='archive') {
       history.pushState(null,'',workspaceHash(routes.archive,next,location.hash));
@@ -408,6 +411,7 @@ function App() {
   const importReturnLabel=returningImport?readPage(returningImport.hash)==='archive'&&(!new URLSearchParams(returningImport.hash.split('?')[1]??'').get('view')||new URLSearchParams(returningImport.hash.split('?')[1]??'').get('view')==='materials')?'我的资料':'返回':'资料库';
   const importNavigation={label:importReturnLabel,leave:()=>{if(!confirmNavigation())return;if(returningImport){allowedImportHash.current=returningImport.hash;history.back();}else{allowedImportHash.current=pageHash('library',{view:'materials'});window.location.hash=allowedImportHash.current;}}};
   const pageLabel=page==='ask'&&new URLSearchParams(routeHash.split('?')[1]??'').has('question')?moteText('需要你补充'):pageLabels[page]??(page==='extensions'?moteText('自动记忆与插件'):undefined);
+  const workspaceReady=Boolean(connection&&verified);
   useEffect(()=>{if(!notesAvailable)setQuickNoteApi(null);},[notesAvailable]);
   const openQuickNote=useCallback(()=>{if(!webFeatures.page('notes')){setNotice(moteText('当前服务未提供此入口'));return;}if(api&&verified)setQuickNoteApi(api);else setShowConnect(true);},[api,verified]);
   return (
@@ -415,16 +419,14 @@ function App() {
     <NavStateContext.Provider value={navState.value}>
     <QuickNoteContext.Provider value={openQuickNote}>
     <PresentationSurface
-      navigation={()=> <WorkspaceSidebar groups={navigation} page={page} onPage={onPage}/> }
-      toolbar={
+      navigation={()=> workspaceReady ? <WorkspaceSidebar groups={navigation} page={page} onPage={onPage}/> : null }
+      toolbar={workspaceReady &&
         <header className="topbar">
-          <WorkspaceMenu groups={navigation} page={page} onPage={onPage} pageLabel={pageLabel??moteText('更多')}>
-            <button type="button" onClick={()=>setShowConnect(true)}>{moteText('登录 Mote')}</button>
-            {connection&&<button type="button" onClick={refresh} disabled={loading}>{moteText('刷新资料')}</button>}
-          </WorkspaceMenu>
+          <WorkspaceMenu groups={navigation} page={page} onPage={onPage} pageLabel={pageLabel??moteText('更多')}/>
           <span className="breadcrumb"><strong>{pageLabel??moteText("当前服务未提供此入口")}</strong></span>
-          <div className="topbar-actions"><GlobalRetrieval key={connection?.viewScope??'disconnected'} onPage={onPage}/><button className="button quick-note" disabled={!notesAvailable} title={notesAvailable?undefined:moteText('当前服务未提供此入口')} onClick={openQuickNote} aria-haspopup="dialog"><Plus size={16}/>{moteText("记录")}</button>
-
+          <div className="topbar-actions">
+            {webFeatures.page('search')&&<GlobalRetrieval key={connection?.viewScope}/>}
+            {notesAvailable&&<button className="button quick-note" onClick={openQuickNote} aria-haspopup="dialog"><Plus size={16} aria-hidden="true"/>{moteText("记录")}</button>}
           </div>
         </header>}
       footer={null}
@@ -464,45 +466,12 @@ function App() {
               </button>
             </div>
           )}
-          {!webFeatures.page(page)?(page==='extensions'?<PluginCenterRescue onPage={onPage}/>:<section className="panel panel-pad"><h1>{moteText('当前服务未提供此入口')}</h1><button className="button" onClick={()=>onPage('archive')}>{moteText('资料库')}</button></section>):!connection && settingsContext ? <section className="panel settings-sign-in"><div className="page-heading"><h1>{moteText("登录后查看{0}", pageLabels[page])}</h1><p>{moteText("调整服务与资料管理方式，或管理当前登录。")}</p></div><button className="button" onClick={()=>setShowConnect(true)}><Link2 size={16}/>{moteText("登录 Mote")}<ArrowRight size={16}/></button></section> : !connection ? (
-            <>
-              <div className="greeting welcome simple-welcome archive-welcome">
-                <div>
-                  <div className="eyebrow">{moteText("个人资料库")}</div>
-                  <h1>
-                    {page === "ask" ? moteText("把记录留住，在需要时找到。") : moteText("登录后查看{0}", pageLabels[page])}
-                  </h1>
-                  <p>{moteText("按来源浏览设备和文件资料。")}</p>
-                  <div className="welcome-archive-flow" aria-label={moteText("采集 · 汇聚 · 理解")}>
-                    <span><FileText size={17}/>{moteText("添加资料")}</span><ArrowRight size={14} aria-hidden="true"/>
-                    <span><Database size={17}/>{moteText("资料库")}</span><ArrowRight size={14} aria-hidden="true"/>
-                    <span><MessageSquare size={17}/>{moteText("聊天")}</span>
-                  </div>
-                  <button className="button" onClick={() => setShowConnect(true)}>
-                    <Link2 size={16} />
-                    {moteText("登录 Mote")}<ArrowRight size={16} />
-                  </button>
-                </div>
-              </div>
-              <div className="welcome-values simple-values">
-                <div>
-                  <ShieldCheck size={20} />
-                  <h3>{moteText("由你决定留下什么")}</h3>
-                  <p>{moteText("应用过滤与端点脱敏，先于资料上传。")}</p>
-                </div>
-                <div>
-                  <Database size={20} />
-                  <h3>{moteText("资料在你的节点")}</h3>
-                  <p>{moteText("可以导入、导出，也可以继续扩展来源。")}</p>
-                </div>
-                <div>
-                  <Sparkles size={20} />
-                  <h3>{moteText("答案带着来处")}</h3>
-                  <p>{moteText("Agent 读取证据，串起你的问题与记录。")}</p>
-                </div>
-              </div>
-            </>
-          ) : (
+          {!connection ? (
+            <section className="panel settings-sign-in">
+              <div className="page-heading"><h1>{pageLabel?moteText("登录后查看{0}",pageLabel):moteText("登录 Mote")}</h1></div>
+              <button className="button primary" onClick={()=>setShowConnect(true)}><Link2 size={16} aria-hidden="true"/>{moteText("登录 Mote")}</button>
+            </section>
+          ) : !webFeatures.page(page)?(page==='extensions'?<PluginCenterRescue onPage={onPage}/>:<section className="panel panel-pad"><h1>{moteText('当前服务未提供此入口')}</h1><button className="button" onClick={()=>onPage('archive')}>{moteText('资料库')}</button></section>):(
             <>
               {(error||verificationError) && <ErrorNotice text={error||verificationError} retry={verificationError&&!error?navState.refresh:refresh} />}
               {!verified && <button className="button subtle" onClick={disconnect}>{moteText("退出登录")}</button>}
@@ -527,7 +496,6 @@ function App() {
     {notesAvailable&&quickNoteApi===api&&api&&verified&&<QuickNoteDialog api={api} namespace={window.location.origin} revision={timelineRevision} onSaved={refresh} onClose={closeQuickNote}/>}
       {showConnect && (
         <LoginDialog
-          destination={pageLabels[page]??moteText("当前服务未提供此入口")}
           onConnected={connected}
           onClose={() => setShowConnect(false)}
         />
