@@ -15,6 +15,7 @@ import type {Api} from '../src/api.js';
 import {webFeatures} from '../src/features/registry.js';
 import type {PageEntry,PageProps} from '../src/features/types.js';
 import {connectionsPages,pages as sourcePages} from '../src/plugins/sources/index.js';
+import {pages as libraryPages} from '../src/plugins/library/index.js';
 import {
   sourcePluginBound,
   sourcePluginFor,
@@ -95,7 +96,7 @@ test('the source catalog consumes the real connector response for every source p
   assert.equal(sourcePluginFor(sources.find(item=>item.kind==='lark-docs')!,statuses)?.id,'mote.connector.lark');
   assert.equal(sourcePluginFor(sources.find(item=>item.kind==='feishu.recordings')!,statuses)?.id,'mote.connector.feishu-recordings');
 
-  local=await webFeatures.install({id:'generated.source-plugins',version:'1',components:[]},[...sourcePages,...connectionsPages].map(entry=>({surface:'page' as const,entry})));
+  local=await webFeatures.install({id:'generated.source-plugins',version:'1',components:[]},[...sourcePages,...connectionsPages,...libraryPages].map(entry=>({surface:'page' as const,entry})));
   const catalogEntry=sourcePages.find(page=>page.id==='sourceCatalog')!;
   dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/#/'+catalogEntry.route,pretendToBeVisual:true});
   configureLocale(()=>'zh-CN');
@@ -106,12 +107,12 @@ test('the source catalog consumes the real connector response for every source p
   root=createRoot(dom.window.document.getElementById('root')!);
   const props:PageProps={api,status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},recent:[],insights:[],onPage:()=>{},onOpen:()=>{},range:{},archiveTab:'materials',setArchiveTab:()=>{},timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'session',changeSessionLifetime:()=>{}};
   await act(async()=>root!.render(React.createElement(React.Suspense,{fallback:'Generated route loading'},catalogEntry.render(props))));
-  await settle(()=>Array.from(dom!.window.document.querySelectorAll('h3')).some(heading=>heading.textContent==='Gmail 邮件'));
   const cardState=(title:string)=>{
     const heading=Array.from(dom!.window.document.querySelectorAll('h3')).find(element=>element.textContent===title);
     assert.ok(heading,title);
     return heading.closest('.discovery-source-card')!.querySelector('.catalog-state')?.textContent;
   };
+  await settle(()=>requests.some(request=>request.path==='/api/connectors/status'&&request.status===200)&&[...dom!.window.document.querySelectorAll('h3')].some(heading=>heading.textContent==='Gmail 邮件')&&cardState('Google Calendar')!=='待确认');
   assert.equal(cardState('Gmail 邮件'),'已暂停');
   assert.equal(cardState('Google Calendar'),'尚未授权');
   assert.equal(cardState('飞书文档与日历'),'尚未授权');

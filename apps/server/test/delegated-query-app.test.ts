@@ -28,7 +28,8 @@ function snapshot(node:Awaited<ReturnType<typeof buildApp>>,id:string){
 // research products, shared execution and final conversation writes are real.
 async function researchFixture(t:TestContext,mode:'parallel'|'restart'|'cancel'|'revoke'){
  const directory=mkdtempSync(join(tmpdir(),'mote-research-consumer-')),sourceId='generated-research-source',concurrency=mode==='restart'?1:2,clientRequestId=randomUUID();
- const cfg:ConfigurationPlatformOptions={...config(directory),dataKey:'65'.repeat(32),contentEncryptionEnabled:true,diagnosticsEnabled:false,interactiveConcurrency:concurrency,agentConcurrency:concurrency,llmConcurrency:concurrency};
+ const base=config(directory);
+ const cfg:ConfigurationPlatformOptions={...base,dataKey:'65'.repeat(32),contentEncryptionEnabled:true,initialDocument:{...base.initialDocument!,diagnostics:{enabled:false},execution:{...base.initialDocument!.execution,interactiveConcurrency:concurrency,agentConcurrency:concurrency,llmConcurrency:concurrency}}};
  const questions=['Inspect the generated decision','Inspect the generated constraint','Inspect the generated outcome'],texts=['Generated decision: keep the prototype archive local.','Generated constraint: retain the agreed project boundary.','Generated outcome: the prototype passed its scoped review.'];
  const originals:{id:string;text:string}[]=[],gates=questions.map(()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>release=resolve);return {promise,release};});
  let node:Awaited<ReturnType<typeof buildApp>>,id='',conversationId='',generation=0,fragments=0,active=0,maxActive=0;
@@ -153,7 +154,8 @@ for(const restart of [false,true])test(`owner HTTP research ${restart?'resumes a
  if(restart){
   await until(()=>f.started.some(call=>call.index===0)?true:undefined,f.describe);f.gates[0].release();
   await until(()=>f.started.some(call=>call.index===1)?true:undefined,f.describe);assert.deepEqual(f.calls,[1,1,0]);
-  const first=f.node.delegation.get('query:'+f.id).units[0];assert.equal(first.status,'succeeded');const product=f.node.store.db.prepare('SELECT * FROM delegation_artifacts WHERE unit_id=?').get(first.id);assert.ok(product);
+  const first=await until(()=>{const [unit]=f.node.delegation.get('query:'+f.id).units;return unit.status==='succeeded'?unit:undefined;},f.describe);
+  const product=f.node.store.db.prepare('SELECT * FROM delegation_artifacts WHERE unit_id=?').get(first.id);assert.ok(product);
   await f.restart();const run=await f.completed();assert.equal(run.status,'completed');assert.deepEqual(f.calls,[1,2,1]);assert.deepEqual(f.node.store.db.prepare('SELECT * FROM delegation_artifacts WHERE unit_id=?').get(first.id),product,'the completed encrypted product is reused byte for byte');
  }else{
   await until(()=>f.started.length===2?true:undefined,f.describe);assert.deepEqual(f.calls,[1,1,0]);assert.equal(f.node.delegation.get('query:'+f.id).units[2].status,'waiting');for(const gate of f.gates)gate.release();await f.completed();assert.deepEqual(f.calls,[1,1,1]);

@@ -36,7 +36,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
  else if(m.method==='turn/start'){const text=m.params.input[0].text;appendFileSync(${JSON.stringify(turns)},JSON.stringify({hadTarget:text.includes('GENERATED_TARGET_BODY'),hadUnread:text.includes('GENERATED_UNREAD_BODY'),hadPrivate:text.includes('memoryCatalogMetadata')})+'\\n');send({id:m.id,result:{turn:{id:'generated-turn'}}});send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'failed',error:{codexErrorInfo:'unauthorized'}}}});}
 });
-`,{mode:0o700});Object.assign(config,{modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',codexBin:executable,codexHome:directory});
+`,{mode:0o700});
+  config.initialDocument!.models={deployment:{provider:'codex',protocol:'codex-app-server',model:'generated-provider'},codex:{executable,home:directory}};
  }
  node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(settings,reader,host)=>{
   assert.equal(typeof host?.runModel,'function');assert.equal(typeof host?.authorizeModelRequest,'function');

@@ -102,7 +102,9 @@ test('configuration drain failure does not abort shutdown cleanup',async t=>{
 });
 
 test('configuration drain failure is retained by enabled diagnostics',async t=>{
-  const {config}=fixture(t),node=await buildApp({...config,logLevel:'error',diagnosticsEnabled:true},{agent,backgroundWorker:false});
+  const {config}=fixture(t);
+  config.initialDocument!.diagnostics={level:'error',enabled:true};
+  const node=await buildApp(config,{agent,backgroundWorker:false});
   (node.configurationPlatform as any).quiesce=async()=>{throw new Error('generated configuration unavailable');};
   await node.app.close();
   const events=node.diagnostics.events(0,100).items;
@@ -165,6 +167,6 @@ test('restart replacement sends real HTTP writes to the newly selected provider 
 
 test('a borrowed vault remains owned by its caller after bootstrap closes',async t=>{
   const {config}=fixture(t),store=new Store(config.initialDocument!.storage.dataDir);t.after(()=>store.close());
-  const boot=await bootstrapCentral({config,store});
+  const boot=await bootstrapCentral({configuration:config,store});
   await boot.close();assert.equal(store.stats().captures,0);
 });

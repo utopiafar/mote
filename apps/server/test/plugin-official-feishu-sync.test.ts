@@ -1,4 +1,4 @@
-import {testInstanceState as createInstanceState} from './fixtures/plugin-storage.js';
+import {holdNextCheckpoint} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -162,13 +162,11 @@ for(const failed of [false,true])test(`Feishu owner mode ABA rejects a late ${fa
 });
 
 test('Feishu actual host conditional CAS rejects owner range changes after the plugin precheck',async t=>{
+ const held=holdNextCheckpoint(t,'feishu-session.scan.0');
  const f=await fixture(t);f.transport.state.messages=[message(0)];const source=f.source();
- const probe=createInstanceState(f.node.store,{identity:{packageId:'generated-probe',installationId:'generated',instanceId:'generated'}} as never),prototype=Object.getPrototypeOf(probe),cas=prototype.compareAndSet;
- let armed=true,enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>release=resolve);
- t.mock.method(prototype,'compareAndSet',async function(key:string,revision:number|null,value:any,condition:any){if(armed&&key==='feishu-session.scan.0'&&value.processed===1){armed=false;assert.deepEqual(condition,{sourceId:source.id,syncScopeVersion:source.syncScopeVersion??0});enter();await gate;}return cas.call(this,key,revision,value,condition);});
  let running:Promise<unknown>|undefined;
- try{running=f.sync(409);await entered;const checkpoint=f.scan();assert.ok(f.node.sources.getItem(source.id,'om_generated_0'),'already committed evidence is preserved');for(const initialSync of ['new_only','all']){const changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync}});assert.equal(changed.statusCode,200,changed.body);}release();await running;assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.history(source.id,'om_generated_0').length,1);}
- finally{release();await running?.catch(()=>{});}
+ try{running=f.sync(409);const condition=await Promise.race([held.entered,running.then(()=>assert.fail('The real checkpoint CAS was not reached'))]);assert.deepEqual(condition,{sourceId:source.id,syncScopeVersion:source.syncScopeVersion??0});const checkpoint=f.scan();assert.ok(f.node.sources.getItem(source.id,'om_generated_0'),'already committed evidence is preserved');for(const initialSync of ['new_only','all']){const changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync}});assert.equal(changed.statusCode,200,changed.body);}held.release();await running;assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.history(source.id,'om_generated_0').length,1);}
+ finally{held.release();await running?.catch(()=>{});}
 });
 
 for(const phase of ['chat','thread'])for(const shape of ['omitted','null','empty'])test(`Feishu ${phase} accepts a legal ${shape} terminal page token`,async t=>{
@@ -250,13 +248,11 @@ test('Feishu failed deselection restores read observation and retains its approv
 });
 
 test('Feishu confirmed read withdrawal fences already-admitted real CAS independently of owner policy',async t=>{
+ const held=holdNextCheckpoint(t,'feishu-session.scan.0');
  const f=await fixture(t);f.transport.state.messages=[message(0)];const source=f.source(),originalScopes=[...f.transport.state.scopes];
- const probe=createInstanceState(f.node.store,{identity:{packageId:'generated-probe',installationId:'generated',instanceId:'generated'}} as never),prototype=Object.getPrototypeOf(probe),cas=prototype.compareAndSet;
- let armed=true,enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>release=resolve);
- t.mock.method(prototype,'compareAndSet',async function(key:string,revision:number|null,value:any,condition:any){if(armed&&key==='feishu-session.scan.0'&&value.processed===1){armed=false;assert.deepEqual(condition,{sourceId:source.id,syncScopeVersion:source.syncScopeVersion??0});enter();await gate;}return cas.call(this,key,revision,value,condition);});
  let running:Promise<unknown>|undefined;
- try{running=f.sync(409);await entered;const checkpoint=f.scan();assert.ok(f.node.sources.getItem(source.id,'om_generated_0'));f.transport.state.scopes=originalScopes.filter(scope=>scope!=='im:message.group_msg:get_as_user');await f.binding.status();assert.equal(f.node.sources.getSource(source.id).enabled,false);f.transport.state.scopes=originalScopes;await f.binding.status();const enable=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{enabled:true}});assert.equal(enable.statusCode,200,enable.body);release();await running;assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.getSource(source.id).syncPolicyVersion,0);await f.sync();assert.equal(f.scan().processed,1);assert.equal(f.node.sources.history(source.id,'om_generated_0').length,1);}
- finally{release();await running?.catch(()=>{});}
+ try{running=f.sync(409);const condition=await Promise.race([held.entered,running.then(()=>assert.fail('The real checkpoint CAS was not reached'))]);assert.deepEqual(condition,{sourceId:source.id,syncScopeVersion:source.syncScopeVersion??0});const checkpoint=f.scan();assert.ok(f.node.sources.getItem(source.id,'om_generated_0'));f.transport.state.scopes=originalScopes.filter(scope=>scope!=='im:message.group_msg:get_as_user');await f.binding.status();assert.equal(f.node.sources.getSource(source.id).enabled,false);f.transport.state.scopes=originalScopes;await f.binding.status();const enable=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{enabled:true}});assert.equal(enable.statusCode,200,enable.body);held.release();await running;assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.getSource(source.id).syncPolicyVersion,0);await f.sync();assert.equal(f.scan().processed,1);assert.equal(f.node.sources.history(source.id,'om_generated_0').length,1);}
+ finally{held.release();await running?.catch(()=>{});}
 });
 
 test('Feishu reauthorization and restart preserve approved unread new-only messages while mode ABA creates a fresh baseline',async t=>{

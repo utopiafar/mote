@@ -206,8 +206,11 @@ test('workbench scope hides mixed dependencies, empty selections, withdrawn titl
     assert.doesNotMatch(JSON.stringify(empty),/Generated studio|Generated Alex|GENERATED_PRIVATE|GENERATED_MIXED/);
   }
   f.node.sources.update('generated-workbench-a',{enabled:false});
-  assert.equal((await f.read(before.request)).data.title,'Generated Alex','stopping synchronization retains legal Memory history');
-  f.node.sources.update('generated-workbench-a',{enabled:true});await f.withdraw();
+  const paused=await f.read(before.request);assert.doesNotMatch(JSON.stringify(paused),/Generated Alex/);
+  assert.equal(f.node.memories.get(f.person.id).fingerprint,f.person.fingerprint,'pausing retains the exact published Memory in storage');
+  f.node.sources.update('generated-workbench-a',{enabled:true});
+  assert.equal((await f.read(before.request)).data.title,'Generated Alex','restoring source access reveals the same Memory');
+  await f.withdraw();
   for(const request of [before.request,{template:'project' as const,scope:f.scope,matterId:f.matter.id}]){
     const after=await f.read(request);assert.doesNotMatch(JSON.stringify(after),/Generated studio|Generated Alex|Generated plan commitment|reading.txt/);
     assert.ok(after.spec.components.some(component=>component.type==='status'&&component.state==='unavailable'));

@@ -379,9 +379,9 @@ export class MemoryStore {
   }
   publish(id:string,version?:number,at=new Date().toISOString()){
     const m=this.get(id);if(version!==undefined&&version!==m.version)throw new StoreError('Memory changed; refresh before activation',409);
+    if(m.status==='stale'||m.supersededBy||m.evidenceIds.some(e=>!this.isCurrentEvidence(e)))throw new StoreError('Evidence has changed; extract again before publishing',409);
     if(m.status==='published')return m;
     if(this.store.db.prepare('SELECT 1 FROM memory_deletions LIMIT 1').get()&&m.reviewReceipt?.deletionSnapshot!==this.deletions.snapshot())throw new StoreError('Memory requires current deletion review before activation',409);
-    if(m.status==='stale'||m.supersededBy||m.evidenceIds.some(e=>!this.isCurrentEvidence(e)))throw new StoreError('Evidence has changed; extract again before publishing',409);
     if(m.relations?.length&&version===undefined)throw new StoreError('A reviewed memory version is required before applying relationships',409);
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');try{
       for(const relation of m.relations??[]){const target=this.get(relation.memoryId);if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||target.version!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed; review the relationship again',409);

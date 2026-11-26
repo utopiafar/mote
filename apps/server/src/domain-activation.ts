@@ -3,6 +3,7 @@ import type {Awaitable,PluginLifecycle,ReplacementPolicy,ServiceBinding,ServiceC
 import {PluginHostError,type PluginHost,type HostPluginContext,type PluginHandle} from '@mote/plugin-host';
 import {randomUUID} from 'node:crypto';
 import type {FeatureRoute} from './features/index.js';
+import type {HostCapabilityDescriptor} from './feature-inventory.js';
 
 /** Executable built-in registration. Dependencies name an exact contribution
  * and API; the loader passes only binding identities, never business values. */
@@ -10,6 +11,7 @@ export interface CentralDomainPlugin {
   readonly contribution:ManifestContribution;
   readonly declaration:{readonly id:string;readonly apiVersion:string};
   readonly replacement:ReplacementPolicy;
+  readonly components?:readonly HostCapabilityDescriptor[];
   readonly activation?:{
     readonly featureId:string;
     readonly requires:Readonly<Record<string,{readonly provider:string;readonly service:ServiceRef}>>;

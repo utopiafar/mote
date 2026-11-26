@@ -27,7 +27,7 @@ test('ordinary queries refuse the import procedure while the dedicated import ru
  const registry=new TaskRegistry(),dispose=installImportTaskPack(registry);
  try{
   const skill=registry.skill('document-import');
-  assert.equal(skill.version,'1.0.6');assert.equal(skill.availability,'import');assert.match(skill.content,/name: document-import/);
+  assert.equal(skill.version,'1.0.7');assert.equal(skill.availability,'import');assert.match(skill.content,/name: document-import/);
   assert.throws(()=>prepareTaskContext({...query,taskRegistry:registry}),error=>error?.code==='skill_unavailable');
   const task=prepareTaskContext({question:'Generated import capability',taskSelection:{id:'import',version:'1'},taskRegistry:registry});
   assert.equal(task.id,'import');assert.equal(task.version,'1');assert.deepEqual(task.profile,{output:'answer',retrieval:'none'});

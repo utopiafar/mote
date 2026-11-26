@@ -9,8 +9,15 @@ import {ServerDiagnostics,diagnosticStageFilters,type ServerDiagnosticsOptions} 
 import {ExecutionObservability,type ObservationClock} from '../execution-observability.js';
 import {scopeFields} from '../query-scope.js';
 import {UsageLedger,type OperationUsage} from '../usage.js';
+import {UsageStatistics} from '../usage-statistics.js';
+import {registerUsageStatisticsRoutes} from '../usage-statistics-routes.js';
 import {createUpdateService,registerUpdateRoutes,type ReleaseCheck,type UpdateContext} from '../updates.js';
 import {centralServices,type UsageRecording} from './central-contracts.js';
+
+export function prepareUsageStatistics(store:ConstructorParameters<typeof UsageStatistics>[0]) {
+  const recorder=new UsageStatistics(store);
+  return {recorder,routes:(app:Parameters<typeof registerUsageStatisticsRoutes>[0],owner:Parameters<typeof registerUsageStatisticsRoutes>[2])=>registerUsageStatisticsRoutes(app,recorder,owner)};
+}
 
 /** Private host configuration, never a Manifest configuration value or a wire DTO. */
 export interface ObservabilityPlatformOptions {

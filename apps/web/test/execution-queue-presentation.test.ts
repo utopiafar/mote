@@ -45,7 +45,7 @@ test('queue summary preserves its Agent lane and a refresh failure remains visib
   const expanded = details.querySelector('p')!.textContent!;
   for (const lane of ['后台 Agent：执行中 3 / 8，排队 5', '后台 Harness：执行中 9 / 40，排队 11',
     '交互 Agent：执行中 2 / 4，排队 7', '交互 Harness：执行中 13 / 32，排队 17',
-    '后台委派：执行中 19 / 24，等待 23', '交互委派：执行中 29 / 32，等待 31']) {
+    '后台工作步骤：执行中 19 / 24，等待 23', '交互工作步骤：执行中 29 / 32，等待 31']) {
     assert.ok(expanded.includes(lane), 'Expanded telemetry retains its separate lane: ' + lane);
   }
   await act(async () => { summary.click(); await tick(); });
@@ -81,5 +81,5 @@ test('a server with only mandatory queue telemetry does not invent optional exec
   assert.equal(details.open, true);
   assert.match(details.textContent!, /后台 Agent：执行中 0 \/ 8，排队 0/);
   assert.match(details.textContent!, /后台 Harness：执行中 1 \/ 4，排队 2/);
-  assert.doesNotMatch(details.textContent!, /交互 Agent|交互 Harness|委派/);
+  assert.doesNotMatch(details.textContent!, /交互 Agent|交互 Harness|工作步骤/);
 });

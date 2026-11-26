@@ -3,11 +3,8 @@ import {createProcessingPluginHost} from './plugins/processing-plugin-host.js';
 import {AssistantWorkbench} from './assistant-workbench.js';
 import {registerAssistantMatterRoutes} from './assistant-matter-routes.js';
 import {AssistantCards} from './assistant-cards.js';
-import {AssistantIdeas,registerAssistantIdeaRoutes} from './assistant-ideas.js';
 import {AssistantFollowup} from './assistant-followup.js';
 import {registerAssistantFollowupRoutes} from './assistant-followup-routes.js';
-import {AssistantGoals} from './assistant-goals.js';
-import {registerAssistantGoalRoutes} from './assistant-goal-routes.js';
 import {queryModelBudget} from './query-model-budget.js';
 import {codexContextCapacity} from '@mote/agent';
 import type {ConversationSettings} from '@mote/shared';
@@ -24,7 +21,7 @@ import {AssistantTasks} from './assistant-tasks.js';
 import {AssistantRoutines} from './assistant-routines.js';
 import {ServerResources} from './server-resources.js';
 import {bootstrapCentral,type CentralDistribution} from './bootstrap.js';
-import {assemblePlatform,prepareUsageStatistics} from './assembly/platform.js';
+import {assemblePlatform,prepareBlockingMonitor,prepareUsageStatistics} from './assembly/platform.js';
 import {assembleSources,prepareDevicesDomain,prepareSourceFeatureRoutes} from './assembly/sources.js';
 import {assembleMaterials,prepareMaterials} from './assembly/materials.js';
 import {assembleMedia,assemblePerception,assembleProcessing,assembleLocalImages,type MediaAssemblyDependencies} from './assembly/processing.js';
@@ -33,7 +30,7 @@ import {assembleAgent} from './assembly/agent.js';
 import {nativeDshSource} from './dsh-native.js';
 import type {DshConfiguration} from './dsh-configuration.js';
 import {prepareConversations,prepareQueryRuntime,prepareQueryRuns} from './assembly/query.js';
-import {workInputs,prepareWorkDomains} from './assembly/work.js';
+import {workInputs,prepareAssistantGoalAndIdeaRoutes,prepareWorkDomains} from './assembly/work.js';
 import {assembleImports} from './assembly/imports.js';
 import {assembleConnectors} from './assembly/connectors.js';
 import type {ConnectorManifest} from './connectors/registry.js';
@@ -69,7 +66,6 @@ import { ConnectionError,Connections,type ConnectionCredential } from './connect
 import type {RequestAuthority} from './plugins/central-contracts.js';
 import { resolveDependencies } from './conversation-lineage.js';
 import { safeError } from './diagnostics.js';
-import {createBlockingMonitor} from './blocking-monitor.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import {sourceScopedReader} from './query-source-scope.js';
 import type {QueryScope as ReaderQueryScope} from './query-scope.js';
@@ -372,14 +368,12 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     if(!record||!withinEvidenceScope(record,scope)||!evidenceReader.contextDependenciesAllowed([record.id],new EvidenceExposurePolicy())||!automaticEvidenceAllowed([record.id]))return;
     return {revision:item.revision,calendar:item.calendar};
   },(id,scope)=>{try{const matter=assistantMatters.get(id);return matter.state==='active'&&isDeepStrictEqual(matter.scope,scope);}catch{return false;}});
-  const assistantGoals=new AssistantGoals(store,assistantCommitments,assistantMatters,assistantRoutines,evidenceReader,()=>workDomains.actions);
-  const assistantIdeas=new AssistantIdeas(store,assistantCards,ownerQuestions,assistantTasks,evidenceReader);
+  const mountGoalsAndIdeas=prepareAssistantGoalAndIdeaRoutes({store,commitments:assistantCommitments,matters:assistantMatters,routines:assistantRoutines,reader:evidenceReader,actions:()=>workDomains.actions,cards:assistantCards,questions:ownerQuestions,tasks:assistantTasks});
   contributeDomainRoutes(backendContext,{'mote.ask':{mount:(app,scope)=>{
     const owner=(req:FastifyRequest)=>{assertRequestActive(req);if(credential(req))throw new StoreError('Owner access required',403);};
     registerAssistantMatterRoutes(app,{store,matters:assistantMatters,routines:assistantRoutines,commitments:assistantCommitments,tasks:assistantTasks!,reader:evidenceReader,owner});
     registerAssistantFollowupRoutes(app,()=>assistantFollowup!,()=>assistantChanges,owner);
-    registerAssistantGoalRoutes(app,{goals:assistantGoals,owner});
-    registerAssistantIdeaRoutes(app,assistantIdeas,owner,scope);
+    mountGoalsAndIdeas(app,owner,scope);
   }}});
   assistantDrafts.setVersionValidator(context=>assistantTasks!.validateDraftVersion(context));
   assistantDrafts.register('assistant.task.start',context=>assistantTasks!.start(context));
@@ -388,8 +382,7 @@ export async function buildHost(configuration:ConfigurationPlatformOptions,depen
     if(!evidenceReader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant input is no longer permitted',409);
   });
   let assistantOnboarding:AssistantOnboarding|undefined;
-  const blockingMonitor=createBlockingMonitor(sample=>diagnostics.record('event-loop.blocked',sample,'warn'));
-  resources.beforeClose(blockingMonitor.close);
+  const blockingMonitor=prepareBlockingMonitor(resources,diagnostics);
   // Reuse the existing Central poll; the routine does not depend on a material
   // change, and a change-feed failure cannot suppress a due occurrence.
   setMaterialConsumerTick(()=>{

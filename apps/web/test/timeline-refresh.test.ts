@@ -55,7 +55,10 @@ async function fixture(){
   await tick(1);assert.equal(timelineReads(),baseline+1,'the real main 30-second revision reaches Archive and timeline exactly once');
   assert.ok(d.querySelector('.library-time-group')===expanded);assert.equal(expanded.open,true);assert.equal(expanded.getAttribute('data-group-id'),'generated-sealed-1');assert.match(d.querySelector('.library-time-observation')!.textContent!,/Generated clock member 1/);assert.ok(memberReads()>initialMembers);
   visible=false;d.dispatchEvent(new dom.window.Event('visibilitychange'));phase=2;const hiddenMembers=memberReads();await tick(30_000);assert.equal(timelineReads(),baseline+1);assert.equal(memberReads(),hiddenMembers,'the existing background-page semantics remain intact');
-  visible=true;d.dispatchEvent(new dom.window.Event('visibilitychange'));assert.equal(timelineReads(),baseline+1);await tick(30_000);assert.equal(timelineReads(),baseline+2);assert.match(d.querySelector('.library-time-observation')!.textContent!,/Generated clock member 2/);
+  visible=true;await act(async()=>d.dispatchEvent(new dom.window.Event('visibilitychange')));
+  await until(()=>Boolean(d.querySelector('.library-time-observation')?.textContent?.includes('Generated clock member 2')));
+  assert.equal(timelineReads(),baseline+2,'foreground return refreshes the changed timeline once');
+  await tick(30_000);assert.equal(timelineReads(),baseline+2,'an unchanged navigation revision causes no extra read');
   await act(async()=>{dom.window.location.hash='#/library?view=materials';dom.window.dispatchEvent(new dom.window.Event('hashchange'));});await until(()=>paths.some(path=>path.startsWith('/api/library/browse')));
   const materialReads=()=>paths.filter(path=>path.startsWith('/api/library/browse')).length,beforeMaterials=materialReads();await tick(30_000);assert.equal(materialReads(),beforeMaterials,'other collections keep their prior revision cadence');
  }finally{hook.deregister();mock.timers.reset();globalThis.fetch=priorFetch;dom.window.close();}

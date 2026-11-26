@@ -1,4 +1,4 @@
-import type {ImportJob} from '@mote/shared';
+import {FILE_MAX_BYTES,type ImportJob} from '@mote/shared';
 import {moteText} from '@mote/shared/i18n';
 import {ApiError,errorMessage,type Api} from '../../api';
 import {uploadImportFiles} from './import-upload-scheduler';
@@ -17,6 +17,7 @@ type Snapshot={entries:readonly ImportQueueEntry[];completedVersion:number};
 export function validateImportFiles(files:readonly File[]):string|undefined{
   if(files.length>4000)return moteText('一次最多选择 4,000 个文件。较多文件可以打包为 ZIP 或分批导入。');
   if(new Set(files.map(file=>file.webkitRelativePath||file.name)).size!==files.length)return moteText('导入路径重复。移除重复文件或分开提交。');
+  if(files.some(file=>!Number.isSafeInteger(file.size)||file.size<0||file.size>FILE_MAX_BYTES))return moteText('文件超过此来源的大小上限');
 }
 
 function failure(error:unknown,source:ImportSource):NonNullable<ImportQueueEntry['failure']>{

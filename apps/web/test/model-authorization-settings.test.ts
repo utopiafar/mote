@@ -21,13 +21,14 @@ async function fixture(t:import('node:test').TestContext){
  for(const [key,value] of Object.entries({window:local.window,document:local.window.document,HTMLElement:local.window.HTMLElement,localStorage:local.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  const {createRoot}=await import('react-dom/client'),root=createRoot(local.window.document.getElementById('root')!),container=local.window.document.getElementById('root')!;
  const directory=mkdtempSync(join(tmpdir(),'mote-authorization-switch-')),token='generated-model-authorization-switch-owner-1234567890';
- let node:Awaited<ReturnType<typeof buildApp>>|undefined,restoreFetch=()=>{};
- t.after(async()=>{t.mock.timers.reset();await act(async()=>root.unmount());restoreFetch();try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});local.window.close();for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}}});
+ let node:Awaited<ReturnType<typeof buildApp>>|undefined,restoreFetch=()=>{},release:(()=>void)|undefined;
+ t.after(async()=>{release?.();await act(async()=>root.unmount());restoreFetch();try{await node?.app.close();}finally{rmSync(directory,{recursive:true,force:true});local.window.close();for(const [key,value] of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}}});
  node=await buildApp({path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}},{backgroundWorker:false});
  node.sources.register({id:'generated-source',name:'Generated source',kind:'custom',deviceId:'generated-import',platform:'import'});
  node.sources.register({id:'generated-other',name:'Generated other source',kind:'custom',deviceId:'generated-import',platform:'import'});
  const direct=async(url:string,init:RequestInit={})=>{const response=await node!.app.inject({url,method:(init.method??'GET') as 'GET'|'POST',headers:{authorization:'Bearer '+token,...(init.body?{'content-type':'application/json'}:{})},...(init.body?{payload:String(init.body)}:{})});assert.ok(response.statusCode<400,'generated remote request '+url+' '+response.body);return response.json();};
- const reads:Wire[]=[],writes:Wire[]=[];let hold=false,release:(()=>void)|undefined;
+ await node.app.ready();
+ const reads:Wire[]=[],writes:Wire[]=[];let hold=false;
  const mock=t.mock.method(globalThis,'fetch',async(input:any,init:RequestInit={})=>{
   const url=String(input),record:Wire={path:url,method:(init.method??'GET').toUpperCase(),body:init.body?JSON.parse(String(init.body)):undefined,status:0};
   (record.method==='GET'?reads:writes).push(record);
@@ -38,10 +39,9 @@ async function fixture(t:import('node:test').TestContext){
  });
  restoreFetch=()=>mock.mock.restore();
  const api=createApi({token});
- t.mock.timers.enable({apis:['setTimeout']});
- const advance=async(ms=0)=>act(async()=>{t.mock.timers.tick(ms);await new Promise<void>(resolve=>setImmediate(resolve));});
+ const advance=async()=>act(async()=>new Promise<void>(resolve=>setImmediate(resolve)));
  const settle=async(check:()=>boolean,label:string)=>{const deadline=Date.now()+15000;while(Date.now()<deadline){if(check())return;await advance();}throw Error('Timed out '+label);};
- const render=async()=>{await act(async()=>root.render(React.createElement(AutomaticProcessing,{api})));await advance();await settle(()=>Boolean(node!.modelAuthorization)&&Boolean(switchOf(container)),'authorization switch');};
+ const render=async()=>{await act(async()=>root.render(React.createElement(AutomaticProcessing,{api})));await settle(()=>Boolean(switchOf(container)&&!switchOf(container)!.disabled&&sourceInput(container,'Generated source')),'authorization switch and sources');};
  const clickSwitch=async()=>{assert.ok(switchOf(container),'switch');await act(async()=>switchOf(container)!.click());await advance();};
  const click=async(label:string)=>{const target=actionButton(container,label);assert.ok(target,label);await act(async()=>target.click());await advance();};
  const {AutomaticProcessing}=await import('../src/plugins/models-processing/AutomaticProcessing.js');

@@ -9,8 +9,8 @@ function invalidateRevision(resource:{invalidate:()=>void}){
  pendingRevisions.add(resource);
  queueMicrotask(()=>{pendingRevisions.delete(resource);resource.invalidate();});
 }
-export function useResource<T>(api:Api,path:string|null,pollMs?:number,revision?:unknown,continuityKey?:string,isolated=false){
- const resource=useMemo(()=>path?(isolated?new Resource<T>(path,api):resources(api).get<T>(path)):disabled,[api,path,isolated]);
+export function useResource<T>(api:Api|null,path:string|null,pollMs?:number,revision?:unknown,continuityKey?:string,isolated=false){
+ const resource=useMemo(()=>api&&path?(isolated?new Resource<T>(path,api):resources(api).get<T>(path)):disabled,[api,path,isolated]);
  useEffect(()=>pollMs?resource.poll(pollMs):undefined,[resource,pollMs]);
  const previous=useRef({resource,revision});
  const alreadyObserved=resource.observed;
@@ -27,7 +27,7 @@ export function useResource<T>(api:Api,path:string|null,pollMs?:number,revision?
  // A caller may identify the same explicit time-range selection while its
  // clock endpoints advance. This is display continuity only: reads still use
  // the new URL, and identities, errors and new selections discard old content.
- if(continuityKey!==undefined&&snapshot.error===undefined){
+ if(api&&continuityKey!==undefined&&snapshot.error===undefined){
   if(data!==undefined)retained.current={api,key:continuityKey,data};
   else if(snapshot.loading)data=retained.current?.data;
   else retained.current=undefined;

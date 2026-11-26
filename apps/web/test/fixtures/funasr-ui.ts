@@ -10,7 +10,7 @@ import {ProviderFailure} from '@mote/shared';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
 import {buildApp} from '../../../server/src/app.js';
-import {parseFunasrArchive,parseFunasrRequest,parseFunasrResponse,projectFunasrDiarization,funasrTranscriptOutput,funasrDialogueOutput,type FunasrSuccess} from '../../../server/src/funasr-contract.js';
+import {parseFunasrRequest,parseFunasrResponse,funasrTranscriptOutput,funasrDialogueOutput,type FunasrSuccess} from '../../../server/src/funasr-contract.js';
 import {authorizeFixtureModels} from '../../../server/test/fixtures/model-authorization.js';
 import {ApiError,type Api} from '../../src/api.js';
 
@@ -58,7 +58,7 @@ export async function audioCentral(t:TestContext,options:{mediaWorker?:{endpoint
  runtime.registry.register({id:'fixture.cam-reader',version:'1',name:'Generated CAM boundary',stage:'diarize',mediaTypes:['audio/'],localOnly:true,process:async()=>{
   if(held){const gate=held;held=undefined;gate.started.resolve();await gate.released.promise;}
   if(scenario==='failed'||scenario==='missing')throw new ProviderFailure({category:scenario==='missing'?'blocked':'permanent',code:scenario==='missing'?'model_missing':'generated_cam_failed'});
-  const response=diarization();return projectFunasrDiarization(parseFunasrArchive(response.checkpoint),response.diarization);
+  return diarization();
  }});
  runtime.recipes.registerStage({id:'fixture.funasr-project',version:'1',run:context=>context.transform(funasrDialogueOutput,async()=>diarization())});
  runtime.recipes.registerRecipe({id:'fixture.funasr-reader',version:'1',steps:[{name:'extract',stage:{id:'mote.extract',version:'1'},dependsOn:[]},{name:'diarize',stage:{id:'mote.diarize',version:'1'},dependsOn:['extract']},{name:'align',stage:{id:'fixture.funasr-project',version:'1'},dependsOn:['extract','diarize']}],output:'align'});

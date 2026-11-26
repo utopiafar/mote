@@ -1,3 +1,4 @@
+import {forgetFixtureOriginal} from './fixtures/forget-original.js';
 import {testPluginControl} from './fixtures/plugin-storage.js';
 import test, {type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
@@ -407,7 +408,7 @@ for (const lostAcknowledgement of [false, true]) test(`real worker migration can
   assert.equal(f.publication!.pending(), 0);
   assert.equal(f.store.db.prepare('SELECT state FROM memory_provider_writes WHERE id=?').get(intent.id)!.state, 'acknowledged', 'recovery observes the exact committed body without another migration put');
   assert.deepEqual(await f.bindings.provider(instance.id).read({namespace: targetNamespace, key: memoryProviderKey(memory)}), memory, 'reconciliation preserves the cancelled canonical stage until an actual revocation');
-  f.store.delete(memory.evidenceIds[0]!);
+  forgetFixtureOriginal(f.store,memory.evidenceIds[0]!);
   await f.publication!.reconcile();
   assert.equal(f.publication!.pending(), 0);
   assert.equal(await f.bindings.provider(instance.id).read({namespace: targetNamespace, key: memoryProviderKey(memory)}), null, 'explicit source deletion erases the retained target through its durable namespace journal');
@@ -521,6 +522,9 @@ test('actual HTTP plugin controls authorize owner sessions, reject MCP credentia
       memoryWorker:{runtime:'worker',factoryExports:['createMemoryProvider'],methods:['health','put','read','remove','search','export'],lifecycle:['close'],supportedCapabilities:['repository','retrieval']},
       connectorService:{runtime:'service',factoryExports:['connector','default'],surfaces:['ingress'],supportedCapabilities:['source.connector']},
       processingService:{runtime:'service',factoryExports:['backendPlugin','outboundExport','default'],surfaces:['processing'],supportedCapabilities:['processing.pack','outbound.export']},
+      domainService:{runtime:'service',factoryExports:['manifest','createPlugin'],surfaces:['data'],dependencies:'active-exact-typed-bindings'},
+      nativeDsh:{packageRuntime:'service',runtime:'native',surfaces:['agent'],exportName:'default',configuration:'restart-only-owner-selection-and-grants',lifecycle:'query-sdk-child',nativeDelegation:false},
+      webPresentation:{packageRuntime:'service',runtime:'host',apiVersion:'1',surfaces:['page','theme','layout'],pages:'self-contained-html-opaque-origin',bridge:'declared-same-instance-service-methods',themes:'role-values-json',layouts:'compiled-workspace-shell-json',navigation:['sidebar','adaptive','top'],detail:['split','stack']},
     });
     assert.ok(!discovery.body.includes(directory),'discovery never exposes private installation paths');
     assert.equal((await node.app.inject({url: '/api/memory-spaces/default/binding', headers: headers(token)})).statusCode, 200);
@@ -661,7 +665,7 @@ test('privacy deletion during an external owner correction fences its late respo
   const refused = assert.rejects(work, /changed|not found|original|evidence/i);
   try {
     await waitFor(() => f.writeEntered(), 'generated worker has received the staged correction');
-    f.store.delete(original.evidenceIds[0]!); f.releaseWrites(); await refused;
+    forgetFixtureOriginal(f.store,original.evidenceIds[0]!); f.releaseWrites(); await refused;
     assert.throws(() => f.memories.get(original.id), {statusCode: 404});
     assert.equal(f.memories.list().length, 0); await assert.rejects(f.bindings.read(original.id), {statusCode: 404});
   } finally {f.releaseWrites(); await work.catch(() => {});}

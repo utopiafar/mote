@@ -12,6 +12,7 @@ import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/evidence-store.js';
 import {materialId} from '../src/materials.js';
+import {forgetFixtureOriginal} from './fixtures/forget-original.js';
 import {serveGeneratedFunasr} from './fixtures/funasr.js';
 
 const caption='I felt proud of completing the generated prototype.';
@@ -26,7 +27,7 @@ async function fixture(t:import('node:test').TestContext,remote=false){
   const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-artifact-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
   if(remote)Object.assign(config,{modelBaseUrl:'https://generated.invalid',apiKey:'fixture',allowUnauthenticatedLocal:false});
   let node:Awaited<ReturnType<typeof buildApp>>,asrCalls=0;
-  const boundaryChecks:{phase:string|undefined;targetCount:number;seedCount:number;siblingSeeded:boolean;ungrantedIds:string[]}[]=[];
+  const boundaryChecks:{phase:string|undefined;batchId:string|undefined;targetCount:number;seedCount:number;siblingSeeded:boolean;sibling:{id:string;offset:number;length:number};ungrantedIds:string[]}[]=[];
   const calls:QueryInput[]=[],control:{failASR:boolean;failCoding:boolean;transcript:string;segments?:string[];probeReadBoundaries?:boolean;review?:(input:QueryInput)=>Promise<void>}={failASR:false,failCoding:false,transcript};
   const start=async()=>{
     node=await buildApp(config,{backgroundWorker:false,
@@ -63,7 +64,9 @@ async function fixture(t:import('node:test').TestContext,remote=false){
           assert.equal((await tool('context_evidence',{id:ungrantedIds[0],offset:0,length:1})).status,400);
           assert.equal((await tool('evidence',{ids:[ungrantedIds[0]]})).status,400);
           assert.equal(bridge.records.has(ungrantedIds[0]),false,'rejected outputs gain no quote authority');
-          boundaryChecks.push({phase:input.traceContext?.phase,targetCount:targets.size,seedCount:seeds.size,siblingSeeded,ungrantedIds});
+          assert.ok(bridge.deliveredRanges.some(range=>range.id===sibling.id&&range.offset===sibling.offset&&range.length===sibling.length));
+          if(input.traceContext?.phase==='review')assert.match(input.question,/Use any original context pages already supplied in this request/);
+          boundaryChecks.push({phase:input.traceContext?.phase,batchId:input.traceContext?.batchId,targetCount:targets.size,seedCount:seeds.size,siblingSeeded,sibling,ungrantedIds});
         }
         const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
         const recipe=node.memoryPipeline.get(input.traceContext!.jobId!).batches.find(b=>b.id===input.traceContext!.batchId)!.strategy!.recipe.id;
@@ -134,7 +137,7 @@ test('ready record index survives failed media, restart and recovery; two waitin
   await f.organize();await f.run();assert.equal(f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id)).length,3,'explicit ASR retry does not authorize historical Memory replay');
   assert.deepEqual(f.node.memories.get(saved),product);assert.equal(f.count('extract'),2);
   for(const job of f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id)).filter(j=>j.id!==bodyJob.id))for(const id of job.memoryIds)assert.equal(f.node.memories.get(id).status,'stale');
-  f.node.store.delete(file.id);assert.equal(f.node.memories.list({includeStale:true}).length,0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
+  forgetFixtureOriginal(f.node.store,file.id);assert.equal(f.node.memories.list({includeStale:true}).length,0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
 });
 
 test('the same named-output recipes reuse a different source and deterministic text processor',async t=>{
@@ -262,7 +265,11 @@ test('a multi-batch consumer keeps ordinary evidence seed-bound while explicit c
   assert.equal(jobs[0].status,'completed');assert.equal(jobs[0].totalBatches,2);assert.equal(jobs[0].materialInputs![0].evidenceIds.length,21);
   assert.equal(f.calls.length,4);assert.ok(f.calls.filter(call=>call.traceContext?.phase==='extract').every(call=>call.evidenceIds!.length<21));
   assert.equal(f.boundaryChecks.length,4);assert.ok(f.boundaryChecks.filter(check=>check.phase==='extract').every(check=>!check.siblingSeeded));
-  assert.ok(f.boundaryChecks.filter(check=>check.phase==='review').every(check=>check.siblingSeeded),'independent review receives the exact sibling original actually read by extraction');
+  for(const batch of jobs[0].batches){
+    const [extraction,review]=f.boundaryChecks.filter(check=>check.batchId===batch.id);
+    assert.equal(extraction.phase,'extract');assert.equal(review.phase,'review');assert.equal(review.siblingSeeded,false);
+    assert.deepEqual(review.sibling,extraction.sibling,'independent review rereads the same authorized sibling range');
+  }
   assert.ok(f.boundaryChecks.every(check=>check.ungrantedIds.length>0));
   const ranges=jobs[0].batches.map(batch=>batch.evidenceRanges.length);assert.equal(ranges.length,2);assert.ok(ranges.every(count=>count<21),'context reads never add targets or coverage');
   assert.equal(f.asrCalls(),1);

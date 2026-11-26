@@ -10,6 +10,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
+import {FILE_PART_BYTES} from '@mote/shared';
 
 test('file CLI preview matches authenticated archive receipt and bytes above the 16 MiB shard boundary',async t=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'mote-file-cli-'))),selected=join(root,'selected'),profile=join(root,'profile'),temporary=join(root,'temporary');
@@ -17,14 +18,12 @@ test('file CLI preview matches authenticated archive receipt and bytes above the
  t.after(async()=>{await node?.app.close();await rm(root,{recursive:true,force:true});});
  for(const path of [selected,profile,temporary])await mkdir(path,{mode:0o700});
  const MiB=1024*1024,expected=new Map<string,{size:number;sha256:string;modifiedAt:string}>();
- for(const [title,size] of [['small.m4a',1024],['large.m4a',16*MiB+1],['oversized.m4a',512*MiB+1]] as const){
+ for(const [title,size] of [['small.m4a',1024],['large.m4a',16*MiB+1],['over-former-limit.m4a',512*MiB+1]] as const){
   const path=join(selected,title),handle=await open(path,'wx',0o600);
   try{
    await handle.truncate(size);await handle.write(Buffer.from('Generated '+title));
-   if(size<=512*MiB){
-    const digest=createHash('sha256');for await(const bytes of createReadStream(path))digest.update(bytes);
-    expected.set(title,{size,sha256:digest.digest('hex'),modifiedAt:(await handle.stat()).mtime.toISOString()});
-   }
+   const digest=createHash('sha256');for await(const bytes of createReadStream(path))digest.update(bytes);
+   expected.set(title,{size,sha256:digest.digest('hex'),modifiedAt:(await handle.stat()).mtime.toISOString()});
   }finally{await handle.close();}
  }
  const token='generated-file-cli-owner',config:ConfigurationPlatformOptions={path:(join(root,'central'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:join(root,'central'),maxExportBytes:MiB,contentEncryptionEnabled:true,dataKey:'74'.repeat(32)},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false,level:'silent'}}};
@@ -38,14 +37,15 @@ test('file CLI preview matches authenticated archive receipt and bytes above the
  const run=(...args:string[])=>promisify(execFile)(process.execPath,['--import','tsx',script,'--root',selected,...args],{cwd,env});
  await assert.rejects(run('--retention','snapshot'),/Confirm with --allow-transient-upload/);
  const preview=await run('--retention','archive','--dry-run');
- assert.match(preview.stdout,/Would send 2 changed files; skipped 1; deletion scan not applied\./);
+ assert.match(preview.stdout,/Would send 3 changed files; skipped 0; deletion scan not applied\./);
  assert.equal(requests.length,0,'preview and missing snapshot consent must not contact Central');
  assert.deepEqual(await readdir(profile),['mote.yaml']);assert.deepEqual(await readdir(temporary),[]);
  const imported=await run('--retention','archive');
- assert.match(imported.stdout,/Received 2 changed files; skipped 1; deletion scan not applied\./);
+ assert.match(imported.stdout,/Received 3 changed files; skipped 0; deletion scan not applied\./);
  assert.ok(requests.length>0);assert.ok(requests.every(request=>request.authorization==='Bearer '+token&&request.version==='2'));
- assert.equal(requests.filter(request=>/\/parts\/\d+$/.test(request.url)).length,6,'large audio must traverse five real upload parts plus the small file part');
- const versions=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions').all();assert.equal(versions.length,2);
+ const partCount=[...expected.values()].reduce((count,file)=>count+Math.ceil(file.size/FILE_PART_BYTES),0);
+ assert.equal(requests.filter(request=>/\/parts\/\d+$/.test(request.url)).length,partCount,'all three originals use the real upload parts');
+ const versions=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions').all();assert.equal(versions.length,3);
  for(const row of versions){
   const manifest=JSON.parse(String(row.manifest)),item=manifest.item,wanted=expected.get(item.title);assert.ok(wanted);
   assert.equal(manifest.sizeBytes,wanted.size);assert.equal(manifest.sha256,wanted.sha256);assert.equal(item.metadata.file.sizeBytes,wanted.size);assert.equal(item.modifiedAt,wanted.modifiedAt);
@@ -57,6 +57,6 @@ test('file CLI preview matches authenticated archive receipt and bytes above the
   assert.equal(bytes,wanted.size);assert.equal(digest.digest('hex'),wanted.sha256);
  }
  const repeated=await run('--retention','archive');
- assert.match(repeated.stdout,/Received 0 changed files; skipped 1; deletion scan not applied\./);
- assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_versions').get()!.n,2);
+ assert.match(repeated.stdout,/Received 0 changed files; skipped 0; deletion scan not applied\./);
+ assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_versions').get()!.n,3);
 });

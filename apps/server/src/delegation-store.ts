@@ -1,7 +1,29 @@
 import {installSchemaPlan} from './schema-installation.js';
+import type {DatabaseSync} from 'node:sqlite';
 import {delegationJournalSchemaInstallation} from './delegation-schema.js';
 import type {EvidenceStore as Store} from './evidence-store.js';
 import {StoreError} from './evidence-store.js';
+
+/** Run inside the original's deletion transaction. A prepared query pins
+ * Memory cards independently of the originals that supported those cards. */
+export function retireDelegatedMemoryInputs(db:DatabaseSync,memoryIds:readonly string[],retainedIds:readonly string[]){
+  if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='delegation_dependencies'").get())return;
+  const works=db.prepare(`
+    SELECT DISTINCT d.work_id FROM delegation_dependencies d
+    JOIN json_each(?) removed ON removed.value=d.evidence_id
+    JOIN delegation_works w ON w.id=d.work_id
+    WHERE json_extract(w.json,'$.status') IN ('running','waiting','blocked','failed')
+      OR d.evidence_id NOT IN (SELECT value FROM json_each(?))
+  `).all(JSON.stringify(memoryIds),JSON.stringify(retainedIds));
+  if(!works.length)return;
+  const ids=JSON.stringify(works.map(row=>String(row.work_id)));
+  db.prepare('DELETE FROM delegation_artifacts WHERE work_id IN (SELECT value FROM json_each(?))').run(ids);
+  db.prepare('DELETE FROM delegation_payloads WHERE work_id IN (SELECT value FROM json_each(?))').run(ids);
+  db.prepare('DELETE FROM delegation_results WHERE work_id IN (SELECT value FROM json_each(?))').run(ids);
+  db.prepare('DELETE FROM delegation_events WHERE work_id IN (SELECT value FROM json_each(?))').run(ids);
+  db.prepare("UPDATE delegation_works SET json=json_set(json_remove(json,'$.private','$.wait'),'$.status','stale','$.goal','','$.error','evidence_deleted') WHERE id IN (SELECT value FROM json_each(?))").run(ids);
+  db.prepare("UPDATE delegation_units SET json=json_set(json_remove(json,'$.private'),'$.status','stale','$.title','','$.goal','','$.input',json('{}'),'$.error','evidence_deleted') WHERE work_id IN (SELECT value FROM json_each(?))").run(ids);
+}
 
 /** Private execution products: never indexed, exported as originals, or accepted
  * as citation authority. Vault encryption policy also applies to these payloads. */

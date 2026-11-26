@@ -31,13 +31,14 @@ async function upload(app:any,headers:any,input:FileRevision,bytes:Buffer){
 }
 
 async function setup(t:any){
-  const dir=mkdtempSync(join(tmpdir(),'mote-thumbs-')),configFile=join(dir,'mote.yaml');
-  writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token:'generated-thumbs-owner-token-1234567'},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
+  const dir=mkdtempSync(join(tmpdir(),'mote-thumbs-')),configFile=join(dir,'mote.yaml'),token='generated-thumbs-owner-token-1234567';
+  writeFileSync(configFile,serializeConfigDocument({version:1,revision:0,server:{profile:'test',token},storage:{dataDir:dir},models:{deployment:{model:''}},diagnostics:{level:'silent'}}),{mode:0o600});
   const config=configurationFromFile(configFile);
   const {app,connections,files}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error();},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
-  const headers={authorization:`Bearer ${config.token}`};
-  await app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'phone',name:'Generated',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'}});
+  const headers={authorization:`Bearer ${token}`};
+  const source=await app.inject({method:'POST',url:'/api/sources',headers,payload:{id:'phone',name:'Generated',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'}});
+  assert.equal(source.statusCode,200,source.body);
   return {app,connections,files,headers};
 }
 

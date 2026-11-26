@@ -73,5 +73,14 @@ test('tag-triggered release checks also avoid the broad server glob and manual p
   assert.ok(release.on.push.tags.includes('central-v*'));
   const checks = release.jobs.package.steps.filter(step => step.run?.includes('--task central-units'));
   assert.equal(checks.length, 1);
+  assert.match(release.env.MOTE_CENTRAL_CHECKS, /startsWith\(github.ref, 'refs\/tags\/'\)/);
+  assert.equal(checks[0].if, "env.MOTE_CENTRAL_CHECKS == 'true'");
+  const native = release.jobs.package.steps.find(step => step.name === 'Verify the pinned Codex App Server');
+  assert.equal(native.if, checks[0].if);
+  assert.ok(release.jobs.package.steps.indexOf(native) < release.jobs.package.steps.indexOf(checks[0]));
+  const sandbox = release.jobs.package.steps.find(step => step.run?.includes('apt-get install') && step.run.includes('bubblewrap'));
+  assert.equal(sandbox.if, checks[0].if);
+  assert.ok(release.jobs.package.steps.indexOf(sandbox) < release.jobs.package.steps.indexOf(native));
+  assert.equal(checks[0]['timeout-minutes'], 30);
   assert.ok(!release.jobs.package.steps.some(step => /check:central|npm test|--suite/.test(step.run ?? '')));
 });

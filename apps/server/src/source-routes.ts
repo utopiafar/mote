@@ -10,6 +10,7 @@ import type {SourceControlPort} from './source-runtime-storage.js';
 import type {SourceFileCatalogRead} from './evidence-read-ports.js';
 import {captureContextChannelSchema} from './capture-context.js';
 import {navigationScopeSchema} from './context-navigation.js';
+export const sourceUpdatePath='/api/sources/:id';
 /** Fixed trusted source connections used by routes; no Store or mutable class. */
 export interface SourceRouteConnections {
   authenticate(header:string|undefined):ConnectionCredential|undefined;
@@ -41,7 +42,7 @@ export function registerSourceRoutes(app:FastifyInstance,{layers,sources,fileCat
       if(c){connections.assertOwnDevice(c,input);connections.assertPlatform(c,input.platform);if(sources.listSources().some(source=>source.id===input.id))connections.assertOwnSource(c,input.id);}};
     return present(req,sources.register(req.body,check));
   });
-  app.patch('/api/sources/:id',async req=>{
+  app.patch(sourceUpdatePath,async req=>{
     const id=(req.params as {id:string}).id;sourceOwner(req,id);
     if(credential(req)&&req.body&&typeof req.body==='object'&&'ownerRelation' in req.body)throw new ConnectionError('connection_scope_denied',403,'Only the owner may declare material attribution.');
     const patch=z.object({ownerRelation:ownerRelationSchema.nullable().optional(),name:z.string().min(1).max(200).optional(),enabled:z.boolean().optional(),initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).optional()}).strict().parse(req.body);

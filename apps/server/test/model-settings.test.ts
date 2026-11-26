@@ -101,8 +101,8 @@ test('profile changes persist privately in the sole YAML source and survive rest
   const restart = await f.restart();
   t.after(() => restart.close());
   const restartedView=await restart.initialize();
-  assert.deepEqual(restartedView.settings,view.settings);
-  assert.deepEqual(restartedView.profiles?.find(p=>p.id==='primary'),view.profiles?.find(p=>p.id==='primary'));
+  assert.deepEqual(restartedView.settings,JSON.parse(JSON.stringify(view.settings)));
+  assert.deepEqual(restartedView.profiles?.find(p=>p.id==='primary'),JSON.parse(JSON.stringify(view.profiles?.find(p=>p.id==='primary'))));
   assert.equal(restartedView.profiles?.find(p=>p.readOnly)?.settings.model,environment.model);
   assert.equal(restart.current().apiKey, environment.apiKey);
   await f.store.close(); assert.equal(f.disposed.length, 0, 'Store close does not cancel active requests');
@@ -148,10 +148,10 @@ test('explicit null clears secrets and supplied replacements need no credential 
   const f = await fixture(t); await f.store.initialize();
   const view = await f.store.update({ revision: 0, settings: { ...input(), provider: 'deepseek', apiKey: null, headers: null, extraBody: null } });
   assert.equal(view.settings.apiKeyConfigured, false); assert.equal(view.settings.headersConfigured, false); assert.equal(view.settings.extraBodyConfigured, false);
-  assert.deepEqual(f.store.current(), { ...environment, provider: 'deepseek', apiKey: '', headers: {}, extraBody: {} });
+  assert.deepEqual(f.store.current(), { ...environment, provider: 'deepseek', contextWindow: undefined, apiKey: '', headers: {}, extraBody: {} });
   const replacement = { ...input(), baseUrl: 'https://replacement.example.invalid/v1', apiKey: 'replacement-synthetic-key', headers: { 'X-Synthetic-Key': 'replacement-synthetic-header' }, extraBody: { temperature: 0.2 } };
   await f.store.update({ revision: 1, settings: replacement });
-  assert.deepEqual(f.store.current(), replacement);
+  assert.deepEqual(f.store.current(), {...replacement,contextWindow:undefined});
 });
 
 test('test merges same-address drafts and returns fixed safe results without persisting or activating', async t => {

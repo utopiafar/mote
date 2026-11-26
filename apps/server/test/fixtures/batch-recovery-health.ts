@@ -57,12 +57,18 @@ try{
   // even when the admission's final setImmediate wins the first loop turn.
   await delay(10);clearTimeout(timer);
   const completed=state();
-  assert.equal(completed.task.state,'waiting');assert.equal(completed.task.revision,queued.task.revision);
+  assert.equal(completed.task.state,'blocked');assert.equal(completed.task.revision,queued.task.revision+1);
   assert.equal(completed.items.length,1);assert.equal(completed.items[0].state,'blocked');
   assert.equal(completed.items[0].error,'model_not_configured');assert.equal(completed.items[0].attempts,0);
   assert.deepEqual(completed.items[0].input,step.input);assert.equal(completed.items[0].operationId,step.operationId);
   assert.deepEqual(executionIdentity(),queuedExecution,'admission must not spend attempts, claim a lease or rewrite the execution identity and recovery window');
-  assert.deepEqual(node.store.db.prepare('SELECT * FROM task_records WHERE operation_id=? ORDER BY rowid').all(step.operationId),privateTasks,'unavailable-model recovery must preserve private tasks, original fingerprints, request identity and timestamps');
+  const projectedTasks=node.store.db.prepare('SELECT * FROM task_records WHERE operation_id=? ORDER BY rowid').all(step.operationId);
+  assert.equal(projectedTasks.length,privateTasks.length);
+  const identity=({state:_state,revision:_revision,updated_at:_updatedAt,...row}:typeof privateTasks[number])=>row;
+  for(const [index,row] of projectedTasks.entries()){
+    assert.equal(row.state,'blocked');assert.equal(row.revision,Number(privateTasks[index].revision)+1);
+    assert.deepEqual(identity(row),identity(privateTasks[index]),'unavailable-model recovery must preserve private inputs, original fingerprints and request identities');
+  }
   assert.deepEqual(originals(),saved,'recovery must preserve original bytes/text, segment timing, source declarations and Material revision');
   process.send!({type:'done',durationMs,timerMs,transactionDuring,total});
 }finally{await node.app.close();}

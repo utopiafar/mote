@@ -35,7 +35,7 @@ test('production entry rejects auxiliary foreign effects, copied reads and raw i
  cpSync(resolve(repository,'scripts/ci'),resolve(root,'scripts/ci'),{recursive:true});
  symlinkSync(resolve(repository,'node_modules'),resolve(root,'node_modules'),'dir');
  const run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8'});
- let result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/SQL ownership: 36 schema owners/);assert.match(result.stdout,/125 tables\/views/);
+ let result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/SQL ownership: 81 schema owners/);assert.match(result.stdout,/210 tables\/views/);
  const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baseline=readFileSync(baselinePath,'utf8');
  const originals=new Map([insight,record,schema].map(file=>[file,readFileSync(resolve(root,file),'utf8')]));
  const cases=[

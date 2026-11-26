@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,appendFileSync,copyFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -135,7 +136,7 @@ test('changes to an unresolved helper body cannot reuse its dynamic SQL exceptio
 
 test('real production inventory and generated map stay in sync with explicit partial coverage',()=>{
  const result=checkSqlOwnership(repository);assert.deepEqual(result.violations,[]);assert.deepEqual(result.stale,[]);
- assert.equal(result.owners.length,68);assert.equal(Object.keys(result.tables).length,174);
+ assert.equal(result.owners.length,86);assert.equal(Object.keys(result.tables).length,210);
  assert.equal(result.tables.insight_runs.owner,'insight-runs');assert.equal(result.tables.record_context_declarations.owner,'record-context');
  assert.ok(result.coveredFiles.includes('apps/server/src/insight-runs.ts'));assert.ok(result.uncoveredFiles.includes('apps/server/src/insight-runs.ts'),'insight runtime keeps its cross-owner reads pending');
  assert.ok(result.coveredFiles.includes('apps/server/src/record-context.ts'));assert.ok(!result.uncoveredFiles.includes('apps/server/src/record-context.ts'));
@@ -270,18 +271,34 @@ test('a non-SQL registration callback needs the exact local type, binding, compl
 });
 
 test('Task prepare adapters require their imported class binding and exact implementation, and keep nested database sinks visible',()=>{
- const proofs=nonSqlCalls.filter(proof=>proof.kind==='class-method'),sources=new Map(proofs.flatMap(proof=>[proof.from,proof.definitionFile]).map(file=>[file,readFileSync(resolve(repository,file),'utf8')]));
- assert.equal(proofs.length,3);
- for(const proof of proofs){
-  const source=sources.get(proof.from),evidence=[];
-  sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:evidence,sourceTexts:sources});assert.equal(evidence.length,1);
-  const call=proof.receiver==='this.questions'?'this.questions.prepare(this.steering?.prepare(input,this.steeringWork(task.id))??input,this.questionWork(task.id))':proof.receiver==='this.steering'?'this.steering?.prepare(input,this.steeringWork(task.id))':'assistantTasks.prepare(input)';
-  assert.ok(source.includes(call));
+ const from='apps/server/src/generated-adapter-consumer.ts',definitionFile='apps/server/src/generated-tool-adapter.ts';
+ const imported="import {GeneratedAdapter} from './generated-tool-adapter.js';";
+ const implementation='prepare(input:QueryInput,context?:unknown){ return input; }';
+ const definition='export class GeneratedAdapter { '+implementation+' }';
+ const hash=value=>createHash('sha256').update(value).digest('hex');
+ for(const [receiver,binding,location,scope,call] of [
+  ['this.questions','private questions:GeneratedAdapter;','class','GeneratedTasks.prepare',"this.questions.prepare(input,db.prepare('SELECT value FROM settings'))"],
+  ['this.steering','private steering:GeneratedAdapter|undefined;','class','GeneratedTasks.prepare','this.steering?.prepare(input,context)'],
+  ['assistantTasks','assistantTasks:GeneratedAdapter','function','buildGenerated','assistantTasks.prepare(input)'],
+ ]){
+  const assignment=receiver+'=new GeneratedAdapter()';
+  const scopeBody=location==='class'
+   ?'prepare(input:QueryInput){return '+call+';}'
+   :'function buildGenerated(input:QueryInput){let '+binding+'; '+assignment+';return '+call+';}';
+  const source=imported+'\n'+(location==='class'?'class GeneratedTasks { '+binding+' constructor(){'+assignment+';} '+scopeBody+' }':scopeBody);
+  const proof={kind:'class-method',from,scope,receiver,method:'prepare',className:'GeneratedAdapter',entryType:'GeneratedAdapter',definitionFile,occurrence:1,
+   moduleFingerprint:hash(source),scopeFingerprint:hash(scopeBody),callFingerprint:hash(call),bindingFingerprint:hash(binding),assignmentFingerprint:hash(assignment),
+   importFingerprint:hash(imported),definitionModuleFingerprint:hash(definition),definitionFingerprint:hash(implementation)};
+  const sources=new Map([[from,source],[definitionFile,definition]]),evidence=[];
+  const original=sqlStatements(from,source,{nonSqlProofs:[proof],nonSqlEvidence:evidence,sourceTexts:sources});assert.equal(evidence.length,1,receiver);
+  if(receiver==='this.questions')assert.ok(original.some(statement=>statement.values.includes('SELECT value FROM settings')),'the nested database call remains an actual SQL sink');
   for(const changed of [source.replace(call,call.replace('input',"'SELECT value FROM settings'")),source.replace(call,'('+call+','+call+')'),source+'\nfunction generatedDatabaseReceiver(db,sql){const sameName=db;return sameName.prepare(sql);}']){
-   const rejected=[],statements=sqlStatements(proof.from,changed,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:sources});assert.equal(rejected.length,0);assert.ok(statements.some(statement=>statement.values.includes('__dynamic__')||statement.values.some(value=>value.includes('SELECT value FROM settings'))));
+   assert.notEqual(changed,source);
+   const rejected=[],statements=sqlStatements(from,changed,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:sources});assert.equal(rejected.length,0);
+   assert.ok(statements.some(statement=>statement.values.includes('__dynamic__')||statement.values.some(value=>value.includes('SELECT value FROM settings'))));
   }
-  const changedSources=new Map(sources);changedSources.set(proof.definitionFile,sources.get(proof.definitionFile)+'\nexport const changedImplementation=true;');const rejected=[];
-  sqlStatements(proof.from,source,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:changedSources});assert.equal(rejected.length,0);
+  const changedSources=new Map(sources);changedSources.set(definitionFile,definition+'\nexport const changedImplementation=true;');const rejected=[];
+  sqlStatements(from,source,{nonSqlProofs:[proof],nonSqlEvidence:rejected,sourceTexts:changedSources});assert.equal(rejected.length,0);
  }
  const db=new DatabaseSync(':memory:');try{db.exec("CREATE TABLE settings(value TEXT);INSERT INTO settings VALUES('generated-task-receiver')");const assistantTasks=db;assert.equal(assistantTasks.prepare('SELECT value FROM settings').get().value,'generated-task-receiver');}finally{db.close();}
 });
@@ -328,8 +345,11 @@ test('the imported retirement helper proves only its exact literal constructor c
  const options={finiteScopes:[proof.scope],importedHelpers:[proof],sourceTexts:sources};
  const statements=sqlStatements(proof.from,source,options),statement=statements.find(item=>item.scope===proof.scope&&item.sink&&item.values.some(value=>value.includes('CREATE TABLE')));
  assert.ok(statement.values.every(value=>!value.includes('__dynamic__')));assert.ok(statement.values[0].includes("UPDATE task_records SET state='stale'"));
- assert.ok(statements.some(item=>item.scope==='AssistantTasks.retire'&&item.values.includes('__dynamic__')),'runtime calls do not inherit constructor proof');
- for(const changed of [source+'\nconst escapedRetirement=retireTaskRecordsSql;',source.replace("retireTaskRecordsSql('SELECT task_id FROM assistant_task_turns WHERE turn_id=old.id AND conversation_id=old.conversation_id')",'retireTaskRecordsSql(selection)'),source.replace('retireTaskRecordsSql,taskEvidenceIds','retireTaskRecordsSql as renamedRetirement,taskEvidenceIds')])assert.throws(()=>sqlStatements(proof.from,changed,options),/imported SQL helper/);
+ const runtime='apps/server/src/assistant-tasks.ts',runtimeSource=readFileSync(resolve(repository,runtime),'utf8');
+ assert.ok(sqlStatements(runtime,runtimeSource).some(item=>item.scope==='AssistantTasks.retire'&&item.values.includes('__dynamic__')),'runtime calls do not inherit constructor proof');
+ const unrelated=source+"\nfunction generatedRetire(db,selection){db.prepare(retireTaskRecordsSql(selection));}";
+ assert.ok(sqlStatements(proof.from,unrelated,options).some(item=>item.scope==='generatedRetire'&&item.values.includes('__dynamic__')),'an out-of-scope use of the same imported helper stays visible to SQL checks');
+ for(const changed of [source+'\nconst escapedRetirement=retireTaskRecordsSql;',source.replace("retireTaskRecordsSql('SELECT task_id FROM assistant_task_turns WHERE turn_id=old.id AND conversation_id=old.conversation_id')",'retireTaskRecordsSql(selection)'),source.replace('retireTaskRecordsSql(', 'renamedRetirement(').replace('{retireTaskRecordsSql}', '{retireTaskRecordsSql as renamedRetirement}')])assert.throws(()=>sqlStatements(proof.from,changed,options),/imported SQL helper/);
  const changedSources=new Map([[proof.definitionFile,definition.replace('UPDATE task_records SET', 'UPDATE captures SET')]]);assert.throws(()=>sqlStatements(proof.from,source,{...options,sourceTexts:changedSources}),/exact pure definition/);
 });
 
@@ -340,7 +360,11 @@ test('existing storage claims bind only actual DDL sinks and their production co
   const helpers=importedHelpers.filter(proof=>proof.from===target);for(const proof of helpers)f.write(proof.definitionFile,readFileSync(resolve(repository,proof.definitionFile),'utf8'));
   const configuration={installations:{},consumers:{},sharedReads:[],storageConstructions:[construction],importedHelpers:helpers};
   let inventory=ownershipInventory(f.root,configuration);assert.equal(inventory.owners.length,1);assert.equal(inventory.owners[0].construction,true);assert.ok(inventory.uncoveredFiles.includes(target),'the rest of this storage module remains pending');
-  f.write(target,source.replace('CREATE TABLE IF NOT EXISTS','CREATE TABLE IF NOT EXISTS changed_'));assert.throws(()=>ownershipInventory(f.root,configuration),/exact constructor and proved DDL sink/);f.write(target,source);
+  const sourceTexts=new Map(helpers.map(proof=>[proof.definitionFile,readFileSync(resolve(repository,proof.definitionFile),'utf8')]));
+  const ddl=sqlStatements(target,source,{finiteScopes:[construction.scope],importedHelpers:helpers,sourceTexts}).find(item=>item.scope===construction.scope&&item.fingerprint===construction.statementFingerprint);
+  assert.ok(ddl,construction.scope);assert.equal(source.split(ddl.expression).length,2);
+  const changedDdl=ddl.expression.replace('CREATE TABLE IF NOT EXISTS','CREATE TABLE IF NOT EXISTS changed_');assert.notEqual(changedDdl,ddl.expression);
+  f.write(target,source.replace(ddl.expression,()=>changedDdl));assert.throws(()=>ownershipInventory(f.root,configuration),/exact constructor and proved DDL sink/);f.write(target,source);
   const call=construction.calls[0],caller=readFileSync(resolve(repository,call.from),'utf8'),className=construction.scope.split('.')[0];
   f.write(call.from,caller+'\nfunction anotherConstruction(db){return new '+className+'(db);}');assert.throws(()=>ownershipInventory(f.root,configuration),/exact production call path/);
   f.write(call.from,caller+'\nconst escapedConstructor='+className+';');assert.throws(()=>ownershipInventory(f.root,configuration),/cannot escape/);f.write(call.from,caller);
@@ -448,6 +472,8 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*activity-memory-index.ts.*memory_jobs.*write/);
  writeFileSync(projectionPath,projectionSource.replace('FROM ${from}json_each','FROM settings hidden,${from}json_each'));
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*activity-memory-index.ts.*settings/);
+ writeFileSync(projectionPath,projectionSource.replace('FROM memory_jobs mj JOIN memory_batches','FROM settings mj JOIN memory_batches'));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*activity-memory-index.ts/);
  writeFileSync(projectionPath,projectionSource.replace('"activity_memory_source_insert",','"foreign_trigger",'));
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-table.*foreign_trigger/);
  writeFileSync(projectionPath,projectionSource.replace('CREATE TABLE IF NOT EXISTS activity_memory_jobs(', 'CREATE TABLE IF NOT EXISTS changed_projection_jobs('));
@@ -471,7 +497,13 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper requires its exact pure definition/);
  // The total entry rejects the changed imported module first. Independently
  // retain the original concrete maintenance-effect assertion at its installer.
- assert.ok(ownershipInventory(root,{...policy,importedHelpers:[],storageConstructions:storageConstructions.filter(item=>item.owner!=='assistant-task-storage')}).issues.some(issue=>issue.rule==='sql-schema-maintenance'&&issue.from.endsWith('/task-evidence.ts')&&issue.to==='memories'&&issue.kind==='update'));
+ const withoutTaskConstruction={
+  ...policy,
+  importedHelpers:[],
+  storageConstructions:storageConstructions.filter(item=>item.owner!=='assistant-task-storage'),
+  consumerScopes:{...policy.consumerScopes,'assistant-tasks.ts':Object.fromEntries(Object.entries(policy.consumerScopes['assistant-tasks.ts']).filter(([,owner])=>owner!=='assistant-task-storage'))},
+ };
+ assert.ok(ownershipInventory(root,withoutTaskConstruction).issues.some(issue=>issue.rule==='sql-schema-maintenance'&&issue.from.endsWith('/task-evidence.ts')&&issue.to==='memories'&&issue.kind==='update'));
  writeFileSync(evidencePath,evidenceSource);
  const searchPath=resolve(root,'apps/server/src/memory-search-schema.ts'),searchSource=readFileSync(searchPath,'utf8');
  writeFileSync(searchPath,searchSource+'\nfunction generatedRuntime(db:DatabaseSync){memoryCatalog(db);}');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/schema db helper cannot inherit installer authority/);writeFileSync(searchPath,searchSource);
@@ -493,10 +525,12 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  const retirementPath=resolve(root,'apps/server/src/task-evidence.ts'),retirementSource=readFileSync(retirementPath,'utf8');
  writeFileSync(retirementPath,retirementSource.replace('UPDATE task_records SET', 'UPDATE captures SET'));
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper requires its exact pure definition/);writeFileSync(retirementPath,retirementSource);
- writeFileSync(taskPath,taskSource+'\nconst escapedRetirement=retireTaskRecordsSql;');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper cannot alias or escape/);writeFileSync(taskPath,taskSource);
- const conversationsCaller=resolve(root,'apps/server/src/plugins/conversations.ts'),conversationsSource=readFileSync(conversationsCaller,'utf8');
- writeFileSync(conversationsCaller,conversationsSource+'\nfunction generatedConstruction(db){return new Conversations(db);}');
- result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor requires its exact production call path/);writeFileSync(conversationsCaller,conversationsSource);
+ const schemaPath=resolve(root,'apps/server/src/chat-storage-schema.ts'),schemaSource=readFileSync(schemaPath,'utf8');
+ writeFileSync(schemaPath,schemaSource+'\nconst escapedRetirement=retireTaskRecordsSql;');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper cannot alias or escape/);writeFileSync(schemaPath,schemaSource);
+ const duplicateConstruction=schemaSource.replace('new ConversationTurnStorage(db);','new ConversationTurnStorage(db);new ConversationTurnStorage(db);');
+ assert.notEqual(duplicateConstruction,schemaSource);
+ writeFileSync(schemaPath,duplicateConstruction);
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor requires its exact production call path/);writeFileSync(schemaPath,schemaSource);
  const historyFile='apps/server/src/evidence-store.ts',historyPath=resolve(root,historyFile),historySource=readFileSync(historyPath,'utf8'),historyStatements=sqlStatements(historyFile,historySource);
  for(const sample of originalPendingWrites){
   const statement=historyStatements.find(item=>item.fingerprint===sample.symbol);assert.ok(statement);assert.equal(statement.scope,sample.scope);assert.equal(statement.scopeFingerprint,sample.scopeFingerprint);
@@ -513,15 +547,15 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  ];
  for(const [name,changed]of historyMutations){assert.notEqual(changed,historySource);writeFileSync(historyPath,changed);result=architecture();assert.equal(result.status,1,result.stderr);assert.match(result.stderr,/evidence-store.ts/);if(name==='fully proved update')assert.match(result.stderr,/sql-cross-owner.*evidence-store.ts.*conversation_turns.*write/);t.diagnostic('Frozen unknown-write '+name+' mutation rejects through the total CLI');}
  writeFileSync(historyPath,historySource);
- for(const construction of storageConstructions.filter(item=>['conversation-turn-storage','query-run-storage'].includes(item.owner))){
-  const path=resolve(root,'apps/server/src/'+construction.file),source=readFileSync(path,'utf8');writeFileSync(path,source.replace('CREATE TABLE IF NOT EXISTS','CREATE TABLE IF NOT EXISTS changed_'));
-  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage construction requires its exact constructor and proved DDL sink/);writeFileSync(path,source);
+ for(const table of ['conversation_turns','query_runs']){
+  const changed=schemaSource.replace('CREATE TABLE IF NOT EXISTS '+table,'CREATE TABLE IF NOT EXISTS changed_'+table);
+  assert.notEqual(changed,schemaSource);writeFileSync(schemaPath,changed);
+  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage construction requires its exact constructor and proved DDL sink/);writeFileSync(schemaPath,schemaSource);
  }
- const rawPath=resolve(root,'apps/server/src/conversations.ts'),rawSource=readFileSync(rawPath,'utf8');
- for(const addition of ['\nexport function generatedExtraConstruction(db){return new Conversations(db);}','\nconst aliasedConstructor=Conversations;','\npublishConstructor(Conversations);','\nclass GeneratedChild extends Conversations {}']){
-  writeFileSync(rawPath,rawSource+addition);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor.*(?:call path|cannot escape)/);
+ for(const addition of ['\nexport function generatedExtraConstruction(db){return new ConversationTurnStorage(db);}','\nconst aliasedConstructor=ConversationTurnStorage;','\npublishConstructor(ConversationTurnStorage);','\nclass GeneratedChild extends ConversationTurnStorage {}']){
+  writeFileSync(schemaPath,schemaSource+addition);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor.*(?:call path|cannot escape)/);
  }
- writeFileSync(rawPath,rawSource);
+ writeFileSync(schemaPath,schemaSource);
  assert.equal(readFileSync(baselinePath,'utf8'),baselineSource,'negative cases never edit the production debt ledger');
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");

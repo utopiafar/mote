@@ -50,7 +50,7 @@ function bounded(input: StateLimits): StateLimits {
 
 /** One table in the existing vault. The trusted factory supplies the real
  * HostScope; ordinary code cannot choose a namespace, instance ID or SQL. */
-class InstanceState implements StateStore {
+export class InstanceState implements StateStore {
   private readonly namespace: Namespace;
   private readonly limits: StateLimits;
 

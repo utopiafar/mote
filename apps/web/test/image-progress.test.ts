@@ -100,9 +100,12 @@ test('real archived image HTTP remains consumable in the existing detail reader 
         if(path.endsWith('/playback'))playbackCookie=String(response.headers['set-cookie']).split(';')[0];
         const wire=new Response(response.body,{status:response.statusCode,headers:{'content-type':'application/json'}});if(!wire.ok)throw await readApiError(wire);return readApiJson<T>(wire);
     }} as Api;
-    await act(async()=>f.root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
+    const details=f.dom.window.document.body.appendChild(f.dom.window.document.createElement('aside'));
+    await act(async()=>f.root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{},detailsTarget:details})));
     await act(async()=>{await Promise.all(['/api/files/'+id,'/api/files/'+id+'/view','/api/images/'+id,'/api/features'].map(path=>readResource(api,path,AbortSignal.timeout(5000))));});
-    assert.equal(f.phase('原件'),'已就绪');assert.equal(f.dom.window.document.querySelector('.image-progress')!==null,true);
+    const processing=details.querySelector<HTMLDetailsElement>('.reader-source-details')!;
+    await act(async()=>processing.querySelector('summary')!.click());assert.equal(processing.open,true);
+    assert.equal(f.phase('原件'),'已就绪');assert.ok(processing.querySelector('.image-progress'));
     assert.equal(f.button('查看原图').disabled,false);assert.equal(f.button('问文件').disabled,false);
     await act(async()=>{f.button('查看原图').click();await new Promise<void>(resolve=>setImmediate(resolve));});
     assert.equal(f.dom.window.document.querySelector('img')?.getAttribute('src'),'/api/files/'+id+'/content');

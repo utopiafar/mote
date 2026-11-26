@@ -30,6 +30,7 @@ import {contributeDomainRoutes} from '../plugins/domain-routes.js';
 import {prepareActivityInputs,type ActivityAssemblyDependencies} from './activity.js';
 import {activityServicesContract,type ActivityServices} from '../plugins/activity-services.js';
 import {resolveSelectedDomain} from '../domain-activation.js';
+export {prepareAssistantGoalAndIdeaRoutes} from '../plugins/assistant-goal-and-idea-routes.js';
 
 /** Executable work domains and their private build input providers. */
 export const plugins:readonly CentralDomainPlugin[]=Object.freeze([

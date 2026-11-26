@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {profilePaths,initialize} from '../../../scripts/profile-lib.mjs';
-import {configurationFromFile} from '../src/config.js';
+import {configurationFromFile,modelsConfigDomain,readConfigDocument} from '../src/config.js';
 import {buildApp} from '../src/app.js';
 import {createModelAgent as productionCreateModelAgent,type ModelAgentFactory} from '../src/model-agent.js';
 import {appCleanup} from './fixtures/app-cleanup.js';
@@ -31,8 +31,9 @@ async function profile(t:TestContext){
   const paths=profilePaths('test',root);
   await initialize(paths);
   const config=configurationFromFile(paths.configFile);
-  assert.equal(config.model,'');
-  assert.equal(config.embeddingModel,'');
+  const models=modelsConfigDomain.schema.parse(readConfigDocument(paths.configFile).models??{});
+  assert.equal(models.deployment.model,'');
+  assert.equal(models.embedding.model,'');
   return {root,config,cleanup};
 }
 
@@ -61,7 +62,7 @@ function fetchSpy(t:TestContext){
 test('a generated unconfigured profile starts, stores and reads a note, and drains a tick without a model, Codex login or embedding request',async t=>{
   const {root,config,cleanup}=await profile(t),counters={queries:0},requests=fetchSpy(t),codex=await codexSpy(t,root);
   let node=cleanup.own(await buildApp(config,{backgroundWorker:false,createModelAgent:countingFactory(counters)}));
-  const headers={authorization:`Bearer ${config.token}`},id=randomUUID();
+  const headers={authorization:`Bearer ${node.bootstrap.configurationBootstrap.owner.token}`},id=randomUUID();
   const created=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-a3-device',deviceName:'Generated A3',platform:'android',capturedAt:'2026-11-01T00:00:00.000Z',text:'Generated note from an unconfigured profile.'}});
   assert.equal(created.statusCode,201,created.body);
   await node.executor.tick();
@@ -85,7 +86,7 @@ test('a generated unconfigured profile starts, stores and reads a note, and drai
 test('a generated unconfigured profile keeps the existing 503 model_not_configured query state',async t=>{
   const {config,cleanup}=await profile(t),counters={queries:0},requests=fetchSpy(t);
   const node=cleanup.own(await buildApp(config,{backgroundWorker:false,createModelAgent:countingFactory(counters)}));
-  const headers={authorization:`Bearer ${config.token}`};
+  const headers={authorization:`Bearer ${node.bootstrap.configurationBootstrap.owner.token}`};
   const status=(await node.app.inject({url:'/api/status',headers})).json();
   assert.equal(status.agent.configured,false,'the existing unconfigured state feeds Ask');
   assert.equal(status.agent.model,null);

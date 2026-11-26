@@ -61,16 +61,16 @@ test('selected Connections uses the original authorization owner and actual HTTP
 });
 
 test('Connections domain withdrawal affects only its routes; reselect/restart retains connection state and sibling Notes/developer access',{timeout:120000},async t=>{
- const f=await fixture(t),selected={...defaultDistribution,features:['mote.connections','mote.notes']};
+ const f=await fixture(t),selected={...defaultDistribution,features:defaultDistribution.features};
  const first=await f.build(selected),invitation=await first.request('POST','/api/connections/collector-invitations',token,{serverUrl:first.origin,label:'Generated retained collector'});
  const paired=await first.request('POST','/api/connections/redeem','',{code:invitation.json().invitation.code,deviceId:'generated-retained',deviceName:'Generated retained',platform:'android'});assert.equal(paired.status,200,paired.body);
- const saved=paired.json(),domains=await first.node.bootstrap.activateDomains();assert.deepEqual(domains.routes.map(route=>route.id),['mote.connections']);
+ const saved=paired.json(),domains=await first.node.bootstrap.activateDomains();assert.equal(domains.routes.filter(route=>route.id==='mote.connections').length,1);
  await domains.quiesce();assert.equal((await first.request('GET','/api/connections/self',saved.token)).status,503);
  await domains.close();assert.equal((await first.request('GET','/api/connections',token)).status,503);
  assert.equal((await first.request('GET','/api/developer')).status,200);assert.equal(first.node.connections.authenticate('Bearer '+saved.token)?.id,saved.credentialId,'route withdrawal did not close the authorization-owned Connections');
  const note={id:randomUUID(),deviceId:'generated-retained',deviceName:'Generated retained',platform:'android',capturedAt:new Date().toISOString(),text:'Generated retained sibling note'};
  assert.equal((await first.request('POST','/api/notes',saved.token,note)).status,201);
- const omitted=await f.build({...selected,features:['mote.notes']});assert.equal((await omitted.request('GET','/api/connections/self')).status,404);assert.equal((await omitted.request('GET','/api/developer')).status,404);
+ const omitted=await f.build({...selected,features:selected.features.filter(id=>id!=='mote.connections')});assert.equal((await omitted.request('GET','/api/connections/self')).status,404);assert.equal((await omitted.request('GET','/api/developer')).status,404);
  const omittedNotes=await omitted.request('GET','/api/notes');assert.equal(omittedNotes.status,200,omittedNotes.body);assert.deepEqual(omittedNotes.json().items.map((row:{id:string;ocrText:string})=>({id:row.id,text:row.ocrText})),[{id:note.id,text:note.text}]);
  const restored=await f.build(selected);assert.equal((await restored.request('GET','/api/connections/self',saved.token)).json().credential.id,saved.credentialId);assert.equal((await restored.request('GET','/api/developer')).status,200);
  const restoredNotes=await restored.request('GET','/api/notes');assert.equal(restoredNotes.status,200,restoredNotes.body);assert.deepEqual(restoredNotes.json().items.map((row:{id:string;ocrText:string})=>({id:row.id,text:row.ocrText})),[{id:note.id,text:note.text}]);

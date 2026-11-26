@@ -21,7 +21,7 @@ test('the full packaged domain template installs, checks, opens its declared pag
   const inventory=await f.request('GET','/api/plugins/presentation') as PluginPresentationInventory,installed=inventory.instances[0]!;
   assert.equal(installed.packageId,item.manifest.id);assert.equal(installed.instanceId,instance.id);assert.equal(installed.releaseDigest,item.manifest.archive.sha256);
   const page=installed.pages[0]!,document=await f.response('GET',page.entryUrl,undefined,'');assert.equal(document.statusCode,200);
-  assert.match(document.headers['content-security-policy'] as string,/sandbox allow-scripts/);assert.match(document.headers['content-security-policy'] as string,/default-src 'none'/);assert.match(document.body,/Template collection/);assert.ok(!document.body.includes(f.config.token));
+  assert.match(document.headers['content-security-policy'] as string,/sandbox allow-scripts/);assert.match(document.headers['content-security-policy'] as string,/default-src 'none'/);assert.match(document.body,/Template collection/);assert.ok(!document.body.includes(f.config.privateCredential!.token));
   const invoke=(method:string,payload?:unknown,activationId=installed.activationId)=>f.response('POST',`/api/plugin-instances/${instance.id}/pages/${page.id}/invoke`,{activationId,method,...(payload===undefined?{}:{payload})});
   assert.equal((await invoke('summary')).statusCode,403,'a real but undeclared method stays inaccessible');
   assert.equal((await invoke('add',{text:'Generated installed page item'})).statusCode,200);

@@ -1,3 +1,4 @@
+import {forgetFixtureOriginal} from './fixtures/forget-original.js';
 import {fixtureMemoryResult,fixtureMemoryPipeline} from './fixtures/memory-result.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -116,7 +117,7 @@ test('consolidation retains coding contracts and checkpoints each domain across 
  failCoding=false;now+=121000;await lifecycle.tick();assert.deepEqual(calls,['personal','personal','coding','coding','coding'],'completed personal generation is not repeated');
  const consolidated=memories.page({tier:'consolidated',level:'detail'}).items;assert.equal(consolidated.length,2);
  const code=consolidated.find(m=>m.domain==='coding')!;assert.equal(code.coding?.scope,'project');assert.deepEqual(code.scopeRefs,[{sourceId:'coding',deviceId:'fixture',provider:'codex',sessionId:'s1',projectKey:'project-a'}]);assert.deepEqual(memories.get(code.id).relatedMemoryIds,[originals[1].id]);
- store.delete(coding);assert.throws(()=>memories.get(code.id));assert.equal(memories.page({tier:'consolidated'}).items.length,1);
+ forgetFixtureOriginal(store,coding);assert.throws(()=>memories.get(code.id));assert.equal(memories.page({tier:'consolidated'}).items.length,1);
  await lifecycle.close();await pipeline.close();
 });
 

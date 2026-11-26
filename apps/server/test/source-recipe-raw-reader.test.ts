@@ -84,7 +84,7 @@ test('a single raw Coding item larger than 1 MiB is assembled instead of failing
 test('a genuinely inconsistent raw range still fails visibly as 409',async t=>{
   const {runtime,sources}=await fixture(t);
   await sources.upsert('coding',event('range','Generated range proof'));
-  const recipe=runtime.recipes.resolve('mote.coding','8'),source=sources.getSource('coding'),group=JSON.stringify(['codex','fixture-project','fixture-session']);
+  const recipe=runtime.recipes.resolve('mote.coding','9'),source=sources.getSource('coding'),group=JSON.stringify(['codex','fixture-project','fixture-session']);
   const reader={
     page:async()=>({status:'available' as const,items:[{ref:'generated-ref',observedAt:'2026-09-24T01:00:00.000Z'}],nextCursor:null,snapshot:'generated-snapshot',total:1,appendEpoch:1}),
     read:async(ref:string,request:{offset:number;length:number})=>({status:'available' as const,ref,mediaType:'application/json',totalBytes:2,offset:request.offset+1,bytes:new Uint8Array([123,125]),nextOffset:null}),

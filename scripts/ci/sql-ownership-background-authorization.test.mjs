@@ -32,6 +32,7 @@ test('background authorization owns six tables while complete routine consumers 
   'BackgroundModelAuthorization.stepAuthority':'background-model-authorization',
   'BackgroundModelAuthorization.assertStep':'background-model-authorization',
   'BackgroundModelAuthorization.runStep':'background-model-authorization',
+  'BackgroundModelAuthorization.renewMemoryRetryAuthority':'background-model-authorization',
  });
  assert.equal(scopes['BackgroundModelAuthorization.eligible'],undefined);assert.equal(scopes['BackgroundModelAuthorization.receiveRoutineOccurrence'],undefined);
  assert.deepEqual(result.exceptions.filter(issue=>issue.from===consumer).map(issue=>[issue.rule,issue.scope,issue.symbol]).sort(),[

@@ -148,6 +148,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
   if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:moteText("Agent 请求已超时，稍后重试或缩小查询范围。")};
   if(e.code==='context_lineage_incomplete')return {status:409,category:'context_lineage_incomplete',message:moteText("这段历史的证据范围不完整，无法安全发送给远程模型。新建对话，或改用本地模型并重新提供证据。")};
   if(e.code==='source_context_changed')return {status:409,category:'source_context_changed',message:moteText("资料状态已变化或当前配置不支持此操作，刷新后重试。")};
+  if(e.code==='context_evidence_restricted'&&e.reason==='ask_evidence_changed')return {status:409,category:'context_evidence_restricted',reason:e.reason,message:moteText('查询所用资料已变化，重新核对证据后发起查询。')};
   if(e.code==='context_evidence_restricted')return {status:409,category:'context_evidence_restricted',message:moteText("这段历史包含当前不可向所选模型披露的资料。改用本地模型，或新建对话并重新选择可用证据。")};
   if(error instanceof ProviderFailure&&Object.hasOwn(responseReasons,error.details.code)){const reason=error.details.code;return {status:502,category:error.details.category==='blocked'?'model_not_configured':error.details.category==='permanent'?'validation':reason==='rate_limited'?'rate_limited':'unavailable',reason,message:moteText(responseReasons[reason])};}
   if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:moteText("模型服务请求未完成，检查地址、凭据和模型配置。")};

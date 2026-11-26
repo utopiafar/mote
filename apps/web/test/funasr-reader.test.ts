@@ -14,7 +14,7 @@ import {audioCentral,audioDom,deferred,until} from './fixtures/funasr-ui.js';
 test('production FunASR bytes reach archive, reader, exact seek, owner naming, manual correction and raw comparison',async t=>{
  const f=await audioCentral(t),id=await f.upload(),ui=await audioDom(t);
  let detail=await f.api.request<any>('/api/files/'+id),raw=detail.artifacts.find((a:any)=>a.kind==='transcript'),dialogue=detail.artifacts.find((a:any)=>a.kind==='dialogue');
- assert.equal(detail.job.state,'succeeded');assert.equal(raw.output.type.id,'mote.funasr-transcript');assert.equal(dialogue.output.type.id,'mote.funasr-dialogue');
+ assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));assert.equal(raw.output.type.id,'mote.funasr-transcript');assert.equal(dialogue.output.type.id,'mote.funasr-dialogue');
  await ui.render(React.createElement(FileDetail,{api:f.api,id,onOpen:()=>{}}));await until(()=>!!ui.d.querySelector('.recording-turn .file-text'));
  assert.match(ui.d.body.textContent!,/零到二十。/);assert.match(ui.d.body.textContent!,/重叠的尾段。/);
  await until(()=>!ui.button('回听录音').disabled);await ui.click('回听录音');await until(()=>!!ui.d.querySelector('audio'));const times=ui.d.querySelectorAll<HTMLButtonElement>('.recording-segment .recording-time');assert.ok(times.length>=2);

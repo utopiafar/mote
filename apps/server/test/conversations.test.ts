@@ -76,7 +76,8 @@ test('new answers receive bounded visible memory leads and respect explicit arch
   assert.deepEqual(seen[1].openingMemories,[]);
   store.delete(published.original.id);
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Again'}})).statusCode,200);
-  assert.deepEqual(seen[2].openingMemories?.map(item=>[item.id,item.status]),[[published.memory.id,'published']],'ordinary original release preserves the published claim and cannot fall back to a proposed draft');
+  assert.deepEqual(seen[2].openingMemories,[],'ordinary original release withdraws the claim from new answers and cannot fall back to a proposed draft');
+  assert.equal(memories.get(published.memory.id).status,'published','the existing publication stays available to private lineage checks');
   assert.deepEqual(store.evidence([published.original.id]),[],'the retained claim grants no original read');
 });
 

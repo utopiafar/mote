@@ -141,10 +141,11 @@ test('registering a plugin retains pending restart fields and only publishes its
   const directory = await fs.mkdtemp(join(tmpdir(), 'mote-config-plugin-registration-'));
   const service = new ConfigService({ path: join(directory, 'mote.yaml'), watch: false, initialDocument: { version: 1, revision: 0, plugins: { deployments: [], configuration: {} } } });
   t.after(async () => { await service.close(); await fs.rm(directory, { recursive: true, force: true }); });
-  service.register({ id: 'plugins', schema: z.object({ deployments: z.array(z.string()), configuration: z.record(z.unknown()) }), defaultValue: { deployments: [], configuration: {} }, restartRequired: true, fields: [{ path: 'deployments', effect: 'restart' }], resolve: raw => raw });
+  const pluginsDomain={id:'plugins',schema:z.object({deployments:z.array(z.string()),configuration:z.record(z.unknown())})};
+  service.register({ ...pluginsDomain, defaultValue: { deployments: [], configuration: {} }, restartRequired: true, fields: [{ path: 'deployments', effect: 'restart' }], resolve: raw => raw });
   await service.initialize(); await service.update('plugins', { deployments: ['pending-deployment'] }, 0);
   await service.registerPlugin({ id:'added',updatePaths:['interval'], schema: z.object({ interval: z.number().default(3) }), defaultValue: {} });
-  assert.deepEqual(service.current(fixturePluginsDomain), { deployments: [], configuration: { added: { interval: 3 } } });
+  assert.deepEqual(service.current(pluginsDomain), { deployments: [], configuration: { added: { interval: 3 } } });
   assert.deepEqual(service.saved('plugins'), { deployments: ['pending-deployment'], configuration: { added: { interval: 3 } } });
   assert.equal(service.view().domains.find(domain => domain.id === 'plugins')?.status, 'restart-required');
   await service.update('plugin.added', { interval: 3 }, 1); assert.equal(service.revision, 1);

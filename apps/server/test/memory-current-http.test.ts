@@ -15,9 +15,10 @@ import {fixtureMemoryWorkResult} from './fixtures/memory-planning.js';
 import {RANGE_SELECTION_PERSONAL_RECIPE,SINGLE_PASS_PERSONAL_RECIPE} from '../src/memory-range-selection-policy.js';
 
 const headers={authorization:'Bearer generated-current-memory-owner'};
-async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<any>=async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}})){
+async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<any>=async()=>({answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[]}}),options:{modelMaxTokens?:number}={}){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-current-memory-'));
  const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:'generated-current-memory-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1000000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
+ if(options.modelMaxTokens!==undefined)Object.assign(config.initialDocument!.models.deployment,{maxTokens:options.modelMaxTokens});
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,query,close:async()=>{}}});await node.app.ready();
  t.after(async()=>{await node.app.close();rmSync(dataDir,{recursive:true,force:true});});
  const add=async(text:string,deviceId='generated-work')=>{

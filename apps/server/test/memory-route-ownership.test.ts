@@ -43,6 +43,7 @@ test('Web Memory settings, recipes, integrations and job pages keep their real H
   const lifecycleExtension={id:'string',version:'string',stream:'string',pendingChanges:'number',dueAt:'number',cursor:'number',failures:'number',maxAttempts:'number',manualRetryRequired:'boolean',trigger:'string',status:'string'};
   const lifecycleExtensionWithoutAttempts={id:'string',version:'string',stream:'string',pendingChanges:'number',dueAt:'number',cursor:'number',failures:'number',manualRetryRequired:'boolean',trigger:'string',status:'string'};
   const recipeItem={id:'string',version:'string',extract:{id:'string',version:'string'},review:{id:'string',version:'string'},workContract:'string',available:'boolean',binding:{recipe:{id:'string',version:'string',fingerprint:'string'},extract:{id:'string',version:'string',fingerprint:'string'},review:{id:'string',version:'string',fingerprint:'string'},workContract:'string'}};
+  const directRecipe={...recipeItem,review:'null',binding:{...recipeItem.binding,review:'null'}};
   const recipeWithRequires={...recipeItem,requires:['string'],binding:{...recipeItem.binding,requires:['string']}};
   const expected:{
     '/api/memory-settings':unknown;
@@ -53,7 +54,7 @@ test('Web Memory settings, recipes, integrations and job pages keep their real H
     '/api/memory-jobs':unknown;
   }={
     '/api/memory-settings':{revision:'number',settings:{extraction:{enabled:'boolean',intervalHours:'number',minChanges:'number',maxItems:'number'},consolidation:{enabled:'boolean',intervalHours:'number',minChanges:'number',maxItems:'number'},insights:{enabled:'boolean',intervalHours:'number',minChanges:'number',maxItems:'number'},working:{enabled:'boolean',intervalHours:'number',minChanges:'number',maxItems:'number'},drainWindows:'number',batchCharacters:'number',recentTurns:'number',contextCharacters:'number',summaryCharacters:'number'},trigger:'string',storage:'string',extensions:[lifecycleExtension,lifecycleExtension,lifecycleExtensionWithoutAttempts,lifecycleExtensionWithoutAttempts]},
-    '/api/memory-recipes':{items:[recipeItem,recipeItem,recipeWithRequires,recipeWithRequires]},
+    '/api/memory-recipes':{items:[recipeItem,recipeItem,recipeWithRequires,directRecipe,recipeWithRequires]},
     '/api/memory-integration-recipes':{items:[{id:'string',version:'string',integrate:{id:'string',version:'string'},review:{id:'string',version:'string'},available:'boolean',binding:{recipe:{id:'string',version:'string',fingerprint:'string'},integrate:{id:'string',version:'string',fingerprint:'string'},review:{id:'string',version:'string',fingerprint:'string'}}}]},
     '/api/memory-integration-settings':{activation:'string',afterSequence:'number',binding:{recipe:{id:'string',version:'string',fingerprint:'string'},integrate:{id:'string',version:'string',fingerprint:'string'},review:{id:'string',version:'string',fingerprint:'string'}},available:'boolean'},
     '/api/memory-recipe-settings':{sourceId:'null',inherited:'boolean',items:[{binding:recipeItem.binding,available:'boolean'}]},

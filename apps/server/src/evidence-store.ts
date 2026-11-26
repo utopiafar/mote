@@ -1,3 +1,4 @@
+import {retireDelegatedMemoryInputs} from './delegation-store.js';
 import {retainConversationRoots,retainedConversationResult} from './conversation-retention.js';
 import {captureSessionMembersSql} from './capture-session-members.js';
 import {installVaultSchema,vaultStorageLedgerInstallations} from './vault-schema-installation.js';
@@ -429,16 +430,19 @@ export class EvidenceStore {
     const priorRevocation=this.db.prepare('SELECT generation,json,state FROM memory_provider_evidence_revocations WHERE id=?');
     const writeRevocation=this.db.prepare("INSERT INTO memory_provider_evidence_revocations VALUES(?,?,?,'submitted') ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,json=excluded.json,state='submitted'");
     const deletedMemories=deleted?this.db.prepare('SELECT memory_id FROM memory_dependencies WHERE evidence_id=?'):undefined;
-    const keep=Object.keys(releasedOriginal?.memoryFingerprints??{});
+    const keep=Object.keys(releasedOriginal?.memoryFingerprints??{}),affectedMemories=new Set<string>();
     // A revision makes cards stale through the existing Memory state. Preserve
     // their exact past publication identity for owner history and later forget;
     // it never authorizes another card or survives strict privacy deletion.
     for(const id of ids){
       const prior=priorRevocation.get(id),saved=prior?JSON.parse(String(prior.json)):undefined,retained=prior?.state==='submitted'?saved:undefined;
       const retainedOriginal=releasedOriginal??(!deleted?saved?.releasedOriginal:undefined);
-      const memoryIds=[...new Set([...(retained?.memoryIds??[]),...(deletedMemories?.all(id).map(row=>String(row.memory_id))??[])])].filter(memoryId=>!keep.includes(memoryId));
+      const dependent=deletedMemories?.all(id).map(row=>String(row.memory_id))??[];
+      for(const memoryId of dependent)affectedMemories.add(memoryId);
+      const memoryIds=[...new Set([...(retained?.memoryIds??[]),...dependent])].filter(memoryId=>!keep.includes(memoryId));
       writeRevocation.run(id,Number(prior?.generation??0)+1,JSON.stringify({evidenceId:id,deleted:deleted||Boolean(retained?.deleted),memoryIds,...(retainedOriginal?{releasedOriginal:retainedOriginal}:{})}));
     }
+    if(affectedMemories.size)retireDelegatedMemoryInputs(this.db,[...affectedMemories],keep);
     // A file can retire thousands of anchors in one commit. Evaluate their
     // shared Memory and checkpoint dependencies once for the whole revision.
     const selected=JSON.stringify(ids);

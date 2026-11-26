@@ -9,7 +9,8 @@ import type { ConfigurationPlatformOptions } from '../src/config.js';
 
 export const testConfig=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:'fixture-token-never-use-in-production',tokenPath:'fixture-only'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:47832,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}}}});
 test('source pack catalog lists public metadata without exposing pinned code locations',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-pack-catalog-test-'));const config={...testConfig(dir),importPythonPacks:[{id:'fixture.pack',version:'1',description:'Fixture parser',packRoot:'/trusted/fixture',script:'parse.py',scriptSha256:'a'.repeat(64),pythonExecutable:'/usr/bin/python3'}]};
+  const dir=mkdtempSync(join(tmpdir(),'mote-pack-catalog-test-')),config=testConfig(dir);
+  config.initialDocument!.plugins={importPythonPacks:[{id:'fixture.pack',version:'1',description:'Fixture parser',packRoot:'/trusted/fixture',script:'parse.py',scriptSha256:'a'.repeat(64),pythonExecutable:'/usr/bin/python3'}]};
   const {app}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('should not run');},close:async()=>{}}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   assert.equal((await app.inject('/api/import-source-packs')).statusCode,401);

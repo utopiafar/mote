@@ -9,6 +9,7 @@ import {rawTranscriptFromTar} from '../src/plugins/sources/RecordingTools';
 import {buildApp} from '../../server/src/app.js';
 import {fileExportEntries,exportTar} from '../../server/src/file-export.js';
 import {sha256} from '../../server/src/evidence-store.js';
+import {writeFileTranscriptChunks} from '../../server/src/file-transcript-chunks.js';
 const text='Generated raw <script>literal</script> and original words';
 const transcript={durationMs:1000,segments:[{startMs:0,endMs:1000,text,speaker:'SPEAKER_0'}]};
 async function bytes(stream:AsyncIterable<Uint8Array>){const parts=[];for await(const part of stream)parts.push(part);return Buffer.concat(parts);}
@@ -19,6 +20,7 @@ test('owner raw viewer reads the actual export by named entry and exact manifest
  node.sources.register({id:'generated-recording',name:'Generated recording',kind:'local-files',deviceId:'generated',platform:'macos',retention:'archive'});
  const original=Buffer.from('Generated unavailable audio decoder fixture'),start=node.files.begin({sourceId:'generated-recording',item:{externalId:'recording.wav',revision:'1',observedAt:'2026-10-29T00:00:00Z',kind:'file',layer:'original',mimeType:'audio/wav'},sizeBytes:original.length,sha256:sha256(original)},()=>{});node.files.part(start.uploadId,0,original,()=>{});const ack=await node.files.commit(start.uploadId,()=>{}),artifact=randomUUID();
  node.store.db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(artifact,ack.id,'transcript','2026-10-29T00:00:00Z','generated',JSON.stringify({complete:true,transcript}));
+ writeFileTranscriptChunks(node.store,ack.id,artifact,transcript,{kind:'transcript'});
  const response=await node.app.inject({url:'/api/files/'+ack.id+'/export',headers:{authorization:'Bearer '+token}});assert.equal(response.statusCode,200,response.body);
  const plain=gunzipSync(response.rawPayload);assert.deepEqual(rawTranscriptFromTar(plain,ack.id,artifact),transcript);
  const reordered=gunzipSync(await bytes(exportTar(fileExportEntries(node.files,ack.id).reverse())));assert.deepEqual(rawTranscriptFromTar(reordered,ack.id,artifact),transcript,'the reader binds manifest and current localized raw filename, never export entry position');

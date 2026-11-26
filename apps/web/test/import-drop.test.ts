@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {configureLocale} from '@mote/shared/i18n';
+import {FILE_MAX_BYTES} from '@mote/shared';
 import {readImportDrop} from '../src/import-drop.js';
 configureLocale(()=> 'zh-CN');
 const fileEntry=(name:string,text=name)=>({name,isFile:true,isDirectory:false,file:(done:(file:File)=>void)=>done(new File([text],name,{type:'text/plain',lastModified:123}))}) as unknown as FileSystemFileEntry;
@@ -28,9 +29,12 @@ test('empty folders, inaccessible descendants, duplicates and upload limits reje
  await assert.rejects(readImportDrop(drop([directory('empty',[[]])])),/没有可上传/);
  const inaccessible={name:'blocked',isDirectory:true,isFile:false,createReader:()=>({readEntries:(_done:unknown,fail:(error:DOMException)=>void)=>fail(new DOMException('Generated denied','NotReadableError'))})} as unknown as FileSystemDirectoryEntry;
  await assert.rejects(readImportDrop(drop([directory('folder',[[fileEntry('good.txt'),inaccessible]])])),/无法读取文件夹中的条目/);
- await assert.rejects(readImportDrop(drop([fileEntry('same.txt'),fileEntry('same.txt')])),/路径不能重复/);
+ await assert.rejects(readImportDrop(drop([fileEntry('same.txt'),fileEntry('same.txt')])),/导入路径重复/);
  await assert.rejects(readImportDrop(drop([directory('large',[Array.from({length:4001},(_,i)=>fileEntry(`${i}.txt`))])])),/4,000/);
- const huge=new File(['generated'],'huge.txt');Object.defineProperty(huge,'size',{value:65*1024*1024});await assert.rejects(readImportDrop({items:[],files:[huge]} as unknown as DataTransfer),/64 MB/);
+ const large=new File(['generated'],'large.txt');Object.defineProperty(large,'size',{value:65*1024*1024});
+ assert.deepEqual(await readImportDrop(drop([], [large])),[large],'the chunked upload accepts a file above the former inline limit');
+ const huge=new File(['generated'],'huge.txt');Object.defineProperty(huge,'size',{value:FILE_MAX_BYTES+1});
+ await assert.rejects(readImportDrop(drop([], [huge])),/文件超过此来源的大小上限/);
 });
 test('cancelling pending enumeration cannot return a partial selection',async()=>{
  let finish!:(entries:FileSystemEntry[])=>void;

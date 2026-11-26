@@ -87,28 +87,30 @@ async function fixture(t:TestContext,providerId:'feishu'|'dingtalk',mode:Mode){
 }
 
 for(const source of ['feishu','dingtalk'] as const)test(`${source} recording reaches actual Memory tools through its exact Material proof without granting raw reads`,async t=>{
- const f=await fixture(t,source,'read');assert.deepEqual(f.wire,[{items:1,evidence:1,sourceEvidence:1}]);assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);assert.ok(f.view().cursor>f.before.cursor);assert.equal(f.view().pendingChanges,0);
- assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'a genuine read followed by no useful relation stays a valid zero result');assert.equal(f.receipts()[0].memoryIds.length,1);assert.equal(f.receipts()[0].evidenceIds.length,1);
- await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1,'success does not replay the old paid window after restart');assert.equal(f.receipts()[0].memoryIds.length,1);
+ const f=await fixture(t,source,'read'),delivered={items:1,evidence:1,sourceEvidence:1};
+ const phases=()=>f.calls.filter(call=>call.skill==='memory-integration').map(call=>call.phase);
+ assert.deepEqual(f.wire,[delivered,delivered]);assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);assert.ok(f.view().cursor>f.before.cursor);assert.equal(f.view().pendingChanges,0);
+ assert.deepEqual(phases(),['extract','review'],'a genuine read followed by no useful relation stays a valid reviewed zero result');assert.equal(f.receipts().length,1);assert.equal(f.receipts()[0].memoryIds.length,1);assert.equal(f.receipts()[0].evidenceIds.length,1);
+ await f.restart();await f.node.lifecycle.tick();assert.deepEqual(phases(),['extract','review'],'success does not replay the old paid window after restart');assert.deepEqual(f.wire,[delivered,delivered]);assert.equal(f.receipts()[0].memoryIds.length,1);
 });
 test('late recording backup preserves automatic integration for a retained transcript anchor',async t=>{
  const f=await fixture(t,'feishu','late-audio');
  assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);assert.ok(f.view().cursor>f.before.cursor);
- assert.equal(f.calls.filter(call=>call.skill==='memory-integration').length,1);
- assert.deepEqual(f.wire,[{items:1,evidence:1,sourceEvidence:1}]);
+ assert.deepEqual(f.calls.filter(call=>call.skill==='memory-integration').map(call=>call.phase),['extract','review']);
+ const delivered={items:1,evidence:1,sourceEvidence:1};assert.deepEqual(f.wire,[delivered,delivered]);
  const work=f.node.store.db.prepare('SELECT json FROM background_model_work WHERE id=?').get('automatic-integration:'+f.view().lastRun?.id);
  assert.deepEqual(JSON.parse(String(work?.json)).roots,['capture:'+f.rawId]);
 });
 test('A1: automatic consolidation waits while the switch is off and completes once after reopening',async t=>{
  const f=await fixture(t,'feishu','deferred');
- const integrationCalls=()=>f.calls.filter(call=>call.skill==='memory-integration').length;
- assert.equal(integrationCalls(),0,'closed switch admits no automatic integration model call');
+ const phases=()=>f.calls.filter(call=>call.skill==='memory-integration').map(call=>call.phase);
+ assert.deepEqual(phases(),[],'closed switch admits no automatic integration model call');
  const active=f.view().active!;assert.ok(active);assert.equal(active.manual,false);
  const current=(await f.node.app.inject({url:'/api/model-authorization',headers:f.headers})).json();
  const opened=await f.node.app.inject({method:'POST',url:'/api/model-authorization/commands',headers:f.headers,payload:{revision:current.authorization.revision,operationId:randomUUID(),action:'on'}});
  assert.equal(opened.statusCode,200,opened.body);
  f.node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_remove(json,'$.retryAt','$.error','$.failures') WHERE id='consolidation'").run();f.node.executor.retry('lifecycle:'+active.id,true);await f.node.lifecycle.tick();
- assert.equal(integrationCalls(),1,'opening backfills the automatic consolidation exactly once');
+ assert.deepEqual(phases(),['extract','review'],'opening backfills one automatic consolidation with one independent review');
  assert.equal(f.view().active,undefined);assert.equal(f.view().error,undefined);assert.ok(f.view().cursor>f.before.cursor);
  assert.equal(f.receipts().length,1);assert.deepEqual(f.receipts()[0].memoryIds,f.cards.map(card=>card.id));
 });

@@ -693,6 +693,26 @@
     },
     {
       "type": "index",
+      "name": "statistics_failure_at",
+      "fingerprint": "c26734e213da765a2cc8a0069285f5a0e498c787132114a809148a9dd99cfa6e"
+    },
+    {
+      "type": "index",
+      "name": "statistics_tool_at",
+      "fingerprint": "e2581ab4d0e59e97fb67f88d4efc3be9900734a654cb60a5f350fa47354acbbe"
+    },
+    {
+      "type": "index",
+      "name": "statistics_tool_run",
+      "fingerprint": "b60d46e9c89295e9ed4cf814980005bbf030e1dd1d7ec0d401b1d8f97967ae9b"
+    },
+    {
+      "type": "index",
+      "name": "statistics_turn_created",
+      "fingerprint": "25d02cac92400e6a6b8e2123d1ba3facdb6a6b1c300c99aaccf422d59fc43f17"
+    },
+    {
+      "type": "index",
       "name": "task_evidence_original",
       "fingerprint": "106b5e3f8cc1b33d38e64823efb87b6662bc0c38b9f2503c53a03f2d58448f3e"
     },
@@ -2240,6 +2260,16 @@
       "type": "table",
       "name": "todos",
       "fingerprint": "c8b3560314b63f5a9b622fd40c8f9630ca979d0fe15aa3c7e7028607e99e6cdf"
+    },
+    {
+      "type": "table",
+      "name": "usage_tool_attempts",
+      "fingerprint": "0a934710d71fcebf97fa4178959cc5a11609f39a014bacc772af374dbada928d"
+    },
+    {
+      "type": "table",
+      "name": "usage_tool_coverage",
+      "fingerprint": "c31cc0f6c867c2d9b54e50d426b5200c0a226a9835abee7cd822e982f5309bba"
     },
     {
       "type": "table",

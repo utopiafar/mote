@@ -160,6 +160,7 @@ test('lost import-create response retries its frozen request while another batch
   if(path==='/api/imports'&&init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated lost response');}
   if(path==='/api/imports'||path==='/api/import-source-packs')return {items:[]};
   if(path==='/api/import-uploads'){const data=JSON.parse(String(init?.body));return {id:data.id,fileId:'archive:'+data.id,partBytes:4,parts:[]};}
+  if(path.endsWith('/commit'))return {id:'archive:'+path.split('/')[3]};
   throw Error('Unexpected '+path);
  });
  await act(async()=>root.render(view(api)));await select(d,[new File(['one'],'one.txt')]);await instruction(d,guidance);await submit(d);
@@ -186,6 +187,7 @@ test('choosing a Source Pack keeps the single editable guidance field and submit
   if(path==='/api/imports'&&init?.method==='POST'){const input=JSON.parse(String(init.body));writes.push(input);return importJob({instruction:input.instruction});}
   if(path==='/api/imports')return {items:[]};
   if(path==='/api/import-uploads'){const input=JSON.parse(String(init?.body));return {id:input.id,fileId:'generated-pack-original',partBytes:4,parts:[]};}
+  if(path.endsWith('/commit'))return {id:'generated-pack-original'};
   throw Error('Unexpected generated path '+path);
  });
  await act(async()=>root.render(view(api)));await instruction(d,guidance);
@@ -313,6 +315,7 @@ test('folder drop expands entries before admission, blocks partial submission an
  const api=apiWith((path,init)=>{
   if(path==='/api/imports'&&init?.method==='POST'){writes.push(JSON.parse(String(init.body)));return importJob();}
   if(path==='/api/import-uploads'){const input=JSON.parse(String(init!.body));names.push(input.name);return {id:input.id,fileId:'archived:'+input.id,partBytes:4,parts:[]};}
+  if(path.endsWith('/commit'))return {id:'archived:'+path.split('/')[3]};
   return {items:[]};
  });
  await act(async()=>root.render(view(api)));await act(async()=>button(d,'添加资料').click());

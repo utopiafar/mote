@@ -19,6 +19,7 @@ import {startBridge} from '../../../packages/agent/dist/bridge.js';
 import {materialId} from '../src/materials.js';
 import {taskTools,buildContextEnvelope} from '../../../packages/agent/dist/task-context.js';
 import {fixtureTopicResult} from './fixtures/model-authorization.js';
+import {httpMemoryRequestCapacity,memoryRequestUsage} from '../src/memory-request-budget.js';
 
 const contract='range-evaluation@1';
 const at='2026-10-13T00:00:00Z';
@@ -401,8 +402,10 @@ test('a pinned policy reviewer receives host repair after an inner validation fa
 
 test('raw extraction and independent review repairs retain exact scope within the existing Agent question budget',async t=>{
  const quote='Generated owner choice: retain explicit transaction boundaries.',f=await fixture(t,[quote]);let generation=0,reviewAttempt=0;
- f.setGenerate(async input=>{assert.ok(input.question.length<=20000);const draft=result(input,[{member:work(input).members[0],quote}]);if(++generation===1){const value=JSON.parse(draft.answer);value.memories[0].admission.attribution='generated-invalid-enum';return {...draft,answer:JSON.stringify(value)};}assert.match(input.question,/Host validation rejected the previous output/);return draft;});
- f.setReview(async(input,draft)=>{assert.ok(input.question.length<=20000,'the independent Agent receives one canonical policy within its question limit');assert.doesNotMatch(input.question,/Host validation rejected the previous output/,'extraction repair does not become repeated independent-review policy');
+ const capacity=httpMemoryRequestCapacity({contextWindow:32_768,maxTokens:4_096});
+ const assertRequestFits=(input:MemoryPipelineQuery)=>assert.ok(memoryRequestUsage(input,f.memories.readEvidence(input.evidenceIds),capacity).fits);
+ f.setGenerate(async input=>{assertRequestFits(input);const draft=result(input,[{member:work(input).members[0],quote}]);if(++generation===1){const value=JSON.parse(draft.answer);value.memories[0].admission.attribution='generated-invalid-enum';return {...draft,answer:JSON.stringify(value)};}assert.match(input.question,/Host validation rejected the previous output/);return draft;});
+ f.setReview(async(input,draft)=>{assertRequestFits(input);assert.doesNotMatch(input.question,/Host validation rejected the previous output/,'extraction repair does not become repeated independent-review policy');
   if(++reviewAttempt===1)throw new MemoryOutputValidationError('schema','Generated reviewer schema failure',{workContract:contract,fieldPath:'memories[0].admission.attribution',problem:'invalid_enum_value'});
   assert.ok(input.memoryReviewRepair);assert.ok(input.question.includes(input.memoryReviewRepair));assert.deepEqual(input.evidenceRanges,f.extracts[0].evidenceRanges);return {...draft,runId:'generated-two-stage-repaired-review'};
  });

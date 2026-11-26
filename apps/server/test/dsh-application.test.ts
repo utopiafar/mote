@@ -183,7 +183,12 @@ async function memoryFileInput(f:Awaited<ReturnType<typeof applicationFixture>>)
   const memories=f.node.featureServices.evidenceReader.memories,original=memories.readEvidence([chunkId])[0]!;assert.ok(original);
   const extracted=memories.extract(fixtureMemoryResult(memories,{answer:JSON.stringify({memories:[{title:'Generated scoped preference',statement,uncertainty:'Generated fixture, revisable by its owner.',evidenceIds:[chunkId]}]}),citations:[{id:chunkId,capturedAt:original.capturedAt,appName:original.appName,excerpt:original.ocrText}],trace:[],runId:randomUUID()}),'generated').items[0]!;
   const published=await f.node.app.inject({method:'POST',url:'/api/memories/'+extracted.id+'/publish',headers:f.headers,payload:{version:extracted.version}});assert.equal(published.statusCode,200,published.body);
-  return {sourceId,fileId,chunkId,text,statement,memory:published.json(),async release(){const response=await f.node.app.inject({method:'DELETE',url:'/api/files/'+fileId,headers:f.headers});assert.equal(response.statusCode,200,response.body);const retained=await f.node.app.inject({url:'/api/memories/'+extracted.id,headers:f.headers});assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().status,'published');assert.equal(retained.json().evidence[0].originalAvailable,false);}};
+  return {sourceId,fileId,chunkId,text,statement,memory:published.json(),async release(){
+    const response=await f.node.app.inject({method:'DELETE',url:'/api/files/'+fileId,headers:f.headers});assert.equal(response.statusCode,200,response.body);
+    const hidden=await f.node.app.inject({url:'/api/memories/'+extracted.id,headers:f.headers});assert.equal(hidden.statusCode,410,hidden.body);
+    assert.equal(hidden.body.includes(statement),false);assert.equal(hidden.body.includes(text),false);
+    assert.equal(memories.get(extracted.id).fingerprint,published.json().fingerprint);
+  }};
 }
 
 test('PF2F an installed APP owner conversation sends a paused Memory to its model without the original',{timeout:30000},async t=>{

@@ -298,10 +298,11 @@ test('Codex fails closed when same-turn image delivery is rejected, mismatched o
 test('Codex cancellation during image steering cannot acknowledge successful delivery',async t=>{
  const root=await fake(t,'image-steer-pending');let cancel;
  const steered=new Promise(resolve=>{cancel=resolve;});
- const session=new CodexSession({model:'fixture',agentTimeoutMs:5000},async()=>({image:{mimeType:'image/png',data:'Z2VuZXJhdGVk'}}));t.after(()=>session.close());
- const request=session.request.bind(session);session.request=(method,params)=>{const pending=request(method,params);if(method==='turn/steer')cancel();return pending;};
+ const session=new CodexSession({model:'fixture',agentTimeoutMs:5000},async()=>({id:record.id,attachmentId:'generated-image',image:{mimeType:'image/png',data:'Z2VuZXJhdGVk'}}));t.after(()=>session.close());
+ const request=session.request.bind(session);session.request=(...args)=>{const pending=request(...args);if(args[0]==='turn/steer')cancel();return pending;};
  await session.start('Generated cancellation',codexContextTools);const running=session.run('Read generated image');void running.catch(()=>{});
- await steered;session.cancel(new Error('Generated cancellation'));await assert.rejects(running,AgentProviderError);
+ await Promise.race([steered,running.then(()=>assert.fail('The turn completed before steering'))]);
+ session.cancel(new Error('Generated cancellation'));await assert.rejects(running,AgentProviderError);
  await session.close();const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.ok(!rpc.some(m=>m.id===999&&m.result?.success));
 });
 test('Codex Agent image rejection and cancellation publish no answer or delivery receipt',async t=>{

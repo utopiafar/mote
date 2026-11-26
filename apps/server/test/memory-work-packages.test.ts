@@ -187,7 +187,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  const calls=readFileSync(delivered,'utf8').trim().split('\n').map(line=>JSON.parse(line));
  assert.equal(calls.length,3);assert.equal(calls[0].threadId,calls[1].threadId);assert.notEqual(calls[1].threadId,calls[2].threadId);
  assert.deepEqual(calls.map(call=>[call.repair,call.review]),[[false,false],[true,false],[false,true]]);
- assert.match(calls[1].feedback,/quote_not_found/);assert.match(calls[1].feedback,/Candidate index: 0/);
+ assert.match(calls[1].feedback,/not an exact substring of the original evidence/);assert.match(calls[1].feedback,/Candidate index: 0/);
  assert.equal(f.seen.length,1);assert.equal(f.reviews.length,1);assert.equal(f.memories.list().length,1);
  assert.deepEqual(done.batches[0].validationFailures?.map(failure=>failure.code),['quote_not_found']);
 });

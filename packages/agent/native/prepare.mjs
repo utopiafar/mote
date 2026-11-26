@@ -31,6 +31,16 @@ async function run(command, args, cwd = root, {quiet = false, allowFailure = fal
   return status;
 }
 
+if (process.argv.includes('--verify')) {
+  const binary = join(here, 'bin/codex-app-server');
+  const receipt = JSON.parse(await readFile(join(here, 'bin/build.json'), 'utf8'));
+  if (receipt.version !== version || receipt.sourceSha256 !== sourceSha256 ||
+      receipt.patchSha256 !== await hash(patch) || receipt.budgetSha256 !== await hash(join(here, 'context_budget.rs')) ||
+      receipt.binarySha256 !== await hash(binary)) throw new Error('Native build receipt does not match the pinned inputs and executable');
+  await run(binary, ['--mote-context-budget-version']);
+  process.exit(0);
+}
+
 await mkdir(cache, {recursive: true});
 if (!await exists(archive)) {
   await run('curl', ['--fail', '--location', '--silent', '--show-error', '--output', archive,

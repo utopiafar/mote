@@ -49,7 +49,11 @@ test('former per-route quotas never replace validation or model configuration er
       assert.equal(result.headers['retry-after'],undefined);
     }
   }
-  for(let i=0;i<130;i++)assert.equal((await app.inject({method:'POST',url:'/api/login/ticket',headers,payload:{}})).statusCode,200);
+  for(let i=0;i<130;i++){
+    const ticket=await app.inject({method:'POST',url:'/api/login/ticket',headers,payload:{}});
+    assert.equal(ticket.statusCode,i<10?200:429,ticket.body);
+    if(i>=10)assert.ok(Number(ticket.headers['retry-after'])>0);
+  }
 });
 
 test('more than 64 pending browser uploads survive restart, and more than 600 part replays preserve exact original bytes',async t=>{

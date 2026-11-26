@@ -105,7 +105,7 @@ test('LB2-02 the import action opens the existing intake panel and an imported P
  assert.ok(d.querySelector('[role="dialog"]'));
  assert.match(d.querySelector('[role="dialog"]')!.textContent!,/导入资料/);
  await act(async()=>{d.querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="关闭"]')!.click();});
- items=[materialEntry(material,when)];revision=1;
+ items=[materialEntry(material,new Date().toISOString())];revision=1;
  await act(async()=>root.render(view()));
  await settle(()=>d.querySelector('.library-day-heading h2')?.textContent==='今天','the imported PDF is grouped under today');
  assert.match(d.querySelector('.library-record')!.textContent!,/同步协议草案 v3\.pdf/);

@@ -65,7 +65,9 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
     return {answer:JSON.stringify({sameConclusion:true,newSupportEvidenceIds:[]}),citations:[],trace:bridge.trace,runId:randomUUID(),imageReadReceipts:bridge.imageReadReceipts,evidenceDependencies:bridge.evidenceDependencies};
    }
    if(input.skill==='memory-integration'){
-    const ids=JSON.parse(input.question.slice(input.question.lastIndexOf('\n')+1)) as string[];
+    const prefix='Host-supplied card IDs (untrusted derived navigation, not original evidence):\n';
+    const start=input.question.indexOf(prefix);assert.ok(start>=0);
+    const ids=JSON.parse(input.question.slice(start+prefix.length).split('\n',1)[0]) as string[];assert.equal(ids.length,1);
     assert.equal(input.evidenceIds,undefined,'open integration retains exact selected image grants without opening whole-library original reads');
     assert.equal(input.processingImages!.length,1);
     const memory=await call('memories',{id:ids[0]});assert.equal(memory.status,200,JSON.stringify(memory.body));assert.equal(memory.body.data.items.length,1);
@@ -73,8 +75,9 @@ async function fixture(t:import('node:test').TestContext,scenario:Scenario){
     const metadata=await call('read_image',{id:grant!.id,view:'metadata'});assert.equal(metadata.status,200,JSON.stringify(metadata.body));
     const pixels=await call('read_image',{id:grant!.id,expectedImageSha256:metadata.body.imageView.original.sha256,region:{x:0,y:0,width:8,height:8}});assert.equal(pixels.status,200,JSON.stringify(pixels.body));
     bridge.imageDelivery(pixels.body.imageDelivery,true);assert.equal(bridge.imageReadReceipts.length,1);
-    receipts.push({phase:'integration',ids:bridge.imageReadReceipts.map(receipt=>receipt.id),views:bridge.imageReadReceipts.map(receipt=>receipt.imageView.viewId)});
-    return {answer:'{"memories":[]}',citations:[],trace:bridge.trace,runId:randomUUID(),imageReadReceipts:bridge.imageReadReceipts,evidenceDependencies:bridge.evidenceDependencies};
+    const runId=randomUUID(),crop=await sharp(Buffer.from(pixels.body.image.data,'base64')).metadata();assert.equal(crop.width,8);assert.equal(crop.height,8);
+    receipts.push({phase:'integration:'+phase,ids:bridge.imageReadReceipts.map(receipt=>receipt.id),views:bridge.imageReadReceipts.map(receipt=>receipt.imageView.viewId),runId});
+    return {answer:'{"memories":[]}',citations:[],trace:bridge.trace,runId,imageReadReceipts:bridge.imageReadReceipts,evidenceDependencies:bridge.evidenceDependencies};
    }
 
    const text=bridge.seedEvidence.find(record=>record.ocrText===(scenario.ocrBody??'GENERATED_OCR_TEXT: the article author resigned.'));
@@ -213,7 +216,11 @@ test('open integration reads only its selected current visual Memory original th
  f.node.lifecycle.retirePending('extraction',Number(f.node.store.db.prepare('SELECT coalesce(max(seq),0) n FROM artifact_events').get()!.n));
  const requested=await f.node.app.inject({method:'POST',url:'/api/memory-integrations',headers:{authorization:'Bearer generated-memory-image-owner'},payload:{recipe:{id:'mote.memory-integration',version:'2'},inputs:[{id:memory.id,version:memory.version,fingerprint:memory.fingerprint}]}});assert.equal(requested.statusCode,202,requested.body);
  await f.node.lifecycle.tick();const state=f.node.lifecycle.view().extensions.find(extension=>extension.id==='consolidation')!;assert.equal(state.error,undefined);assert.equal(state.active,undefined);
- assert.equal(f.inputs.filter(input=>input.skill==='memory-integration').length,1);assert.deepEqual(f.receipts.filter(receipt=>receipt.phase==='integration').map(receipt=>receipt.ids),[[memory.evidence[0].id]]);
+ const attempts=f.receipts.filter(receipt=>receipt.phase.startsWith('integration:'));
+ assert.deepEqual(f.inputs.filter(input=>input.skill==='memory-integration').map(input=>input.traceContext?.phase),['extract','review']);
+ assert.deepEqual(attempts.map(receipt=>receipt.phase),['integration:extract','integration:review']);
+ assert.deepEqual(attempts.map(receipt=>receipt.ids),[[memory.evidence[0].id],[memory.evidence[0].id]]);
+ assert.deepEqual(attempts[0].views,attempts[1].views);assert.notEqual(attempts[0].runId,attempts[1].runId);
  const receipt=JSON.parse(String(f.node.store.db.prepare('SELECT json FROM memory_integration_deliveries').get()!.json));assert.deepEqual(receipt.memoryIds,[memory.id]);
 });
 test('an available original image does not wait for the fallible interpretation service',async t=>{

@@ -46,6 +46,7 @@ import { canonicalDestination,readWorkspaceRoute,workspaceHash } from './workspa
 import { webViewPage } from './deep-link';
 import { isSettingsContext,WorkspaceNavigation } from './WorkspaceNavigation';
 import { readResource,resources,invalidateLibraryResources } from './resource-cache';
+import {useResource} from './useResource';
 import { intakePlugin } from './plugins/intake';
 import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { ErrorNotice,EvidenceDialog,LoginDialog } from './shell-components';
@@ -152,7 +153,6 @@ function App() {
   const [status, setStatus] = useState<Status | null>(null);
   useEffect(()=>{if(status)initializeBrowserLogging(status.profile);},[status?.profile]);
   useEffect(()=>{const changed=(event:StorageEvent)=>{if(event.key==='mote-browser-log-settings')initializeBrowserLogging(status?.profile);};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);},[status?.profile]);
-  const [devices, setDevices] = useState<Device[]>([]);
   const [activity, setActivity] = useState<Activity>({
     apps: [],
     devices: [],
@@ -189,7 +189,6 @@ function App() {
     setError("");
     setLoading(false);
     setStatus(null);
-    setDevices([]);
   }, []);
   useEffect(()=>{
     const handoff=()=>{
@@ -241,6 +240,11 @@ function App() {
   );
   apiRef.current=api;
   const navState=useNavStateRead(api);
+  const devicesRead=useResource<{items: Device[]; disconnectedDeviceIds?: string[]}>(api,verified?'/api/devices':null);
+  const devices=useMemo(()=>{
+    const disconnected=new Set(devicesRead.data?.disconnectedDeviceIds);
+    return devicesRead.data?.items.map(device=>({...device,disconnected:disconnected.has(device.deviceId)}))??[];
+  },[devicesRead.data]);
   useEffect(()=>{if(navState.value)setVerified(true);},[navState.value]);
   const verificationError=!verified&&navState.error?(navState.error instanceof ApiError&&navState.error.status===403?moteText("令牌无管理权限。用管理令牌登录。"):errorMessage(navState.error)):"";
   useEffect(()=>api&&verified?installedWebPlugins.connect(api,connection?.viewScope):undefined,[api,verified,connection?.viewScope]);
@@ -279,11 +283,15 @@ function App() {
     const visibility = () => {
       const resumed = hidden && !document.hidden;
       hidden = document.hidden;
-      if (resumed) refresh();
+      if (resumed) {
+        // The foreground navigation read drives the timeline and its sealed groups.
+        resources(api).invalidate(key=>!/^\/api\/capture-browser\/timeline(?:\/members)?\?/.test(key));
+        setShellRevision(value => value + 1);
+      }
     };
     document.addEventListener('visibilitychange', visibility);
     return () => document.removeEventListener('visibilitychange', visibility);
-  }, [api, verified, refresh]);
+  }, [api, verified]);
   const materialsChanged = useCallback(() => {
     if(api)invalidateLibraryResources(api);
   }, [api]);
@@ -309,10 +317,7 @@ function App() {
     // Independent collections must not block navigation when one endpoint fails.
     void Promise.allSettled([
       load<Status>("/api/status", value => {setStatus(value);}),
-      load<{items: Device[];disconnectedDeviceIds?: string[]}>("/api/devices", value => {
-        const disconnected = new Set(value.disconnectedDeviceIds ?? []);
-        setDevices(value.items.map(device => ({...device,disconnected:disconnected.has(device.deviceId)})));
-      }),
+      readResource(api,"/api/devices",controller.signal),
     ]).then(results => {
       if (!active) return;
       const failure = results.find(result => result.status === "rejected");
@@ -395,7 +400,6 @@ function App() {
     setPeriod(readPeriod(next));
     setVerified(false);
     setStatus(null);
-    setDevices([]);
     updateEvidenceId(readEvidenceRoute(window.location.hash));
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setShowConnect(false);

@@ -28,6 +28,7 @@ import {sourcesFeature,type SourcesFeatureDependencies} from '../features/source
 import {openMaterialNoteDeletion} from '../plugins/material-repository.js';
 import type {FeatureRoute} from '../features/index.js';
 import {contributeDomainRoutes} from '../plugins/domain-routes.js';
+import {sourceUpdatePath} from '../source-routes.js';
 import type {Context} from '@deepseek-ai/cordis';
 
 /** Declared build-time domain plugins the sources assembly wires; the
@@ -37,7 +38,8 @@ export const plugins:readonly CentralDomainPlugin[]=Object.freeze([
   {contribution:codingSourceContribution,declaration:codingSourceDeclaration,replacement:codingSourceReplacement},
   {contribution:filesSourceContribution,declaration:filesSourceDeclaration,replacement:filesSourceReplacement},
   {contribution:captureIntakeContribution,declaration:captureIntakeDeclaration,replacement:captureIntakeReplacement},
-  {contribution:c10IntegrationContribution,declaration:c10IntegrationDeclaration,replacement:c10IntegrationReplacement},
+  {contribution:c10IntegrationContribution,declaration:c10IntegrationDeclaration,replacement:c10IntegrationReplacement,
+    components:[{id:`http:PATCH:${sourceUpdatePath}`,version:'1',surface:'command'}]},
   {contribution:notesSourceContribution,declaration:notesSourceDeclaration,replacement:notesSourceReplacement},
   {contribution:devicesFactoryContribution,declaration:devicesFactoryDeclaration,replacement:'restart'},
   devicesSourcePlugin,

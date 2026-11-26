@@ -35,6 +35,22 @@ const itemsSql=(ref:string,from='')=>`WITH
  LEFT JOIN first_pin p ON p.job_id=e.job_id AND p.ref=e.ref AND p.choice=1 ORDER BY e.ordinal`;
 const coverageSql=(ref:string,from='')=>`SELECT ${ref}.id,${ref}.job_id,CAST(c.key AS INTEGER),json_extract(c.value,'$.id'),CASE WHEN json_extract(${ref}.json,'$.status')='invalidated' THEN 'stale' WHEN coalesce(json_array_length(${ref}.json,'$.coverage'),0)>0 THEN CASE json_extract(c.value,'$.state') WHEN 'checked' THEN 'completed' WHEN 'no_candidates' THEN 'completed' WHEN 'needs_context' THEN 'needs_input' WHEN 'needs_owner_input' THEN 'needs_input' WHEN 'pending' THEN 'waiting' ELSE coalesce(json_extract(c.value,'$.state'),'waiting') END ELSE CASE json_extract(${ref}.json,'$.status') WHEN 'completed' THEN 'completed' WHEN 'failed' THEN 'failed' WHEN 'running' THEN 'running' WHEN 'cancelled' THEN 'cancelled' ELSE 'waiting' END END
  FROM ${from}json_each(CASE WHEN coalesce(json_array_length(${ref}.json,'$.coverage'),0)>0 THEN json_extract(${ref}.json,'$.coverage') ELSE coalesce(json_extract(${ref}.json,'$.evidenceRanges'),json('[]')) END) c WHERE coalesce(json_array_length(${ref}.json,'$.supersededBy'),0)=0 AND NOT (json_extract(${ref}.json,'$.contextFeedbackChildId') IS NOT NULL AND coalesce(json_extract(c.value,'$.state'),'')='needs_context')`;
+// A material-specific authority loss can stop a pooled job while a sibling
+// still waits for an owner reply. Match the exact coverage row and question.
+function authorityPendingQuestion(available:boolean,authorizations:boolean,jobId:string,batchId:string,ordinal?:string){
+ if(!available)return '0';
+ const entry=ordinal?"json_extract(mb.json,'$.coverage['||CAST("+ordinal+" AS INTEGER)||']')":'coverage.value';
+ const source="json_extract("+entry+",'$.sourceId')",input="json_extract("+entry+",'$.inputKey')",scope="json_extract("+entry+",'$.scope')";
+ const allowed=authorizations?" AND ("+source+" IS NULL OR "+input+" IS NULL OR "+scope+" IS NULL OR EXISTS(SELECT 1 FROM memory_input_authorizations a WHERE a.source_id="+source+
+  " AND a.input_key="+input+" AND a.scope="+scope+" AND a.job_id=mj.id AND a.authorized=1 AND a.revoked_at IS NULL))":'';
+ const coverageJoin=ordinal?'':"JOIN json_each(mb.json,'$.coverage') coverage";
+ const query=`SELECT 1 FROM memory_jobs mj JOIN memory_batches mb ON mb.job_id=mj.id
+  ${coverageJoin} JOIN owner_questions q ON q.id=json_extract(${entry},'$.questionId')
+  WHERE mj.id=${jobId} AND mb.id=${batchId} AND json_extract(mj.json,'$.cancellationCause')='authority'
+  AND json_extract(${entry},'$.state')='needs_owner_input' AND json_extract(q.json,'$.operationId')='memory:'||mj.id
+  AND json_extract(q.json,'$.state') IN ('open','deferred')${allowed}`;
+ return `EXISTS(${query})`;
+}
 const publicRank=(value:string)=>`CASE ${value} WHEN 'running' THEN 6 WHEN 'needs_input' THEN 5 WHEN 'stale' THEN 4 WHEN 'failed' THEN 3 WHEN 'waiting' THEN 2 WHEN 'completed' THEN 0 WHEN 'cancelled' THEN -1 WHEN 'excluded' THEN -2 ELSE CASE WHEN ${value} IS NULL THEN NULL ELSE 2 END END`;
 const refreshOutputs=(jobId:string)=>`DELETE FROM activity_memory_outputs WHERE job_id=${jobId};
  INSERT OR IGNORE INTO activity_memory_outputs SELECT ${jobId},value FROM memory_jobs j,json_each(j.json,'$.memoryIds') WHERE j.id=${jobId};
@@ -186,10 +202,12 @@ export class ActivityMemoryIndex {
   const {mapping,sources}=this.groups(),mapped=JSON.stringify(mapping);
   const requests=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_memory_requests'").get()),authorizations=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_input_authorizations'").get());
   const pending=authorizations?`SELECT DISTINCT m.group_id FROM memory_input_authorizations a JOIN mapping m ON m.source_id=a.source_id WHERE a.authorized=1 AND a.revoked_at IS NULL AND a.job_id IS NULL ${requests?`AND NOT EXISTS(SELECT 1 FROM material_memory_requests r JOIN material_heads h ON h.id=r.material_id WHERE h.source_id=a.source_id AND r.input_key=a.input_key AND r.scope=a.scope AND r.job_id IS NOT NULL)`:''}`:"SELECT NULL group_id WHERE 0";
+  const questions=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='owner_questions'").get());
+  const pendingQuestion=authorityPendingQuestion(questions,authorizations,'j.id','b.id');
   const sql=`WITH mapping AS (SELECT json_extract(value,'$.sourceId') source_id,json_extract(value,'$.groupId') group_id FROM json_each(?)), job_groups AS (
     SELECT j.id,CASE WHEN j.import_id IS NOT NULL THEN 'memory-import:'||j.import_id WHEN min(m.group_id) IS NOT NULL THEN min(m.group_id) ELSE 'memory:'||coalesce((SELECT root_id FROM activity_memory_continuations WHERE job_id=j.id),j.id) END group_id,j.created_at,j.updated_at,${rank('j.status')} rank
     FROM activity_memory_jobs j LEFT JOIN activity_memory_sources s ON s.job_id=j.id LEFT JOIN mapping m ON m.source_id=s.source_id GROUP BY j.id), pending AS (${pending}), summaries AS (
-   SELECT j.group_id id,min(j.created_at) created_at,max(j.updated_at) updated_at,max(CASE WHEN j.rank=-1 THEN -1 ELSE max(j.rank,coalesce(b.rank,-2),CASE WHEN EXISTS(SELECT 1 FROM activity_memory_items i WHERE i.job_id=j.id AND NOT EXISTS(SELECT 1 FROM activity_memory_coverage c WHERE c.job_id=i.job_id AND c.ref=i.ref)) THEN 2 ELSE -2 END) END) rank
+   SELECT j.group_id id,min(j.created_at) created_at,max(j.updated_at) updated_at,max(CASE WHEN j.rank=-1 THEN CASE WHEN ${pendingQuestion} THEN 5 ELSE -1 END ELSE max(j.rank,coalesce(b.rank,-2),CASE WHEN EXISTS(SELECT 1 FROM activity_memory_items i WHERE i.job_id=j.id AND NOT EXISTS(SELECT 1 FROM activity_memory_coverage c WHERE c.job_id=i.job_id AND c.ref=i.ref)) THEN 2 ELSE -2 END) END) rank
    FROM job_groups j LEFT JOIN activity_memory_batches b ON b.job_id=j.id AND b.leaf=1 GROUP BY j.group_id)
    SELECT id,created_at,updated_at,max(rank,CASE WHEN id IN (SELECT group_id FROM pending) THEN 2 ELSE -2 END) rank FROM summaries${relatedJobs?' WHERE id IN (SELECT group_id FROM job_groups WHERE id IN ('+relatedJobs+'))':''}`;
   return {sql,parameters:[mapped],sources};
@@ -206,8 +224,9 @@ export class ActivityMemoryIndex {
   const requestManifest=requests&&sources.length?`SELECT json_array(h.source_id,r.input_key) item_key,NULL state FROM material_memory_requests r JOIN material_heads h ON h.id=r.material_id WHERE h.source_id IN (SELECT value FROM json_each(?)) AND r.auto_authorized=1`:"SELECT NULL item_key,NULL state WHERE 0";
   const imported=authorizations&&captureIds.length?`SELECT json_array(a.source_id,a.input_key) item_key,'waiting' state FROM memory_input_authorizations a WHERE a.authorized=1 AND a.revoked_at IS NULL AND a.job_id IS NULL AND a.capture_id IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM selected s JOIN activity_memory_items i ON i.job_id=s.id WHERE i.ref=a.capture_id ${has('material_evidence_dependencies')?"OR EXISTS(SELECT 1 FROM material_evidence_dependencies d WHERE d.anchor_id=i.ref AND d.evidence_id=a.capture_id)":''})`:"SELECT NULL item_key,NULL state WHERE 0";
   const plans=!sources.length&&has('memory_input_plans')?`SELECT p.material_id||':pending' item_key,CASE WHEN s.status='cancelled' THEN 'cancelled' ELSE 'waiting' END state FROM memory_input_plans p JOIN selected s ON s.id=p.job_id WHERE coalesce(json_array_length(p.json,'$.resolvedInput.evidenceIds'),0)=0`:"SELECT NULL item_key,NULL state WHERE 0";
+  const pendingQuestion=authorityPendingQuestion(has('owner_questions'),authorizations,'j.id','c.batch_id','c.idx');
   const sql=`WITH selected AS (SELECT j.* FROM activity_memory_jobs j WHERE ${predicate}), records AS (
-   SELECT i.item_key,CASE WHEN j.status='cancelled' AND coalesce(c.state,'')!='completed' THEN 'cancelled' ELSE coalesce(c.state,CASE WHEN NOT EXISTS(SELECT 1 FROM activity_memory_batches b WHERE b.job_id=j.id AND b.leaf=1) AND j.status!='completed' THEN CASE j.status WHEN 'queued' THEN 'waiting' WHEN 'waiting_for_model' THEN 'needs_input' WHEN 'waiting_for_input' THEN 'needs_input' WHEN 'paused' THEN 'needs_input' WHEN 'pausing' THEN 'running' ELSE j.status END ELSE 'waiting' END) END state FROM selected j JOIN activity_memory_items i ON i.job_id=j.id LEFT JOIN activity_memory_coverage c ON c.job_id=i.job_id AND c.ref=i.ref
+   SELECT i.item_key,CASE WHEN j.status='cancelled' AND coalesce(c.state,'')!='completed' THEN CASE WHEN ${pendingQuestion} THEN 'needs_input' ELSE 'cancelled' END ELSE coalesce(c.state,CASE WHEN NOT EXISTS(SELECT 1 FROM activity_memory_batches b WHERE b.job_id=j.id AND b.leaf=1) AND j.status!='completed' THEN CASE j.status WHEN 'queued' THEN 'waiting' WHEN 'waiting_for_model' THEN 'needs_input' WHEN 'waiting_for_input' THEN 'needs_input' WHEN 'paused' THEN 'needs_input' WHEN 'pausing' THEN 'running' ELSE j.status END ELSE 'waiting' END) END state FROM selected j JOIN activity_memory_items i ON i.job_id=j.id LEFT JOIN activity_memory_coverage c ON c.job_id=i.job_id AND c.ref=i.ref
    UNION ALL ${sourceManifest} UNION ALL ${requestManifest} UNION ALL ${imported} UNION ALL ${plans}), items AS (
     SELECT item_key,CASE WHEN max(${publicRank('state')})>0 THEN max(${publicRank('state')}) WHEN count(state)=0 THEN 2 WHEN sum(${publicRank('state')}=-1)>0 THEN -1 WHEN min(${publicRank('state')})=-2 AND max(${publicRank('state')})=-2 THEN -2 ELSE 0 END rank FROM records GROUP BY item_key), states AS (
     SELECT rank FROM items UNION ALL SELECT ${rank('status')} FROM selected WHERE status!='completed')
@@ -222,6 +241,13 @@ export class ActivityMemoryIndex {
     (SELECT json_group_array('memory:'||id) FROM (SELECT id FROM selected ORDER BY created_at,id LIMIT 100)) operations`;
   const row=db.prepare(sql).get(parameter,...(authorizations&&sources.length?[JSON.stringify(sources)]:[]),...(requests&&sources.length?[JSON.stringify(sources)]:[]),...(authorizations&&captureIds.length?[JSON.stringify(captureIds)]:[]))!;
   return {createdAt:String(row.created_at),updatedAt:String(row.updated_at),rank:Number(row.rank??2),total:Number(row.total),completed:Number(row.completed),failed:Number(row.failed),needsInput:Number(row.needs_input),excluded:Number(row.excluded),evidence:Number(row.evidence),memories:Number(row.memories),branches:Number(row.branches),runningBranches:Number(row.running_branches),completedBranches:Number(row.completed_branches),operations:JSON.parse(String(row.operations)) as string[]};
+ }
+ pendingQuestionLookup(){
+  const db=this.store.db,has=(table:string)=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name=?").get(table));
+  if(!has('owner_questions'))return ()=>false;
+  const pending=authorityPendingQuestion(true,has('memory_input_authorizations'),'selected.job_id','selected.batch_id','selected.ordinal');
+  const statement=db.prepare(`WITH selected(job_id,batch_id,ordinal) AS (VALUES(?,?,?)) SELECT 1 FROM selected WHERE ${pending}`);
+  return (jobId:string,batchId:string,ordinal:number)=>Boolean(statement.get(jobId,batchId,ordinal));
  }
  jobIds(id:string,sources:string[]):string[]{
   if(id.startsWith('memory-import:'))return this.store.db.prepare('SELECT id FROM activity_memory_jobs WHERE import_id=? ORDER BY created_at,id').all(id.slice('memory-import:'.length)).map(row=>String(row.id));

@@ -23,14 +23,13 @@ const processScript=String.raw`
  import {buildApp} from './src/app.ts';
  import {writeFileSync} from 'node:fs';
  import {join} from 'node:path';
- const config={dataDir:process.env.MOTE_TEST_DIRECTORY,dataKey:'64'.repeat(32),contentEncryptionEnabled:true,token:'generated-routine-owner',tokenPath:'fixture-only',host:'127.0.0.1',port:0,
-  maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'generated-model',modelBaseUrl:'https://generated.invalid',apiKey:'generated-key',
-  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+ const config=JSON.parse(process.env.MOTE_TEST_ROUTINE_CONFIG);
+ const dataDir=config.initialDocument.storage.dataDir;
  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Unexpected model call in admission-only process');},close:async()=>{}}});let clock=Date.parse('2026-11-01T08:00:00Z');node.assistantRoutines.now=()=>clock;
  await node.app.ready();process.send({type:'ready'});
  process.on('message',async message=>{try{
   clock=Date.parse('2026-11-01T09:00:00Z');
-  if(message.crash){const start=node.assistantRoutines.startTask;node.assistantRoutines.startTask=ref=>{const task=start(ref);writeFileSync(join(config.dataDir,'generated-crash-marker'),'enqueued');process.kill(process.pid,'SIGKILL');return task;};}
+  if(message.crash){const start=node.assistantRoutines.startTask;node.assistantRoutines.startTask=ref=>{const task=start(ref);writeFileSync(join(dataDir,'generated-crash-marker'),'enqueued');process.kill(process.pid,'SIGKILL');return task;};}
   const result=node.assistantRoutines.admit(message.ref);process.send({type:'result',...result});await node.app.close();process.exit(0);
  }catch(error){process.send({type:'error',message:String(error)});try{await node.app.close();}finally{process.exit(1);}}});`;
 
@@ -51,7 +50,7 @@ async function fixture(t:TestContext,query:(input:QueryInput)=>Promise<QueryResu
   assert.equal(response.statusCode,200,response.body);return response.json();
  };
  const command=(action:'on'|'off'|'stop'|'exclude',excludedSourceIds:string[]=[])=>node.modelAuthorization.command({action,operationId:randomUUID(),revision:node.modelAuthorization.view().revision,...(action==='exclude'?{excludedSourceIds}:{})});
- return {get node(){return node;},dataDir,note,create,command,setClock(value:string){clock=Date.parse(value);},async restart(){await node.app.close();node=await build();}};
+ return {get node(){return node;},dataDir,config,note,create,command,setClock(value:string){clock=Date.parse(value);},async restart(){await node.app.close();node=await build();}};
 }
 
 test('a due rule creates one real A2 task without a new source change and combines missed periods',async t=>{
@@ -112,7 +111,7 @@ test('two Central processes waking the same due rule commit only one occurrence 
  const f=await fixture(t);await f.note('generated-processes');f.command('on');const rule=await f.create();
  await f.node.app.close();
  const cwd=fileURLToPath(new URL('..',import.meta.url));
- const children=[0,1].map(()=>spawn(process.execPath,['--import','tsx','--input-type=module','-e',processScript],{cwd,env:{...process.env,MOTE_TEST_DIRECTORY:f.dataDir},stdio:['ignore','ignore','pipe','ipc']}));
+ const children=[0,1].map(()=>spawn(process.execPath,['--import','tsx','--input-type=module','-e',processScript],{cwd,env:{...process.env,MOTE_TEST_ROUTINE_CONFIG:JSON.stringify(f.config)},stdio:['ignore','ignore','pipe','ipc']}));
  t.after(()=>{for(const child of children)if(child.exitCode===null)child.kill();});
  const states=children.map(child=>{
   let stderr='';child.stderr!.on('data',chunk=>{stderr+=String(chunk);});
@@ -138,7 +137,7 @@ test('two Central processes waking the same due rule commit only one occurrence 
 test('a process killed after task enqueue leaves the occurrence due for recovery',async t=>{
  const f=await fixture(t);await f.note('generated-crash');f.command('on');const rule=await f.create();await f.node.app.close();
  const child=spawn(process.execPath,['--import','tsx','--input-type=module','-e',processScript],{
-  cwd:fileURLToPath(new URL('..',import.meta.url)),env:{...process.env,MOTE_TEST_DIRECTORY:f.dataDir},stdio:['ignore','ignore','pipe','ipc']});
+  cwd:fileURLToPath(new URL('..',import.meta.url)),env:{...process.env,MOTE_TEST_ROUTINE_CONFIG:JSON.stringify(f.config)},stdio:['ignore','ignore','pipe','ipc']});
  t.after(()=>{if(child.exitCode===null&&child.signalCode===null)child.kill();});
  let ready=false,stderr='';child.stderr!.on('data',chunk=>{stderr+=String(chunk);});
  child.on('message',message=>{const value=message as {type:string};if(value.type==='ready')ready=true;});

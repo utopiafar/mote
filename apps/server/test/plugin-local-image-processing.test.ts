@@ -232,10 +232,17 @@ test('graceful replacement withdraws admission and drains accepted HTTP work bef
 });
 
 test('shutdown during preparation disposes the partial activation and cannot launch a late worker',async t=>{
-  const f=await fixture(t,{installed:true}),held=f.holdPrepare(),enabling=f.request(true);
-  await held.started;const closing=f.runtime.host.close();held.release();await enabling;await closing;
+  const f=await fixture(t,{installed:true}),held=f.holdPrepare();
+  const input={...command(f.desired()?.revision??f.runtime.plugins.revision()),selection:localImageProcessingSelection};
+  const enabling=f.runtime.app.inject({method:'PATCH',url:'/api/plugin-builds/'+LOCAL_IMAGE_PROCESSING_INSTANCE,headers:{authorization:'Bearer generated-owner'},payload:input});
+  await held.started;
+  const closing=f.runtime.host.close();held.release();const interrupted=await enabling;await closing;
+  assert.equal(interrupted.statusCode,503,interrupted.body);
   assert.equal(f.counts.started,0);assert.equal(f.counts.resources,0);assert.equal(f.counts.disposed,1);
-  assert.equal(f.runtime.local.port.state().enabled,true);assert.notEqual(f.runtime.local.port.state().state,'ready');
+  await f.restart();
+  assert.equal(f.desired()?.operationId,input.operationId,'restart restores the exact recorded owner choice');
+  assert.equal(f.runtime.local.port.state().enabled,true);assert.equal(f.runtime.local.port.state().state,'stopped');assert.equal(f.counts.started,0);
+  await f.request(true);assert.equal(f.runtime.local.port.state().state,'ready');assert.equal(f.counts.started,1);
 });
 
 test('a stopped Central restores the durable choice exactly once, and a dead worker stays locally unavailable until explicit recovery',async t=>{
