@@ -17,7 +17,7 @@ import {materialId} from '../src/materials.js';
 
 const token='generated-task-journey-owner',headers={authorization:'Bearer '+token};
 const text='GENERATED BLUE ORCHID FILE EVIDENCE';
-async function until(check:()=>boolean){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Timed out waiting for generated task');}
+async function until(check:()=>boolean,details?:()=>string){const end=Date.now()+10000;while(Date.now()<end){if(check())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error(`Timed out waiting for generated task${details?': '+details():''}`);}
 
 async function fixture(t:TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-task-journey-'));
@@ -275,6 +275,9 @@ test('a fixed suggestion rejects stale card revisions and discards a provider an
 
 test('an explicit conversation selection prepares indexed file descendants without scanning unrelated catalogs',async t=>{
  const f=await fixture(t),fileId=await f.upload();
+ const chunks=f.node.files.chunks(fileId).filter(record=>record.ocrText.trim()),original=chunks.find(record=>record.ocrText.includes(text));
+ assert.ok(original,'the generated model must cite an exact extracted chunk');
+ f.setEvidence(original.id);
  f.node.sources.register({id:'generated-selection-outside',name:'Generated outside',kind:'custom',deviceId:'generated-device',platform:'import'});
  const outside=await f.node.sources.upsert('generated-selection-outside',{externalId:'wide',revision:'1',observedAt:'2026-10-01T00:00:00Z',kind:'message',layer:'original',text:'Generated outside selection'});
  f.node.materials.publish({id:materialId('generated-selection-outside','wide'),kind:'mote.file',schemaVersion:1,title:'Generated unrelated oversized Material',origin:{sourceId:'generated-selection-outside',externalId:'wide',deviceId:'generated-device'},members:[{id:'original',kind:'capture',ref:'capture:'+outside.id}],blocks:Array.from({length:1002},(_,index)=>({id:'body-'+index,kind:'text' as const,format:'plain' as const,text:'Generated unrelated block '+index,memberIds:['original']})),artifacts:[{key:'source-body',state:'ready',blockIds:Array.from({length:1002},(_,index)=>'body-'+index)}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},{expectedRevision:null});
@@ -288,11 +291,14 @@ test('an explicit conversation selection prepares indexed file descendants witho
  const reader=f.node.featureServices.evidenceReader,queryPage=reader.queryPage.bind(reader);let catalogReads=0;
  t.mock.method(reader,'queryPage',(...args:Parameters<typeof reader.queryPage>)=>{catalogReads++;return queryPage(...args);});
  const began=performance.now(),first=await f.start(turn),admissionMs=performance.now()-began;
- await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(first.taskId)?.state==='succeeded');
+ const state=f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?');
+ const details=()=>JSON.stringify({task:state.get(first.taskId),providerRequests:f.taskCalls,steps:f.node.store.db.prepare('SELECT kind,state,error,attempts FROM execution_steps WHERE operation_id=?').all('assistant.task:'+turn.draft.requestId)});
+ await until(()=>['succeeded','blocked','failed','stale','cancelled'].includes(String(state.get(first.taskId)?.state)),details);
+ assert.equal(state.get(first.taskId)?.state,'succeeded',details());
  const [result]=await f.read(turn);assert.equal(result.result.answer,'Generated grounded answer');assert.equal(result.result.citations[0].id,f.evidenceId);
  const taskRecords=new TaskRecords(f.node.store),item=f.node.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch.item'").get('assistant.task:'+turn.draft.requestId)!;
  const frozen=taskRecords.input<{evidenceIds:string[]}>(String(item.id),taskRecords.get(String(item.id)).revision,()=>{});
- const chunks=f.node.files.chunks(fileId).filter(record=>record.ocrText.trim());assert.ok(chunks.length>0);for(const chunk of chunks)assert.ok(frozen.evidenceIds.includes(chunk.id),'every selected extracted chunk remains in the read set');
+ for(const chunk of chunks)assert.ok(frozen.evidenceIds.includes(chunk.id),'every selected extracted chunk remains in the read set');
  assert.equal(frozen.evidenceIds.includes(outside.id),false);assert.equal((await f.start(turn)).taskId,first.taskId);assert.equal(catalogReads,0,'admission, currentness and idempotent retry never browse the unrelated library');
  t.diagnostic(JSON.stringify({generatedOnly:true,unrelatedMaterialBlocks:1002,selectedOriginals:evidenceIds.length,selectedFileChunks:chunks.length,catalogReads,admissionMs:Math.round(admissionMs)}));
 });

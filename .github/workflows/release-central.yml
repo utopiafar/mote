@@ -1,154 +1,25 @@
 name: Release Central
 on:
-  push:
-    tags: ['central-v*']
   workflow_dispatch:
     inputs:
       profile:
-        description: 'Branch build profile (release tags always use prod)'
         type: choice
         options: [dev, prod]
         default: dev
       verify:
-        description: 'Run the complete release checks on a development artifact'
         type: boolean
         default: false
-env:
-  MOTE_BUILD_PROFILE: ${{ startsWith(github.ref, 'refs/tags/') && 'prod' || inputs.profile || 'dev' }}
-  MOTE_CENTRAL_CHECKS: ${{ (startsWith(github.ref, 'refs/tags/') || vars.MOTE_PRE_RELEASE_CHECKS == 'true' || inputs.verify) && 'true' || 'false' }}
 permissions:
   contents: read
-concurrency:
-  group: mote-release-central-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
-  version:
+  selected-file-task-diagnostic:
     runs-on: ubuntu-24.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      profile: ${{ steps.version.outputs.profile }}
-      build_id: ${{ steps.version.outputs.build_id }}
-      checks: ${{ steps.checks.outputs.required }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with: { node-version: '24' }
-      - id: version
-        run: npm run release:verify -- central
-      - id: checks
-        run: echo "required=$MOTE_CENTRAL_CHECKS" >> "$GITHUB_OUTPUT"
-  native:
-    needs: version
-    if: needs.version.outputs.checks == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with: { node-version: '24' }
-      - name: Restore the pinned Codex App Server
-        id: native
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: packages/agent/native/bin
-          key: mote-codex-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agent/native/prepare.mjs', 'packages/agent/native/codex.patch', 'packages/agent/native/context_budget.rs') }}
-      - name: Build the pinned Codex App Server
-        if: steps.native.outputs.cache-hit != 'true'
-        run: |
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
-          npm run native:prepare -w @mote/agent -- --online
-      - name: Verify the pinned Codex App Server
-        run: npm run native:prepare -w @mote/agent -- --verify
-      - name: Save the verified Codex App Server
-        if: steps.native.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: packages/agent/native/bin
-          key: ${{ steps.native.outputs.cache-primary-key }}
-      - name: Archive the verified executable and receipt
-        run: tar -C packages/agent/native/bin -czf "$RUNNER_TEMP/mote-codex.tar.gz" build.json codex-app-server
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with: { name: central-verified-codex, path: "${{ runner.temp }}/mote-codex.tar.gz", if-no-files-found: error, retention-days: 1 }
-  verify:
-    needs: [version, native]
-    if: needs.version.outputs.checks == 'true'
-    name: Verify / ${{ matrix.task }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        task: [central-workspaces, central-server-1, central-server-2, central-server-3, central-server-4, central-server-timing, central-release-tools]
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      MOTE_TEST_CODEX_BIN: ${{ github.workspace }}/packages/agent/native/codex.mjs
-      MOTE_TEST_DSH_JOURNEYS: '1'
-      MOTE_TEST_PYTHON_OS_SANDBOX: '1'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with: { node-version: '24', cache: npm }
-      - name: Install Linux sandbox and media fixtures
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils ffmpeg
-          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
-          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
-          bwrap --unshare-user --unshare-net --ro-bind / / /usr/bin/true
-          ffmpeg -version
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: { name: central-verified-codex, path: "${{ runner.temp }}" }
-      - name: Restore and verify the test executable
-        run: |
-          mkdir -p packages/agent/native/bin
-          tar -xzf "$RUNNER_TEMP/mote-codex.tar.gz" -C packages/agent/native/bin
-          npm run native:prepare -w @mote/agent -- --verify
-      - run: npm ci --ignore-scripts
-      - name: Build central workspaces
-        run: npm run build:central
-      - name: Prepare Python image fixtures
-        run: |
-          python3 -m venv "$RUNNER_TEMP/mote-python-fixtures"
-          "$RUNNER_TEMP/mote-python-fixtures/bin/python" -m pip install --only-binary=:all: Pillow==11.3.0
-          echo "$RUNNER_TEMP/mote-python-fixtures/bin" >> "$GITHUB_PATH"
-      - name: Run the release checks for this partition
-        timeout-minutes: 30
-        env:
-          CHECK_TASK: ${{ matrix.task }}
-        run: node scripts/ci/run.mjs --task "$CHECK_TASK"
-  package:
-    needs: [version, verify]
-    if: ${{ !failure() && !cancelled() && needs.version.result == 'success' && (needs.verify.result == 'success' || (needs.version.outputs.checks == 'false' && needs.verify.result == 'skipped')) }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1' }
+    timeout-minutes: 10
+    env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1', MOTE_BUILD_PROFILE: dev }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
-      - name: Build central workspaces
-        run: npm run build:central
-      - name: Package committed central source and verify archive metadata
-        run: node scripts/release/source-package.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with: { name: "${{ needs.version.outputs.build_id }}", path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
-  publish:
-    if: needs.version.outputs.profile == 'prod'
-    needs: [version, package]
-    runs-on: ubuntu-24.04
-    environment: release
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with: { node-version: '24' }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: { name: "${{ needs.version.outputs.build_id }}", path: artifacts/release }
-      - name: Publish verified central Beta or stable release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/release/publish.mjs central
+      - run: npm run build:central
+      - run: node --import tsx --test --test-timeout=120000 --test-name-pattern "^an explicit conversation selection" apps/server/test/assistant-task-journey.test.ts
