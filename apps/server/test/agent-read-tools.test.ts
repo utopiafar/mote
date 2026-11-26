@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {Context} from '@deepseek-ai/cordis';
 import type {ContextReader,ContextRecord} from '@mote/agent';
 import {installAgentReadTools} from '../src/plugins/agent-read-tools.js';
@@ -82,7 +84,7 @@ test('the formal evidence factory feeds the actual Host sender and owner stop re
   const {ServerDiagnostics}=await import('../src/diagnostics.js'),{createEvidenceContextReader}=await import('../src/plugins/evidence-context-reader.js'),{createEvidenceReaderFacade,createEvidenceReaderForAssembly}=await import('../src/evidence-reader.js'),{createContextTrees,createContextTreesReadCapability}=await import('../src/context-trees.js');
   const {startBridge}=await import('../../../packages/agent/dist/bridge.js'),{pinContextTools}=await import('../../../packages/agent/dist/tool-contributions.js');
   const {hostFixture}=await import('../../../packages/agent/test/fixtures/read-pack-host.mjs');
-  const directory=mkdtempSync('/private/tmp/mote-a08-factory-'),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store),diagnostics=new ServerDiagnostics({directory:directory+'/logs',enabled:false}),root=new Context();
+  const directory=mkdtempSync(join(tmpdir(),'mote-a08-factory-')),store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store),diagnostics=new ServerDiagnostics({directory:directory+'/logs',enabled:false}),root=new Context();
   const bridges:Awaited<ReturnType<typeof startBridge>>[]=[];
   await diagnostics.init();t.after(async()=>{for(const bridge of bridges)try{await bridge.close();}catch(error){if((error as {code?:string}).code!=='ERR_SERVER_NOT_RUNNING')throw error;}await root.fiber.dispose();await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});assert.equal(existsSync(directory),false);});
   const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done;});return {promise,resolve};},completed=()=>({terminal:{kind:'completed' as const},candidate:{text:JSON.stringify({answer:'Generated factory answer',citationIds:[]})}});

@@ -738,6 +738,10 @@
      "name": "material_organizer_inputs"
     },
     {
+     "type": "index",
+     "name": "material_organizer_input_group"
+    },
+    {
      "type": "table",
      "name": "material_organizer_backfills"
     },
