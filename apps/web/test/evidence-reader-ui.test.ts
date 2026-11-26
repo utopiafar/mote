@@ -22,6 +22,8 @@ async function fixture(t:any,capture:Capture,readMedia?:(path:string,signal?:Abo
 }
 const settle=()=>act(async()=>{for(let turn=0;turn<6;turn++)await new Promise(resolve=>setTimeout(resolve,0));});
 const factRow=(d:Document,label:string)=>Array.from(d.querySelectorAll('.evidence-aside .evidence-facts>div')).find(row=>row.querySelector('dt')?.textContent===label);
+const openDetails=(d:Document)=>act(async()=>d.querySelector<HTMLButtonElement>('.reader-details-trigger')!.click());
+const closeDetails=(d:Document)=>act(async()=>d.querySelector<HTMLButtonElement>('.reader-details-panel[role=dialog] header button')!.click());
 test('note reader leads with the exact original, keeps real source facts and returns focus after Close',async t=>{
  const before=structuredClone(generated),{document:d,origin,writes}=await fixture(t,generated),body=d.querySelector('.evidence-text pre')!;
  assert.equal(d.querySelector('.evidence-back')!.getAttribute('aria-label'),'关闭证据详情');
@@ -32,30 +34,37 @@ test('note reader leads with the exact original, keeps real source facts and ret
  assert.equal(inspect.getAttribute('aria-expanded'),'true');
  assert.equal(Boolean(d.querySelector('.evidence-main')!.closest('[inert]')),true);
  assert.ok(d.activeElement===drawer.querySelector('button'),'details receive focus');
+ assert.match(drawer.querySelector('.evidence-facts')!.textContent!,/Generated note app/);
+ assert.match(drawer.querySelector('.evidence-facts')!.textContent!,/Generated device/);
+ assert.equal(drawer.querySelector<HTMLDetailsElement>('.reader-source-details')!.open,false,'technical facts are available on demand');
+ const facts=Array.from(drawer.querySelectorAll('.reader-source-details>dl>div'));
+ assert.ok(facts.some(row=>row.querySelector('dt')!.textContent==='窗口标题'&&row.querySelector('dd')!.textContent===generated.windowTitle));
+ assert.ok(facts.some(row=>row.textContent==='索引状态等待索引'));assert.ok(facts.some(row=>row.textContent==='隐私处理未标记脱敏'));
+ assert.equal(drawer.querySelector('[data-archive-state]')!.textContent,'资料已归档');
+ assert.equal(drawer.querySelector('[data-processing-state]')!.getAttribute('data-processing-state'),'unknown');
+ const help=drawer.querySelector<HTMLDetailsElement>('.evidence-processing-help')!;
+ assert.equal(help.open,false);assert.equal(help.querySelector('summary')!.textContent,'归档与处理说明');
+ assert.ok(body.compareDocumentPosition(help)&d.defaultView!.Node.DOCUMENT_POSITION_FOLLOWING);
+ help.open=true;assert.match(help.textContent!,/OCR、索引和记忆分别处理/);
  await act(async()=>d.activeElement!.dispatchEvent(new d.defaultView!.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
  assert.equal(inspect.getAttribute('aria-expanded'),'false');
  assert.ok(d.activeElement===inspect,'Escape returns focus to the details trigger');
  assert.equal(Boolean(d.querySelector('.evidence-main')!.closest('[inert]')),false);
  assert.ok(d.querySelector('.evidence-text pre')===body,'closing details keeps the original reader mounted');
- await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());const help=d.querySelector<HTMLDetailsElement>('.evidence-processing-help')!;
+ await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());
  assert.equal(d.querySelector('.evidence-heading h2')!.textContent,generated.windowTitle);assert.equal(d.querySelector('.evidence-body-heading')!.textContent,'用户原文');
  assert.equal(body.textContent,generated.ocrText);assert.equal(body.querySelector('script'),null,'untrusted original remains literal');
- assert.match(d.querySelector('.evidence-aside .evidence-facts')!.textContent!,/Generated note app/);assert.match(d.querySelector('.evidence-aside .evidence-facts')!.textContent!,/Generated device/);assert.equal(d.querySelector('.evidence-caption time')!.textContent,dateTime(generated.capturedAt));assert.equal(d.querySelector('time')!.getAttribute('datetime'),generated.capturedAt);
- assert.equal(d.querySelector<HTMLDetailsElement>('.reader-source-details')!.open,false,'original text leads while source facts remain available on demand');
- const facts=Array.from(d.querySelectorAll('.reader-source-details>dl>div'));
- assert.ok(facts.some(row=>row.querySelector('dt')!.textContent==='窗口标题'&&row.querySelector('dd')!.textContent===generated.windowTitle));
- assert.ok(facts.some(row=>row.textContent==='索引状态等待索引'));assert.ok(facts.some(row=>row.textContent==='隐私处理未标记脱敏'));
- // Source facts and processing explanation remain available on demand.
- assert.equal(d.querySelector('[data-archive-state]')!.textContent,'资料已归档');assert.equal(d.querySelector('[data-processing-state]')!.getAttribute('data-processing-state'),'unknown');assert.equal(help.open,false);assert.equal(help.querySelector('summary')!.textContent,'归档与处理说明');
- assert.ok(body.compareDocumentPosition(help)&d.defaultView!.Node.DOCUMENT_POSITION_FOLLOWING);const menu=d.querySelector('.reader-menu')!;assert.equal(d.querySelector('.reader-more-button')!.getAttribute('aria-controls'),menu.id,'source actions open from the ⋯ control');assert.ok(menu.contains(d.querySelector('.evidence-source-actions')));
- help.open=true;assert.match(help.textContent!,/OCR、索引和记忆分别处理/);
+ assert.equal(d.querySelector('.evidence-caption time')!.textContent,dateTime(generated.capturedAt));assert.equal(d.querySelector('time')!.getAttribute('datetime'),generated.capturedAt);
+ const menu=d.querySelector('.reader-menu')!;assert.equal(d.querySelector('.reader-more-button')!.getAttribute('aria-controls'),menu.id,'source actions open from the ⋯ control');assert.ok(menu.contains(d.querySelector('.evidence-source-actions')));
  const route=d.querySelector('.evidence-source-actions a')!.getAttribute('href')!;assert.equal(new URLSearchParams(route.split('?')[1]).get('memorySource'),'capture:'+id);
  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());assert.equal(d.querySelector('.reader-menu'),null);await act(async()=>d.querySelector<HTMLButtonElement>('[aria-label="关闭证据详情"]')!.click());assert.equal(d.querySelector('[role=dialog]'),null);assert.equal(d.activeElement,origin);assert.equal(d.querySelector('main')!.hasAttribute('inert'),false);assert.deepEqual(writes,[]);assert.deepEqual(generated,before);
 });
 test('screen reader keeps authored title, failed OCR/index/privacy facts and the actual delete confirmation',async t=>{
  const capture:Capture={...generated,source:'screen',platform:'macos',windowTitle:'Generated authored window',ocrText:'Exact generated OCR\n  final line ',indexingStatus:'failed',ocr:{status:'failed',updatedAt:'2026-10-13T00:01:00Z'},privacy:{redacted:true,mode:'standard'}},before=structuredClone(capture),{document:d,writes}=await fixture(t,capture);
  assert.equal(d.querySelector('.evidence-heading h2')!.textContent,capture.windowTitle);assert.equal(d.querySelector('.evidence-body-heading')!.textContent,'OCR 全文');assert.equal(d.querySelector('.evidence-text pre')!.textContent,capture.ocrText);
+ await openDetails(d);
  assert.match(d.querySelector('.evidence-caption')!.textContent!,/屏幕采样/);assert.match(d.querySelector('.evidence-ocr-status')!.textContent!,/OCR 失败/);assert.match(d.querySelector('.reader-source-details>dl')!.textContent!,/索引失败/);assert.match(d.querySelector('.reader-source-details>dl')!.textContent!,/客户端报告已脱敏/);
+ await closeDetails(d);
  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());await act(async()=>d.querySelector<HTMLButtonElement>('.danger-text')!.click());assert.match(d.querySelector('.evidence-footer')!.textContent!,/此操作无法撤销/);assert.deepEqual(writes,[]);
  await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('.evidence-footer button')).find(button=>button.textContent==='取消')!.click());assert.deepEqual(writes,[]);assert.equal(d.querySelector('.evidence-text pre')!.textContent,capture.ocrText);
  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());await act(async()=>d.querySelector<HTMLButtonElement>('.danger-text')!.click());await act(async()=>d.querySelector<HTMLButtonElement>('.evidence-footer .danger')!.click());assert.deepEqual(writes,['/api/captures/'+id]);assert.equal(d.querySelector('[role=dialog]'),null);assert.deepEqual(capture,before);
@@ -65,6 +74,7 @@ test('a declared exact media citation renders readable body and keeps canonical 
  const ref='material:mat_'+'a'.repeat(64)+'@'+'b'.repeat(64),base={...generated,source:'file' as const,libraryVersion:ref+'#chunk:d78f66ea-b068-4747-a305-53c21c9b9cbf',provenance:{sourceId:'generated-source',externalId:'generated',revision:'b'.repeat(64),layer:'derived' as const,deleted:false,uri:ref+'#chunk:d78f66ea-b068-4747-a305-53c21c9b9cbf'}};const value={...base,id,ocrText:'{"speaker":"SPEAKER_0"}\n  Exact quoted speech <script>literal</script>\n',revisionState:'historical' as const},pin=value.libraryVersion!,m=/^(material:(mat_[a-f0-9]{64})@([a-f0-9]{64}))#(.+)$/.exec(pin)!;
  const text=value.ocrText+'\n',calls:string[]=[],page={material:{id:m[2],ref:m[1],revision:m[3],kind:'mote.file',schemaVersion:2,textLength:text.length,blockCount:1},text,textRange:{offset:0,total:text.length,nextOffset:null},spans:[{blockId:m[4],kind:'text',format:'speech-text',evidenceId:id,evidenceOffset:0,pageRange:{start:0,end:text.length},materialRange:{start:0,end:text.length},locator:{chunkId:m[4].slice(6),textStart:0,textEnd:value.ocrText.length}}]};
  const {document:d,writes}=await fixture(t,value,async path=>{calls.push(path);return page;});assert.equal(d.querySelector('.evidence-text>pre')!.textContent,'  Exact quoted speech <script>literal</script>\n');assert.equal(d.querySelector('.evidence-text>pre script'),null);assert.equal(d.querySelector('.evidence-main .evidence-canonical')===null,true,'canonical bytes never join the reading column');assert.equal(d.querySelector('.evidence-speaker')!.textContent,'SPEAKER_0');assert.match(d.body.textContent!,/历史证据/);assert.equal(calls.length,1);assert.ok(calls[0].includes('revision='+m[3]));assert.equal(d.querySelector('.file-detail'),null,'never redirect an exact historical citation to a current file');
+ await openDetails(d);
  const details=d.querySelector<HTMLDetailsElement>('.reader-source-details')!,technical=details.querySelector<HTMLDetailsElement>('.evidence-canonical')!;assert.equal(details.open,false);assert.equal(technical.open,false);assert.equal(technical.querySelector('pre')!.textContent,value.ocrText);assert.deepEqual(writes,[]);
 });
 test('file-looking plain JSON remains literal without inventing a media declaration',async t=>{
@@ -112,14 +122,14 @@ test('the aside shows only declared descriptions and no conversation list',async
  const capture:Capture={...generated,memoryMaterialRef:materialRef,attributionContext:{
   recordContextDeclarations:[{captureId:id,version:1,fingerprint:'e'.repeat(64)}],
   recordContextStatements:[{captureId:id,version:1,description:'Generated owner description\nsecond line'},{captureId:other,version:1,description:'Undeclared generated description'}]}};
- const {document:d}=await fixture(t,capture);await settle();
+ const {document:d}=await fixture(t,capture);await openDetails(d);await settle();
  assert.deepEqual(Array.from(factRow(d,'资料说明')!.querySelectorAll('dd p')).map(item=>item.textContent),['Generated owner description\nsecond line']);
  assert.equal(factRow(d,'引用它的对话'),undefined);
  assert.equal(d.querySelector('.evidence-conversations'),null);
 });
 
 test('a record nobody cites shows no description or conversation row',async t=>{
- const {document:d}=await fixture(t,generated);await settle();
+ const {document:d}=await fixture(t,generated);await openDetails(d);await settle();
  assert.equal(factRow(d,'资料说明'),undefined);assert.equal(factRow(d,'引用它的对话'),undefined);
 });
 

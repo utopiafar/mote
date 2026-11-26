@@ -16,6 +16,11 @@ export function ReaderDetails({open, opener, onClose, children}: {
   const panel = useRef<HTMLElement>(null);
   const close = useRef<HTMLButtonElement>(null);
   const [retained, setRetained] = useState(open);
+  const lastContents = useRef<ReactNode>(null);
+  useLayoutEffect(() => {
+    if (open) lastContents.current = children;
+    else if (!retained) lastContents.current = null;
+  }, [open, retained, children]);
   useLayoutEffect(() => {
     if (open) {
       setRetained(true);
@@ -62,7 +67,7 @@ export function ReaderDetails({open, opener, onClose, children}: {
           <X size={18} aria-hidden="true"/>
         </button>
       </header>
-      <div className="reader-details-content">{(open || retained) && children}</div>
+      <div className="reader-details-content">{open ? children : retained ? lastContents.current : null}</div>
     </section>
   </div>, opener.current?.ownerDocument.body ?? document.body);
 }
