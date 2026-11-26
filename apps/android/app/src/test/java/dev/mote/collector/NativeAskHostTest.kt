@@ -33,8 +33,6 @@ import org.robolectric.shadows.ShadowDialog
 import org.robolectric.util.ReflectionHelpers
 import java.io.File
 import java.io.DataInputStream
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.net.Socket
 import java.time.Duration
 import java.util.Base64
@@ -62,7 +60,7 @@ class NativeAskHostTest {
     private val requests = CopyOnWriteArrayList<Pair<String, String>>()
     private val fixtureFailure = AtomicReference<Throwable?>()
     private val openActivities = mutableListOf<ActivityController<out Activity>>()
-    private lateinit var server: ServerSocket
+    private lateinit var tls: GeneratedCentralTls
     private val network = Executors.newSingleThreadExecutor()
     private lateinit var origin: String
     @Volatile private var dropAdmissions = false
@@ -70,7 +68,8 @@ class NativeAskHostTest {
     @Volatile private var tasks = JSONArray()
 
     @Before fun generatedCentral() {
-        server = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
+        tls = GeneratedCentralTls(16)
+        val server = tls.server
         network.execute {
             try {
                 while (!server.isClosed) server.accept().use(::respond)
@@ -80,15 +79,18 @@ class NativeAskHostTest {
                 fixtureFailure.set(error)
             }
         }
-        origin = "http://127.0.0.1:" + server.localPort
+        origin = tls.origin
         Settings(app).read()
     }
 
     @After fun closeGeneratedProfile() {
-        openActivities.asReversed().forEach { it.pause().stop().destroy() }
-        assertTrue(app.pluginHost.quit().isEmpty())
-        server.close()
-        network.shutdown()
+        try {
+            openActivities.asReversed().forEach { it.pause().stop().destroy() }
+            assertTrue(app.pluginHost.quit().isEmpty())
+        } finally {
+            if (::tls.isInitialized) tls.close()
+            network.shutdown()
+        }
         assertTrue(network.awaitTermination(5, TimeUnit.SECONDS))
         fixtureFailure.get()?.let { throw AssertionError("Generated chat fixture failed", it) }
     }
@@ -98,7 +100,7 @@ class NativeAskHostTest {
             .encode(if (authorized) "generated-chat-only-" + "a".repeat(32) else "")
         assertTrue(app.getSharedPreferences("mote", 0).edit().putString("server", origin).putString("centralEndpoint", origin)
             .putString("dataOrigin", origin).putString("token", token).putString("deviceName", "Generated phone")
-            .putBoolean("debugHttp", true).putString("syncMode", "manual").commit())
+            .putString("syncMode", "manual").commit())
     }
 
     private fun respond(socket: Socket) {

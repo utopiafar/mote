@@ -31,8 +31,6 @@ import org.robolectric.annotation.RealObject
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.shadows.ShadowApplication
 import java.io.DataInputStream
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.net.URLDecoder
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
@@ -82,7 +80,7 @@ class AssistantHostSecretBoxShadow {
 @LooperMode(LooperMode.Mode.PAUSED)
 class AssistantHostTest {
     private val f = AssistantFixtures
-    private lateinit var server: ServerSocket
+    private lateinit var tls: GeneratedCentralTls
     private lateinit var network: ExecutorService
     private val fixtureFailure = AtomicReference<Throwable?>()
     private lateinit var origin: String
@@ -100,7 +98,8 @@ class AssistantHostTest {
     @Volatile private var withdrawn = false
 
     @Before fun generatedCentral() {
-        server = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
+        tls = GeneratedCentralTls(20)
+        val server = tls.server
         network = Executors.newSingleThreadExecutor()
         network.execute {
           while (!server.isClosed) try { server.accept().use { socket ->
@@ -183,19 +182,24 @@ class AssistantHostTest {
             }
           } } catch (failure: Exception) { if (!server.isClosed) fixtureFailure.set(failure); return@execute }
         }
-        origin = "http://127.0.0.1:" + server.localPort
+        origin = tls.origin
         val application = RuntimeEnvironment.getApplication() as MoteApplication
         Settings(application).read()
         // Seed an already connected private profile. Pairing's pending-capture
         // checks require the intentionally absent application-wide transport.
         val token = CredentialValue(RuntimeProfile.current, application.secretBox()).encode("generated-host-only-" + "a".repeat(32))
         check(application.getSharedPreferences("mote", 0).edit().putString("server", origin).putString("centralEndpoint", origin)
-            .putString("dataOrigin", origin).putString("token", token).putString("deviceName", "Generated phone").putBoolean("debugHttp", true).commit())
+            .putString("dataOrigin", origin).putString("token", token).putString("deviceName", "Generated phone").commit())
     }
     @After fun cleanup() {
-        activities.asReversed().forEach { it.pause().stop().destroy() }
-        assertTrue((RuntimeEnvironment.getApplication() as MoteApplication).pluginHost.quit().isEmpty())
-        server.close(); network.shutdown()
+        try {
+            activities.asReversed().forEach { it.pause().stop().destroy() }
+            assertTrue((RuntimeEnvironment.getApplication() as MoteApplication).pluginHost.quit().isEmpty())
+        } finally {
+            if (::tls.isInitialized) tls.close()
+            if (::network.isInitialized) network.shutdown()
+        }
+        if (!::network.isInitialized) return
         assertTrue("The generated HTTP fixture stopped", network.awaitTermination(5, TimeUnit.SECONDS))
         fixtureFailure.get()?.let { throw AssertionError("Generated HTTP fixture failed", it) }
     }
