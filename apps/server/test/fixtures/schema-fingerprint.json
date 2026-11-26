@@ -473,6 +473,11 @@
     },
     {
       "type": "index",
+      "name": "material_organizer_input_group",
+      "fingerprint": "62cf6258b63006261c213e23e98228c8db3ba79488a6b242bbb3b2e268db4d5e"
+    },
+    {
+      "type": "index",
       "name": "media_execution_pending",
       "fingerprint": "e66dba7b7b677116ca54ff87fecb6e01088d034ed016e2dce4c328589762f82d"
     },
