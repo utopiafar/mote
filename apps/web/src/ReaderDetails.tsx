@@ -1,6 +1,6 @@
 import {moteText} from '@mote/shared/i18n';
 import {X} from 'lucide-react';
-import {useId, useLayoutEffect, useRef, type ReactNode, type RefObject} from 'react';
+import {useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from 'react';
 import {createPortal} from 'react-dom';
 import {containDialogFocus} from './dialog-focus';
 
@@ -12,8 +12,27 @@ export function ReaderDetails({open, opener, onClose, children}: {
   children: ReactNode;
 }) {
   const id = useId();
+  const backdrop = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const close = useRef<HTMLButtonElement>(null);
+  const [retained, setRetained] = useState(open);
+  useLayoutEffect(() => {
+    if (open) {
+      setRetained(true);
+      return;
+    }
+    if (!retained) return;
+    const animations = backdrop.current?.getAnimations?.() ?? [];
+    if (!animations.length) {
+      setRetained(false);
+      return;
+    }
+    let current = true;
+    void Promise.allSettled(animations.map(animation => animation.finished)).then(() => {
+      if (current) setRetained(false);
+    });
+    return () => { current = false; };
+  }, [open, retained]);
   useLayoutEffect(() => {
     if (!open || !panel.current) return;
     const trigger = opener.current;
@@ -27,7 +46,7 @@ export function ReaderDetails({open, opener, onClose, children}: {
     };
   }, [open, opener]);
 
-  return createPortal(<div className="reader-details-backdrop" hidden={!open} inert={!open}
+  return createPortal(<div ref={backdrop} className="reader-details-backdrop" hidden={!open} inert={!open}
     onMouseDown={event => { if (open && event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -43,7 +62,7 @@ export function ReaderDetails({open, opener, onClose, children}: {
           <X size={18} aria-hidden="true"/>
         </button>
       </header>
-      <div className="reader-details-content">{children}</div>
+      <div className="reader-details-content">{(open || retained) && children}</div>
     </section>
   </div>, opener.current?.ownerDocument.body ?? document.body);
 }

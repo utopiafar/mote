@@ -46,6 +46,7 @@ async function run(){
      await delay(500);
      json(res,key==='main'?{id:mainId}:detail(mainId));
     }finally{pending.delete(req);}return;}
+    if(path===detailPath+'/assistant-tasks'){json(res,{items:[]});return;}
     if(path==='/api/captures'){json(res,{items:[],nextCursor:null});return;}
     if(path==='/api/insights'){json(res,{items:[]});return;}
     if(path==='/api/sources'){json(res,{items:[]});return;}
