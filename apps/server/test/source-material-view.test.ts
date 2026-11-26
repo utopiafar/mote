@@ -40,6 +40,16 @@ test('unknown JSON stays literal and metadata-only pages remain bounded and resu
   assert.equal(page.items[1].type,'raw');assert.equal(page.items[1].text,raw);assert.equal(page.items.length,32);assert.deepEqual(page.next,{block:32,offset:0});
   const next=sourceMaterialView(materials,record.id,{revision:record.revision,...page.next!});assert.equal(next.items.length,10);assert.equal(next.next,null);
 });
+test('an organized image keeps its file link and preserves its locator only in the raw structure',async t=>{
+  const {store,materials}=fixture(t),input=draft(),captureId=input.members[0].id;
+  const hash='a'.repeat(64),text=JSON.stringify({originalImage:{sha256:hash},evidenceKind:'original_image_reference'});
+  input.blocks.push({id:'image:original',kind:'text',format:'json',text,memberIds:[captureId],locator:{memoryImageOriginal:{captureId,sha256:hash}}});
+  const record=await publish(store,materials,input),page=sourceMaterialView(materials,record.id,{revision:record.revision});
+  assert.equal(page.items[0].sourceRef,'capture:'+captureId);
+  assert.equal(page.items[0].sourceType,'file');
+  assert.equal(page.items.some(item=>item.blockId==='image:original'),false);
+  assert.equal(materials.block(record.ref,2)?.block.text,text);
+});
 test('pending current views reject cached text and historical pages retain their old speaker and words after rebuilding',async t=>{
   const {store,materials}=fixture(t),input=draft('Generated old words'),first=await publish(store,materials,input);
   store.invalidateMemoryEvidence(input.members[0].ref.slice('capture:'.length));assert.throws(()=>sourceMaterialView(materials,first.id,{revision:first.revision}),{statusCode:409});

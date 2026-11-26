@@ -2,6 +2,14 @@ import {z} from 'zod';
 import {fileSpeakerAttributionSchema,imageLocationSchema} from './files.js';
 import {documentSchema,sourceItemKinds} from './sources.js';
 
+export const collectedMaterialVersions: Readonly<Record<string, number>> = {
+  'mote.capture-event': 1,
+  'mote.screen-segment': 1,
+  'mote.ui-page-object': 1,
+  'mote.state-series': 1,
+  'mote.notification': 2,
+};
+
 /** These are organizer-owned serializations, not JSON guessed from captured prose. */
 export type SourceTextFormat='source-record-json-v1'|'speech-json-v1'|'speech-text-v2';
 const speech=z.object({speaker:z.string().max(100).optional(),speakerAttribution:fileSpeakerAttributionSchema.optional(),imageLocation:imageLocationSchema.optional(),text:z.string().max(250000)}).strict().refine(value=>value.speaker!==undefined||value.imageLocation!==undefined);

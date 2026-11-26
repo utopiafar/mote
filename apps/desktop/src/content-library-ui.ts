@@ -190,8 +190,8 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
   el('content-detail-close').addEventListener('click',()=>close());dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
   const inspect=el<HTMLButtonElement>('content-detail-inspect'),summary=processing.querySelector('summary')!;
   inspect.addEventListener('click',()=>{
-    processing.open=true;
-    summary.focus();
+    processing.open=!processing.open;
+    if(processing.open)summary.focus();
   });
   processing.addEventListener('toggle',()=>inspect.setAttribute('aria-expanded',String(processing.open)));
   el('content-detail-refresh').addEventListener('click',()=>void readSelected());

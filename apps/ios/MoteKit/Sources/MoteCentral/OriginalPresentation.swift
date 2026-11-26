@@ -83,7 +83,7 @@ public struct OriginalPresentation: Equatable, Sendable {
     }
 
     public init(record: OriginalRecord, conversations: [ConversationSummary]?,
-                highlightedPhrase: String? = nil) throws {
+                highlightedPhrase: String? = nil, fileText: String? = nil, fileImage: Bool = false) throws {
         let normalizedID = record.id.lowercased()
         guard UUID(uuidString: normalizedID) != nil,
               let capturedAt = CentralTimestamp.parse(record.capturedAt),
@@ -94,7 +94,7 @@ public struct OriginalPresentation: Equatable, Sendable {
         self.init(
             id: normalizedID,
             title: title,
-            text: record.ocrText,
+            text: fileText ?? Self.readableText(record),
             summary: record.summary,
             capturedAt: capturedAt,
             receivedAt: receivedAt,
@@ -104,7 +104,7 @@ public struct OriginalPresentation: Equatable, Sendable {
             deletionKind: record.deletion?.available == true ? record.deletion?.kind : nil,
             highlightedPhrase: highlightedPhrase,
             source: record.source,
-            hasImage: record.blobHash?.isEmpty == false
+            hasImage: fileImage || record.blobHash?.isEmpty == false
         )
     }
 
@@ -124,12 +124,64 @@ public struct OriginalPresentation: Equatable, Sendable {
     private static func title(for record: OriginalRecord) -> String {
         let windowTitle = record.windowTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if !windowTitle.isEmpty { return windowTitle }
+        if record.source == .notification {
+            return record.metadata?.notification?.title ?? sourceLabel(record.source)
+        }
+        if record.source == .deviceEvent { return sourceLabel(record.source) }
         if let firstLine = record.ocrText.split(whereSeparator: \.isNewline).first {
             let value = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if !value.isEmpty { return String(value.prefix(80)) }
         }
         let appName = record.appName.trimmingCharacters(in: .whitespacesAndNewlines)
         return appName.isEmpty ? "记录" : appName
+    }
+
+    private static func readableText(_ record: OriginalRecord) -> String {
+        switch record.source {
+        case .notification:
+            guard let notification = record.metadata?.notification else { return record.ocrText }
+            let action = switch notification.action {
+            case .posted: "收到通知"
+            case .updated: "通知更新"
+            case .removed: "通知移除"
+            }
+            let lines = [action, notification.title, notification.text, notification.bigText, notification.subText]
+                .compactMap { $0 } + (notification.textLines ?? [])
+            var seen = Set<String>()
+            return lines.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: "\n")
+        case .deviceEvent:
+            guard let event = record.metadata?.deviceEvent else { return record.ocrText }
+            let action = switch event.action {
+            case "screen_on": "亮屏"
+            case "screen_off": "熄屏"
+            case "user_present": "用户解锁 / 在场"
+            default: "锁定状态观察"
+            }
+            return [action, event.keyguardLocked ? "系统报告已锁定" : "系统报告未锁定",
+                    event.screenInteractive ? "屏幕可交互" : "屏幕不可交互"].joined(separator: " · ")
+        case .activity:
+            guard record.durationMs > 0 else { return record.ocrText }
+            let seconds = Double(record.durationMs) / 1_000
+            return "前台应用采样时长：\(seconds.formatted()) 秒"
+        case .media:
+            let lines = record.metadata?.media?.sessions.compactMap { session -> String? in
+                let state = switch session.playbackState {
+                case "playing": "正在播放"
+                case "paused": "已暂停"
+                case "stopped": "已停止"
+                default: nil as String?
+                }
+                let label = session.title ?? session.appName
+                let line = [label, session.artist, state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                return line.isEmpty ? nil : line
+            } ?? []
+            return lines.isEmpty ? "媒体状态未上报" : lines.joined(separator: "\n")
+        default:
+            if record.ocrText.isEmpty && record.provenance?.layer == "reference" {
+                return "此来源仅保留引用与元数据，未导入正文。"
+            }
+            return record.ocrText
+        }
     }
 
     private static func references(_ scope: ConversationScope, record: OriginalRecord) -> Bool {

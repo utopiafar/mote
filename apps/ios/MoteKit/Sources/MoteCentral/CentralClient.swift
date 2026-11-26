@@ -94,6 +94,58 @@ public struct CentralClient: Sendable {
         try await request("GET", "/api/capture-browser/\(id.uuidString.lowercased())")
     }
 
+    public func originalFile(id: UUID) async throws -> OriginalFileView {
+        let pathID = id.uuidString.lowercased()
+        let file: OriginalFileView = try await request("GET", "/api/files/\(pathID)/view")
+        guard file.captureId == pathID else { throw CentralError.invalidResponse }
+        return file
+    }
+
+    public func originalFileText(id: UUID, offset: Int = 0) async throws -> OriginalFilePage {
+        try await request("GET", "/api/files/\(id.uuidString.lowercased())/chunks",
+                          query: [URLQueryItem(name: "offset", value: String(offset))])
+    }
+
+    public func originalFileImage(id: UUID) async throws -> Data {
+        var request = try originalFileContentRequest(id: id)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request, delegate: RejectRedirects.shared)
+        if let http = response as? HTTPURLResponse, http.statusCode == 200,
+           http.mimeType == "application/octet-stream", !data.isEmpty {
+            // Central serves archived non-audio bytes as attachments. ImageIO
+            // still validates the actual format before displaying anything.
+            return data
+        }
+        return try Self.image(data: data, response: response)
+    }
+
+    public func downloadOriginalAudio(id: UUID) async throws -> URL {
+        var request = try originalFileContentRequest(id: id)
+        request.setValue("audio/*", forHTTPHeaderField: "Accept")
+        let (temporary, response) = try await session.download(for: request, delegate: RejectRedirects.shared)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              http.mimeType?.lowercased().hasPrefix("audio/") == true else {
+            try? FileManager.default.removeItem(at: temporary)
+            throw CentralError.invalidResponse
+        }
+        #if os(iOS)
+        do {
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: temporary.path)
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+        #endif
+        return temporary
+    }
+
+    private func originalFileContentRequest(id: UUID) throws -> URLRequest {
+        var request = try makeRequest("GET", "/api/files/\(id.uuidString.lowercased())/content",
+                                      query: [], authenticated: true)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        return request
+    }
+
     /// The full screenshot or photo behind an original, from the route Web and Android read.
     public func originalImage(id: UUID) async throws -> Data {
         var request = try makeRequest("GET", "/api/capture-browser/\(id.uuidString.lowercased())/image",

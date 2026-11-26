@@ -43,8 +43,9 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     private val draftFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
     var importInstruction = ""
     private var player: android.media.MediaPlayer? = null
+    private var originalImage: android.app.Dialog? = null
     @Volatile private var audioFile: File? = null
-    fun close() { askFailureDialog?.dismiss(); askFailureDialog = null; player?.release(); player = null; audioFile?.delete(); audioFile = null; admin.close() }
+    fun close() { askFailureDialog?.dismiss(); askFailureDialog = null; originalImage?.dismiss(); originalImage = null; player?.release(); player = null; audioFile?.delete(); audioFile = null; admin.close() }
     private val askState get() = ask.state
     private val noteWriter = LatestWriter<JSONObject>(CentralDraftWrites.executor) {
         runCatching { noteStore.edit(it.getString("text"), it.getString("mood"), it.getJSONArray("attachments")) }
@@ -168,6 +169,10 @@ internal class CentralScreens(val ui: CentralContent, val body: LinearLayout, pr
     fun refresh() { if (currentPage == "insights") insights.returnFromEvidence(); ui.navigate(currentPage) }
     fun showOriginalDetail(detail: OriginalDetailPresentation) {
         NativeOriginalDetail.show(ui.hostActivity(), detail)
+    }
+    fun showOriginalImage(bitmap: android.graphics.Bitmap) {
+        originalImage?.dismiss()
+        originalImage = NativeOriginalDetail.image(ui.hostActivity(), bitmap)
     }
     fun insightRequest(prompt: String): JSONObject = CentralDraftWrites.barrier {
         val saved = insightStore.read()

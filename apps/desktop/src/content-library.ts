@@ -29,6 +29,11 @@ export async function localContentDetail(queue:DurableQueue,sources:LocalSourceM
     const event=record.event;let text=event.source==='note'?noteBody(event.ocrText??'',event.metadata):event.ocrText??'';
     if(event.source==='activity')text=moteText('仅记录应用活动；未采集屏幕、窗口标题或正文');
     if(event.source==='notification'){const value=event.metadata?.notification;text=value?[value.title,value.text,value.bigText,value.subText,...(value.textLines??[])].filter(Boolean).join('\n'):text;}
+    if(event.source==='media'){
+      const sessions=event.metadata?.media?.sessions??[];
+      text=[...sessions.map(session=>[session.title||session.appName,session.artist].filter(Boolean).join(' · ')),
+        moteText('此记录的已观察播放时长：{0} 秒（不含观测缺口）',event.durationMs/1000)].filter(Boolean).join('\n');
+    }
     const bytes=image?await queue.imageForBrowser(event.id):undefined;
     return {canRelease:Boolean(record.archiveAcknowledgment&&!record.syncBlocked&&!record.syncError),sizeBytes:record.blobBytes||undefined,truncated:text.length>100000,text:text.slice(0,100000),description:event.metadata?.ownerDescription,sourceName:event.deviceName,metadata:JSON.stringify({capturedAt:event.capturedAt,appName:event.appName,durationMs:event.durationMs,stateSeries:event.stateSeries,metadata:event.metadata},null,2),hasImage:Boolean(record.blobHash),retainsOriginal:record.blobHash?true:undefined,...(bytes?{image:await previewWork.run<string>({kind:'preview',bytes,thumbnail:false})}:{})};
   }

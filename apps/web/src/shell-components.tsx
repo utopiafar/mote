@@ -461,6 +461,7 @@ export function EvidenceDialog({
   const [mutationError,setError]=useState(''),[deletionDiagnostic,setDeletionDiagnostic]=useState('');
   const error=mutationError||(readError?errorMessage(readError):'');
   const [confirm, setConfirm] = useState(false),[readerTools,setReaderTools]=useState(false),[copied,setCopied]=useState(false),[detailsOpen,setDetailsOpen]=useState(false);
+  const [fileDetailsTarget,setFileDetailsTarget]=useState<HTMLDivElement|null>(null);
   const [busy, setBusy] = useState(false);
   const menuId=useId(),more=useRef<HTMLDivElement>(null),moreButton=useRef<HTMLButtonElement>(null),cancelDelete=useRef<HTMLButtonElement>(null),detailsButton=useRef<HTMLButtonElement>(null);
   useEffect(()=>{setError('');setDeletionDiagnostic('');setBusy(false);setConfirm(false);setReaderTools(false);setCopied(false);setDetailsOpen(false);},[api,id]);
@@ -572,7 +573,6 @@ export function EvidenceDialog({
           {!embedded&&<button className="icon-button evidence-back" onClick={onClose} aria-label={moteText("关闭证据详情")}><X size={20} /></button>}
         </header>
 
-        {capture?.blobHash&&capture.revisionState!=='historical'&&<ImageProgress api={api} id={capture.id}/>}
         {capture?.revisionState==='historical'&&<p role="status">{moteText('历史证据，仅用于核对当时的内容。')}</p>}
         {capture?.source==='screen'&&ocr?.tone==='amber'&&<p className="reader-status" role="status">{ocr.label}</p>}
         {capture?.indexingStatus==='failed'&&<p className="reader-status" role="status">{moteText('索引失败')}</p>}
@@ -583,7 +583,7 @@ export function EvidenceDialog({
         {capture && (
           <div className="evidence-body">
             <div className="evidence-main">
-              {presentation?.nativeFile && <FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} historical={capture.revisionState==='historical'} onOpen={onOpen}/>}
+              {presentation?.nativeFile && <FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} historical={capture.revisionState==='historical'} onOpen={onOpen} detailsTarget={detailsOpen?fileDetailsTarget:null}/>}
               <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
                 {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
                 <div className="evidence-text">
@@ -605,6 +605,8 @@ export function EvidenceDialog({
                 <div><dt>{moteText("状态")}</dt><dd><EvidenceState/>{capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span>{ocr.tone!=='green'&&<p>{ocr.description}</p>}</div>}</dd></div>
                 {descriptions.length>0&&<div><dt>{moteText("资料说明")}</dt><dd>{descriptions.map(text=><p key={text} className="evidence-description">{text}</p>)}</dd></div>}
               </dl>
+              {capture.blobHash&&capture.revisionState!=='historical'&&detailsOpen&&<ImageProgress api={api} id={capture.id}/>}
+              {presentation?.nativeFile&&<div ref={setFileDetailsTarget}/>}
               <details className="reader-source-details"><summary>{moteText("技术详情")}</summary>{presentation?.nativeFile&&readableText&&<pre>{readableText}</pre>}<dl>
                 <div>
                   <dt>{moteText("来源")}</dt>

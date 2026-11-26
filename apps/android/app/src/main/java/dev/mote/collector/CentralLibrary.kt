@@ -91,7 +91,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 ui.text(row.getString("title"), NativeFontRole.ROW, card)
                 ui.text(type?.let { MoteI18n.text(it.label) } ?: row.optString("kind"), parent = card)
                 ui.text(row.optJSONObject("coverage")?.optString("state").orEmpty(), parent = card)
-                ui.button(MoteI18n.text("查看原文"), parent = card) { material(row.getString("id"), row.getString("revision")) }
+                ui.button(MoteI18n.text("查看原文"), parent = card) { material(row.getString("id"), row.getString("revision")) }.tag = "material-open:" + row.getString("id")
             }
             renderPage(path, target, null, result, render)
         }
@@ -138,7 +138,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         } else paged("/api/capture-browser?" + params.joinToString("&"), list) { row, card ->
             ui.text(row.optString("appName"), NativeFontRole.ROW, card); ui.text(row.optString("capturedAt"), NativeFontRole.SUPPORT, card)
             ui.text(row.optString("textPreview"), parent = card)
-            ui.button(MoteI18n.text("查看原文"), parent = card) { capture(row.getString("id")) }
+            ui.button(MoteI18n.text("查看原文"), parent = card) { capture(row.getString("id")) }.tag = "archive-original:" + row.getString("id")
         }
     }
     private fun activity() {
@@ -322,26 +322,44 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         ui.text(MoteI18n.text("告知模型归属：自述、第三方或混合。未知也可查询整理。"), parent = card)
         return selector to options
     }
-    private fun material(id: String, revision: String?, offset: Int = 0) {
+    private fun material(id: String, revision: String?, offset: Int = 0, sourceBlock: Int = 0, sourceOffset: Int = 0) {
         val api = client
         ui.work(MoteI18n.text("正在读取原文…"), {
-            api.get("/api/materials/" + enc(id) + "/read?offset=$offset&length=4000" + (revision?.let { "&revision=" + enc(it) } ?: "")) to api.get("/api/materials/" + enc(id))
-        }) { (value, current) ->
+            val path = "/api/materials/" + enc(id)
+            val value = api.get(path + "/read?offset=$offset&length=4000" + (revision?.let { "&revision=" + enc(it) } ?: ""))
+            val item = value.getJSONObject("material")
+            val current = api.get(path)
+            val projected = if (hasSourceView(item)) {
+                api.get(path + "/source-view?revision=" + enc(item.getString("revision")) + "&block=$sourceBlock&offset=$sourceOffset")
+                    .also { check(it.getJSONObject("material").getString("ref") == item.getString("ref")) }
+            } else null
+            Triple(value, current, projected)
+        }) { (value, current, projected) ->
             body.removeAllViews(); screens.setBack { screens.refresh() }
             val item = value.getJSONObject("material")
             val spans=value.getJSONArray("spans");val pageText=value.getString("text")
             fun literal(span: JSONObject) = span.getJSONObject("pageRange").let { pageText.substring(it.getInt("start"), it.getInt("end")) }
-            val readable = (0 until spans.length()).map(spans::getJSONObject).filter { it.getString("kind")=="text" }.map(::literal).filter(String::isNotEmpty).joinToString("\n\n")
+            fun noteMetadata(span: JSONObject) = item.optString("kind") == "mote.note" &&
+                span.optString("blockId") == "record-metadata" && span.optString("format") == "json"
+            val sourceItems = projected?.getJSONArray("items")
+            val readable = if (sourceItems == null) {
+                (0 until spans.length()).map(spans::getJSONObject).filter { it.getString("kind") == "text" && !noteMetadata(it) }
+                    .map(::literal)
+            } else (0 until sourceItems.length()).map { sourceItems.getJSONObject(it).optString("text") }
+            val readableText = readable.filter(String::isNotEmpty).joinToString("\n\n")
             val reference="material:"+item.getString("id")+"@"+item.getString("revision")
             val descriptions = NativeRecordDescription.read(item, true)
             val historical = current.getString("revision") != item.getString("revision")
             val detail = NativeOriginalDetail.material(item)
-            readerHead(MoteI18n.text("版本 {0}", item.opt("sequence")), item.getString("title"), readable,
+            val title = item.getString("title").let {
+                if (item.getString("kind") == "mote.state-series" && it == "device_event") MoteI18n.text("设备事件") else it
+            }
+            readerHead(MoteI18n.text("版本 {0}", item.opt("sequence")), title, readableText,
                 details = { screens.showOriginalDetail(detail) }) {
                 val actions = buildList {
                     add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.material(item) } })
                     if (descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(ui.hostActivity(), descriptions) })
-                    if (readable.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(ui, readable) })
+                    if (readableText.isNotBlank()) add(OriginalAction(MoteGlyph.COPY, MoteI18n.text("复制")) { NativeOriginalDetail.copy(ui, readableText) })
                 }
                 NativeOriginalDetail.more(ui.hostActivity(), actions, null, null)
             }
@@ -361,10 +379,20 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     }
                 }
             }
-            if(readable.isEmpty())ui.text(MoteI18n.text(if(item.optInt("blockCount")==item.optInt("assetCount"))"此版本暂无文字正文。" else "本页暂无文字正文。"))
-            for(index in 0 until spans.length()) {
+            if (readableText.isEmpty() && (sourceItems == null || sourceItems.length() == 0))
+                ui.text(MoteI18n.text(if(item.optInt("blockCount")==item.optInt("assetCount"))"此版本暂无文字正文。" else "本页暂无文字正文。"))
+            if (sourceItems != null) {
+                val archived = item.optJSONArray("artifacts")?.let { artifacts ->
+                    (0 until artifacts.length()).any { index ->
+                        val artifact = artifacts.getJSONObject(index)
+                        artifact.optString("key") == "original" && artifact.optString("state") == "ready"
+                    }
+                } == true
+                renderSourceMaterial(sourceItems, archived) { material(id, item.getString("revision"), offset, sourceBlock, sourceOffset) }
+            }
+            else for(index in 0 until spans.length()) {
                 val span=spans.getJSONObject(index)
-                if(span.getString("kind")=="text") {
+                if(span.getString("kind")=="text" && !noteMetadata(span)) {
                     val literal=literal(span)
                     if(literal.isNotEmpty())ui.text(literal).tag="material-literal:"+span.getString("blockId")
                 }
@@ -376,7 +404,12 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 }
             }
             val range = value.getJSONObject("textRange")
-            if (!range.isNull("nextOffset")) ui.button(MoteI18n.text("继续展开")) { material(id, item.getString("revision"), range.getInt("nextOffset")) }
+            if (projected == null && !range.isNull("nextOffset")) ui.button(MoteI18n.text("继续展开")) { material(id, item.getString("revision"), range.getInt("nextOffset")) }
+            projected?.optJSONObject("next")?.let { next ->
+                ui.button(MoteI18n.text("继续展开")) {
+                    material(id, item.getString("revision"), sourceBlock = next.getInt("block"), sourceOffset = next.getInt("offset"))
+                }
+            }
             ui.disclosure(MoteI18n.text("来源与处理")) { section ->
                 paged("/api/materials/" + enc(id) + "/members?limit=20&revision="+enc(item.getString("revision")), ui.card(section)) { member, card ->
                     ui.button(MoteI18n.text("查看原文"), parent = card) { evidence(member.getString("ref")) }
@@ -403,9 +436,51 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             }
             ui.disclosure(MoteI18n.text("技术详情")) { more ->
                 values(item.getJSONObject("origin"), ui.card(more))
-                for(index in 0 until spans.length())spans.getJSONObject(index).optJSONObject("asset")?.let { values(it,ui.card(more)) }
+                if (projected != null) ui.text(pageText, parent = more)
+                for (index in 0 until spans.length()) {
+                    val span = spans.getJSONObject(index)
+                    if (noteMetadata(span)) ui.text(literal(span), parent = more)
+                    span.optJSONObject("asset")?.let { values(it, ui.card(more)) }
+                }
             }
             readerAsk("material-ask") { screens.askAboutMaterial(reference, item.optString("title")) }
+            ui.restoreContentScroll(0)
+        }
+    }
+
+    private fun hasSourceView(item: JSONObject): Boolean {
+        val version = item.optInt("schemaVersion")
+        return when (item.optString("kind")) {
+            "mote.capture-event", "mote.screen-segment", "mote.ui-page-object", "mote.state-series" -> version == 1
+            "mote.notification" -> version == 2
+            "mote.calendar", "mote.file", "mote.event", "mote.message", "mote.metric", "mote.memory" -> version in 1..2
+            else -> false
+        }
+    }
+
+    private fun renderSourceMaterial(items: JSONArray, archived: Boolean, returnToMaterial: () -> Unit) {
+        for (index in 0 until items.length()) {
+            val item = items.getJSONObject(index)
+            val bodyText = item.optString("text")
+            val ref = item.optString("sourceRef")
+            if (item.optString("type") == "asset") {
+                ui.text(MoteI18n.text("归档附件") + " · " + item.optString("mimeType"))
+            }
+            if (item.optBoolean("referenceOnly")) ui.text(MoteI18n.text("此来源仅保留引用与元数据，未导入正文。"))
+            if (bodyText.isNotBlank()) ui.text(bodyText).apply { setTextIsSelectable(true); tag = "material-literal:" + item.getString("blockId") }
+            if (ref.isNotBlank()) {
+                val sourceType = item.optString("sourceType")
+                val fileId = if (archived && sourceType == "file") CentralEvidenceReference.captureId(ref) else null
+                val action = when {
+                    fileId != null -> "查看文件详情"
+                    sourceType == "screen" -> "查看原图"
+                    else -> "查看原始记录"
+                }
+                ui.button(MoteI18n.text(action)) {
+                    if (fileId == null) evidence(ref)
+                    else file(fileId, returnTo = returnToMaterial)
+                }
+            }
         }
     }
     private fun files() {
@@ -414,12 +489,12 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         paged("/api/files?limit=30&query=" + enc(query), ui.card()) { row, card ->
             ui.text(row.getJSONObject("item").optString("title"), NativeFontRole.SECTION, card)
             ui.text(row.optJSONObject("job")?.optString("state").orEmpty(), parent = card)
-            ui.button(MoteI18n.text("查看详情"), parent = card) { file(row.getString("captureId")) }
+            ui.button(MoteI18n.text("查看详情"), parent = card) { file(row.getString("captureId")) }.tag = "archive-file:" + row.getString("captureId")
         }
         ui.button(MoteI18n.text("处理设置")) { CentralAdmin(screens).fileSettings() }
     }
     fun openFile(id: String) { java.util.UUID.fromString(id); file(id) }
-    private fun file(id: String, offset: Int = 0) {
+    private fun file(id: String, offset: Int = 0, returnTo: (() -> Unit)? = null) {
         val api = client
         // A revoked source must not leave a previously loaded body on screen.
         body.removeAllViews()
@@ -428,7 +503,8 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val rawView = api.get("/api/files/" + enc(id) + "/view")
             Triple(row, rawView, api.get("/api/files/" + enc(id) + "/chunks?offset=$offset"))
         }) { (row, rawView, chunks) ->
-            body.removeAllViews(); screens.setBack { screens.refresh() }
+            body.removeAllViews(); screens.setBack { returnTo?.invoke() ?: screens.refresh() }
+            ui.restoreContentScroll(0)
             val item = row.getJSONObject("item")
             val fileView = CentralFileView.forDetail(row, rawView)
             val mime = item.optString("mimeType")
@@ -436,7 +512,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             if (mime.isNotBlank()) ui.text(mime, NativeFontRole.META)
             if (fileView?.let { it.hasOriginal && it.canOpenOriginal } == true) {
                 val path = "/api/files/" + enc(id) + "/content"
-                if (mime.startsWith("image/")) readerHero(path)
+                if (mime.startsWith("image/")) readerHero(path, archivedFile = true)
                 if (mime.startsWith("audio/")) {
                     val controls = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
                     ui.button(MoteI18n.text("播放录音")) {
@@ -457,21 +533,28 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val items = chunks.optJSONArray("items") ?: JSONArray()
             for (i in 0 until items.length()) {
                 val chunk = items.getJSONObject(i); val card = ui.card()
-                ui.text(chunk.optString("ocrText"), parent = card)
                 val fileEvidence = chunk.optJSONObject("fileEvidence")
+                val speaker = fileEvidence?.let { AssistantJson.optional(it, "speaker") }
+                val original = chunk.optString("ocrText").let { text -> if (speaker == null) text else text.removePrefix("[$speaker] ") }
+                if (speaker != null) {
+                    val named = fileEvidence?.optJSONObject("speakerAttribution")?.let { AssistantJson.optional(it, "name") }
+                    val index = speaker.takeIf { it.startsWith("SPEAKER_") }?.substringAfter("SPEAKER_")?.toIntOrNull()
+                    val label = named ?: index?.takeIf { it in 0 until Int.MAX_VALUE }?.let { MoteI18n.text("说话人 {0}", it + 1) } ?: speaker
+                    ui.text(label, NativeFontRole.META, card)
+                }
+                ui.text(original, parent = card)
                 if (fileEvidence != null) ui.button(MoteI18n.text("纠正此段"), parent = card) {
-                    val original = if (fileEvidence.optString("speaker").isNotBlank()) chunk.optString("ocrText").removePrefix("[" + fileEvidence.getString("speaker") + "] ") else chunk.optString("ocrText")
                     val text = ui.field(MoteI18n.text("纠正此段文字"), original, multiline = true, parent = card)
                     ui.button(MoteI18n.text("保存纠正"), true, parent = card) {
                         val value = text.text.toString()
                         ui.work(MoteI18n.text("正在保存…"), {
                             api.post("/api/files/" + enc(id) + "/corrections", JSONObject().put("artifactId", fileEvidence.getString("artifactId"))
                                 .put("chunkId", chunk.getString("id")).put("originalText", original).put("correctedText", value))
-                        }) { file(id, offset) }
+                        }) { file(id, offset, returnTo) }
                     }
                 }
             }
-            if (!chunks.isNull("nextOffset")) ui.button(MoteI18n.text("继续展开")) { file(id, chunks.getInt("nextOffset")) }
+            if (!chunks.isNull("nextOffset")) ui.button(MoteI18n.text("继续展开")) { file(id, chunks.getInt("nextOffset"), returnTo) }
             ui.disclosure(MoteI18n.text("处理详情")) { processing ->
                 ui.text(MoteI18n.text("处理状态") + " · " + processingState(job?.optString("state").orEmpty(), job?.optString("error").orEmpty(), job == null), parent = processing)
                 if (job != null) {
@@ -498,12 +581,12 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                     ui.saveCentral("/api/files/" + enc(id) + "/export", "mote-file.tar.gz", "application/gzip")
                 }
                 if (cancellation?.optBoolean("canCancel") == true) ui.button(MoteI18n.text("停止处理"), parent = processing) {
-                    ui.work(MoteI18n.text("正在停止处理…"), { api.post("/api/files/" + enc(id) + "/cancel") }) { file(id, offset) }
+                    ui.work(MoteI18n.text("正在停止处理…"), { api.post("/api/files/" + enc(id) + "/cancel") }) { file(id, offset, returnTo) }
                 }
                 if (cancellation?.optString("wait") != "running") listOf("transcribe" to "转写", "diarize" to "说话人分离", "summary" to "摘要").forEach { (stage, label) ->
                     ui.button(MoteI18n.text("重试") + " · " + MoteI18n.text(label), parent = processing) {
                         val retry = {
-                            ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset) }
+                            ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset, returnTo) }
                         }
                         if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), retry) else retry()
                     }
@@ -964,17 +1047,18 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         if (meta.isNotBlank()) ui.text(meta, NativeFontRole.META).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
     }
     /** The record's image leads its words: full width, at most 360dp tall, a quiet tile while it loads. */
-    private fun readerHero(path: String) {
+    private fun readerHero(path: String, archivedFile: Boolean = false) {
         val slot = FrameLayout(ui).apply { tag = "library-reader-hero" }
         body.addView(slot, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.moteDp(12) })
         slot.addView(MoteComponents.skeletonTile(ui, MoteI18n.text("正在读取原图…")), FrameLayout.LayoutParams(-1, ui.moteDp(220)))
-        ui.readerImage(path) { bitmap ->
+        ui.readerImage(path, archivedFile) { bitmap ->
             if (slot.parent == null) { bitmap?.recycle(); return@readerImage }
             slot.removeAllViews()
             if (bitmap == null) slot.addView(TextView(ui).apply { text = MoteI18n.text("图片暂不可用。"); MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) })
             else slot.addView(ImageView(ui).apply {
                 setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; adjustViewBounds = true; maxHeight = ui.moteDp(360)
-                contentDescription = MoteI18n.text("采集图片"); val edge = ui.moteDp(1); setPadding(edge, edge, edge, edge)
+                contentDescription = MoteI18n.text("查看原图"); val edge = ui.moteDp(1); setPadding(edge, edge, edge, edge)
+                setOnClickListener { if (slot.isAttachedToWindow) screens.showOriginalImage(bitmap) }
                 NativePresentationStyles.bind(this, "reader-hero") { it.background = MoteUi.shape(ui, NativeColorRole.SURFACE_SUNKEN, NativeRadiusRole.CONTAINER, true, NativeColorRole.HAIR) }
                 outlineProvider = android.view.ViewOutlineProvider.BACKGROUND; clipToOutline = true
             }, FrameLayout.LayoutParams(-1, -2))

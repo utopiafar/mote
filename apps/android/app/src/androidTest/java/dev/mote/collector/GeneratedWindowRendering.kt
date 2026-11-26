@@ -162,14 +162,17 @@ internal object GeneratedWindowRendering {
         }
         return evidence
     }
-    fun save(activity: Activity, directory: File, name: String, overlays: List<View> = emptyList(), includeScrollEvidence: Boolean = true, ownedGuideBuffer: File? = null, includeHorizontalEvidence: Boolean = true) {
+    fun save(activity: Activity, directory: File, name: String, overlays: List<View> = emptyList(), includeScrollEvidence: Boolean = true, ownedGuideBuffer: File? = null, includeHorizontalEvidence: Boolean = true, readerMarker: String? = null) {
         require(activity.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.contains("/emu64a:"))
         require(InstrumentationRegistry.getArguments().getString("uiIterationFixture") == "true")
         require(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
         val base = activity.window.decorView
         require(base.width > 0 && base.height > 0 && base.isShown)
         check(hasNoPendingLabels(base) && overlays.all(::hasNoPendingLabels)) { "An unfinished native surface cannot be a ready scene: $name" }
-        val (page, state, marker) = when (name) {
+        val (page, state, marker) = if (readerMarker != null) {
+            require(InstrumentationRegistry.getArguments().getString("readerVisualFixture") == "true")
+            Triple("reader", "content", readerMarker)
+        } else when (name) {
             "home-recent" -> Triple("home", "content", "生成的设计稿标注内容")
             "home-menu" -> Triple("manage", "content", "我的 Mote")
             "ask-retained-draft" -> Triple("ask", "draft", "生成的未发送草稿")

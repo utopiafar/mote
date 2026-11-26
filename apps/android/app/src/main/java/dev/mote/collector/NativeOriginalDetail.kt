@@ -131,7 +131,7 @@ internal object NativeOriginalDetail {
     }
 
     /** Shared 详情 bottom sheet used by both original readers. */
-    fun show(activity: Activity, detail: OriginalDetailPresentation): Dialog {
+    fun show(activity: Activity, detail: OriginalDetailPresentation, technical: String? = null): Dialog {
         val dialog = Dialog(activity).apply { requestWindowFeature(Window.FEATURE_NO_TITLE) }
         val sheet = MoteComponents.sheet(activity).apply {
             addView(titleBar(activity, MoteI18n.text("详情")) { dialog.dismiss() }, LinearLayout.LayoutParams(-1, -2))
@@ -141,10 +141,38 @@ internal object NativeOriginalDetail {
             addView(MoteComponents.group(activity).apply {
                 addView(detailRow(activity, MoteI18n.text("来源"), detail.source, null), LinearLayout.LayoutParams(-1, -2))
             }, groupParams(activity, 12))
+            if (!technical.isNullOrBlank()) {
+                val facts = android.widget.ScrollView(activity).apply {
+                    visibility = View.GONE
+                    addView(TextView(activity).apply {
+                        text = technical
+                        MoteUi.type(this, NativeFontRole.META)
+                        MoteUi.textColor(this, NativeColorRole.MUTED)
+                        setTextIsSelectable(true)
+                    })
+                }
+                addView(actionRow(activity, MoteGlyph.FILE, MoteI18n.text("技术详情"), chevron = true, danger = false) {
+                    facts.visibility = if (facts.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                }, groupParams(activity, 6))
+                addView(facts, groupParams(activity, 6).apply { height = activity.moteDp(144) })
+            }
             addView(View(activity), LinearLayout.LayoutParams(-1, activity.moteDp(40)))
         }
         val secure = activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
         present(activity, dialog, sheet, secure)
+        return dialog
+    }
+
+    fun image(activity: Activity, bitmap: android.graphics.Bitmap): Dialog {
+        val dialog = Dialog(activity).apply { requestWindowFeature(Window.FEATURE_NO_TITLE) }
+        val sheet = MoteComponents.sheet(activity).apply {
+            addView(titleBar(activity, MoteI18n.text("查看原图")) { dialog.dismiss() })
+            addView(BulkDedupeImageView(activity).apply {
+                setImageBitmap(bitmap)
+                contentDescription = MoteI18n.text("采集图片")
+            }, LinearLayout.LayoutParams(-1, (activity.resources.displayMetrics.heightPixels * .65).toInt()))
+        }
+        present(activity, dialog, sheet, secure = true)
         return dialog
     }
 
