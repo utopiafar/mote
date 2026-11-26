@@ -57,7 +57,7 @@ export function taskPlan(task, root = '.', selectedServer = ['all']) {
   if (task === 'tooling') return [node('--test', ...listTests('scripts/ci', '.test.mjs', root), ...listTests('scripts/release', '.test.mjs', root))];
   if (task === 'i18n') return [sharedBuild(), npm('check:i18n'), node('--test', 'packages/shared/test/i18n.test.mjs')];
   if (task === 'shared') return [sharedBuild(), npm('test', '-w', '@mote/shared')];
-  if (task === 'web') return [npm('build', '-w', '@mote/plugin-host'), ...libs(), npm('build', '-w', '@mote/web'), npm('test', '-w', '@mote/web')];
+  if (task === 'web') return [npm('build', '-w', '@mote/plugin-host'), ...libs(), npm('build', '-w', '@mote/plugin-sdk'), npm('build', '-w', '@mote/web'), npm('test', '-w', '@mote/web')];
   if (task === 'web-contract') return [sharedBuild(), node('--import', 'tsx', '--test', 'apps/web/test/api.test.ts')];
   if (task === 'agent' || task === 'agent-contract') return [...libs(), node('--test', ...(task === 'agent' ? listTests('packages/agent/test', '.test.mjs', root) : ['packages/agent/test/task-context.test.mjs', 'packages/agent/test/tool-contributions.test.mjs']))];
   if (task === 'server-build') return [...serverLibs(), node('--test', 'packages/plugin-host/test/import-boundary.test.mjs', 'packages/plugin-host/test/lifecycle.test.mjs', 'packages/plugin-host/test/extensions.test.mjs'), npm('build', '-w', '@mote/server')];

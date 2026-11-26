@@ -189,6 +189,7 @@ test('Web regression preparation builds the Agent runtime needed by real Server 
   assert.ok(build('@mote/agent') >= 0, 'Web fixtures import Server modules which load @mote/agent/dist');
   assert.ok(build('@mote/shared') < build('@mote/agent'));
   assert.ok(build('@mote/agent') < build('@mote/web'));
+  assert.ok(build('@mote/plugin-sdk') >= 0 && build('@mote/plugin-sdk') < webTests, 'Web documentation examples import the installed SDK build');
   assert.ok(build('@mote/web') < webTests);
   assert.ok(!plan.some(step => step.args.includes('test') && (step.args.includes('@mote/agent') || step.args.includes('@mote/server'))));
   assert.deepEqual(taskPlan('web-contract').filter(step => step.command === 'npm').map(step => step.args), [['run', 'build', '-w', '@mote/shared']]);

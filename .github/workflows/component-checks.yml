@@ -54,6 +54,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
+      - name: Install the ASR process fixture dependency
+        if: matrix.task == 'server-1'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm ci --ignore-scripts
       - env:
           CHECK_TASK: ${{ matrix.task }}
