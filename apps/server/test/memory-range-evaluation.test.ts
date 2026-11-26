@@ -91,6 +91,52 @@ test('coverage validation locates an unsupported candidate and an unknown target
  ]);
 });
 
+test('repairing an overlong candidate evidence list also repairs its linked coverage rows',async t=>{
+ const f=await fixture(t,facts(32));
+ const read=(member:MemoryWorkMember)=>f.memories.readEvidence([member.id])[0].ocrText;
+ let limitIssue:MemoryOutputValidationError|undefined;
+ f.setGenerate(async input=>{
+  const members=work(input).members;
+  assert.equal(members.length,32);
+  return result(input,[{member:members[0],quote:read(members[0])},{member:members[31],quote:read(members[31])}]);
+ });
+ f.setReview(async(input,draft)=>{
+  const members=work(input).members,prepared=JSON.parse(draft.answer);
+  const excessive=structuredClone(prepared),support=members.slice(0,31);
+  excessive.memories[0].evidenceIds=support.map(member=>member.id);
+  excessive.memories[0].evidence=support.map(member=>({id:member.id,quote:read(member)}));
+  support.forEach((_,index)=>{excessive.coverage[index].state='checked';excessive.coverage[index].candidateIndexes=[0];});
+  const overLimit=await input.validateOutput!({...draft,runId:randomUUID(),answer:JSON.stringify(excessive)});
+  assert.ok(overLimit instanceof MemoryOutputValidationError);
+  assert.equal(overLimit.code,'schema');
+  assert.equal(overLimit.details.fieldPath,'memories[0].evidenceIds');
+  assert.equal(overLimit.details.maxItems,30);
+  limitIssue=overLimit;
+
+  excessive.memories[0]=prepared.memories[0];
+  const staleLinks=await input.validateOutput!({...draft,runId:randomUUID(),answer:JSON.stringify(excessive)});
+  assert.ok(staleLinks instanceof MemoryOutputValidationError);
+  assert.equal(staleLinks.details.problem,'unsupported_candidate_for_target');
+  assert.equal(staleLinks.memoryRepair?.section,'coverage','an independently incorrect coverage row still has a scoped correction');
+  assert.match(staleLinks.feedback,/Remove the reported index/);
+  assert.equal(f.memories.list().length,0);
+
+  const repaired={...draft,runId:randomUUID()};
+  assert.equal(await input.validateOutput!(repaired),undefined);
+  return repaired;
+ });
+ const done=await f.pipeline.run(f.create().id);
+ assert.ok(limitIssue);
+ assert.equal(limitIssue.memoryRepair,undefined,'a candidate-only replacement leaves invalid coverage links');
+ assert.match(limitIssue.feedback,/every coverage row that references this candidate/);
+ assert.match(limitIssue.feedback,/Use at most 30 entries/);
+ assert.equal(done.status,'completed');
+ assert.equal(done.batches[0].evaluation?.assessedTargets,32);
+ assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+ assert.equal(done.memoryIds.length,2);
+ assert.equal(f.reviews.length,1);
+});
+
 test('successive coverage errors in one extraction each identify the existing row to repair',async t=>{
  const f=await fixture(t,facts(3));
  f.setGenerate(async input=>{

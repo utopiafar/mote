@@ -28,8 +28,16 @@ export type MemoryValidationDetails={workContract?:'range-evaluation@1';candidat
 /** Schema-owned locations only; never echo arbitrary keys, bad values or model text. */
 const fields=new Set('memories domain relations admission layer reason scope attribution relatedMemoryIds coding kind applicability validation validFrom validUntil title statement uncertainty evidenceIds evidence id offset length quote citationIds coverage key state candidateIndexes contextRefs question prompt choices label answer capacity saturated memoryId fingerprint version summary memoryCandidates workRecords requirements constraints decisions results openItems artifactRefs events occurredAt actor status basis sourceTime ref actionCues'.split(' '));
 export function validationLocation(path:(string|number)[]){return path.every(key=>typeof key==='number'?Number.isSafeInteger(key)&&key>=0:fields.has(key))?path.reduce<string>((value,key)=>typeof key==='number'?value+'['+key+']':value+(value?'.':'')+key,''):'unrecognized_field';}
+function candidateEvidenceLimitAffectsCoverage(code:MemoryOutputValidationCode,details:MemoryValidationDetails){
+ return code==='schema'&&details.workContract==='range-evaluation@1'&&details.problem==='too_big'&&details.maxItems!==undefined&&
+  /^memories\[\d+\]\.(?:evidenceIds|evidence)$/.test(details.fieldPath??'');
+}
 export function memoryValidationInstruction(code:MemoryOutputValidationCode,details:MemoryValidationDetails,complete=true){
- const feedback=code==='coverage'&&details.problem==='missing_candidate_for_supporting_target'?
+ const feedback=candidateEvidenceLimitAffectsCoverage(code,details)?
+  'Revise the reported candidate together with every coverage row that references this candidate. Keep a sufficient set of exact original evidence within the limit and make the statement, evidenceIds, evidence entries and outer citations agree. Remove its candidate index from targets that no longer have exact verified support. Preserve other supported links and unrelated candidates. Keep a row for every target with an accurate assessment state. A fully inspected target with no selected candidates can use no_candidates. An unassessed target requires incomplete.':
+ code==='coverage'&&details.problem==='unsupported_candidate_for_target'?
+  'The reported candidate lacks verified original evidence within this target range. Remove the reported index from this row and preserve its exact target key and other supported links. A fully inspected target with no selected candidates can use no_candidates. An unassessed target requires incomplete.':
+ code==='coverage'&&details.problem==='missing_candidate_for_supporting_target'?
   'This coverage row omits a candidate whose verified evidence is within its target range. Add the reported candidate index to this row while preserving its exact target key and existing supported links. Keep the state consistent with the range-evaluation contract.':
  details.workContract==='range-evaluation@1'&&(code==='coverage'||code==='schema')?
   'The range-evaluation@1 output is {memories:[...],coverage:[{key,state:checked|no_candidates|incomplete|needs_context|needs_owner_input,candidateIndexes:[zero-based indices],reason,contextRefs:[],question?}]}. Do not return capacity or saturated. There is no candidate-count quota. Every target must be fully assessed and independently reviewed before checked/no_candidates; deliberate selection is permitted. Unassessed ranges require incomplete with a concrete reason; needs_context identifies useful additional authorized interpretation evidence. Preserve exact keys, candidate ownership and the owner-question contract. '+MEMORY_SCHEMA_FEEDBACK+' '+CODING_MEMORY_CONTRACT:code==='scope'&&details.problem==='missing_target_support'?'Every candidate needs an exact supporting quote wholly within a listed target range. Successfully read context may explain or complete a target claim, but a context-only claim cannot become an independent candidate. Remove that candidate or provide genuine target support; do not invent a target quote.':validationFeedback[code];
@@ -39,6 +47,8 @@ export function memoryValidationInstruction(code:MemoryOutputValidationCode,deta
 /** Only a host-owned existing row or exact quote can be repaired in isolation.
  * An identity change or a missing/cross-row contract goes through full validation. */
 export function memoryRepairScope(code:MemoryOutputValidationCode,details:MemoryValidationDetails):MemoryRepairScope|undefined {
+  // Changing the candidate's evidence can invalidate several target links.
+  if(candidateEvidenceLimitAffectsCoverage(code,details))return;
   const feedback=()=>memoryValidationInstruction(code,details,false);
   if(['quote_not_found','quote_ambiguous','quote_length_mismatch','quote_offset_mismatch','quote_range'].includes(code)&&
     details.candidateIndex!==undefined&&details.spanIndex!==undefined){
