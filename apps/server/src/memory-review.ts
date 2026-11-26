@@ -16,7 +16,11 @@ export function memoryReviewReceipt(result:QueryResult){return receipts.get(resu
 /** Set only by the host that invoked the native engine, never by captured content. */
 export type MemoryDraftOrigin='mote'|'native-engine';
 export type MemoryReviewInput=QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string;resumeReviewFromExtraction?:true};
-type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy|null;recipe?:MemoryRecipeBinding;taskInstructions?:string;fitsResumedReview?:(request:QueryInput)=>boolean;prepareResumedReview?:(request:QueryInput)=>QueryInput};
+export type PrepareMemoryReviewRequest=(input:QueryInput,context:{
+  resumedFromExtraction:boolean;
+  withExtractionContext?:QueryInput;
+})=>QueryInput;
+type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy|null;recipe?:MemoryRecipeBinding;taskInstructions?:string;prepareReviewRequest?:PrepareMemoryReviewRequest};
 
 export const memoryReviewSupportsEdits=(input:QueryInput)=>
   (input.taskContext?.memoryWork as {workContract?:MemoryWorkContract}|undefined)?.workContract==='range-evaluation@1'&&!input.processingImages?.length;
@@ -41,9 +45,8 @@ export function memoryReviewQuestion(input:MemoryReviewInput,strategy?:MemoryRev
  * validation and current deletion intent; only an actual review gets a run ID. */
 export async function reviewMemory({resumeReviewFromExtraction,...input}:MemoryReviewInput,draft:QueryResult,query:(input:QueryInput)=>Promise<QueryResult>,options?:ReviewOptions):Promise<QueryResult> {
   input.signal?.throwIfAborted();
-  const fitsResumedReview=options?.fitsResumedReview;
   let contextPagesRequired=false;
-  let resumedPages:NonNullable<QueryInput['evidenceRanges']>=[];
+  let extractionPages:NonNullable<QueryInput['evidenceRanges']>=[];
   const readContextOnDemand=memoryReviewSupportsEdits(input);
   // Re-disclose extraction's actual original reads to the independent reviewer;
   // the broader grant remains available for its own autonomous inspection.
@@ -54,10 +57,10 @@ export async function reviewMemory({resumeReviewFromExtraction,...input}:MemoryR
     if(readContextOnDemand){
       const seeds=input.evidenceRanges??[];
       contextPagesRequired=ranges.some(range=>!seeds.some(seed=>seed.id===range.id&&range.offset>=seed.offset&&range.offset+range.length<=seed.offset+seed.length));
-      if(resumeReviewFromExtraction&&fitsResumedReview){
+      if(options?.prepareReviewRequest){
         // Keep the original target prefix. Only exact, previously delivered
         // context that still fits one grant may be sent as additional seeds.
-        resumedPages=ranges.filter(range=>!seeds.some(seed=>seed.id===range.id&&range.offset<seed.offset+seed.length&&seed.offset<range.offset+range.length)&&
+        extractionPages=ranges.filter(range=>!seeds.some(seed=>seed.id===range.id&&range.offset<seed.offset+seed.length&&seed.offset<range.offset+range.length)&&
           grantedRanges.some(grant=>grant.id===range.id&&range.offset>=grant.offset&&range.offset+range.length<=grant.offset+grant.length));
       }
     }else if(extractionSeedScopeValid(ids,ranges))input={...input,evidenceIds:ids,evidenceRanges:ranges};
@@ -144,14 +147,14 @@ export async function reviewMemory({resumeReviewFromExtraction,...input}:MemoryR
   const question=memoryReviewQuestion(input,strategy,options?.taskInstructions);
   const contextReading=contextPagesRequired&&!readContextOnDemand?'\nThe extractor\'s additional original page ranges do not form a valid initial evidence scope for this review. This review starts with the original target seeds and retains the same context read grant. Use context_evidence to read the necessary original pages before retaining claims that rely on them. Quoted text in the untrusted draft and the extractor\'s reading do not establish that this reviewer read those originals. Only originals actually delivered in this review support its citations; additional context does not add targets or complete other coverage. If necessary context cannot be inspected, preserve the specific uncertainty or omit unsupported claims without inventing absence.':'';
   const compactReview=Boolean(memoryReviewSupportsEdits(input)&&!native&&value.memories.length&&!draftImages.length);
-  let request:QueryInput={...input,...(modelSessionId?{modelSessionId:modelSessionId+':review'}:{}),
+  const request:QueryInput={...input,...(modelSessionId?{modelSessionId:modelSessionId+':review'}:{}),
     ...(compactReview?{memoryReviewDraft:{answer:draft.answer,citationIds:draft.citations.map(citation=>citation.id)}}:{}),traceContext:{...traceContext,phase:'review'},taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:draftImages.length?{...value,imageViews:draftImages}:value},question:question+contextReading+memoryReviewRequestSuffix(input,{readBackground:contextPagesRequired&&readContextOnDemand,compact:compactReview})+(draftImages.length||input.processingImages?.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:'')};
-  if(resumeReviewFromExtraction&&options?.prepareResumedReview)request=options.prepareResumedReview(request);
-  if(resumedPages.length&&fitsResumedReview){
-    const withPages={...request,evidenceIds:[...new Set([...(request.evidenceIds??[]),...resumedPages.map(page=>page.id)])],evidenceRanges:[...(request.evidenceRanges??[]),...resumedPages]};
-    if(fitsResumedReview(withPages))request=withPages;
-  }
-  const reviewed=await query(request);
+  const withExtractionContext=extractionPages.length?{
+    ...request,evidenceIds:[...new Set([...(request.evidenceIds??[]),...extractionPages.map(page=>page.id)])],
+    evidenceRanges:[...(request.evidenceRanges??[]),...extractionPages],
+  }:undefined;
+  const prepared=options?.prepareReviewRequest?.(request,{resumedFromExtraction:resumeReviewFromExtraction===true,withExtractionContext});
+  const reviewed=await query(prepared??request);
   await validate(reviewed);
   // An explicit incomplete assessment is a recoverable failure, not a reusable
   // verdict. A later owner retry still needs a fresh independent review.

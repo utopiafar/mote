@@ -29,7 +29,7 @@ const diary=(beginning+middle+cat).padEnd(1024,'.');
 assert.equal(diary.indexOf(repair),256);assert.equal(diary.indexOf(cat),480);assert.equal(diary.length,1024);
 const instruction='Most of these recordings are my diary; a few are conversations or consultations with others. Filename dates are recording dates in UTC+8.';
 const otherText='A generated continuation confirms this diary retrospective covers 2024.';
-type Scenario='read-context'|'unread-quote'|'context-only-candidate'|'corrected-during-read'|'cross-original-context'|'review-only-context'|'unused-context-correction'|'unused-context-deletion'|'resume-review-capacity';
+type Scenario='read-context'|'unread-quote'|'context-only-candidate'|'corrected-during-read'|'cross-original-context'|'review-only-context'|'unused-context-correction'|'unused-context-deletion'|'resume-review-capacity'|'first-review-over-budget';
 type Call={phase:string|undefined;target:{id:string;offset:number;length:number}[];seedIds:string[];readRanges:{id:string;offset:number;length:number}[];contextReads:{id:string;offset:number;length:number}[]};
 
 async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
@@ -41,11 +41,12 @@ async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{
 async function fixture(t:TestContext,scenario:Scenario){
  const dataDir=mkdtempSync(join(tmpdir(),'mote-memory-context-http-')),token='generated-memory-context-owner';
  const resumeReview=scenario==='resume-review-capacity';
- const deployment=resumeReview
+ const nativeReview=resumeReview||scenario==='first-review-over-budget';
+ const deployment=nativeReview
   ?{model:'gpt-6.1-terra',provider:'codex',protocol:'codex-app-server' as const,apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'max' as const,maxTokens:65536}
   :{model:'generated-model',provider:'custom',protocol:'openai-completions' as const,baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,reasoningEffort:'high' as const};
- const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment,embedding:{model:'',baseUrl:'',apiKey:''},...(resumeReview?{codex:{memoryReviewContextWindow:400000}}:{})},diagnostics:{enabled:false}}};
- const selectedOther=resumeReview||['cross-original-context','review-only-context','unused-context-correction','unused-context-deletion'].includes(scenario);
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment,embedding:{model:'',baseUrl:'',apiKey:''},...(nativeReview?{codex:{memoryReviewContextWindow:resumeReview?400000:128001}}:{})},diagnostics:{enabled:false}}};
+ const selectedOther=nativeReview||['cross-original-context','review-only-context','unused-context-correction','unused-context-deletion'].includes(scenario);
  const calls:Call[]=[],rejections:{code:string;feedback:string}[]=[],spyFailures:string[]=[];
  let otherId='',otherCaptureId='',otherMaterialRef='',materialRef='',corrected=false,firstReviewFailed=false;
  let node:Awaited<ReturnType<typeof buildApp>>;
@@ -81,10 +82,13 @@ async function fixture(t:TestContext,scenario:Scenario){
    if(target.length===1&&target[0].offset===256&&target[0].length===256){
     assert.ok(input.evidenceReadRanges?.some(range=>range.id===member.id&&range.offset===0&&range.length===diary.length),'the frozen selected original remains readable after configured initial partitioning');
     const denied=await tool('context_evidence',{id:selectedOther?randomUUID():otherId,offset:0,length:12});assert.equal(denied.status,400,'an original outside this job selection has no read grant');
-    const resumed=resumeReview&&input.traceContext?.phase==='review'&&firstReviewFailed;
-    assert.equal(input.modelBudget?.contextWindow,resumed?400000:undefined,'the configured window applies at the resumed review boundary');
-    if(resumed)assert.equal(input.modelBudget?.maxTokens,128000,'the full native output allowance remains reserved');
-    const ordinary=await tool('evidence',{ids:[member.id],offset:0,length:header.length});assert.equal(ordinary.status,resumed?200:400,'the evidence tool can reread only seeds delivered to this attempt');
+    const prefilled=resumeReview&&input.traceContext?.phase==='review';
+    assert.equal(input.modelBudget?.contextWindow,prefilled?400000:undefined,'the complete review must fit the configured window before sharing pages');
+    if(prefilled){
+     assert.equal(input.modelBudget?.maxTokens,128000,'the full native output allowance remains reserved');
+     assert.deepEqual(input.evidenceRanges?.slice(0,target.length),target,'the original target remains the first seed');
+    }
+    const ordinary=await tool('evidence',{ids:[member.id],offset:0,length:header.length});assert.equal(ordinary.status,prefilled?200:400,'the evidence tool can reread only seeds delivered to this attempt');
     const prefix={quote:header,offset:0},event={quote:repair,offset:256};
     if(scenario==='unread-quote'&&input.traceContext?.phase==='extract'){
      const invalid=claim('Unread diary context','The owner repaired a blue bicycle in 2024',[prefix,event]);
@@ -93,7 +97,7 @@ async function fixture(t:TestContext,scenario:Scenario){
      const failure=await input.validateOutput!({...result,trace:bridge.trace,runId:randomUUID(),evidenceReadRanges:bridge.deliveredRanges});
      assert.ok(failure,'authorization alone never proves original text was delivered');assert.match(failure.code,/quote|scope/);rejections.push(failure);
     }
-    if(!resumed)await read(0,header.length);
+    if(!prefilled)await read(0,header.length);
     await read(480,cat.length);
     if(scenario==='context-only-candidate'&&input.traceContext?.phase==='extract'){
      const invalid=claim('Context-only diary header','The owner recorded a diary on 2025-02-03',[prefix]);
@@ -103,8 +107,8 @@ async function fixture(t:TestContext,scenario:Scenario){
      assert.ok(failure,'reading context cannot produce a separate card unrelated to this target');assert.match(failure.feedback,/exact supporting quote wholly within a listed target range/);assert.match(failure.feedback,/context-only claim/);rejections.push(failure);
     }
     memories.push(claim('Generated bicycle repair','The owner reported repairing a blue bicycle on 2024-04-20',[prefix,event]),claim('Generated toy-cat reaction','The toy cat looked displeased after claw trimming',[{quote:cat.slice(0,32),offset:480},{quote:cat,offset:480}]));
-    if(resumeReview||scenario==='cross-original-context'||scenario==='review-only-context'&&input.traceContext?.phase==='review'){
-     if(resumed)assert.equal(bridge.seedEvidence.find(record=>record.id===otherId)?.ocrText,otherText);
+    if(nativeReview||scenario==='cross-original-context'||scenario==='review-only-context'&&input.traceContext?.phase==='review'){
+     if(prefilled)assert.equal(bridge.seedEvidence.find(record=>record.id===otherId)?.ocrText,otherText);
      else {
       const context=await tool('context_evidence',{id:otherId,offset:0,length:otherText.length});assert.equal(context.status,200,JSON.stringify(context.body));assert.equal(context.body.data[0].ocrText,otherText);
       call.contextReads.push({id:otherId,offset:0,length:otherText.length});
@@ -147,11 +151,11 @@ async function fixture(t:TestContext,scenario:Scenario){
 
 const failureSummary=(f:Awaited<ReturnType<typeof fixture>>)=>JSON.stringify({spyFailures:f.spyFailures,batches:f.done.batches.map((batch:any)=>({offset:batch.evidenceRanges[0]?.offset,length:batch.evidenceRanges[0]?.length,status:batch.status,error:batch.errorCode,failures:batch.validationFailures}))});
 
-test('Central retries a capacity-limited independent review with the saved extraction and exact authorized pages',{timeout:30000},async t=>{
+test('Central shares exact authorized pages on the first independent review and reuses the same extraction on retry',{timeout:30000},async t=>{
  const f=await fixture(t,'resume-review-capacity');
  assert.equal(f.done.status,'failed',failureSummary(f));
  const failed=f.done.batches.find((batch:any)=>batch.phase==='review'&&batch.errorCode==='processing_limit');
- assert.ok(failed);
+ assert.ok(failed,failureSummary(f));
  const extraction=()=>f.node.store.db.prepare("SELECT step_id,output_hash FROM memory_phase_outputs WHERE batch_id=? AND phase='extract'").all(failed.id);
  const saved=extraction();
  assert.equal(saved.length,1);
@@ -167,10 +171,22 @@ test('Central retries a capacity-limited independent review with the saved extra
  assert.equal(reviewed.evaluation.assessedTargets,1);
  const middle=f.calls.filter(call=>call.target.length===1&&call.target[0].offset===256&&call.target[0].length===256);
  assert.deepEqual(middle.map(call=>call.phase),['extract','review','review']);
- assert.ok(middle[1].contextReads.some(range=>range.id===f.otherId));
- assert.ok(!middle[2].contextReads.some(range=>range.id===f.otherId));
+ assert.equal(middle[0].contextReads.length,3);
+ for(const call of middle.slice(1))assert.deepEqual(call.contextReads,[{id:middle[0].target[0].id,offset:480,length:cat.length}]);
  const memory=done.memoryIds.map((id:string)=>f.node.memories.get(id)).find((value:any)=>value.title==='Generated bicycle repair');
  assert.ok(memory.evidence.some((span:any)=>span.id===f.otherId&&span.quote===otherText));
+});
+
+test('Central keeps first-review pages on demand when the complete request exceeds the configured window',{timeout:30000},async t=>{
+ const f=await fixture(t,'first-review-over-budget');
+ assert.equal(f.done.status,'completed',failureSummary(f));
+ const middle=f.calls.filter(call=>call.target.length===1&&call.target[0].offset===256&&call.target[0].length===256);
+ assert.deepEqual(middle.map(call=>call.phase),['extract','review']);
+ assert.deepEqual(middle[1].contextReads,middle[0].contextReads);
+ assert.equal(middle[1].contextReads.length,3);
+ const reviewed=f.done.batches.find((batch:any)=>batch.evidenceRanges[0]?.offset===256&&batch.evidenceRanges[0]?.length===256);
+ assert.equal(reviewed.reviewReceipt.decision,'independent');
+ assert.equal(reviewed.evaluation.assessedTargets,1);
 });
 
 test('HTTP diary import preserves model-selected retrospective and continuation reads through configured range extraction, independent review and publication',{timeout:30000},async t=>{
