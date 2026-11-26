@@ -1,4 +1,4 @@
-import {memoryExtractionStrategySchema,memoryReviewStrategySchema,memoryRecipeSchema,memoryStrategyPin,type MemoryExtractionStrategy,type MemoryReviewStrategy,type MemoryStrategyRef,type MemoryRecipeBinding} from './memory-strategy-contract.js';
+import {memoryExtractionStrategySchema,memoryReviewStrategySchema,memoryRecipeSchema,type MemoryExtractionStrategy,type MemoryReviewStrategy,type MemoryStrategyRef,type MemoryStrategyPin,type MemoryRecipeBinding} from './memory-strategy-contract.js';
 import {freezeRecipe,recipeFingerprint} from './recipe-contract.js';
 import {memoryIntegrationStrategySchema,memoryIntegrationRecipeSchema,type MemoryIntegrationStrategy,type MemoryIntegrationBinding} from './memory-strategy-contract.js';
 import {defaultMemoryIntegrationStrategy,defaultMemoryIntegrationRecipe,defaultMemoryIntegrationReview} from './memory-integration-policy.js';
@@ -82,6 +82,11 @@ export class MemoryStrategies {
     const frozen=freezeRecipe(value) as T;this.identities.set(identity,fingerprint);map.set(id,frozen);
     return ()=>{if(map.get(id)===frozen)map.delete(id);};
   }
+  private pin(kind:string,value:MemoryStrategyRef):MemoryStrategyPin {
+    // Only installed, frozen definitions reach this method. Reuse the hash
+    // computed at registration when preparing each batch of a saved queue.
+    return {id:value.id,version:value.version,fingerprint:this.identities.get(kind+':'+key(value))!};
+  }
   registerExtraction(value:unknown){return this.install('extraction',this.extracts,memoryExtractionStrategySchema.parse(value));}
   registerReview(value:unknown){return this.install('review',this.reviews,memoryReviewStrategySchema.parse(value));}
   registerIntegration(value:unknown){return this.install('integration',this.integrators,memoryIntegrationStrategySchema.parse(value));}
@@ -94,7 +99,7 @@ export class MemoryStrategies {
   resolveIntegration(ref:MemoryStrategyRef){
     const recipe=this.integrationRecipes.get(key(ref));if(!recipe)throw Error('Memory integration recipe is not installed');
     const {integrate,review}=this.integrationComponents(recipe);
-    return {binding:{recipe:memoryStrategyPin(recipe),integrate:memoryStrategyPin(integrate),review:memoryStrategyPin(review)},integrate,review};
+    return {binding:{recipe:this.pin('integration-recipe',recipe),integrate:this.pin('integration',integrate),review:this.pin('review',review)},integrate,review};
   }
   resolvePinnedIntegration(binding:MemoryIntegrationBinding){const current=this.resolveIntegration(binding.recipe);if(recipeFingerprint(current.binding)!==recipeFingerprint(binding))throw Error('Memory integration definition changed');return current;}
   listIntegrations(){return [...this.integrationRecipes.values()].map(recipe=>{try{return {...recipe,available:true,binding:this.resolveIntegration(recipe).binding};}catch{return {...recipe,available:false};}});}
@@ -110,7 +115,7 @@ export class MemoryStrategies {
   resolve(ref:MemoryStrategyRef):ResolvedMemoryRecipe {
     const recipe=this.recipes.get(key(ref));if(!recipe)throw Error('Memory recipe is not installed');
     const {extract,review}=this.components(recipe);
-    return {binding:{recipe:memoryStrategyPin(recipe),extract:memoryStrategyPin(extract),review:review===null?null:memoryStrategyPin(review),...(recipe.requires?{requires:recipe.requires}:{}),workContract:recipe.workContract},extract,review};
+    return {binding:{recipe:this.pin('recipe',recipe),extract:this.pin('extraction',extract),review:review===null?null:this.pin('review',review),...(recipe.requires?{requires:recipe.requires}:{}),workContract:recipe.workContract},extract,review};
   }
   resolvePinned(binding:MemoryRecipeBinding):ResolvedMemoryRecipe {
     const current=this.resolve(binding.recipe);
