@@ -15,6 +15,7 @@ const asrIdentity=JSON.parse(asrProducer).request.identity;
 const asrHealth={protocol:'mote.funasr/1',execution:'local',asr:true,diarization:true,identity:asrIdentity};
 
 test('ASR shutdown reaps its actual normalization subprocess after recognizer exit',()=>{
+ execFileSync('ffmpeg',['-version'],{stdio:'pipe'});
  execFileSync('python3',[fileURLToPath(new URL('../../../scripts/test_media_worker_shutdown.py',import.meta.url))],{stdio:'pipe'});
 });
 

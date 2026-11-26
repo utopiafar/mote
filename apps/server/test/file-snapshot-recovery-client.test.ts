@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {LocalSourceManager} from '../../desktop/src/source-manager.js';
 import {defaultConfig} from '../../desktop/src/config.js';
+import {localVolumeIdentity} from '../../desktop/src/local-volume.js';
 import {DEFAULT_SOURCE_OPTIONS,type SourceOptions} from '../../desktop/src/source-types.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
@@ -185,19 +186,26 @@ test('narrowing read permission creates a current restricted revision without re
  await finishPipeline(String(current.capture_id));assert.equal(node.files.detail(String(current.capture_id)).job!.state,'succeeded');assert.equal(node.store.db.prepare('SELECT COUNT(*) n FROM file_snapshot_text').get()!.n,0);assert.equal(node.files.chunks(first.id).length,0);
 });
 
-test('same inode metadata rename creates a successor snapshot instead of settling an version with missing input',async()=>{
+test('metadata rename writes a new snapshot and only preserves lineage on a verified volume',async()=>{
  const {rename,stat}=await import('node:fs/promises');
  // The direct sync path scans before asking for recovery, then stages the scan.
  // It must preserve a metadata change even when the remote request matches bytes.
  for(const managedUploads of [false,true]){
   const selectedPath=managedUploads?join(root,'authorized-managed'):selected;if(managedUploads){await mkdir(selectedPath);await writeFile(join(selectedPath,'generated.txt'),'Generated current snapshot');}
+  const verifiedVolume=await localVolumeIdentity(selectedPath);
+  if(process.platform==='darwin')assert.ok(verifiedVolume,'the macOS fixture must exercise the verified-volume lineage');
   const value=new LocalSourceManager(join(root,managedUploads?'desktop-managed':'desktop'),{...defaultConfig(),deviceId:'bf07fd16-109f-47f9-b4f0-daf02649060d',serverUrl:'http://127.0.0.1:47832',token,syncMode:'manual'},'/never-real-calendar',managedUploads);managers.push(value);await value.initialize();await value.addFiles(selectedPath,snapshotOptions);const firstStart=paths.length;await value.sync(true);
   if(managedUploads){assert.equal(paths.length,firstStart,'UI local discovery has no transport before explicit flush');assert.equal(value.pendingStats().pendingRecords,1);await value.flushPending(new AbortController().signal);}
   assert.equal(value.pendingStats().pendingRecords,0);const sourceId=value.status()[0].source.id,first=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions WHERE source_id=?').get(sourceId)!,firstId=String(first.capture_id),firstManifest=String(first.manifest),input=JSON.parse(firstManifest);loseInput(firstId);await node.processing.tick();
   const originalPath=join(selectedPath,'generated.txt'),renamedPath=join(selectedPath,'renamed-generated.txt'),before=await stat(originalPath);await rename(originalPath,renamedPath);const after=await stat(renamedPath);assert.equal(after.ino,before.ino);assert.equal(after.dev,before.dev);
   const start=paths.length;await value.sync(true);if(managedUploads){assert.equal(paths.length,start,'UI rename discovery remains local');assert.equal(value.pendingStats().pendingRecords,1);await value.flushPending(new AbortController().signal);}assert.equal(value.pendingStats().pendingRecords,0);
   const rows=node.store.db.prepare('SELECT capture_id,manifest FROM file_versions WHERE source_id=? ORDER BY rowid').all(sourceId);assert.equal(rows.length,2,'unchanged bytes must not swallow changed file metadata');
-  assert.equal(rows[0].manifest,firstManifest);const current=rows[1],next=JSON.parse(String(current.manifest));assert.notEqual(current.capture_id,firstId);assert.notEqual(next.item.revision,input.item.revision);assert.equal(next.previousRevision,input.item.revision);assert.equal(next.sha256,input.sha256);assert.equal(next.item.externalId,input.item.externalId);assert.equal(next.item.title,'renamed-generated.txt');assert.ok(next.item.uri.endsWith('/renamed-generated.txt'));
+  assert.equal(rows[0].manifest,firstManifest);const current=rows[1],next=JSON.parse(String(current.manifest));assert.notEqual(current.capture_id,firstId);assert.notEqual(next.item.revision,input.item.revision);assert.equal(next.sha256,input.sha256);assert.equal(next.item.title,'renamed-generated.txt');assert.ok(next.item.uri.endsWith('/renamed-generated.txt'));
+  if(verifiedVolume){
+   assert.equal(next.previousRevision,input.item.revision);assert.equal(next.item.externalId,input.item.externalId);
+  }else{
+   assert.equal(next.previousRevision,null);assert.notEqual(next.item.externalId,input.item.externalId,'an unverified volume must not inherit file identity');
+  }
   assert.equal(paths.slice(start).some(path=>path.includes('/recovery/')&&path.endsWith('/uploads')),false,'changed metadata uses an ordinary successor manifest');
   await finishPipeline(String(current.capture_id));assert.equal(node.files.detail(String(current.capture_id)).job!.state,'succeeded');assert.equal(node.sources.getItem(next.sourceId,next.item.externalId)!.captureId,current.capture_id);
  }

@@ -88,6 +88,7 @@ test('tag-triggered release checks also avoid the broad server glob and manual p
   assert.equal(sandbox.if, gate);
   assert.match(sandbox.run, /apparmor_parser -r \/etc\/apparmor\.d\/bwrap-userns-restrict/);
   assert.match(sandbox.run, /bwrap --unshare-user --unshare-net --ro-bind/);
+  assert.match(sandbox.run, /apt-get install[^\n]*\bffmpeg\b/);
   assert.ok(steps.indexOf(sandbox) < steps.indexOf(native));
   assert.ok(!steps.some(step => /check:central|npm test|--suite/.test(step.run ?? '')));
 });
