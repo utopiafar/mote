@@ -288,7 +288,11 @@ test('an explicit conversation selection prepares indexed file descendants witho
  const reader=f.node.featureServices.evidenceReader,queryPage=reader.queryPage.bind(reader);let catalogReads=0;
  t.mock.method(reader,'queryPage',(...args:Parameters<typeof reader.queryPage>)=>{catalogReads++;return queryPage(...args);});
  const began=performance.now(),first=await f.start(turn),admissionMs=performance.now()-began;
- await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(first.taskId)?.state==='succeeded');
+ try{await until(()=>f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(first.taskId)?.state==='succeeded');}finally{
+   const statuses=f.node.store.db.prepare('SELECT kind,state,error,attempts FROM execution_steps WHERE operation_id=?').all('assistant.task:'+turn.draft.requestId);
+   const record=f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(first.taskId);
+   t.diagnostic(JSON.stringify({statuses,record,providerRequests:f.taskCalls,fixtureEvidenceIsChunk:f.node.files.chunks(fileId).some(chunk=>chunk.id===f.evidenceId),fixtureEvidenceIsMaterial:Boolean(f.node.store.db.prepare('SELECT 1 FROM material_evidence WHERE id=?').get(f.evidenceId)),admissionMs}));
+ }
  const [result]=await f.read(turn);assert.equal(result.result.answer,'Generated grounded answer');assert.equal(result.result.citations[0].id,f.evidenceId);
  const taskRecords=new TaskRecords(f.node.store),item=f.node.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch.item'").get('assistant.task:'+turn.draft.requestId)!;
  const frozen=taskRecords.input<{evidenceIds:string[]}>(String(item.id),taskRecords.get(String(item.id)).revision,()=>{});
