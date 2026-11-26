@@ -8,19 +8,37 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import sharp from 'sharp';
 import type {QueryInput} from '@mote/agent';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import {sha256} from '../src/evidence-store.js';
 import {materialId} from '../src/materials.js';
-import {fileAttachmentParent} from '../src/file-attachments.js';
+import {fileAttachmentParent,fileAttachmentVersions} from '../src/file-attachments.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 
 const token='generated-attachment-owner',headers={authorization:'Bearer '+token};
 const caption='I saved a generated engineering discussion because I wanted to revisit it.';
 const words='Generated participant described testing idempotent writes; implementation by the owner is unknown.';
 const location={width:8,height:8,polygon:[[1,1],[7,1],[7,5],[1,5]]};
+
+test('bulk attachment lookup follows the single lookup when a file ID also names a chunk',t=>{
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());
+ db.exec(`CREATE TABLE file_versions(capture_id TEXT PRIMARY KEY,manifest TEXT NOT NULL);
+  CREATE TABLE file_chunks(id TEXT PRIMARY KEY,capture_id TEXT NOT NULL);`);
+ const store={db} as Parameters<typeof fileAttachmentVersions>[0];
+ const parent='10000000-0000-4000-8000-000000000000',collision='20000000-0000-4000-8000-000000000000';
+ const insert=db.prepare('INSERT INTO file_versions VALUES (?,?)');
+ insert.run(parent,JSON.stringify({item:{document:{attachmentOf:{captureId:randomUUID(),fileId:randomUUID()}}}}));
+ insert.run(collision,'{}');
+ db.prepare('INSERT INTO file_chunks VALUES (?,?)').run(collision,parent);
+ const single=db.prepare(`SELECT v.capture_id,json_extract(v.manifest,'$.item.document.attachmentOf') parent
+  FROM file_versions v WHERE v.capture_id=? OR v.capture_id=(SELECT capture_id FROM file_chunks WHERE id=?) LIMIT 1`).get(collision,collision);
+ assert.equal(fileAttachmentVersions(store,[parent,collision,collision]).get(collision),single?.parent?single.capture_id:undefined);
+ assert.equal(fileAttachmentVersions(store,[parent]).get(parent),parent);
+});
+
 async function fixture(t:import('node:test').TestContext){
  const directory=mkdtempSync(join(tmpdir(),'mote-attachment-composition-')),config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'',allowUnauthenticatedLocal:true,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  let node:Awaited<ReturnType<typeof buildApp>>,ocrCalls=0;const modelCalls:QueryInput[]=[],failed=new Set<string>();
