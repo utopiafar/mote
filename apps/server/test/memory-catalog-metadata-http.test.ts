@@ -120,10 +120,12 @@ test('a complete 4097-member catalog receipt checks metadata without reading bod
   assert.equal(reader.memoryCatalogMetadataAllowed(attachmentReceipt),true,'the existing parent attachment authority is checked without its private body');
   assert.equal(fileAttachmentParent(node.store,child.captureId,true)?.record.id,parent.id);
   assert.equal(node.featureServices.evidenceReader.contextDependenciesAllowed([chunk]),true,'raw dependency metadata also preserves the existing attachment authority without loading either body');
+  assert.equal(node.featureServices.evidenceReader.contextDependenciesAllowed([child.captureId,chunk]),true,'mixed file and chunk dependencies share the live parent check');
  }finally{node.store.evidence=originals;node.materials.evidence=anchors;node.materials.read=text;node.memories.readEvidence=canonical;}
  node.materials.correctContext(material.id,material.revision,'third_party');assert.equal(reader.memoryCatalogMetadataAllowed(receipt),false,'the next synchronous check has no retained metadata cache');
  node.store.delete(parent.id);assert.equal(reader.memoryCatalogMetadataAllowed(attachmentReceipt),false);assert.equal(fileAttachmentParent(node.store,child.captureId,true),undefined);
  assert.equal(node.files.readableFile(child.captureId),undefined);assert.equal(node.files.readableFile(chunk),undefined);
  assert.equal(node.files.isCurrentEvidence(chunk),false);assert.equal(node.files.readableHistoricalFile(child.captureId),false);
  assert.equal(reader.contextDependenciesAllowed([chunk]),false,'parent deletion also revokes raw attachment chunk dependencies');
+ assert.equal(reader.contextDependenciesAllowed([child.captureId,chunk]),false,'a later check rereads the revoked parent for both identities');
 });

@@ -1277,6 +1277,7 @@ export class MemoryPipeline {
               if(workMembers&&canonical){const accounting=readMemoryWorkCoverage(result,workMembers,id=>this.options.memories.readEvidence([id])[0]?.ocrText);if(accounting.missing.length)throw new MemoryOutputValidationError('coverage','Every supplied target requires coverage',{workContract:contract});}
               // Let requests through between output validation and the durable draft write.
               await yieldTurn();
+              stageSignal.throwIfAborted();
               if(!observeCurrent(()=>{validateArtifacts();const readChunks=observedReadChunks(result);this.assertContextReadScope(job,batch,readChunks);this.retainReadDependencies(batch.id,readChunks);this.drafts.put(batch.id,draftKey,result,Boolean(selected)&&!native);} ))throw new ExecutionFailure('waiting','interrupted');
 
               }else{

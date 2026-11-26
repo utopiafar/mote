@@ -26,7 +26,7 @@ import {createHash} from 'node:crypto';
 import {ArchivedFileStore} from './archived-files.js';
 import {readEvidenceImage} from './evidence-image.js';
 import {memoryImageOriginal,type MemoryImageGrant} from './memory-image-grants.js';
-import {fileAttachmentAvailable,fileAttachmentParent} from './file-attachments.js';
+import {fileAttachmentAvailable,fileAttachmentParent,fileAttachmentVersions} from './file-attachments.js';
 import {materialSourcePin,materialSourceCurrent,type MaterialSourcePin} from './material-source-pin.js';
 import {authoredRecordProjection} from './material-organizers.js';
 import type {MemoryRecipeBinding} from './memory-strategy-contract.js';
@@ -857,14 +857,21 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const fileChunks=this.files?db.prepare(`SELECT c.id,c.capture_id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id
       JOIN file_versions v ON v.capture_id=c.capture_id JOIN json_each(?) wanted ON wanted.value=c.id WHERE a.current=1`)
       .all(encoded) as {id:string;capture_id:string}[]:[];
-    const captures=new Map(this.store.evidenceMetadata([...selected,...fileChunks.map(chunk=>chunk.capture_id)]).map(record=>[record.id,record]));
+    const captureIds=[...new Set([...selected,...fileChunks.map(chunk=>chunk.capture_id)])];
+    const captures=new Map(this.store.evidenceMetadata(captureIds).map(record=>[record.id,record]));
+    const attachments=this.files?fileAttachmentVersions(this.store,captureIds):undefined;
     const anchorMap=new Map(anchors.map(anchor=>[anchor.id,anchor])),chunkMap=new Map(fileChunks.map(chunk=>[chunk.id,chunk]));
     const derived=new Set(db.prepare(`SELECT wanted.value id FROM json_each(?) wanted WHERE
       EXISTS(SELECT 1 FROM memories m WHERE m.id=wanted.value) OR EXISTS(SELECT 1 FROM context_artifacts a WHERE a.id=wanted.value)
       OR EXISTS(SELECT 1 FROM file_artifacts a WHERE a.id=wanted.value)`).all(encoded).map(row=>String(row.id)));
     const metadata=new Map<string,MaterialRecord|undefined>(),materialAllowed=new Map<string,boolean>(),fileAllowed=new Map<string,boolean>(),attachmentAllowed=new Map<string,boolean>(),headDeleted=new Map<string,boolean>();
     const material=(ref:string)=>{if(!metadata.has(ref))metadata.set(ref,this.materials?.authorizationMetadata(ref));return metadata.get(ref);};
-    const attachment=(id:string)=>{if(!attachmentAllowed.has(id))attachmentAllowed.set(id,fileAttachmentAvailable(this.store,id,true));return attachmentAllowed.get(id)!;};
+    const attachment=(id:string)=>{
+      if(!attachments)return fileAttachmentAvailable(this.store,id,true);
+      const capture=attachments.get(id);if(!capture)return true;
+      if(!attachmentAllowed.has(capture))attachmentAllowed.set(capture,Boolean(fileAttachmentParent(this.store,capture,true)));
+      return attachmentAllowed.get(capture)!;
+    };
     const tombstone=(sourceId:string,externalId:string)=>{const key=JSON.stringify([sourceId,externalId]);if(!headDeleted.has(key))headDeleted.set(key,Boolean(db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,externalId)?.deleted));return headDeleted.get(key)!;};
     const allowMaterial=(current:MaterialRecord)=>{if(!materialAllowed.has(current.ref))materialAllowed.set(current.ref,this.materialExposure(current,'expand',policy,undefined,false,undefined,true)&&policy.allows({sourceKind:this.materialKind(current),sourceId:current.origin.sourceId,representation:'material',operation:'expand',phase:current.coverage.state}));return materialAllowed.get(current.ref)!;};
     const allowRecord=(record:CaptureRecord,attachmentId=record.id)=>{

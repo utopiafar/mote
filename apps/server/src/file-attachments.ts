@@ -9,6 +9,7 @@ import type {StatementSync} from 'node:sqlite';
 // Retain compiled SQL only. Attachment lineage and revocation are read anew
 // on every check, including checks inside a caller's current transaction.
 const availableStatements=new WeakMap<Store,StatementSync>();
+const attachmentVersionStatements=new WeakMap<Store,StatementSync>();
 const parentStatements=new WeakMap<Store,StatementSync>();
 
 /** Storage fact only: callers still check current evidence, attachment lineage
@@ -46,6 +47,18 @@ export function fileAttachmentAvailable(store:Store,id:string,metadataOnly=false
   FROM file_versions v WHERE v.capture_id=? OR v.capture_id=(SELECT capture_id FROM file_chunks WHERE id=?) LIMIT 1`);availableStatements.set(store,statement);}
  const row=statement.get(id,id);
  return !row?.parent||Boolean(fileAttachmentParent(store,String(row.capture_id),metadataOnly));
+}
+
+/** Map only the selected identities that need a live attachment-parent check. */
+export function fileAttachmentVersions(store:Store,ids:readonly string[]):Map<string,string> {
+ if(!ids.length)return new Map();
+ let statement=attachmentVersionStatements.get(store);
+ if(!statement){statement=store.db.prepare(`SELECT wanted.value id,v.capture_id,json_extract(v.manifest,'$.item.document.attachmentOf') parent
+  FROM json_each(?) wanted JOIN file_versions v ON v.capture_id=(SELECT exact.capture_id FROM file_versions exact
+    WHERE exact.capture_id=wanted.value OR exact.capture_id=(SELECT capture_id FROM file_chunks WHERE id=wanted.value) LIMIT 1)`);
+  attachmentVersionStatements.set(store,statement);}
+ const rows=statement.all(JSON.stringify(ids));
+ return new Map(rows.filter(row=>row.parent).map(row=>[String(row.id),String(row.capture_id)]));
 }
 
 /** Explicit admission composes archive retention with the existing file pipeline.
