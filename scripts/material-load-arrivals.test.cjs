@@ -12,7 +12,7 @@ test('independent schedule survives held ACK, producer-only outage and accepted 
  const root=mkdtempSync(join(tmpdir(),'mote-arrivals-')); // Kept as private diagnostic evidence, including failures.
  const fixture=makeFixture('interactive-400'),fixturePath=join(root,'fixture.json'),ready=join(root,'ready.json'),token='generated-only-token-'.repeat(3);
  writeFileSync(fixturePath,JSON.stringify(fixture),{mode:0o600});
- const config={dataDir:join(root,'vault'),token,tokenPath:join(root,'token'),host:'127.0.0.1',port:0,maxExportBytes:1000000,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false};
+ const config={dataDir:join(root,'vault'),token,tokenPath:join(root,'token')};
  const configPath=join(root,'config.json');writeFileSync(configPath,JSON.stringify({config,fixturePath,ready}),{mode:0o600});
  const child=spawn(process.execPath,[resolve('scripts/material-load-fixture-server.mjs'),configPath],{stdio:['ignore','pipe','pipe'],env:{PATH:process.env.PATH,HOME:process.env.HOME}});let errors='';child.stderr.on('data',b=>{errors+=b;writeFileSync(join(root,'server-stderr.log'),errors,{mode:0o600});});child.stdout.resume();
  let proxy,run,release;const held=new Promise(r=>{release=r;});t.after(async()=>{release();run?.stop();await proxy?.close();child.kill('SIGTERM');await Promise.race([new Promise(r=>child.once('exit',r)),delay(3000)]);if(child.exitCode===null)child.kill('SIGKILL');});

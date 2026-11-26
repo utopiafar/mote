@@ -35,10 +35,11 @@ async function start(name){
   assert.equal((await health()).code,0,'the Docker health command must check the startup port while a different port is saved');
   return async(method,path,payload)=>{const response=await fetch(base+path,{method,headers:{authorization:'Bearer '+token,'x-mote-ingress-version':'2',...(payload===undefined?{}:{'content-type':'application/json'})},...(payload===undefined?{}:{body:JSON.stringify(payload)})});const body=await response.json();assert.ok(response.ok,`${method} ${path}: ${response.status}`);return body;};
 }
-async function stop(name){
+async function stop(name,directLog){
   const running=child;child=undefined;const closed=new Promise(resolve=>running.once('close',(code,signal)=>resolve({code,signal})));running.kill('SIGTERM');
   const timer=delay(30000,undefined,{ref:false}).then(()=>({code:'timeout'}));const exit=await Promise.race([closed,timer]);if(exit.code==='timeout')running.kill('SIGKILL');assert.equal(exit.code,0);
-  assert.ok((await supervisorLogs()).includes('server.stopped'));
+  const shutdownLog=directLog?await readFile(directLog,'utf8'):await supervisorLogs();
+  assert.ok(shutdownLog.includes('server.stopped'));
   assert.equal(await stat(join(output,name,'server.pid')).then(()=>true,()=>false),false,'PID lock must be removed');
   assert.equal(await stat(runtimeListenerPath(join(output,name+'.yaml'))).then(()=>true,()=>false),false,'matching runtime locator must be removed');
   assert.equal((await command(process.execPath,[join(repository,'apps/server/dist/healthcheck.js')],{env:{...env,MOTE_CONFIG_FILE:join(output,name+'.yaml')}})).code,1,'a stopped listener cannot remain healthy');
@@ -62,7 +63,7 @@ async function bootstrapConsistency() {
   assert.equal(Number(await readFile(join(dataDir,'server.pid'),'utf8')),runtime.pid,'PID lock belongs to the initialized data directory');
   const response=await fetch(base+'/api/configuration',{headers:{authorization:'Bearer '+token}}),view=await response.json();assert.equal(response.status,200);assert.equal(view.storage.dataDir,dataDir);assert.equal(view.domains.find(domain=>domain.id==='server').effective.port,port);
   assert.equal((await command(process.execPath,[join(repository,'apps/server/dist/healthcheck.js')],{env:{...env,MOTE_CONFIG_FILE:file}})).code,0);
-  await stop(name);report.checks.push('controlled YAML change between pure load and ConfigService initialization keeps credential directory, PID lock, Store and listener on one boot document');
+  await stop(name,log);report.checks.push('controlled YAML change between pure load and ConfigService initialization keeps credential directory, PID lock, Store and listener on one boot document');
 }
 try{
   await bootstrapConsistency();
