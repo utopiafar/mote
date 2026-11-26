@@ -50,13 +50,16 @@ async function bootFixture(scenario: string) {
       assert.equal(dom.window.document.getElementById('root')!.childElementCount, 0);
     }
     releaseEnglish();
-    await until(() => !!dom.window.document.querySelector('.welcome'));
+    await until(() => !!dom.window.document.querySelector('[data-session="signed-out"] .settings-sign-in button'));
     const {sourceLabels} = await import('../src/Metadata');
     const i18n = await import('@mote/shared/i18n');
     const expected = locale === 'zh-CN' ? '文件' : scenario === 'japanese' ? 'ファイル' : 'File';
     assert.equal(sourceLabels.file, expected, 'the real main dependency evaluates module-level text after catalogs load');
     assert.equal(dom.window.document.documentElement.lang, locale);
-    assert.ok(dom.window.document.body.textContent!.includes(i18n.translate(locale, '由你决定留下什么')));
+    const loginActions = dom.window.document.querySelectorAll('.settings-sign-in button');
+    assert.equal(loginActions.length, 1, 'signed-out boot exposes one login action');
+    assert.equal(loginActions[0]!.textContent?.trim(), i18n.translate(locale, '登录 Mote'));
+    assert.equal(dom.window.document.querySelector('.workspace-sidebar'), null);
     assert.deepEqual(catalogs.sort(), locale === 'zh-CN' ? [] : locale === 'en' ? ['en'] : ['en', 'ja']);
     dom.window.localStorage.setItem('mote.language', 'ru');
     assert.equal(i18n.getLocale(), locale, 'negotiation stays fixed until the existing language reload');

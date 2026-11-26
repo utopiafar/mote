@@ -92,9 +92,12 @@ test('model selection and override input keep draft edit ordering, live settings
  assert.match(selector.textContent!,/Generated refreshed provider/,'memo still consumes real shared resource updates');assert.equal(version(),expected,'settings refresh does not edit the draft');
  await act(async()=>f.input().focus());await f.press('Enter');
  assert.equal(posts.length,1);assert.equal(posts[0].question,'Generated selected-model question');assert.equal(posts[0].modelProfileId,'generated-second-provider');assert.equal(posts[0].modelOverride,'generated-final-override');
- assert.equal(f.input().disabled,true);
+ assert.equal(f.input().readOnly,true);
+ assert.equal(f.d.activeElement,f.input(),'the pending send keeps keyboard focus in the composer');
+ assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,true);
  await act(async()=>accepted.resolve(receipt(posts[0])));
- assert.equal(f.input().value,'');assert.equal(f.input().disabled,false);
+ assert.equal(f.input().value,'');assert.equal(f.input().readOnly,false);
+ assert.equal(f.d.activeElement,f.input(),'the composer becomes editable without a second click');
  const nextTransport=apiWith(()=>({items:[]})),next={...nextTransport,request:async(path:string,init?:RequestInit)=>path==='/api/model-settings'?settings:nextTransport.request(path,init)} as Api;
  await f.render(next);await f.options();const oldVersion=version(),nextVersion=version(next);await inputModel('generated-next-owner-model');
  assert.equal(version(next),nextVersion+1,'the stable callback belongs to the new API');assert.equal(version(),oldVersion,'the prior owner receives no new draft edit');
@@ -107,12 +110,13 @@ test('composer keeps current controlled input, IME, Shift+Enter, submit and a la
  assert.equal(f.d.querySelector<HTMLButtonElement>('.send-button')!.disabled,false);
  assert.equal((await f.press('Enter',{isComposing:true})).defaultPrevented,false);assert.equal(posts.length,0);
  assert.equal((await f.press('Enter',{shiftKey:true})).defaultPrevented,false);assert.equal(posts.length,0);
- assert.equal((await f.press('Enter')).defaultPrevented,true);assert.equal(posts.length,1);assert.equal(posts[0].question,'Generated 草稿');assert.equal(f.input().value,'  Generated 草稿  ');assert.equal(f.input().disabled,true);
+ assert.equal((await f.press('Enter')).defaultPrevented,true);assert.equal(posts.length,1);assert.equal(posts[0].question,'Generated 草稿');assert.equal(f.input().value,'  Generated 草稿  ');assert.equal(f.input().readOnly,true);
+ await f.press('Enter');assert.equal(posts.length,1,'another Enter cannot duplicate a pending send');
  await f.type('  Generated later draft  ');
  current=receipt(posts[0]);
  await act(async()=>admission.resolve(current));
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60));});
- assert.equal(f.input().value,'  Generated later draft  ');assert.equal(f.input().disabled,false);
+ assert.equal(f.input().value,'  Generated later draft  ');assert.equal(f.input().readOnly,false);
  assert.equal(f.d.querySelector('.conversation-pending')?.textContent?.includes('已接收'),true);
 });
 
