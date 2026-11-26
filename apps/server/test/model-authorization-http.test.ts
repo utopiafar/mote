@@ -6,6 +6,7 @@ import {sha256,EvidenceStore as Store} from '../src/evidence-store.js';
 import {fixtureFilePolicy} from './fixtures/file-policy.js';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -167,7 +168,15 @@ test('historical audio batch confirmation authorizes only previewed originals ac
  assert.equal(bodies.length,0);
  const confirmed=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(confirmed.statusCode,200,confirmed.body);assert.equal(confirmed.json().queued,2);
  const duplicate=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(duplicate.statusCode,200,duplicate.body);assert.deepEqual(duplicate.json(),confirmed.json());
- await f.restart();assert.doesNotThrow(()=>f.node.processing.reprocessTargets({token:preview.json().token}));const afterRestart=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(afterRestart.statusCode,200,afterRestart.body);assert.deepEqual(afterRestart.json(),confirmed.json());await f.node.processing.tick();
+ await f.restart();assert.doesNotThrow(()=>f.node.processing.reprocessTargets({token:preview.json().token}));const afterRestart=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(afterRestart.statusCode,200,afterRestart.body);assert.deepEqual(afterRestart.json(),confirmed.json());
+ const deadline=Date.now()+5000,ids=[first.id,second.id];
+ for(;;){
+  await f.node.processing.tick();
+  const jobs=ids.map(id=>f.node.files.detail(id).job);
+  if(jobs.every(job=>job?.state==='succeeded'))break;
+  assert.ok(Date.now()<deadline,'Both previewed files must finish after restart: '+JSON.stringify(jobs));
+  await delay(10);
+ }
  assert.equal(bodies.length,2);assert.deepEqual(new Set(bodies.map(body=>body.toString())),new Set([first.bytes.toString(),second.bytes.toString()]));
  for(const file of [first,second])assert.equal(f.node.files.chunks(file.id)[0].ocrText,'Generated batch transcript');
  assert.equal(f.node.files.chunks(later.id).length,0);assert.equal(f.node.modelAuthorization.view().state,'off');

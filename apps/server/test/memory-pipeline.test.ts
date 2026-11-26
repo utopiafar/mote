@@ -618,7 +618,15 @@ test('400 generated days imported individually and in batches share one durable 
   for(const input of inputs.slice(0,200)){const record=await sources.upsert('generated',input);t.signal.throwIfAborted();ids.push(record.id);}
   for(let offset=200;offset<400;offset+=100){await sources.upsertBatch('generated',inputs.slice(offset,offset+100));t.signal.throwIfAborted();for(const input of inputs.slice(offset,offset+100))ids.push(sources.getItem('generated',input.externalId)!.captureId);}
   engine=new ExecutionEngine(store);const calls:string[]=[];let peak=0,active=0;
-  pipeline=fixtureMemoryPipeline({executor:engine,store,memories,batchCharacters:256,concurrency:()=>3,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{calls.push(input.traceContext!.jobId!);active++;peak=Math.max(peak,active);await new Promise(r=>setImmediate(r));active--;return empty();}}});
+  // An admission spans separate event-loop turns. Hold the first model calls
+  // long enough to prove that the executor can fill all three available slots.
+  const firstWave=Promise.withResolvers<void>();
+  t.signal.addEventListener('abort',firstWave.resolve,{once:true});
+  pipeline=fixtureMemoryPipeline({executor:engine,store,memories,batchCharacters:256,concurrency:()=>3,models:{model:()=> 'fixture',configured:()=>true},phases:{query:async input=>{
+   calls.push(input.traceContext!.jobId!);active++;peak=Math.max(peak,active);
+   if(calls.length===3)firstWave.resolve();
+   try{await firstWave.promise;await nextTurn();return empty();}finally{active--;}
+  }}});
   const a=pipeline.create({evidenceIds:ids.slice(0,200)}),b=pipeline.create({evidenceIds:ids.slice(200)});
   const completed=await Promise.all([pipeline.run(a.id),pipeline.run(b.id)]);t.signal.throwIfAborted();assert.ok(completed.every(job=>job.status==='completed'));
   assert.equal(calls.length,800);assert.equal(peak,3);assert.ok(calls.slice(0,6).includes(a.id)&&calls.slice(0,6).includes(b.id));

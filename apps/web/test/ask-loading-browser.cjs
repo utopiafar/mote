@@ -31,7 +31,7 @@ const record={id:'11111111-1111-4111-8111-111111111111',deviceId:'generated-devi
 
 async function run(){
  assert.ok(existsSync(join(web,'index.html')),'Build the Web bundle first: npm run build:central');
- await app.whenReady();const token=randomBytes(32).toString('hex');let cursor=0;
+ await app.whenReady();const token=randomBytes(32).toString('hex');let cursor=0,libraryRevision=1;
  const json=(res,value)=>{if(!res.destroyed){res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));}};
  server=createServer(async(req,res)=>{
   const url=new URL(req.url,'http://fixture.invalid'),path=url.pathname;
@@ -59,7 +59,7 @@ async function run(){
     }
     if(path==='/api/actions/by-evidence/'+record.id){json(res,{items:[]});return;}
     if(path==='/api/memories'){json(res,{items:[],nextCursor:null});return;}
-    if(path==='/api/nav-state'){json(res,{revisions:{library:'1',cards:'1',commitments:'1',matters:'1',memory:'1',sources:'1',plugins:'1'},badges:{ideas:0,connections:false}});return;}
+    if(path==='/api/nav-state'){json(res,{revisions:{library:String(libraryRevision),cards:'1',commitments:'1',matters:'1',memory:'1',sources:'1',plugins:'1'},badges:{ideas:0,connections:false}});return;}
     if(path==='/api/plugins/presentation'){json(res,{instances:[]});return;}
     if(path==='/api/connectors/status'){json(res,{items:[]});return;}
     if(path==='/api/configuration'){json(res,{profile:'generated-fixture',groups:[]});return;}
@@ -70,7 +70,7 @@ async function run(){
     const collection=path==='/api/media-activity'?'media':path==='/api/activity'?'activity':path==='/api/capture-browser/timeline'?'records':null;
     if(collection){
      counts[collection]++;collectionPaths[collection].push(req.url);pending.add(req);
-     try{if(counts[collection]>1)await ({media:mediaRefresh,activity:activityRefresh,records:recordsRefresh})[collection].promise;await delay(300);json(res,collection==='media'?media:collection==='activity'?activity:{items:[{type:'record',day:'2026-10-01',record}],nextCursor:null});}
+     try{if(counts[collection]>1)await ({media:mediaRefresh,activity:activityRefresh,records:recordsRefresh})[collection].promise;await delay(300);json(res,collection==='media'?media:collection==='activity'?activity:{items:[{type:'record',day:'2026-10-01',firstAt:when,record}],nextCursor:null,revision:String(libraryRevision)});}
      finally{pending.delete(req);}return;
     }
     if(path==='/api/operations/changes'){counts.feed++;const hint=hints.shift();if(hint){cursor++;consumed.push(hint);}json(res,{ids:hint?[hint]:[],cursor,hasMore:false,reset:Number(url.searchParams.get('since'))>cursor});return;}
@@ -150,13 +150,15 @@ async function run(){
  assert.equal(await js(`document.querySelector('.chat-page textarea').value`),draft);
  await until(()=>!chatPending(),'explicit refresh completes');
 
- // Exercise returning to a foreground Web window: it invalidates resources and advances both
- // the rolling time URL and timeline revision before the replacement read ends.
- async function checkLibraryRefresh({id,selector,row,text,release,rolling}){
+ // Returning to a foreground Web window advances the rolling range. The
+ // timeline only requests records when Central reports a changed revision.
+ async function checkLibraryRefresh({id,selector,row,text,release,rolling,beforeResume}){
   await js(`location.hash=${JSON.stringify('#/library?view='+id)}`);
   await until(()=>counts[id]&&js(`document.querySelector(${JSON.stringify(selector)})?.textContent.includes(${JSON.stringify(text)})`),'loaded '+id+' collection');
   const initialPath=collectionPaths[id][0],before=counts[id];
-  await js(`(()=>{const panel=document.querySelector(${JSON.stringify(selector)}),row=document.querySelector(${JSON.stringify(row)});if(!panel||!row)throw Error('Missing generated collection content');const state=window.__frontendRefreshCheck={panel,row,violations:[],active:true};const check=()=>{if(!state.active)return;const loading=[...document.querySelectorAll('.library-content [role="status"],.library-content .loading')].filter(element=>element.getClientRects().length&&/正在读取|正在找回/.test(element.textContent)).map(element=>element.textContent);const reasons=[...loading,...!panel.isConnected||document.querySelector(${JSON.stringify(selector)})!==panel?['loaded panel replaced']:[],...!row.isConnected||document.querySelector(${JSON.stringify(row)})!==row?['loaded row replaced']:[]];if(reasons.length)state.violations.push(reasons);};state.observer=new MutationObserver(check);state.observer.observe(document.body,{subtree:true,childList:true,attributes:true});state.timer=setInterval(check,16);check();})()`);await requestRefresh();
+  await js(`(()=>{const panel=document.querySelector(${JSON.stringify(selector)}),row=document.querySelector(${JSON.stringify(row)});if(!panel||!row)throw Error('Missing generated collection content');const state=window.__frontendRefreshCheck={panel,row,violations:[],active:true};const check=()=>{if(!state.active)return;const loading=[...document.querySelectorAll('.library-content [role="status"],.library-content .loading')].filter(element=>element.getClientRects().length&&/正在读取|正在找回/.test(element.textContent)).map(element=>element.textContent);const reasons=[...loading,...!panel.isConnected||document.querySelector(${JSON.stringify(selector)})!==panel?['loaded panel replaced']:[],...!row.isConnected||document.querySelector(${JSON.stringify(row)})!==row?['loaded row replaced']:[]];if(reasons.length)state.violations.push(reasons);};state.observer=new MutationObserver(check);state.observer.observe(document.body,{subtree:true,childList:true,attributes:true});state.timer=setInterval(check,16);check();})()`);
+  beforeResume?.();
+  await requestRefresh();
   await until(()=>counts[id]>before&&(!rolling||collectionPaths[id].some(path=>path!==initialPath))&&[...pending].some(req=>req.url.startsWith(initialPath.split('?')[0])),'delayed global '+id+' refresh');
   assert.equal(await js(`window.__frontendRefreshCheck.row.isConnected&&window.__frontendRefreshCheck.panel.isConnected`),true,'global '+id+' refresh retains loaded content while pending');
   release.release();
@@ -168,7 +170,7 @@ async function run(){
  }
  await checkLibraryRefresh({id:'media',selector:'.media-activity-panel',row:'.media-app-row',text:'Generated player',release:mediaRefresh,rolling:true});
  await checkLibraryRefresh({id:'activity',selector:'.activity-panel',row:'.special-activity-row',text:'Generated editor',release:activityRefresh,rolling:true});
- await checkLibraryRefresh({id:'records',selector:'.library-captures',row:'.library-record',text:'Generated archived note',release:recordsRefresh,rolling:false});
+ await checkLibraryRefresh({id:'records',selector:'.library-captures',row:'.library-record',text:'Generated archived note',release:recordsRefresh,rolling:false,beforeResume:()=>libraryRevision++});
  // The default route opens the chat and keeps global retrieval available.
  await js(`location.hash=''`);
  await until(()=>js(`document.querySelector('[data-page="ask"][data-session="ready"] .chat-page[aria-busy="false"]')`),'default main chat');

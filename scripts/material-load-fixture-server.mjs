@@ -2,7 +2,7 @@
 import {readFileSync,writeFileSync,renameSync,appendFileSync,realpathSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import assert from 'node:assert/strict';
-import {join,resolve,relative} from 'node:path';
+import {dirname,join,resolve,relative} from 'node:path';
 import fixtureHelpers from './material-load-fixture.cjs';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../apps/server/dist/app.js';
@@ -32,7 +32,13 @@ if(recoveryOnly){
  recoveryDeadline=setTimeout(()=>{writeFileSync(join(config.dataDir,'recovery-deadline.json'),JSON.stringify({failed:true,reason:'120-second recovery deadline'}),{mode:0o600});void shutdown(1);},120000);
 }
 
-node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:interactive,close:async()=>{},query:async input=>{
+const configuration={
+ path:join(dirname(process.argv[2]),'mote.yaml'),
+ privateCredential:{token:config.token,tokenPath:config.tokenPath},
+ initialDocument:{version:1,revision:0,server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},storage:{dataDir:config.dataDir,maxExportBytes:1000000},
+  execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent',traceEnabled:false}},
+};
+node=await buildApp(configuration,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:interactive,close:async()=>{},query:async input=>{
  if(recovery)return recovery.query();
  if(!interactive||!input.traceContext?.jobId)throw Error('Unexpected query in generated UI fixture');
  if(calls.length>=fixture.expectations.stubCallLimit)throw Error('Frozen stub call budget exceeded');
