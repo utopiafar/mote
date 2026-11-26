@@ -17,7 +17,6 @@ const all={kind:'all' as const},ownerAnswer='Generated owner choice: show the sh
 type Envelope={request:string;untrustedTaskContext?:Record<string,any>;untrustedEvidence?:any[]};
 type Request={messages:{role:string;content:string}[];tools?:{function:{name:string}}[]};
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
-async function until(check:()=>boolean){const end=Date.now()+10000;while(!check()){assert.ok(Date.now()<end,'the generated suggestion task must settle');await new Promise(resolve=>setTimeout(resolve,10));}}
 
 /** Real Home HTTP command, queue, query assembly and provider transport. Only
  * the loopback provider is generated; no actual owner profile is opened. */
@@ -72,7 +71,17 @@ async function fixture(t:TestContext){
  const start=async(goal?:string)=>{const current=await home(),command={requestId:randomUUID(),goal:goal??current.title,scope:current.taskScope,cardId:current.id,expectedRevision:current.revision};return {response:await api('POST','/api/assistant/tasks',command),command};};
  const read=async(id:string)=>{const response=await api('GET','/api/assistant/tasks/'+id+'?'+new URLSearchParams({scope:JSON.stringify(all)}));assert.equal(response.statusCode,200,response.body);return response.json();};
  const state=(id:string)=>String(node.store.db.prepare('SELECT state FROM task_records WHERE id=?').get(id)?.state);
- const settled=async(id:string)=>{await until(()=>['succeeded','blocked','failed','stale'].includes(state(id)));return read(id);};
+ const settled=async(id:string)=>{
+  const deadline=performance.now()+10000;
+  while(!['succeeded','blocked','failed','stale'].includes(state(id))){
+   if(performance.now()>=deadline){
+    const steps=node.store.db.prepare('SELECT kind,state,error,attempts,available_at FROM execution_steps WHERE operation_id=(SELECT operation_id FROM task_records WHERE id=?) ORDER BY rowid').all(id);
+    assert.fail(`Generated suggestion task did not settle: ${JSON.stringify({state:state(id),providerRequests:requests.length,steps})}`);
+   }
+   await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  return read(id);
+ };
  return {get node(){return node;},requests,api,calls,context,outside,card,publication,publish,home,start,read,state,settled,entered:entered.promise,
   setReads(ids:string[]){readIds=ids;},askChoice(){askChoice=true;},hold(){hold=true;},release(){hold=false;held.resolve();},
   async restart(){await node.app.close();hold=false;held.resolve();node=await build();}};

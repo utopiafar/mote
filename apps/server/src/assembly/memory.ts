@@ -260,10 +260,13 @@ export function memoryRuntime(dependencies:MemoryRuntimeDependencies){
     authorizeDeletionEvidence:(input,ids)=>memoryPhasePipeline.pipeline.inputs.assertDeletion(ids,input.modelProfileId),
     snapshot:(input,result)=>{
       const ids=input.evidenceReadRanges?[...new Set([...(input.evidenceIds??[]),...memoryReadRanges(result,input.evidenceRanges??[],input.evidenceReadRanges).map(range=>range.id)])]:input.evidenceIds??[];
-      if(ids.some(id=>!memories.isCurrentEvidence(id)))throw new StoreError('Memory evidence changed during review',409);
+      const records=memories.readEvidenceIfCurrent(ids);
+      if(!records)throw new StoreError('Memory evidence changed during review',409);
+      const visible=new Set(records.map(record=>record.id));
+      if(ids.some(id=>!visible.has(id)))throw new StoreError('Memory evidence changed during review',409);
       // Include full original metadata (speaker, source, device, dates, version),
       // not just quote text. Credentials/config are hashed, never retained.
-      return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
+      return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,records]));
     }},ownerQuestions,materials,
     scheduling:{automatic:lifecycleRuntime.automatic,drain:async()=>{await sourcePipelines.drainMemory(memoryPipeline,agent.configured);await memoryPipeline.tickInputs();}}});
   memoryPhasePipeline.prepare();memoryPhasePipeline.start();

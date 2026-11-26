@@ -261,9 +261,9 @@ export class MemoryStore {
       const evidenceIds=[...new Set([...Object.keys(options.expectedFingerprints??{}),...result.citations.map(c=>c.id)])];
       const evidence=this.readEvidence(evidenceIds),evidenceById=new Map(evidence.map(record=>[record.id,record])),current=new Map<string,boolean>();
       // This guard is synchronous: reuse its canonical read while checking the
-      // live resolver once per ID. Later validation/commit calls read afresh.
-      const materialUris=this.materialEvidenceUris(evidence);
-      for(const record of evidence)if(!current.has(record.id))current.set(record.id,this.recordIsCurrent(record,undefined,materialUris));
+      // whole set against the live resolver. Later validation/commit calls read afresh.
+      const materialUris=this.materialEvidenceUris(evidence),currentIds=this.currentEvidenceBatch?.([...evidenceById.keys()]);
+      for(const record of evidence)if(!current.has(record.id))current.set(record.id,this.recordIsCurrent(record,currentIds,materialUris));
       const fingerprints=evidenceIds.map(id=>{const record=evidenceById.get(id);return [id,record?memoryEvidenceFingerprint(record):null,current.get(id)??false];});
       const related=[...new Set([...(options.relatedMemoryIds??[]),...parsed.data.memories.flatMap(m=>(m.relations??[]).map(r=>r.memoryId))])].map(id=>this.get(id));
       let imageReads:ReturnType<typeof memoryImageReadReceipts>;

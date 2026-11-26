@@ -1,6 +1,6 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {constants,existsSync} from 'node:fs';
+import {constants,existsSync,realpathSync} from 'node:fs';
 import {chmod,mkdtemp,open,realpath,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
@@ -67,6 +67,13 @@ export const defaultPythonSandbox:PythonSandboxLauncher=(workspace,python,runner
   if(process.platform==='linux'){
     const bwrap=['/usr/bin/bwrap','/bin/bwrap'].find(existsSync);if(!bwrap)return;
     const bindings=[...new Set(roots)].flatMap(root=>['--ro-bind',root,root]);
+    // On merged-/usr systems the ELF loader still uses /lib64 (or /lib).
+    // Recreate only aliases to runtime directories already available in the sandbox.
+    for(const alias of ['/bin','/lib','/lib64']){
+      if(!existsSync(alias))continue;
+      const target=realpathSync(alias);
+      if(target!==alias&&roots.some(root=>inside(root,target)))bindings.push('--symlink',target,alias);
+    }
     return {command:bwrap,args:['--unshare-all','--die-with-parent','--new-session','--proc','/proc','--dev','/dev','--tmpfs','/tmp',...bindings,'--bind',workspace,'/workspace','--chdir','/workspace',python,'-I','-B','/workspace/runner.py'],cwd:workspace,env:{...cleanEnv('/workspace'),TMPDIR:'/tmp'}};
   }
 };

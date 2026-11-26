@@ -26,9 +26,16 @@ test('generated image disclosure and authorization guards are selected by the re
   for (const guard of guards) assert.ok(rootTest.includes(guard), `npm test must include ${guard}`);
 });
 
-test('the staged Central release runs the whole Central plan in order', () => {
-  const stages = ['central-workspaces', 'central-server-1-2', 'central-server-3-4', 'central-release-tools'];
+test('the parallel Central release runs the whole Central plan and each automatic Server file once', () => {
+  const stages = ['central-workspaces', 'central-server-1', 'central-server-2', 'central-server-3', 'central-server-4', 'central-server-timing', 'central-release-tools'];
   assert.deepEqual(stages.flatMap(stage => taskPlan(stage)), taskPlan('central-units'));
+  const serverStages = stages.filter(stage => stage.startsWith('central-server-'));
+  const files = serverStages.flatMap(stage => taskPlan(stage)[0].args.filter(arg => arg.startsWith('apps/server/test/')));
+  assert.deepEqual(files.sort(), [1, 2, 3, 4].flatMap(shard => serverFiles(shard)).sort());
+  const timing = taskPlan('central-server-timing')[0].args;
+  assert.ok(timing.includes('--test-concurrency=1'));
+  assert.ok(timing.includes('--test-timeout=120000'));
+  assert.deepEqual(timing.filter(arg => arg.endsWith('.test.ts')), ['apps/server/test/assistant-suggestion-context.test.ts', 'apps/server/test/memory-processing-health.test.ts']);
 });
 
 test('host changes select the light task that runs host lifecycle contracts once', () => {

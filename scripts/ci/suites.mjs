@@ -24,7 +24,8 @@ const server = (files, ...options) => {
   const timeout = options.find(option => option.startsWith('--test-timeout=')) ?? '--test-timeout=120000';
   // Keep the original case deadlines and scales. Four simultaneous archive
   // fixtures can starve a bounded 30-second coordinator case on CI workers.
-  return node('--import', 'tsx', '--test', '--test-concurrency=2', timeout, ...options.filter(option => !option.startsWith('--test-timeout=')), ...files);
+  const concurrency = options.find(option => option.startsWith('--test-concurrency=')) ?? '--test-concurrency=2';
+  return node('--import', 'tsx', '--test', concurrency, timeout, ...options.filter(option => !/^--test-(timeout|concurrency)=/.test(option)), ...files);
 };
 const sharedBuild = () => npm('build', '-w', '@mote/shared');
 const agentBuild = () => npm('build', '-w', '@mote/agent');
@@ -33,11 +34,17 @@ const libs = () => [sharedBuild(), agentBuild()];
 const imageAuditTests = () => node('--import', 'tsx', '--test', 'scripts/composed-image-disclosure.test.ts', 'scripts/test-image-context-live.test.ts');
 // Server runtime adapters consume plugin-host; its project references build plugin-api.
 const serverLibs = () => [npm('build', '-w', '@mote/plugin-host'), ...libs()];
-const centralServerChecks = (root, shards) => shards.map(shard => server(serverFiles(shard, root), '--test-skip-pattern', automaticSkipPattern));
+// These exercise real recovery and HTTP deadlines. Give them exclusive use
+// of the verification runner so unrelated fixtures cannot use their CPU budget.
+const centralTimingFiles = ['apps/server/test/assistant-suggestion-context.test.ts', 'apps/server/test/memory-processing-health.test.ts'];
+const centralServerShard = (root, shard) => [server(serverFiles(shard, root).filter(file => !centralTimingFiles.includes(file)), '--test-skip-pattern', automaticSkipPattern)];
 const centralChecks = {
   'central-workspaces': () => [npm('test', '-w', '@mote/shared', '-w', '@mote/agent', '-w', '@mote/web')],
-  'central-server-1-2': root => centralServerChecks(root, [1, 2]),
-  'central-server-3-4': root => centralServerChecks(root, [3, 4]),
+  'central-server-1': root => centralServerShard(root, 1),
+  'central-server-2': root => centralServerShard(root, 2),
+  'central-server-3': root => centralServerShard(root, 3),
+  'central-server-4': root => centralServerShard(root, 4),
+  'central-server-timing': () => [server(centralTimingFiles, '--test-concurrency=1', '--test-skip-pattern', automaticSkipPattern)],
   'central-release-tools': root => [
     node('--test', ...listTests('scripts/release', '.test.mjs', root), ...listTests('scripts/ci', '.test.mjs', root)),
     imageAuditTests(), node('scripts/test-central-runner.mjs'),

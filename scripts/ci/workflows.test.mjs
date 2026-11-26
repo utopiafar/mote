@@ -82,24 +82,34 @@ test('the component and integration jobs install FFmpeg before their ASR process
 test('tag-triggered release checks also avoid the broad server glob and manual performance/scale cases', () => {
   const release = workflow('release-central');
   assert.ok(release.on.push.tags.includes('central-v*'));
-  const steps = release.jobs.package.steps;
-  const checks = steps.filter(step => step.run?.includes('node scripts/ci/run.mjs --task '));
-  assert.deepEqual(checks.map(step => step.run.split(' ').at(-1)), ['central-workspaces', 'central-server-1-2', 'central-server-3-4', 'central-release-tools']);
-  assert.match(release.env.MOTE_CENTRAL_CHECKS, /startsWith\(github.ref, 'refs\/tags\/'\)/);
-  const gate = "env.MOTE_CENTRAL_CHECKS == 'true'";
-  const native = steps.find(step => step.name === 'Verify the pinned Codex App Server');
-  const packaging = steps.find(step => step.run?.includes('scripts/release/source-package.mjs'));
+  const {version, native, verify, package: pack, publish} = release.jobs;
+  assert.match(release.env.MOTE_CENTRAL_CHECKS, /startsWith\(github.ref, 'refs\/tags\/'\) \|\|/);
+  assert.equal(version.outputs.checks, '${{ steps.checks.outputs.required }}');
+  assert.match(version.steps.find(step => step.id === 'checks').run, /\$MOTE_CENTRAL_CHECKS/);
+  const gate = "needs.version.outputs.checks == 'true'";
   assert.equal(native.if, gate);
-  for (const check of checks) {
-    assert.equal(check.if, gate);
-    assert.equal(check['timeout-minutes'], 30);
-    assert.ok(steps.indexOf(native) < steps.indexOf(check) && steps.indexOf(check) < steps.indexOf(packaging));
-  }
+  assert.equal(verify.if, gate);
+  assert.deepEqual(verify.needs, ['version', 'native']);
+  assert.equal(verify.strategy['fail-fast'], false);
+  assert.deepEqual(verify.strategy.matrix.task, ['central-workspaces', 'central-server-1', 'central-server-2', 'central-server-3', 'central-server-4', 'central-server-timing', 'central-release-tools']);
+  assert.deepEqual(pack.needs, ['version', 'verify']);
+  assert.match(pack.if, /needs\.verify\.result == 'success' \|\| \(needs\.version\.outputs\.checks == 'false' && needs\.verify\.result == 'skipped'\)/);
+  assert.deepEqual(publish.needs, ['version', 'package']);
+  assert.ok(pack.steps.some(step => step.run?.includes('scripts/release/source-package.mjs')));
+  const steps = verify.steps;
+  const check = steps.find(step => step.run?.includes('node scripts/ci/run.mjs --task '));
+  const verifyNative = steps.find(step => step.run?.includes('native:prepare -w @mote/agent -- --verify'));
+  assert.equal(check['timeout-minutes'], 30);
+  assert.equal(check.env.CHECK_TASK, '${{ matrix.task }}');
+  assert.equal(verify.env.MOTE_TEST_PYTHON_OS_SANDBOX, '1');
+  assert.ok(verifyNative && steps.indexOf(verifyNative) < steps.indexOf(check));
+  const archive = native.steps.find(step => step.run?.includes('tar -C packages/agent/native/bin'));
+  assert.ok(native.steps.findIndex(step => step.run?.includes('native:prepare -w @mote/agent -- --verify')) < native.steps.indexOf(archive));
+  assert.equal(native.steps.find(step => step.uses?.startsWith('actions/upload-artifact')).with.name, steps.find(step => step.uses?.startsWith('actions/download-artifact')).with.name);
   const sandbox = steps.find(step => step.run?.includes('apt-get install') && step.run.includes('bubblewrap'));
-  assert.equal(sandbox.if, gate);
   assert.match(sandbox.run, /apparmor_parser -r \/etc\/apparmor\.d\/bwrap-userns-restrict/);
   assert.match(sandbox.run, /bwrap --unshare-user --unshare-net --ro-bind/);
   assert.match(sandbox.run, /apt-get install[^\n]*\bffmpeg\b/);
-  assert.ok(steps.indexOf(sandbox) < steps.indexOf(native));
+  assert.ok(steps.indexOf(sandbox) < steps.indexOf(check));
   assert.ok(!steps.some(step => /check:central|npm test|--suite/.test(step.run ?? '')));
 });
