@@ -44,7 +44,13 @@ test('Memory settings production owners reject unowned constructor DDL, foreign 
  const positive=run();assert.equal(positive.status,0,positive.stderr);
  assert.match(positive.stdout,/81 schema owners \+ 1 scoped projection owner\(s\) \+ 4 existing construction owner\(s\), 210 tables\/views/);
  assert.match(positive.stdout,/PARTIAL coverage: 143 files with pending consumers, 80 referenced relations pending, 234 unproved SQL statements/);
- assert.match(positive.stdout,/2299 concrete existing exceptions/);
+ const inventory=checkSqlOwnership(repository);
+ assert.deepEqual(inventory.violations,[]);assert.deepEqual(inventory.stale,[]);
+ // Exact SQL proofs are checked above and below. The report count follows the
+ // current ledger, including resolved exceptions in unrelated consumers.
+ const reportedExceptions=positive.stdout.match(/\b(\d+) concrete existing exceptions\b/);
+ assert.ok(reportedExceptions);
+ assert.equal(Number(reportedExceptions[1]),inventory.exceptions.length);
  const adapterPath=resolve(root,adapter),recipePath=resolve(root,recipe),adapterSource=readFileSync(adapterPath,'utf8'),recipeSource=readFileSync(recipePath,'utf8');
  const variants=[
   [adapterPath,adapterSource.replace('async erasePreparedEvidence(evidenceIds:readonly string[]){',"async erasePreparedEvidence(evidenceIds:readonly string[]){this.plugins.store.db.prepare('DELETE FROM source_connections WHERE id=?').run('generated');"),/sql-cross-owner.*memory-adapters.ts.*source_connections.*write/],
