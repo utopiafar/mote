@@ -525,10 +525,12 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  const retirementPath=resolve(root,'apps/server/src/task-evidence.ts'),retirementSource=readFileSync(retirementPath,'utf8');
  writeFileSync(retirementPath,retirementSource.replace('UPDATE task_records SET', 'UPDATE captures SET'));
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper requires its exact pure definition/);writeFileSync(retirementPath,retirementSource);
- writeFileSync(taskPath,taskSource+'\nconst escapedRetirement=retireTaskRecordsSql;');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper cannot alias or escape/);writeFileSync(taskPath,taskSource);
- const conversationsCaller=resolve(root,'apps/server/src/plugins/conversations.ts'),conversationsSource=readFileSync(conversationsCaller,'utf8');
- writeFileSync(conversationsCaller,conversationsSource+'\nfunction generatedConstruction(db){return new Conversations(db);}');
- result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor requires its exact production call path/);writeFileSync(conversationsCaller,conversationsSource);
+ const schemaPath=resolve(root,'apps/server/src/chat-storage-schema.ts'),schemaSource=readFileSync(schemaPath,'utf8');
+ writeFileSync(schemaPath,schemaSource+'\nconst escapedRetirement=retireTaskRecordsSql;');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper cannot alias or escape/);writeFileSync(schemaPath,schemaSource);
+ const duplicateConstruction=schemaSource.replace('new ConversationTurnStorage(db);','new ConversationTurnStorage(db);new ConversationTurnStorage(db);');
+ assert.notEqual(duplicateConstruction,schemaSource);
+ writeFileSync(schemaPath,duplicateConstruction);
+ result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor requires its exact production call path/);writeFileSync(schemaPath,schemaSource);
  const historyFile='apps/server/src/evidence-store.ts',historyPath=resolve(root,historyFile),historySource=readFileSync(historyPath,'utf8'),historyStatements=sqlStatements(historyFile,historySource);
  for(const sample of originalPendingWrites){
   const statement=historyStatements.find(item=>item.fingerprint===sample.symbol);assert.ok(statement);assert.equal(statement.scope,sample.scope);assert.equal(statement.scopeFingerprint,sample.scopeFingerprint);
@@ -545,15 +547,15 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  ];
  for(const [name,changed]of historyMutations){assert.notEqual(changed,historySource);writeFileSync(historyPath,changed);result=architecture();assert.equal(result.status,1,result.stderr);assert.match(result.stderr,/evidence-store.ts/);if(name==='fully proved update')assert.match(result.stderr,/sql-cross-owner.*evidence-store.ts.*conversation_turns.*write/);t.diagnostic('Frozen unknown-write '+name+' mutation rejects through the total CLI');}
  writeFileSync(historyPath,historySource);
- for(const construction of storageConstructions.filter(item=>['conversation-turn-storage','query-run-storage'].includes(item.owner))){
-  const path=resolve(root,'apps/server/src/'+construction.file),source=readFileSync(path,'utf8');writeFileSync(path,source.replace('CREATE TABLE IF NOT EXISTS','CREATE TABLE IF NOT EXISTS changed_'));
-  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage construction requires its exact constructor and proved DDL sink/);writeFileSync(path,source);
+ for(const table of ['conversation_turns','query_runs']){
+  const changed=schemaSource.replace('CREATE TABLE IF NOT EXISTS '+table,'CREATE TABLE IF NOT EXISTS changed_'+table);
+  assert.notEqual(changed,schemaSource);writeFileSync(schemaPath,changed);
+  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage construction requires its exact constructor and proved DDL sink/);writeFileSync(schemaPath,schemaSource);
  }
- const rawPath=resolve(root,'apps/server/src/conversations.ts'),rawSource=readFileSync(rawPath,'utf8');
- for(const addition of ['\nexport function generatedExtraConstruction(db){return new Conversations(db);}','\nconst aliasedConstructor=Conversations;','\npublishConstructor(Conversations);','\nclass GeneratedChild extends Conversations {}']){
-  writeFileSync(rawPath,rawSource+addition);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor.*(?:call path|cannot escape)/);
+ for(const addition of ['\nexport function generatedExtraConstruction(db){return new ConversationTurnStorage(db);}','\nconst aliasedConstructor=ConversationTurnStorage;','\npublishConstructor(ConversationTurnStorage);','\nclass GeneratedChild extends ConversationTurnStorage {}']){
+  writeFileSync(schemaPath,schemaSource+addition);result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/storage constructor.*(?:call path|cannot escape)/);
  }
- writeFileSync(rawPath,rawSource);
+ writeFileSync(schemaPath,schemaSource);
  assert.equal(readFileSync(baselinePath,'utf8'),baselineSource,'negative cases never edit the production debt ledger');
  const target=resolve(root,'apps/server/src/material-index.ts'),original=readFileSync(target,'utf8');
  appendFileSync(target,"\nfunction generatedOwnershipNegative(db){db.prepare('SELECT value FROM settings WHERE key=?');}\n");
