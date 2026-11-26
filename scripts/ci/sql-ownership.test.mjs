@@ -472,6 +472,8 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*activity-memory-index.ts.*memory_jobs.*write/);
  writeFileSync(projectionPath,projectionSource.replace('FROM ${from}json_each','FROM settings hidden,${from}json_each'));
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-cross-owner.*activity-memory-index.ts.*settings/);
+ writeFileSync(projectionPath,projectionSource.replace('FROM memory_jobs mj JOIN memory_batches','FROM settings mj JOIN memory_batches'));
+ result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-consumer.*activity-memory-index.ts/);
  writeFileSync(projectionPath,projectionSource.replace('"activity_memory_source_insert",','"foreign_trigger",'));
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/sql-uncovered-table.*foreign_trigger/);
  writeFileSync(projectionPath,projectionSource.replace('CREATE TABLE IF NOT EXISTS activity_memory_jobs(', 'CREATE TABLE IF NOT EXISTS changed_projection_jobs('));
@@ -495,7 +497,13 @@ test('actual CLI rejects an inserted cross-owner query in a copy of the producti
  result=run();assert.equal(result.status,1);assert.match(result.stderr,/imported SQL helper requires its exact pure definition/);
  // The total entry rejects the changed imported module first. Independently
  // retain the original concrete maintenance-effect assertion at its installer.
- assert.ok(ownershipInventory(root,{...policy,importedHelpers:[],storageConstructions:storageConstructions.filter(item=>item.owner!=='assistant-task-storage')}).issues.some(issue=>issue.rule==='sql-schema-maintenance'&&issue.from.endsWith('/task-evidence.ts')&&issue.to==='memories'&&issue.kind==='update'));
+ const withoutTaskConstruction={
+  ...policy,
+  importedHelpers:[],
+  storageConstructions:storageConstructions.filter(item=>item.owner!=='assistant-task-storage'),
+  consumerScopes:{...policy.consumerScopes,'assistant-tasks.ts':Object.fromEntries(Object.entries(policy.consumerScopes['assistant-tasks.ts']).filter(([,owner])=>owner!=='assistant-task-storage'))},
+ };
+ assert.ok(ownershipInventory(root,withoutTaskConstruction).issues.some(issue=>issue.rule==='sql-schema-maintenance'&&issue.from.endsWith('/task-evidence.ts')&&issue.to==='memories'&&issue.kind==='update'));
  writeFileSync(evidencePath,evidenceSource);
  const searchPath=resolve(root,'apps/server/src/memory-search-schema.ts'),searchSource=readFileSync(searchPath,'utf8');
  writeFileSync(searchPath,searchSource+'\nfunction generatedRuntime(db:DatabaseSync){memoryCatalog(db);}');result=architecture();assert.equal(result.status,1);assert.match(result.stderr,/schema db helper cannot inherit installer authority/);writeFileSync(searchPath,searchSource);

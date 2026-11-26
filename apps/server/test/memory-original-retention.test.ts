@@ -288,7 +288,7 @@ for(const raw of [false,true])test(`an in-flight owner query with ${raw?'a prepa
  const conversationId=(await f.request('/api/conversations/main')).json().id;
  const response=await f.request('/api/query','POST',{question:'Use the generated available Memory and evidence as needed.',conversationId});
  assert.equal(response.statusCode,409,response.body+' '+f.modelErrors.join('\n'));
- if(!raw)assert.equal(response.json().error,'context_evidence_restricted');
+ if(!raw){assert.equal(response.json().error,'context_evidence_restricted');assert.equal(response.json().reason,'ask_evidence_changed');}
  assert.ok(!response.body.includes(lateAnswer));assert.equal(calls,1);assert.equal(delivered,raw);
  assert.equal((await f.request('/api/captures/'+f.id)).statusCode,404);
  assert.ok(!(await readCurrentMemoryPage(f.node.featureServices.evidenceReader,{kind:'all'},{level:'detail'})).items.some(value=>value.id===f.memory.id));

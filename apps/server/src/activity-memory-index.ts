@@ -43,11 +43,13 @@ function authorityPendingQuestion(available:boolean,authorizations:boolean,jobId
  const source="json_extract("+entry+",'$.sourceId')",input="json_extract("+entry+",'$.inputKey')",scope="json_extract("+entry+",'$.scope')";
  const allowed=authorizations?" AND ("+source+" IS NULL OR "+input+" IS NULL OR "+scope+" IS NULL OR EXISTS(SELECT 1 FROM memory_input_authorizations a WHERE a.source_id="+source+
   " AND a.input_key="+input+" AND a.scope="+scope+" AND a.job_id=mj.id AND a.authorized=1 AND a.revoked_at IS NULL))":'';
- return "EXISTS(SELECT 1 FROM memory_jobs mj JOIN memory_batches mb ON mb.job_id=mj.id "+
-  (ordinal?"":"JOIN json_each(mb.json,'$.coverage') coverage ")+
-  "JOIN owner_questions q ON q.id=json_extract("+entry+",'$.questionId') WHERE mj.id="+jobId+" AND mb.id="+batchId+
-  " AND json_extract(mj.json,'$.cancellationCause')='authority' AND json_extract("+entry+",'$.state')='needs_owner_input'"+
-  " AND json_extract(q.json,'$.operationId')='memory:'||mj.id AND json_extract(q.json,'$.state') IN ('open','deferred')"+allowed+")";
+ const coverageJoin=ordinal?'':"JOIN json_each(mb.json,'$.coverage') coverage";
+ const query=`SELECT 1 FROM memory_jobs mj JOIN memory_batches mb ON mb.job_id=mj.id
+  ${coverageJoin} JOIN owner_questions q ON q.id=json_extract(${entry},'$.questionId')
+  WHERE mj.id=${jobId} AND mb.id=${batchId} AND json_extract(mj.json,'$.cancellationCause')='authority'
+  AND json_extract(${entry},'$.state')='needs_owner_input' AND json_extract(q.json,'$.operationId')='memory:'||mj.id
+  AND json_extract(q.json,'$.state') IN ('open','deferred')${allowed}`;
+ return `EXISTS(${query})`;
 }
 const publicRank=(value:string)=>`CASE ${value} WHEN 'running' THEN 6 WHEN 'needs_input' THEN 5 WHEN 'stale' THEN 4 WHEN 'failed' THEN 3 WHEN 'waiting' THEN 2 WHEN 'completed' THEN 0 WHEN 'cancelled' THEN -1 WHEN 'excluded' THEN -2 ELSE CASE WHEN ${value} IS NULL THEN NULL ELSE 2 END END`;
 const refreshOutputs=(jobId:string)=>`DELETE FROM activity_memory_outputs WHERE job_id=${jobId};

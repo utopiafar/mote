@@ -158,12 +158,14 @@ export class DelegatedQueryRuns {
         // request can still retain its question, without resurrecting derived
         // context or trusting a late provider callback after the grant expired.
         const saved:Pick<SavedInput,'hostRequest'|'lastFailure'>=erasedForeground?foreground!:this.runtime.journal.payload<SavedInput>(work.id);
-        const error=erasedForeground?Object.assign(new StoreError('Evidence used by this answer is no longer available',409),{code:'context_evidence_restricted'}):this.errors.get(run.id)??this.restoredFailure(saved.lastFailure,current),failure=saved.lastFailure??safeError(error);
+        const error=erasedForeground?Object.assign(new StoreError('Evidence used by this answer is no longer available',409),{code:'context_evidence_restricted',reason:'ask_evidence_changed'}):this.errors.get(run.id)??this.restoredFailure(saved.lastFailure,current),failure=saved.lastFailure??safeError(error);
         const timedOut=failure.category==='timeout'||current.error==='timeout';
         // A timed-out fragment cannot publish a conversation turn after its grant
         // has expired; waiting time never establishes a timeout.
         const diagnostic=sanitizeFailureDiagnostics({...failure.diagnostic,lastTool:[...run.events].reverse().find(e=>e.stage==='tool'&&e.phase==='completed')?.tool});
-        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error,current),finished={...run,...conversation,error:{code:timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':failure.reason??failure.category,message:failure.message,reason:failure.reason,diagnostic}};
+        const conversation=timedOut?undefined:this.callbacks.failure?.(saved.hostRequest,error,current);
+        const code=timedOut?'timeout':current.error==='source_context_changed'?'source_context_changed':erasedForeground?failure.category:failure.reason??failure.category;
+        const finished={...run,...conversation,error:{code,message:failure.message,reason:failure.reason,diagnostic}};
         this.save(finished);
         if(own)this.store.db.exec('COMMIT');
         Object.assign(run,finished);if(conversation&&error&&typeof error==='object')Object.assign(error,{conversation});
@@ -254,7 +256,7 @@ export class DelegatedQueryRuns {
     if(run.error?.code==='timeout')throw new AgentTimeoutError();
     const failed=this.errors.get(id);this.errors.delete(id);if(failed!==undefined)throw failed;
     const error=new StoreError(run.error?.message??'Query did not complete',409),code=run.error?.code;
-    if(code==='source_context_changed'||code==='context_evidence_restricted')Object.assign(error,{code});
+    if(code==='source_context_changed'||code==='context_evidence_restricted')Object.assign(error,{code,reason:run.error?.reason});
     if(run.conversationId&&run.turnId)Object.assign(error,{conversation:{conversationId:run.conversationId,turnId:run.turnId}});
     throw error;
     }finally{this.foreground.delete(id);this.foregroundRequests.delete(id);this.results.delete(id);this.errors.delete(id);}
