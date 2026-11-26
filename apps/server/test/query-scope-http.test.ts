@@ -28,7 +28,9 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
   try{
    const call=async(tool:string,args:unknown)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});const value=await response.json() as any;assert.equal(response.status,200,JSON.stringify(value));return value;};
    const capability=async(name:string,args:unknown={})=>{const found=await call('capability_discover',{name});return call('capability_execute',{name,version:found.data.version,argumentsJson:JSON.stringify(args)});};
-   const directoryPage=await capability('context_index',{path:'/context/sources'}),sources=await capability('sources');
+   const directoryPage=await capability('context_index',{path:'/context/sources'});
+   const definition=await call('capability_discover',{name:'sources'}),sourceCall={name:'sources',version:definition.data.version,argumentsJson:'{}'};
+   const sources=await call('capability_execute',sourceCall);
    const items=await capability('source_items'),search=await call('search_context',{query:'Generated scoped'}),catalog=await call('material_catalog',{}),memories=await call('memories',{});
    if(sourceScoped){
     const segments=await capability('segments'),episodes=await capability('context_index',{path:'/context/episodes'}),activity=await capability('activity'),devices=await capability('devices');
@@ -50,11 +52,7 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
     assert.equal(withdrawn.statusCode,200,withdrawn.body);
     const response=await fetch(bridge.url+'/material_read',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({ref:catalog.data.items[0].ref,length:12000})});
     const rejected=await response.json();assert.notEqual(response.status,200,JSON.stringify(rejected));assert.doesNotMatch(JSON.stringify(rejected),/GENERATED_VISIBLE_BODY|generated-visible-path/);
-    const requestTool=(tool:string,args:unknown)=>fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});
-    const discovery=await requestTool('capability_discover',{name:'sources'});
-    assert.equal(discovery.status,200,'the static tool definition remains discoverable');
-    const definition=await discovery.json() as {data:{version:string}};
-    const closed=await requestTool('capability_execute',{name:'sources',version:definition.data.version,argumentsJson:'{}'});
+    const closed=await fetch(bridge.url+'/capability_execute',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(sourceCall)});
     const denial=await closed.json() as {data?:unknown;toolError?:{code:string}};
     assert.equal(closed.status,400,JSON.stringify(denial));
     assert.equal(denial.toolError?.code,'context_tool_failed');assert.equal(denial.data,undefined,'a run with a revoked source receipt cannot receive further metadata');
