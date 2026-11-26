@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
 import {Conversations} from '../src/conversations.js';
+import {memoryEvidenceFingerprint} from '../src/memory.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 
@@ -202,19 +203,25 @@ test('queued history reads retain their original lineage and reject changed hist
 });
 
 test('the extended query authority check keeps delivered Memory pins current',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-c3-authority-')),memoryId=randomUUID();
+  const dir=mkdtempSync(join(tmpdir(),'mote-c3-authority-')),memoryId=randomUUID(),evidenceId=randomUUID();
+  const capturedAt='2026-10-01T00:00:00.000Z',quote='Generated original for the delivered Memory.',fingerprint='1'.repeat(64);
   let node!:Awaited<ReturnType<typeof buildApp>>,detected=false;
   node=await buildApp(config(dir),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput)=>{
-    node.store.db.prepare('INSERT OR REPLACE INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,new Date().toISOString(),JSON.stringify({version:1,title:'GENERATED_MEMORY',statement:'Generated memory statement',uncertainty:'Generated only',status:'published',domain:'personal',tier:'episode',kind:'episodic',createdAt:new Date().toISOString(),evidenceIds:[],evidence:[],model:'fixture',runId:'fixture',fingerprint:'GENERATED_OLD_MEMORY',admission:{layer:'memory',reason:'Generated',scope:'Generated',attribution:'observed'}}));
-    input.onMemoryBodies?.([{id:memoryId,fingerprint:'GENERATED_OLD_MEMORY',version:1}]);
-    node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.fingerprint','GENERATED_NEW_MEMORY') WHERE id=?").run(memoryId);
+    input.onMemoryBodies?.([{id:memoryId,fingerprint,version:1}]);
+    input.assertContextAuthority?.();
+    node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.fingerprint',?) WHERE id=?").run('2'.repeat(64),memoryId);
     try{input.assertContextAuthority?.();}catch{detected=true;}
-    node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.fingerprint','GENERATED_OLD_MEMORY') WHERE id=?").run(memoryId);
+    node.store.db.prepare("UPDATE memories SET json=json_set(json,'$.fingerprint',?) WHERE id=?").run(fingerprint,memoryId);
     return answer('Generated memory authority answer');
   }}});
   t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
+  await node.store.ingest({id:evidenceId,deviceId:'generated',deviceName:'Generated',platform:'import',source:'note',capturedAt,durationMs:0,ocrText:quote});
+  const original=node.store.evidence([evidenceId])[0];
+  const memory={id:memoryId,version:1,title:'GENERATED_MEMORY',statement:'Generated memory statement',uncertainty:'Generated only',status:'published',domain:'personal',tier:'episode',kind:'episodic',createdAt:capturedAt,evidenceIds:[evidenceId],evidence:[{id:evidenceId,deviceId:original.deviceId,capturedAt,receivedAt:original.receivedAt,offset:0,length:quote.length,quote,contentHash:memoryEvidenceFingerprint(original)}],model:'fixture',runId:'fixture',fingerprint,admission:{layer:'memory',reason:'Generated',scope:'Generated',attribution:'observed'}};
+  node.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(memoryId,capturedAt,JSON.stringify(memory));
+  node.store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(memoryId,evidenceId);
   const id=node.conversations.main().id;
-  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:id,question:'Generated memory authority',after:'2026-09-01T00:00:00Z'}});
+  const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:id,question:'Generated memory authority',after:'2026-09-01T00:00:00.000Z'}});
   assert.equal(response.statusCode,200,response.body);
   assert.equal(detected,true,'the extended history assertion still validates delivered Memory pins');
 });

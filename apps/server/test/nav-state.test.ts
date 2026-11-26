@@ -31,30 +31,31 @@ const state=(response:{json():unknown})=>response.json() as NavState;
 test('NV2-01 a plugin badge count appears and changes the ETag',async t=>{
   const {app}=await fixture(t);
   let count=2;
-  const unregister=registerNavBadge('ideas',()=>count);
+  const unregister=registerNavBadge('generated.queue',()=>count);
   t.after(unregister);
   const first=await read(app);
   assert.equal(first.statusCode,200);
-  assert.equal(state(first).badges.ideas,2);
+  assert.equal(state(first).badges['generated.queue'],2);
   assert.equal(typeof first.headers.etag,'string');
   assert.match(String(first.headers.etag),/^"[^"]+"$/);
   count=3;
   const second=await read(app);
   assert.equal(second.statusCode,200);
-  assert.equal(state(second).badges.ideas,3);
+  assert.equal(state(second).badges['generated.queue'],3);
   assert.notEqual(second.headers.etag,first.headers.etag);
 });
 
 test('NV2-02 stopping a plugin removes its badge without touching the others',async t=>{
   const {app}=await fixture(t);
-  const unregister=registerNavBadge('ideas',()=>4);
+  const unregister=registerNavBadge('generated.queue',()=>4);
   const active=await read(app);
-  assert.equal(state(active).badges.ideas,4);
+  assert.equal(state(active).badges['generated.queue'],4);
   unregister();
   const stopped=await read(app);
   assert.equal(stopped.statusCode,200);
-  assert.equal('ideas' in state(stopped).badges,false);
+  assert.equal('generated.queue' in state(stopped).badges,false);
   assert.equal(state(stopped).badges.connections,false);
+  assert.equal(state(stopped).badges.ideas,state(active).badges.ideas);
 });
 
 test('NV2-03 adding a library item changes only the library revision',async t=>{
@@ -82,15 +83,15 @@ test('NV2-04 an unchanged poll returns 304 without a body',async t=>{
 
 test('NV2-05 one failing badge is omitted, diagnosed, and the rest still answer',async t=>{
   const {app,diagnostics}=await fixture(t);
-  const unregisterIdeas=registerNavBadge('ideas',()=>2);
+  const unregisterQueue=registerNavBadge('generated.queue',()=>2);
   const unregisterBroken=registerNavBadge('generated.failing',()=>{throw Error('Generated badge failure');});
-  t.after(()=>{unregisterIdeas();unregisterBroken();});
+  t.after(()=>{unregisterQueue();unregisterBroken();});
   const failures=()=>diagnostics.events(0,500).items.filter(event=>event.event==='request.failed'&&event.category==='internal').length;
   const before=failures();
   const response=await read(app);
   assert.equal(response.statusCode,200);
   const badges=state(response).badges;
-  assert.equal(badges.ideas,2);
+  assert.equal(badges['generated.queue'],2);
   assert.equal('generated.failing' in badges,false);
   assert.ok(failures()>before,'the rejected badge is recorded as a diagnostic');
 });

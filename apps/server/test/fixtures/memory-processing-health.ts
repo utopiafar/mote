@@ -12,9 +12,16 @@ import {generatedMemoryOutput} from './memory-planning.js';
 // only the external provider is replaced with generated responses.
 const directory=process.argv[2],recordings=8,segmentsPerRecording=296,notes=344;
 const config={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-health-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1e6},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:3},models:{deployment:{model:'generated',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
-let modelCalls=0;
+const dispatches:Record<string,number>={};
+let followupCalls=0;
 const node=await buildApp(config,{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
-  modelCalls++;process.send!({type:'model',modelCalls,phase:input.traceContext?.phase});await delay(100);
+  if(input.taskContext?.materials){
+    followupCalls++;
+    return {answer:'{"reason":"Generated material needs no follow-up.","cards":[],"commitments":[]}',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:input.contextEvidenceDependencies};
+  }
+  const phase=input.traceContext?.phase??'unclassified';
+  dispatches[phase]=(dispatches[phase]??0)+1;
+  process.send!({type:'model',dispatches,phase});await delay(100);
   return {answer:generatedMemoryOutput(input),citations:[],trace:[],runId:randomUUID()};
 }}});
 try{
@@ -48,14 +55,17 @@ try{
   const completed=await Promise.all(running);
   assert.ok(completed.every(job=>job.status==='completed'));
   const batches=completed.flatMap(job=>job.batches),coverage=batches.flatMap(batch=>batch.coverage??[]);
-  assert.equal(batches.length,67);assert.equal(modelCalls,batches.length*2,'each batch extracts and independently reviews once');
+  assert.equal(batches.length,67);assert.deepEqual(dispatches,{extract:batches.length,review:batches.length},'each batch extracts and independently reviews exactly once');
   assert.ok(batches.every(batch=>batch.attempts===1));
   assert.equal(coverage.length,2712);assert.equal(new Set(coverage.map(member=>member.key)).size,2712);
   assert.ok(coverage.every(member=>member.state==='no_candidates'));
   assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,2712);
   assert.equal(node.store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.batch' AND (state!='succeeded' OR attempts!=1 OR error IS NOT NULL)").get()!.n,0);
   assert.equal(originals(),saved,'processing preserves every original, transcript segment, source time, file identity and Material revision');
-  process.send!({type:'done',durationMs:performance.now()-began,jobs:completed.length,batches:batches.length,originals:coverage.length,modelCalls});
+  process.send!({type:'done',durationMs:performance.now()-began,jobs:completed.length,batches:batches.length,originals:coverage.length,dispatches,followupCalls});
   await new Promise<void>(resolve=>process.once('message',()=>resolve()));
+}catch(error){
+  process.send!({type:'failed',error:error instanceof Error?error.stack:String(error)});
+  throw error;
 }finally{await node.app.close();}
 process.disconnect();

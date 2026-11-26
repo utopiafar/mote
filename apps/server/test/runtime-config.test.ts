@@ -96,7 +96,9 @@ test('YAML trace activation persists its deadline, survives restart and cannot r
 test('YAML diagnostics validate the trace deadline before applying execution limits or enabling capture', async t => {
  const now=Date.now();t.mock.timers.enable({apis:['Date'],now});
  const directory=await mkdtemp(join(tmpdir(),'mote-yaml-trace-validation-'));
- const node=await buildApp({...config(directory),diagnosticsEnabled:false,agentTraceEnabled:true,agentTraceExpiresAt:0},{agent:inactive,backgroundWorker:false});
+ const profile=config(directory);
+ profile.initialDocument!.diagnostics={enabled:false,traceEnabled:true,traceExpiresAt:0};
+ const node=await buildApp(profile,{agent:inactive,backgroundWorker:false});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  const settings=(await node.app.inject({url:'/api/execution-settings',headers})).json();
  const update=await node.app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{revision:settings.revision,agentConcurrency:5}});
@@ -134,7 +136,9 @@ test('legacy SQLite execution and diagnostics rows never override YAML and remai
 test('a later domain application failure restores the old model generation and keeps its in-flight lease',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'mote-model-rollback-')),closed:string[]=[];
  let release!:()=>void,started!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;}),began=new Promise<void>(resolve=>{started=resolve;});
- const node=await buildApp({...config(directory),model:'original-model'},{backgroundWorker:false,createModelAgent:async settings=>({configured:true,query:async input=>{if(input.question==='hold rollback'){started();await held;}return {answer:settings.model,citations:[],trace:[],runId:'synthetic-rollback-run'};},close:async()=>{closed.push(settings.model);}})});
+ const profile=config(directory);
+ profile.initialDocument!.models={deployment:{model:'original-model',baseUrl:'https://fixture.invalid/v1'}};
+ const node=await buildApp(profile,{backgroundWorker:false,createModelAgent:async settings=>({configured:true,query:async input=>{if(input.question==='hold rollback'){started();await held;}return {answer:settings.model,citations:[],trace:[],runId:'synthetic-rollback-run'};},close:async()=>{closed.push(settings.model);}})});
  t.after(async()=>{release();await node.app.close();await rm(directory,{recursive:true,force:true});});
  const pending=node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'hold rollback'}});await began;
  node.configService.setHandler(connectorsConfigDomain,()=>({applyOrder:2000,apply:()=>{},publish:()=>{throw Error('Synthetic publication failure');},rollback:()=>{}}));
@@ -148,7 +152,10 @@ test('a later domain application failure restores the old model generation and k
 test('an asynchronous plugin failure exposes no candidate model, admission limit or diagnostic trace policy',async t=>{
  const {z}=await import('zod'),{stat}=await import('node:fs/promises');
  const directory=await mkdtemp(join(tmpdir(),'mote-runtime-publication-')),closed:string[]=[];
- const node=await buildApp({...config(directory),model:'committed-model',diagnosticsEnabled:false},{backgroundWorker:false,createModelAgent:async settings=>({configured:true,query:async()=>({answer:settings.model,citations:[],trace:[],runId:'synthetic-publication-run'}),close:async()=>{closed.push(settings.model);}})});
+ const profile=config(directory);
+ profile.initialDocument!.models={deployment:{model:'committed-model',baseUrl:'https://fixture.invalid/v1'}};
+ profile.initialDocument!.diagnostics={enabled:false};
+ const node=await buildApp(profile,{backgroundWorker:false,createModelAgent:async settings=>({configured:true,query:async()=>({answer:settings.model,citations:[],trace:[],runId:'synthetic-publication-run'}),close:async()=>{closed.push(settings.model);}})});
  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
  let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>{enter=resolve;}),held=new Promise<void>(resolve=>{finish=resolve;});
  await node.configService.registerPlugin({id:'publication-fixture',updatePaths:['reject'],schema:z.object({reject:z.boolean()}),defaultValue:{reject:false},prepare:next=>({apply:async()=>{if(next.reject){enter();await held;throw Error('Synthetic asynchronous failure');}},rollback:()=>{}})});

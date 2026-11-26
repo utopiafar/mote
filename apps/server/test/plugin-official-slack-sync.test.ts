@@ -1,4 +1,4 @@
-import {testInstanceState as createInstanceState} from './fixtures/plugin-storage.js';
+import {holdNextCheckpoint} from './fixtures/plugin-storage.js';
 import test,{type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -134,15 +134,11 @@ test('Slack mode ABA fences source upserts queued behind an earlier write',async
 });
 
 test('Slack checkpoint CAS rechecks the real host range after the plugin precheck',async t=>{
+ const held=holdNextCheckpoint(t,'slack.scan.0');
  const f=await fixture(t);f.transport.setMessages([{ts:ts(1),user:'U1',text:'Generated legal archive before CAS'}]);const source=f.source();
- // Instrument the real StateStore prototype; the paused call still executes on
- // the installed package's actual instance scope and transaction afterwards.
- const probe=createInstanceState(f.node.store,{identity:{packageId:'generated-probe',installationId:'generated',instanceId:'generated'}} as never),prototype=Object.getPrototypeOf(probe),cas=prototype.compareAndSet;
- let armed=true,enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),gate=new Promise<void>(resolve=>release=resolve);
- t.mock.method(prototype,'compareAndSet',async function(key:string,revision:number|null,value:any,condition:any){if(armed&&key==='slack.scan.0'&&value.processed===1){armed=false;assert.deepEqual(condition,{sourceId:source.id,syncScopeVersion:source.syncScopeVersion??0});enter();await gate;}return cas.call(this,key,revision,value,condition);});
  let running:Promise<unknown>|undefined;
- try{running=f.sync(409);await entered;const checkpoint=f.scan();assert.ok(f.node.sources.getItem(source.id,ts(1)),'an archive committed before the range change remains valid');for(const initialSync of ['new_only','all']){const changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync}});assert.equal(changed.statusCode,200,changed.body);}release();await running;assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.history(source.id,ts(1)).length,1);}
- finally{release();await running?.catch(()=>{});}
+ try{running=f.sync(409);const condition=await Promise.race([held.entered,running.then(()=>assert.fail('The real checkpoint CAS was not reached'))]);assert.deepEqual(condition,{sourceId:source.id,syncScopeVersion:source.syncScopeVersion??0});const checkpoint=f.scan();assert.ok(f.node.sources.getItem(source.id,ts(1)),'an archive committed before the range change remains valid');for(const initialSync of ['new_only','all']){const changed=await f.node.app.inject({method:'PATCH',url:'/api/sources/'+source.id,headers:f.headers,payload:{initialSync}});assert.equal(changed.statusCode,200,changed.body);}held.release();await running;assert.deepEqual(f.scan(),checkpoint);assert.equal(f.node.sources.getSource(source.id).status?.coverage,undefined);assert.equal(f.node.sources.history(source.id,ts(1)).length,1);}
+ finally{held.release();await running?.catch(()=>{});}
 });
 
 test('Slack all-history review discovers later replies without rewriting a complete parent as an aggregate',async t=>{

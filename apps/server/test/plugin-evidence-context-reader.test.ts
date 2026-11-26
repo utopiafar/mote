@@ -140,14 +140,16 @@ test('dispose rejects a held agent read after its await boundary',async t=>{
   const {store,sources,materials,diagnostics}=await fixture(t);
   let entered!:()=>void,release!:()=>void;
   const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  const namespace={ownerId:'mote-owner',instanceId:'generated-instance',bindingRevision:1};
   const binding={
-    retainSnapshot:()=>({binding:{namespace:{ownerId:'mote-owner',instanceId:'generated-instance',bindingRevision:1}},catalog:{generated:{memoryId:'generated'}},recordDigests:{},metadata:{},lineage:{},records:undefined,release:()=>{}}),
+    binding:()=>({namespace}),
+    retainSnapshot:()=>({binding:{namespace},catalog:{generated:{memoryId:'generated'}},recordDigests:{},metadata:{},lineage:{},records:undefined,release:()=>{}}),
     provider:()=>({search:async()=>{entered();await gate;return [];}}),
   } as unknown as MemoryBindings;
   const {service}=open(store,sources,materials,binding);
   t.after(()=>service.dispose());
   const reading=service.agent({diagnostics}).memories!({query:'generated'});
-  await started;
+  await Promise.race([started,reading.then(()=>assert.fail('Memory search did not enter the provider'))]);
   service.dispose();
   release();
   await assert.rejects(reading,{statusCode:503});

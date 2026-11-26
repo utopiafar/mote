@@ -119,9 +119,9 @@ test('Ask plugin stop cancels owned execution while feature disposal and Insight
  let querySignal:AbortSignal|undefined;
  const node=await buildApp(config,{agent:{configured:true,close:async()=>{},query:async input=>{querySignal=input.signal;await held;return {answer:'Generated late answer',citations:[],trace:[],runId:randomUUID()};}},prepareImport:async input=>{importSignal=input.signal;entered();await held;throw Error('Generated late parser failure');}});
  t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});await node.app.ready();
- const queryId=randomUUID(),insightId=randomUUID();let insightSignal:AbortSignal|undefined;
+ const queryId=randomUUID(),insightId=randomUUID(),insights=node.insightRuns;let insightSignal:AbortSignal|undefined;
  await withFixtureOwnerModelWork(node,async()=>node.queryRuns.start(queryId,{question:'Generated disposal query'}));
- node.insightRuns.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
+ insights.start(insightId,{},async(_observe,signal)=>{insightSignal=signal;await held;return {runId:randomUUID(),answer:'Generated late report',citations:[],trace:[]};});
  const imported=await node.imports.create({files:[{name:'generated.txt',dataBase64:Buffer.from('Generated input').toString('base64')}],instruction:'Generate a preview',processing:'preview'});
  const preparing=node.imports.prepare(imported.id);await started;await new Promise(resolve=>setImmediate(resolve));
  await Promise.all(['mote.ask','mote.insights','mote.imports'].map(feature=>node.featureRoutes.dispose(feature)));
@@ -129,14 +129,14 @@ test('Ask plugin stop cancels owned execution while feature disposal and Insight
  assert.equal(querySignal?.aborted,false);assert.equal(node.queryRuns.get(queryId).status,'running');
  await Promise.all([node.queryRunServices.stop('disabled'),node.insightServices.stop('disabled'),node.importServices.stop('disabled')]);
  assert.equal(querySignal?.aborted,true);assert.equal(insightSignal?.aborted,true);assert.equal(importSignal?.aborted,true);
- assert.equal(node.queryRuns.get(queryId).status,'cancelled');assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
+ assert.equal(node.queryRuns.get(queryId).status,'cancelled');assert.equal(insights.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
  assert.throws(()=>node.queryRuns.start(randomUUID(),{question:'Generated closed query'}),{statusCode:503});
  await assert.rejects(node.imports.prepare(imported.id),{statusCode:503});
  const headers={authorization:'Bearer '+config.privateCredential!.token};
  for(const path of ['/api/query-runs','/api/insight-runs','/api/imports'])assert.equal((await node.app.inject({url:path,headers})).statusCode,503);
  assert.equal((await node.app.inject({url:'/api/devices',headers})).statusCode,200,'unrelated feature remains live');
  release();await preparing;await new Promise(resolve=>setImmediate(resolve));
- assert.equal(node.store.insights().items.length,0);assert.equal(node.insightRuns.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
+ assert.equal(node.store.insights().items.length,0);assert.equal(insights.get(insightId).status,'cancelled');assert.equal(node.imports.get(imported.id).status,'cancelled');
 });
 
 test('Import scope cancels initial container expansion and removes late temporary output while retaining the original',async t=>{

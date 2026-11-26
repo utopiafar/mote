@@ -42,9 +42,9 @@ test('Memory settings production owners reject unowned constructor DDL, foreign 
  }
  const baselinePath=resolve(root,'scripts/ci/sql-ownership-baseline.json'),baseline=readFileSync(baselinePath,'utf8'),run=()=>spawnSync(process.execPath,[cli],{cwd:root,encoding:'utf8',timeout:120000});
  const positive=run();assert.equal(positive.status,0,positive.stderr);
- assert.match(positive.stdout,/40 schema owners \+ 1 scoped projection owner\(s\) \+ 3 existing construction owner\(s\), 132 tables\/views/);
- assert.match(positive.stdout,/PARTIAL coverage: 150 files with pending consumers, 153 referenced relations pending, 233 unproved SQL statements/);
- assert.match(positive.stdout,/2543 concrete existing exceptions/);
+ assert.match(positive.stdout,/81 schema owners \+ 1 scoped projection owner\(s\) \+ 4 existing construction owner\(s\), 210 tables\/views/);
+ assert.match(positive.stdout,/PARTIAL coverage: 143 files with pending consumers, 80 referenced relations pending, 233 unproved SQL statements/);
+ assert.match(positive.stdout,/2298 concrete existing exceptions/);
  const adapterPath=resolve(root,adapter),recipePath=resolve(root,recipe),adapterSource=readFileSync(adapterPath,'utf8'),recipeSource=readFileSync(recipePath,'utf8');
  const variants=[
   [adapterPath,adapterSource.replace('async erasePreparedEvidence(evidenceIds:readonly string[]){',"async erasePreparedEvidence(evidenceIds:readonly string[]){this.plugins.store.db.prepare('DELETE FROM source_connections WHERE id=?').run('generated');"),/sql-cross-owner.*memory-adapters.ts.*source_connections.*write/],

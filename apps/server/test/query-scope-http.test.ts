@@ -50,7 +50,17 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
     assert.equal(withdrawn.statusCode,200,withdrawn.body);
     const response=await fetch(bridge.url+'/material_read',{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify({ref:catalog.data.items[0].ref,length:12000})});
     const rejected=await response.json();assert.notEqual(response.status,200,JSON.stringify(rejected));assert.doesNotMatch(JSON.stringify(rejected),/GENERATED_VISIBLE_BODY|generated-visible-path/);
-    const afterWithdrawal=await capability('sources');assert.deepEqual(afterWithdrawal.data.items,[],'a source no longer represented in the time range is not disclosed again');
+    const requestTool=(tool:string,args:unknown)=>fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});
+    const discovery=await requestTool('capability_discover',{name:'sources'});
+    let closed=discovery,denial=await discovery.json() as {data?:{version:string};toolError?:{code:string}};
+    if(restriction==='source-withdrawal'){
+      assert.equal(discovery.status,200,'the static tool definition remains discoverable');
+      closed=await requestTool('capability_execute',{name:'sources',version:denial.data!.version,argumentsJson:'{}'});
+      denial=await closed.json() as typeof denial;
+    }
+    assert.equal(closed.status,400,JSON.stringify(denial));
+    assert.equal(denial.toolError?.code,'context_tool_failed');assert.equal(denial.data,undefined,'a run with a revoked source receipt cannot receive further metadata');
+    assert.doesNotMatch(JSON.stringify(denial),/GENERATED_VISIBLE_BODY|generated-visible-path|generated-visible-source/);
    }
    return {answer:'Generated bounded result',citations:[],trace:bridge.trace,runId:randomUUID(),evidenceDependencies:bridge.evidenceDependencies,sourceContextDependencies:bridge.sourceContextDependencies};
   }catch(error){fixtureFailure=error;throw error;}finally{await bridge.close();}

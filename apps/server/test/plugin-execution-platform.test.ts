@@ -97,7 +97,8 @@ test('quiesce refuses new work but lets an accepted lease commit without startin
 test('four real gates consume configuration and durable provider cooldowns survive resource replacement',async t=>{
   const f=await fixture(t),settings={protocol:'openai-completions' as const,provider:'custom',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'generated-private-key',headers:{}},provider=f.platform.assembly.providerAdmission;
   await assert.rejects(provider.run(settings,async()=>{throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:5000});}),ProviderFailure);
-  f.config.setHandler(executionConfigDomain,(next,previous)=>({apply:()=>{},publish:()=>f.platform.refreshSettings(next),rollback:()=>f.platform.refreshSettings(previous)}));
+  const apply=(value:unknown)=>f.platform.refreshSettings(executionSettingsSchema.strip().parse(value));
+  f.config.setHandler(executionConfigDomain,(next,previous)=>({apply:()=>{},publish:()=>apply(next),rollback:()=>apply(previous)}));
   await f.config.update('execution',{interactiveConcurrency:1,agentConcurrency:2,llmConcurrency:3,memoryConcurrency:1},f.config.revision);
   assert.deepEqual(Object.fromEntries(Object.entries(f.platform.assembly).filter(([key])=>key.endsWith('Gate')).map(([key,gate])=>[key,(gate as import('../src/concurrency.js').ConcurrencyGate).snapshot().limit])),{agentGate:2,llmGate:3,interactiveGate:1,interactiveModelGate:1});
   const gate=f.platform.assembly.interactiveGate,started=deferred(),release=deferred();t.after(()=>release.resolve());let accepted=false;

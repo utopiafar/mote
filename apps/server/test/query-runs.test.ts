@@ -90,17 +90,18 @@ test('execution entrypoints attribute insight, memory and isolated file analysis
   await featureServices.withMediaOwnerIntent('generated-file-id',()=>processing.analyze('generated-file-id',[],'Generated prompt mentioning unrelated skills and agents'));
   failFile=true;await assert.rejects(featureServices.withMediaOwnerIntent('generated-file-id',()=>processing.analyze('generated-file-id',[],'Generated failure')));assert.equal(closedFiles,2);
   const today=new Date().toISOString().slice(0,10),summary=(await app.inject({url:`/api/usage?from=${today}&to=${today}&groupBy=module`,headers})).json();
-  assert.equal(summary.total.runs,4);assert.equal(summary.total.failed,1);assert.equal(summary.total.totalTokens,160);
+  assert.equal(summary.total.runs,5);assert.equal(summary.total.failed,1);assert.equal(summary.total.totalTokens,200);
   assert.deepEqual(summary.items.map((r:any)=>({agentId:r.attribution.agentId,moduleId:r.attribution.moduleId,skillId:r.attribution.skillId})).sort((a:any,b:any)=>a.moduleId.localeCompare(b.moduleId)),[
     {agentId:'file-analysis',moduleId:'files',skillId:null},{agentId:'file-analysis',moduleId:'files',skillId:null},
-    {agentId:'context-query',moduleId:'insights',skillId:'personal-insight'}, {agentId:'context-query',moduleId:'memories',skillId:'memory-extraction'},
+    {agentId:'context-query',moduleId:'insights',skillId:'personal-insight'},
+    {agentId:'context-query',moduleId:'memories',skillId:'memory-extraction'},{agentId:'context-query',moduleId:'memories',skillId:'memory-extraction'},
   ]);
 });
 
 test('direct Memory extraction preserves a generated range beyond the retired count and character gates',async t=>{
-  const dir=mkdtempSync(join(tmpdir(),'mote-extract-without-read-budget-')),seen:Array<{ids:string[];ranges:unknown[]}>=[];
+  const dir=mkdtempSync(join(tmpdir(),'mote-extract-without-read-budget-')),seen:Array<{ids:string[];ranges:unknown[];phase?:string}>=[];
   const {app,store,memories}=await buildApp(config(dir),{backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async input=>{
-    if(input.skill==='memory-extraction')seen.push({ids:input.evidenceIds??[],ranges:input.evidenceRanges??[]});
+    if(input.skill==='memory-extraction')seen.push({ids:input.evidenceIds??[],ranges:input.evidenceRanges??[],phase:input.traceContext?.phase});
     return {answer:JSON.stringify({memories:[]}),citations:[],trace:[],runId:randomUUID()};
   }}});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
@@ -110,10 +111,12 @@ test('direct Memory extraction preserves a generated range beyond the retired co
     await store.ingest({id,deviceId:'generated-budget-regression',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-10-01T00:00:00.000Z',durationMs:0,ocrText:text});
   }
   const response=await app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}});
-  assert.equal(response.statusCode,200,response.body);assert.equal(seen.length,1);
+  assert.equal(response.statusCode,200,response.body);assert.equal(seen.length,2);
   assert.equal(seen[0]!.ids.length,101);assert.equal(seen[0]!.ranges.length,101);
   assert.deepEqual(memories.readEvidence(seen[0]!.ids).map(record=>record.ocrText).sort(),texts.sort());
   assert.ok((seen[0]!.ranges as Array<{length:number}>).reduce((sum,range)=>sum+range.length,0)>100000);
+  assert.deepEqual(seen[1]!.ids,seen[0]!.ids);
+  assert.deepEqual(seen[1]!.ranges,seen[0]!.ranges);
 });
 
 test('explicit cancellation reaches the executing agent and cannot archive a late answer',async t=>{

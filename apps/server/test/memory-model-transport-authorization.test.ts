@@ -39,7 +39,8 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  else if(m.method==='thread/start')send({id:m.id,result:{thread:{id:'generated-thread',model:null},model:m.params.model,serviceTier:m.params.serviceTier,approvalPolicy:'never',sandbox:{type:'readOnly'}}});
  else if(m.method==='turn/start'){appendFileSync(${JSON.stringify(turns)},JSON.stringify({hadOriginal:m.params.input[0].text.includes('GENERATED_TRANSPORT_ORIGINAL')})+'\\n');send({id:m.id,result:{turn:{id:'generated-turn'}}});send({method:'turn/completed',params:{threadId:'generated-thread',turn:{status:'failed',error:{codexErrorInfo:'unauthorized'}}}});}
 });
-`,{mode:0o700});Object.assign(config,{modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',codexBin:executable,codexHome:directory});
+`,{mode:0o700});
+  config.initialDocument!.models={deployment:{provider:'codex',protocol:'codex-app-server',model:'generated-provider'},codex:{executable,home:directory}};
  }
  node=await buildApp(config,{backgroundWorker:false,...(adapter==='codex'?{createModelAgent:async(settings,reader,host)=>{assert.equal(typeof host?.runModel,'function');assert.equal(typeof host?.authorizeModelRequest,'function');hooksReceived=true;return createModelAgent(settings,reader,{executable,home:directory},host!.runModel,host!.authorizeModelRequest);}}:{})});await node.app.ready();await authorizeFixtureModels(node);
  t.after(async()=>{await node.app.close();endpoint.closeAllConnections();await new Promise<void>(resolve=>endpoint.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});});
@@ -67,7 +68,9 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.pa
  assert.equal(node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(result.memoryIds.length,0);
  if(mutation!=='unchanged'){
   assert.equal(changed,true);const step=node.store.db.prepare("SELECT state,error,attempts FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").get('memory:'+jobId)!;
-  assert.equal(step.error,'context_evidence_restricted');assert.equal(step.attempts,1,'revocation never becomes a network retry');
+  const frozenInputChanged=mutation==='deleted-original'||mutation==='owner-declaration'||adapter==='http'&&mutation==='after-admission';
+  assert.equal(step.error,frozenInputChanged?'input_changed':'context_evidence_restricted',JSON.stringify(step));
+  assert.equal(step.attempts,1,'revocation never becomes a network retry');
  }
 });
 
@@ -123,7 +126,7 @@ test('HTTP Memory transport fences a context-only original actually disclosed by
  const job=await withFixtureOwnerModelWork(node,async()=>node.memoryPipeline.create({evidenceIds:[inputs[0].id,inputs[1].id],evidenceRanges:[inputs[0]],contextEvidenceRanges:inputs,recipes:[{id:'mote.personal-memory',version:'5'}]})),diagnostics=node.featureServices.diagnostics,trace=diagnostics.agentTrace.bind(diagnostics);
  diagnostics.agentTrace=(event,context)=>{events.push({type:event.type,tool:event.tool,status:event.status});if(event.type==='progress'&&event.tool==='context_evidence'&&event.phase==='completed'){contextRead=true;if(!revoked){revoked=true;node.store.delete(contextParent);}}trace(event,context);};
  const done=await withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(job.id));assert.equal(contextRead,true,JSON.stringify({starts,events,execution:node.store.db.prepare("SELECT state,error FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").all('memory:'+job.id)}));assert.equal(revoked,true);assert.equal(starts,1,'the successful first read revokes the already-loaded context before SDK continuation');assert.equal(done.completedBatches,0);assert.equal(done.memoryIds.length,0);
- assert.deepEqual(node.store.db.prepare("SELECT state,error FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").all('memory:'+job.id).map(row=>({state:row.state,error:row.error})),[{state:'failed',error:'context_evidence_restricted'}]);
+ assert.deepEqual(node.store.db.prepare("SELECT state,error FROM execution_steps WHERE kind='memory.batch' AND operation_id=?").all('memory:'+job.id).map(row=>({state:row.state,error:row.error})),[{state:'blocked',error:'context_evidence_restricted'}]);
 });
 
 

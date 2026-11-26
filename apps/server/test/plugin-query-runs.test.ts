@@ -109,7 +109,7 @@ test('an accepted run keeps its original model while later runs use the saved mo
   // the accepted run resumes under its original model while later runs use the saved one.
   const view=(await node.app.inject({url:'/api/model-settings',headers})).json() as {revision:number;settings:Record<string,unknown>};
   const {apiKeyConfigured:_key,headersConfigured:_headers,extraBodyConfigured:_body,...settings}=view.settings;
-  const saved=await node.app.inject({method:'PUT',url:'/api/model-settings',headers,payload:{revision:view.revision,settings:((sourceInput:ConfigurationPlatformOptions)=>({...sourceInput,initialDocument:{...sourceInput.initialDocument!,models:{...((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>),deployment:{...(((sourceInput.initialDocument! as Record<string,unknown>)["models"] as Record<string,unknown>)["deployment"] as Record<string,unknown>),model:'next-fixture'}}}}))(settings)}});
+  const saved=await node.app.inject({method:'PUT',url:'/api/model-settings',headers,payload:{revision:view.revision,settings:{...settings,model:'next-fixture'}}});
   assert.equal(saved.statusCode,200,saved.body);
   assert.equal(node.modelSettings.select('chat').settings.model,'next-fixture');
   assert.equal(node.queryRunServices.delegation,runtime,'an ordinary model switch does not replace the accepted run runtime');

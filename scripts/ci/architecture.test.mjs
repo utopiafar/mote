@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync,copyFileSync,symlinkSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync,readFileSync,realpathSync,copyFileSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -14,7 +14,7 @@ const cli=fileURLToPath(new URL('./architecture.mjs',import.meta.url));
 const repository=fileURLToPath(new URL('../..',import.meta.url));
 const productionSql=ownershipInventory(repository);
 const productionOwners=new Map(productionSql.owners.map(item=>[item.declaration,item.owner]));
-const fixtureSqlPolicy={...sqlPolicy,storageConstructions:[],importedHelpers:[],consumerScopes:{},nonSqlCalls:nonSqlCalls.filter(proof=>proof.kind!=='class-method'),schemaMaintenance:schemaMaintenance.filter(grant=>grant.installer!=='AssistantTasks.constructor')};
+const fixtureSqlPolicy={...sqlPolicy,storageConstructions:[],importedHelpers:[],consumerScopes:{},nonSqlCalls:nonSqlCalls.filter(proof=>proof.from==='apps/server/src/config-service.ts'),schemaMaintenance:schemaMaintenance.filter(grant=>grant.installer!=='AssistantTasks.constructor')};
 function fixture(t){
   const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-architecture-')));
   t.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -57,8 +57,16 @@ function fixture(t){
   const catalog='apps/server/src/material-catalog.ts',catalogSource=readFileSync(join(repository,catalog),'utf8');
   const facet=sqlStatements(catalog,catalogSource).find(statement=>statement.fingerprint===sharedReads.find(grant=>grant.from===catalog).symbol);
   write(catalog,readFileSync(join(root,catalog),'utf8')+`\nfunction fixtureFacet(db){db.prepare(${facet.expression});}`);
-  const configuration={...fixtureSqlPolicy,sharedReads:sharedReads.filter(grant=>existsSync(join(root,grant.from)))};
-  const sql=ownershipInventory(root,configuration),grants=new Set([...configuration.sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'})),...configuration.schemaMaintenance.map(item=>({...item,rule:'sql-schema-maintenance'}))].map(issueKey));
+  const sql=ownershipInventory(root,fixtureSqlPolicy),known=new Map(sql.issues.map(issue=>[issueKey(issue),issue]));
+  const matching=(grants,rule,kind)=>grants.filter(grant=>{
+    const exact=known.get(issueKey({...grant,rule,...(kind?{kind}:{})}));
+    return exact&&(!grant.scope||grant.scope===exact.scope)&&(!grant.scopeFingerprint||grant.scopeFingerprint===exact.scopeFingerprint);
+  });
+  const configuration={...fixtureSqlPolicy,
+    sharedReads:matching(sharedReads,'sql-cross-owner','read'),
+    sharedObservations:matching(sharedObservations,'sql-cross-owner','observe'),
+    schemaMaintenance:matching(fixtureSqlPolicy.schemaMaintenance,'sql-schema-maintenance')};
+  const grants=new Set([...configuration.sharedReads.map(item=>({...item,rule:'sql-cross-owner',kind:'read'})),...configuration.sharedObservations.map(item=>({...item,rule:'sql-cross-owner',kind:'observe'})),...configuration.schemaMaintenance.map(item=>({...item,rule:'sql-schema-maintenance'}))].map(issueKey));
   const debt=sql.issues.filter(issue=>!grants.has(issueKey(issue))).map(({line,...issue})=>({...issue,reason:'Generated architecture fixture'}));
   write('scripts/ci/sql-ownership-baseline.json',JSON.stringify(debt));
   write('scripts/ci/sql-ownership-map.json',JSON.stringify({owners:sql.owners,tables:sql.tables}));

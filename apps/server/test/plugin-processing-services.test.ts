@@ -20,7 +20,7 @@ import {fileProcessingSchema} from '@mote/shared';
 const token='generated-prc01-owner',headers={authorization:`Bearer ${token}`};
 const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}});
 const record=(text='Generated processing plugin evidence')=>({id:randomUUID(),deviceId:'generated-prc01-device',deviceName:'Generated fixture',platform:'import',capturedAt:'2026-11-01T00:00:00Z',durationMs:0,source:'note' as const,appName:'Fixture',ocrText:text,privacy:{excluded:false,redacted:false,mode:'none'}});
-const fileRecipes=[{id:'mote.file-extraction',version:'1'},{id:'mote.audio-dialogue',version:'2'},{id:'mote.audio-dialogue',version:'3'}];
+const fileRecipes=[{id:'mote.file-extraction',version:'1'},{id:'mote.audio-dialogue',version:'2'},{id:'mote.audio-dialogue',version:'4'}];
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value;
 const fixtureFingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'null').digest('hex');
 
@@ -66,7 +66,7 @@ test('processing disables without admitting writes, drains accepted work and re-
   assert.equal(node.processingServices.port.phase,'active');
   assert.deepEqual(node.processing.runtime.registry.list().map(processor=>processor.id),['audio.http','audio.local-dialogue','text.utf8','document.generic','image.http','audio.diarize'],'re-enable installs exactly one current processor set');
   assert.deepEqual(node.processing.runtime.recipes.list().recipes.map(({id,version})=>({id,version})),fileRecipes,'re-enable installs each file recipe once');
-  assert.deepEqual(node.processing.runtime.recipes.list().stages,[{id:'mote.extract',version:'1'},{id:'mote.diarize',version:'1'},{id:'mote.align',version:'2'},{id:'mote.turns',version:'1'},{id:'mote.funasr-align',version:'1'},{id:'mote.transcript-cleanup',version:'1'}],'re-enable installs each file stage once');
+  assert.deepEqual(node.processing.runtime.recipes.list().stages,[{id:'mote.extract',version:'1'},{id:'mote.diarize',version:'1'},{id:'mote.align',version:'2'},{id:'mote.turns',version:'1'},{id:'mote.funasr-align',version:'2'},{id:'mote.transcript-cleanup',version:'1'}],'re-enable installs each file stage once');
   assert.equal(node.processing.runtime.outputs.get({id:'mote.cleaned-dialogue',version:'1'}).kind,'dialogue','re-enable restores the cleanup output');
   assert.equal(node.processing.runtime.imageRecipes.list().recipes.length,1,'re-enable still has exactly one image recipe');
   assert.equal(node.processing.runtime.imageRecipes.list().stages.length,2,'re-enable still has exactly one copy of each image stage');

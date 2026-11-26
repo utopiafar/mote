@@ -378,7 +378,7 @@ test('trusted Python packs retain pinned validation in YAML', t => {
   const { file, write, root, vault } = fixture(t);
   const pack = { id: 'fixture.pack', version: '1', packRoot: join(root, 'pack'), script: 'parse.py', scriptSha256: 'a'.repeat(64), pythonExecutable: '/usr/bin/python3', config: { timeZoneOffset: '+08:00' } };
   write({ plugins: { importPythonPacks: [pack] } }); const valid = readConfig({ MOTE_CONFIG_FILE: file }); assert.equal(valid.status, 0, valid.stderr);
-  assert.deepEqual(JSON.parse(valid.stdout).importPythonPacks, [pack]); rmSync(vault, { recursive: true });
+  assert.deepEqual(JSON.parse(valid.stdout).domains.plugins.importPythonPacks, [pack]); rmSync(vault, { recursive: true });
   for (const packs of [[{ ...pack, script: '../outside.py' }], [{ ...pack, scriptSha256: 'not-pinned' }], [{ ...pack, config: { oversized: 'x'.repeat(8193) } }], [pack, pack]]) {
     write({ plugins: { importPythonPacks: packs } }); assert.notEqual(readConfig({ MOTE_CONFIG_FILE: file }).status, 0); assert.equal(existsSync(vault), false);
   }

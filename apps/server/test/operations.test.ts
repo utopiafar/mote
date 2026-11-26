@@ -1,3 +1,4 @@
+import {forgetFixtureOriginal} from './fixtures/forget-original.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -122,7 +123,7 @@ test('real memory mutations publish memory change ids through the operations end
  assert.equal(memories.get(staled.id).status,'stale');
  assert.ok((await changed()).includes('memory:'+staled.id),'evidence retirement emits a memory change id for staled inputs');
  const removed=seed('Generated removed topic input');
- store.delete(evidenceId);
+ forgetFixtureOriginal(store,evidenceId);
  assert.throws(()=>memories.get(removed.id),/not found/);
  assert.ok((await changed()).includes('memory:'+removed.id),'evidence deletion emits a memory change id for removed inputs');
 });

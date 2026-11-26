@@ -37,7 +37,7 @@ test('schema initialization failure closes its own transaction and permits the s
   const failure=new Error('generated controlled schema failure'),exec=StoreDatabase.prototype.exec;
   StoreDatabase.prototype.exec=function(sql:string){
     if(sql.includes('CREATE TABLE IF NOT EXISTS settings')){
-      opened=this;exec.call(this,'BEGIN IMMEDIATE');throw failure;
+      opened=this;if(!this.isTransaction)exec.call(this,'BEGIN IMMEDIATE');throw failure;
     }
     return exec.call(this,sql);
   };

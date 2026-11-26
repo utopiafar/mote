@@ -158,7 +158,7 @@ export class DelegatedQueryRuns {
         // request can still retain its question, without resurrecting derived
         // context or trusting a late provider callback after the grant expired.
         const saved:Pick<SavedInput,'hostRequest'|'lastFailure'>=erasedForeground?foreground!:this.runtime.journal.payload<SavedInput>(work.id);
-        const error=erasedForeground?new StoreError('Evidence used by this answer is no longer available',409):this.errors.get(run.id)??this.restoredFailure(saved.lastFailure,current),failure=saved.lastFailure??safeError(error);
+        const error=erasedForeground?Object.assign(new StoreError('Evidence used by this answer is no longer available',409),{code:'context_evidence_restricted'}):this.errors.get(run.id)??this.restoredFailure(saved.lastFailure,current),failure=saved.lastFailure??safeError(error);
         const timedOut=failure.category==='timeout'||current.error==='timeout';
         // A timed-out fragment cannot publish a conversation turn after its grant
         // has expired; waiting time never establishes a timeout.
@@ -253,7 +253,10 @@ export class DelegatedQueryRuns {
     if(run.status==='completed'&&result)return {...result,...(run.operationUsage?{operationUsage:run.operationUsage}:{})} as unknown as T;
     if(run.error?.code==='timeout')throw new AgentTimeoutError();
     const failed=this.errors.get(id);this.errors.delete(id);if(failed!==undefined)throw failed;
-    const error=new StoreError(run.error?.message??'Query did not complete',409);if(run.error?.code==='source_context_changed')Object.assign(error,{code:'source_context_changed'});if(run.conversationId&&run.turnId)Object.assign(error,{conversation:{conversationId:run.conversationId,turnId:run.turnId}});throw error;
+    const error=new StoreError(run.error?.message??'Query did not complete',409),code=run.error?.code;
+    if(code==='source_context_changed'||code==='context_evidence_restricted')Object.assign(error,{code});
+    if(run.conversationId&&run.turnId)Object.assign(error,{conversation:{conversationId:run.conversationId,turnId:run.turnId}});
+    throw error;
     }finally{this.foreground.delete(id);this.foregroundRequests.delete(id);this.results.delete(id);this.errors.delete(id);}
   }
   async close(){clearInterval(this.timer);for(const id of this.waiters.keys())this.notify(id);}

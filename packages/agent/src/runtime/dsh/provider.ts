@@ -158,7 +158,15 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
             host.assertCurrent(); active = request.attempt;
             task = (async () => {
               try {
-                const result = await host.runModel(request.attempt, () => Promise.race([harness!.run(request.prompt, {sessionId, onNotification: notification}), channel!.failure, observer!.failure]));
+                const result = await host.runModel(request.attempt, async () => {
+                  try {
+                    return await Promise.race([harness!.run(request.prompt, {sessionId, onNotification: notification}), channel!.failure, observer!.failure]);
+                  } catch (error) {
+                    if (error instanceof ProviderFailure || error instanceof AgentResponseError || error instanceof AgentTimeoutError || error instanceof AgentYieldError || error instanceof ContextToolError) throw error;
+                    if (error instanceof RequestTimeoutError) throw new AgentTimeoutError({source:'http',code:'request_timeout',errorType:'RequestTimeoutError',stage:'model'});
+                    throw new AgentProviderError(undefined,sdkExceptionDiagnostics(error, 'model'));
+                  }
+                });
                 const end = result.events && [...result.events].reverse().find(event => event.type === 'turn/end');
                 const reason = (end?.data as {reason?: {kind?: unknown; error?: {code?: unknown; status?: unknown; requestId?: unknown}}} | undefined)?.reason;
                 if (reason?.kind === 'completed') return {terminal: {kind: 'completed'}, candidate: {text: result.finalResponse}};
@@ -169,14 +177,10 @@ export function createDshRuntimeProvider(options: DshProviderOptions = {}) {
               } catch (error) {
                 if (cancellation || host.signal.aborted) return {terminal: {kind: 'cancelled', cause: cancellation?.kind ?? 'cancelled'}};
                 if (error instanceof AgentYieldError) return {terminal: {kind: 'yielded'}};
-                if(error instanceof AgentTimeoutError)throw error;
-                if(error instanceof RequestTimeoutError)throw new AgentTimeoutError({source:'http',code:'request_timeout',errorType:'RequestTimeoutError',stage:'model'});
-                // Host admission and validation failures stay primary and keep
-                // their identity; the run terminal must not replace them with a
-                // generic provider or tool failure.
-                if (error instanceof ProviderFailure || error instanceof AgentResponseError) throw error;
                 if (error instanceof ContextToolError && error.recovery === 'stop') return {terminal: {kind: 'failed', reason: 'tool_failure'}};
-                throw new AgentProviderError(undefined,sdkExceptionDiagnostics(error, 'model'));
+                // Admission and fences can fail before the SDK callback runs.
+                // Keep the Host's failure identity for its own retry policy.
+                throw error;
               } finally { active = undefined; }
             })();
             return task;

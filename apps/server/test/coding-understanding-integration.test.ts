@@ -227,7 +227,7 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
    // complete disclosure receipt so the production batch can validate it.
    assert.equal(input.contextEvidenceDependencies?.complete,true);
    assert.ok(input.contextEvidenceDependencies.ids.includes(proof.id));
-   return {...response(proof.id,tail,{reason:'Device verification and the family travel date remain unknown.',cards:[{action:'confirm',cardId:null,relatedCardIds:[],title:'Generated release and family follow-up',body:'The agent reported tests passing. Device verification and the family travel date are still unconfirmed.',reason:'The owner left both items open in the recovered tail.',evidence:[proof],matterId:null}],
+   return {...response(proof.id,tail,{reason:'Device verification and the family travel date remain unknown.',cards:[{action:'confirm',cardId:null,relatedCardIds:[],title:'Generated release and family follow-up',body:'The agent reported tests passing. Device verification and the family travel date are still unconfirmed.',reason:'The owner left both items open in the recovered tail.',evidence:[proof],matterId:null,codingNextStep:{kind:'decision',whyNow:'Device verification is required before release.',goal:'Confirm device verification before release.',request:proof}}],
     commitments:[{commitmentId:null,kind:'commitment',occurredAt:null,summary:'Verify the physical device before release; no confirmed deadline.',changes:{title:'Generated device verification',status:'pending_confirmation'},evidence:[proof]}]}),evidenceDependencies:input.contextEvidenceDependencies};
    }catch(error){followupFailure=error;throw error;}
   }
@@ -287,7 +287,7 @@ test('a failed Coding tail resumes without repeating completed pages and supplie
  assert.equal(followupCalls,1,'the production query must consume the supplied task context');
  assert.equal(node.batchProcessing.progress(batchId).task.state,'succeeded',JSON.stringify(node.batchProcessing.progress(batchId)));
  const result=await followup.finish(task.id);assert.equal(followupCalls,1);assert.equal(result.cardIds.length,1);assert.equal(result.commitmentIds.length,1);
- const saved=node.featureServices.assistantCards.get(result.cardIds[0],{kind:'all'});assert.equal(saved.kind,'question');assert.match(saved.body,/unconfirmed/);assert.ok(saved.evidence.some(item=>item.id===original.id&&item.quote===tail));
+ const saved=node.featureServices.assistantCards.get(result.cardIds[0],{kind:'all'});assert.equal(saved.kind,'question');assert.equal(saved.codingNextStep?.kind,'decision');assert.match(saved.body,/unconfirmed/);assert.ok(saved.evidence.some(item=>item.id===original.id&&item.quote===tail));
  const commitment=node.featureServices.assistantCommitments.get(result.commitmentIds[0],{kind:'all'});assert.equal(commitment.status,'pending_confirmation');assert.equal(commitment.deadline,null);
  assert.equal(node.memories.list().length,0);
 });

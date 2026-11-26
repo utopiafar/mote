@@ -3,6 +3,8 @@ import {z} from 'zod';
 import type {PluginCenter} from '../plugin-center.js';
 import type {MemoryBindings} from '../memory-bindings.js';
 import type {MemoryAutomation} from '../memory-automation.js';
+import {PluginHostError} from '@mote/plugin-host';
+import {StoreError} from '../evidence-store.js';
 import {PLUGIN_PAGE_CSP} from './presentation-plugin-loader.js';
 
 export interface PluginControlHttpDeps {
@@ -45,7 +47,14 @@ export function registerPluginControlHttp(app: FastifyInstance, {plugins, bindin
   // restartPlan/blockedActions fields are invented here.
   app.get('/api/plugin-builds', async request => { owner(request); return plugins.buildViews(); });
   app.get('/api/plugin-builds/:id', async request => { owner(request); return plugins.buildView(id(request)); });
-  app.patch('/api/plugin-builds/:id', async request => { owner(request); return plugins.selectBuild(id(request), request.body); });
+  app.patch('/api/plugin-builds/:id', async request => {
+    owner(request);
+    try{return await plugins.selectBuild(id(request),request.body);}
+    catch(error){
+      if(error instanceof PluginHostError&&['stale_scope','revoked','cancelled'].includes(error.code))throw new StoreError('Plugin host operation is unavailable',503);
+      throw error;
+    }
+  });
   app.post('/api/plugin-builds/:id/retire', async request => { owner(request); return plugins.retireBuild(id(request), request.body); });
 
   app.get('/api/memory-spaces/default/binding', async request => { owner(request); return bindings.view(); });

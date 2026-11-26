@@ -88,9 +88,10 @@ test('an archived image reuses one extraction and composes with its caption for 
  assert.deepEqual(retained.map(memory=>memory.id).sort(),[...done.memoryIds].sort(),'releasing originals retains the two verified conclusions');
  for(const id of done.memoryIds){
   const response=await f.node.app.inject({method:'GET',url:'/api/memories/'+id,headers});
-  assert.equal(response.statusCode,200,response.body);
-  const memory=response.json();assert.equal(memory.status,'published');assert.equal(memory.evidence.length,2);
-  for(const evidence of memory.evidence){assert.equal(evidence.originalAvailable,false);assert.equal(evidence.quote,undefined);}
+  assert.equal(response.statusCode,410,response.body);
+  const memory=f.node.memories.get(id);assert.equal(memory.status,'published');assert.equal(memory.evidence.length,2);
+  assert.equal(response.body.includes(memory.statement),false);
+  for(const evidence of memory.evidence)if(evidence.quote)assert.equal(response.body.includes(evidence.quote),false);
  }
  assert.ok(!candidates().includes(chunk.id),'withdrawn attachment identities do not contribute to candidate or coverage counts');
  assert.equal(f.node.files.version(donor).object_hash,sha256(f.bytes),'independently retained original survives removal of the caption');

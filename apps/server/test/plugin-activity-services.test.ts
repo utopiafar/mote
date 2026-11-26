@@ -10,6 +10,7 @@ import type {QueryResult} from '@mote/shared';
 import type {HostPluginContext} from '@mote/plugin-host';
 import {activityConfigurationSchema,type ActivityConfiguration} from '../src/activity-configuration.js';
 import type {ConfigService} from '../src/config-service.js';
+import {activityConfigDomain} from '../src/config.js';
 import {ServerDiagnostics} from '../src/diagnostics.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionHandler} from '../src/execution-engine.js';
 import {MaterialStore} from '../src/materials.js';
@@ -28,10 +29,10 @@ function configuration(initial:Partial<ActivityConfiguration>={}):ConfigService 
   let value=activityConfigurationSchema.parse({enabled:true,modelProfileId:profile,...initial}),revision=4;
   return {
     get revision(){return revision;},
-    current:(id:string)=>{if(id!=='activity')throw Error('Unexpected configuration domain');return structuredClone(value);},
+    current:(domain:unknown)=>{if(domain!==activityConfigDomain)throw Error('Unexpected configuration domain');return structuredClone(value);},
     setHandler:()=>{},
     replace:async(id:string,next:ActivityConfiguration)=>{
-      if(id!=='activity')throw Error('Unexpected configuration domain');
+      if(id!==activityConfigDomain.id)throw Error('Unexpected configuration domain');
       value=activityConfigurationSchema.parse(next);revision++;return structuredClone(value);
     },
   } as unknown as ConfigService;

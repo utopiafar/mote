@@ -10,8 +10,9 @@ import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
-import type {QueryInput} from '@mote/agent';
+import {buildContextEnvelope,type QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
+import {httpMemoryRequestCapacity,memoryRequestUsage} from '../src/memory-request-budget.js';
 import {requestMemoryIntegration} from '../src/memory-integration.js';
 import {MemoryStrategies} from '../src/memory-strategies.js';
 import {MemoryProviderError} from '../src/memory-provider-contract.js';
@@ -22,7 +23,7 @@ const review={...ref('review'),input:'memory-candidates@1',output:'memory-candid
 const recipes=[{...ref('base'),integrate:ref('integrator'),review:ref('review')},{...ref('review-replaced'),integrate:ref('integrator'),review:ref('review','2')},{...ref('integrator-replaced'),integrate:ref('integrator','2'),review:ref('review','2')}];
 const original='I felt proud of the prototype. An idempotency key prevented duplicate writes; I verified the retry.';
 
-async function fixture(t:any){
+async function fixture(t:any,capacity?:{contextWindow:number;maxTokens:number}){
  const directory=mkdtempSync(join(tmpdir(),'mote-integration-')),modulePath=join(directory,'generated-integrators.mjs');
  writeFileSync(modulePath,`export default {apiVersion:1,id:'generated-integrators',sourceKinds:[],create(ctx){const dispose=[];return {async init(){
   for(const value of ${JSON.stringify([integrate,{...integrate,version:'2',prompt:'GENERATED_INTEGRATOR_2'}])})dispose.push(ctx.memoryStrategies.registerIntegration(value));
@@ -30,7 +31,7 @@ async function fixture(t:any){
   for(const value of ${JSON.stringify(recipes)})dispose.push(ctx.memoryStrategies.registerIntegrationRecipe(value));
  },close(){for(const fn of dispose.reverse())fn();}};}};`);
  const connectorManifest=(await import(pathToFileURL(modulePath).href)).default;
- const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:'generated-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'vault'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
+ const config:ConfigurationPlatformOptions={path:(join(directory,'vault'))+'/mote.yaml',privateCredential:{token:'generated-owner-token',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'vault'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high',...capacity},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
  const calls:QueryInput[]=[],control:{duringQuery?:(input:QueryInput)=>Promise<void>|void;badQuote?:boolean;badRelation?:boolean;relation?:boolean;failCoding?:boolean;failPersonal?:boolean;reject?:boolean}={};
  const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
   calls.push(input);await control.duringQuery?.(input);
@@ -179,7 +180,9 @@ for(const phase of ['queued','review'] as const)test(`model configuration change
 });
 
 test('an integration that actually received originals may complete with no new relation and no replay',async t=>{
- const f=await fixture(t),{products}=await f.add('diary');f.control.reject=true;await f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.calls.length,1);assert.equal(f.products().length,0);assert.equal(f.view().active,undefined);await f.node.lifecycle.tick();assert.equal(f.calls.length,1);
+ const f=await fixture(t),{products}=await f.add('diary');f.control.reject=true;await f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();
+ const phases=()=>f.calls.map(call=>call.traceContext?.phase);
+ assert.deepEqual(phases(),['extract','review']);assert.equal(f.products().length,0);assert.equal(f.view().active,undefined);await f.node.lifecycle.tick();assert.deepEqual(phases(),['extract','review']);
 });
 
 test('unsupported native input remains an explicit integration failure without automatic model replay after restart',async t=>{
@@ -192,12 +195,20 @@ test('unsupported native input remains an explicit integration failure without a
 });
 
 test('maximum declared strategy and card inputs fit the Agent question contract for both phases',async t=>{
- const f=await fixture(t),{products}=await f.add('diary');
+ const f=await fixture(t,{contextWindow:98_304,maxTokens:32_768}),{products}=await f.add('diary');
  const parent=products[0],quote=parent.evidence![0].quote!,evidenceId=parent.evidenceIds[0],ids=[parent.id];
  for(let i=1;i<50;i++)ids.push(f.node.memories.extract(fixtureMemoryResult(f.node.memories,{answer:JSON.stringify({memories:[{domain:'personal',title:'Generated '+i,statement:`Generated distinct statement ${i} [${evidenceId}]`,uncertainty:'Generated fixture',admission:parent.admission,evidenceIds:[evidenceId],evidence:[{id:evidenceId,quote}]}]}),citations:[{id:evidenceId,capturedAt:parent.evidence![0].capturedAt,appName:'Generated',excerpt:''}],trace:[],runId:randomUUID()}),'fixture',{requireAdmission:true}).items[0].id);
  f.node.memoryStrategies.registerIntegration({...integrate,...ref('long-integrator'),prompt:'G'.repeat(16000)});
  f.node.memoryStrategies.registerReview({...review,...ref('long-review'),policy:'R'.repeat(16000)});
  f.node.memoryStrategies.registerIntegrationRecipe({...ref('long'),integrate:ref('long-integrator'),review:ref('long-review')});
  const s=f.node.lifecycle.settings();await f.node.lifecycle.save({revision:f.node.configService.revision,settings:{...s,consolidation:{...s.consolidation,maxItems:50}}});await f.queue(ids,'long');await f.node.lifecycle.tick();
- assert.equal(f.calls.length,2);assert.equal(f.view().error,undefined);assert.ok(f.calls.every(c=>c.question.length<=20000),f.calls.map(c=>c.question.length).join(','));
+ assert.deepEqual(f.calls.map(call=>call.traceContext?.phase),['extract','review']);assert.equal(f.view().error,undefined);
+ const capacity=httpMemoryRequestCapacity(f.node.modelSettings.select('memory').settings);
+ for(const [index,call] of f.calls.entries()){
+  const envelope=buildContextEnvelope(call,[]);
+  assert.ok(envelope.request.includes((index===0?'G':'R').repeat(16000)),'each phase retains the entire selected strategy');
+  assert.ok(envelope.request.includes(JSON.stringify(ids)),'each phase sees all 50 exact card IDs in order');
+  const usage=memoryRequestUsage(call,[],capacity);
+  assert.ok(usage.fits,JSON.stringify({phase:call.traceContext?.phase,...capacity,...usage}));
+ }
 });

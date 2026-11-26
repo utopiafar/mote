@@ -17,6 +17,8 @@ import {screenImageSource} from '../src/image-inputs.js';
 import {sha256} from '../src/evidence-store.js';
 import {dailyEventFixtures} from './fixtures/daily-events.js';
 import {generatedMemoryOutput} from './fixtures/memory-planning.js';
+import {startBridge} from '../../../packages/agent/dist/bridge.js';
+import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 
 const personal={id:'mote.personal-memory',version:'5'},coding={id:'mote.coding-memory',version:'3'};
 test('capture defaults preserve explicit selections, only authorize future input, and retain an owner-disabled event recipe after restart',async t=>{
@@ -46,12 +48,23 @@ test('generated screenshot and field HTTP intake runs daily extraction/review, s
     if(input.directImages){const id=input.directImages[0].id;await reader.readImage!({id});return {answer:JSON.stringify({text:data.ocr.get(id),regions:[]}),citations:[],trace:[],runId:randomUUID()};}
     const records=await reader.evidence({ids:input.evidenceIds!});assert.ok(records.length);
     const daily=input.question.includes('daily event history');
+    const targets=(input.taskContext?.memoryWork as {members?:MemoryWorkMember[]}|undefined)?.members?.filter(member=>member.imageTarget)??[];
+    const bridge=targets.length?await startBridge(reader,input):undefined;
+    try{
+    if(bridge)for(const target of targets){
+      const response=await fetch(bridge.url+'/read_image',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({id:target.id,expectedImageSha256:target.imageTarget!.originalSha256})});
+      const pixels=await response.json() as {image?:{data:string};imageDelivery:string};
+      assert.equal(response.status,200,JSON.stringify(pixels));assert.ok(pixels.image?.data);
+      bridge.imageDelivery(pixels.imageDelivery,true);
+    }
     // The deterministic provider proves contracts/routing, not semantic quality.
     const candidates=daily?records.map(record=>{const range=input.evidenceRanges!.find(span=>span.id===record.id)!;const quote=record.ocrText.slice(range.offset,range.offset+range.length);return {domain:'personal',kind:'episodic',title:'Generated dated event',statement:`Captured event at ${record.capturedAt}; action/outcome is limited to displayed proof [${record.id}]`,uncertainty:'Generated visible scope; no claim of endorsement, ownership or unshown completion.',admission:{layer:'observation',reason:'Daily recall of this dated display',scope:record.capturedAt,attribution:'observed'},evidenceIds:[record.id],evidence:[{id:record.id,quote,offset:range.offset}]};}):[];
-    return {answer:generatedMemoryOutput(input,candidates),citations:records.filter(record=>daily).map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''})),trace:[],runId:randomUUID()};
+    return {answer:generatedMemoryOutput(input,candidates),citations:records.filter(record=>daily).map(record=>({id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''})),trace:bridge?.trace??[],runId:randomUUID(),imageReadReceipts:bridge?.imageReadReceipts};
+    }finally{await bridge?.close();}
   }})};
   let node=await buildApp(config,dependencies);await node.app.ready();t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
   const setup=async()=>{await node.processing.saveImageDefault({endpoint:'http://127.0.0.1:9011/ocr'});node.processing.runtime.registry.get('image.http').process=async input=>({durationMs:0,segments:[{startMs:0,endMs:0,text:data.ocr.get(input.file.id)!}]});};await setup();await authorizeFixtureModels(node);
+  await node.perception.save({revision:node.configService.revision,settings:{...node.perception.settings(),allowQueryImages:true}});
   const publish=async()=>{await node.perception.tick();for(let i=0;i<20;i++)if(await node.materialOrganizer.tick(100)===0)break;};
   const run=async()=>{node.store.db.prepare('UPDATE material_memory_requests SET ready_at=0').run();await node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);for(const job of node.memoryPipeline.list())if(['queued','running','waiting_for_model'].includes(job.status))await node.memoryPipeline.run(job.id);};
   for(const value of data.all){const r=await node.app.inject({method:'POST',url:'/api/captures',headers,payload:value});assert.equal(r.statusCode,201,r.body);}
