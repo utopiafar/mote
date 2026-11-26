@@ -15,7 +15,7 @@ const expectedPages = [
   'agentView', 'notes', 'help', 'localPreferences', 'about', 'notifications',
   'assistantMatters', 'assistantMemory', 'assistantWorkbench', 'assistantFeed', 'assistantIdeas', 'assistantGoals',
   'search', 'ask', 'vault', 'statistics', 'sourceCatalog', 'sources',
-  'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'insights',
+  'lark', 'imports', 'activity', 'actions', 'processing', 'extensions', 'usage', 'usageStatistics', 'insights',
   'settings', 'archive', 'connections', 'deviceConnections', 'developer',
 ];
 const expectedCollections = ['materials', 'records', 'segments', 'sources', 'files', 'activity', 'media', 'coding-status'];
@@ -24,6 +24,8 @@ const expectedRenderers = [
   'source-item.calendar', 'source-item.calendar.v2', 'source-item.file', 'source-item.file.v2',
   'source-item.event', 'source-item.event.v2', 'source-item.message', 'source-item.message.v2',
   'source-item.metric', 'source-item.metric.v2', 'source-item.memory', 'source-item.memory.v2',
+  'source-item.capture-event', 'source-item.notification.v2', 'source-item.screen-segment',
+  'source-item.state-series', 'source-item.ui-page-object',
 ];
 const expectedPanels = [
   'memory.saved', 'operation.saved', 'owner-questions.standalone-detail', 'owner-questions.conversation',

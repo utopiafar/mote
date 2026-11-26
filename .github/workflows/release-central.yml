@@ -69,9 +69,18 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Build central workspaces
         run: npm run build:central
+      - name: Prepare Python image fixtures
+        if: env.MOTE_CENTRAL_CHECKS == 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/mote-python-fixtures"
+          "$RUNNER_TEMP/mote-python-fixtures/bin/python" -m pip install --only-binary=:all: Pillow==11.3.0
+          echo "$RUNNER_TEMP/mote-python-fixtures/bin" >> "$GITHUB_PATH"
       - name: Verify central workspaces and generated fixtures
         if: env.MOTE_CENTRAL_CHECKS == 'true'
         timeout-minutes: 30
+        env:
+          MOTE_TEST_CODEX_BIN: ${{ github.workspace }}/packages/agent/native/codex.mjs
+          MOTE_TEST_DSH_JOURNEYS: '1'
         run: node scripts/ci/run.mjs --task central-units
       - name: Package committed central source and verify archive metadata
         run: node scripts/release/source-package.mjs

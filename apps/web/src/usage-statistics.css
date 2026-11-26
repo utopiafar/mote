@@ -40,7 +40,7 @@
 .statistics-marks { display: grid; min-width: 0; position: relative; isolation: isolate; }
 .statistics-gridlines { position: absolute; inset: 0 0 auto; pointer-events: none; z-index: -1; }
 .statistics-gridlines span { border-top: 1px solid var(--mote-hair); }
-.statistics-day-mark { display: grid; grid-template-rows: var(--statistics-plot-height) 24px; position: relative; min-width: 0; padding: 0 1px; border: 0; border-radius: 4px; background: transparent; }
+.statistics-day-mark { display: grid; grid-template-rows: var(--statistics-plot-height) 24px; position: relative; min-width: 0; padding: 0 1px; border: 0; border-radius: var(--mote-radius-indicator); background: transparent; }
 .statistics-day-mark:is(:hover,[aria-pressed=true]) { background: color-mix(in srgb,var(--mote-tint) 68%,transparent); }
 .statistics-bar-slot { display: flex; min-width: 0; justify-content: center; align-items: end; }
 .statistics-bar { display: flex; flex-direction: column-reverse; width: min(72%,32px); overflow: hidden; border-radius: 3px 3px 0 0; background: var(--mote-accent); }
@@ -58,9 +58,9 @@
 .statistics-rank { display: grid; gap: 9px; }
 .statistics-rank > li { display: grid; grid-template-columns: minmax(0,1fr) max-content; gap: 3px 7px; font-size: var(--mote-font-meta); align-items: baseline; }
 .statistics-rank li > span { min-width: 0; overflow-wrap: anywhere; }
-.statistics-rank span > i { display: inline-block; width: 7px; height: 7px; margin-inline-end: 5px; border-radius: 2px; }
-.statistics-rank li > div { grid-column: 1 / -1; height: 5px; border-radius: 4px; overflow: hidden; background: var(--mote-fill); }
-.statistics-rank li > div > i { height: 100%; border-radius: 4px; }
+.statistics-rank span > i { display: inline-block; width: 7px; height: 7px; margin-inline-end: 5px; border-radius: var(--mote-radius-indicator); }
+.statistics-rank li > div { grid-column: 1 / -1; height: 5px; border-radius: var(--mote-radius-indicator); overflow: hidden; background: var(--mote-fill); }
+.statistics-rank li > div > i { height: 100%; border-radius: var(--mote-radius-indicator); }
 .statistics-rank small { color: var(--mote-muted); }
 .statistics-day { scroll-margin: 12px; }
 .statistics-day > p { margin: 0 0 6px; }

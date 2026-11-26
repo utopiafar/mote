@@ -10,6 +10,7 @@ import {AssistantList,kindTitle} from './lists';
 import {BackgroundStatus,all,useAssistantCapabilities} from './common';
 
 const owners=new WeakMap<Api,number>();let nextOwner=0;
+const listCapability={matter:'http:GET:/api/assistant/matters',routine:'http:GET:/api/assistant/routines',commitment:'http:GET:/api/assistant/commitments'} as const;
 export function AssistantMatters({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
  if(!owners.has(api))owners.set(api,++nextOwner);
  return <AssistantMattersContent key={owners.get(api)} api={api} onOpen={onOpen}/>;
@@ -30,7 +31,7 @@ function AssistantMattersContent({api,onOpen}:{api:Api;onOpen:(ref:string)=>void
  return <div className="assistant-matters"><header><h1>{moteText('事项与规则')}</h1>{kind?<a className="text-button" href={returnTo}><ArrowLeft size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineEnd:"0.3em"}}/>{moteText('返回')}</a>:<nav className="segmented-nav" aria-label={moteText('事项与规则')}>
   {(['matter','commitment','routine'] as const).map(value=><a key={value} aria-current={tab===value?'page':undefined} href={'#/assistant/matters?'+new URLSearchParams({tab:value,scope:JSON.stringify(scope)})}>{kindTitle(value)}</a>)}</nav>}</header>
   {kind&&id?(kind==='matter'?<MatterDetail key={selectionKey} api={api} id={id} scope={scope} onOpen={onOpen}/>:kind==='routine'?<RoutineDetail key={selectionKey} api={api} id={id} scope={scope}/>:<CommitmentDetail key={selectionKey} api={api} id={id} scope={scope} onOpen={onOpen}/>):
-   can('http:GET:/api/assistant/'+(tab==='matter'?'matters':tab==='routine'?'routines':'commitments'))?<AssistantList key={JSON.stringify([tab,scope])} api={api} kind={tab} scope={scope}/>:<p role="status">{moteText('当前服务未提供此入口')}</p>}
+   can(listCapability[tab])?<AssistantList key={JSON.stringify([tab,scope])} api={api} kind={tab} scope={scope}/>:<p role="status">{moteText('当前服务未提供此入口')}</p>}
   <BackgroundStatus api={api}/>
  </div>;
 }

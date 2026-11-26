@@ -22,6 +22,8 @@ const native = fileURLToPath(new URL('../native/codex.mjs', import.meta.url));
 const record = {id: '274f8026-73c2-5566-9528-b7aa5fb14de6', capturedAt: '2026-01-01T00:00:00Z', appName: 'Generated fixture', ocrText: '证'.repeat(3000)};
 // The reserve is a published model ceiling, even though Host maxTokens is 512.
 const reserve = 128_000;
+// The original continuation exceeds this window, but its disclosed reduction fits.
+const recoveryWindow = 145_000;
 
 async function generatedTls(root) {
   const run = promisify(execFile), ca = join(root, 'fixture-ca.pem'), caKey = join(root, 'fixture-ca.key');
@@ -344,7 +346,7 @@ for (const {model, window} of [
 
 for (const mode of ['websocket', 'http-fallback']) {
   for (const selection of [{model: 'gpt-5.4'}, {model: 'gpt-6.1-terra', serviceTier: 'fast', chatgpt: true}]) test(`native ${mode} prevents oversized tool continuation and sends one disclosed reduction: ${selection.model}`, {timeout: 30000}, async t => {
-    const f = await fixture(t, {mode, ...selection});
+    const f = await fixture(t, {mode, ...selection, window: recoveryWindow});
     try {
       const answer = await f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline']});
       assert.deepEqual(answer.citations.map(c => c.id), [record.id]);
@@ -359,7 +361,7 @@ for (const mode of ['websocket', 'http-fallback']) {
     assert.equal(JSON.parse(result.output).budgetCoverage.truncated, true);
     assert.ok(!JSON.stringify(actual[1].body).includes(record.ocrText));
     if (mode === 'websocket') assert.equal(actual[1].body.previous_response_id, undefined, 'reduction invalidates continuation inheritance');
-    t.diagnostic(JSON.stringify({mode, window: 144000, outputReserve: reserve, ...stats,
+    t.diagnostic(JSON.stringify({mode, window: recoveryWindow, outputReserve: reserve, ...stats,
       effectiveEstimates: actual.map(r => estimateSerializedTokens({...r.body, input: r.fullInput}).tokens)}));
   });
 
@@ -387,7 +389,7 @@ for (const mode of ['websocket', 'http-fallback']) {
 }
 
 test('native output repair shares the already consumed context recovery', {timeout: 30000}, async t => {
-  const f = await fixture(t, {repair: true});
+  const f = await fixture(t, {repair: true, window: recoveryWindow});
   await assert.rejects(f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline']}), error =>
     error instanceof AgentProviderError && error.details.code === 'processing_limit');
   const stats = await f.stats();
@@ -395,10 +397,12 @@ test('native output repair shares the already consumed context recovery', {timeo
   assert.equal(stats.turns, 2, 'Host output repair uses its existing second turn');
   assert.equal(stats.reads, 1);
   assert.equal(stats.compacts, 0);
+  const continuation = f.requests.filter(request => request.body.generate !== false)[1];
+  assert.ok(continuation.body.input.some(item => item.type === 'function_call_output' && JSON.parse(item.output).budgetCoverage?.truncated));
 });
 
 for (const mode of ['websocket', 'http-fallback']) test(`built-in generated ChatGPT auth uses the same native ${mode} budget gate`, {timeout: 30000}, async t => {
-  const f = await fixture(t, {mode, chatgpt: true});
+  const f = await fixture(t, {mode, chatgpt: true, window: recoveryWindow});
   try {await f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline']});}
   catch (error) {t.diagnostic((await f.diagnostics()).slice(-2000)); throw error;}
   const stats = await f.stats();
@@ -409,7 +413,7 @@ for (const mode of ['websocket', 'http-fallback']) test(`built-in generated Chat
 });
 
 test('native ChatGPT HTTP authentication retry keeps the prior reduction and does not rerun the tool', {timeout: 30000}, async t => {
-  const f = await fixture(t, {mode: 'http-fallback', chatgpt: true, authRetry: true});
+  const f = await fixture(t, {mode: 'http-fallback', chatgpt: true, authRetry: true, window: recoveryWindow});
   try {await f.agent.query({question: 'Read the generated timeline.', hostToolSelection: ['timeline']});}
   catch (error) {t.diagnostic((await f.diagnostics()).slice(-2000)); throw error;}
   const stats = await f.stats();

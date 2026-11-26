@@ -51,6 +51,7 @@ test('real Codex adapter handles queued control tools without native delegation 
  await writeFile(join(root,'auth.json'),JSON.stringify({OPENAI_API_KEY:'generated-unused'}),{mode:0o600});
  await writeFile(executable,`#!${process.execPath}
 import readline from 'node:readline';
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 readline.createInterface({input:process.stdin}).on('line',line=>{const message=JSON.parse(line);
 if(message.method==='initialize')send({id:message.id,result:{}});

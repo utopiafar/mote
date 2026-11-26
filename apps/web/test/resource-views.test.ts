@@ -22,7 +22,7 @@ const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbb
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.scrollTo=()=>{};dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
 function generatedFileView(captureId:string,canOpenOriginal:boolean){return fileViewSchema.parse({captureId,sourceId:'generated',item:{externalId:'generated-file',revision:'generated-v1',observedAt:'2026-09-27T00:00:00Z',title:'Generated file',text:'',kind:'file',layer:'original'},retention:'archive',hasOriginal:canOpenOriginal,originMissing:false,canOpenOriginal,coverage:{extraction:{status:'pending'},semantic:{status:'pending'},embedding:{status:'unsupported'}}});}
-function apiWith(read:(path:string,init?:RequestInit)=>unknown,fileOriginalAccess=false):Api{return {request:async(path:string,init?:RequestInit)=>{const view=/^\/api\/files\/([^/]+)\/view$/.exec(path);if(view)return generatedFileView(view[1],fileOriginalAccess);if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:[]};if(path.startsWith('/api/actions/by-evidence/'))return {items:[],hasMore:false};if(path==='/api/context-trees')return {items:[{id:'topics',version:'1',label:'主题',nodes:[{id:'personal',label:'个人'}]}]};if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();if(path==='/api/memory-settings'){const custom=await read(path,init);return custom&&typeof custom==='object'&&'settings' in custom?custom:{settings:{consolidation:{enabled:false,maxItems:3}},extensions:[]};}if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
+function apiWith(read:(path:string,init?:RequestInit)=>unknown,fileOriginalAccess=false):Api{return {request:async(path:string,init?:RequestInit)=>{const view=/^\/api\/files\/([^/]+)\/view$/.exec(path);if(view)return generatedFileView(view[1],fileOriginalAccess);if(path==='/api/features')return {schemaVersion:1,revision:1,features:[],capabilities:[]};if(path.startsWith('/api/actions/by-evidence/'))return {items:[],hasMore:false};if(path.startsWith('/api/assistant/commitments?')){const page=await read(path,init);return page&&typeof page==='object'&&'items' in page?page:{items:[],nextCursor:null};}if(path==='/api/context-trees')return {items:[{id:'topics',version:'1',label:'主题',nodes:[{id:'personal',label:'个人'}]}]};if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return modelView();if(path==='/api/memory-settings'){const custom=await read(path,init);return custom&&typeof custom==='object'&&'settings' in custom?custom:{settings:{consolidation:{enabled:false,maxItems:3}},extensions:[]};}if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
 test('Memory history uses summary counts and uncertainty links the same verified citations as its statement',async t=>{
  const {root,document:d}=await fixture(t),opened:string[]=[];
@@ -202,15 +202,15 @@ test('current multi-block Material offers one bounded extraction route; stale an
  const api=apiWith(path=>path.includes('/members?')?{items:[],nextOffset:null}:path==='/api/sources'?{items:[]}:path.includes('/source-view?')?{material:current,items:[{blockId:'generated',type:'text',text:'Generated formal body',offset:0,total:21,continued:false}],next:null}:path.includes('/read?')?{material,text:'Generated formal body',textRange:{offset:0,total:21,nextOffset:null}}:current);
  await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:()=>{}})));
  await act(async()=>Array.from(d.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent==='来源与处理')!.click());
- const link=d.querySelector<HTMLAnchorElement>('.material-detail a[href*="memoryMaterial="]');assert.ok(link);
+ const link=d.querySelector<HTMLAnchorElement>('.reader-details-panel[role="dialog"] a[href*="memoryMaterial="]');assert.ok(link);
  assert.match(link.href,/memoryMaterial=material%3Amat_[a-f0-9]{64}%40[b]{64}/);
  current={...current,coverage:{state:'pending'},memorySource:{status:'waiting',evidenceIds:[]}} as typeof current;
  await act(async()=>resources(api).invalidate(key=>key===`/api/materials/${id}`));
- assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null);
- assert.match(d.querySelector('.material-detail')!.textContent!,/无法单独提取记忆/);
+ assert.equal(d.querySelector('a[href*="memoryMaterial="]'),null);
+ assert.match(d.querySelector('.reader-details-panel[role="dialog"]')!.textContent!,/无法单独提取记忆/);
  const old={...material,ref:`material:${id}@${'c'.repeat(64)}`,revision:'c'.repeat(64)};
  await act(async()=>root.render(React.createElement(MaterialDetail,{api,material:old,onOpen:()=>{}})));
- assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null,'historical pinned version cannot borrow the current link');
+ assert.equal(d.querySelector('a[href*="memoryMaterial="]'),null,'historical pinned version cannot borrow the current link');
 });
 test('index failure keeps the published body readable and retries only the current owner index',async t=>{
  const {root,document:d}=await fixture(t),writes:string[]=[];
@@ -407,19 +407,20 @@ test('late raw reply cannot repopulate dialogue view',async t=>{
 });
 
 for(const change of ['artifact','session','unmount'] as const)for(const outcome of ['success','error'] as const)test(`chunk read ignores late ${outcome} after ${change} and prevents duplicate requests`,async t=>{
- const {root,document:d}=await fixture(t),pending=deferred();let artifact='raw-generated',reads=0,signal:AbortSignal|undefined;
+ const {root,document:d}=await fixture(t),pending=deferred(),signals:AbortSignal[]=[];let artifact='raw-generated';
  const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',observedAt:'2026-09-27T00:00:00Z'},job:null,artifacts:[{id:artifact,kind:artifact==='raw-generated'?'transcript':'dialogue'}]});
- const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.includes('/chunks?')){reads++;signal=init?.signal as AbortSignal;return pending.promise;}return value();});
+ const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.includes('/chunks?')){signals.push(init?.signal as AbortSignal);return artifact==='raw-generated'?pending.promise:{items:[{id:'current',ocrText:'CURRENT GENERATED CONTENT',fileEvidence:{artifactId:artifact}}],nextOffset:null};}return value();});
  const render=(client:Api)=>root.render(React.createElement(FileDetail,{api:client,id:ids[0],onOpen:()=>{}}));
  await act(async()=>render(api));
- await act(async()=>{const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='展开原始转写（未校正）')!;button.click();button.click();});assert.equal(reads,1);
+ await act(async()=>{const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='展开原始转写（未校正）')!;button.click();button.click();});assert.equal(signals.length,1);
  if(change==='artifact'){artifact='dialogue-generated';await act(async()=>resources(api).invalidate(key=>key==='/api/files/'+ids[0]));}
  if(change==='session'){const next=apiWith(path=>path.endsWith('/reviews')?{items:[]}:value());await act(async()=>render(next));}
  if(change==='unmount')await act(async()=>root.render(null));
- assert.equal(signal?.aborted,true);
+ assert.equal(signals[0]?.aborted,true);
  await act(async()=>{if(outcome==='success')pending.resolve({items:[{id:'stale',ocrText:'STALE GENERATED CONTENT'}],nextOffset:null});else pending.reject(new Error('STALE GENERATED ERROR'));});
  assert.doesNotMatch(d.body.textContent!,/STALE GENERATED/);
- if(change!=='unmount'){const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent===(change==='artifact'?'展开转写 / 原文片段':'展开原始转写（未校正）'));assert.ok(button);assert.equal(button.disabled,false);}
+ if(change==='artifact'){assert.equal(signals.length,2);assert.equal(signals[1].aborted,false);assert.match(d.body.textContent!,/CURRENT GENERATED CONTENT/);}
+ if(change==='session'){const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='展开原始转写（未校正）');assert.ok(button);assert.equal(button.disabled,false);}
 });
 
 test('manual segment editor preserves literal speaker prefix, cancels without mutation and submits exact identity',async t=>{
@@ -430,7 +431,7 @@ test('manual segment editor preserves literal speaker prefix, cancels without mu
  const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/corrections')){writes.push(JSON.parse(String(init?.body)));throw new ApiError('Generated stale segment',409);}if(path.includes('/chunks?'))return {items:[{id:ids[1],ocrText:'[SPEAKER_0] '+original,fileEvidence:{artifactId:ids[0],speaker:'SPEAKER_0',startMs:0}}],nextOffset:null};return {captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',summary_state:'cancelled'},artifacts:[{id:ids[0],kind:'dialogue'}]};});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
  const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
- await click('展开转写 / 原文片段');await click('纠正此段');assert.equal(d.querySelector('textarea')!.value,original);
+ await click('纠正此段');assert.equal(d.querySelector('textarea')!.value,original);
  await click('取消');assert.equal(writes.length,0);await click('纠正此段');
  await act(async()=>{const input=d.querySelector('textarea')!;Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'Owner corrected text');input.dispatchEvent(new window.Event('input',{bubbles:true}));input.dispatchEvent(new window.Event('change',{bubbles:true}));input.dispatchEvent(new window.KeyboardEvent('keyup',{bubbles:true,key:'t'}));});
  await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
@@ -664,29 +665,36 @@ test('file processing cancellation distinguishes waiting from unknown and requir
  assert.equal(d.querySelector('[role=alertdialog]'),null);
 });
 
+function fileButton(document:Document,label:string){
+ const button=Array.from(document.querySelectorAll('button')).find(button=>button.textContent===label);
+ assert.ok(button,label);
+ return button;
+}
+
 test('unknown file retry confirmation cannot carry approval to another node',async t=>{
  const {root,document:d}=await fixture(t),writes:string[]=[];
- const file={captureId:ids[0],item:{title:'Generated file'},sizeBytes:1,hasOriginal:false,job:{state:'failed',summary_state:'cancelled'},cancellation:{canCancel:false,wait:'unknown'},artifacts:[]};
+ const file={captureId:ids[0],item:{title:'Generated recording',mimeType:'audio/wav'},sizeBytes:1,hasOriginal:false,job:{state:'failed',summary_state:'cancelled'},cancellation:{canCancel:false,wait:'unknown'},artifacts:[]};
  const client=(node:string)=>apiWith((path,init)=>{if(init?.method==='POST')writes.push(node);return file;});
  const first=client('first'),second=client('second'),render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}}));
- await act(async()=>render(first));await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!.click());
+ await act(async()=>render(first));await act(async()=>fileButton(d,'处理详情').click());await act(async()=>fileButton(d,'重新转写 / 提取').click());
  assert.ok(d.querySelector('[role=alertdialog]'));
  await act(async()=>render(second));assert.equal(d.querySelector('[role=alertdialog]'),null);assert.deepEqual(writes,[]);
 });
 
 for(const outcome of ['resolve','reject'] as const)test('file cancellation ignores old session '+outcome+' while new node can cancel',async t=>{
  const {root,document:d}=await fixture(t),late=deferred();let newWrites=0;
- const file={captureId:ids[0],item:{title:'Generated file'},sizeBytes:1,hasOriginal:false,job:{state:'running',summary_state:'waiting'},cancellation:{canCancel:true,wait:'running'},artifacts:[]};
+ const file={captureId:ids[0],item:{title:'Generated recording',mimeType:'audio/wav'},sizeBytes:1,hasOriginal:false,job:{state:'running',summary_state:'waiting'},cancellation:{canCancel:true,wait:'running'},artifacts:[]};
  const oldApi=apiWith((path,init)=>init?.method==='POST'?late.promise:file),newApi=apiWith((path,init)=>{if(init?.method==='POST'){newWrites++;return {};}return file;});
  const render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})),cancel=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='取消本次处理')!;
- await act(async()=>render(oldApi));await act(async()=>cancel().click());await act(async()=>render(newApi));assert.equal(cancel().disabled,false);
+ await act(async()=>render(oldApi));await act(async()=>fileButton(d,'处理详情').click());await act(async()=>cancel().click());await act(async()=>render(newApi));await act(async()=>fileButton(d,'处理详情').click());assert.equal(cancel().disabled,false);
  await act(async()=>cancel().click());assert.equal(newWrites,1);await act(async()=>outcome==='resolve'?late.resolve({state:'cancelled'}):late.reject(new Error('generated stale failure')));assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
 });
 
 test('file processor wait polling enables retry after raw completion without an operation event',async t=>{
  const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});let waiting=true,reads=0;
- const api=apiWith(path=>{if(path==='/api/files/'+ids[0])reads++;return {captureId:ids[0],item:{title:'Generated cancelled file'},sizeBytes:1,hasOriginal:false,job:{state:'cancelled',summary_state:'cancelled'},cancellation:{canCancel:false,wait:waiting?'running':null},artifacts:[]};});
+ const api=apiWith(path=>{if(path==='/api/files/'+ids[0])reads++;return {captureId:ids[0],item:{title:'Generated cancelled recording',mimeType:'audio/wav'},sizeBytes:1,hasOriginal:false,job:{state:'cancelled',summary_state:'cancelled'},cancellation:{canCancel:false,wait:waiting?'running':null},artifacts:[]};});
  await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ await act(async()=>fileButton(d,'处理详情').click());
  const retry=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!;assert.equal(retry().disabled,true);
  waiting=false;await act(async()=>t.mock.timers.tick(2000));assert.equal(retry().disabled,false);const before=reads;
  await act(async()=>t.mock.timers.tick(6000));assert.equal(reads,before,'polling stops after the physical wait settles');

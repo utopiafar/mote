@@ -76,6 +76,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   const plugins=distribution.plugins.map(entry=>{
     const activation=entry.activation;
     return Object.freeze({...entry,contribution:Object.freeze({...entry.contribution}),declaration:Object.freeze({...entry.declaration}),
+      ...(entry.components?{components:Object.freeze(entry.components.map(component=>Object.freeze({...component})))}:{}),
       ...(activation?{activation:Object.freeze({...activation,requires:Object.freeze(Object.fromEntries(Object.entries(activation.requires)
         .map(([name,requirement])=>[name,Object.freeze({...requirement,service:Object.freeze({...requirement.service})})])))})}:{}),
     });
@@ -87,7 +88,7 @@ export async function bootstrapCentral(input:FoundationInput,distribution:Centra
   }
   const contributions=Object.freeze([
     ...selected.map(provider=>({...provider.contribution,featureVersion:provider.version})),
-    ...plugins.map(plugin=>({...plugin.contribution,featureVersion:plugin.contribution.version})),
+    ...plugins.map(plugin=>({...plugin.contribution,featureVersion:plugin.contribution.version,components:plugin.components})),
   ]);
   let stateFor:((scope:HostScope)=>StateStore)|undefined,storageOwner:HostScope|undefined;
   const host=new PluginHost({kind:'central',id:randomUUID()},undefined,undefined,{

@@ -23,6 +23,7 @@ import {createLocalImageProcessing,LOCAL_IMAGE_PROCESSING_INSTANCE,localImagePro
 import {LOCAL_IMAGE_MODEL,localImagePluginStateSchema} from '../../server/src/local-image-contract.js';
 import {MediaAssets,MEDIA_CATALOG} from '../../server/src/media-assets.js';
 import {mediaModelsFeature} from '../../server/src/features/media.js';
+import {testPluginControl,testPluginStorage} from '../../server/test/fixtures/plugin-storage.js';
 
 configureLocale(()=> 'zh-CN');
 // New copy is supplied by CORE-03's one i18n integration. These generated test
@@ -154,7 +155,7 @@ test('real plugin and asset producers drive missing-model recovery, stop drainag
     let center:PluginCenter|undefined,running=false,failStart=false,stopGate:ReturnType<typeof gate>|undefined,ui:Awaited<ReturnType<typeof domFixture>>|undefined;
     let stopStarted=gate();
     const local=createLocalImageProcessing({desired:()=>center?.control.build(control.instanceId)?.desired,modelStatus:async()=>({...assets.status('local-image'),runtimeReady:running}),createWorker:()=>({prepare(){if(failStart)throw Error('Generated startup failure');},start(){running=true;},quiesce(){},async stop(){stopStarted.release();await stopGate?.promise;running=false;},dispose(){running=false;}})});
-    const platform=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(directory,'releases'))},[local.build]);
+    const platform=createPluginControlPlatform({store,executor,host,releases:new GitHubPluginReleases(join(directory,'releases')),controlForScope:testPluginStorage(store).controlForScope},[local.build]);
     const handle=await host.install({identity:{host:host.identity,packageId:'mote.plugin-control',installationId:'generated-control',instanceId:'control',activationId:randomUUID()},contributions:[pluginControlDeclaration],factory:platform.factory});
     const app=Fastify(),serverErrors:Error[]=[];
     t.after(async()=>{await ui?.unmount();stopGate?.release();await app.close();await handle.close('shutdown');await host.close();await executor.close();store.close();await assets.close();MEDIA_CATALOG['local-image']=prior;await rm(directory,{recursive:true,force:true});});
@@ -201,9 +202,8 @@ test('real plugin and asset producers drive missing-model recovery, stop drainag
     await ui.unmount();stopGate.release();await Promise.all([...writes]);
     // Re-open the persisted control store rather than reusing a hand-written
     // stopped fixture. The production control projects the same durable row.
-    const {PluginControlStore}=await import('../../server/src/plugins/plugin-control-store.js');
     const reopened=new Store(join(directory,'store'));
-    try{assert.equal(new PluginControlStore(reopened).build(control.instanceId)?.desired,null);}finally{reopened.close();}
+    try{assert.equal(testPluginControl(reopened).build(control.instanceId)?.desired,null);}finally{reopened.close();}
     ui.remount();await ui.render(api);assert.equal(ui.toggle().getAttribute('aria-checked'),'false');assert.match(ui.text(),/已关闭/);assert.equal(running,false);assert.equal(assets.ready('local-image'),true);
     assert.ok(states.some(state=>(state as {state:string}).state==='waiting'));assert.ok(states.some(state=>(state as {state:string}).state==='failed'));assert.ok(states.some(state=>(state as {state:string}).state==='ready'));
     assert.ok(calls.filter(call=>call.init.method).every(call=>call.path==='/api/plugin-builds/'+control.instanceId));

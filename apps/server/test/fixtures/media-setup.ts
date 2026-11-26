@@ -21,7 +21,7 @@ const gate=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>r
  * health, persisted plugin selection and stop remain production code. */
 export async function generatedLocalImageSetup(t:TestContext,runtime:'native'|'docker'='native',workerFixture?:{script:string;token:string},createModelAgent?:NonNullable<Parameters<typeof buildApp>[1]>['createModelAgent']){
  const directory=await mkdtemp(join(tmpdir(),'mote-generated-image-setup-')),prior=MEDIA_CATALOG['local-image'],bytes=Buffer.from('Generated optional image model bytes');
- const modelDirectory=join(directory,'models'),modelName='component/model.bin',digest=createHash('sha256').update(bytes).digest('hex');
+ const modelDirectory=join(directory,'models'),runtimeDirectory=join(directory,'data','media-runtime','local-image'),modelName='component/model.bin',digest=createHash('sha256').update(bytes).digest('hex');
  MEDIA_CATALOG['local-image']={version:'generated-image-setup',files:[{name:modelName,size:bytes.length,sha256:digest,official:'https://generated-image-setup.invalid/model'}],
   ...(workerFixture?{models:{image:{id:LOCAL_IMAGE_MODEL.id,repository:'generated-img08',revision:'generated-img08-boundary',license:'generated-fixture',directory:'.'}}}:{})};
  const download=createServer((_request,response)=>response.writeHead(200,{'content-length':bytes.length}).end(bytes));
@@ -54,7 +54,7 @@ ThreadingHTTPServer(('127.0.0.1',int(sys.argv[sys.argv.index('--port')+1])),Hand
  const counts={prepare:0,pip:0,probe:0},entered=gate();let held:ReturnType<typeof gate>|undefined;
  // The bootstrap download is an external boundary too. Seed only its verified
  // executable receipt, never current.json or an installed environment/model.
- const {MEDIA_UV_VERSION,nativeMediaPlatform}=await import('../../src/media-native-runtime.mjs') as any,platform=nativeMediaPlatform(),bootstrap=join(modelDirectory,'runtime/local-image/bootstrap',MEDIA_UV_VERSION,platform.target),bootstrapBytes=Buffer.from('Generated package installer');
+ const {MEDIA_UV_VERSION,nativeMediaPlatform}=await import('../../src/media-native-runtime.mjs') as any,platform=nativeMediaPlatform(),bootstrap=join(runtimeDirectory,'bootstrap',MEDIA_UV_VERSION,platform.target),bootstrapBytes=Buffer.from('Generated package installer');
  await mkdir(bootstrap,{recursive:true});await writeFile(join(bootstrap,'uv'),bootstrapBytes);await writeFile(join(bootstrap,'receipt.json'),JSON.stringify({archiveSha256:platform.sha256,binarySha256:createHash('sha256').update(bootstrapBytes).digest('hex')}));
  const prepare:NonNullable<Parameters<typeof buildApp>[1]>['prepareMediaRuntime']=async options=>{
   counts.prepare++;
@@ -77,7 +77,7 @@ ThreadingHTTPServer(('127.0.0.1',int(sys.argv[sys.argv.index('--port')+1])),Hand
  const token='generated-image-setup-owner',workerToken=workerFixture?.token??'generated-image-setup-worker';
  const config:ConfigurationPlatformOptions={path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:token,tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[],runtime:runtime},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'},media:{modelDirectory,python:'python3',workerToken,ocrPort:9010,asrPort:9009,ocrEndpoint:'http://127.0.0.1:9010/ocr',asrEndpoint:'http://127.0.0.1:9009/transcribe',localImagePort:port,localImageEndpoint:`http://127.0.0.1:${port}/v1/interpret`}}};
  node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare,...(createModelAgent?{createModelAgent}:{})});
- return {directory,bytes,counts,token,workerToken,config,pidPath,endpoint:config.initialDocument!.media!.localImageEndpoint!,supported:runtime==='native'&&mediaRoleSupported('local-image'),get node(){return node!;},installed:join(modelDirectory,'local-image',modelName),
+ return {directory,runtimeDirectory,bytes,counts,token,workerToken,config,pidPath,endpoint:config.initialDocument!.media!.localImageEndpoint!,supported:runtime==='native'&&mediaRoleSupported('local-image'),get node(){return node!;},installed:join(modelDirectory,'local-image',modelName),
   holdDependencies(){held=gate();holds.push(held);return {entered:entered.promise,release:held.release};},
   async restart(){await node!.app.close();node=await buildApp(config,{backgroundWorker:false,prepareMediaRuntime:prepare,...(createModelAgent?{createModelAgent}:{})});},
   async until(check:()=>boolean|Promise<boolean>,label:string){const deadline=Date.now()+10000;while(!await check()){assert.ok(Date.now()<deadline,label);await new Promise(resolve=>setTimeout(resolve,5));}},

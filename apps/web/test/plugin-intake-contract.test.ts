@@ -23,6 +23,7 @@ test('deactivating intake pauses the upload queue and reactivating resumes the s
       if(first){first=false;uploadSignal=init.signal as AbortSignal;return new Promise((_resolve,reject)=>init.signal!.addEventListener('abort',()=>reject(init.signal!.reason),{once:true}));}
       return {id:input.id,fileId:'archived:'+input.id,partBytes:4,parts:[]};
     }
+    if(path.endsWith('/commit'))return {id:'archived:'+path.split('/')[3]};
     assert.equal(path,'/api/imports');
     const input=JSON.parse(String(init.body));creates.push(input);
     return {id:input.requestId,name:input.name,status:'completed'};

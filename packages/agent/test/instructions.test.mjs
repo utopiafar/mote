@@ -47,21 +47,22 @@ test('personal application guidance is native archive policy, never dispatched f
 
 test('broad archive coverage and state relevance are model instructions without question dispatch',()=>{
  const a=systemInstructions({question:'Review generated tool-organizer changes'},[]),b=systemInstructions({question:'Find a generated exact fact'},[]);assert.equal(a,b);
- assert.match(a,/track which points are supported/);assert.match(a,/Opening Memory cards are a small set of navigation leads/);assert.match(a,/unfinished Memory work does not prevent reading ready originals/);assert.match(a,/read later transcript blocks/);assert.match(a,/context\.research/);assert.match(a,/one-time event belongs in a long-period state review only/);assert.match(a,/not a checklist of disclaimers/);assert.match(a,/Mention a remaining gap only when it affects a requested conclusion/);
+ assert.match(a,/track which points are supported/);assert.match(a,/Opening Memory cards provide effective derived context.*never a complete account/);assert.match(a,/unfinished Memory work does not prevent reading ready originals/);assert.match(a,/read later transcript blocks/);assert.match(a,/context\.research/);assert.match(a,/one-time event belongs in a long-period state review only/);assert.match(a,/not a checklist of disclaimers/);assert.match(a,/Mention a remaining gap only when it affects a requested conclusion/);
  assert.equal(a.split(ARCHIVE_RECENCY_INSTRUCTIONS).length,2,'archive roles receive the single shared recency responsibility');
  const bounded=systemInstructions({question:'Generated extraction',evidenceIds:[record.id]},[record]);assert.doesNotMatch(bounded,/track which points are supported|context\.research|checklist of disclaimers/);
  for(const hostContextToolMode of [undefined,'all-native'])assert.ok(systemInstructions({question:'Generated review',hostContextToolMode},[]).includes(ARCHIVE_RECENCY_INSTRUCTIONS));
 });
 
-test('archive self-check preserves action status and relevant progress without intent dispatch',()=>{
+test('archive guidance preserves action status and relevant progress without intent dispatch',()=>{
  for(const question of ['Summarize a generated tool-labeling plan','Review a generated paper-glider check','Explain a generated juggling-practice start','Find a generated exact fact']){
   const instructions=systemInstructions({question},[]);assert.equal(instructions,SYSTEM_PROMPT);
-  assert.match(instructions,/check each factual clause.*action status, degree of commitment/);
+  assert.match(instructions,/Before finishing, check that the inspected evidence covers the user's requested points and the relevant changes/);
+  assert.match(instructions,/an intention remains distinct from a confirmed action/);
   assert.match(instructions,/planned action has started, is in progress or is complete/);
-  assert.match(instructions,/Do not promote a plan into an action in progress/);
-  assert.match(instructions,/weaken an explicit start, advance or improvement into a mere preference/);
-  assert.match(instructions,/Retain supported progress that materially answers the requested state or change/);
-  assert.match(instructions,/an unknown final outcome does not erase that progress/);
+  assert.match(instructions,/Do not strengthen or weaken that force without original evidence/);
+  assert.match(instructions,/absent outcome updates establish neither completion nor failure, cancellation or abandonment/);
+  assert.match(instructions,/Select states and changes for their relevance to the question/);
+  assert.match(instructions,/State the supported time and any unresolved outcome/);
  }
 });
 

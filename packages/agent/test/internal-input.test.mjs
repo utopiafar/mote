@@ -12,6 +12,7 @@ const members=originals.map((record,index)=>({key:String(index+1).repeat(64),id:
 const reader={search:async()=>originals,timeline:async()=>({items:originals,nextCursor:null}),evidence:async({ids})=>originals.filter(record=>ids.includes(record.id)),activity:async()=>({}),devices:async()=>[]};
 const question='Generated host policy with complete source attribution and evidence requirements. '.repeat(300)+' Exact policy tail.';
 const instruction='Assess every supplied original range in full, preserving uncertainty and exact quotes. '.repeat(280)+' Exact coverage instruction tail.';
+const fixtureBudget={contextWindow:200000,maxTokens:16384};
 const request=()=>({question,responseMode:'memory-extraction',evidenceIds:originals.map(record=>record.id),evidenceRanges:members.map(({id,offset,length})=>({id,offset,length})),taskContext:{turns:[],memoryWork:{workContract:'range-evaluation@1',members,contextMembers:[],authorizedMembers:members,history:[],instruction}}});
 
 function generatedAnswer(envelope){return {answer:JSON.stringify({memories:[],coverage:envelope.untrustedTaskContext.memoryWork.members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]})),proof:envelope.untrustedEvidence.map(record=>({id:record.id,quote:record.ocrText}))}),citationIds:envelope.untrustedEvidence.map(record=>record.id)};}
@@ -50,6 +51,7 @@ async function codex(t,reject=false){
  await writeFile(executable,`#!${process.execPath}
 import readline from 'node:readline';
 import {appendFileSync} from 'node:fs';
+if(process.argv[2]==='--mote-context-budget-version'){process.stdout.write('mote-context-budget-v1\\n');process.exit(0);}
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const message=JSON.parse(line);appendFileSync(${JSON.stringify(join(root,'rpc.ndjson'))},line+'\\n');
@@ -69,7 +71,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
 
 for(const protocol of ['deepseek','openai-completions','codex-app-server']){
  test(`${protocol} delivers an internal question beyond 20000 with complete original ranges and coverage`,{timeout:30000},async t=>{
-  const fixture=protocol==='codex-app-server'?await codex(t):await provider(t,protocol),agent=createAgent({reader,protocol,model:'generated',apiKey:'generated',agentTimeoutMs:20000,...(fixture.options??{baseUrl:fixture.baseUrl})});t.after(()=>agent.close());let validations=0;
+  const fixture=protocol==='codex-app-server'?await codex(t):await provider(t,protocol),agent=createAgent({reader,protocol,model:'generated',apiKey:'generated',...fixtureBudget,agentTimeoutMs:20000,...(fixture.options??{baseUrl:fixture.baseUrl})});t.after(()=>agent.close());let validations=0;
   const result=await agent.query({...request(),validateOutput:result=>{validations++;assertOutput(result);}});assertOutput(result);assert.equal(validations,1);
   if(fixture.turns){const turns=await fixture.turns();assert.equal(turns.length,1);assertEnvelope(JSON.parse(turns[0].params.input[0].text));}else assert.equal(fixture.requests.length,1);
  });
@@ -79,7 +81,7 @@ for(const protocol of ['deepseek','openai-completions','codex-app-server']){
   assert.equal(admissions,0);
  });
  test(`${protocol} preserves a real capacity failure without truncation or automatic retries`,{timeout:30000},async t=>{
-  const fixture=protocol==='codex-app-server'?await codex(t,true):await provider(t,protocol,true),agent=createAgent({reader,protocol,model:'generated',apiKey:'generated',agentTimeoutMs:20000,...(fixture.options??{baseUrl:fixture.baseUrl})});t.after(()=>agent.close());
+  const fixture=protocol==='codex-app-server'?await codex(t,true):await provider(t,protocol,true),agent=createAgent({reader,protocol,model:'generated',apiKey:'generated',...fixtureBudget,agentTimeoutMs:20000,...(fixture.options??{baseUrl:fixture.baseUrl})});t.after(()=>agent.close());
   await assert.rejects(agent.query(request()),error=>error instanceof AgentProviderError&&error.details.category==='permanent'&&error.details.code==='processing_limit');
   if(fixture.turns){const turns=await fixture.turns();assert.equal(turns.length,1);assertEnvelope(JSON.parse(turns[0].params.input[0].text));}else {assert.equal(fixture.requests.length,1);const message=fixture.requests[0].messages.find(message=>message.role==='user');assertEnvelope(JSON.parse(typeof message.content==='string'?message.content:message.content.find(block=>block.type==='text').text));}
  });

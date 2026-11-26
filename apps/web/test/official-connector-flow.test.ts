@@ -99,7 +99,14 @@ async function fixture(t:TestContext,kind:OfficialProvider='notion'){
  for(const [key,value] of Object.entries({window:dom.window,location:dom.window.location,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true,fetch:ownerFetch})){prior.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  const api=createApi({token:owner}),root=createRoot(dom.window.document.getElementById('root')!);
  const local=await webFeatures.install({id:'generated.official-flow',version:'1',components:[]},[...sourcePages,...connectionsPages].map(entry=>({surface:'page' as const,entry})));
- t.after(async()=>{for(const hold of delayed)hold.release();await act(async()=>root.unmount());await local.dispose();for(const[key,value]of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}configureLocale(()=>locale);dom.window.close();for(const other of otherNodes)await other.app.close();await node.app.close();delete process.env[secret];await rm(directory,{recursive:true,force:true});});
+ t.after(async()=>{for(const hold of delayed)hold.release();provider.releaseAuthorization();await act(async()=>root.unmount());await local.dispose();for(const[key,value]of prior){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}configureLocale(()=>locale);dom.window.close();
+  for(const {app} of [...otherNodes,node]){
+   const closing=app.close();
+   app.server.closeAllConnections();
+   await closing;
+  }
+  delete process.env[secret];await rm(directory,{recursive:true,force:true});
+ });
  const until=async(check:()=>boolean|Promise<boolean>)=>{for(let attempt=0;attempt<800;attempt++){if(await check())return;await act(async()=>new Promise(resolve=>setTimeout(resolve,10)));}throw Error('The generated official source flow did not settle');};
  const request=<T=any>(path:string,body?:unknown)=>api.request<T>(path,body===undefined?undefined:{method:'POST',body:JSON.stringify(body)});
  const preview=await request('/api/plugins/resolve',{repository:definition.repository,tag:'v0.1.0'});await request('/api/plugins/install',{previewId:preview.id,expectedRevision:node.pluginCenter.view().revision,operationId:randomUUID()});await until(()=>node.pluginCenter.view().packages[0]?.state==='installed');

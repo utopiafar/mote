@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 // Outcome schema checks run directly on the production parser; no SDK, model or assembled Host.
-import {parseRuntimeOutcome, RuntimeContractError} from '../src/runtime/contracts.ts';
+import {parseRuntimeOutcome, RuntimeContractError} from '../dist/runtime/contracts.js';
 
 const completed = text => ({terminal: {kind: 'completed'}, candidate: {text}});
 

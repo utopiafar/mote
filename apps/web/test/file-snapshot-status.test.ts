@@ -16,8 +16,12 @@ test('snapshot privacy blocks and expired temporary inputs remain visible in the
  const api={request:async(path:string)=>path.startsWith('/api/operations/changes')?{ids:[],cursor:0,hasMore:false,reset:false}:path==='/api/file-processing'?null:path==='/api/sources'?{items:[]}:path.startsWith('/api/files?')?{items:[row],nextCursor:null}:path==='/api/files/'+id?{...row,item:{...row.item,document:{fileIndex:{status:'pending',coverage:'none'}}},job:{state:'blocked',error:'snapshot_input_expired',summary_state:'blocked'}}:{},setAgentTimeout:()=>{}} as Api;
  await act(async()=>root.render(React.createElement(Files,{api,onOpen:()=>{}})));
  assert.match(dom.window.document.body.textContent!,/隐私规则无法应用，输入未上传/);assert.doesNotMatch(dom.window.document.body.textContent!,/已登记目录/);
- await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
- assert.match(dom.window.document.body.textContent!,/中央索引待处理，原件不归档/);assert.match(dom.window.document.body.textContent!,/快照临时原件已清理.*重新同步来源文件/);
+ const details=dom.window.document.body.appendChild(dom.window.document.createElement('aside'));
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{},detailsTarget:details})));
+ assert.match(dom.window.document.querySelector('.file-detail')!.textContent!,/中央索引待处理，原件不归档/);
+ const processing=details.querySelector<HTMLDetailsElement>('.reader-source-details')!;
+ await act(async()=>processing.querySelector('summary')!.click());assert.equal(processing.open,true);
+ assert.match(processing.textContent!,/快照临时原件已清理.*重新同步来源文件/);
 });
 
 test('summary capacity waiting and its canonical retry time remain separate from completed file processing',async t=>{

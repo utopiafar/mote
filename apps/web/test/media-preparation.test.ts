@@ -62,7 +62,10 @@ test('local-image Web setup prepares actual runtime receipts and verified assets
   assert.equal((await status()).state,'unsupported');assert.equal((await status()).error,'platform_unsupported');
   assert.equal(f.button('一键安装').disabled,true);assert.match(f.dom.window.document.body.textContent!,/不支持自动安装/);assert.deepEqual(setup.counts,{prepare:0,pip:0,probe:0});return;
  }
- const held=setup.holdDependencies();await act(async()=>{f.button('一键安装').click();await drain();});await held.entered;
+ const held=setup.holdDependencies();await act(async()=>{f.button('一键安装').click();await drain();});
+ try{await setup.until(()=>setup.counts.pip>0,'setup starts the generated dependency install');}
+ catch(error){t.diagnostic(JSON.stringify({status:await status(),counts:setup.counts,writes}));throw error;}
+ await held.entered;
  const first=await status(),duplicate=await setup.request('/api/media-preparation/local-image',{method:'POST',body:'{}'});
  assert.equal(first.id,duplicate.id);assert.equal(setup.counts.prepare,1);assert.equal(setup.counts.pip,1);assert.equal(f.button('安装中…').disabled,true);
  await act(async()=>{f.button('取消').click();await new Promise(resolve=>setImmediate(resolve));held.release();await setup.until(async()=>(await status()).state==='cancelled','setup cancellation completes');await drain();});
@@ -73,7 +76,7 @@ test('local-image Web setup prepares actual runtime receipts and verified assets
  assert.match(f.dom.window.document.body.textContent!,/运行依赖和模型已准备/);assert.doesNotMatch(f.dom.window.document.body.textContent!,/服务尚未就绪|准备未完成/);
  assert.match(f.dom.window.document.body.textContent!,/安装模型不会启用本地识图/);assert.equal(f.dom.window.document.querySelector('[role=switch]')!.getAttribute('aria-checked'),'false');
  assert.deepEqual((await setup.request('/api/local-image-processing')),{enabled:false,state:'stopped'});await assert.rejects(readFile(setup.pidPath),{code:'ENOENT'});
- const marker=JSON.parse(await readFile(join(setup.config.media!.modelDirectory,'runtime/local-image/current.json'),'utf8'));
+ const marker=JSON.parse(await readFile(join(setup.runtimeDirectory,'current.json'),'utf8'));
  assert.equal(marker.role,'local-image');assert.match(marker.generation,/^environment-/);assert.equal(setup.counts.pip,2);assert.ok(setup.counts.probe>0);assert.deepEqual(before(),initial);
  await writeFile(setup.installed,Buffer.alloc(setup.bytes.length,1));assert.equal(setup.node.featureServices.mediaAssets.ready('local-image'),true,'same-size image corruption remains the strict worker boundary during normal status');
  await act(async()=>{f.button('启用').click();await setup.until(async()=>(await setup.request('/api/local-image-processing')).state==='failed','the production byte verifier rejects changed weights before publishing worker health');await drain();});await refresh();

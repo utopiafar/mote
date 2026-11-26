@@ -6,7 +6,7 @@
 .assistant-matters nav [aria-current=page] {font-weight:650;text-decoration:underline;text-underline-offset:6px}
 .assistant-matters article>section,.assistant-object-list,.assistant-background {border-top:1px solid var(--border);padding:16px 0}
 .assistant-matters label {display:flex;flex-direction:column;gap:6px;margin:12px 0}
-.assistant-matters textarea,.assistant-matters input,.assistant-matters select {box-sizing:border-box;max-width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;color:inherit;background:var(--mote-surface);font:inherit}
+.assistant-matters textarea,.assistant-matters input,.assistant-matters select {box-sizing:border-box;max-width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--mote-radius-control);color:inherit;background:var(--mote-surface);font:inherit}
 .assistant-matters textarea {width:100%;min-height:90px;resize:vertical}
 .assistant-matters dl {display:grid;grid-template-columns:100px 1fr;gap:8px}
 .assistant-matters dd {margin:0;overflow-wrap:anywhere}
