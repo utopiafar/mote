@@ -146,10 +146,6 @@ export class AssistantTasks implements BatchProductProjection {
  private ancestors(id:string){
   return resolveDependencies(this.store,{version:1,complete:true,ids:[id]})!.ids;
  }
- private originalIds(ids:readonly string[]){
-  return this.store.db.prepare('SELECT id FROM captures WHERE id IN (SELECT value FROM json_each(?))')
-   .all(JSON.stringify(ids)).map(row=>String(row.id));
- }
  private selected(id:string,scope:QueryScope,seen=new Set<string>(),ancestors?:string[]):boolean{
   if(scope.evidenceIds===undefined||scope.evidenceIds.includes(id))return true;
   if(seen.has(id))return false;seen.add(id);
@@ -157,7 +153,7 @@ export class AssistantTasks implements BatchProductProjection {
   for(const row of this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id))parents.push(String(row.evidence_id));
   // Only original captures establish whether a derived candidate is inside a
   // fixed selection. Intermediate artifacts never add permission.
-  const roots=this.originalIds(parents);
+  const roots=this.store.existingCaptureIds(parents);
   return roots.length>0&&roots.every(root=>this.selected(root,scope,new Set(seen)));
  }
  /** Enumerate the current authorized read catalog, not a semantic ranking.
@@ -195,7 +191,7 @@ export class AssistantTasks implements BatchProductProjection {
   const result=()=>{
    const snapshot=new Set<string>();
    for(const id of seen){
-    const originals=this.originalIds(this.ancestors(id));
+    const originals=this.store.existingCaptureIds(this.ancestors(id));
     for(const root of originals.length?originals:[id]){
      snapshot.add('observed:'+root);
      if(found.has(id))snapshot.add('readable:'+root);

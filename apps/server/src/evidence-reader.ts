@@ -1,5 +1,6 @@
 import {openingMemoryLead} from './opening-memory.js';
 import {retiredConversationRoot} from './conversation-retention.js';
+import type {StatementSync} from 'node:sqlite';
 import {z} from 'zod';
 import {materialDependencyStatus,type MaterialInputPin} from './material-readiness.js';
 import {scopeRecord} from './evidence-scope-record.js';
@@ -87,6 +88,12 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   private lifecycleDisposed=false;
   private readonly derivedChecks=new Set<string>();
   private releaseDerivedRead?:()=>void;
+  private dependencyAnchorsStatement?:StatementSync;
+  private dependencyFileChunksStatement?:StatementSync;
+  private dependencyDerivedStatement?:StatementSync;
+  private dependencyTombstoneStatement?:StatementSync;
+  private dependencyMemoriesStatement?:StatementSync;
+  private memoryOriginalsStatement?:StatementSync;
   constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Pick<Indexer,'search'>,private readonly fileEvidence?:FileEvidence,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean,private readonly sourceContexts:SourceContextStore=new SourceContextStore(store)){
     this.archivedFiles=new ArchivedFileStore(store);
     if(materials)installAssistantCardMaterialVisibility(store.db);
@@ -847,23 +854,23 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
   contextDependenciesAllowed(ids:readonly string[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,historical=false,retiredIds?:ReadonlySet<string>,releasedDeletionContextIds?:ReadonlySet<string>,ownerChatScope?:Range):boolean {
     const selected=[...new Set(ids)],encoded=JSON.stringify(selected),db=this.store.db;
     if(!selected.length)return true;
-    const anchors=this.materials?db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM material_evidence e
+    const anchors=this.materials?(this.dependencyAnchorsStatement??=db.prepare(`SELECT e.id,e.material_id,e.revision,e.block_id FROM material_evidence e
       JOIN json_each(?) wanted ON wanted.value=e.id JOIN material_heads h ON h.id=e.material_id
       JOIN material_revisions r ON r.material_id=e.material_id AND r.revision=e.revision
-      WHERE h.retired=0 AND ${historical?'1':'r.sequence>=h.min_visible_sequence'} AND (
+      WHERE h.retired=0 AND (? OR r.sequence>=h.min_visible_sequence) AND (
         EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=e.material_id AND b.revision=e.revision AND b.block_id=e.block_id)
-        OR EXISTS(SELECT 1 FROM material_block_versions b WHERE b.material_id=e.material_id AND b.from_revision=e.revision AND b.block_id=e.block_id AND b.anchor_id=e.id))`)
-      .all(encoded) as {id:string;material_id:string;revision:string;block_id:string}[]:[];
-    const fileChunks=this.files?db.prepare(`SELECT c.id,c.capture_id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id
-      JOIN file_versions v ON v.capture_id=c.capture_id JOIN json_each(?) wanted ON wanted.value=c.id WHERE a.current=1`)
+        OR EXISTS(SELECT 1 FROM material_block_versions b WHERE b.material_id=e.material_id AND b.from_revision=e.revision AND b.block_id=e.block_id AND b.anchor_id=e.id))`))
+      .all(encoded,Number(historical)) as {id:string;material_id:string;revision:string;block_id:string}[]:[];
+    const fileChunks=this.files?(this.dependencyFileChunksStatement??=db.prepare(`SELECT c.id,c.capture_id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id
+      JOIN file_versions v ON v.capture_id=c.capture_id JOIN json_each(?) wanted ON wanted.value=c.id WHERE a.current=1`))
       .all(encoded) as {id:string;capture_id:string}[]:[];
     const captureIds=[...new Set([...selected,...fileChunks.map(chunk=>chunk.capture_id)])];
     const captures=new Map(this.store.evidenceMetadata(captureIds).map(record=>[record.id,record]));
     const attachments=this.files?fileAttachmentVersions(this.store,captureIds):undefined;
     const anchorMap=new Map(anchors.map(anchor=>[anchor.id,anchor])),chunkMap=new Map(fileChunks.map(chunk=>[chunk.id,chunk]));
-    const derived=new Set(db.prepare(`SELECT wanted.value id FROM json_each(?) wanted WHERE
+    const derived=new Set((this.dependencyDerivedStatement??=db.prepare(`SELECT wanted.value id FROM json_each(?) wanted WHERE
       EXISTS(SELECT 1 FROM memories m WHERE m.id=wanted.value) OR EXISTS(SELECT 1 FROM context_artifacts a WHERE a.id=wanted.value)
-      OR EXISTS(SELECT 1 FROM file_artifacts a WHERE a.id=wanted.value)`).all(encoded).map(row=>String(row.id)));
+      OR EXISTS(SELECT 1 FROM file_artifacts a WHERE a.id=wanted.value)`)).all(encoded).map(row=>String(row.id)));
     const metadata=new Map<string,MaterialRecord|undefined>(),materialAllowed=new Map<string,boolean>(),fileAllowed=new Map<string,boolean>(),attachmentAllowed=new Map<string,boolean>(),headDeleted=new Map<string,boolean>();
     const material=(ref:string)=>{if(!metadata.has(ref))metadata.set(ref,this.materials?.authorizationMetadata(ref));return metadata.get(ref);};
     const attachment=(id:string)=>{
@@ -872,7 +879,11 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
       if(!attachmentAllowed.has(capture))attachmentAllowed.set(capture,Boolean(fileAttachmentParent(this.store,capture,true)));
       return attachmentAllowed.get(capture)!;
     };
-    const tombstone=(sourceId:string,externalId:string)=>{const key=JSON.stringify([sourceId,externalId]);if(!headDeleted.has(key))headDeleted.set(key,Boolean(db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,externalId)?.deleted));return headDeleted.get(key)!;};
+    const tombstone=(sourceId:string,externalId:string)=>{
+      const key=JSON.stringify([sourceId,externalId]);
+      if(!headDeleted.has(key))headDeleted.set(key,Boolean((this.dependencyTombstoneStatement??=db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?')).get(sourceId,externalId)?.deleted));
+      return headDeleted.get(key)!;
+    };
     const allowMaterial=(current:MaterialRecord)=>{if(!materialAllowed.has(current.ref))materialAllowed.set(current.ref,this.materialExposure(current,'expand',policy,undefined,false,undefined,true)&&policy.allows({sourceKind:this.materialKind(current),sourceId:current.origin.sourceId,representation:'material',operation:'expand',phase:current.coverage.state}));return materialAllowed.get(current.ref)!;};
     const allowRecord=(record:CaptureRecord,attachmentId=record.id)=>{
       if(!attachment(attachmentId))return false;
@@ -887,8 +898,9 @@ export class EvidenceReader implements CaptureRead,CaptureContextRead,SourceFile
     const pausedClaims=new Set<string>();
     const paused=ownerChatScope?this.memorySourceRevokedIds(selected):undefined;
     const withdrawn=ownerChatScope?this.withdrawnMemoryIds(selected):undefined;
-    for(const row of db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))').all(encoded)){
-      const card=memorySchema.parse(JSON.parse(String(row.json))),dependencies=db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(card.id).map(row=>String(row.evidence_id));
+    for(const row of (this.dependencyMemoriesStatement??=db.prepare('SELECT json FROM memories WHERE id IN (SELECT value FROM json_each(?))')).all(encoded)){
+      const card=memorySchema.parse(JSON.parse(String(row.json)));
+      const dependencies=(this.memoryOriginalsStatement??=db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?')).all(card.id).map(row=>String(row.evidence_id));
       if(ownerChatScope&&paused?.has(card.id)&&!withdrawn?.has(card.id)){
         if(card.status!=='published'||card.supersededBy||!this.memoryLineageVisible(card.id,this.memoryLineage(card),ownerChatScope,false,{policy,operation:'expand',[ownerChatMemory]:true}))return false;
         for(const id of dependencies)pausedClaims.add(id);
