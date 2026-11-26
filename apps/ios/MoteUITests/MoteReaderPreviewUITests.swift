@@ -9,7 +9,7 @@ final class MoteReaderPreviewUITests: XCTestCase {
         for appearance in ["light", "dark"] {
             let app = launch(state: "reader", appearance: appearance)
             XCTAssertTrue(app.staticTexts[body].waitForExistence(timeout: 15))
-            for label in ["返回", "分享", "更多", "围绕这份资料提问"] {
+            for label in ["返回", "来源与处理", "分享", "更多", "围绕这份资料提问"] {
                 let button = app.buttons[label].firstMatch
                 XCTAssertTrue(button.exists, "\(label) is missing")
                 XCTAssertGreaterThanOrEqual(button.frame.width, 44)
@@ -31,14 +31,28 @@ final class MoteReaderPreviewUITests: XCTestCase {
             try capture("panel-more-\(appearance)")
 
             let detail = launch(appearance: appearance)
-            detail.buttons["更多"].tap()
-            detail.buttons["详情"].tap()
+            detail.buttons["来源与处理"].tap()
             for text in ["详情", "本机已保存", "中央已接收", "已整理，可搜索", "14:20", "14:22", "14:25", "来源", "记录 · 我的 iPhone"] {
                 XCTAssertTrue(detail.staticTexts[text].firstMatch.waitForExistence(timeout: 3), "\(text) is missing")
             }
             waitForTarget(detail.buttons["关闭"])
             try capture("panel-detail-\(appearance)")
         }
+    }
+
+    func testScreenshotOpensOriginalAndReturnsToRecognizedText() {
+        let app = launch(state: "screen")
+        let original = app.buttons["original-image"]
+        XCTAssertTrue(original.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["识别文字"].exists)
+        original.tap()
+        let zoom = app.buttons["放大"]
+        XCTAssertTrue(zoom.waitForExistence(timeout: 5))
+        zoom.tap()
+        XCTAssertTrue(app.buttons["适应宽度"].exists)
+        app.buttons["关闭原图"].tap()
+        XCTAssertTrue(original.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["识别文字"].exists)
     }
 
     func testScopeHandoffAndUnconfirmedDeletionKeepOriginal() {

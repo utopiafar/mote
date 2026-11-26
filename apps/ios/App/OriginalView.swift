@@ -70,6 +70,7 @@ struct OriginalView: View {
     let onDeleted: () -> Void
 
     @State private var panel: OriginalPanel?
+    @State private var imageViewer: OriginalImageSelection?
     @State private var confirmingDeletion = false
     @State private var deleting = false
     @State private var deletionError: String?
@@ -101,19 +102,18 @@ struct OriginalView: View {
             topBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(metadata)
-                            .font(MoteFont.secondary)
-                            .foregroundStyle(MoteDesignTokens.muted.color)
+                    VStack(alignment: .leading, spacing: 5) {
                         if let headline {
                             Text(headline)
                                 .font(MoteFont.title)
                                 .foregroundStyle(MoteDesignTokens.ink.color)
-                                .frame(maxWidth: 340, alignment: .leading)
                                 .accessibilityAddTraits(.isHeader)
                         }
+                        Text(metadata)
+                            .font(MoteFont.secondary)
+                            .foregroundStyle(MoteDesignTokens.muted.color)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, MoteMetrics.pageMargin)
                     // A screenshot leads and its recognized words follow; a photo follows the words it came with.
                     if isScreen {
                         if let hero { heroView(hero) }
@@ -133,14 +133,15 @@ struct OriginalView: View {
                             .font(MoteFont.reading)
                             .foregroundStyle(MoteDesignTokens.ink.color)
                             .lineSpacing(10)
-                            .frame(maxWidth: 340, alignment: .leading)
-                            .padding(.horizontal, 20)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, MoteMetrics.pageMargin)
                             .textSelection(.enabled)
                     }
                     if !isScreen, let hero { heroView(hero) }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
+                .frame(maxWidth: 664, alignment: .leading)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12)
             }
             .scrollIndicators(.hidden)
             if let deletionError {
@@ -153,6 +154,7 @@ struct OriginalView: View {
         }
         .background(MoteDesignTokens.background.color)
         .safeAreaInset(edge: .bottom, spacing: 0) { askDock }
+        .accessibilityHidden(panel != nil)
         .overlay {
             if let panel {
                 ZStack(alignment: .bottom) {
@@ -165,12 +167,20 @@ struct OriginalView: View {
                 .ignoresSafeArea()
             }
         }
+        .fullScreenCover(item: $imageViewer) { selection in
+            OriginalImageViewer(selection: selection)
+        }
     }
 
     private var topBar: some View {
         HStack(spacing: 0) {
             MoteIconButton(icon: .back, label: "返回", action: onBack)
+            Text("资料详情")
+                .font(MoteFont.section)
+                .foregroundStyle(MoteDesignTokens.ink.color)
+                .lineLimit(1)
             Spacer()
+            MoteIconButton(icon: .clock, label: "来源与处理") { panel = .detail }
             ShareLink(item: presentation.text) {
                 MoteIcon(.share)
                     .foregroundStyle(MoteDesignTokens.ink.color)
@@ -371,20 +381,32 @@ struct OriginalView: View {
             case .loading:
                 MoteLoadingTile("正在读取图片…")
             case .image(let image):
-                HeroFrame(aspectRatio: image.size.width / max(image.size.height, 1), maxHeight: 360) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
+                Button {
+                    imageViewer = OriginalImageSelection(image: image, title: isScreen ? "截图" : "照片")
+                } label: {
+                    HeroFrame(aspectRatio: image.size.width / max(image.size.height, 1), maxHeight: 360) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                    }
+                    .background(MoteDesignTokens.surfaceSunken.color)
+                    .clipShape(RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous)
+                            .strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        MoteIcon(.plus, size: 17)
+                            .foregroundStyle(MoteDesignTokens.ink.color)
+                            .frame(width: 36, height: 36)
+                            .background(MoteDesignTokens.surface.color, in: Circle())
+                            .padding(8)
+                            .accessibilityHidden(true)
+                    }
                 }
-                .background(MoteDesignTokens.surfaceSunken.color)
-                .clipShape(RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: MoteMetrics.groupRadius, style: .continuous)
-                        .strokeBorder(MoteDesignTokens.hair.color, lineWidth: 1)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(isScreen ? "截图" : "照片")
-                .accessibilityAddTraits(.isImage)
+                .buttonStyle(.plain)
+                .accessibilityLabel("查看原图")
+                .accessibilityIdentifier("original-image")
             case .unavailable:
                 Text("图片暂不可用。")
                     .font(MoteFont.body)
@@ -417,7 +439,7 @@ struct OriginalView: View {
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
         let date = formatter.string(from: presentation.capturedAt)
-        return "\(date) · \(presentation.sourceDescription.components(separatedBy: " · ").first ?? "记录")"
+        return [presentation.sourceDescription, date].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func timeString(_ date: Date) -> String {
@@ -433,6 +455,40 @@ struct OriginalView: View {
             return "删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。"
         }
         return "删除中央保存的这条记录。不会删除本机副本或来源原件，也不会改变来源同步策略。删除后无法恢复。"
+    }
+}
+
+private struct OriginalImageSelection: Identifiable {
+    let image: UIImage
+    let title: String
+    var id: ObjectIdentifier { ObjectIdentifier(image) }
+}
+
+private struct OriginalImageViewer: View {
+    let selection: OriginalImageSelection
+    @Environment(\.dismiss) private var dismiss
+    @State private var enlarged = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                MoteIconButton(icon: .close, label: "关闭原图") { dismiss() }
+                Spacer()
+                MoteCapsuleButton(enlarged ? "适应宽度" : "放大", style: .plain) { enlarged.toggle() }
+            }
+            .padding(.horizontal, MoteMetrics.pageMargin)
+            GeometryReader { geometry in
+                ScrollView(enlarged ? [.horizontal, .vertical] : []) {
+                    Image(uiImage: selection.image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: geometry.size.width * (enlarged ? 2 : 1),
+                               height: geometry.size.height * (enlarged ? 2 : 1))
+                        .accessibilityLabel(selection.title)
+                }
+            }
+        }
+        .background(MoteDesignTokens.background.color)
     }
 }
 

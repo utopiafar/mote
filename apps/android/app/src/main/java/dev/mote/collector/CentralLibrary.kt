@@ -1,7 +1,6 @@
 package dev.mote.collector
 
 import android.app.DatePickerDialog
-import android.graphics.BitmapFactory
 import android.view.Gravity
 import android.widget.*
 import dev.mote.collector.ui.MoteComponents
@@ -274,6 +273,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 listOfNotNull(if (citation == null && windowTitle != null) appName else null, citation?.detail, field("capturedAt")?.let(::readerTime)).joinToString(" · "),
                 citation?.name ?: windowTitle ?: appName ?: NativeOriginalDetail.sourceLabel(row.optString("source")),
                 readable,
+                details = { showDetail { NativeOriginalDetail.capture(row) } },
             ) {
                 val actions = buildList {
                     add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.capture(row) } })
@@ -334,7 +334,10 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             val readable = (0 until spans.length()).map(spans::getJSONObject).filter { it.getString("kind")=="text" }.map(::literal).filter(String::isNotEmpty).joinToString("\n\n")
             val reference="material:"+item.getString("id")+"@"+item.getString("revision")
             val descriptions = NativeRecordDescription.read(item, true)
-            readerHead(MoteI18n.text("版本 {0}", item.opt("sequence")), item.getString("title"), readable) {
+            val historical = current.getString("revision") != item.getString("revision")
+            val detail = NativeOriginalDetail.material(item)
+            readerHead(MoteI18n.text("版本 {0}", item.opt("sequence")), item.getString("title"), readable,
+                details = { screens.showOriginalDetail(detail) }) {
                 val actions = buildList {
                     add(OriginalAction(MoteGlyph.CLOCK, MoteI18n.text("详情"), chevron = true) { showDetail { NativeOriginalDetail.material(item) } })
                     if (descriptions.isNotEmpty()) add(OriginalAction(MoteGlyph.COMPOSE, MoteI18n.text("资料说明"), chevron = true) { NativeOriginalDetail.description(ui.hostActivity(), descriptions) })
@@ -342,7 +345,11 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 }
                 NativeOriginalDetail.more(ui.hostActivity(), actions, null, null)
             }
-            if (current.getString("revision") == item.getString("revision")) current.optJSONObject("codingContext")?.let { context ->
+            if (historical) {
+                ui.text(MoteI18n.text("历史版本"), NativeFontRole.SUPPORT)
+                ui.button(MoteI18n.text("查看当前版本")) { material(id, current.getString("revision")) }
+            }
+            if (!historical) current.optJSONObject("codingContext")?.let { context ->
                 ui.button(MoteI18n.text("主会话") + " · " + context.getString("title")) { evidence(context.getString("ref")) }
                 val requests = context.getJSONArray("requests")
                 if (requests.length() > 0) ui.disclosure(MoteI18n.text("主会话的用户原话")) { section ->
@@ -391,7 +398,7 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                             val relation = options[choice.selectedItemPosition]
                             ui.work(MoteI18n.text("正在保存…"), { api.patch("/api/materials/" + enc(id) + "/context", JSONObject().put("expectedRevision", item.getString("revision")).put("ownerRelation", relation.ifEmpty { null } ?: JSONObject.NULL)) }) { updated -> material(id, updated.getString("revision")) }
                         }
-                    } else ui.button(MoteI18n.text("查看当前版本"), parent = card) { material(id, current.getString("revision")) }
+                    }
                 }
             }
             ui.disclosure(MoteI18n.text("技术详情")) { more ->
@@ -424,36 +431,28 @@ internal class CentralLibrary(private val screens: CentralScreens) {
             body.removeAllViews(); screens.setBack { screens.refresh() }
             val item = row.getJSONObject("item")
             val fileView = CentralFileView.forDetail(row, rawView)
-            ui.text(item.optString("title"), NativeFontRole.TITLE_MOBILE); ui.text(item.optString("mimeType")); ui.text(item.optString("text"))
-            val job = row.optJSONObject("job")
-            val cancellation = row.optJSONObject("cancellation")
-            val processing = ui.card()
-            ui.text(MoteI18n.text("处理状态") + " · " + processingState(job?.optString("state").orEmpty(), job?.optString("error").orEmpty(), job == null), parent = processing)
-            if (job != null) {
-                ui.text(MoteI18n.text("阶段") + " · " + job.optString("stage"), parent = processing)
-                ui.text(MoteI18n.text("摘要") + " · " + processingState(job.optString("summary_state"), job.optString("error")), parent = processing)
-                if (!job.isNull("error") && job.optString("error").isNotBlank()) ui.text(job.getString("error"), parent = processing)
-            }
-            if (fileView != null) FileViewPresentation.summary(fileView).lines.forEach { line -> ui.text(line, NativeFontRole.META, processing) }
-            else if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
-            if (fileView == null) ui.text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, processing)
-            when (cancellation?.optString("wait")) {
-                "running" -> ui.text(MoteI18n.text("已请求停止，外部结果待核实，远端工作仍可能运行。"), parent = processing)
-                "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), parent = processing)
-            }
-            if (job != null) ui.disclosure(MoteI18n.text("处理详情")) { target -> ui.text(job.toString(2), parent = target) }
-            if (fileView != null && fileView.hasOriginal && fileView.canOpenOriginal) {
-                if (item.optString("mimeType").startsWith("image/")) ui.button(MoteI18n.text("查看原图")) { image("/api/files/" + enc(id) + "/content", body) }
-                if (item.optString("mimeType").startsWith("audio/")) ui.button(MoteI18n.text("播放录音")) { screens.playAudio("/api/files/" + enc(id) + "/content", body) }
-                ui.button(MoteI18n.text("保存原件")) { ui.saveCentral("/api/files/" + enc(id) + "/content", item.optString("title", "mote-file"), item.optString("mimeType", "application/octet-stream")) }
-            }
-            ui.button(MoteI18n.text("导出")) { ui.saveCentral("/api/files/" + enc(id) + "/export", "mote-file.tar.gz", "application/gzip") }
-            val artifacts = row.optJSONArray("artifacts") ?: JSONArray()
-            if (item.optString("mimeType").startsWith("audio/") || (0 until artifacts.length()).any { artifacts.optJSONObject(it)?.let { value -> value.optString("kind") == "transcript" && value.optBoolean("providerSupplied") } == true }) {
-                listOf(AdvancedWebTarget.RecordingTool.SPEAKERS, AdvancedWebTarget.RecordingTool.COMPARE, AdvancedWebTarget.RecordingTool.RAW).forEach { tool ->
-                    val target = AdvancedWebTarget.Recording(id, tool)
-                    ui.button(ui.advancedWebLabel(target)) { ui.openAdvancedWeb(target) }
+            val mime = item.optString("mimeType")
+            ui.text(item.optString("title"), NativeFontRole.TITLE_MOBILE)
+            if (mime.isNotBlank()) ui.text(mime, NativeFontRole.META)
+            if (fileView?.let { it.hasOriginal && it.canOpenOriginal } == true) {
+                val path = "/api/files/" + enc(id) + "/content"
+                if (mime.startsWith("image/")) readerHero(path)
+                if (mime.startsWith("audio/")) {
+                    val controls = LinearLayout(ui).apply { orientation = LinearLayout.VERTICAL }
+                    ui.button(MoteI18n.text("播放录音")) {
+                        controls.removeAllViews()
+                        screens.playAudio(path, controls)
+                    }
+                    body.addView(controls)
                 }
+                ui.button(MoteI18n.text("保存原件")) { ui.saveCentral(path, item.optString("title", "mote-file"), mime.ifBlank { "application/octet-stream" }) }
+            }
+            item.optString("text").takeIf(String::isNotBlank)?.let { ui.text(it) }
+            val job = row.optJSONObject("job")
+            val jobState = job?.optString("state").orEmpty()
+            val cancellation = row.optJSONObject("cancellation")
+            if (jobState in setOf("waiting", "running", "failed")) {
+                ui.text(processingState(jobState, job?.optString("error").orEmpty()), NativeFontRole.SUPPORT)
             }
             val items = chunks.optJSONArray("items") ?: JSONArray()
             for (i in 0 until items.length()) {
@@ -473,20 +472,46 @@ internal class CentralLibrary(private val screens: CentralScreens) {
                 }
             }
             if (!chunks.isNull("nextOffset")) ui.button(MoteI18n.text("继续展开")) { file(id, chunks.getInt("nextOffset")) }
-            if (cancellation?.optBoolean("canCancel") == true) ui.button(MoteI18n.text("停止处理")) {
-                ui.work(MoteI18n.text("正在停止处理…"), { api.post("/api/files/" + enc(id) + "/cancel") }) { file(id, offset) }
-            }
-            if (cancellation?.optString("wait") != "running") listOf("transcribe" to "转写", "diarize" to "说话人分离", "summary" to "摘要").forEach { (stage, label) ->
-                ui.button(MoteI18n.text("重试") + " · " + MoteI18n.text(label)) {
-                    val retry = {
-                        ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset) }
-                    }
-                    if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), retry) else retry()
+            ui.disclosure(MoteI18n.text("处理详情")) { processing ->
+                ui.text(MoteI18n.text("处理状态") + " · " + processingState(job?.optString("state").orEmpty(), job?.optString("error").orEmpty(), job == null), parent = processing)
+                if (job != null) {
+                    ui.text(MoteI18n.text("阶段") + " · " + job.optString("stage"), parent = processing)
+                    ui.text(MoteI18n.text("摘要") + " · " + processingState(job.optString("summary_state"), job.optString("error")), parent = processing)
+                    if (!job.isNull("error") && job.optString("error").isNotBlank()) ui.text(job.getString("error"), parent = processing)
                 }
+                if (fileView != null) FileViewPresentation.summary(fileView).lines.forEach { line -> ui.text(line, NativeFontRole.META, processing) }
+                else if (row.optBoolean("originMissing")) ui.text(MoteI18n.text(" · 来源已不可见，中央归档仍可使用").trim(), parent = processing)
+                if (fileView == null) ui.text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, processing)
+                when (cancellation?.optString("wait")) {
+                    "running" -> ui.text(MoteI18n.text("已请求停止，外部结果待核实，远端工作仍可能运行。"), parent = processing)
+                    "unknown" -> ui.text(MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), parent = processing)
+                }
+                if (job != null) ui.disclosure(MoteI18n.text("技术详情"), parent = processing) { target -> ui.text(job.toString(2), parent = target) }
+                val artifacts = row.optJSONArray("artifacts") ?: JSONArray()
+                if (item.optString("mimeType").startsWith("audio/") || (0 until artifacts.length()).any { artifacts.optJSONObject(it)?.let { value -> value.optString("kind") == "transcript" && value.optBoolean("providerSupplied") } == true }) {
+                    listOf(AdvancedWebTarget.RecordingTool.SPEAKERS, AdvancedWebTarget.RecordingTool.COMPARE, AdvancedWebTarget.RecordingTool.RAW).forEach { tool ->
+                        val target = AdvancedWebTarget.Recording(id, tool)
+                        ui.button(ui.advancedWebLabel(target), parent = processing) { ui.openAdvancedWeb(target) }
+                    }
+                }
+                ui.button(MoteI18n.text("导出"), parent = processing) {
+                    ui.saveCentral("/api/files/" + enc(id) + "/export", "mote-file.tar.gz", "application/gzip")
+                }
+                if (cancellation?.optBoolean("canCancel") == true) ui.button(MoteI18n.text("停止处理"), parent = processing) {
+                    ui.work(MoteI18n.text("正在停止处理…"), { api.post("/api/files/" + enc(id) + "/cancel") }) { file(id, offset) }
+                }
+                if (cancellation?.optString("wait") != "running") listOf("transcribe" to "转写", "diarize" to "说话人分离", "summary" to "摘要").forEach { (stage, label) ->
+                    ui.button(MoteI18n.text("重试") + " · " + MoteI18n.text(label), parent = processing) {
+                        val retry = {
+                            ui.work(MoteI18n.text("正在处理…"), { api.post("/api/files/" + enc(id) + "/retry", JSONObject().put("stage", stage).put("confirmUnknown", cancellation?.optString("wait") == "unknown")) }) { file(id, offset) }
+                        }
+                        if (cancellation?.optString("wait") == "unknown") screens.confirm(MoteI18n.text("确认重试"), MoteI18n.text("上次处理是否结束未知，重试可能重复执行。确认后继续。"), retry) else retry()
+                    }
+                }
+                ui.button(MoteI18n.text("删除文件"), parent = processing) { screens.confirm(MoteI18n.text("删除中央文件"), MoteI18n.text("删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。")) {
+                    ui.work(MoteI18n.text("正在删除…"), { CentralDeletion.delete(api,"/api/files/" + enc(id)) }) { screens.refresh() }
+                } }
             }
-            ui.button(MoteI18n.text("删除文件")) { screens.confirm(MoteI18n.text("删除中央文件"), MoteI18n.text("删除中央保存的这份文件。不会删除设备上的原件，也不会改变来源同步策略。删除后无法恢复。")) {
-                ui.work(MoteI18n.text("正在删除…"), { CentralDeletion.delete(api,"/api/files/" + enc(id)) }) { screens.refresh() }
-            } }
         }
     }
     private fun processingState(state: String, reason: String = "", notScheduled: Boolean = false): String {
@@ -925,27 +950,18 @@ internal class CentralLibrary(private val screens: CentralScreens) {
         }
     }
     private fun insights() = screens.showInsights()
-    private fun image(path: String, parent: LinearLayout) {
-        val api = client
-        ui.work(MoteI18n.text("正在读取原图…"), {
-            val bytes = api.image(path)
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }; BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            require(bounds.outWidth > 0 && bounds.outHeight > 0)
-            var sample = 1; while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-        }) { bitmap ->
-            parent.addView(ImageView(ui).apply { adjustViewBounds = true; contentDescription = MoteI18n.text("当前选择的采集截图"); setImageBitmap(bitmap) }, LinearLayout.LayoutParams(-1, -2))
+    private fun readerHead(meta: String, title: String, share: String, details: (() -> Unit)? = null, more: () -> Unit) {
+        val bar = LinearLayout(ui).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            tag = "library-reader-bar"
         }
-    }
-    /** The library readers share the phone reader's frame: a meta line with 分享 and ⋯ beside it, then the title.
-     * The ask docks below through [readerAsk]. */
-    private fun readerHead(meta: String, title: String, share: String, more: () -> Unit) {
-        val bar = LinearLayout(ui).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; tag = "library-reader-bar" }
-        bar.addView(TextView(ui).apply { text = meta; MoteUi.type(this, NativeFontRole.META); MoteUi.textColor(this, NativeColorRole.MUTED) }, LinearLayout.LayoutParams(0, -2, 1f))
+        details?.let { bar.addView(NativeOriginalDetail.barButton(ui, MoteGlyph.CLOCK, "来源与处理", "library-reader-details", it)) }
         if (share.isNotBlank()) bar.addView(NativeOriginalDetail.barButton(ui, MoteGlyph.SHARE, "分享", "library-reader-share") { NativeOriginalDetail.share(ui.hostActivity(), share) })
-        bar.addView(NativeOriginalDetail.barButton(ui, MoteGlyph.MORE, "更多", "library-reader-more") { more() })
+        bar.addView(NativeOriginalDetail.barButton(ui, MoteGlyph.MORE, "更多", "library-reader-more", more))
         body.addView(bar, LinearLayout.LayoutParams(-1, -2))
-        ui.text(title, NativeFontRole.TITLE_MOBILE).setPadding(0, ui.moteDp(2), 0, ui.moteDp(12))
+        ui.text(title, NativeFontRole.TITLE_MOBILE).setPadding(0, ui.moteDp(2), 0, ui.moteDp(4))
+        if (meta.isNotBlank()) ui.text(meta, NativeFontRole.META).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
     }
     /** The record's image leads its words: full width, at most 360dp tall, a quiet tile while it loads. */
     private fun readerHero(path: String) {

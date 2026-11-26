@@ -49,7 +49,7 @@ class LibrarySourceReaderActivity : MoteActivity() {
         super.onCreate(state); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         offset = state?.getInt("offset") ?: 0; memberOffset = state?.getInt("members") ?: 0
         exportGeneration = state?.getLong("exportGeneration")?.takeIf { it >= 0 }; exportOrigin = state?.getString("exportOrigin")
-        body = moteDetailPage()
+        body = moteDetailPage(title = MoteI18n.text("资料详情"))
     }
     override fun onResume() { super.onResume(); resumed = true; load(); handler.postDelayed(availabilityCheck, 5000) }
     override fun onPause() {
@@ -120,25 +120,27 @@ class LibrarySourceReaderActivity : MoteActivity() {
         val type = key("type")
         text(page.item.optString("title", page.item.optString("windowTitle")), NativeFontRole.TITLE_MOBILE)
         text(MoteI18n.text(if (type == "material") "整理资料" else "原文与出处"), NativeFontRole.SECTION)
-        if (type == "material") text(LocalContentPresentation.centralStatus(null, page.item))
-        text(page.text.ifBlank { MoteI18n.text("此版本没有保存正文。") })
-        page.item.optString("sourceDescription").takeIf(String::isNotBlank)?.let(::text)
-        page.item.optJSONObject("attributionContext")?.let { context ->
-            text(MoteI18n.text("内容与我的关系") + " · " + MoteI18n.text(when(context.optString("ownerRelation")) { "owner" -> "我的表达或经历"; "third_party" -> "第三方内容"; "mixed" -> "混合内容"; else -> "归属未知" }))
-        }
-        page.item.optJSONArray("evidenceRefs")?.let { refs -> repeat(refs.length()) { index -> button(MoteI18n.text("查看原始记录")) { openMember(refs.getString(index)) } } }
+        text(page.text.ifBlank { MoteI18n.text("此版本没有保存正文。") }).setLineSpacing(0f, 1.35f)
         page.nextOffset?.let { next -> button(MoteI18n.text("继续展开")) { offset = next; load() } }
         if (offset > 0) button(MoteI18n.text("返回原文开头")) { offset = 0; load() }
+
+        val details = SecondaryUi.disclosure(body, MoteI18n.text("来源与处理"), "library-source-details", expanded = memberOffset > 0)
+        if (type == "material") text(LocalContentPresentation.centralStatus(null, page.item), parent = details)
+        page.item.optString("sourceDescription").takeIf(String::isNotBlank)?.let { text(it, parent = details) }
+        page.item.optJSONObject("attributionContext")?.let { context ->
+            text(MoteI18n.text("内容与我的关系") + " · " + MoteI18n.text(when(context.optString("ownerRelation")) { "owner" -> "我的表达或经历"; "third_party" -> "第三方内容"; "mixed" -> "混合内容"; else -> "归属未知" }), parent = details)
+        }
+        page.item.optJSONArray("evidenceRefs")?.let { refs -> repeat(refs.length()) { index -> button(MoteI18n.text("查看原始记录"), details) { openMember(refs.getString(index)) } } }
         val ref = page.item.optString("memoryMaterialRef")
-        Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matchEntire(ref)?.let { match -> button(MoteI18n.text("整理资料")) { open(this, key("origin"), "material", match.groupValues[1], "", "", match.groupValues[2]) } }
+        Regex("^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$").matchEntire(ref)?.let { match -> button(MoteI18n.text("整理资料"), details) { open(this, key("origin"), "material", match.groupValues[1], "", "", match.groupValues[2]) } }
         page.file?.let { file ->
-            text(LocalContentPresentation.centralStatus(file, null))
+            text(LocalContentPresentation.centralStatus(file, null), parent = details)
             val view = page.fileView
             if (view == null) {
-                text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META)
+                text(MoteI18n.text("原件状态暂不可确认；正文仍可读取。"), NativeFontRole.META, details)
             } else {
-                FileViewPresentation.summary(view).lines.forEach { line -> text(line, NativeFontRole.META) }
-                if (view.hasOriginal && view.canOpenOriginal) button(MoteI18n.text("保存原件")) {
+                FileViewPresentation.summary(view).lines.forEach { line -> text(line, NativeFontRole.META, details) }
+                if (view.hasOriginal && view.canOpenOriginal) button(MoteI18n.text("保存原件"), details) {
                     val selection = reader.selection()
                     exportGeneration = selection.generation; exportOrigin = selection.server
                     @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(file.optJSONObject("item")?.optString("mimeType") ?: "application/octet-stream").putExtra(Intent.EXTRA_TITLE, page.item.optString("windowTitle", "mote-file")), 812)
@@ -146,16 +148,16 @@ class LibrarySourceReaderActivity : MoteActivity() {
             }
         }
         page.members?.let { members ->
-            text(MoteI18n.text("原始依据"), NativeFontRole.SECTION)
+            text(MoteI18n.text("原始依据"), NativeFontRole.SECTION, details)
             val items = members.getJSONArray("items")
-            repeat(items.length()) { index -> val memberRef = items.getJSONObject(index).getString("ref"); button(memberRef) { openMember(memberRef) } }
-            if (!members.isNull("nextOffset")) button(MoteI18n.text("加载更多")) { memberOffset = members.getInt("nextOffset"); load() }
-            if (memberOffset > 0) button(MoteI18n.text("返回")) { memberOffset = 0; load() }
+            repeat(items.length()) { index -> val memberRef = items.getJSONObject(index).getString("ref"); button(memberRef, details) { openMember(memberRef) } }
+            if (!members.isNull("nextOffset")) button(MoteI18n.text("加载更多"), details) { memberOffset = members.getInt("nextOffset"); load() }
+            if (memberOffset > 0) button(MoteI18n.text("返回"), details) { memberOffset = 0; load() }
         }
         page.history?.let { history ->
-            text(MoteI18n.text("历史版本"), NativeFontRole.SECTION)
+            text(MoteI18n.text("历史版本"), NativeFontRole.SECTION, details)
             repeat(history.length()) { index -> val version = history.getJSONObject(index)
-                button(version.getString("revision")) { open(this, key("origin"), "original", key("source"), key("external"), key("device"), version.getString("revision"), version.getString("captureId")) }
+                button(version.getString("revision"), details) { open(this, key("origin"), "original", key("source"), key("external"), key("device"), version.getString("revision"), version.getString("captureId")) }
             }
         }
     }
@@ -193,6 +195,13 @@ class LibrarySourceReaderActivity : MoteActivity() {
             if (!isFinishing && !isDestroyed) load()
         }
     }
-    private fun text(value: String, role: NativeFontRole = NativeFontRole.BODY) { body.addView(TextView(this).apply { text = value; setTextIsSelectable(true); MoteUi.type(this, role); MoteUi.textColor(this, NativeColorRole.INK); setPadding(0, moteDp(8), 0, moteDp(8)) }) }
-    private fun button(value: String, action: () -> Unit) { body.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } })) }
+    private fun text(value: String, role: NativeFontRole = NativeFontRole.BODY, parent: LinearLayout = body): TextView =
+        TextView(this).apply {
+            text = value; setTextIsSelectable(true); MoteUi.type(this, role); MoteUi.textColor(this, NativeColorRole.INK)
+            setPadding(0, moteDp(8), 0, moteDp(8))
+        }.also(parent::addView)
+
+    private fun button(value: String, parent: LinearLayout = body, action: () -> Unit) {
+        parent.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } }))
+    }
 }

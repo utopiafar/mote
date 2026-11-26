@@ -145,10 +145,15 @@ class UiCentralDetailRolloutInstrumentedTest {
             clickCard("Generated original.txt", "查看详情"); save("files", "file-reader", "Generated owner statement", translated = false)
             scenario.onActivity { activity ->
                 assertTrue("Original and correction controls are present with technical detail closed", labels(activity).containsAll(listOf(MoteI18n.text("保存原件"), MoteI18n.text("纠正此段"))))
-                assertTrue("Readable processing status is directly visible", labels(activity).contains(MoteI18n.text("处理状态") + " · " + MoteI18n.text("已完成")))
+                assertFalse("Completed processing stays folded during reading", labels(activity).contains(MoteI18n.text("处理状态") + " · " + MoteI18n.text("已完成")))
                 assertFalse("Technical processing record is initially disclosed", labels(activity).any { it.contains("\"inputVersion\"") })
             }
-            disclosure("处理详情"); save("files", "file-processing-details", "inputVersion", translated = false)
+            disclosure("处理详情")
+            scenario.onActivity { activity ->
+                assertTrue("The processing disclosure shows the real completion state", labels(activity).contains(MoteI18n.text("处理状态") + " · " + MoteI18n.text("已完成")))
+                assertFalse("Technical execution details have their own disclosure", labels(activity).any { it.contains("\\\"inputVersion\\\"") })
+            }
+            disclosure("技术详情"); save("files", "file-processing-details", "inputVersion", translated = false)
             scenario.onActivity { activity ->
                 val complete = JSONObject(labels(activity).single { it.startsWith("{\n") && it.contains("\"inputVersion\"") })
                 assertTrue("Technical processing record includes complete execution and input version", complete.has("execution") && complete.has("inputVersion") && complete.has("attempts"))
@@ -156,7 +161,7 @@ class UiCentralDetailRolloutInstrumentedTest {
             }
             disclosure("处理详情")
             click("纠正此段"); save("files", "file-correction", "保存纠正")
-            click("删除文件"); save("files", "file-delete-confirmation", "删除文件", dialog = true); cancelDialog()
+            disclosure("处理详情"); click("删除文件"); save("files", "file-delete-confirmation", "删除文件", dialog = true); cancelDialog()
             navigate("memories"); save("memories", "memories-populated", "Generated detail memory", translated = false)
             scenario.onActivity { assertTrue("Actual metadata title remains in the native list", labels(it).contains("Generated detail memory")) }
             scenario.onActivity { assertTrue("Actual metadata evidence count and effective status remain visible", labels(it).contains(MoteI18n.text("已生效") + " · 1 " + MoteI18n.text("条证据"))) }

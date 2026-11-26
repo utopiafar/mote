@@ -9,6 +9,9 @@ import {showSkeleton} from './loading-ui';
 export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,reader?:{open():void;close():void}){
   const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
   const dialog=el<HTMLDialogElement>('content-detail-dialog');
+  const original=el<HTMLDetailsElement>('content-original'),processing=el<HTMLDetailsElement>('content-processing');
+  const readerStatus=el('content-detail-status'),imageElement=el<HTMLImageElement>('content-detail-image');
+  const receipt=el('content-detail-receipt'),imageStatus=el('content-detail-image-status');
   const releaseDialog=document.getElementById('content-release-dialog') as HTMLDialogElement|null;
   let releaseTarget:{key:string;generation:number}|undefined;
   const cancelRelease=()=>{releaseTarget=undefined;if(releaseDialog?.open)releaseDialog.close();};
@@ -36,7 +39,7 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
         button.classList.add('home-content-row');icon.className='home-content-symbol';icon.append(desktopContentIcon(document,item.source));
         const arrow=document.createElement('span');arrow.className='chevron';arrow.append(desktopIcon(document,'chevron-right',true));button.append(icon,copy,state,arrow);
       }
-      button.addEventListener('click',()=>{selectedButton=button;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();});root.append(button);
+      button.addEventListener('click',()=>openItem(item,button));root.append(button);
     }
   }
   function mergeRows(rows:ContentItem[]){
@@ -121,14 +124,36 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
     const values=[moteText('本机已保存'),moteText('中央已收到'),moteText('正在整理'),moteText('已完整整理并建立索引')];
     values.forEach((label,index)=>{const item=document.createElement('li');item.textContent=label;item.className=index===0||index===1&&received||index===2&&(readiness==='pending'||readiness==='ready')||index===3&&readiness==='ready'?'completed':'waiting';list.append(item);});
   }
-  async function readSelected(image=false){
+  function openItem(item:ContentItem,button?:HTMLElement){
+    cancelRelease();
+    selectedButton=button;
+    selected=item;
+    detailIsCentral=item.key.startsWith('capture:');
+    chunkOffset=0;
+    processing.open=false;
+    processing.querySelector<HTMLDetailsElement>('details')!.open=false;
+    original.open=item.key.startsWith('queue:')&&item.source==='screen'&&!item.localContentRelease;
+    void readSelected(original.open);
+  }
+  async function readSelected(image=original.open){
     if(!selected)return;const version=++detailGeneration,archiveVersion=archiveGeneration,request=++archiveRequest,item=selected;
-    el('content-detail-status').setAttribute('aria-busy','true');
+    readerStatus.setAttribute('aria-busy','true');
+    receipt.textContent='';imageStatus.textContent='';
     el('content-detail-title').textContent=item.title||sourceName(item.source);el('content-detail-source').textContent=sourceName(item.source);el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale()),item.archiveAcknowledgment?moteText('中央已收到')+' '+new Date(item.archiveAcknowledgment.at).toLocaleString(getLocale()):undefined,item.archiveAcknowledgment?.origin].filter(Boolean).join(' · ');
     el('content-detail-range').hidden=true;el('content-detail-body').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-metadata').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');showSkeleton(el('content-detail-status'),moteText('正在读取内容…'));el('content-detail-next').hidden=true;el('content-detail-central').hidden=true;el('content-original').hidden=true;
     if(!dialog.open){el<HTMLDetailsElement>('content-processing').open=false;if(reader){dialog.show();reader.open();}else dialog.showModal();el('content-detail-title').focus();}stages(item.key.startsWith('capture:')||Boolean(item.archiveAcknowledgment),'unknown');
     try{
-      const result:ContentDetail|SyncContent=item.key.startsWith('capture:')?await api.centralContentDetail(item.key.slice(8),chunkOffset,image):await api.localContentDetail(item.key,image);
+      let result:ContentDetail|SyncContent;
+      if(item.key.startsWith('capture:'))result=await api.centralContentDetail(item.key.slice(8),chunkOffset,image);
+      else{
+        try{result=await api.localContentDetail(item.key,image);}
+        catch(error){
+          // An unreadable local screenshot does not erase its independent text record.
+          if(!image||!item.key.startsWith('queue:')||item.localContentRelease)throw error;
+          if(version!==detailGeneration||!dialog.open)return;
+          result=await api.localContentDetail(item.key,false);
+        }
+      }
       if(version!==detailGeneration||!dialog.open)return;
       const remote='location'in result&&result.location==='central',released='localContentRelease'in result?result.localContentRelease:undefined;
       const releaseButton=document.getElementById('content-detail-release') as HTMLButtonElement|null,saveButton=document.getElementById('content-detail-save-original') as HTMLButtonElement|null;
@@ -138,24 +163,38 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
       if(remote&&(archiveAuthorizationDenied||archiveVersion!==archiveGeneration)){close();return;}
       if(remote)observeArchive({status:'fulfilled',value:{items:[]}},request,archiveVersion);
       detailIsCentral=remote;
-      const bytes='sizeBytes'in result?result.sizeBytes:undefined;el('content-detail-source').textContent=[sourceName(item.source),remote?moteText('中央已收到'):item.localContentRelease?(item.localContentRelease.pending?moteText('需要处理'):moteText('本机副本已清理')):item.archiveAcknowledgment?moteText('原件已保留'):moteText('本机待传副本'),typeof bytes==='number'?bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(1)+' MiB':''].filter(Boolean).join(' · ');
+      const bytes='sizeBytes'in result?result.sizeBytes:undefined;
+      const kind=sourceName(item.source),device='sourceName'in result?result.sourceName:item.sourceName;
+      el('content-detail-source').textContent=[kind,device!==kind?device:undefined,
+        new Date(item.observedAt).toLocaleString(getLocale()),typeof bytes==='number'?bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(1)+' MiB':undefined].filter(Boolean).join(' · ');
       stages(remote||Boolean(item.archiveAcknowledgment),readiness);centralId='captureId'in result?result.captureId:undefined;
       el('content-detail-body').textContent=result.text||(released?(released.pending?moteText('副本清理未完成。重试清理，剩余输入不会重新上传。'):moteText('本机原件不在此设备，连接原中央后可按当前权限读取。')):result.metadataOnly?moteText('此记录仅同步目录信息，未上传正文或原件。'):remote?moteText('正文尚未就绪，原件与来源信息仍可核对。'):moteText('原件已保存在本机，解析或识别会在中央进行。'));
       el('content-detail-range').hidden=!result.truncated;el('content-detail-range').textContent=result.truncated?moteText('当前显示正文前 100000 个字符。完整内容在中央打开。'):'';
       el('content-detail-description').textContent=result.description??'';el('content-description-section').hidden=!result.description;
       el('content-detail-metadata').textContent=result.metadata??'';
       el('content-detail-original-state').textContent=released?(released.pending?moteText('副本清理未完成。重试清理，剩余输入不会重新上传。'):moteText('本机原件不在此设备，连接原中央后可按当前权限读取。')):result.retainsOriginal===undefined?'':result.retainsOriginal?(remote?moteText('原件保留在中央'):moteText('原件已保存在本机')):remote?moteText('中央未保留原件'):moteText('本机仅保留目录信息');
-      el('content-detail-status').textContent=!remote?(item.archiveAcknowledgment?moteText('中央已收到')+' · '+item.archiveAcknowledgment.origin:moteText('本机已保存；尚未收到中央接收确认。')):readiness==='ready'?moteText('资料已完整整理并建立索引'):readiness==='pending'?moteText('中央已收到，正在整理'):readiness==='failed'?moteText('中央已收到，整理需要处理'):readiness==='metadata'?moteText('仅目录信息；未读取正文'):moteText('中央已收到，整理状态待确认');
-      el('content-original').hidden=!result.hasImage;if(result.image)el<HTMLImageElement>('content-detail-image').src=result.image;
+      receipt.textContent=!remote?(item.archiveAcknowledgment?moteText('中央已收到')+' · '+item.archiveAcknowledgment.origin:moteText('本机已保存；尚未收到中央接收确认。')):readiness==='ready'?moteText('资料已完整整理并建立索引'):readiness==='pending'?moteText('中央已收到，正在整理'):readiness==='failed'?moteText('中央已收到，整理需要处理'):readiness==='metadata'?moteText('仅目录信息；未读取正文'):moteText('中央已收到，整理状态待确认');
+      readerStatus.textContent=released?(released.pending?moteText('需要处理'):moteText('本机副本已清理')):
+        remote?(readiness==='ready'?'':receipt.textContent):
+        item.error?moteText('需要处理'):item.archiveAcknowledgment?'':moteText('等待上传');
+      original.hidden=!result.hasImage;
+      if(result.image)imageElement.src=result.image;
+      else if(image&&result.hasImage)imageStatus.textContent=moteText('图片暂不可用。');
       el('content-detail-central').hidden=!centralId;
       if('nextChunkOffset'in result&&result.nextChunkOffset!==undefined){el('content-detail-next').hidden=false;el('content-detail-next').dataset.offset=String(result.nextChunkOffset);}
     }catch(error){if(version!==detailGeneration||!dialog.open)return;renderReadableFailure(el('content-detail-status'),moteText('内容暂不可完整读取，重试。'),error instanceof Error?error.message:String(error));clearDetail();el('content-detail-title').textContent=moteText('内容暂不可用');if(item.localContentRelease){el('content-detail-facts').textContent=[item.sourceName,new Date(item.observedAt).toLocaleString(getLocale()),item.archiveAcknowledgment?.origin].filter(Boolean).join(' · ');el('content-detail-original-state').textContent=moteText(item.localContentRelease.pending?'副本清理未完成。重试清理，剩余输入不会重新上传。':'本机原件不在此设备，连接原中央后可按当前权限读取。');}el<HTMLDetailsElement>('content-processing').open=true;if(item.key.startsWith('capture:')){items=items.filter(row=>!row.key.startsWith('capture:'));renderFeed('content-feed',items);}}
     finally{if(version===detailGeneration&&dialog.open)el('content-detail-status').setAttribute('aria-busy','false');}
   }
-  function clearDetail(){document.getElementById('content-detail-release')?.setAttribute('hidden','');document.getElementById('content-detail-save-original')?.setAttribute('hidden','');el('content-detail-facts').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-range').textContent='';el('content-detail-range').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-body').textContent='';el('content-detail-metadata').textContent='';el('content-detail-source').textContent='';el('content-detail-title').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');centralId=undefined;detailIsCentral=false;el<HTMLDetailsElement>('content-original').open=false;}
-  function close(returnToOrigin=true){cancelRelease();detailGeneration++;const wasOpen=dialog.open,button=selectedButton;dialog.close();clearDetail();selected=undefined;selectedButton=undefined;if(wasOpen&&returnToOrigin){reader?.close();button?.focus();}}
-  el('content-detail-close').addEventListener('click',()=>close());dialog.addEventListener('cancel',()=>{cancelRelease();detailGeneration++;clearDetail();selected=undefined;selectedButton=undefined;reader?.close();});
-  el('content-detail-refresh').addEventListener('click',()=>void readSelected(el<HTMLDetailsElement>('content-original').open));
+  function clearDetail(){document.getElementById('content-detail-release')?.setAttribute('hidden','');document.getElementById('content-detail-save-original')?.setAttribute('hidden','');el('content-detail-facts').textContent='';el('content-detail-description').textContent='';el('content-description-section').hidden=true;el('content-detail-range').textContent='';el('content-detail-range').hidden=true;el('content-detail-original-state').textContent='';el('content-detail-body').textContent='';el('content-detail-metadata').textContent='';el('content-detail-source').textContent='';el('content-detail-title').textContent='';el<HTMLImageElement>('content-detail-image').removeAttribute('src');centralId=undefined;detailIsCentral=false;original.open=false;original.hidden=true;receipt.textContent='';imageStatus.textContent='';}
+  function close(returnToOrigin=true){cancelRelease();detailGeneration++;const wasOpen=dialog.open,button=selectedButton;dialog.close();clearDetail();readerStatus.textContent='';readerStatus.setAttribute('aria-busy','false');selected=undefined;selectedButton=undefined;if(wasOpen&&returnToOrigin){reader?.close();button?.focus();}}
+  el('content-detail-close').addEventListener('click',()=>close());dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
+  const inspect=el<HTMLButtonElement>('content-detail-inspect'),summary=processing.querySelector('summary')!;
+  inspect.addEventListener('click',()=>{
+    processing.open=true;
+    summary.focus();
+  });
+  processing.addEventListener('toggle',()=>inspect.setAttribute('aria-expanded',String(processing.open)));
+  el('content-detail-refresh').addEventListener('click',()=>void readSelected());
   document.getElementById('content-detail-release')?.addEventListener('click',()=>{if(!selected||!releaseDialog)return;releaseTarget={key:selected.key,generation:detailGeneration};releaseDialog.showModal();});
   document.getElementById('content-release-cancel')?.addEventListener('click',cancelRelease);
   releaseDialog?.addEventListener('cancel',cancelRelease);
@@ -169,7 +208,9 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
 
   el('content-detail-next').addEventListener('click',()=>{chunkOffset=Number(el('content-detail-next').dataset.offset);void readSelected();});
   el('content-detail-central').addEventListener('click',()=>{if(centralId)void api.openCentral(undefined,centralId);});
-  el<HTMLDetailsElement>('content-original').addEventListener('toggle',()=>{if(el<HTMLDetailsElement>('content-original').open&&!el<HTMLImageElement>('content-detail-image').src)void readSelected(true);});
+  original.addEventListener('toggle',()=>{
+    if(original.open&&!original.hidden&&!imageElement.src&&!imageStatus.textContent&&readerStatus.getAttribute('aria-busy')!=='true')void readSelected(true);
+  });
   el('content-refresh').addEventListener('click',()=>void refresh());el('content-scope').addEventListener('change',()=>void refresh());el('content-more').addEventListener('click',()=>void refresh(true));
   let searchTimer:ReturnType<typeof setTimeout>|undefined;
   el('content-search').addEventListener('input',()=>{generation++;if(searchTimer)clearTimeout(searchTimer);searchTimer=setTimeout(()=>{searchTimer=undefined;void refresh();},180);});
@@ -185,5 +226,5 @@ export function createContentLibraryUi(api:DesktopApi,openMemories?:()=>void,rea
     if(refreshTimer){clearTimeout(refreshTimer);refreshTimer=undefined;}
     if(deferredContent){deferredContent=false;void refresh();}
   });
-  return {open(item:ContentItem){cancelRelease();selectedButton=undefined;selected=item;detailIsCentral=item.key.startsWith('capture:');chunkOffset=0;el<HTMLDetailsElement>('content-original').open=false;void readSelected();},refresh,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.queueBytes,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];loadedScope='';generation++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}},close};
+  return {open:openItem,refresh,update(next:Status){const changed=status&&(status.authorizationGeneration!==next.authorizationGeneration||status.config.serverUrl!==next.config.serverUrl||status.config.tokenConfigured!==next.config.tokenConfigured||status.config.authSignedOut!==next.config.authSignedOut||status.config.authExpiresAt!==next.config.authExpiresAt||status.config.authSourceBinding!==next.config.authSourceBinding);const nextSignature=JSON.stringify([next.queueDepth,next.queueBytes,next.sync.pendingRecords,next.sync.lastUploadAt,next.sync.state]);const contentChanged=signature!==nextSignature;signature=nextSignature;status=next;if(changed){close();items=[];loadedScope='';generation++;archiveGeneration++;archiveAuthorizationDenied=false;renderFeed('content-feed',[]);void refresh();}else if(contentChanged&&!refreshTimer){const delay=Math.max(0,3000-(Date.now()-lastRefresh));if(!delay)void refresh();else refreshTimer=setTimeout(()=>{refreshTimer=undefined;void refresh();},delay);}},close};
 }

@@ -115,9 +115,6 @@ class FileContentActivity : MoteActivity() {
         text(item.optString("title"), MoteTheme.fontTitleMobile.toFloat()).apply { MoteUi.type(this, NativeFontRole.TITLE_MOBILE, medium = true) }
         text(MoteI18n.text("来源：{0}", detail.source.name), MoteTheme.fontSupport.toFloat()).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
         text(item.optString("observedAt"), MoteTheme.fontMeta.toFloat()).apply { MoteUi.textColor(this, NativeColorRole.MUTED) }
-        transportStatus = text(LocalContentPresentation.fileStatus(row), MoteTheme.fontBody.toFloat())
-        folderProgress = if (detail.folderSummary.isNotBlank()) text(detail.folderSummary, MoteTheme.fontSupport.toFloat()) else null
-        if (detail.capture != null) text(LocalContentPresentation.centralStatus(detail.file, detail.material), 15f)
         if (detail.failed) text(MoteI18n.text("中央暂不可用 · 保留本机状态，恢复连接后重试"), MoteTheme.fontSupport.toFloat())
         if (!row.has("pending") && row.optString("captureId").isNotBlank() && detail.access.client == null) {
             text(MoteI18n.text("登录中央后，可在这里读取原文与整理状态。"), MoteTheme.fontSupport.toFloat())
@@ -128,10 +125,6 @@ class FileContentActivity : MoteActivity() {
         val original = if (local != null) local.first.drop(offset).take(4000) else detail.capture?.optString("ocrText")?.takeIf { it.isNotBlank() } ?: item.optString("text")
         if (original.isNotBlank()) text(original, 16f)
         else text(MoteI18n.text(if (row.optJSONObject("pending")?.optJSONObject("manifest")?.has("sha256") == true) "本机保留文件信息和待发原始字节，正文经中央整理显示。" else "此版本没有保存正文。"), MoteTheme.fontSupport.toFloat())
-        if (detail.source.description.isNotBlank()) {
-            text(MoteI18n.text("资料说明"), MoteTheme.fontSupport.toFloat())
-            text(detail.source.description, MoteTheme.fontBody.toFloat())
-        }
         if (local != null) {
             text(MoteI18n.text(if (local.second && offset + 4000 >= local.first.length) "已显示本机保存原文的最后一页" else "正在预览本机保存的原文，尚未显示完整内容"), 12f)
             if (offset + 4000 < local.first.length) button(MoteI18n.text("继续展开")) { offset += 4000; load() }
@@ -150,11 +143,19 @@ class FileContentActivity : MoteActivity() {
             exportVersion = Triple(detail.source.id, item.getString("externalId"), item.getString("revision"))
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(item.optString("mimeType", "application/octet-stream")).putExtra(Intent.EXTRA_TITLE, item.optString("title", "Mote")), 801)
         }
-        text(item.optString("uri", item.optString("externalId")), 12f)
-        text(MoteI18n.text(if (detail.source.syncContinuously) "以后修改会自动同步" else "本次导入一次，不监控以后修改"), MoteTheme.fontSupport.toFloat())
-        text(MoteI18n.text(when (detail.source.retention) { "archive" -> "中央保留完整原件"; "reference" -> "仅发送文件信息，不读取正文"; else -> "完整文件发送到中央提取正文，处理后不保留中央原件" }), MoteTheme.fontSupport.toFloat())
-        button(MoteI18n.text("管理这个来源")) { startActivity(Intent(this, SourcesActivity::class.java).putExtra("sourceId", detail.source.id)) }
-        button(MoteI18n.text("刷新状态")) { load() }
+        val details = SecondaryUi.disclosure(content, MoteI18n.text("来源与处理"), "file-content-details")
+        transportStatus = text(LocalContentPresentation.fileStatus(row), MoteTheme.fontBody.toFloat(), details)
+        folderProgress = if (detail.folderSummary.isNotBlank()) text(detail.folderSummary, MoteTheme.fontSupport.toFloat(), details) else null
+        if (detail.capture != null) text(LocalContentPresentation.centralStatus(detail.file, detail.material), 15f, details)
+        if (detail.source.description.isNotBlank()) {
+            text(MoteI18n.text("资料说明"), MoteTheme.fontSupport.toFloat(), details)
+            text(detail.source.description, MoteTheme.fontBody.toFloat(), details)
+        }
+        text(item.optString("uri", item.optString("externalId")), 12f, details)
+        text(MoteI18n.text(if (detail.source.syncContinuously) "以后修改会自动同步" else "本次导入一次，不监控以后修改"), MoteTheme.fontSupport.toFloat(), details)
+        text(MoteI18n.text(when (detail.source.retention) { "archive" -> "中央保留完整原件"; "reference" -> "仅发送文件信息，不读取正文"; else -> "完整文件发送到中央提取正文，处理后不保留中央原件" }), MoteTheme.fontSupport.toFloat(), details)
+        button(MoteI18n.text("管理这个来源"), details) { startActivity(Intent(this, SourcesActivity::class.java).putExtra("sourceId", detail.source.id)) }
+        button(MoteI18n.text("刷新状态"), details) { load() }
         MoteUi.styleTree(content)
     }
     @Deprecated("Native export picker") override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -165,6 +166,6 @@ class FileContentActivity : MoteActivity() {
             contentResolver.openOutputStream(destination)?.use { output -> owner.exportPending(selected.first, selected.second, selected.third, output) } ?: error("Destination unavailable")
         }) { result -> Toast.makeText(this, MoteI18n.text(if (result.isSuccess) "本机原件已导出" else "原件导出未完成，重新打开内容后重试"), Toast.LENGTH_LONG).show(); load() }
     }
-    private fun text(value: String, size: Float = MoteTheme.fontBody.toFloat()) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setTextIsSelectable(true); setPadding(0, moteDp(8), 0, moteDp(8)) }.also(content::addView)
-    private fun button(value: String, action: () -> Unit) = content.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } }))
+    private fun text(value: String, size: Float = MoteTheme.fontBody.toFloat(), parent: LinearLayout = content) = TextView(this).apply { text = value; MoteUi.type(this, size.toInt()); MoteUi.textColor(this, NativeColorRole.INK); setTextIsSelectable(true); setPadding(0, moteDp(8), 0, moteDp(8)) }.also(parent::addView)
+    private fun button(value: String, parent: LinearLayout = content, action: () -> Unit) = parent.addView(MoteUi.button(Button(this).apply { text = value; setOnClickListener { action() } }))
 }

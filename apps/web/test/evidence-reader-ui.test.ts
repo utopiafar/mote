@@ -25,6 +25,18 @@ const factRow=(d:Document,label:string)=>Array.from(d.querySelectorAll('.evidenc
 test('note reader leads with the exact original, keeps real source facts and returns focus after Close',async t=>{
  const before=structuredClone(generated),{document:d,origin,writes}=await fixture(t,generated),body=d.querySelector('.evidence-text pre')!;
  assert.equal(d.querySelector('.evidence-back')!.getAttribute('aria-label'),'关闭证据详情');
+ const inspect=d.querySelector<HTMLButtonElement>('.reader-details-trigger')!;
+ assert.equal(d.querySelector<HTMLElement>('.reader-details-backdrop')!.hidden,true);
+ await act(async()=>inspect.click());
+ const drawer=d.querySelector<HTMLElement>('.reader-details-panel[role=dialog]')!;
+ assert.equal(inspect.getAttribute('aria-expanded'),'true');
+ assert.equal(Boolean(d.querySelector('.evidence-main')!.closest('[inert]')),true);
+ assert.ok(d.activeElement===drawer.querySelector('button'),'details receive focus');
+ await act(async()=>d.activeElement!.dispatchEvent(new d.defaultView!.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+ assert.equal(inspect.getAttribute('aria-expanded'),'false');
+ assert.ok(d.activeElement===inspect,'Escape returns focus to the details trigger');
+ assert.equal(Boolean(d.querySelector('.evidence-main')!.closest('[inert]')),false);
+ assert.ok(d.querySelector('.evidence-text pre')===body,'closing details keeps the original reader mounted');
  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-more-button')!.click());const help=d.querySelector<HTMLDetailsElement>('.evidence-processing-help')!;
  assert.equal(d.querySelector('.evidence-heading h2')!.textContent,generated.windowTitle);assert.equal(d.querySelector('.evidence-body-heading')!.textContent,'用户原文');
  assert.equal(body.textContent,generated.ocrText);assert.equal(body.querySelector('script'),null,'untrusted original remains literal');
