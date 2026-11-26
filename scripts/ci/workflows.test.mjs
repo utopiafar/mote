@@ -71,18 +71,23 @@ test('manual requests reject unknown modes, invalid scope and a mutable/mismatch
 test('tag-triggered release checks also avoid the broad server glob and manual performance/scale cases', () => {
   const release = workflow('release-central');
   assert.ok(release.on.push.tags.includes('central-v*'));
-  const checks = release.jobs.package.steps.filter(step => step.run?.includes('--task central-units'));
-  assert.equal(checks.length, 1);
+  const steps = release.jobs.package.steps;
+  const checks = steps.filter(step => step.run?.includes('node scripts/ci/run.mjs --task '));
+  assert.deepEqual(checks.map(step => step.run.split(' ').at(-1)), ['central-workspaces', 'central-server-1-2', 'central-server-3-4', 'central-release-tools']);
   assert.match(release.env.MOTE_CENTRAL_CHECKS, /startsWith\(github.ref, 'refs\/tags\/'\)/);
-  assert.equal(checks[0].if, "env.MOTE_CENTRAL_CHECKS == 'true'");
-  const native = release.jobs.package.steps.find(step => step.name === 'Verify the pinned Codex App Server');
-  assert.equal(native.if, checks[0].if);
-  assert.ok(release.jobs.package.steps.indexOf(native) < release.jobs.package.steps.indexOf(checks[0]));
-  const sandbox = release.jobs.package.steps.find(step => step.run?.includes('apt-get install') && step.run.includes('bubblewrap'));
-  assert.equal(sandbox.if, checks[0].if);
+  const gate = "env.MOTE_CENTRAL_CHECKS == 'true'";
+  const native = steps.find(step => step.name === 'Verify the pinned Codex App Server');
+  const packaging = steps.find(step => step.run?.includes('scripts/release/source-package.mjs'));
+  assert.equal(native.if, gate);
+  for (const check of checks) {
+    assert.equal(check.if, gate);
+    assert.equal(check['timeout-minutes'], 30);
+    assert.ok(steps.indexOf(native) < steps.indexOf(check) && steps.indexOf(check) < steps.indexOf(packaging));
+  }
+  const sandbox = steps.find(step => step.run?.includes('apt-get install') && step.run.includes('bubblewrap'));
+  assert.equal(sandbox.if, gate);
   assert.match(sandbox.run, /apparmor_parser -r \/etc\/apparmor\.d\/bwrap-userns-restrict/);
   assert.match(sandbox.run, /bwrap --unshare-user --unshare-net --ro-bind/);
-  assert.ok(release.jobs.package.steps.indexOf(sandbox) < release.jobs.package.steps.indexOf(native));
-  assert.equal(checks[0]['timeout-minutes'], 30);
-  assert.ok(!release.jobs.package.steps.some(step => /check:central|npm test|--suite/.test(step.run ?? '')));
+  assert.ok(steps.indexOf(sandbox) < steps.indexOf(native));
+  assert.ok(!steps.some(step => /check:central|npm test|--suite/.test(step.run ?? '')));
 });
