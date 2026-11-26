@@ -166,8 +166,14 @@ test('historical audio batch confirmation authorizes only previewed originals ac
  await assert.rejects(f.node.featureServices.withMediaOwnerBatch([first.id],()=>f.node.processing.reprocess({token:preview.json().token})),{statusCode:409});
  for(const file of [first,second,later])assert.equal(f.node.processing.modelIntent(file.id,'pipeline'),undefined);
  assert.equal(bodies.length,0);
+ // Freeze this process's scheduled execution at the queued boundary. An
+ // interrupted, already-issued request has unknown outcome and must wait for
+ // explicit confirmation; this case exercises the saved, unsent work.
+ t.mock.method(f.node.executor,'tick',async()=>{});
  const confirmed=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(confirmed.statusCode,200,confirmed.body);assert.equal(confirmed.json().queued,2);
  const duplicate=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(duplicate.statusCode,200,duplicate.body);assert.deepEqual(duplicate.json(),confirmed.json());
+ for(const file of [first,second])assert.equal(f.node.files.detail(file.id).job?.state,'waiting');
+ assert.equal(bodies.length,0,'neither authorized original has been sent before restart');
  await f.restart();assert.doesNotThrow(()=>f.node.processing.reprocessTargets({token:preview.json().token}));const afterRestart=await f.node.app.inject({method:'POST',url:'/api/file-processing/reprocess',headers:f.headers,payload:{token:preview.json().token}});assert.equal(afterRestart.statusCode,200,afterRestart.body);assert.deepEqual(afterRestart.json(),confirmed.json());
  const deadline=Date.now()+5000,ids=[first.id,second.id];
  for(;;){
