@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile,writeFile} from 'node:fs/promises';
+import {readFile,rename,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import React,{act} from 'react';
 import {JSDOM} from 'jsdom';
@@ -145,6 +145,11 @@ test('closing a page suppresses late replies while separately admitted server wo
   const installed=(await f.request('GET','/api/plugins/presentation')).instances[0],posted:unknown[]=[];
   const bridge=new CustomPageBridge({instanceId:instance.id,nonce:'generated-nonce',documentKey:'generated-document',generation:()=>1,visible:()=>true,documentAlive:()=>true,declared:installed.pages[0].methods,invoke:(method,payload)=>f.request('POST',`/api/plugin-instances/${instance.id}/pages/${installed.pages[0].id}/invoke`,{activationId:installed.activationId,method,payload}),post:reply=>posted.push(reply)});
   const pending=bridge.accept({data:{contractVersion:'1',instanceId:instance.id,nonce:'generated-nonce',documentKey:'generated-document',generation:1,requestId:'generated-start',kind:'request',method:'start',payload:{authorized:true}}});
-  await presentationUntil(async()=>Boolean(await readFile(gate+'.entered').catch(()=>undefined)),'authorized server work entered');bridge.revoke();await writeFile(gate,'true');assert.equal(await pending,true);assert.deepEqual(posted,[]);
+  await presentationUntil(async()=>Boolean(await readFile(gate+'.entered').catch(()=>undefined)),'authorized server work entered');
+  bridge.revoke();
+  await writeFile(gate+'.next','true');
+  await rename(gate+'.next',gate);
+  assert.equal(await pending,true);
+  assert.deepEqual(posted,[]);
   const result=await f.request('POST',`/api/plugin-instances/${instance.id}/pages/${installed.pages[0].id}/invoke`,{activationId:installed.activationId,method:'state'});assert.deepEqual(result,{completed:true});assert.equal(f.node.pluginCenter.instanceView(instance.id).desired,true,'page lifetime never revokes the background owner selection');
 });

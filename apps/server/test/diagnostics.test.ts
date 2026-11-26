@@ -37,12 +37,17 @@ async function within<T>(task:Promise<T>,message:string):Promise<T> {
 // generated public record arrives, so every completed append has a successor.
 function continuousWrites(t:import('node:test').TestContext,logger:ServerDiagnostics) {
  let active=true,produced=0;const append=DiagnosticLogStore.prototype.append;
+ let acknowledgeFirstRecord!:()=>void;
+ const firstRecord=new Promise<void>(resolve=>{acknowledgeFirstRecord=resolve;});
  t.mock.method(DiagnosticLogStore.prototype,'append',async function(this:DiagnosticLogStore,records:Parameters<typeof append>[0]) {
   const files=await append.call(this,records);
-  if(active&&logger.accepts('debug')&&records.some(record=>JSON.parse(record.line).instanceId===logger.instanceId))logger.record('source.completed',{count:++produced},'debug');
+  if(active&&logger.accepts('debug')&&records.some(record=>JSON.parse(record.line).instanceId===logger.instanceId)){
+   logger.record('source.completed',{count:++produced},'debug');
+   acknowledgeFirstRecord();
+  }
   return files;
  });
- return {stop:()=>{active=false;},get produced(){return produced;}};
+ return {firstRecord,stop:()=>{active=false;},get produced(){return produced;}};
 }
 
 test('OpenCode request usage persists safe counters without detailed tracing',async t=>{
@@ -124,6 +129,7 @@ test('diagnostic settings and disk-backed reads complete while debug producers r
  const before=(await app.inject({url:'/api/diagnostics-settings',headers})).json();
  diagnostics.record('source.completed',{count:0},'debug');
  const unchanged=diagnostics.snapshot().lastSeq;diagnostics.agentTrace({type:'fixture.before-publication'});assert.equal(diagnostics.snapshot().lastSeq,unchanged);
+ await within(producer.firstRecord,'the fixture debug producer did not start');
  const saved=await within(app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{...before,traceEnabled:true}}).then(response=>response),'settings save was starved by later debug records');
  assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().revision,before.revision+1);assert.equal(saved.json().traceEnabled,true);
  diagnostics.agentTrace({type:'fixture.after-publication',payload:{prompt:'Generated trace after committed opt-in'}});
