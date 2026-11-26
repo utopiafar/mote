@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync,mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
+import {createServer,type AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {z} from 'zod';
@@ -71,17 +72,22 @@ test('deadline and cancellation stop a Python child without returning partial ou
   assert.deepEqual(await running,{status:'cancelled',code:'cancelled'});
 });
 
-test('macOS sandbox permits staged input but denies files and network outside it',
-  {skip:process.platform!=='darwin'||process.env.MOTE_TEST_PYTHON_OS_SANDBOX!=='1'},async t=>{
+test('OS sandbox permits staged input but denies files and network outside it',
+  {skip:!['darwin','linux'].includes(process.platform)||process.env.MOTE_TEST_PYTHON_OS_SANDBOX!=='1'},async t=>{
   const script=`import json, socket\nr=json.load(open('request.json'))\nresult=[open(r['inputs'][0]['path']).read()]\n`+
-    `try:\n open('/private/etc/hosts').read(); result.append('outside-read-open')\nexcept OSError:\n result.append('outside-read-denied')\n`+
+    `try:\n open(r['config']['systemPath']).read(); result.append('outside-read-open')\nexcept OSError:\n result.append('outside-read-denied')\n`+
     `try:\n open(r['config']['outsidePath'],'w').write('escape'); result.append('outside-write-open')\nexcept OSError:\n result.append('outside-write-denied')\n`+
-    `try:\n s=socket.socket(); s.connect(('127.0.0.1',9)); result.append('network-open')\nexcept OSError:\n result.append('network-denied')\n`+
+    `try:\n s=socket.socket(); s.connect(('127.0.0.1',r['config']['port'])); result.append('network-open')\nexcept OSError:\n result.append('network-denied')\n`+
     `print(json.dumps({'value':'|'.join(result)}))\n`;
-  const f=fixture(t,script),outsidePath=join(f.directory,'escape.txt');
+  const f=fixture(t,script),outsidePath=join(f.directory,'escape.txt'),mac=process.platform==='darwin';
+  const systemPath=mac?'/private/etc/hosts':'/etc/hosts';
+  const listener=createServer(socket=>socket.end());
+  await new Promise<void>((resolve,reject)=>{listener.once('error',reject);listener.listen(0,'127.0.0.1',resolve);});
+  t.after(()=>new Promise<void>(resolve=>listener.close(()=>resolve())));
+  const {port}=listener.address() as AddressInfo;
   const executor=new PythonSourcePackExecutor({id:'fixture.os-sandbox',version:'1',packRoot:f.packRoot,script:'main.py',scriptSha256:sha256(script),
-    pythonExecutable:'/Library/Developer/CommandLineTools/usr/bin/python3',outputSchema:z.object({value:z.string()}).strict()});
-  const result=await executor.run({workspace:f.workspace,inputPaths:[f.inputPath],config:{outsidePath}});
+    pythonExecutable:mac?'/Library/Developer/CommandLineTools/usr/bin/python3':'/usr/bin/python3',outputSchema:z.object({value:z.string()}).strict()});
+  const result=await executor.run({workspace:f.workspace,inputPaths:[f.inputPath],config:{outsidePath,systemPath,port}});
   assert.deepEqual(result,{status:'succeeded',output:{value:'Generated Python Source Pack input.|outside-read-denied|outside-write-denied|network-denied'}});
   assert.equal(existsSync(outsidePath),false);
 });

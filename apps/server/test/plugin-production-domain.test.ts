@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rename,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
@@ -59,7 +59,14 @@ const consumer=String.raw`
 `;
 
 async function fixture(t:TestContext){
- const directory=await mkdtemp(join(tmpdir(),'mote-production-domain-')),controlFile=join(directory,'control.json');await writeFile(controlFile,'{}');
+ const directory=await mkdtemp(join(tmpdir(),'mote-production-domain-')),controlFile=join(directory,'control.json');
+ const control=async(value:object)=>{
+  const next=controlFile+'.next';
+  await writeFile(next,JSON.stringify(value));
+  // The plugin keeps polling this file during withdrawal; publish a complete value.
+  await rename(next,controlFile);
+ };
+ await control({});
  const releases=new Map<string,Release>(),config:ConfigurationPlatformOptions={path:(join(directory,'data'))+'/mote.yaml',privateCredential:{token:'generated-domain-owner',tokenPath:'generated'},initialDocument:{version:1,revision:0,storage:{dataDir:join(directory,'data'),maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}};
  const transport:PluginReleaseTransport=async url=>{
   const item=[...releases.values()].find(value=>url.includes('/generated/'+value.manifest.id+'/'));assert.ok(item,'only generated release transport is used');
@@ -69,7 +76,7 @@ async function fixture(t:TestContext){
   if(url===base+'mote-plugin.json')return {bytes:strToU8(JSON.stringify(item.manifest))};if(url===base+item.manifest.archive.asset)return {bytes:item.archive};throw Error('Unexpected generated release URL');
  };
  const start=async()=>{const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,async close(){},async query(){throw Error('No model calls in domain fixture');}}});Object.defineProperty(node.pluginCenter.releases,'transport',{value:transport});return node;};
- let node=await start();t.after(async()=>{await writeFile(controlFile,'{}');await node.app.close();await rm(directory,{recursive:true,force:true});});
+ let node=await start();t.after(async()=>{await control({});await node.app.close();await rm(directory,{recursive:true,force:true});});
  const request=async(method:'GET'|'POST'|'PATCH',url:string,payload?:unknown)=>{const response=await node.app.inject({method,url,headers:{authorization:'Bearer '+config.privateCredential!.token},...(payload===undefined?{}:{payload:payload as object})});assert.ok(response.statusCode<400,response.body);return response.json();};
  const install=async(item:Release)=>{releases.set(item.manifest.id,item);const preview=await request('POST','/api/plugins/resolve',{repository:'generated/'+item.manifest.id,tag:'v1'}),id=item.manifest.id+'@'+preview.source.digest;await request('POST','/api/plugins/install',{...command(node.pluginCenter.revision()),previewId:preview.id});await until(()=>node.pluginCenter.view().packages.some(value=>value.id===id&&value.state==='installed'),'formal domain archive installs');assert.equal(sha256(await readFile(join(config.initialDocument!.storage.dataDir,'plugins/packages',preview.source.digest,'mote-source.zip'))),preview.source.digest);return id;};
  const configure=async(packageId:string,mode='normal',id?:string,operationId=randomUUID())=>{const fields=node.pluginCenter.view().packages.find(value=>value.id===packageId)!.configurationSchema!;return request(id?'PATCH':'POST','/api/plugin-instances'+(id?'/'+id:''),{...command(id?node.pluginCenter.instanceView(id).revision:node.pluginCenter.revision()),operationId,...(id?{}:{packageId}),name:'Generated '+mode,scope:'default',configuration:Object.fromEntries(Object.entries({mode,controlFile}).filter(([key])=>fields.some(value=>value.id===key)))});};
@@ -77,7 +84,7 @@ async function fixture(t:TestContext){
  const settle=async(id:string)=>{await until(()=>node.pluginCenter.instanceView(id).observed!=='checking','domain operation settles');return node.pluginCenter.instanceView(id);};
  const check=async(id:string)=>{await action(id,'check');return settle(id);},enable=async(id:string)=>{assert.equal((await action(id,'enable')).observed,'checking');return settle(id);};
  const binding=(id:string,serviceId:string,apiVersion='1'):ServiceBinding=>{const entry=node.bootstrap.host.snapshot().contributions.find(value=>value.identity.scope.instanceId===id&&value.availability.state==='active');assert.ok(entry,'binding comes from an actual active host contribution');return {service:{id:serviceId,apiVersion},provider:entry.identity,revision:0};};
- return {directory,controlFile,config,install,configure,request,action,check,enable,binding,get node(){return node;},control:(value:object)=>writeFile(controlFile,JSON.stringify(value)),entered:(key:string)=>until(async()=>Boolean(await readFile(controlFile+'.'+key).catch(()=>undefined)),'controlled '+key+' gate reached'),async restart(){await node.app.close();node=await start();}};
+ return {directory,controlFile,config,install,configure,request,action,check,enable,binding,get node(){return node;},control,entered:(key:string)=>until(async()=>Boolean(await readFile(controlFile+'.'+key).catch(()=>undefined)),'controlled '+key+' gate reached'),async restart(){await node.app.close();node=await start();}};
 }
 
 async function template(f:Awaited<ReturnType<typeof fixture>>){
