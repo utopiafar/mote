@@ -5,7 +5,7 @@ import type {FastifyInstance} from 'fastify';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryPipeline,type MemoryPhasePorts,type MemoryPipelineOptions} from '../memory-pipeline.js';
-import {reviewMemory,type MemoryDraftOrigin,type MemoryReviewInput} from '../memory-review.js';
+import {reviewMemory,type MemoryDraftOrigin,type MemoryReviewInput,type PrepareMemoryReviewRequest} from '../memory-review.js';
 import {MemoryReviewCache} from '../memory-review-cache.js';
 import type {MemoryDeletions} from './memory-deletions.js';
 import type {MemoryRecipeBinding,MemoryReviewStrategy} from '../memory-strategy-contract.js';
@@ -38,8 +38,7 @@ export const memoryPhasePipelineReplacement='hot' as const;
 export type MemoryPhasePipelineOptions=Omit<MemoryPipelineOptions,'phases'>&{readonly phases:Omit<MemoryPhasePorts,'review'>};
 export interface MemoryPhaseReviewDependencies {
   readonly query:(input:QueryInput)=>Promise<QueryResult>;
-  readonly fitsResumedReview?:(input:QueryInput)=>boolean;
-  readonly prepareResumedReview?:(input:QueryInput)=>QueryInput;
+  readonly prepareReviewRequest?:PrepareMemoryReviewRequest;
   readonly deletions?:MemoryDeletions;
   readonly authorizeDeletionEvidence?:(input:QueryInput,ids:string[])=>void;
   /** Exact current original/model snapshot for bounded verdict reuse. */
@@ -142,8 +141,7 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
     const {reviews:pipelineReviews}=readable();
     return reviewMemory(input,result,dependencies.review.query,{
       draftOrigin,strategy,recipe,deletions:dependencies.review.deletions,
-      fitsResumedReview:dependencies.review.fitsResumedReview,
-      prepareResumedReview:dependencies.review.prepareResumedReview,
+      prepareReviewRequest:dependencies.review.prepareReviewRequest,
       authorizeDeletionEvidence:ids=>dependencies.review.authorizeDeletionEvidence?.(input,ids),
       cache:pipelineReviews,snapshot:dependencies.review.snapshot?()=>dependencies.review.snapshot!(input,result):undefined,
       taskInstructions:dependencies.review.taskInstructions,

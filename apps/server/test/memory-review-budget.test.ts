@@ -73,10 +73,11 @@ test('a resumed review keeps on-demand context when prior original pages exceed 
   assert.deepEqual(request.evidenceRanges,[target]);
   assert.deepEqual(request.evidenceReadRanges,grant);
   return {...draft,runId:'generated-review',evidenceReadRanges:[target]};
- },{fitsResumedReview:request=>{
+ },{prepareReviewRequest:(request,{resumedFromExtraction,withExtractionContext})=>{
   measurements++;
-  assert.deepEqual(request.evidenceRanges,[target,priorPage]);
-  return false;
+  assert.equal(resumedFromExtraction,true);
+  assert.deepEqual(withExtractionContext?.evidenceRanges,[target,priorPage]);
+  return request;
  }});
  assert.equal(measurements,1);
  assert.equal(calls,1);
