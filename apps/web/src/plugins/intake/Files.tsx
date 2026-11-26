@@ -11,6 +11,7 @@ import {useOperationUpdates} from '../../useOperationUpdates';
 import { getLocale, moteText, cjkLocale } from '@mote/shared/i18n';
 import {fileIndexCoverageLabel} from '../../file-index-presentation';
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {recordingToolFromHash} from '../../advanced-web-target';
 import {useHashChoice} from '../../useHashChoice';
 import {ApiError,type Api,type Capture,bytes,dateTime,errorMessage} from '../../api';
@@ -61,8 +62,9 @@ function SegmentCorrection({api,id,chunk,onSaved,compact=false}:{api:Api;id:stri
  return editing?<form className={compact?'recording-correction':undefined} onSubmit={event=>{event.preventDefault();void save();}}><label>{moteText("校正此段文字")}<textarea autoFocus value={text} maxLength={8000} onChange={event=>setText(event.target.value)} disabled={busy}/></label><p className="recording-correction-caption">{compact?moteText("原始转写保留。"):moteText("仅保存人工校正，不调用模型；原件和原始转写保留。")} </p><div className="source-toolbar"><button className="button primary" type="submit" disabled={busy||!text.length}>{moteText("保存校正")}</button><button className={compact?"text-button":"button"} type="button" disabled={busy} onClick={()=>setEditing(false)}>{moteText("取消")}</button></div>{error&&<p role="alert">{error}</p>}</form>:<div className={compact?"recording-turn-tools":undefined}><span/><button className={compact?"text-button":"button"} onClick={()=>{setText(originalText);setError('');setEditing(true);}}>{compact?moteText("纠正文字"):moteText("纠正此段")}</button></div>;
 }
 
-export function FileDetail(props:{api:Api;id:string;startMs?:number;historical?:boolean;onOpen:(id:string)=>void}){return <FileDetailContents key={props.id} {...props}/>;}
-function FileDetailContents({api,id,startMs=0,historical=false,onOpen}:{api:Api;id:string;startMs?:number;historical?:boolean;onOpen:(id:string)=>void}){
+type FileDetailProps={api:Api;id:string;startMs?:number;historical?:boolean;onOpen:(id:string)=>void;detailsTarget:HTMLElement|null};
+export function FileDetail(props:FileDetailProps){return <FileDetailContents key={props.id} {...props}/>;}
+function FileDetailContents({api,id,startMs=0,historical=false,onOpen,detailsTarget}:FileDetailProps){
  const {data:file,error:readError,loading,refresh}=useResource<FileRow>(api,'/api/files/'+encodeURIComponent(id));
  const status=useFileStatus(api,id),canOpenOriginal=status.canOpenOriginal&&!readError;
  useOperationUpdates(api);
@@ -117,13 +119,20 @@ function FileDetailContents({api,id,startMs=0,historical=false,onOpen}:{api:Api;
  const actionRequest=useRef<AbortController|null>(null);
  useLayoutEffect(()=>()=>{actionRequest.current?.abort();actionRequest.current=null;},[api,id]);
  async function action(fn:(signal:AbortSignal)=>Promise<void>){if(actionRequest.current)return;const controller=new AbortController();actionRequest.current=controller;try{setError('');await fn(controller.signal);}catch(e){if(!controller.signal.aborted)setError(errorMessage(e));}finally{if(actionRequest.current===controller)actionRequest.current=null;}}
- useEffect(()=>{if(isRecording&&textArtifact&&offset===0&&!chunks.length)void loadChunks();},[api,id,isRecording,textArtifact?.id,offset,chunks.length]);
+ useEffect(()=>{if(textArtifact&&offset===0&&!chunks.length)void loadChunks();},[api,id,textArtifact?.id,speakerNamesId,offset,chunks.length]);
  const seek=(ms:number|undefined)=>{if(ms===undefined||!Number.isFinite(ms)||ms<0||!hasAudio||!canOpenOriginal)return;pendingSeek.current=ms;if(player.current)player.current.currentTime=ms/1000;else void loadOriginal();};
  const clock=recordingClock,diarized=Boolean(file?.artifacts.some(a=>a.kind==='diarization'));
  const speaker=(c:Capture)=>recordingSpeaker(c.fileEvidence?.speaker,diarized,c.fileEvidence?.speakerAttribution?.name);
  const showSpeaker=(value?:string)=>{setSpeakerFocus(value);setTool('speakers');};
  const correction=(c:Capture)=><SegmentCorrection key={c.fileEvidence?.artifactId+':'+c.id} api={api} id={id} chunk={c} compact={isRecording} onSaved={()=>{resetChunks();refresh();resources(api).invalidate(key=>/^\/api\/(memories|materials|conversations|capture-browser)([/?]|$)/.test(key));}}/>;
- const renderChunk=(c:Capture)=><div key={c.id} className={isRecording?'recording-segment':'source-item'}><button className={'text-button'+(isRecording?' recording-time':'')} disabled={isRecording&&(!hasAudio||!canOpenOriginal)} onClick={()=>seek(c.fileEvidence?.startMs)}>{c.fileEvidence?.startMs!==undefined?(isRecording?clock(c.fileEvidence.startMs):filePosition(c.fileEvidence.startMs)):moteText('文本片段')}</button>{c.fileEvidence?.speakerAttribution&&<span> · {moteText('已确认说话人：{0}',c.fileEvidence.speakerAttribution.name)}</span>}{(c.fileEvidence?.uncertain||c.fileEvidence?.overlap)&&<span> · {c.fileEvidence.overlap?moteText('重叠说话'):moteText('说话人不确定')}</span>}<p className="file-text">{transcriptChunkText(c)}</p>{correction(c)}</div>;
+ const renderChunk=(c:Capture)=><div key={c.id} className={isRecording?'recording-segment':'source-item'}>
+  {c.fileEvidence?.startMs!==undefined&&(isRecording?
+    <button className="text-button recording-time" disabled={!hasAudio||!canOpenOriginal} onClick={()=>seek(c.fileEvidence?.startMs)}>{clock(c.fileEvidence.startMs)}</button>:
+    <small>{filePosition(c.fileEvidence.startMs)}</small>)}
+  {c.fileEvidence?.speakerAttribution&&<span> · {moteText('已确认说话人：{0}',c.fileEvidence.speakerAttribution.name)}</span>}
+  {(c.fileEvidence?.uncertain||c.fileEvidence?.overlap)&&<span> · {c.fileEvidence.overlap?moteText('重叠说话'):moteText('说话人不确定')}</span>}
+  <p className="file-text">{transcriptChunkText(c)}</p>{correction(c)}
+ </div>;
  if(!file||status.revoked)return <section className="file-detail">{loading&&<Loading/>}{(error||status.error)&&<p role="alert" className="error-banner">{error||errorMessage(status.error)}<button className="button" onClick={()=>void load()}>{moteText('重新读取')}</button></p>}</section>;
  const calendarLink=file.artifacts.find(artifact=>artifact.kind==='calendar-link'&&artifact.confirmed===true&&typeof artifact.calendarId==='string'&&/^[a-f0-9-]{36}$/i.test(artifact.calendarId));
  const management=<> {file.job?.state==='skipped'&&file.job.error&&<p>{failureMessage(file.job.error)}</p>}
@@ -136,10 +145,15 @@ function FileDetailContents({api,id,startMs=0,historical=false,onOpen}:{api:Api;
  {file.artifacts.filter(a=>a.kind==='summary').map(a=><div key={a.id}><h4>{moteText("模型摘要")}</h4>{a.sections?.map((s,i)=><AnswerMarkdown key={i} onOpen={onOpen} answer={{answer:s.answer,runId:a.id,trace:[],citations:s.citationIds.map(id=>({id,capturedAt:file.item.observedAt,appName:file.item.title,excerpt:''}))}}/>)}</div>)}
 </>;
  return <section className={'file-detail'+(isRecording?' recording-view':'')}>
- {!isRecording&&<><h3>{file.item.title}</h3><p>{bytes(file.sizeBytes)} · {fileAvailability(file)}{file.originMissing?moteText(' · 来源已不可见，中央归档仍可使用'):''}</p></>}
- <FileStatus api={api} status={status} historical={historical}/>
+ {!isRecording&&<p>{bytes(file.sizeBytes)} · {fileAvailability(file)}{file.originMissing?moteText(' · 来源已不可见，中央归档仍可使用'):''}</p>}
+ {detailsTarget&&createPortal(<><FileStatus api={api} status={status} historical={historical}/>{!isRecording&&<details className="reader-source-details"><summary>{moteText('处理详情')}</summary>{management}</details>}</>,detailsTarget)}
+ {file.item.layer==='reference'&&<p role="status">{moteText('此来源仅保留引用与元数据，未导入正文。')}</p>}
+ {!isRecording&&file.item.text&&<p className="file-text">{file.item.text}</p>}
  <div className={isRecording?'recording-file':'file-original'}><div className={isRecording?'recording-file-head':'source-toolbar'}>{isRecording&&<><span className="recording-file-icon" aria-hidden="true"><AudioLines size={22} aria-hidden="true"/></span><div className="recording-file-name"><strong>{hasAudio?file.item.title:moteText('原始录音')}</strong><small>{hasAudio?<>{file.artifacts.find(artifact=>artifact.durationMs!==undefined)?.durationMs!==undefined?clock(file.artifacts.find(artifact=>artifact.durationMs!==undefined)!.durationMs!):bytes(file.sizeBytes)} · {fileAvailability(file)}</>:textArtifact?moteText('音频尚未归档 · 转写可读'):moteText('原始录音未归档')}</small></div></>}
- {file.hasOriginal&&(!isRecording||hasAudio)?<><button className="button" disabled={originalLoading||!canOpenOriginal} aria-busy={originalLoading} onClick={()=>void loadOriginal()}>{originalLoading&&<LoadingRing/>}{isRecording?(url?moteText('回到播放器'):moteText('回听录音')):file.item.mimeType?.startsWith('image/')?moteText('查看原图'):moteText('加载原件 / 回听')}</button>{!isRecording&&<button className="button" disabled={!canOpenOriginal||originalLoading} onClick={()=>void loadOriginal(true)}>{moteText('下载原件')}</button>}</>:null}
+ {file.hasOriginal&&<>
+  {(hasAudio||file.item.mimeType?.startsWith('image/'))&&<button className="button" disabled={originalLoading||!canOpenOriginal} aria-busy={originalLoading} onClick={()=>void loadOriginal()}>{originalLoading&&<LoadingRing/>}{hasAudio?(url?moteText('回到播放器'):moteText('回听录音')):moteText('查看原图')}</button>}
+  {!isRecording&&<button className="button" disabled={!canOpenOriginal||originalLoading} onClick={()=>void loadOriginal(true)}>{moteText('下载原件')}</button>}
+ </>}
  {isRecording&&!hasAudio&&<a className="text-button" href={'#/connections?sourceId='+encodeURIComponent(file.sourceId)}>{moteText('查看来源')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></a>}
  </div> {url&&canOpenOriginal&&file.item.mimeType?.startsWith('image/')&&<div className="original-image"><div className="original-image-controls"><button className="button" aria-pressed={!nativeSize} onClick={()=>setNativeSize(false)}>{moteText('适应宽度')}</button><button className="button" aria-pressed={nativeSize} onClick={()=>setNativeSize(true)}>{moteText('原始尺寸')}</button><button className="button" onClick={()=>setUrl('')}>{moteText('收起原图')}</button></div><div className={`original-image-viewport${nativeSize?' native-size':''}`} tabIndex={0} role="region" aria-label={moteText('原图，可滚动查看')}><div className="capture-image"><img src={url} alt={file.item.title} decoding="async" onError={()=>setError(moteText('影像暂不可用'))}/></div></div></div>}
  {url&&canOpenOriginal&&file.item.mimeType?.startsWith('audio/')&&<audio onError={()=>setError(moteText("浏览器无法播放此编码，可下载原件使用本机播放器打开。"))} ref={player} controls src={url} preload="metadata" onLoadedMetadata={()=>{if(player.current)player.current.currentTime=pendingSeek.current/1000;}}/>}
@@ -152,7 +166,6 @@ function FileDetailContents({api,id,startMs=0,historical=false,onOpen}:{api:Api;
  {isRecording&&calendarLink&&<div className="recording-associated"><div>{moteText('关联日程')}{calendarLink.title&&<small>{calendarLink.title}</small>}</div><button className="text-button" onClick={()=>onOpen(formatEvidenceRef('capture',calendarLink.calendarId!))}>{moteText('查看日程')}<ArrowRight size={14} aria-hidden="true" style={{verticalAlign:"middle",marginInlineStart:"0.3em"}}/></button></div>}
  {offset!==null&&textArtifact&&<button className="button" disabled={chunksLoading} onClick={()=>void loadChunks()}>{chunks.length?moteText("继续展开"):rawTranscript?moteText("展开原始转写（未校正）"):moteText("展开转写 / 原文片段")}</button>}
  {error&&<p role="alert" className="error-banner">{error}</p>}
-  {!isRecording&&<details className="reader-source-details"><summary>{moteText('处理详情')}</summary>{management}</details>}
  </section>;
 }
 

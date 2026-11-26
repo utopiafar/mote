@@ -111,7 +111,7 @@ internal class CentralClient(
             checkActive()
         } finally { connection.disconnect() }
     }
-    fun image(path: String): ByteArray {
+    fun image(path: String, archivedFile: Boolean = false): ByteArray {
         checkActive()
         val connection = URL(destination(path)).openConnection() as HttpURLConnection
         try {
@@ -121,7 +121,9 @@ internal class CentralClient(
             val status = connection.responseCode
             checkActive()
             if (status !in 200..299) fail(status)
-            require(connection.contentType?.startsWith("image/") == true)
+            val mime = connection.contentType?.substringBefore(';')
+            require(mime?.startsWith("image/") == true || archivedFile && mime == "application/octet-stream" &&
+                Regex("^/api/files/[a-f0-9-]{36}/content$").matches(path))
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
                 while (true) { checkActive(); val count = input.read(buffer); checkActive(); if (count < 0) break

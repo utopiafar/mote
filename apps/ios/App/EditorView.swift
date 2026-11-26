@@ -77,7 +77,7 @@ private struct EditorView: View {
     @ObservedObject var recording: RecordingController
     let intent: HomeDestination.EditorIntent
     let onClose: (() -> Void)?
-    @StateObject private var audioPlayer = EditorAudioPlayer()
+    @StateObject private var audioPlayer = MoteAudioPlayer()
     @State private var photoItem: PhotosPickerItem?
     @State private var isCameraPresented = false
     @State private var isFileImporterPresented = false
@@ -332,7 +332,7 @@ private struct EditorView: View {
             HStack(spacing: 8) {
                 Button {
                     do {
-                        try audioPlayer.toggle(attachment, url: model.store.fileURL(for: attachment))
+                        try audioPlayer.toggle(id: attachment.id, url: model.store.fileURL(for: attachment))
                     } catch {
                         model.errorMessage = "录音未能播放"
                     }
@@ -491,20 +491,20 @@ private struct EditorView: View {
 }
 
 @MainActor
-private final class EditorAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class MoteAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var playingID: String?
     private var currentID: String?
     private var player: AVAudioPlayer?
 
-    func toggle(_ attachment: EditorAttachment, url: URL) throws {
-        if playingID == attachment.id {
+    func toggle(id: String, url: URL) throws {
+        if playingID == id {
             player?.pause()
             playingID = nil
             return
         }
-        if currentID == attachment.id, let player {
+        if currentID == id, let player {
             player.play()
-            playingID = attachment.id
+            playingID = id
             return
         }
         stop()
@@ -513,8 +513,8 @@ private final class EditorAudioPlayer: NSObject, ObservableObject, AVAudioPlayer
         player.prepareToPlay()
         player.play()
         self.player = player
-        currentID = attachment.id
-        playingID = attachment.id
+        currentID = id
+        playingID = id
     }
 
     func stop() {

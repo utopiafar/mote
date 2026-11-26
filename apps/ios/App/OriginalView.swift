@@ -29,6 +29,9 @@ struct OriginalRootView: View {
                 OriginalView(
                     presentation: presentation,
                     hero: model.hero,
+                    fileNotice: model.fileNotice,
+                    downloadAudio: model.canPlayAudio ? { try await model.downloadAudio() } : nil,
+                    loadMore: model.nextFileOffset != nil ? { await model.loadMore() } : nil,
                     onBack: onDeleted,
                     onAsk: { onAsk($0) },
                     onDelete: { await model.delete() },
@@ -64,6 +67,9 @@ struct OriginalView: View {
     var hero: OriginalHero? = nil
     var initialPanel: OriginalPanel? = nil
     var initialDeletionError: String? = nil
+    var fileNotice: String?
+    var downloadAudio: (() async throws -> URL)?
+    var loadMore: (() async -> Void)?
     let onBack: () -> Void
     let onAsk: (OriginalAskScope) -> Void
     let onDelete: () async -> String?
@@ -78,6 +84,9 @@ struct OriginalView: View {
     init(
         presentation: OriginalPresentation,
         hero: OriginalHero? = nil,
+        fileNotice: String? = nil,
+        downloadAudio: (() async throws -> URL)? = nil,
+        loadMore: (() async -> Void)? = nil,
         initialPanel: OriginalPanel? = nil,
         initialDeletionError: String? = nil,
         onBack: @escaping () -> Void,
@@ -87,6 +96,9 @@ struct OriginalView: View {
     ) {
         self.presentation = presentation
         self.hero = hero
+        self.fileNotice = fileNotice
+        self.downloadAudio = downloadAudio
+        self.loadMore = loadMore
         self.initialPanel = initialPanel
         self.initialDeletionError = initialDeletionError
         self.onBack = onBack
@@ -114,6 +126,10 @@ struct OriginalView: View {
                             .foregroundStyle(MoteDesignTokens.muted.color)
                     }
                     .padding(.horizontal, MoteMetrics.pageMargin)
+                    if let downloadAudio {
+                        OriginalAudioControl(id: presentation.id, download: downloadAudio)
+                            .padding(.horizontal, MoteMetrics.pageMargin)
+                    }
                     // A screenshot leads and its recognized words follow; a photo follows the words it came with.
                     if isScreen {
                         if let hero { heroView(hero) }
@@ -128,7 +144,7 @@ struct OriginalView: View {
                             .font(MoteFont.body)
                             .foregroundStyle(MoteDesignTokens.muted.color)
                             .padding(.horizontal, 20)
-                    } else {
+                    } else if !presentation.text.isEmpty {
                         Text(bodyText)
                             .font(MoteFont.reading)
                             .foregroundStyle(MoteDesignTokens.ink.color)
@@ -138,6 +154,15 @@ struct OriginalView: View {
                             .textSelection(.enabled)
                     }
                     if !isScreen, let hero { heroView(hero) }
+                    if let fileNotice {
+                        Text(fileNotice).font(MoteFont.body)
+                            .foregroundStyle(MoteDesignTokens.muted.color)
+                            .padding(.horizontal, MoteMetrics.pageMargin)
+                    }
+                    if let loadMore {
+                        MoteCapsuleButton("继续展开", style: .plain) { Task { await loadMore() } }
+                            .padding(.horizontal, MoteMetrics.pageMargin)
+                    }
                 }
                 .frame(maxWidth: 664, alignment: .leading)
                 .frame(maxWidth: .infinity)
@@ -181,13 +206,14 @@ struct OriginalView: View {
                 .lineLimit(1)
             Spacer()
             MoteIconButton(icon: .clock, label: "来源与处理") { panel = .detail }
-            ShareLink(item: presentation.text) {
+            if !presentation.text.isEmpty { ShareLink(item: presentation.text) {
                 MoteIcon(.share)
                     .foregroundStyle(MoteDesignTokens.ink.color)
                     .frame(width: MoteMetrics.touchTarget, height: MoteMetrics.touchTarget)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("分享")
+            }
             MoteIconButton(icon: .more, label: "更多") {
                 deletionError = nil
                 panel = .more
@@ -245,11 +271,12 @@ struct OriginalView: View {
                     MoteRow(icon: .compose, title: "资料说明", topDivider: true) {
                         self.panel = .description
                     }
-                    MoteRow(icon: .copy, title: "复制", topDivider: true, action: {
+                    if !presentation.text.isEmpty { MoteRow(icon: .copy, title: "复制", topDivider: true, action: {
                         UIPasteboard.general.string = presentation.text
                         self.panel = nil
                     }) {
                         EmptyView()
+                    }
                     }
                 }
                 if presentation.deletionKind != nil {
@@ -464,6 +491,58 @@ private struct OriginalImageSelection: Identifiable {
     var id: ObjectIdentifier { ObjectIdentifier(image) }
 }
 
+private struct OriginalAudioControl: View {
+    let id: String
+    let download: () async throws -> URL
+    @StateObject private var player = MoteAudioPlayer()
+    @State private var localFile: URL?
+    @State private var loading = false
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MoteCapsuleButton(player.playingID == id ? "暂停" : "播放录音", style: .plain) {
+                if let localFile {
+                    play(localFile)
+                } else {
+                    loading = true
+                    failed = false
+                }
+            }
+            .disabled(loading)
+            if loading { MoteLoading("正在读取…") }
+            if failed {
+                Text("录音暂不可播放").font(MoteFont.secondary).foregroundStyle(MoteDesignTokens.muted.color)
+            }
+        }
+        .task(id: loading) {
+            guard loading else { return }
+            defer { loading = false }
+            do {
+                let url = try await download()
+                guard !Task.isCancelled else {
+                    try? FileManager.default.removeItem(at: url)
+                    return
+                }
+                localFile = url
+                play(url)
+            } catch {
+                if !Task.isCancelled { failed = true }
+            }
+        }
+        .onDisappear {
+            player.stop()
+            if let localFile { try? FileManager.default.removeItem(at: localFile) }
+            localFile = nil
+        }
+    }
+
+    private func play(_ url: URL) {
+        do { try player.toggle(id: id, url: url) }
+        catch { failed = true }
+    }
+}
+
 private struct OriginalImageViewer: View {
     let selection: OriginalImageSelection
     @Environment(\.dismiss) private var dismiss
@@ -478,17 +557,22 @@ private struct OriginalImageViewer: View {
             }
             .padding(.horizontal, MoteMetrics.pageMargin)
             GeometryReader { geometry in
-                ScrollView(enlarged ? [.horizontal, .vertical] : []) {
-                    Image(uiImage: selection.image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: geometry.size.width * (enlarged ? 2 : 1),
-                               height: geometry.size.height * (enlarged ? 2 : 1))
-                        .accessibilityLabel(selection.title)
+                let width = geometry.size.width * (enlarged ? 2 : 1)
+                let ratio = selection.image.size.height / max(selection.image.size.width, 1)
+                if enlarged {
+                    ScrollView([.horizontal, .vertical]) {
+                        original.frame(width: width, height: width * ratio)
+                    }
+                } else {
+                    original.frame(width: width, height: geometry.size.height)
                 }
             }
         }
         .background(MoteDesignTokens.background.color)
+    }
+
+    private var original: some View {
+        Image(uiImage: selection.image).resizable().scaledToFit().accessibilityLabel(selection.title)
     }
 }
 

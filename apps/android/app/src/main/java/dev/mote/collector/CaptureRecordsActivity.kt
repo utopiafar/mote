@@ -669,7 +669,8 @@ class CaptureRecordsActivity : MoteActivity() {
                         fun showDetail() {
                             if (!actionCurrent()) return
                             readerSheet?.dismiss()
-                            readerSheet = NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record)).also { opened ->
+                            val technical = record.optJSONObject("metadata")?.takeIf { source in SystemEventRules.sources || source == "ui_page" }
+                            readerSheet = NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record), technical?.toString(2)).also { opened ->
                                 opened.setOnDismissListener { if (readerSheet === opened) readerSheet = null }
                             }
                         }
@@ -716,7 +717,6 @@ class CaptureRecordsActivity : MoteActivity() {
                         readable = SystemEventRules.label(record)
                         text(content, readable, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)
                         quiet(MoteI18n.text("原始系统事件 · 阅读和任务执行未知。熄屏与锁定各自记录。"))
-                        text(content, record.getJSONObject("metadata").toString(2), MoteTheme.fontMeta.toFloat()).setTextIsSelectable(true)
                         chrome(describe = false); return@runOnUiThread
                     }
                     record.optJSONObject("stateSeries")?.optJSONArray("samples")?.let { samples ->
@@ -741,7 +741,6 @@ class CaptureRecordsActivity : MoteActivity() {
                         }
                     }
                     if (source in setOf("note", "activity", "ui_page", "message")) {
-                        record.optJSONObject("metadata")?.optJSONObject("uiPage")?.let { text(content, "${it.optString("adapterId")} @ ${it.optString("adapterVersion")} · ${it.optString("status")}", MoteTheme.fontSupport.toFloat()) }
                         readable = record.optString("ocrText").ifBlank { if (isNote || source == "message") "" else MoteI18n.text("应用活动 · {0} 毫秒", record.optLong("durationMs")) }
                         text(content, readable, if (isNote) MoteTheme.fontSection.toFloat() else MoteTheme.fontBody.toFloat()).apply { setTextIsSelectable(true); if (isNote) setLineSpacing(0f, 1.4f) }
                         record.optString("syncError").takeIf(String::isNotBlank)?.let { text(content, MoteI18n.text("同步需要处理：{0}", it), MoteTheme.fontBody.toFloat()) }
@@ -769,7 +768,15 @@ class CaptureRecordsActivity : MoteActivity() {
                     // A screen: the image leads, its recognized words follow.
                     if (bitmap != null) content.addView(ImageView(this).apply {
                         setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; adjustViewBounds = true; maxHeight = moteDp(360)
-                        contentDescription = MoteI18n.text("采集图片"); val edge = moteDp(1); setPadding(edge, edge, edge, edge)
+                        contentDescription = MoteI18n.text("查看原图"); val edge = moteDp(1); setPadding(edge, edge, edge, edge)
+                        setOnClickListener {
+                            if (actionCurrent()) {
+                                readerSheet?.dismiss()
+                                readerSheet = NativeOriginalDetail.image(this@CaptureRecordsActivity, bitmap).also { opened ->
+                                    opened.setOnDismissListener { if (readerSheet === opened) readerSheet = null }
+                                }
+                            }
+                        }
                         NativePresentationStyles.bind(this, "reader-hero") { it.background = MoteUi.shape(this@CaptureRecordsActivity, NativeColorRole.SURFACE_SUNKEN, NativeRadiusRole.CONTAINER, true, NativeColorRole.HAIR) }
                         outlineProvider = android.view.ViewOutlineProvider.BACKGROUND; clipToOutline = true
                     }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = moteDp(2); bottomMargin = moteDp(4) })

@@ -433,12 +433,12 @@ internal class CentralContent(
     /** A reader's picture loads beside the page's own work, so a slow image never holds the next page back.
      * A picture whose page has gone is skipped or dropped, and the idle lane's thread ends by itself. */
     private val readerImages = java.util.concurrent.ThreadPoolExecutor(0, 1, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue())
-    internal fun readerImage(path: String, done: (android.graphics.Bitmap?) -> Unit) {
+    internal fun readerImage(path: String, archivedFile: Boolean = false, done: (android.graphics.Bitmap?) -> Unit) {
         val api = client ?: return done(null)
         val version = revision; val generation = accessGeneration
         readerImages.execute {
             if (version != revision) return@execute
-            val bitmap = runCatching { CapturePreview.decode(api.image(path), 1600) }.getOrNull()
+            val bitmap = runCatching { CapturePreview.decode(api.image(path, archivedFile), 1600) }.getOrNull()
             handler.post { if (version == revision && generation == accessGeneration && !isDestroyed) done(bitmap) else bitmap?.recycle() }
         }
     }

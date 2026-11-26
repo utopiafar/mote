@@ -339,11 +339,14 @@ public struct RecordMetadata: Codable, Equatable, Sendable {
     public let noteOrigin: NoteOrigin?
     public let ownerDescription: String?
     public let attachments: [String]?
+    public let deviceEvent: OriginalDeviceEvent?
+    public let media: OriginalMediaObservation?
 
     public init(version: Int? = nil, observedAt: String? = nil, collector: CollectorMetadata? = nil,
                 notification: NotificationMetadata? = nil, observation: ObservationMetadata? = nil,
                 noteOrigin: NoteOrigin? = nil, ownerDescription: String? = nil,
-                attachments: [String]? = nil) {
+                attachments: [String]? = nil, deviceEvent: OriginalDeviceEvent? = nil,
+                media: OriginalMediaObservation? = nil) {
         self.version = version
         self.observedAt = observedAt
         self.collector = collector
@@ -352,7 +355,25 @@ public struct RecordMetadata: Codable, Equatable, Sendable {
         self.noteOrigin = noteOrigin
         self.ownerDescription = ownerDescription
         self.attachments = attachments
+        self.deviceEvent = deviceEvent
+        self.media = media
     }
+}
+
+public struct OriginalDeviceEvent: Codable, Equatable, Sendable {
+    public let action: String
+    public let keyguardLocked: Bool
+    public let screenInteractive: Bool
+}
+
+public struct OriginalMediaObservation: Codable, Equatable, Sendable {
+    public struct Session: Codable, Equatable, Sendable {
+        public let title: String?
+        public let artist: String?
+        public let appName: String?
+        public let playbackState: String?
+    }
+    public let sessions: [Session]
 }
 
 public struct CapturePrivacy: Codable, Equatable, Sendable {
@@ -494,6 +515,12 @@ public struct OriginalDeletionCapability: Codable, Equatable, Sendable {
 }
 
 public struct OriginalRecord: Codable, Equatable, Sendable {
+    public struct FileArchive: Codable, Equatable, Sendable {
+        public let captureId: String
+    }
+    public struct Provenance: Codable, Equatable, Sendable {
+        public let layer: String
+    }
     public let id: String
     public let capturedAt: String
     public let receivedAt: String
@@ -515,6 +542,50 @@ public struct OriginalRecord: Codable, Equatable, Sendable {
     public let memoryMaterialRef: String?
     /// Present when Central keeps a screenshot or photo for this record.
     public let blobHash: String?
+    public let fileArchive: FileArchive?
+    public let provenance: Provenance?
+}
+
+public struct OriginalFileView: Decodable, Sendable {
+    public struct Item: Decodable, Sendable {
+        public let mimeType: String?
+        public let text: String?
+    }
+    public let captureId: String
+    public let canOpenOriginal: Bool
+    public let item: Item
+}
+
+public struct OriginalFilePage: Decodable, Sendable {
+    public struct Chunk: Decodable, Sendable {
+        struct Evidence: Decodable, Sendable {
+            struct Attribution: Decodable, Sendable { let name: String? }
+            let artifactId: String?
+            let startMs: Int?
+            let speaker: String?
+            let speakerAttribution: Attribution?
+        }
+        public let ocrText: String
+        let fileEvidence: Evidence?
+
+        public var artifactID: String? { fileEvidence?.artifactId }
+        public var readableText: String {
+            guard let evidence = fileEvidence, let speaker = evidence.speaker, !speaker.isEmpty else { return ocrText }
+            let prefix = "[\(speaker)] "
+            let text = ocrText.hasPrefix(prefix) ? String(ocrText.dropFirst(prefix.count)) : ocrText
+            let index = speaker.hasPrefix("SPEAKER_") ? Int(speaker.dropFirst("SPEAKER_".count)) : nil
+            let standardLabel = index.flatMap { (0..<Int.max).contains($0) ? "说话人 \($0 + 1)" : nil }
+            let label = evidence.speakerAttribution?.name ?? standardLabel ?? speaker
+            let time = evidence.startMs.flatMap { millis -> String? in
+                guard millis >= 0 else { return nil }
+                let seconds = millis / 1_000
+                return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+            }
+            return [time, label].compactMap { $0 }.joined(separator: " · ") + "\n" + text
+        }
+    }
+    public let items: [Chunk]
+    public let nextOffset: Int?
 }
 
 public struct CentralPage<Item: Codable & Sendable>: Codable, Sendable {

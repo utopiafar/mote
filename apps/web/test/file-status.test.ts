@@ -17,7 +17,7 @@ const source={id:'generated-files',name:'Generated files',kind:'local-files',dev
 const projection=(patch:Partial<FileView>={}):FileView=>fileViewSchema.parse({captureId:id,sourceId:source.id,item:{externalId:'generated-file',revision:'generated-v2',observedAt:at,title:'Generated report.txt',text:'',kind:'file',layer:'snapshot',uri:'file:///generated/report.txt',document:{path:'/generated/report.txt'}},retention:'snapshot',hasOriginal:false,originMissing:false,canOpenOriginal:false,coverage:{extraction:{status:'ready',completed:2,total:2},semantic:{status:'partial',reason:'A summary was generated; complete semantic understanding is not established.'},embedding:{status:'unsupported',reason:'Embedding is not configured; lexical search remains available for extracted text.'}},...patch});
 function deferred<T>(){let resolve!:(value:T)=>void;return {promise:new Promise<T>(done=>{resolve=done;}),resolve:(value:T)=>resolve(value)};}
 async function fixture(t:any){
- const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/#/connections?sourceId=generated-files',pretendToBeVisual:true}),previous=new Map<string,PropertyDescriptor|undefined>();
+ const dom=new JSDOM('<div id="root"></div><aside id="details"></aside>',{url:'http://localhost/#/connections?sourceId=generated-files',pretendToBeVisual:true}),previous=new Map<string,PropertyDescriptor|undefined>();
  for(const[key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
  dom.window.HTMLMediaElement.prototype.pause=()=>{};dom.window.HTMLMediaElement.prototype.load=()=>{};
  const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')!);
@@ -45,8 +45,8 @@ test('file detail separates offline originals, partial extraction, metadata-only
  const {root,d}=await fixture(t);
  for(const view of [projection({originMissing:true}),projection({coverage:{extraction:{status:'partial',completed:1,total:3,reason:'Generated missing pages'},semantic:{status:'pending'},embedding:{status:'partial',completed:1,total:2}}}),projection({retention:'reference',item:{...projection().item,layer:'reference'},coverage:{extraction:{status:'unsupported'},semantic:{status:'unsupported'},embedding:{status:'unsupported'}}}),projection()]){
   const api=owner(path=>path==='/api/files/'+id?row(view):path==='/api/files/'+id+'/view'?JSON.parse(JSON.stringify(view)):{});
-  await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
-  const status=d.querySelector('.file-status');assert.ok(status,'FileView status must be visible in the existing file reader');
+  await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api,id,onOpen:()=>{}})));
+  const status=d.querySelector('#details .file-status');assert.ok(status,'FileView status must be visible in the reader details');
   assert.match(status.textContent!,/generated-v2/);assert.match(status.textContent!,/generated\/report.txt/);
   assert.ok(status.querySelector('time[datetime="'+at+'"]'));
   assert.equal(button(d,'下载原件')?.disabled,true,'a retained flag and summary do not grant original access');
@@ -80,7 +80,7 @@ test('processing hints refresh coverage without inferring completion from a summ
  let view=projection({retention:'archive',hasOriginal:true,canOpenOriginal:true,coverage:{extraction:{status:'pending'},semantic:{status:'partial'},embedding:{status:'pending'}}});
  const api=owner(path=>path==='/api/files/'+id?row(view):path==='/api/files/'+id+'/view'?(++reads===2?pendingView.promise:view):{});
  const request=api.request;api.request=async(path,init)=>path.startsWith('/api/operations/changes')?hint.promise as any:request(path,init);
- await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api,id,onOpen:()=>{}})));
  assert.match(d.querySelector('.file-status')!.textContent!,/正文提取等待处理/);
  assert.equal(button(d,'下载原件').disabled,false);
  view=projection({retention:'archive',hasOriginal:true,canOpenOriginal:true});
@@ -96,7 +96,7 @@ test('processing hints refresh coverage without inferring completion from a summ
 test('file work handoff preserves the exact capture and guards existing drafts without creating a task',async t=>{
  const {root,d,w}=await fixture(t),writes:string[]=[],view=projection();
  const api=owner((path,init)=>{if(init?.method)writes.push(path);return path==='/api/files/'+id?row(view):path==='/api/files/'+id+'/view'?view:{};});
- await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api,id,onOpen:()=>{}})));
  assert.equal(d.querySelector('a[href^="#/library?view=files"]')!.getAttribute('href'),'#/library?view=files&sourceId=generated-files');
  assert.equal(d.querySelector('a[href^="#/search?"]')!.getAttribute('href'),'#/search?sourceId=generated-files');
  await act(async()=>button(d,'问文件').click());
@@ -106,7 +106,7 @@ test('file work handoff preserves the exact capture and guards existing drafts w
  w.confirm=()=>true;await act(async()=>button(d,'用于事项').click());
  const query=new URLSearchParams(w.location.hash.split('?')[1]);assert.equal(query.get('fromCapture'),id);assert.match(query.get('questionDraft')!,/可编辑草稿/);
  assert.deepEqual(writes,[],'only the existing Ask draft is prepared; host-validated start remains a later owner operation');
- await act(async()=>root.render(React.createElement(FileDetail,{api,id,historical:true,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api,id,historical:true,onOpen:()=>{}})));
  assert.equal(button(d,'问文件').disabled,true);assert.equal(button(d,'用于事项').disabled,true);
 });
 
@@ -114,9 +114,9 @@ test('revoked or replaced FileView reads remove stale actions and do not publish
  const {root,d}=await fixture(t),late=deferred<unknown>();let failure=false;
  const view=projection({retention:'archive',hasOriginal:true,canOpenOriginal:true});
  const first=owner(path=>path==='/api/files/'+id?row(view):path==='/api/files/'+id+'/view'?late.promise:{});
- await act(async()=>root.render(React.createElement(FileDetail,{api:first,id,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api:first,id,onOpen:()=>{}})));
  const current=owner(path=>{if(path==='/api/files/'+id)return row(projection());if(path==='/api/files/'+id+'/view'){if(failure)throw new ApiError('Generated revoked file',403);return projection();}return {};});
- await act(async()=>root.render(React.createElement(FileDetail,{api:current,id,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api:current,id,onOpen:()=>{}})));
  await act(async()=>late.resolve(view));assert.equal(button(d,'下载原件').disabled,true);
  failure=true;await act(async()=>resources(current).get('/api/files/'+id+'/view').refresh());
  assert.equal(d.querySelector('.file-status'),null);assert.doesNotMatch(d.body.textContent!,/Generated summary/);assert.equal(button(d,'用于事项'),undefined);
@@ -128,10 +128,10 @@ test('original opening uses the host grant for this ID; missing query capabiliti
  const api=owner((path,init)=>{if(init?.method){requests.push(path);return {url:'/api/files/'+id+'/content'};}return path==='/api/files/'+id?row(view):path==='/api/files/'+id+'/view'?view:{};});
  const request=api.request;api.request=async(path,init)=>path==='/api/features'?{schemaVersion:1,revision:1,features:[],capabilities:[]} as any:request(path,init);
  w.HTMLAnchorElement.prototype.click=function(){opened.push(this.getAttribute('href')!);};
- await act(async()=>root.render(React.createElement(FileDetail,{api,id,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api,id,onOpen:()=>{}})));
  assert.equal(button(d,'问文件').disabled,true);assert.equal(button(d,'用于事项').disabled,true);
- await act(async()=>button(d,'加载原件 / 回听').click());
- assert.deepEqual(requests,['/api/files/'+id+'/playback']);assert.deepEqual(opened,['/api/files/'+id+'/content']);
+ await act(async()=>button(d,'下载原件').click());
+ assert.deepEqual(requests,['/api/files/'+id+'/playback']);assert.deepEqual(opened,['/api/files/'+id+'/content?download=1']);
  view=projection({retention:'archive',hasOriginal:true,canOpenOriginal:false});await act(async()=>resources(api).get('/api/files/'+id+'/view').refresh());
  assert.equal(button(d,'下载原件').disabled,true);await act(async()=>button(d,'下载原件').click());assert.equal(requests.length,1);
 });
@@ -160,6 +160,6 @@ test('real Central file projection reaches the existing reader from an isolated 
  const ingested=await app.inject({method:'PUT',url:'/api/file-sync/v1/revisions',headers,payload:{sourceId:source.id,previousRevision:null,relativePath:'generated/report.txt',sizeBytes:24,item:{...projection().item,layer:'reference'}}});assert.equal(ingested.statusCode,200,ingested.body);
  const captureId=ingested.json().id,paths:string[]=[];
  const api={request:async(path:string,init?:RequestInit)=>{paths.push(path);const response=await app.inject({method:(init?.method??'GET') as any,url:path,headers,...(init?.body?{payload:JSON.parse(String(init.body))}:{})});if(response.statusCode>=400)throw new ApiError('Generated HTTP failure',response.statusCode);return response.json();}} as Api;
- await act(async()=>root.render(React.createElement(FileDetail,{api,id:captureId,onOpen:()=>{}})));
+ await act(async()=>root.render(React.createElement(FileDetail,{detailsTarget:d.getElementById('details'),api,id:captureId,onOpen:()=>{}})));
  assert.ok(paths.includes('/api/files/'+captureId+'/view'));assert.match(d.querySelector('.file-status')!.textContent!,/generated-v2/);assert.match(d.querySelector('.file-status')!.textContent!,/仅保存引用/);assert.match(d.querySelector('.file-status')!.textContent!,/正文提取不可用/);assert.equal(button(d,'下载原件'),undefined);
 });
