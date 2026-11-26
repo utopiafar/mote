@@ -41,7 +41,11 @@ async function fixture(t:TestContext){const dataDir=mkdtempSync(join(tmpdir(),'m
 }
 
 test('typed Activity config follows real owner HTTP, failed saves, intake revocation and restart',{timeout:120000},async t=>{
-  const f=await fixture(t);let origin=await f.node.app.listen({host:'127.0.0.1',port:0});
+  const f=await fixture(t);
+  // Exercise withdrawal of an accepted, still queued Activity over HTTP.
+  // Another journey exercises dispatch and publication after ticking the worker.
+  t.mock.method(f.node.executor,'tick',async()=>{});
+  let origin=await f.node.app.listen({host:'127.0.0.1',port:0});
   const request=async(method:string,path:string,body?:unknown)=>{
     const response=await fetch(origin+path,{method,headers:{...headers,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000)});
     return {status:response.status,body:await response.json()};
@@ -60,12 +64,14 @@ test('typed Activity config follows real owner HTTP, failed saves, intake revoca
   const unrelated=await request('PUT','/api/configuration/notifications',{revision,value:{enabled:false}});assert.equal(unrelated.status,200);
   assert.equal(epoch(),permissionEpoch,'another domain cannot revoke or republish Activity permission');
   assert.equal(f.node.automaticActivity.view().settings.enabled,true);
+  assert.equal(f.node.automaticActivity.view().counts.waiting,1);
   assert.equal((await configure(false)).status,200);assert.notEqual(epoch(),permissionEpoch);
   assert.equal(f.node.configService.current(activityConfigDomain).enabled,false);assert.equal(f.node.automaticActivity.view().counts.cancelled,1);
   const denied=observation(1);assert.equal((await request('POST','/api/captures',denied)).status,201);
   assert.equal(f.node.store.db.prepare('SELECT authorized FROM activity_intake_receipts WHERE capture_id=?').get(denied.id)!.authorized,0);
   await f.restart();origin=await f.node.app.listen({host:'127.0.0.1',port:0});
   assert.equal(f.node.configService.current(activityConfigDomain).enabled,false);await f.node.automaticActivity.tick();assert.equal(f.calls.length,0);
+  t.mock.method(f.node.executor,'tick',async()=>{});
   assert.equal((await configure(true)).status,200);assert.equal((await request('POST','/api/captures',denied)).status,200);
   assert.equal(f.node.store.db.prepare('SELECT authorized FROM activity_intake_receipts WHERE capture_id=?').get(denied.id)!.authorized,0,'reenabling does not authorize an earlier denied revision');
   const future=observation(2);assert.equal((await request('POST','/api/captures',future)).status,201);

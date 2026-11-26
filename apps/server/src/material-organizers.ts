@@ -701,6 +701,7 @@ export class MaterialOrganizerRuntime {
   constructor(private readonly store:Store,readonly materials:MaterialStore,additionalOrganizers:MaterialOrganizer[]=[],executor?:ExecutionEngine,private readonly memoryWork?:Pick<MaterialMemoryWork,'observe'|'withdraw'>){
     new ArchivedFileStore(store);
     store.db.exec(`CREATE TABLE IF NOT EXISTS material_organizer_inputs(capture_id TEXT NOT NULL,organizer_id TEXT NOT NULL,group_json TEXT NOT NULL,material_id TEXT,PRIMARY KEY(capture_id,organizer_id));
+      CREATE INDEX IF NOT EXISTS material_organizer_input_group ON material_organizer_inputs(organizer_id,group_json,capture_id);
       CREATE TABLE IF NOT EXISTS material_organizer_backfills(organizer_id TEXT PRIMARY KEY,version TEXT NOT NULL,cursor_rowid INTEGER NOT NULL DEFAULT 0,complete INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS material_organizer_groups(group_key TEXT PRIMARY KEY,organizer_id TEXT NOT NULL,version TEXT NOT NULL,group_json TEXT NOT NULL,material_id TEXT NOT NULL,generation INTEGER NOT NULL,checkpoint INTEGER NOT NULL,active INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS material_organizer_group_material ON material_organizer_groups(material_id,active);
@@ -986,12 +987,16 @@ export class MaterialOrganizerRuntime {
       const backfill=(db.prepare('SELECT organizer_id id,version,cursor_rowid cursorRowid FROM material_organizer_backfills WHERE complete=0 ORDER BY organizer_id').all() as {id:string;version:string;cursorRowid:number}[])
         .find(row=>this.registry.get(row.id)?.version===row.version);
       const backfillRows=backfill?db.prepare('SELECT rowid,id FROM captures WHERE rowid>? ORDER BY rowid LIMIT ?').all(backfill.cursorRowid,batchSize) as {rowid:number;id:string}[]:[];
-      const changedIds=[...new Set([...rows.map(row=>row.id),...backfillRows.map(row=>row.id)])];
+      let changedIds=[...new Set([...rows.map(row=>row.id),...backfillRows.map(row=>row.id)])];
       // Note attachments keep their own file processing identity. Rebuild each
       // exact referring note on completion, failure or withdrawal of that file.
-      const noteParents=db.prepare(`SELECT id FROM captures WHERE json_extract(json,'$.source')='note'
-        AND EXISTS(SELECT 1 FROM json_each(captures.json,'$.metadata.attachments') a WHERE a.value=?)`);
-      for(const id of [...changedIds])for(const row of noteParents.all(id))if(!changedIds.includes(String(row.id)))changedIds.push(String(row.id));
+      if(changedIds.length){
+        const noteParents=db.prepare(`SELECT note.id FROM captures note
+          JOIN json_each(note.json,'$.metadata.attachments') attached
+          JOIN json_each(?) changed ON attached.value=changed.value
+          WHERE json_extract(note.json,'$.source')='note' ORDER BY changed.key,note.rowid`).all(JSON.stringify(changedIds));
+        changedIds=[...new Set([...changedIds,...noteParents.map(row=>String(row.id))])];
+      }
       const changedSourceIds=new Set(rows.map(row=>row.id));
       const touched=new Map<string,{organizerId:string;group:Record<string,string>;priorMaterialId:string|null;sourceChanged:boolean}>();
       const replacements=new Map<string,Set<string>>();
