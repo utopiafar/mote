@@ -52,12 +52,10 @@ for(const restriction of ['device','time','withdrawal','source','source-device',
     const rejected=await response.json();assert.notEqual(response.status,200,JSON.stringify(rejected));assert.doesNotMatch(JSON.stringify(rejected),/GENERATED_VISIBLE_BODY|generated-visible-path/);
     const requestTool=(tool:string,args:unknown)=>fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token},body:JSON.stringify(args)});
     const discovery=await requestTool('capability_discover',{name:'sources'});
-    let closed=discovery,denial=await discovery.json() as {data?:{version:string};toolError?:{code:string}};
-    if(restriction==='source-withdrawal'){
-      assert.equal(discovery.status,200,'the static tool definition remains discoverable');
-      closed=await requestTool('capability_execute',{name:'sources',version:denial.data!.version,argumentsJson:'{}'});
-      denial=await closed.json() as typeof denial;
-    }
+    assert.equal(discovery.status,200,'the static tool definition remains discoverable');
+    const definition=await discovery.json() as {data:{version:string}};
+    const closed=await requestTool('capability_execute',{name:'sources',version:definition.data.version,argumentsJson:'{}'});
+    const denial=await closed.json() as {data?:unknown;toolError?:{code:string}};
     assert.equal(closed.status,400,JSON.stringify(denial));
     assert.equal(denial.toolError?.code,'context_tool_failed');assert.equal(denial.data,undefined,'a run with a revoked source receipt cannot receive further metadata');
     assert.doesNotMatch(JSON.stringify(denial),/GENERATED_VISIBLE_BODY|generated-visible-path|generated-visible-source/);
