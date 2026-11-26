@@ -79,7 +79,11 @@ export const modelDomainSchema = z.object({
   deployment:deploymentModelSettingsSchema.default({}),profiles:z.array(profileSchema).max(30).default([]),defaults:defaultsSchema.default(defaultModelAssignments),defaultModels:defaultModelsSchema.default({}),
   memoryBudgetProfileId:modelProfileIdSchema.optional(),
   embedding:z.object({model:line(512).default(''),baseUrl:line(4096).default(''),apiKey:apiKey.default('')}).strict().default({}),
-  codex:z.object({executable:line(4096,1).optional(),home:line(4096,1).optional()}).strict().default({}),
+  codex:z.object({
+    executable:line(4096,1).optional(),
+    home:line(4096,1).optional(),
+    memoryReviewContextWindow:z.number().int().min(128_001).max(1_050_000).optional(),
+  }).strict().default({}),
 }).strict().superRefine((state,ctx)=>{
   const ids=[DEPLOYMENT_MODEL_PROFILE_ID,...state.profiles.map(p=>p.id)];
   if(new Set(ids).size!==ids.length||Object.values(state.defaults).some(id=>!ids.includes(id)))ctx.addIssue({code:'custom',message:'Invalid model references'});

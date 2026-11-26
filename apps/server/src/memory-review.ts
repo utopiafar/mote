@@ -16,7 +16,7 @@ export function memoryReviewReceipt(result:QueryResult){return receipts.get(resu
 /** Set only by the host that invoked the native engine, never by captured content. */
 export type MemoryDraftOrigin='mote'|'native-engine';
 export type MemoryReviewInput=QueryInput&{memoryReviewQuestion?:string;memoryReviewRepair?:string;resumeReviewFromExtraction?:true};
-type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy|null;recipe?:MemoryRecipeBinding;taskInstructions?:string;fitsResumedReview?:(request:QueryInput)=>boolean};
+type ReviewOptions={draftOrigin?:MemoryDraftOrigin;deletions?:MemoryDeletions;authorizeDeletionEvidence?:(ids:string[])=>void;cache?:MemoryReviewCache;snapshot?:()=>string;strategy?:MemoryReviewStrategy|null;recipe?:MemoryRecipeBinding;taskInstructions?:string;fitsResumedReview?:(request:QueryInput)=>boolean;prepareResumedReview?:(request:QueryInput)=>QueryInput};
 
 export const memoryReviewSupportsEdits=(input:QueryInput)=>
   (input.taskContext?.memoryWork as {workContract?:MemoryWorkContract}|undefined)?.workContract==='range-evaluation@1'&&!input.processingImages?.length;
@@ -146,6 +146,7 @@ export async function reviewMemory({resumeReviewFromExtraction,...input}:MemoryR
   const compactReview=Boolean(memoryReviewSupportsEdits(input)&&!native&&value.memories.length&&!draftImages.length);
   let request:QueryInput={...input,...(modelSessionId?{modelSessionId:modelSessionId+':review'}:{}),
     ...(compactReview?{memoryReviewDraft:{answer:draft.answer,citationIds:draft.citations.map(citation=>citation.id)}}:{}),traceContext:{...traceContext,phase:'review'},taskContext:{turns:[],...input.taskContext,untrustedMemoryDraft:draftImages.length?{...value,imageViews:draftImages}:value},question:question+contextReading+memoryReviewRequestSuffix(input,{readBackground:contextPagesRequired&&readContextOnDemand,compact:compactReview})+(draftImages.length||input.processingImages?.length?'\n'+MEMORY_VISUAL_EVIDENCE_CONTRACT:'')};
+  if(resumeReviewFromExtraction&&options?.prepareResumedReview)request=options.prepareResumedReview(request);
   if(resumedPages.length&&fitsResumedReview){
     const withPages={...request,evidenceIds:[...new Set([...(request.evidenceIds??[]),...resumedPages.map(page=>page.id)])],evidenceRanges:[...(request.evidenceRanges??[]),...resumedPages]};
     if(fitsResumedReview(withPages))request=withPages;
