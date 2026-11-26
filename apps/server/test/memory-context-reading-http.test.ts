@@ -44,7 +44,7 @@ async function fixture(t:TestContext,scenario:Scenario){
  const deployment=resumeReview
   ?{model:'gpt-6.1-terra',provider:'codex',protocol:'codex-app-server' as const,apiKey:'',allowUnauthenticatedLocal:false,reasoningEffort:'max' as const,maxTokens:65536}
   :{model:'generated-model',provider:'custom',protocol:'openai-completions' as const,baseUrl:'https://generated.invalid/v1',apiKey:'generated-unused-key',allowUnauthenticatedLocal:false,reasoningEffort:'high' as const};
- const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment,embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
+ const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,maxExportBytes:2_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment,embedding:{model:'',baseUrl:'',apiKey:''},...(resumeReview?{codex:{memoryReviewContextWindow:400000}}:{})},diagnostics:{enabled:false}}};
  const selectedOther=resumeReview||['cross-original-context','review-only-context','unused-context-correction','unused-context-deletion'].includes(scenario);
  const calls:Call[]=[],rejections:{code:string;feedback:string}[]=[],spyFailures:string[]=[];
  let otherId='',otherCaptureId='',otherMaterialRef='',materialRef='',corrected=false,firstReviewFailed=false;
@@ -82,6 +82,8 @@ async function fixture(t:TestContext,scenario:Scenario){
     assert.ok(input.evidenceReadRanges?.some(range=>range.id===member.id&&range.offset===0&&range.length===diary.length),'the frozen selected original remains readable after configured initial partitioning');
     const denied=await tool('context_evidence',{id:selectedOther?randomUUID():otherId,offset:0,length:12});assert.equal(denied.status,400,'an original outside this job selection has no read grant');
     const resumed=resumeReview&&input.traceContext?.phase==='review'&&firstReviewFailed;
+    assert.equal(input.modelBudget?.contextWindow,resumed?400000:undefined,'the configured window applies at the resumed review boundary');
+    if(resumed)assert.equal(input.modelBudget?.maxTokens,128000,'the full native output allowance remains reserved');
     const ordinary=await tool('evidence',{ids:[member.id],offset:0,length:header.length});assert.equal(ordinary.status,resumed?200:400,'the evidence tool can reread only seeds delivered to this attempt');
     const prefix={quote:header,offset:0},event={quote:repair,offset:256};
     if(scenario==='unread-quote'&&input.traceContext?.phase==='extract'){
@@ -157,6 +159,7 @@ test('Central retries a capacity-limited independent review with the saved extra
  assert.equal(retry.statusCode,202,retry.body);
  const done=await until(async()=>(await f.api('GET','/api/memory-jobs/'+f.done.id)).json(),job=>['completed','failed','cancelled'].includes(job.status));
  assert.equal(done.status,'completed',failureSummary({...f,done}));
+ assert.equal(done.configuration.fingerprint,f.done.configuration.fingerprint);
  assert.deepEqual(extraction(),saved);
  const reviewed=done.batches.find((batch:any)=>batch.id===failed.id);
  assert.deepEqual(reviewed.evidenceRanges,failed.evidenceRanges);

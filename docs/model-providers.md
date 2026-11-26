@@ -45,6 +45,8 @@ Codex 需要运行 Central 的系统用户有可访问的文件登录。原生�
 
 Codex单次模型请求期限由上游管理，Mote的Agent总预算仍可为空；HTTP输出token设置不传给Codex。推理档位和Standard/Fast按当前目录选择，不静默替换；Fast返回档位不匹配会失败。Host未配置窗口时使用272000 token保守预算，并受目录实际窗口和输出预留约束；真正超限保留失败，不裁剪原始目标。能力取决于所用CLI和模型，连接测试仅证明本次调用。
 
+已保存提取检查点的 Codex Memory 复核可用部署配置 `models.codex.memoryReviewContextWindow` 指定单次请求的总上下文窗口。依据同一 App Server 线路的窗口回执选择配置，启动后生效。Central 量算完整请求，原生发送仍受模型目录实际窗口约束，并保留完整输出预算。该配置独立于模型预设和提取检查点。
+
 ## 所有者接口
 
 设置接口只允许所有者身份，不缓存或回显凭据。主要入口为`GET/PUT/DELETE /api/model-settings`、`POST /api/model-settings/test`、`PUT /api/model-settings/defaults`，预设使用`PUT/DELETE /api/model-settings/profiles/:id`，其`test/copy`为POST，`models`可GET已保存目录或POST草稿。写入携带revision；复制携带新id、name及`includeCredentials`。默认分配是`chat/memory/insight/import/file`，独立模型覆盖在`defaultModels`。

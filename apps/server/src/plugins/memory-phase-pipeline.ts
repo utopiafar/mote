@@ -39,6 +39,7 @@ export type MemoryPhasePipelineOptions=Omit<MemoryPipelineOptions,'phases'>&{rea
 export interface MemoryPhaseReviewDependencies {
   readonly query:(input:QueryInput)=>Promise<QueryResult>;
   readonly fitsResumedReview?:(input:QueryInput)=>boolean;
+  readonly prepareResumedReview?:(input:QueryInput)=>QueryInput;
   readonly deletions?:MemoryDeletions;
   readonly authorizeDeletionEvidence?:(input:QueryInput,ids:string[])=>void;
   /** Exact current original/model snapshot for bounded verdict reuse. */
@@ -142,6 +143,7 @@ export function createMemoryPhasePipeline(dependencies:MemoryPhasePipelineDepend
     return reviewMemory(input,result,dependencies.review.query,{
       draftOrigin,strategy,recipe,deletions:dependencies.review.deletions,
       fitsResumedReview:dependencies.review.fitsResumedReview,
+      prepareResumedReview:dependencies.review.prepareResumedReview,
       authorizeDeletionEvidence:ids=>dependencies.review.authorizeDeletionEvidence?.(input,ids),
       cache:pipelineReviews,snapshot:dependencies.review.snapshot?()=>dependencies.review.snapshot!(input,result):undefined,
       taskInstructions:dependencies.review.taskInstructions,

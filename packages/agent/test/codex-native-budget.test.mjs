@@ -462,6 +462,19 @@ test('an explicit larger owner window remains pinned while the native catalog an
   const stats=await f.stats();assert.equal(stats.generations,2);assert.equal(stats.reads,1);assert.equal(stats.turns,1);assert.equal(stats.compacts,0);
 });
 
+test('an explicit native request window admits the complete request above the conservative default', {timeout: 30000}, async t => {
+  const f=await fixture(t,{model:'gpt-6.1-terra',chatgpt:true,window:272000,nativeWindow:500000});
+  const input={question:'Read the generated timeline.',hostToolSelection:['timeline'],taskContext:{turns:[],generatedOriginal:'证'.repeat(105000)}};
+  await assert.rejects(f.agent.query(input),error=>
+    error instanceof AgentProviderError&&error.details.code==='processing_limit'&&error.details.executionStarted===false);
+  assert.equal((await f.stats()).generations,0);
+  const answer=await f.agent.query({...input,modelBudget:{contextWindow:400000,maxTokens:128000,historyRatio:0,lowWatermarkRatio:0.5,
+    tokenCounting:'estimated',contextWindowSource:'configured'}});
+  assert.deepEqual(answer.citations.map(c=>c.id),[record.id]);
+  const totals=f.requests.filter(({body})=>body.generate!==false).map(({body,fullInput})=>estimateCodexRequestTokens({...body,input:fullInput})+reserve);
+  assert.ok(totals.length>0&&totals.every(total=>total>272000&&total<=400000));
+});
+
 test('native import recovery preserves a real workspace tool result without executing its command again', {timeout: 30000}, async t => {
   const f = await fixture(t, {workspace: true, window: 160000, mode: 'http-fallback', reject: 1});
   try {
