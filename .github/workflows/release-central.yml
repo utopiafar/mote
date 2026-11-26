@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 jobs:
-  selected-file-task-diagnostic:
+  selected-file-task-profile:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1', MOTE_BUILD_PROFILE: dev }
@@ -22,4 +22,4 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
       - run: npm run build:central
-      - run: node --import tsx --test --test-timeout=120000 --test-name-pattern "^an explicit conversation selection" apps/server/test/assistant-task-journey.test.ts
+      - run: node scripts/profile-selected-file.mjs

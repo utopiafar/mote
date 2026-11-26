@@ -290,10 +290,12 @@ test('an explicit conversation selection prepares indexed file descendants witho
  const turn={conversationId,turnId,draft:conversation.json().turns.find((item:any)=>item.id===turnId).result.draft};assert.deepEqual(turn.draft.scope,scope);
  const reader=f.node.featureServices.evidenceReader,queryPage=reader.queryPage.bind(reader);let catalogReads=0;
  t.mock.method(reader,'queryPage',(...args:Parameters<typeof reader.queryPage>)=>{catalogReads++;return queryPage(...args);});
- const began=performance.now(),first=await f.start(turn),admissionMs=performance.now()-began;
+ const began=performance.now(),events:unknown[]=[],real=f.node.diagnostics.agentTrace.bind(f.node.diagnostics);
+ t.mock.method(f.node.diagnostics,'agentTrace',(...args:Parameters<typeof real>)=>{events.push({elapsed:Math.round(performance.now()-began),type:args[0].type,stage:args[0].stage});return real(...args);});
+ const first=await f.start(turn),admissionMs=performance.now()-began;
  const state=f.node.store.db.prepare('SELECT state FROM task_records WHERE id=?');
  const details=()=>JSON.stringify({task:state.get(first.taskId),providerRequests:f.taskCalls,steps:f.node.store.db.prepare('SELECT kind,state,error,attempts FROM execution_steps WHERE operation_id=?').all('assistant.task:'+turn.draft.requestId)});
- await until(()=>['succeeded','blocked','failed','stale','cancelled'].includes(String(state.get(first.taskId)?.state)),details);
+ try{await until(()=>['succeeded','blocked','failed','stale','cancelled'].includes(String(state.get(first.taskId)?.state)),details);}finally{t.diagnostic(JSON.stringify({admissionMs,events}));}
  assert.equal(state.get(first.taskId)?.state,'succeeded',details());
  const [result]=await f.read(turn);assert.equal(result.result.answer,'Generated grounded answer');assert.equal(result.result.citations[0].id,f.evidenceId);
  const taskRecords=new TaskRecords(f.node.store),item=f.node.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch.item'").get('assistant.task:'+turn.draft.requestId)!;
