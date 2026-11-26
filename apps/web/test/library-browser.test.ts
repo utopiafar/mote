@@ -69,7 +69,10 @@ test('explicit library navigation leads directly into rows and source details wi
   assert.equal(d.querySelector<HTMLElement>('.library-master')!.hidden,true,'the reader replaces the visible list at every viewport');
   assert.match(d.querySelector('.library-detail')!.textContent!,/Generated a/);
   assert.match(d.querySelector('.library-detail')!.textContent!,/Generated device/);
-  assert.match(d.querySelector('.library-detail')!.textContent!,/generated\/note.txt/);
+  assert.doesNotMatch(d.querySelector('.library-detail')!.textContent!,/generated\/note.txt/);
+  await act(async()=>button(d,'来源与处理').click());
+  assert.match(d.querySelector('.reader-details-panel[role=dialog]')!.textContent!,/generated\/note.txt/);
+  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-details-panel [aria-label="关闭详情"]')!.click());
   assert.match(d.querySelector('.library-detail')!.textContent!,/Generated untrusted evidence/);
   assert.equal(d.querySelector('.library-detail script'),null);
   assert.ok(reads.includes('/api/capture-browser/'+id));
@@ -146,7 +149,8 @@ test('formal material selection reads its pinned version through full ReferenceD
   assert.ok(paths.some(path=>path.includes('/read?revision='+revision+'&offset=4000')));
   assert.match(d.querySelector('.library-detail')!.textContent!,/Generated remainder/);
   await act(async()=>button(d,'来源与处理').click());
-  assert.match(d.querySelector('.library-detail')!.textContent!,/generated-source/);
+  assert.match(d.querySelector('.reader-details-panel[role=dialog]')!.textContent!,/generated-source/);
+  await act(async()=>d.querySelector<HTMLButtonElement>('.reader-details-panel [aria-label="关闭详情"]')!.click());
   await act(async()=>d.querySelector<HTMLButtonElement>('.library-master .library-pagination button')!.click());
   assert.ok(paths.some(path=>path.includes('/api/library/browse?limit=24&cursor=generated-next')));
   assert.equal(d.querySelector('.library-browser')?.classList.contains('has-selection'),false,'the next list page clears its previous pinned object');

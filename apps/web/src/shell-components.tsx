@@ -13,6 +13,7 @@ import {memorySourceRoute} from './memory-source-route';
 import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
 import { moteText, cjkLocale } from '@mote/shared/i18n';
 import {
+ArrowLeft,
 ArrowRight,
 ArrowUp,
 ChevronDown,
@@ -55,6 +56,7 @@ type Device
 } from "./api";
 import { evidencePresentation,ocrPresentation } from './capture-presentation';
 import { containDialogFocus } from './dialog-focus';
+import { ReaderDetails } from './ReaderDetails';
 import { type Page } from './navigation';
 import { resources } from './resource-cache';
 import { readSessionLifetime,type SessionLifetime } from "./session";
@@ -458,18 +460,18 @@ export function EvidenceDialog({
   };
   const [mutationError,setError]=useState(''),[deletionDiagnostic,setDeletionDiagnostic]=useState('');
   const error=mutationError||(readError?errorMessage(readError):'');
-  const [confirm, setConfirm] = useState(false),[readerTools,setReaderTools]=useState(false),[copied,setCopied]=useState(false);
+  const [confirm, setConfirm] = useState(false),[readerTools,setReaderTools]=useState(false),[copied,setCopied]=useState(false),[detailsOpen,setDetailsOpen]=useState(false);
   const [busy, setBusy] = useState(false);
-  const menuId=useId(),more=useRef<HTMLDivElement>(null),moreButton=useRef<HTMLButtonElement>(null),cancelDelete=useRef<HTMLButtonElement>(null);
-  useEffect(()=>{setError('');setDeletionDiagnostic('');setBusy(false);setConfirm(false);setReaderTools(false);setCopied(false);},[api,id]);
+  const menuId=useId(),more=useRef<HTMLDivElement>(null),moreButton=useRef<HTMLButtonElement>(null),cancelDelete=useRef<HTMLButtonElement>(null),detailsButton=useRef<HTMLButtonElement>(null);
+  useEffect(()=>{setError('');setDeletionDiagnostic('');setBusy(false);setConfirm(false);setReaderTools(false);setCopied(false);setDetailsOpen(false);},[api,id]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape")return;
-      if(readerTools)setReaderTools(false);else if(confirm&&!busy)setConfirm(false);else onClose();
+      if (e.key !== "Escape" || e.defaultPrevented || readerPanel.current?.closest("[inert]")) return;
+      if(detailsOpen)setDetailsOpen(false);else if(readerTools)setReaderTools(false);else if(confirm&&!busy)setConfirm(false);else onClose();
     };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [onClose,readerTools,confirm,busy]);
+  }, [onClose,readerTools,confirm,busy,detailsOpen]);
   // The ⋯ menu follows the shared more-menu pattern: first item focused, closed from outside.
   useEffect(()=>{
     if(!readerTools){setCopied(false);return;}
@@ -536,12 +538,20 @@ export function EvidenceDialog({
         aria-modal={embedded?undefined:true}
         aria-label={moteText("上下文证据详情")}
       >
-        {embedded&&<button className="text-button evidence-back" onClick={onClose}>{moteText("返回")}</button>}
+        {embedded&&<button className="text-button evidence-back" onClick={onClose}><ArrowLeft size={16} aria-hidden="true"/>{moteText("返回")}</button>}
         <header className={captureRef?"evidence-heading":"evidence-heading bare"}>
-          <div>{captureRef&&<>
-            {capture&&<p className="evidence-caption"><time dateTime={capture.capturedAt}>{dateTime(capture.capturedAt)}</time>{readerTitle!==sourceLabel&&<span> · {sourceLabel}</span>}</p>}
+          <div className="evidence-identity">{captureRef&&<>
             <h2>{readerTitle}</h2>
+            {capture&&<p className="evidence-caption">
+              {readerTitle!==sourceLabel&&<span>{sourceLabel} · </span>}
+              <time dateTime={capture.capturedAt}>{dateTime(capture.capturedAt)}</time>
+              {capture.deviceName&&<span> · {capture.deviceName}</span>}
+            </p>}
           </>}</div>
+          {capture&&<button ref={detailsButton} type="button" className="text-button reader-details-trigger"
+            aria-haspopup="dialog" aria-expanded={detailsOpen} aria-label={moteText('来源与处理')} onClick={()=>setDetailsOpen(true)}>
+            <Info size={16} aria-hidden="true"/><span>{moteText('来源与处理')}</span>
+          </button>}
           {capture&&<div className="report-more reader-more" ref={more} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setReaderTools(false);}} onKeyDown={event=>{
             if(event.key==='Escape'&&readerTools){event.preventDefault();event.stopPropagation();setReaderTools(false);moreButton.current?.focus();return;}
             if(!readerTools||!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
@@ -564,6 +574,8 @@ export function EvidenceDialog({
 
         {capture?.blobHash&&capture.revisionState!=='historical'&&<ImageProgress api={api} id={capture.id}/>}
         {capture?.revisionState==='historical'&&<p role="status">{moteText('历史证据，仅用于核对当时的内容。')}</p>}
+        {capture?.source==='screen'&&ocr?.tone==='amber'&&<p className="reader-status" role="status">{ocr.label}</p>}
+        {capture?.indexingStatus==='failed'&&<p className="reader-status" role="status">{moteText('索引失败')}</p>}
         {error && <ErrorNotice text={error} />}
         {deletionDiagnostic&&<details className="deletion-diagnostic"><summary>{moteText('技术详情')}</summary><pre>{deletionDiagnostic}</pre></details>}
         {!captureRef&&<ReferenceDetail key={id} api={api} reference={id} onOpen={onOpen} onOpenSavedOrigin={openSavedCitation} onSavedOriginSettled={originSettled}/>}
@@ -582,10 +594,12 @@ export function EvidenceDialog({
                   </pre>} </>}
                   <ActionResults api={api} evidenceId={capture.id}/>
                   {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
+                  <NoteAttachments api={api} capture={capture} onOpen={onOpen}/>
                 </div>
               </div>
             </div>
-            <aside className="evidence-aside">
+            <ReaderDetails open={detailsOpen} opener={detailsButton} onClose={()=>setDetailsOpen(false)}>
+            <div className="evidence-aside">
               <dl className="evidence-facts">
                 <div><dt>{moteText("来源")}</dt><dd>{sourceFact}</dd></div>
                 <div><dt>{moteText("状态")}</dt><dd><EvidenceState/>{capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span>{ocr.tone!=='green'&&<p>{ocr.description}</p>}</div>}</dd></div>
@@ -625,7 +639,6 @@ export function EvidenceDialog({
                   </dd>
                 </div>
               </dl>
-              <NoteAttachments api={api} capture={capture} onOpen={onOpen}/>
               <Metadata stateSeries={capture.stateSeries} metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
               <SourceDocumentDetails api={api} document={capture.provenance?.document}/>
               {capture.privacy.reason && (
@@ -635,7 +648,8 @@ export function EvidenceDialog({
               {projectedMedia&&<details className="evidence-canonical"><summary>{moteText('原始文本')}</summary><pre>{capture.ocrText}</pre></details>}
               <EvidenceProcessingHelp/>
               <code className="record-id">{capture.id}</code></details>
-            </aside>
+            </div>
+            </ReaderDetails>
           </div>
         )}
         {capture&&(confirm&&capture.deletion?.available?<footer className="evidence-dock evidence-footer">

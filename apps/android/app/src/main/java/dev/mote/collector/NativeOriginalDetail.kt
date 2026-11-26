@@ -131,7 +131,7 @@ internal object NativeOriginalDetail {
     }
 
     /** Shared 详情 bottom sheet used by both original readers. */
-    fun show(activity: Activity, detail: OriginalDetailPresentation) {
+    fun show(activity: Activity, detail: OriginalDetailPresentation): Dialog {
         val dialog = Dialog(activity).apply { requestWindowFeature(Window.FEATURE_NO_TITLE) }
         val sheet = MoteComponents.sheet(activity).apply {
             addView(titleBar(activity, MoteI18n.text("详情")) { dialog.dismiss() }, LinearLayout.LayoutParams(-1, -2))
@@ -143,7 +143,9 @@ internal object NativeOriginalDetail {
             }, groupParams(activity, 12))
             addView(View(activity), LinearLayout.LayoutParams(-1, activity.moteDp(40)))
         }
-        present(activity, dialog, sheet, secure = false)
+        val secure = activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+        present(activity, dialog, sheet, secure)
+        return dialog
     }
 
     /** The reader's ⋯ sheet: everyday actions in one group, the destructive one apart. */

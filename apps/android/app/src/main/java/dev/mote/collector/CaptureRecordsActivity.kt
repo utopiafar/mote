@@ -668,7 +668,10 @@ class CaptureRecordsActivity : MoteActivity() {
                         }
                         fun showDetail() {
                             if (!actionCurrent()) return
-                            NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record))
+                            readerSheet?.dismiss()
+                            readerSheet = NativeOriginalDetail.show(this@CaptureRecordsActivity, NativeOriginalDetail.capture(record)).also { opened ->
+                                opened.setOnDismissListener { if (readerSheet === opened) readerSheet = null }
+                            }
                         }
                         val inlineDescriptions = !direct
                         fun sheet() {
@@ -690,6 +693,7 @@ class CaptureRecordsActivity : MoteActivity() {
                             descriptions.forEach { description -> text(content, description, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true) }
                         }
                         if (direct) {
+                            readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.CLOCK, "来源与处理", "capture-reader-details") { showDetail() })
                             if (readable.isNotBlank()) readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.SHARE, "分享", "capture-reader-share") { if (actionCurrent()) NativeOriginalDetail.share(this@CaptureRecordsActivity, readable) })
                             if (remote || descriptions.isNotEmpty() || readable.isNotBlank() || centralReader)
                                 readerActions.addView(NativeOriginalDetail.barButton(this@CaptureRecordsActivity, MoteGlyph.MORE, "更多", "capture-reader-more") { sheet() })
@@ -701,12 +705,13 @@ class CaptureRecordsActivity : MoteActivity() {
                         }
                     }
 
-                    // Meta line, then a title for everything but a note, whose own words lead.
-                    if (isNote) quiet("$capturedAt · $place · $origin")
-                    else {
-                        quiet(listOfNotNull(headline?.let { origin }, capturedAt, place).joinToString(" · "))
-                        text(content, headline ?: origin, MoteTheme.fontBody.toFloat()).apply { MoteUi.type(this, NativeFontRole.TITLE_MOBILE); setPadding(0, moteDp(2), 0, moteDp(12)) }
+                    if (!isNote) {
+                        text(content, headline ?: origin, MoteTheme.fontBody.toFloat()).apply {
+                            MoteUi.type(this, NativeFontRole.TITLE_MOBILE)
+                            setPadding(0, moteDp(2), 0, moteDp(4))
+                        }
                     }
+                    quiet(listOfNotNull(origin.takeIf { isNote || headline != null }, capturedAt, place).joinToString(" · "))
                     if (source in SystemEventRules.sources) {
                         readable = SystemEventRules.label(record)
                         text(content, readable, MoteTheme.fontBody.toFloat()).setTextIsSelectable(true)

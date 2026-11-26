@@ -62,6 +62,27 @@ it('lists a local row and reads its exact original',async()=>{
   expect(api.localContentDetail).toHaveBeenCalledWith(item.key,false);
 });
 
+it('opens a local screenshot above its OCR and keeps its upload receipt on demand',async()=>{
+  const screen:ContentItem={...item,source:'screen',title:'Generated local screenshot'};
+  const png='data:image/png;base64,iVBORw0KGgo=';
+  vi.mocked(api.localContent).mockResolvedValue({items:[screen],total:1});
+  vi.mocked(api.localContentDetail).mockResolvedValue({...localDetail,hasImage:true,image:png});
+  await library.refresh();await open();
+  const picture=el('content-original') as HTMLDetailsElement,processing=el('content-processing') as HTMLDetailsElement;
+  expect(picture.open).toBe(true);
+  expect(picture.hidden).toBe(false);
+  expect(el('content-detail-image').getAttribute('src')).toBe(png);
+  expect(picture.compareDocumentPosition(el('content-detail-body')) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(processing.open).toBe(false);
+  expect(el('content-detail-status').textContent).toBe('等待上传');
+  el('content-detail-inspect').click();
+  expect(processing.open).toBe(true);
+  expect(document.activeElement).toBe(processing.querySelector('summary'));
+  expect(el('content-detail-body').textContent).toBe(localDetail.text);
+  expect(api.localContentDetail).toHaveBeenCalledTimes(1);
+  expect(api.localContentDetail).toHaveBeenCalledWith(screen.key,true);
+});
+
 it('renders an owner description separately and clears it when the reader closes',async()=>{
   vi.mocked(api.localContent).mockResolvedValue({items:[item],total:1});
   vi.mocked(api.localContentDetail).mockResolvedValue({...localDetail,description:'Generated explanation <script>not executable</script>'});

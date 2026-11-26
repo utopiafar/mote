@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import android.app.Activity
 import android.app.Application
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
@@ -213,6 +214,50 @@ class CaptureReaderLifecycleInstrumentedTest {
             generatedId?.let { context.queue().removeGeneratedRecord(it) }
             try { settings.save(previous, confirmCentralEndpoint = true) }
             finally { MoteI18n.select(context, previousLanguage) }
+        }
+    }
+
+    @Test fun directReaderOpensSourceDetailsAndReturnsToTheSameOriginal() {
+        require(InstrumentationRegistry.getArguments().getString("uiIterationFixture") == "true")
+        require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.contains("/emu64a:"))
+        require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running)
+        val before = Settings(context).read()
+        require(before.token.isBlank() && context.queue().depth() == 0)
+        val original = "Generated direct reader\nExact original <script>literal</script>"
+        val recordId = QuickNotes.save(context, original, "")
+        try {
+            val intent = Intent(context, CaptureRecordsActivity::class.java)
+                .putExtra("directReader", true).putExtra("recordSource", "note").putExtra("recordId", recordId)
+            ActivityScenario.launch<CaptureRecordsActivity>(intent).use { scenario ->
+                var ready = false
+                waitFor("The direct reader shows the exact original") {
+                    scenario.onActivity { activity ->
+                        ready = visible(activity).filterIsInstance<TextView>().any { it.text.toString() == original }
+                    }
+                    ready
+                }
+                scenario.onActivity { activity ->
+                    assertTrue(visible(activity).single { it.tag == "capture-reader-details" }.performClick())
+                }
+                fun focusedWindows() = android.view.inspector.WindowInspector.getGlobalWindowViews()
+                    .filter { it.isShown && it.hasWindowFocus() }.flatMap(::views).filter { it.isShown }
+                waitFor("The detail sheet displays the local receipt") {
+                    var found = false
+                    instrumentation.runOnMainSync {
+                        found = focusedWindows().filterIsInstance<TextView>().any { it.text.toString() == MoteI18n.text("本机已保存") }
+                    }
+                    found
+                }
+                instrumentation.runOnMainSync {
+                    assertTrue(focusedWindows().single { it.isClickable && it.contentDescription == MoteI18n.text("关闭") }.performClick())
+                }
+                scenario.onActivity { activity ->
+                    assertTrue(visible(activity).filterIsInstance<TextView>().any { it.text.toString() == original })
+                    assertTrue(visible(activity).any { it.tag == "capture-reader-details" })
+                }
+            }
+        } finally {
+            context.queue().removeGeneratedRecord(recordId)
         }
     }
 
