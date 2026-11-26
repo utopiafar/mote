@@ -18,8 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sample: [1, 2]
-    name: Generated Memory health (${{ matrix.sample }})
+        sample: [health-1, health-2, conversation]
+    name: Generated checks (${{ matrix.sample }})
     env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1', MOTE_BUILD_PROFILE: dev }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -27,4 +27,7 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
       - run: npm run build:central
-      - run: node scripts/profile-generated-memory-health.mjs
+      - if: matrix.sample != 'conversation'
+        run: node --import tsx --test --test-timeout=120000 apps/server/test/memory-processing-health.test.ts
+      - if: matrix.sample == 'conversation'
+        run: node --import tsx --test --test-timeout=120000 apps/server/test/assistant-task-journey.test.ts
