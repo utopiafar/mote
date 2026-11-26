@@ -74,9 +74,13 @@ export class AssistantTasks implements BatchProductProjection {
   },steeringAuthority);
  }
  close(){this.questions.close();}
- private questionWork(id:string){
+ private requireCurrentTask(id:string){
   const task=this.tasks.get(id);
   if(task.kind!=='assistant.task'||!this.current(task))throw new StoreError('Assistant task input is no longer current',409);
+  return task;
+ }
+ private questionWork(id:string){
+  const task=this.requireCurrentTask(id);
   // A routine task was discovered with automatic admission, so its continuation
   // must keep the same source-exclusion and evidence-eligibility checks. Treating
   // the owner reply as an unrestricted manual read would add excluded sources.
@@ -99,7 +103,8 @@ export class AssistantTasks implements BatchProductProjection {
    taskContext:{...input.taskContext,turns:input.taskContext?.turns??[],ownerInstruction:{messageId:frozen.turnId,question:frozen.instruction.text}}};
    if(Buffer.byteLength(JSON.stringify(input.taskContext))>BATCH_CONTEXT_MAX_BYTES)throw new ExecutionFailure('blocked','assistant_task_context_budget');
   }
-  return this.questions.withOwnerQuestions(this.steering?.withAmendments(input,this.steeringWork(task.id))??input,this.questionWork(task.id));
+  const current=this.requireCurrentTask(task.id);
+  return this.questions.withOwnerQuestions(this.steering?.withAmendments(input,this.steeringWork(task.id,current))??input,current,()=>this.requireCurrentTask(task.id));
  }
  execute(input:QueryInput,query:(input:QueryInput)=>Promise<QueryResult>,selection?:AssistantTaskModelSelector){
   const task=input.traceContext?.operationId&&this.taskForOperation(input.traceContext.operationId);
@@ -111,11 +116,11 @@ export class AssistantTasks implements BatchProductProjection {
    return selected;
   }));
  }
- private steeringWork(id:string):AssistantTaskSteeringWork{
-  const work=this.questionWork(id),frozen=this.draft(work.task);
+ private steeringWork(id:string,task=this.requireCurrentTask(id)):AssistantTaskSteeringWork{
+  const frozen=this.draft(task);
   if(frozen.instruction?.archive&&this.archivePins(id)?.evidenceIds.length===0)
-   return {task:work.task,goal:work.goal,scope:frozen.request.scope,origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}};
-  return {task:work.task,goal:work.goal,scope:frozen.request.scope,batchId:this.currentBatch(work.task.operationId),...(frozen.conversationId?{origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}}:{})};
+   return {task,goal:frozen.request.goal,scope:frozen.request.scope,origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}};
+  return {task,goal:frozen.request.goal,scope:frozen.request.scope,batchId:this.currentBatch(task.operationId),...(frozen.conversationId?{origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}}:{})};
  }
  private currentBatch(operationId:string){return this.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch' ORDER BY rowid DESC LIMIT 1").get(operationId)?.id as string|undefined;}
  private continueSteering(work:AssistantTaskSteeringWork,message:ConversationMessage){
