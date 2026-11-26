@@ -68,6 +68,17 @@ test('manual requests reject unknown modes, invalid scope and a mutable/mismatch
   for (const options of [{ suite: 'typo' }, { suite: 'scale', scope: 'typo' }, { suite: 'all', scope: 'memory' }, { suite: 'integration', revision: 'main' }, { suite: 'scale', revision: 'b'.repeat(40) }]) assert.throws(() => validateManual({ actual, ...options }));
 });
 
+test('the component and integration jobs install FFmpeg before their ASR process fixture', () => {
+  const component = workflow('component-checks').jobs.regressions.steps;
+  const integration = workflow('checks').jobs['protocol-and-app-tests'].steps;
+  const ffmpeg = steps => steps.find(step => /apt-get install[^\n]*\bffmpeg\b/.test(step.run ?? ''));
+  assert.equal(ffmpeg(component)?.if, "matrix.task == 'server-1'");
+  for (const [steps, command] of [[component, '--task "$CHECK_TASK"'], [integration, '--task integration-units']]) {
+    assert.ok(ffmpeg(steps));
+    assert.ok(steps.indexOf(ffmpeg(steps)) < steps.findIndex(step => step.run?.includes(command)));
+  }
+});
+
 test('tag-triggered release checks also avoid the broad server glob and manual performance/scale cases', () => {
   const release = workflow('release-central');
   assert.ok(release.on.push.tags.includes('central-v*'));
