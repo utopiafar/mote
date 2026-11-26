@@ -73,14 +73,14 @@ export class AssistantTaskQuestions {
  /** Read-only validation shared with the completed-result adapter. A question
   * is an alternative response, not a completed action-bearing result. */
  isQuestion(work:Work,result:Pick<QueryResult,'answer'|'citations'>){return Boolean(this.proposal(result.answer,work,result.citations));}
- withOwnerQuestions(input:QueryInput,work:Work):QueryInput{
+ withOwnerQuestions(input:QueryInput,task:TaskRecord,currentTask:()=>TaskRecord):QueryInput{
   assertSourceContextDependencies(this.contexts,input.contextSourceContextDependencies);
   return {...input,question:instruction+input.question,
    assertContextAuthority:()=>{input.assertContextAuthority?.();assertSourceContextDependencies(this.contexts,input.contextSourceContextDependencies);
-    if(this.work(work.task.id).task.revision!==work.task.revision)throw new StoreError('Assistant task changed before disclosure',409);},
+    if(currentTask().revision!==task.revision)throw new StoreError('Assistant task changed before disclosure',409);},
    validateOutput:async result=>{
     const issue=await input.validateOutput?.(result);if(issue)return issue;
-    try{this.proposal(result.answer,this.work(work.task.id),result.citations);}
+    try{this.proposal(result.answer,this.work(task.id),result.citations);}
     catch{return {code:'assistant_owner_question',feedback:'Return one concrete question using the specified existing owner-question fields. Quotes must be exact current authorized original spans with citation IDs. Never invent a default owner choice.'};}
    },
   };

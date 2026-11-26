@@ -1264,9 +1264,9 @@ for(const mode of ['failed-preparation','external-endpoint'] as const)test(`audi
 });
 
 test('managed ASR readiness never bypasses the loaded model identity check before uploading audio',async t=>{
- const f=await nativeFunasrFixture(t,{managed:true});await f.startPreparation();const id=await f.upload();await f.node.processing.tick();
+ const f=await nativeFunasrFixture(t,{managed:true});await f.startPreparation();const id=await f.upload();await f.settle(id);
  assert.equal((await f.details(id)).job.error,'worker_not_ready');f.identity.models.asr.revision=sha256('generated unexpected managed revision');f.releasePreparation();await f.waitPreparation('ready');
- f.wake(id);await f.node.processing.tick();const detail=await f.details(id);
+ f.wake(id);await f.settle(id);const detail=await f.details(id);
  assert.equal(detail.job.state,'blocked');assert.equal(detail.job.error,'processor_not_configured');assert.equal(detail.hasOriginal,true);assert.equal(f.requests.length,0);assert.equal(f.node.files.chunks(id).length,0);
 });
 

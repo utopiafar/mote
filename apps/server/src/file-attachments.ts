@@ -41,11 +41,15 @@ export function fileAttachmentChildren(store:Store,parentId:string){
  return store.db.prepare('SELECT capture_id FROM file_evidence_links WHERE parent_id=? ORDER BY capture_id LIMIT 101').all(parentId)
   .flatMap(row=>{const id=String(row.capture_id),parent=fileAttachmentParent(store,id),record=parent&&store.evidence([id])[0];return parent?.record.id===parentId&&record?[{record,fileId:parent.fileId}]:[];});
 }
-export function fileAttachmentAvailable(store:Store,id:string,metadataOnly=false){
+function attachmentVersion(store:Store,id:string){
  let statement=availableStatements.get(store);
  if(!statement){statement=store.db.prepare(`SELECT v.capture_id,json_extract(v.manifest,'$.item.document.attachmentOf') parent
   FROM file_versions v WHERE v.capture_id=? OR v.capture_id=(SELECT capture_id FROM file_chunks WHERE id=?) LIMIT 1`);availableStatements.set(store,statement);}
- const row=statement.get(id,id);
+ return statement.get(id,id);
+}
+
+export function fileAttachmentAvailable(store:Store,id:string,metadataOnly=false){
+ const row=attachmentVersion(store,id);
  return !row?.parent||Boolean(fileAttachmentParent(store,String(row.capture_id),metadataOnly));
 }
 
@@ -54,11 +58,17 @@ export function fileAttachmentVersions(store:Store,ids:readonly string[]):Map<st
  if(!ids.length)return new Map();
  let statement=attachmentVersionStatements.get(store);
  if(!statement){statement=store.db.prepare(`SELECT wanted.value id,v.capture_id,json_extract(v.manifest,'$.item.document.attachmentOf') parent
-  FROM json_each(?) wanted JOIN file_versions v ON v.capture_id=(SELECT exact.capture_id FROM file_versions exact
-    WHERE exact.capture_id=wanted.value OR exact.capture_id=(SELECT capture_id FROM file_chunks WHERE id=wanted.value) LIMIT 1)`);
+  FROM json_each(?) wanted JOIN file_versions v ON v.capture_id IN (wanted.value,(SELECT capture_id FROM file_chunks WHERE id=wanted.value))`);
   attachmentVersionStatements.set(store,statement);}
- const rows=statement.all(JSON.stringify(ids));
- return new Map(rows.filter(row=>row.parent).map(row=>[String(row.id),String(row.capture_id)]));
+ const attached=new Map<string,string>(),seen=new Set<string>();
+ for(const candidate of statement.all(JSON.stringify([...new Set(ids)]))){
+  const id=String(candidate.id);
+  // A file ID can also name a chunk. Keep the original resolver's choice if both match.
+  const selected=seen.has(id)?attachmentVersion(store,id):candidate;
+  seen.add(id);
+  if(selected?.parent)attached.set(id,String(selected.capture_id));else attached.delete(id);
+ }
+ return attached;
 }
 
 /** Explicit admission composes archive retention with the existing file pipeline.

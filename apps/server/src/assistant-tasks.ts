@@ -74,9 +74,13 @@ export class AssistantTasks implements BatchProductProjection {
   },steeringAuthority);
  }
  close(){this.questions.close();}
- private questionWork(id:string){
+ private requireCurrentTask(id:string){
   const task=this.tasks.get(id);
   if(task.kind!=='assistant.task'||!this.current(task))throw new StoreError('Assistant task input is no longer current',409);
+  return task;
+ }
+ private questionWork(id:string){
+  const task=this.requireCurrentTask(id);
   // A routine task was discovered with automatic admission, so its continuation
   // must keep the same source-exclusion and evidence-eligibility checks. Treating
   // the owner reply as an unrestricted manual read would add excluded sources.
@@ -99,7 +103,8 @@ export class AssistantTasks implements BatchProductProjection {
    taskContext:{...input.taskContext,turns:input.taskContext?.turns??[],ownerInstruction:{messageId:frozen.turnId,question:frozen.instruction.text}}};
    if(Buffer.byteLength(JSON.stringify(input.taskContext))>BATCH_CONTEXT_MAX_BYTES)throw new ExecutionFailure('blocked','assistant_task_context_budget');
   }
-  return this.questions.withOwnerQuestions(this.steering?.withAmendments(input,this.steeringWork(task.id))??input,this.questionWork(task.id));
+  const current=this.requireCurrentTask(task.id);
+  return this.questions.withOwnerQuestions(this.steering?.withAmendments(input,this.steeringWork(task.id,current))??input,current,()=>this.requireCurrentTask(task.id));
  }
  execute(input:QueryInput,query:(input:QueryInput)=>Promise<QueryResult>,selection?:AssistantTaskModelSelector){
   const task=input.traceContext?.operationId&&this.taskForOperation(input.traceContext.operationId);
@@ -111,11 +116,11 @@ export class AssistantTasks implements BatchProductProjection {
    return selected;
   }));
  }
- private steeringWork(id:string):AssistantTaskSteeringWork{
-  const work=this.questionWork(id),frozen=this.draft(work.task);
+ private steeringWork(id:string,task=this.requireCurrentTask(id)):AssistantTaskSteeringWork{
+  const frozen=this.draft(task);
   if(frozen.instruction?.archive&&this.archivePins(id)?.evidenceIds.length===0)
-   return {task:work.task,goal:work.goal,scope:frozen.request.scope,origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}};
-  return {task:work.task,goal:work.goal,scope:frozen.request.scope,batchId:this.currentBatch(work.task.operationId),...(frozen.conversationId?{origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}}:{})};
+   return {task,goal:frozen.request.goal,scope:frozen.request.scope,origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}};
+  return {task,goal:frozen.request.goal,scope:frozen.request.scope,batchId:this.currentBatch(task.operationId),...(frozen.conversationId?{origin:{conversationId:frozen.conversationId,turnId:frozen.turnId}}:{})};
  }
  private currentBatch(operationId:string){return this.store.db.prepare("SELECT id FROM task_records WHERE operation_id=? AND kind='batch' ORDER BY rowid DESC LIMIT 1").get(operationId)?.id as string|undefined;}
  private continueSteering(work:AssistantTaskSteeringWork,message:ConversationMessage){
@@ -138,14 +143,17 @@ export class AssistantTasks implements BatchProductProjection {
  private assertCurrent=(ids:readonly string[])=>{
   if(!this.reader.contextDependenciesAllowed(ids,new EvidenceExposurePolicy()))throw new StoreError('Assistant task evidence is no longer permitted',409);
  };
- private selected(id:string,scope:QueryScope,seen=new Set<string>()):boolean{
+ private ancestors(id:string){
+  return resolveDependencies(this.store,{version:1,complete:true,ids:[id]})!.ids;
+ }
+ private selected(id:string,scope:QueryScope,seen=new Set<string>(),ancestors?:string[]):boolean{
   if(scope.evidenceIds===undefined||scope.evidenceIds.includes(id))return true;
   if(seen.has(id))return false;seen.add(id);
-  const parents=resolveDependencies(this.store,{version:1,complete:true,ids:[id]})!.ids.filter(value=>value!==id);
+  const parents=(ancestors??this.ancestors(id)).filter(value=>value!==id);
   for(const row of this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id))parents.push(String(row.evidence_id));
   // Only original captures establish whether a derived candidate is inside a
   // fixed selection. Intermediate artifacts never add permission.
-  const roots=parents.filter(value=>Boolean(this.store.db.prepare('SELECT 1 FROM captures WHERE id=?').get(value)));
+  const roots=this.store.existingCaptureIds(parents);
   return roots.length>0&&roots.every(root=>this.selected(root,scope,new Set(seen)));
  }
  /** Enumerate the current authorized read catalog, not a semantic ranking.
@@ -160,27 +168,43 @@ export class AssistantTasks implements BatchProductProjection {
   const sources=scope.kind==='selection'&&scope.sourceIds!==undefined?new Set(scope.sourceIds):undefined;
   const restriction=sources?new EvidenceExposurePolicy([],value=>sources.has(value.sourceId??'')):undefined;
   const found=new Set<string>(),seen=new Set<string>();let cursor:string|undefined;
-  const add=(record:CaptureRecord)=>{
-   const block=this.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(record.id);
-   if(record.privacy.excluded||!withinEvidenceScope(record,scope)||
-     !this.selected(record.id,scope)||!this.reader.memories.isCurrentEvidence(record.id)||
-     !this.reader.contextDependenciesAllowed([record.id])||restriction&&!this.reader.contextDependenciesAllowed([record.id],restriction))return;
-   const ancestors=resolveDependencies(this.store,{version:1,complete:true,ids:[record.id]})!.ids;
-   if(automatic&&(!this.routines||!this.routines.allows([record.id,...ancestors])))return;
-   seen.add(record.id);
-   if(block&&['source-metadata','record-metadata'].includes(String(block.block_id))||!record.ocrText?.trim()||record.provenance?.layer==='reference')return;
-   if(this.store.evidenceMetadata(ancestors).some(original=>original.provenance?.layer==='reference'))return;
-   found.add(record.id);
-   if(found.size>1000)throw new StoreError('Choose a smaller scope for this assistant task',413);
+  const add=(records:readonly CaptureRecord[])=>{
+   // Every page checks current canonical evidence together. Never carry a
+   // read or authority decision across a yielded page.
+   const candidates=records.flatMap(record=>{
+    if(record.privacy.excluded||!withinEvidenceScope(record,scope))return [];
+    const ancestors=this.ancestors(record.id);
+    return this.selected(record.id,scope,undefined,ancestors)?[{record,ancestors}]:[];
+   });
+   const current=new Set(this.reader.memories.readCurrentEvidence(candidates.map(({record})=>record.id)).map(record=>record.id));
+   for(const {record,ancestors} of candidates){
+    if(!current.has(record.id)||!this.reader.contextDependenciesAllowed([record.id],restriction)||
+      automatic&&(!this.routines||!this.routines.allows([record.id,...ancestors])))continue;
+    seen.add(record.id);
+    const block=this.store.db.prepare('SELECT block_id FROM material_evidence WHERE id=?').get(record.id);
+    if(block&&['source-metadata','record-metadata'].includes(String(block.block_id))||!record.ocrText?.trim()||record.provenance?.layer==='reference')continue;
+    if(this.store.evidenceMetadata(ancestors).some(original=>original.provenance?.layer==='reference'))continue;
+    found.add(record.id);
+    if(found.size>1000)throw new StoreError('Choose a smaller scope for this assistant task',413);
+   }
   };
-  const result=()=>({ids:[...found].sort(),snapshot:[...this.snapshot([...seen]).map(id=>'observed:'+id),
-   ...this.snapshot([...found]).map(id=>'readable:'+id)].sort()});
+  const result=()=>{
+   const snapshot=new Set<string>();
+   for(const id of seen){
+    const originals=this.store.existingCaptureIds(this.ancestors(id));
+    for(const root of originals.length?originals:[id]){
+     snapshot.add('observed:'+root);
+     if(found.has(id))snapshot.add('readable:'+root);
+    }
+   }
+   return {ids:[...found].sort(),snapshot:[...snapshot].sort()};
+  };
   if(fixed&&scope.evidenceIds===undefined)throw new StoreError('Suggestion requires a fixed evidence selection',409);
   if(scope.evidenceIds!==undefined){
    const reader=this.reader;
    function* read(ids:string[]){
     for(let offset=0;offset<ids.length;offset+=100){
-     for(const record of reader.evidence(ids.slice(offset,offset+100).map(id=>formatEvidenceRef('capture',id)),scope))add(record);
+     add(reader.evidence(ids.slice(offset,offset+100).map(id=>formatEvidenceRef('capture',id)),scope));
      yield;
     }
    }
@@ -191,7 +215,7 @@ export class AssistantTasks implements BatchProductProjection {
     // instead of browsing every source, retaining the same root-scope checks.
     const inputs=new Set(scope.evidenceIds),pending=[...inputs];
     for(const id of scope.evidenceIds)if(this.reader.files&&this.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id)){
-     for(let offset=0;;offset+=200){const chunks=this.reader.files.chunks(id,offset,200);for(const chunk of chunks){add(chunk);if(!inputs.has(chunk.id)){inputs.add(chunk.id);pending.push(chunk.id);}}if(chunks.length<200)break;yield;}
+     for(let offset=0;;offset+=200){const chunks=this.reader.files.chunks(id,offset,200);add(chunks);for(const chunk of chunks)if(!inputs.has(chunk.id)){inputs.add(chunk.id);pending.push(chunk.id);}if(chunks.length<200)break;yield;}
     }
     const children=this.store.db.prepare('SELECT DISTINCT anchor_id FROM material_evidence_dependencies WHERE evidence_id IN (SELECT value FROM json_each(?))');
     for(let offset=0;offset<pending.length;){
@@ -206,18 +230,18 @@ export class AssistantTasks implements BatchProductProjection {
   do{
    const page=this.reader.queryPage({...scope,cursor,limit:100},'browse');
    for(const record of page.items){
-    add(record);
+    add([record]);
     const ref=record.provenance?.uri?.split('#')[0];
     if(ref?.startsWith('material:')){
      const ids=this.materials.evidenceIds(ref,undefined,1001);
      if(ids.length>1000)throw new StoreError('Choose a smaller scope for this assistant task',413);
      for(let offset=0;offset<ids.length;offset+=100){
-      for(const candidate of this.reader.evidence(ids.slice(offset,offset+100).map(id=>formatEvidenceRef('capture',id)),scope))add(candidate);
+      add(this.reader.evidence(ids.slice(offset,offset+100).map(id=>formatEvidenceRef('capture',id)),scope));
       yield;
      }
     }else{
      if(this.reader.files&&this.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(record.id)){
-      for(let offset=0;;offset+=200){const chunks=this.reader.files.chunks(record.id,offset,200);for(const chunk of chunks)add(chunk);if(chunks.length<200)break;yield;}
+      for(let offset=0;;offset+=200){const chunks=this.reader.files.chunks(record.id,offset,200);add(chunks);if(chunks.length<200)break;yield;}
      }
     }
    }
@@ -229,16 +253,6 @@ export class AssistantTasks implements BatchProductProjection {
  private taskForOperation(operationId:string):TaskRecord|undefined{
   const row=this.store.db.prepare("SELECT t.id FROM task_records t JOIN assistant_task_scopes s ON s.task_id=t.id WHERE t.operation_id=? AND t.kind='assistant.task'").get(operationId);
   return row?this.tasks.get(String(row.id)):undefined;
- }
- private snapshot(ids:string[]){
-  const roots=new Set<string>();
-  for(const id of ids){
-   const ancestors=resolveDependencies(this.store,{version:1,complete:true,ids:[id]})!.ids;
-   for(const row of this.store.db.prepare('SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id=?').all(id))ancestors.push(String(row.evidence_id));
-   const originals=ancestors.filter(value=>Boolean(this.store.db.prepare('SELECT 1 FROM captures WHERE id=?').get(value)));
-   if(originals.length)originals.forEach(value=>roots.add(value));else roots.add(id);
-  }
-  return [...roots].sort();
  }
  private draft(task:TaskRecord):FrozenDraftTask{return this.tasks.input<FrozenDraftTask>(task.id,task.revision,this.assertCurrent);}
  private current(task:TaskRecord):boolean{

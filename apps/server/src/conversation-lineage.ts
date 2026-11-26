@@ -1,5 +1,8 @@
 import type {EvidenceDependencies} from '@mote/shared';
+import type {StatementSync} from 'node:sqlite';
 import type {EvidenceStore as Store} from './evidence-store.js';
+
+const lineageStatements=new WeakMap<Store,{schema:StatementSync;parents:Map<string,StatementSync>}>();
 
 export function combineDependencies(values:(EvidenceDependencies|undefined)[]):EvidenceDependencies|undefined {
   if(values.some(value=>!value))return;
@@ -9,23 +12,35 @@ export function combineDependencies(values:(EvidenceDependencies|undefined)[]):E
 /** Resolve derived disclosures while their lineage still exists, before deletion can cascade. */
 export function resolveDependencies(store:Store,value:EvidenceDependencies|undefined):EvidenceDependencies|undefined {
   if(!value)return;
+  if(!value.ids.length)return {...value,ids:[]};
   // The graph is installed by file processing in a full node. The fallback
   // covers lightweight Store/Conversations consumers without that service.
-  const graph=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='evidence_dependency_edges'").get();
-  const materialInputs=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='artifact_material_inputs'").get();
-  const materialEvidence=store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence_dependencies'").get();
+  let statements=lineageStatements.get(store);
+  if(!statements){
+    statements={schema:store.db.prepare(`SELECT name FROM sqlite_master WHERE name IN
+      ('evidence_dependency_edges','artifact_material_inputs','material_evidence_dependencies') ORDER BY name`),parents:new Map()};
+    lineageStatements.set(store,statements);
+  }
+  // Retain compiled SQL only. Schema availability and every edge are read from
+  // the current transaction, including after a plugin installs its tables.
+  const tables=statements.schema.all().map(row=>row.name),key=tables.join(',');
+  const graph=tables.includes('evidence_dependency_edges'),materialInputs=tables.includes('artifact_material_inputs'),materialEvidence=tables.includes('material_evidence_dependencies');
   // A recursive join to the compound graph view materializes every edge and
   // parses unrelated file/Memory JSON before looking up even one original.
   // Push each bounded set of selected child IDs into the view so its branches
   // use their existing indexes. Retain every ancestor; the visited set only
   // deduplicates work and terminates cycles, never limits disclosure lineage.
-  const parents=store.db.prepare(`WITH selected(id) AS (SELECT value FROM json_each(?))
+  let parents=statements.parents.get(key);
+  if(!parents){
+    parents=store.db.prepare(`WITH selected(id) AS (SELECT value FROM json_each(?))
     ${graph?'SELECT parent_id id FROM evidence_dependency_edges WHERE child_id IN (SELECT id FROM selected) UNION ':''}
     SELECT evidence_id id FROM memory_dependencies WHERE memory_id IN (SELECT id FROM selected)
     UNION SELECT parent_id FROM file_evidence_links WHERE capture_id IN (SELECT id FROM selected)
     UNION SELECT capture_id FROM file_chunks WHERE id IN (SELECT id FROM selected)
     ${materialEvidence?'UNION SELECT evidence_id FROM material_evidence_dependencies WHERE anchor_id IN (SELECT id FROM selected)':''}
     ${materialInputs?'UNION SELECT e.id FROM artifact_material_inputs i JOIN material_evidence e ON e.material_id=i.material_id AND e.revision=i.revision WHERE i.artifact_id IN (SELECT id FROM selected)':''}`);
+    statements.parents.set(key,parents);
+  }
   const seen=new Set(value.ids),pending=[...seen];
   for(let offset=0;offset<pending.length;){
     const page=pending.slice(offset,offset+256);offset+=page.length;

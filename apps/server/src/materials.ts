@@ -98,6 +98,8 @@ type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision
 type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
 type EvidenceContextInput={anchor_id:string;evidence_id:string;chunk_capture_id:string|null;declaration_seed:number};
 type EvidenceContexts={materials:Map<string,AttributionContext|undefined>;originals:Map<string,AttributionContext>;anchors:Map<string,string>;inputs:Map<string,EvidenceContextInput[]>;chunks:Map<string,string>};
+type EvidenceAnchorRow={id:string;material_id:string;revision:string;block_id:string};
+type EvidenceBlockRow={id:string;text:string;locator:string|null;evidence_context:string|null};
 type CurrentEvidenceRow={id:string;source_id:string;sequence:number;min_visible_sequence:number;retired:number;revision:string;evidence_revision:string;coding_active:number;snapshot_active:number;invalidated:number};
 const currentEvidenceSelection=`SELECT e.id,h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
     EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
@@ -159,6 +161,9 @@ export class MaterialStore {
   private contextDependenciesStatement?:StatementSync;
   private contextChunkStatement?:StatementSync;
   private contextMembersStatement?:StatementSync;
+  private evidenceAnchorsStatement?:StatementSync;
+  private snapshotEvidenceStatement?:StatementSync;
+  private codingEvidenceStatement?:StatementSync;
   index?:MaterialIndexRuntime;
   onContextChanged?:(materialId:string,cause?:'attribution'|'derived')=>void;
   onSourceContextChanged?:(sourceId:string)=>void;
@@ -674,38 +679,44 @@ export class MaterialStore {
    * always use the default visibility and retirement fences. */
   evidence(ids:string[],includeRetired=false):CaptureRecord[]{
     if(!ids.length)return [];
-    const materials=new Map<string,MaterialRecord|undefined>(),layouts=new Map<string,boolean>();
-    const derivedAllowed=new Map<string,boolean>();
-    const anchors=new Map(this.store.db.prepare('SELECT id,material_id,revision,block_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))')
-      .all(JSON.stringify([...new Set(ids)])).map(row=>[String(row.id),row]));
-    const contexts=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?');
-    let codingBlocks:StatementSync|undefined,snapshotBlocks:StatementSync|undefined;
-    return ids.flatMap(id=>{
-    const anchor=anchors.get(id);if(!anchor)return [];
-    const ref=formatMaterialRef(String(anchor.material_id),String(anchor.revision));
-    if(!materials.has(ref)){
-      let material=this.get(ref);
-      if(!material&&includeRetired){const head=this.head(String(anchor.material_id)),version=this.version(String(anchor.material_id),String(anchor.revision));if(head&&version)material=this.record(head,version);}
-      materials.set(ref,material);
+    const db=this.store.db;
+    const anchors=(this.evidenceAnchorsStatement??=db.prepare('SELECT id,material_id,revision,block_id FROM material_evidence WHERE id IN (SELECT value FROM json_each(?))'))
+      .all(JSON.stringify([...new Set(ids)])) as EvidenceAnchorRow[];
+    const materials=new Map<string,{material:MaterialRecord;coding:boolean}|undefined>();
+    const selected=new Map<string,{anchor:EvidenceAnchorRow;material:MaterialRecord}>(),snapshotIds:string[]=[],codingIds:string[]=[];
+    for(const anchor of anchors){
+      const ref=formatMaterialRef(anchor.material_id,anchor.revision);
+      if(!materials.has(ref)){
+        let material=this.get(ref);
+        if(!material&&includeRetired){const head=this.head(anchor.material_id),version=this.version(anchor.material_id,anchor.revision);if(head&&version)material=this.record(head,version);}
+        materials.set(ref,material&&this.derivedAllowed(material)?{material,coding:this.codingLayout(material.id,material.revision)}:undefined);
+      }
+      const allowed=materials.get(ref);if(!allowed)continue;
+      selected.set(anchor.id,{anchor,material:allowed.material});
+      (allowed.coding?codingIds:snapshotIds).push(anchor.id);
     }
-    const material=materials.get(ref);
-    if(!material)return [];
-    if(!derivedAllowed.has(ref))derivedAllowed.set(ref,this.derivedAllowed(material));
-    if(!derivedAllowed.get(ref))return [];
-    if(!layouts.has(ref))layouts.set(ref,this.codingLayout(material.id,material.revision));
-    const block=layouts.get(ref)?(codingBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset,b.locator FROM material_block_versions b
-      JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`))
-      .get(material.id,material.revision,anchor.block_id,id):(snapshotBlocks??=this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
-      WHERE b.material_id=? AND b.revision=? AND b.block_id=?`)).get(material.id,material.revision,anchor.block_id);if(!block)return [];
-    const contextRow=contexts.get(id);
-    const context=contextRow?materialEvidenceContextSchema.parse(JSON.parse(String(contextRow.json))):undefined;
+    // Read only the approved anchors. Each batch uses the same revision and
+    // block identity as the individual reads, including retained Coding blocks.
+    const snapshots=snapshotIds.length?(this.snapshotEvidenceStatement??=db.prepare(`SELECT e.id,p.text,NULL locator,c.json evidence_context
+      FROM json_each(?) wanted CROSS JOIN material_evidence e ON e.id=wanted.value
+      CROSS JOIN material_blocks b ON b.material_id=e.material_id AND b.revision=e.revision AND b.block_id=e.block_id
+      JOIN material_block_payloads p ON p.hash=b.payload_hash LEFT JOIN material_evidence_context c ON c.anchor_id=e.id`)).all(JSON.stringify(snapshotIds)) as EvidenceBlockRow[]:[];
+    const codingRows=codingIds.length?(this.codingEvidenceStatement??=db.prepare(`SELECT e.id,p.text,b.locator,c.json evidence_context
+      FROM json_each(?) wanted CROSS JOIN material_evidence e ON e.id=wanted.value
+      CROSS JOIN material_block_versions b ON b.material_id=e.material_id AND b.from_revision=e.revision AND b.block_id=e.block_id AND b.anchor_id=e.id
+      JOIN material_block_payloads p ON p.hash=b.payload_hash LEFT JOIN material_evidence_context c ON c.anchor_id=e.id`)).all(JSON.stringify(codingIds)) as EvidenceBlockRow[]:[];
+    const blocks=new Map([...snapshots,...codingRows].map(row=>[row.id,row]));
+    return ids.flatMap(id=>{
+    const entry=selected.get(id),block=blocks.get(id);if(!entry||!block)return [];
+    const {anchor,material}=entry;
+    const context=block.evidence_context===null?undefined:materialEvidenceContextSchema.parse(JSON.parse(block.evidence_context));
     const coding=material.origin.provider&&material.origin.projectKey&&material.origin.sessionId;
     const at=context?.observedAt??material.createdAt;
     // A material's range is not a block's authored/recording/event time. Only
     // the organizer can declare that context; captured prose cannot supply it.
     const document=context?.document??{timeBasis:'unknown',contentRole:'other'};
-    const messages=coding&&block.locator?codingMessages(JSON.parse(String(block.locator))):[];
-    return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(messages.length?{codingMessages:messages}:{}),...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
+    const messages=coding&&block.locator?codingMessages(JSON.parse(block.locator)):[];
+    return [{id,attributionContext:material.attributionContext??unknownAttributionContext(),deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:block.text,indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(messages.length?{codingMessages:messages}:{}),...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:anchor.block_id,role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
   private currentEvidenceRow(id:string){return (this.currentEvidenceStatement??=this.store.db.prepare(currentEvidenceSelection+' WHERE e.id=?')).get(id) as CurrentEvidenceRow|undefined;}
   isCurrentEvidence(id:string){return currentEvidenceAllowed(this.currentEvidenceRow(id));}

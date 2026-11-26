@@ -161,6 +161,9 @@ export class BatchProcessing {
     this.product?.project(step);
   }
   private async execute(step:ExecutionStep,signal:AbortSignal,assertGrant:()=>void):Promise<QueryResult>{
+    // A queued analysis can share a turn with several Memory jobs. Service
+    // HTTP after admission, before revalidating and opening its saved context.
+    await yieldTurn();signal.throwIfAborted();
     const started=performance.now(),input=step.input as StepInput;
     if(input.itemId)await this.product?.prepareEvidence?.(step,signal,assertGrant);
     const {parent,plan,itemInput}=this.transaction(()=>{
@@ -202,6 +205,7 @@ export class BatchProcessing {
     const result=await this.query({...frozen,executionLane:'background',...(frozen.evidenceIds.length?{}:{hostRetrieval:'none' as const}),
       contextTime:plan.contextTime,contextEvidenceDependencies:deps(frozen.evidenceIds),...(sourceContexts?.length?{contextSourceContextDependencies:sourceContexts}:{}),assertContextAuthority:assert,signal,...(taskContext?{taskContext}:{}),
       traceContext:{operationId:step.operationId,jobId:parent.id,batchId:step.id,...(input.index===undefined?{}:{batchIndex:input.index}),attempt:step.attempts}});
+    await yieldTurn();
     assert();
     const allowed=new Set(frozen.evidenceIds);
     const lineage=new Set(resolveDependencies(this.store,deps(frozen.evidenceIds))!.ids);
@@ -210,10 +214,11 @@ export class BatchProcessing {
     return result;
   }
   private commit(step:ExecutionStep,result:QueryResult){
-    const input=step.input as StepInput,parent=this.parent(step),plan=this.tasks.input<Plan>(parent.id,parent.revision,this.current(parent.id));
+    const input=step.input as StepInput,parent=this.parent(step),authority=this.readAuthority(parent);
+    const plan=this.tasks.input<Plan>(parent.id,parent.revision,authority.parent);
     this.assertResultCurrent(result);const dependencies=deps(result.evidenceDependencies!.ids);
     if(input.itemId){
-      const item=this.tasks.get(input.itemId),frozen=this.itemInput(step,item,this.current(item.id));this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
+      const item=this.tasks.get(input.itemId),frozen=this.itemInput(step,item,authority.item(item));this.pins(frozen);this.assertDisclosure(frozen.evidenceIds);
       this.tasks.saveResult(item.id,item.revision,result,dependencies,this.current(item.id));
       if(plan.reduce===undefined)this.tasks.saveResult(parent.id,parent.revision,result,dependencies,this.current(parent.id));
     }else{
