@@ -248,8 +248,8 @@ export class MemoryPipeline {
         // A parent re-entry cannot advance a queued/running semantic child.
         // Keep the engine's existing input/grant validation, but observe that
         // durable child's state before preparing all frozen ranges again.
-        if(['semantic_processing_pending','interrupted'].includes(step.error??'')&&this.options.phases.understand&&this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='processing_jobs'").get()){
-          const child=this.store.db.prepare("SELECT e.available_at FROM memory_batches b INDEXED BY memory_batches_scheduling JOIN processing_jobs p ON json_extract(p.json,'$.parentGrant.stepId')=b.id AND json_extract(p.json,'$.config.generationContract')=json_extract(b.json,'$.generationContract') JOIN execution_steps e ON e.id=p.id WHERE b.job_id=? AND b.id=? AND coalesce(json_extract(p.json,'$.config.modelFingerprint'),'')=? AND e.state IN ('waiting','running') ORDER BY e.available_at LIMIT 1").get(job.id,step.id,job.configuration?.fingerprint??'');
+        if(['semantic_processing_pending','interrupted'].includes(step.error??'')&&this.options.phases.understand){
+          const child=this.pendingPreparation(job.id,step.id,job.configuration?.fingerprint??'');
           if(child)return new ExecutionFailure('waiting','semantic_processing_pending',Number(child.available_at)>Date.now()?Math.max(1000,Number(child.available_at)-Date.now()):5000);
         }
       },
@@ -863,6 +863,30 @@ export class MemoryPipeline {
     try{this.prepareJob(id,job);}catch(error){this.completions.delete(id);this.active.delete(id);reject(error);}
     this.wake();return task;
   }
+  private pendingPreparation(jobId:string,batchId:string,modelFingerprint:string){
+    const db=this.store.db;
+    if(!db.prepare("SELECT 1 FROM sqlite_master WHERE name='processing_jobs'").get())return;
+    return db.prepare(`SELECT e.available_at,e.state,e.error,e.attempts,coalesce(json_array_length(p.json,'$.outputs'),0) outputs
+      FROM memory_batches b INDEXED BY memory_batches_scheduling
+      JOIN processing_jobs p ON json_extract(p.json,'$.parentGrant.stepId')=b.id AND json_extract(p.json,'$.config.generationContract')=json_extract(b.json,'$.generationContract')
+      JOIN execution_steps e ON e.id=p.id
+      WHERE b.job_id=? AND b.id=? AND coalesce(json_extract(p.json,'$.config.modelFingerprint'),'')=?
+        AND e.state IN ('waiting','running') ORDER BY e.available_at LIMIT 1`).get(jobId,batchId,modelFingerprint);
+  }
+  /** HTTP authority renewal and batch re-entry use the same model selection rules. */
+  retrySelectsModel(job:MemoryJob,batch:MemoryBatch,provider:ModelConfiguration['provider']){
+    if(batch.status==='failed')return batch.errorCode!=='memory_context_required';
+    if(batch.status!=='pending')return false;
+    if(job.configuration&&job.configuration.provider!==provider&&isProviderQuotaWait(batch.errorCode))return true;
+    const pin=batch.configuration;
+    // A parent may still project a generic wait after its exact preparation
+    // enters provider cooldown. A saved job model can already differ from that pin.
+    if(batch.errorCode!=='semantic_processing_pending'||batch.supersededBy?.length||!pin||pin.provider===provider||
+      !batch.generationContract||this.phaseOutputs.hasExtraction(batch.id))return false;
+    const child=this.pendingPreparation(job.id,batch.id,pin.fingerprint);
+    return child?.state==='waiting'&&child.attempts===0&&child.outputs===0&&
+      typeof child.error==='string'&&isProviderQuotaWait(child.error);
+  }
   private assertRetryWindow(job:MemoryJob,changingProvider:boolean){
     // Input readiness checks have their own timer. Only a batch's provider
     // cooldown may delay an explicit recheck of another failed input plan.
@@ -891,11 +915,12 @@ export class MemoryPipeline {
     if(this.active.has(id))this.settle([id]);
     const active=this.active.get(id);
     if(modelProfileId!==undefined&&(!ownerAction||active))throw new StoreError('Pause the active Memory job before selecting another model profile',409);
-    const retryable=(batch:MemoryBatch)=>batch.status==='failed'&&batch.errorCode!=='memory_context_required'||
-      changingProvider&&batch.status==='pending'&&isProviderQuotaWait(batch.errorCode);
+    const retryable=(current:MemoryJob,batch:MemoryBatch)=>ownerAction&&selection
+      ?this.retrySelectsModel(current,batch,selection.provider)
+      :batch.status==='failed'&&batch.errorCode!=='memory_context_required';
     if(active){
       const current=this.get(id);
-      if(!ownerAction||(current.runningBatches??0)>0||this.inputBusy(id)||!current.batches.some(retryable))return {job:current,completion:active};
+      if(!ownerAction||(current.runningBatches??0)>0||this.inputBusy(id)||!current.batches.some(batch=>retryable(current,batch)))return {job:current,completion:active};
     }
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
       try{
@@ -907,19 +932,19 @@ export class MemoryPipeline {
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
       // A partial retry keeps the active job's model and the sibling batches'
       // input ranges. A new run can rebind its model and plan remaining work.
-      const previousConfiguration=job.configuration?.fingerprint;
+      const previousConfiguration=job.configuration?.fingerprint,retries=batches.filter(batch=>retryable(job,batch));
       if(selection){
         if(selection.fingerprint!==previousConfiguration&&batches.some(batch=>['pending','failed'].includes(batch.status)&&this.phaseOutputs.hasExtraction(batch.id)))throw new StoreError('An unfinished Memory review already has a saved extraction',409);
         job.modelProfileId=modelProfileId;
         job.configuration=structuredClone(selection);
       }else if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
       const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);
-      for(const batch of batches)if(retryable(batch)){
+      for(const batch of retries){
         try{this.admitBatch(job,batch);}catch{batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
         if(batch.errorCode==='memory_evaluation_incomplete')this.phaseOutputs.retryReview(batch.id,ownerAction);
         // This owner action authorizes another failed preparation call. Parent
         // re-entry and resource waiting alone must never reopen these children.
-        if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='processing_jobs'").get())for(const child of db.prepare("SELECT e.id FROM processing_jobs p JOIN execution_steps e ON e.id=p.id WHERE json_extract(p.json,'$.parentGrant.stepId')=? AND e.state='failed'").all(batch.id))this.engine.retry(String(child.id),ownerAction);
+        if((batch.status==='failed'||isProviderQuotaWait(batch.errorCode))&&db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='processing_jobs'").get())for(const child of db.prepare("SELECT e.id FROM processing_jobs p JOIN execution_steps e ON e.id=p.id WHERE json_extract(p.json,'$.parentGrant.stepId')=? AND e.state='failed'").all(batch.id))this.engine.retry(String(child.id),ownerAction);
         this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
         const step=this.engine.get(batch.id);
         if(step)this.engine.retry(batch.id,ownerAction);
