@@ -230,6 +230,54 @@ for(const {phase,limit} of [
  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
 });
 
+test('retrying a failed split batch keeps the waiting sibling\'s exact read scope',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-sibling-budget-'));
+ const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
+ const capacity:MemoryRequestCapacity={contextWindow:98304,maxOutputTokens:16384,draftTokens:16384};
+ let failure:'initial'|'first-child'|'none'='initial',jobId:string;
+ const calls:{phase:string;batchId?:string;ranges:QueryInput['evidenceRanges'];read:QueryInput['evidenceReadRanges']}[]=[];
+ const query=async(input:MemoryPipelineQuery)=>{
+  const {phase,batchId}=input.traceContext!;
+  calls.push({phase:phase!,batchId,ranges:input.evidenceRanges,read:input.evidenceReadRanges});
+  if(phase==='extract'&&failure!=='none'){
+   if(failure==='first-child')pipeline.pause(jobId);
+   throw new ProviderFailure({category:'permanent',code:'processing_limit'});
+  }
+  const {members}=input.taskContext!.memoryWork as {members:MemoryWorkMember[]};
+  return {answer:JSON.stringify({memories:[],coverage:members.map(member=>({key:member.key,state:'no_candidates',candidateIndexes:[]}))}),citations:[],trace:[],runId:randomUUID()};
+ };
+ const pipeline=new MemoryPipeline({store,memories,concurrency:()=>1,models:{configured:()=>true,model:()=> 'generated-provider',capacity:()=>capacity},
+  phases:{query,review:(input,draft,strategy)=>reviewMemory(input,draft,query,{strategy})}});
+ t.after(async()=>{await pipeline.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const source='generated-split-siblings';
+ sources.register({id:source,name:'Generated recording',kind:'custom',deviceId:'generated',platform:'import'});
+ const evidenceIds:string[]=[];
+ for(let index=0;index<16;index++)evidenceIds.push((await sources.upsert(source,{externalId:String(index),revision:'1',
+  text:'Generated recording fragment '+String(index),observedAt:at,kind:'file',layer:'original',document:{contentRole:'transcript',recordedAt:at,timeBasis:'recorded'}})).id);
+ const job=pipeline.create({evidenceIds}),root=job.batches[0];jobId=job.id;
+ assert.equal(job.totalBatches,1);assert.equal((await pipeline.run(jobId)).batches[0].errorCode,'processing_limit');
+ failure='first-child';
+ const paused=await pipeline.retry(jobId);
+ assert.equal(paused.status,'paused');
+ const parent=paused.batches.find(batch=>batch.id===root.id)!;
+ const children=paused.batches.filter(batch=>parent.supersededBy!.includes(batch.id));
+ assert.equal(children.length,2);
+ const failed=children.find(batch=>batch.status==='failed')!,waiting=children.find(batch=>batch.status==='pending')!;
+ assert.equal(failed.errorCode,'processing_limit');assert.equal(waiting.evidenceRanges.length,8);
+ assert.equal(calls.some(call=>call.batchId===waiting.id),false,'the waiting child has not run yet');
+ failure='none';
+ const done=await pipeline.retry(jobId);
+ assert.equal(done.status,'completed');
+ const siblingCalls=calls.filter(call=>call.batchId===waiting.id);
+ assert.deepEqual(siblingCalls.map(call=>call.phase),['extract','review']);
+ for(const call of siblingCalls){
+  assert.deepEqual(call.ranges,waiting.evidenceRanges);
+  assert.deepEqual(call.read,waiting.evidenceRanges,'another child\'s retry must not reopen optional context for the waiting sibling');
+ }
+ assert.ok(done.batches.filter(batch=>!batch.supersededBy?.length).every(batch=>batch.reviewReceipt?.decision==='independent'));
+ assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
+});
+
 test('an owner-selected long-output profile resumes the original paused batch under the new allowance',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-profile-retry-'));
  const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);

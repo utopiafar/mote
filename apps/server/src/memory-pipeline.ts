@@ -930,14 +930,13 @@ export class MemoryPipeline {
       const batches=this.batches(id);
       if(batches.some(batch=>batch.errorCode==='memory_provider_unknown_result'&&db.prepare("SELECT 1 FROM memory_provider_writes WHERE parent_id=? AND state='submitted'").get(batch.id)))throw new StoreError('Previous Memory publication outcome requires reconciliation before retry',409);
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
-      // A partial retry keeps the active job's model and the sibling batches'
-      // input ranges. A new run can rebind its model and plan remaining work.
       const previousConfiguration=job.configuration?.fingerprint,retries=batches.filter(batch=>retryable(job,batch));
       if(selection){
         if(selection.fingerprint!==previousConfiguration&&batches.some(batch=>['pending','failed'].includes(batch.status)&&this.phaseOutputs.hasExtraction(batch.id)))throw new StoreError('An unfinished Memory review already has a saved extraction',409);
         job.modelProfileId=modelProfileId;
         job.configuration=structuredClone(selection);
       }else if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
+      const configurationChanged=previousConfiguration!==job.configuration?.fingerprint;
       const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);
       for(const batch of retries){
         try{this.admitBatch(job,batch);}catch{batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
@@ -951,19 +950,19 @@ export class MemoryPipeline {
         // With the same model allowance the previous estimate would repeat the
         // rejected extraction. Reuse the frozen targets in smaller requests.
         if(ownerAction&&capacity&&batch.readRanges&&batch.errorCode==='processing_limit'&&batch.phase==='extract'&&
-          !batch.feedbackOnly&&batch.strategy?.review!==null&&previousConfiguration===job.configuration?.fingerprint){
+          !batch.feedbackOnly&&batch.strategy?.review!==null&&!configurationChanged){
           batch.splitForCapacityRetry=true;
         }
         batch.status='pending';delete batch.errorCode;delete batch.availableAt;
-        if(active&&capacity&&!this.phaseOutputs.hasExtraction(batch.id))delete batch.readRanges;
+        if(capacity&&!this.phaseOutputs.hasExtraction(batch.id))delete batch.readRanges;
         this.saveBatch(batch);
         if(active&&!step)this.prepareBatch(id,batch);
       }
-      // Reopen failed phases against their saved exact generation first. Then
-      // the retry can plan unfinished work using the current allowance, even
-      // when the original job predates request-aware partitioning.
-      if(!active&&capacity)for(const batch of batches)if(batch.status==='pending'&&!this.phaseOutputs.hasExtraction(batch.id)){
-        if(modelProfileId!==undefined&&previousConfiguration!==job.configuration?.fingerprint)delete batch.splitForCapacityRetry;
+      // Keep queued siblings' read scopes on a retry with the same model.
+      // A previous capacity split may have deliberately omitted background.
+      // Rebinding a model can replan pending work without a saved extraction.
+      if(!active&&capacity&&configurationChanged)for(const batch of batches)if(batch.status==='pending'&&!this.phaseOutputs.hasExtraction(batch.id)){
+        if(modelProfileId!==undefined)delete batch.splitForCapacityRetry;
         delete batch.readRanges;this.saveBatch(batch);
       }
       job.status='queued';delete job.errorCode;this.saveJob(job);
