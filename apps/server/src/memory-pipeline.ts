@@ -944,17 +944,20 @@ export class MemoryPipeline {
         // This owner action authorizes another failed preparation call. Parent
         // re-entry and resource waiting alone must never reopen these children.
         if((batch.status==='failed'||isProviderQuotaWait(batch.errorCode))&&db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='processing_jobs'").get())for(const child of db.prepare("SELECT e.id FROM processing_jobs p JOIN execution_steps e ON e.id=p.id WHERE json_extract(p.json,'$.parentGrant.stepId')=? AND e.state='failed'").all(batch.id))this.engine.retry(String(child.id),ownerAction);
-        this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
+        const extractionFailure=this.phaseOutputs.retryFailed(batch.id,ownerAction,this.generationContract(job,batch,batch.chunks));
+        // A missing native budget gate fails before any request is sent.
+        // Restoring the gate lets the same planned extraction run unchanged.
+        const keepReadScope=!configurationChanged&&extractionFailure?.executionStarted===false&&extractionFailure.causeCode==='native_budget_unavailable';
         const step=this.engine.get(batch.id);
         if(step)this.engine.retry(batch.id,ownerAction);
         // With the same model allowance the previous estimate would repeat the
         // rejected extraction. Reuse the frozen targets in smaller requests.
-        if(ownerAction&&capacity&&batch.readRanges&&batch.errorCode==='processing_limit'&&batch.phase==='extract'&&
+        if(ownerAction&&capacity&&!keepReadScope&&batch.readRanges&&batch.errorCode==='processing_limit'&&batch.phase==='extract'&&
           !batch.feedbackOnly&&batch.strategy?.review!==null&&!configurationChanged){
           batch.splitForCapacityRetry=true;
         }
         batch.status='pending';delete batch.errorCode;delete batch.availableAt;
-        if(capacity&&!this.phaseOutputs.hasExtraction(batch.id))delete batch.readRanges;
+        if(capacity&&!keepReadScope&&!this.phaseOutputs.hasExtraction(batch.id))delete batch.readRanges;
         this.saveBatch(batch);
         if(active&&!step)this.prepareBatch(id,batch);
       }

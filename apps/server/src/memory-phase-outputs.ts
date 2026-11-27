@@ -1,6 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {installSchemaPlan,type SchemaInstallation} from './schema-installation.js';
-import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
+import {ExecutionEngine,ExecutionFailure,type ExecutionFailureReceipt} from './execution-engine.js';
 import {EXECUTION_POLICIES} from './execution-policy.js';
 import {encodeMemoryPrivate,decodeMemoryPrivate} from './plugins/memory-private-storage.js';
 import {sha256,StoreError,type EvidenceStore as Store} from './evidence-store.js';
@@ -52,7 +52,13 @@ export class MemoryPhaseOutputs {
    read:()=>{if(!options.validate())throw new ExecutionFailure('stale','input_changed');return this.read<T>(id,inputHash);},project:()=>{},classify:error=>error instanceof StoreError&&error.statusCode===507?new ExecutionFailure('blocked','storage_full'):new ExecutionFailure('permanent','memory_phase_failed')});
  }
  retryFailed(batchId:string,ownerAction:boolean,generation:string){
-  for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'memory.phase.%' AND json_extract(input,'$.batchId')=? AND json_extract(input,'$.generation')=? AND state IN ('failed','blocked')").all(batchId,generation))this.engine.retry(String(row.id),ownerAction);
+  let extractionFailure:ExecutionFailureReceipt|undefined;
+  for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'memory.phase.%' AND json_extract(input,'$.batchId')=? AND json_extract(input,'$.generation')=? AND state IN ('failed','blocked')").all(batchId,generation)){
+   const id=String(row.id),failure=this.engine.failure(id);
+   if(failure?.phase==='extract'&&failure.state==='failed'&&(!extractionFailure||failure.at>extractionFailure.at))extractionFailure=failure;
+   this.engine.retry(id,ownerAction);
+  }
+  return extractionFailure;
  }
  /** A successful model transport can explicitly report incomplete evaluation.
   * An owner retry must re-review it, never replay that saved verdict forever. */
