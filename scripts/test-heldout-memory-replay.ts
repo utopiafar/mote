@@ -11,6 +11,7 @@ import {cp,mkdir,readFile,realpath,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,relative,resolve} from 'node:path';
 import {backup,DatabaseSync} from 'node:sqlite';
 import {sourceItemSchema} from '@mote/shared';
+import {readConfigDocument,serializeConfigDocument} from '@mote/shared/config-file';
 import type {QueryResult} from '@mote/shared';
 import type {ContextReader,QueryInput} from '@mote/agent';
 import {buildApp} from '../apps/server/src/app.js';
@@ -19,6 +20,8 @@ import {sha256} from '../apps/server/src/evidence-store.js';
 import {archiveHash,sourceReceiptId} from '../apps/server/src/source-archive.js';
 import {defaultMemoryIntegrationRecipe} from '../apps/server/src/memory-integration-policy.js';
 import {requestMemoryIntegration} from '../apps/server/src/memory-integration.js';
+import {lifecycleSettingsSchema} from '../apps/server/src/memory-configuration.js';
+import {generatedMemoryAnswer,readGeneratedIntegration} from './test-heldout-memory-fixtures.js';
 
 if(!process.env.MOTE_HELDOUT_FIXTURE_ROOT)throw Error('MOTE_HELDOUT_FIXTURE_ROOT must name the external frozen generated corpus/evaluation directory');
 const base=resolve(process.env.MOTE_HELDOUT_FIXTURE_ROOT);
@@ -39,7 +42,7 @@ let phase='initial',output='',node:Node|undefined,admissions=0;
 const report:Summary={schema:'mote-heldout-replay-preparation@1',mode:'prepare-only',status:'running',realModelCalls:0,stubModelCalls:0,providerAdmissionAttempts:0,semanticContentExposed:false,liveReady:false,blockers:['Replay runner, technical gates and staged cumulative budget must be frozen; generated model work is already authorized by the active Goal.'],waves:[],checks:{},policy:{recipes,integrationRecipe:defaultMemoryIntegrationRecipe,batchCharacters:12000,selection:'Both recipes receive every new or revised Material; no semantic source dispatch.',checkpointReuse:'Unchanged Material revisions are not rescheduled. Changed sessions retain their normal complete Material input. Resume preserves the original job contextTime.',maximumAutomaticOuterRetries:0,perOuterCallTimeoutMs:300000}};
 async function save(){if(output)await writeFile(join(output,'metadata.json'),json(report),{mode:0o600});}
 function disjoint(a:string,b:string){const rel=relative(a,b);check(rel==='..'||rel.startsWith('../'),'paths_not_disjoint');const reverse=relative(b,a);check(reverse==='..'||reverse.startsWith('../'),'paths_not_disjoint');}
-async function externalNew(value:string){const path=resolve(value),parent=await realpath(dirname(path));disjoint(repositoryRoot,path);disjoint(corpus,path);disjoint(evaluation,path);return join(parent,basename(path));}
+async function externalNew(value:string){const path=resolve(value),parent=await realpath(dirname(path)),target=join(parent,basename(path));disjoint(repositoryRoot,target);disjoint(corpus,target);disjoint(evaluation,target);return target;}
 async function parse(path:string):Promise<any>{try{return JSON.parse(await readFile(path,'utf8'));}catch{throw new SafeFailure('json_invalid');}}
 async function verifyFreeze(directory:string,expected:string){
   const bytes=await readFile(join(directory,'freeze-manifest.json'));check(sha256(bytes)===expected,'freeze_hash_mismatch');
@@ -53,11 +56,38 @@ async function verifyFreeze(directory:string,expected:string){
   return {freezeSha256:expected,fileHashes:hashes};
 }
 async function lines(path:string){const text=await readFile(path,'utf8');check(text.endsWith('\n'),'ndjson_missing_final_lf');return text.slice(0,-1).split('\n').map(line=>({bytes:line+'\n',value:JSON.parse(line)}));}
-function config(vault:string):ConfigurationPlatformOptions{return {path:(vault)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(vault,'token')},initialDocument:{version:1,revision:0,storage:{dataDir:vault,dataKey:undefined,maxExportBytes:40_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'heldout-preparation-no-provider',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:true,agentTimeoutMs:300000,reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''},codex:{executable:'/nonexistent-heldout-no-provider',home:join(output,'DO_NOT_OPEN','unused-codex-home')}},diagnostics:{level:'silent',enabled:false,traceEnabled:false}}};}
+function config(vault:string){
+  return {path:join(vault,'mote.yaml'),privateCredential:{token,tokenPath:join(vault,'token')},initialDocument:{
+    version:1,revision:0,storage:{dataDir:'.',maxExportBytes:40_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
+    execution:{insightIntervalHours:0,memoryConcurrency:1},
+    memory:lifecycleSettingsSchema.parse({consolidation:{enabled:false},insights:{enabled:false},working:{enabled:false}}),
+    models:{deployment:{model:'heldout-preparation-no-provider',provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:1',apiKey:'',allowUnauthenticatedLocal:true,agentTimeoutMs:300000,reasoningEffort:'high'}},
+    diagnostics:{level:'silent',enabled:false,traceEnabled:false},
+  }} satisfies ConfigurationPlatformOptions;
+}
+
+/** Bind the configuration in a disposable clone to that clone before boot. */
+async function prepareCloneConfig(path:string,deadline?:300000|600000){
+  let persisted:ReturnType<typeof readConfigDocument>['savedDocument'];
+  try{({savedDocument:persisted}=readConfigDocument(path));}
+  catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
+  const storage=persisted.storage as {dataDir?:string}|undefined;
+  const models=persisted.models as {deployment?:Record<string,unknown>}|undefined;
+  const deployment=models?.deployment;
+  const deadlineChanged=deadline!==undefined&&deadline!==deployment?.agentTimeoutMs;
+  if(storage?.dataDir==='.'&&!deadlineChanged)return;
+  persisted.storage={...storage,dataDir:'.'};
+  if(deadlineChanged){
+    check(deployment,'replay_model_configuration_missing');
+    persisted.models={...models,deployment:{...deployment,agentTimeoutMs:deadline}};
+  }
+  await writeFile(path,serializeConfigDocument(persisted),{mode:0o600});
+}
 async function open(vault:string,stub?:(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>,semanticContextTime?:()=>string){
   check(!node,'node_already_open');
-  node=await buildApp(config(vault),{backgroundWorker:false,semanticContextTime,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async input=>{if(stub)return stub(reader,input);admissions++;throw new SafeFailure('provider_admission_forbidden');}})});
-  const settings=node.lifecycle.settings();for(const key of ['consolidation','insights','working'] as const)settings[key].enabled=false;await node.lifecycle.save({revision:node.configService.revision,settings});
+  const options=config(vault);await prepareCloneConfig(options.path);
+  const {replayStub}=await import('./test-heldout-memory-replay-stage.js');
+  node=await buildApp(options,{backgroundWorker:false,memoryExecutionScope:'extraction-review',semanticContextTime,createModelAgent:async(_settings,reader)=>replayStub(reader,stub??(async()=>{admissions++;throw new SafeFailure('provider_admission_forbidden');}))});
   node.memoryRecipeSettings.configure({recipes});await node.app.ready();
 }
 async function close(){if(!node)return;const current=node;node=undefined;await current.app.close();}
@@ -75,8 +105,29 @@ async function cloneClosed(source:string,target:string){
   await closed(source);check(sha256(await readFile(join(source,'mote.sqlite')))===before,'backup_mutated_source');return {method:'closed-node-sqlite-backup',sourceSha256:before,targetSha256:sha256(await readFile(join(target,'mote.sqlite')))};
 }
 // Explicit cache classification. Any unknown semantic artifact is a blocker, not an implicit allowlist.
-const ablated=['memories','memory_jobs','memory_checkpoints','memory_extraction_drafts','memory_lifecycle_state','memory_events'];
-const allowed=new Set([...ablated,'memory_catalog','memory_scopes','memory_dependencies','memory_artifact_dependencies','memory_batches','memory_batch_dependencies','memory_job_counts','memory_input_plans','memory_input_authorizations','memory_extraction_draft_dependencies','storage_ledger','memories_fts','memories_fts_data','memories_fts_idx','memories_fts_content','memories_fts_docsize','memories_fts_config']);
+// Activity uses connection-local projection triggers, absent on a closed clone.
+const memoryRootsToErase=['memories','memory_jobs','memory_checkpoints','memory_extraction_drafts','memory_lifecycle_state','memory_events','memory_phase_outputs','activity_memory_jobs','activity_memory_source_nodes','activity_memory_source_links'];
+const memoryDerivedTables=new Set([...memoryRootsToErase,'memory_catalog','memory_scopes','memory_dependencies','memory_artifact_dependencies','memory_batches','memory_batch_dependencies','memory_job_counts','memory_job_dependencies','memory_input_plans','memory_extraction_draft_dependencies','memories_fts','memories_fts_data','memories_fts_idx','memories_fts_content','memories_fts_docsize','memories_fts_config','activity_memory_continuations','activity_memory_sources','activity_memory_batches','activity_memory_items','activity_memory_coverage','activity_memory_outputs']);
+const allowed=new Set([...memoryDerivedTables,'storage_ledger']);
+
+function eraseMemoryRows(db:DatabaseSync){
+  db.exec('BEGIN IMMEDIATE');
+  try{
+    const sequence=db.prepare("SELECT seq FROM sqlite_sequence WHERE name='operation_changes'").get()?.seq;
+    const expected=new Set(db.prepare("SELECT 'memory:'||id AS operation_id FROM memories").all().map(row=>row.operation_id));
+    for(const table of memoryRootsToErase)db.exec(`DELETE FROM ${quoted(table)}`);
+    // Removing cards in the disposable arm emits one UI notification per card.
+    // Remove exactly those fresh notifications and leave the original feed intact.
+    const created=db.prepare('SELECT operation_id FROM operation_changes WHERE seq>?').all(sequence??0);
+    check(created.length===expected.size&&created.every(row=>expected.delete(row.operation_id)),'ablation_operation_changes_changed');
+    if(created.length){
+      db.prepare('DELETE FROM operation_changes WHERE seq>?').run(sequence??0);
+      if(sequence===undefined)db.exec("DELETE FROM sqlite_sequence WHERE name='operation_changes'");
+      else db.prepare("UPDATE sqlite_sequence SET seq=? WHERE name='operation_changes'").run(sequence);
+    }
+    db.exec('COMMIT');
+  }catch(error){db.exec('ROLLBACK');throw error;}
+}
 const emptySemantic=['conversations','conversation_turns','working_memories','query_runs','insights','insight_runs','memory_deletions','memory_deletion_dependencies','artifact_dependencies','artifact_material_inputs'];
 /** Compare deterministic segments against a fresh production reconstruction in a disposable clone.
  * No prose parser: exact source bytes, processor identity, metadata, inputs and FTS must match.
@@ -92,12 +143,13 @@ function exactIndex(db:DatabaseSync){
 }
 function ablateClone(vault:string,remove:boolean){const db=new DatabaseSync(join(vault,'mote.sqlite'));try{
   db.exec('PRAGMA foreign_keys=ON');const before=tables(db);for(const name of emptySemantic)check(!before[name]||before[name].rows===0,'unexpected_semantic_cache');exactIndex(db);
-  if(remove){db.exec('BEGIN IMMEDIATE');try{for(const name of ablated)if(before[name])db.exec(`DELETE FROM ${quoted(name)}`);db.exec('COMMIT');}catch{db.exec('ROLLBACK');throw new SafeFailure('ablation_transaction_failed');}}
+  if(remove)eraseMemoryRows(db);
   const after=tables(db),changed=Object.keys(before).filter(key=>JSON.stringify(before[key])!==JSON.stringify(after[key]));check(changed.every(name=>remove&&allowed.has(name)),'ablation_changed_protected_table');sqliteCheck(db);
   return {protectedHash:hashObject(Object.fromEntries(Object.entries(after).filter(([name])=>!allowed.has(name)))),protectedTables:Object.keys(after).filter(name=>!allowed.has(name)).length,changedTables:changed,index:exactIndex(db)};
 }finally{db.close();}}
 /** Independent, literal plumbing fixture. It never loads heldout text into a model stub. */
 async function clockProbe(){
+  const {runOwnedMemory}=await import('./test-heldout-memory-replay-stage.js');
   const expected='2025-12-31T23:59:59+08:00',integrationExpected='2026-01-31T23:59:59+08:00';
   const vault=join(output,'DO_NOT_OPEN','clock-probe'),calls:Summary[]=[];let stage:'extraction'|'integration'|'ask'='extraction',proofIds:string[]=[],parents:any[]=[],target:any;
   const probe:Summary={fixture:'independent-literal-clock-plumbing@1',heldoutInputsUsed:false,maximumStubCalls:5,calls,expectedExtractionTime:expected,expectedIntegrationAndAskTime:integrationExpected};
@@ -112,21 +164,22 @@ async function clockProbe(){
       equal(catalog.entries.map(entry=>entry.id).sort(),defaults.items.map((entry:any)=>entry.id).sort(),'clock_catalog_default_mismatch');equal((input.openingMemories??[]).map(entry=>entry.id).sort(),defaults.items.map((entry:any)=>entry.id).sort(),'clock_opening_default_mismatch');
       return {...result,answer:'Independent clock plumbing stub; no semantic answer was generated.'};
     }
+    if(stage==='integration')await readGeneratedIntegration(reader,input);
     const evidence=await reader.evidence({ids:proofIds});check(evidence.length===1,'clock_stub_original_missing');const original=evidence[0];
     const common={domain:'personal',uncertainty:'Independent mechanical fixture only.',admission:{layer:'memory',reason:'Clock plumbing fixture',scope:'Independent generated clock test',attribution:'observed'},evidenceIds:proofIds,evidence:[{id:original.id,quote:original.ocrText}]};
-    const memories=stage==='extraction'?[{...common,title:'Expiry fixture',statement:'Expiry clock fixture ['+original.id+']',validUntil:'2026-01-01T00:00:00+08:00'},{...common,title:'Relation fixture',statement:'Relation clock fixture ['+original.id+']'}]:[{...common,title:'Replacement fixture',statement:'Replacement clock fixture ['+original.id+']',relatedMemoryIds:parents.map(parent=>parent.id),relations:[{kind:'supersedes',memoryId:target.id,fingerprint:target.fingerprint,version:target.version}]}];
-    return {...result,answer:JSON.stringify({memories}),citations:[{id:original.id,capturedAt:original.capturedAt,appName:original.appName,excerpt:original.ocrText}]};
+    const memories=stage==='extraction'?[{...common,title:'Expiry fixture',statement:'Expiry clock fixture ['+original.id+']',validUntil:'2026-01-01T00:00:00+08:00'},{...common,title:'Relation fixture',statement:'Relation clock fixture ['+original.id+']'}]:[{...common,title:'Replacement fixture',statement:'Replacement clock fixture ['+original.id+']',relatedMemoryIds:[target.id],relations:[{kind:'supersedes',memoryId:target.id,fingerprint:target.fingerprint,version:target.version}]}];
+    return {...result,answer:generatedMemoryAnswer(input,memories),citations:[{id:original.id,capturedAt:original.capturedAt,appName:original.appName,excerpt:original.ocrText}]};
   };
   const semanticTime=()=>stage==='extraction'?expected:integrationExpected;
   await open(vault,stub,semanticTime);await request('POST','/api/sources',{id:'independent-clock-source',name:'Independent clock plumbing fixture',kind:'custom',deviceId:'independent-clock-device',platform:'import',retention:'archive'});
   await request('PUT','/api/sources/independent-clock-source/items',{externalId:'independent-clock-original',revision:'1',kind:'message',layer:'original',observedAt:'2025-12-01T12:00:00+08:00',text:'Independent generated fixture for expiry, replacement, and host time plumbing.',document:{contentRole:'authored',recordedAt:'2025-12-01T12:00:00+08:00',timeBasis:'recorded'}});await drain();
   const material=node!.store.db.prepare('SELECT id FROM material_heads WHERE retired=0').get();check(material,'clock_material_missing');proofIds=node!.materials.evidenceIds(node!.materials.get(String(material.id))!.ref);
-  const input={evidenceIds:proofIds,recipes:[recipes[0]],contextTime:expected,timeZone:'Asia/Shanghai',batchCharacters:12000};const job=node!.memoryPipeline.create(input);check(job.totalBatches===1,'clock_batch_count');check((await node!.memoryPipeline.run(job.id)).status==='completed','clock_job_failed');
+  const input={evidenceIds:proofIds,recipes:[recipes[0]],contextTime:expected,timeZone:'Asia/Shanghai',batchCharacters:12000};const job=node!.memoryPipeline.create(input);check(job.totalBatches===1,'clock_batch_count');check((await runOwnedMemory(node!,job.id)).status==='completed','clock_job_failed');
   parents=node!.store.db.prepare('SELECT json FROM memories').all().map(row=>JSON.parse(String(row.json)));check(parents.length===2,'clock_card_count');check(parents.every(parent=>parent.reviewReceipt?.contextTime===expected),'clock_extraction_receipt_mismatch');
   target=parents.find(parent=>parent.validUntil===undefined);check(target,'clock_relation_target_missing');
   probe.extraction={modelInputsMatch:calls.every(call=>call.matchesExpected),reviewReceiptsMatch:true,defaultValidityCount:node!.memories.page().items.length,explicitHistoricalValidityCount:node!.memories.page({asOf:expected}).items.length,receiptCheckedAtUsesWallTime:parents.every(parent=>Date.parse(parent.reviewReceipt.checkedAt)>Date.parse(integrationExpected))};
   const reused=node!.memoryPipeline.create(input);check(reused.status==='completed'&&reused.totalBatches===0&&calls.length===2,'same_clock_checkpoint_not_reused');probe.sameClockCompletedCheckpointReuse=true;
-  stage='integration';const integration=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:parents.map(parent=>{const current=node!.memories.get(parent.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})},{lifecycle:node!.lifecycle,memories:node!.memories,pipeline:node!.memoryPipeline});await node!.lifecycle.tick();
+  stage='integration';const integration=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:[target].map(parent=>{const current=node!.memories.get(parent.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})},{lifecycle:node!.lifecycle,memories:node!.memories,pipeline:node!.memoryPipeline});node!.modelAuthorizationHost.control.manual('owner-integration:'+integration.id,'manual',[],node!.featureServices.availableModelConnections());await node!.lifecycle.tick();
   const state=node!.lifecycle.view().extensions.find(extension=>extension.id==='consolidation');check(!state?.active&&!state?.error,'clock_integration_failed');
   const cards=node!.store.db.prepare('SELECT json FROM memories').all().map(row=>JSON.parse(String(row.json))),replacement=cards.find(card=>card.tier==='consolidated'),old=cards.find(card=>card.id===target.id);check(replacement&&old?.supersededBy===replacement.id,'clock_relation_not_applied');
   probe.integration={windowIdHash:sha256(integration.id),modelInputsMatch:calls.filter(call=>call.stage==='integration').every(call=>call.matchesExpected),reviewReceiptContextTime:replacement.reviewReceipt?.contextTime??null,reviewReceiptMatchesExpected:replacement.reviewReceipt?.contextTime===integrationExpected,supersededAt:old.supersededAt,supersededAtMatchesExpected:Date.parse(old.supersededAt)===Date.parse(integrationExpected),oldStillActiveAtReplayTime:node!.memories.page({asOf:integrationExpected}).items.some(card=>card.id===old.id)};
@@ -140,7 +193,7 @@ async function clockProbe(){
 async function duplicateProbe(){
   const vault=join(output,'DO_NOT_OPEN','duplicate-probe');await open(vault);
   await request('POST','/api/sources',{id:'independent-coding-source',name:'Independent coding transport fixture',kind:'coding-agent',deviceId:'independent-coding-device',platform:'import',retention:'archive'});
-  const item=(id:string,role:'user'|'assistant',time:string)=>({externalId:id,revision:'1',observedAt:time,kind:'message',layer:'original',text:'Independent generated transport fixture '+id,document:{contentRole:'transcript',recordedAt:time,timeBasis:'recorded',coding:{version:1,provider:'codex',sessionId:'independent-session',projectKey:'independent-project',eventId:id,role,part:0,parts:1}}});
+  const item=(id:string,role:'user'|'assistant',time:string)=>({externalId:id,revision:'1',observedAt:time,kind:'message',layer:'original',text:'Independent generated transport fixture '+id,document:{contentRole:'transcript',recordedAt:time,timeBasis:'recorded',coding:{version:1,provider:'codex',sessionId:'independent-session',projectKey:'independent-project',eventId:id,role,attribution:role==='user'?'human':'agent',...(role==='assistant'?{channel:'final'}:{}),part:0,parts:1}}});
   const first=item('event-a','user','2026-01-01T10:00:00+08:00'),second=item('event-b','assistant','2026-01-01T10:01:00+08:00');
   const snapshot=()=>{const head=node!.store.db.prepare("SELECT id,revision,sequence FROM material_heads WHERE kind='mote.coding-session' AND retired=0").get();check(head,'duplicate_probe_head_missing');const m=node!.materials.get(String(head.id))!,input=node!.materials.input(m.ref,['conversation']);check(input?.ready,'duplicate_probe_material_unready');const db=node!.store.db;return {revision:String(head.revision),sequence:Number(head.sequence),inputFingerprint:input.fingerprint,conversationRevision:m.artifacts?.find(artifact=>artifact.key==='conversation')?.revision,rawVersionsHash:hashObject(db.prepare('SELECT * FROM source_archive_versions ORDER BY source_id,version_key').all()),rawHeadCount:Number(db.prepare('SELECT count(*) n FROM source_archive_heads').get()!.n),memoryGrants:Number(db.prepare('SELECT count(*) n FROM memory_input_authorizations').get()!.n)};};
   const ackA=await request('PUT','/api/sources/independent-coding-source/items',first);await drain();const initial=snapshot();const ackB=await request('PUT','/api/sources/independent-coding-source/items',second);await drain();const appended=snapshot();const ackDuplicate=await request('PUT','/api/sources/independent-coding-source/items',first);await drain();const repeated=snapshot();
@@ -213,7 +266,7 @@ async function main(){
   check(admissions===0,'unexpected_agent_admission');report.checks.exactIndexReconstructedFromOriginals=true;report.providerAdmissionAttempts=admissions;report.status='prepared-clock-blocked';report.finishedAt=new Date().toISOString();await save();
   console.log(JSON.stringify({schema:report.schema,status:report.status,output,counts:report.counts,budget:report.budget,realModelCalls:0,stubModelCalls:report.stubModelCalls,semanticContentExposed:false}));
 }
-export {base,corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObject,externalNew,parse,verifyFreeze,lines,config,tables,closed,cloneClosed,ablateClone,exactIndex,sqliteCheck};
+export {base,corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObject,externalNew,parse,verifyFreeze,lines,config,prepareCloneConfig,tables,closed,cloneClosed,ablateClone,exactIndex,sqliteCheck,eraseMemoryRows,memoryDerivedTables};
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)void (async()=>{try{
   if(['stage-ask-recovery-freeze','stage-normal-review-freeze','stage-normal-freeze','stage-freeze','stage-recovery-freeze','stage-resume-freeze','stage-ingress-freeze','stage-extract-freeze','stage-integration-freeze','stage-integration-live','stage-ask-freeze','stage-ask-live','stage-live'].includes(process.env.MOTE_HELDOUT_MODE??'')){const stage=await import('./test-heldout-memory-replay-stage.js');await stage.stageMain();}
   else await main();

@@ -1317,7 +1317,7 @@ export class MemoryPipeline {
               for(let reviewAttempt=0;reviewAttempt<2;reviewAttempt++){
                 reviewAttemptNumber=reviewAttempt+1;
                 try{
-                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,modelSessionId,signal:stageSignal,...(resumeReviewFromExtraction?{resumeReviewFromExtraction:true as const}:{})},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
+                  result=await withExecutionCancellation(stageSignal,()=>this.options.phases.review!({...input,modelSessionId,signal:stageSignal,traceContext:{...input.traceContext,attempt:batch.attempts},...(resumeReviewFromExtraction?{resumeReviewFromExtraction:true as const}:{})},validDraft,selected?.review,native?'native-engine':'mote',selected?.binding));
                   const failure=await validateOutput({...result,trace:[]});if(failure)throw new MemoryOutputValidationError(failure.code as import('./memory-validation.js').MemoryOutputValidationCode,'Memory review failed host validation',{workContract:contract});
                   // An incomplete text verdict may confuse a referenced original
                   // with this exact target. Let the model reconsider once within

@@ -76,6 +76,8 @@ node scripts/ci/run.mjs --suite scale --scope memory --dry-run
 node scripts/ci/run.mjs --suite scale --scope memory
 ```
 
+Run the historical Memory replay checks with `node scripts/ci/run.mjs --suite recovery --scope replay` after `npm run build:libs`. Each run makes private generated fixtures in the system temporary directory. The later recovery suites use checkpoints produced earlier in the same run. The held-out corpus, sealed question bundle and live supervisor are separate inputs for an actual replay.
+
 These specialist checks are selected only for explicitly requested acceptance or investigation. Automatic light checks never select them transitively. Dependency/setup requirements and exact commands are defined in the runner. `--task integration-units` is one step, not the whole integration workflow.
 
 ## Results and artifacts
