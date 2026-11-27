@@ -40,7 +40,9 @@ export class AutomaticActivity {
     const previousPolicy=saved?activityConfigurationSchema.parse(JSON.parse(String(saved.value))):undefined;
     // A stopped host may have missed the completion callback after a config
     // save, or the owner may have edited the file while it was stopped.
-    if(!this.policy.enabled||previousPolicy&&previousPolicy.modelProfileId!==this.policy.modelProfileId)this.revoke();
+    const pendingWhileDisabled=!this.policy.enabled&&(previousPolicy?.enabled!==false||(['waiting','running','blocked'] as const)
+      .some(state=>engine.list({kind:KIND,state,limit:1}).items.length>0));
+    if(pendingWhileDisabled||previousPolicy&&previousPolicy.modelProfileId!==this.policy.modelProfileId)this.revoke();
     this.savePermissionPolicy();
     config.setHandler(activityConfigDomain,next=>{
       const previous=this.policy,value=next;

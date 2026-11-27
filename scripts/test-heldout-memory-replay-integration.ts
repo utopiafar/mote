@@ -1,5 +1,6 @@
 import {normalLimits,readNormalPlan} from './test-heldout-memory-replay-ledger.js';
 /** A single explicit integration window. No CLI or automatic live dispatch. */
+import {writeFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import {join,relative} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -13,7 +14,7 @@ import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {check,equal,json,hashObject,closed,cloneClosed,sqliteCheck,externalNew,corpus,evaluation,verifyFreeze} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,inspectAdmissionLedger,StageSafetyError} from './test-heldout-memory-replay-ledger.js';
-import {type Manifest,codeHashes,executorPins,treeHash,protectedTables,privateWrite,sealedError,safeCode,bindings,settings,openNode} from './test-heldout-memory-replay-stage.js';
+import {type Manifest,codeHashes,executorPins,treeHash,protectedTables,privateWrite,sealedError,safeCode,bindings,settings,openNode,observeReplayModel,reserveReplayCall} from './test-heldout-memory-replay-stage.js';
 import {type PhaseManifest,type Ref,type WavePlan,ref,readRef,rootAndRuntime,validation,phaseCursor,validateRecoveryRoot,validateNormalRoot} from './test-heldout-memory-replay-sequence.js';
 
 type Node=Awaited<ReturnType<typeof openNode>>['node'];
@@ -29,7 +30,8 @@ export type IntegrationManifest=Omit<PhaseManifest,'task'|'limits'>&{task:{kind:
 export function integrationSelection(db:DatabaseSync,contextTime:string):IntegrationSelection {
   check(Number.isFinite(Date.parse(contextTime)),'integration_clock_invalid');sqliteCheck(db);
   const lifecycle=lifecycleSettingsSchema.parse(JSON.parse(String(db.prepare('SELECT json FROM memory_lifecycle_effective WHERE id=1').get()!.json)));
-  check(['extraction','consolidation','insights','working'].every(key=>!lifecycle[key as keyof Pick<typeof lifecycle,'extraction'|'consolidation'|'insights'|'working'>].enabled),'integration_background_enabled');
+  const authorization=JSON.parse(String(db.prepare('SELECT json FROM background_model_authorization WHERE id=1').get()!.json));
+  check(authorization.state==='off'&&(['consolidation','insights','working'] as const).every(key=>!lifecycle[key].enabled),'integration_background_enabled');
   check(lifecycle.consolidation.maxItems===30,'integration_frozen_capacity_changed');
   check(Number(db.prepare("SELECT count(*) n FROM memory_batches WHERE json_extract(json,'$.status')!='completed'").get()!.n)===0,'integration_extraction_unfinished');
   check(Number(db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n)===0,'integration_extra_deletion_review_forbidden');
@@ -79,20 +81,20 @@ export async function freezeIntegration(options:{rootManifest:string;previousMan
 
 /** Stateful ordering uses durable completed[] + fixed domain order, never question semantics. */
 export class IntegrationCallOrder {
-  private progress=new Map<Domain,{extracted:boolean;needsReview:boolean;reviewed:boolean}>();
+  private progress=new Map<Domain,{extracted:boolean;reviewed:boolean}>();
   readonly activeDomains:Domain[];
   constructor(private inputs:IntegrationPlan['inputs']){this.activeDomains=domains.filter(domain=>inputs.some(input=>input.domain===domain));}
   next(completed:unknown,phase:unknown,question:string){
     check(Array.isArray(completed)&&completed.every((domain,i)=>domain===this.activeDomains[i]),'integration_completed_order_changed');
     const domain=this.activeDomains[completed.length];check(domain,'integration_extra_outer');const progress=this.progress.get(domain);
     if(phase==='extract')check(!progress,'integration_prior_domain_uncommitted_or_repeated');
-    else check(phase==='review'&&progress?.extracted&&progress.needsReview&&!progress.reviewed,'integration_review_out_of_order');
+    else check(phase==='review'&&progress?.extracted&&!progress.reviewed,'integration_review_out_of_order');
     const ids=this.inputs.filter(input=>input.domain===domain).map(input=>input.id);
     check(question.endsWith('\n'+JSON.stringify(ids)),'integration_host_ids_changed');return domain;
   }
   complete(domain:Domain,phase:'extract'|'review',answer:string){
     const value=JSON.parse(answer);check(Array.isArray(value.memories),'integration_output_shape');
-    if(phase==='extract')this.progress.set(domain,{extracted:true,needsReview:value.memories.length>0,reviewed:false});else this.progress.get(domain)!.reviewed=true;
+    if(phase==='extract')this.progress.set(domain,{extracted:true,reviewed:false});else this.progress.get(domain)!.reviewed=true;
   }
 }
 
@@ -109,30 +111,42 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
     await cloneClosed(m.parent.path,vault);const initial=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});try{inherited=new Set(initial.prepare('SELECT id FROM model_usage').all().map(row=>String(row.id)));}finally{initial.close();}
     if(plan.inputs.length){
       ({node}=await openNode(vault,root.model,m.task.contextTime,options.stub,m.normalContinuation?600000:300000));equal(hashObject(settings(node)),plan.settingsHash,'integration_settings_changed');if(m.normalContinuation){const {assertRecoveryESettings}=await import('./test-heldout-memory-replay-recovery.js');equal(assertRecoveryESettings(node,root.settingsHash),readNormalPlan(m.normalContinuation.plan).effectiveSettingsHash,'normal_integration_settings_changed');report.effectiveAgentTimeoutMs=node.modelSettings.select('memory').settings.agentTimeoutMs;}equal(hashObject(bindings(node)),plan.bindingsHash,'integration_bindings_changed');equal(integrationSelection(node.store.db,m.task.contextTime),selectionFields(plan),'integration_open_changed_selection');
-      for(const input of plan.inputs){check(hashObject(node.memories.get(input.id))===input.hash,'integration_input_changed');node.memoryPipeline.inputs.assert(node.memories.get(input.id).evidenceIds);}
+      // The selection hashes the stored card. The public reader can add derived
+      // presentation fields, so compare the storage pin on both sides.
+      for(const input of plan.inputs){
+        const stored=node.store.db.prepare('SELECT json FROM memories WHERE id=?').get(input.id);
+        check(stored&&hashObject({version:1,...JSON.parse(String(stored.json))})===input.hash,'integration_input_changed');
+        node.memoryPipeline.inputs.assert(node.memories.get(input.id).evidenceIds);
+      }
       options.mechanicalHook?.(node);const query=node.agent.query.bind(node.agent);
-      node.agent.query=async input=>{
-        let callId:string|undefined,requests=0,repairs=0;const traces:unknown[]=[];
+      node.agent.query=async(input,lease)=>{
+        let callId:string|undefined,attempt:ReturnType<typeof observeReplayModel>|undefined;
         try{
           check(admissionOpen&&!ledger.stopped,'integration_admission_closed');check(!inFlight,'integration_concurrency');
-          equal(hashObject(protectedTables(node!.store.db)),plan.protectedHash,'integration_admission_source_changed');
+          equal(hashObject(protectedTables(node!.store.db,windowId)),plan.protectedHash,'integration_admission_source_changed');
           const trace=input.traceContext,phase=trace?.phase;check(windowId&&trace?.jobId===windowId&&trace.operationId==='workflow:lifecycle:'+windowId&&(phase==='extract'||phase==='review')&&input.skill==='memory-integration'&&input.responseMode==='memory-extraction','integration_outer_scope');check(input.contextTime===m.task.contextTime,'integration_outer_clock');
           check(input.modelOverride===root.model.model&&trace.model===root.model.model&&trace.provider===root.model.provider&&trace.protocol===root.model.protocol,'integration_outer_model_changed');
           const active=node!.lifecycle.view().extensions.find(e=>e.id==='consolidation')!.active;check(active?.id===windowId&&active.checkpoint&&active.checkpoint!=='completed','integration_window_changed');const checkpoint=JSON.parse(active.checkpoint),domain=order.next(checkpoint.completed,phase,input.question);
-          const receipts=node!.store.db.prepare("SELECT id FROM model_usage WHERE json_extract(json,'$.status')='running'").all().map(row=>String(row.id)).filter(id=>!inherited.has(id)&&!usedReceipts.has(id));check(receipts.length===1,'integration_running_receipt_ambiguous');usedReceipts.add(receipts[0]);
-          const serial=JSON.parse(JSON.stringify(input,(_key,value)=>typeof value==='function'?undefined:value));callId=ledger.reserve(hashObject([windowId,domain,phase]),hashObject(serial),receipts[0]);inFlight=true;
-          await privateWrite(join(output,'DO_NOT_OPEN',callId+'-input.json'),serial);const control=new AbortController();activeControl=control;const abort=()=>control.abort(input.signal?.reason);input.signal?.addEventListener('abort',abort,{once:true});let timer:ReturnType<typeof setTimeout>|undefined;
+          const serial=JSON.parse(JSON.stringify(input,(_key,value)=>typeof value==='function'?undefined:value));inFlight=true;
+          const control=new AbortController();activeControl=control;
+          attempt=observeReplayModel(input,control,()=>{
+            callId=reserveReplayCall(node!.store.db,ledger,inherited,usedReceipts,hashObject([windowId,domain,phase]),serial,'integration_running_receipt_ambiguous');
+            writeFileSync(join(output,'DO_NOT_OPEN',callId+'-input.json'),json(serial),{mode:0o600});
+          },options.perOuterMs??m.limits.perOuterMs,()=>new StageSafetyError('integration_outer_deadline'));
           try{
-            input.signal?.throwIfAborted();const answer=await Promise.race([query({...input,signal:control.signal,onTrace:event=>{traces.push(event);if(event.type==='model.started'){requests++;if((event.payload as {repair?:boolean}|undefined)?.repair)repairs++;}input.onTrace?.(event);}}),new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{control.abort();reject(new StageSafetyError('integration_outer_deadline'));},options.perOuterMs??m.limits.perOuterMs);})]);
-            const issue=await input.validateOutput?.(answer as AgentAnswer);check(!issue,'integration_outer_validation');order.complete(domain,phase,answer.answer);await privateWrite(join(output,'DO_NOT_OPEN',callId+'-result.json'),answer);ledger.terminal(callId,'completed','ok',{modelRunStarts:requests||null,repairs:requests?repairs:null});return answer;
-          }finally{if(timer)clearTimeout(timer);input.signal?.removeEventListener('abort',abort);await privateWrite(join(output,'DO_NOT_OPEN',callId+'-trace.json'),traces);activeControl=undefined;}
-        }catch(error){activeControl?.abort();ledger.stop(safeCode(error));if(callId&&ledger.pending().some(e=>e.data.callId===callId))ledger.terminal(callId,'failed',safeCode(error),{modelRunStarts:requests||null,repairs:requests?repairs:null});await sealedError(join(output,'DO_NOT_OPEN'),error);throw error;}
+            input.signal?.throwIfAborted();const answer=await Promise.race([query({...input,signal:control.signal,onTrace:attempt.onTrace},lease),attempt.deadline]);
+            attempt.assertAdmitted();check(callId,'integration_model_call_missing');
+            const issue=await input.validateOutput?.(answer as AgentAnswer);check(!issue,'integration_outer_validation');order.complete(domain,phase,answer.answer);await privateWrite(join(output,'DO_NOT_OPEN',callId+'-result.json'),answer);ledger.terminal(callId,'completed','ok',attempt.counts());return answer;
+          }finally{attempt.dispose();try{if(callId)await privateWrite(join(output,'DO_NOT_OPEN',callId+'-trace.json'),attempt.traces);}finally{activeControl=undefined;}}
+        }catch(cause){const error=attempt?.failure(cause)??cause;activeControl?.abort(error);ledger.stop(safeCode(error));if(callId&&attempt&&ledger.pending().some(e=>e.data.callId===callId))ledger.terminal(callId,'failed',safeCode(error),attempt.counts());await sealedError(join(output,'DO_NOT_OPEN'),error);throw error;}
         finally{inFlight=false;}
       };
-      const requested=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:plan.inputs.map(input=>{const current=node!.memories.get(input.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});windowId=requested.id;await privateWrite(join(output,'DO_NOT_OPEN','window.json'),requested);await node.lifecycle.tick();
+      const requested=requestMemoryIntegration({recipe:defaultMemoryIntegrationRecipe,inputs:plan.inputs.map(input=>{const current=node!.memories.get(input.id);return {id:current.id,version:current.version!,fingerprint:current.fingerprint};})},{lifecycle:node.lifecycle,memories:node.memories,pipeline:node.memoryPipeline});windowId=requested.id;
+      node.modelAuthorizationHost.control.manual('owner-integration:'+windowId,'manual',[],node.featureServices.availableModelConnections());
+      await privateWrite(join(output,'DO_NOT_OPEN','window.json'),requested);await node.lifecycle.tick();
       check(!ledger.stopped,'integration_circuit_stopped');const state=node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!;
       check(!state.active&&!state.error&&state.lastRun?.id===windowId&&node.executor.get('lifecycle:'+windowId)?.state==='succeeded','integration_window_not_committed');report.completedDomainCount=order.activeDomains.length;
-      equal(hashObject(protectedTables(node.store.db)),plan.protectedHash,'integration_protected_source_mutated');
+      equal(hashObject(protectedTables(node.store.db,windowId)),plan.protectedHash,'integration_protected_source_mutated');
     }
     succeeded=true;
   }catch(error){failure=error;ledger.stop(safeCode(error));await sealedError(join(output,'DO_NOT_OPEN'),error);}
@@ -140,7 +154,7 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
     admissionOpen=false;if(node)try{await node.app.close();}catch(error){failure??=error;succeeded=false;ledger.stop('integration_close_failed');await sealedError(join(output,'DO_NOT_OPEN'),error);}
     try{
       await closed(vault);const db=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});let receipts:UsageReceipt[]=[];
-      try{sqliteCheck(db);receipts=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt).filter(row=>!inherited.has(row.id));report.sourceProtectedHash=hashObject(protectedTables(db));if(windowId){const state=JSON.parse(String(db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));report.completedDomainCount=state.active?.checkpoint&&state.active.checkpoint!=='completed'?JSON.parse(state.active.checkpoint).completed.length:state.lastRun?.id===windowId?order.activeDomains.length:0;}}finally{db.close();}
+      try{sqliteCheck(db);receipts=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt).filter(row=>!inherited.has(row.id));report.sourceProtectedHash=hashObject(protectedTables(db,windowId));if(windowId){const state=JSON.parse(String(db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));report.completedDomainCount=state.active?.checkpoint&&state.active.checkpoint!=='completed'?JSON.parse(state.active.checkpoint).completed.length:state.lastRun?.id===windowId?order.activeDomains.length:0;}}finally{db.close();}
       const admitted=new Set(ledger.admitted.map(e=>e.data.receiptId)),rejected=receipts.filter(row=>!admitted.has(row.id));report.hostRejectedReceipts=rejected.length;if(rejected.length)succeeded=false;
       const safeReceipt=(row:UsageReceipt)=>({id:row.id,status:row.status,tokens:row.tokens,estimatedCost:row.estimatedCost,currency:row.currency,durationMs:row.durationMs});
       ledger.rejectedReceipts(rejected.map(safeReceipt));ledger.receipts(receipts.filter(row=>admitted.has(row.id)).map(safeReceipt));report.terminalUsage={readAfterClose:true,inherited:inherited.size,new:receipts.length,totals:usageTotals(receipts)};check(receipts.every(row=>row.status!=='running'),'integration_usage_unfinished');equal(report.sourceProtectedHash,plan.protectedHash,'integration_closed_source_mutated');
