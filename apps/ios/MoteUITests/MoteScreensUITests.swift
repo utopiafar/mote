@@ -123,7 +123,10 @@ final class MoteScreensUITests: XCTestCase {
         ] {
             let app = launch(["-MoteReaderPreview", "-MoteReaderState", state], appearance: appearance)
             XCTAssertTrue(app.buttons["更多"].waitForExistence(timeout: 15), name)
-            if state != "reader" {
+            if state == "screen" {
+                XCTAssertTrue(app.buttons["original-image"].waitForExistence(timeout: 5), name)
+                XCTAssertTrue(app.staticTexts["识别文字"].exists, name)
+            } else if state == "panel-more" || state == "panel-detail" {
                 XCTAssertTrue(app.staticTexts["详情"].waitForExistence(timeout: 5), name)
             }
             capture(name, appearance, app)
