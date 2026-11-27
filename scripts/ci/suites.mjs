@@ -96,7 +96,7 @@ export function manualPlan(suite, scope = 'all', root = '.') {
       if (name === 'replay') {
         const files = listTests('scripts', '.test.ts', root).filter(file => /^scripts\/test-heldout-memory-/.test(file));
         if (!files.length) throw Error('Recovery replay inventory is empty');
-        plan.push(node('--import', 'tsx', '--test', ...files));
+        plan.push(node('scripts/test-heldout-memory-generated.mjs', ...files));
       }
       if (name === 'process') plan.push(node('scripts/test-central-process-lifecycle.mjs'));
       if (name === 'arrivals') plan.push(node('--import', 'tsx', '--test', 'scripts/material-load-arrivals.test.cjs', 'scripts/material-load-recovery.test.cjs'));

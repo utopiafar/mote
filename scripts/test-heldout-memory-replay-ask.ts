@@ -1,17 +1,17 @@
 import {normalLimits,readNormalPlan,readAskRecoveryPlan,askRecoveryLogicalKeys} from './test-heldout-memory-replay-ledger.js';
 /** One sealed paired ordinary Ask. Generated fixtures only until separately frozen live approval. */
 import {randomInt,randomUUID} from 'node:crypto';
-import {existsSync,openSync,writeSync,fsyncSync,closeSync} from 'node:fs';
+import {existsSync,openSync,writeSync,fsyncSync,closeSync,writeFileSync} from 'node:fs';
 import {readFile,readdir} from 'node:fs/promises';
 import {join,relative} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import type {AgentAnswer,ContextReader,QueryInput} from '@mote/agent';
+import {createOfficialReadPacks,type AgentAnswer,type ContextReader,type QueryInput} from '@mote/agent';
 import type {QueryResult,UsageReceipt} from '@mote/shared';
 import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
-import {corpus,evaluation,check,equal,json,hashObject,closed,cloneClosed,sqliteCheck,verifyFreeze,parse,exactIndex} from './test-heldout-memory-replay.js';
+import {corpus,evaluation,check,equal,json,hashObject,closed,cloneClosed,prepareCloneConfig,sqliteCheck,verifyFreeze,parse,exactIndex,eraseMemoryRows,memoryDerivedTables as memoryTables} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,inspectAdmissionLedger,StageSafetyError} from './test-heldout-memory-replay-ledger.js';
-import {type Manifest,codeHashes,executorPins,treeHash,privateWrite,sealedError,safeCode,openNode,settings,bindings} from './test-heldout-memory-replay-stage.js';
+import {type Manifest,codeHashes,executorPins,treeHash,privateWrite,sealedError,safeCode,openNode,settings,bindings,observeReplayModel,reserveReplayCall} from './test-heldout-memory-replay-stage.js';
 import {type PhaseManifest,type Ref,ref,readRef,rootAndRuntime,validation,phaseCursor,validateRecoveryRoot,validateNormalRoot} from './test-heldout-memory-replay-sequence.js';
 
 type Node=Awaited<ReturnType<typeof openNode>>['node'];
@@ -23,8 +23,6 @@ type Pair=Question&{slots:Array<{id:string;removeMemory:boolean;label:string}>};
 export type AskPlan={schema:'mote-heldout-ask-plan@1';experimentHash:string;questionsHash:string;pairs:Pair[]};
 export type AskManifest=Omit<PhaseManifest,'task'|'limits'>&{task:{kind:'evaluation';wave:number;index:number;contextTime:string;plan:Ref;commitment:Ref;inventoryHash:string};limits:typeof askLimits};
 const questionCounts=[0,0,1,1,1,1,4];
-const erase=['memories','memory_jobs','memory_checkpoints','memory_extraction_drafts','memory_lifecycle_state','memory_events'];
-const memoryTables=new Set([...erase,'memory_catalog','memory_scopes','memory_dependencies','memory_artifact_dependencies','memory_batches','memory_batch_dependencies','memory_job_counts','memory_input_plans','memory_extraction_draft_dependencies','memories_fts','memories_fts_data','memories_fts_idx','memories_fts_content','memories_fts_docsize','memories_fts_config']);
 const logicalMemory=[...memoryTables].filter(name=>!name.startsWith('memories_fts_'));
 const empty=['conversations','conversation_turns','working_memories','query_runs','insights','insight_runs','memory_deletions','memory_deletion_dependencies','artifact_dependencies','artifact_material_inputs','context_dirty','perception_jobs','perception_results','capture_ocr_receipts','file_artifacts','file_chunks','file_reviews','file_versions','archived_files','capture_files','blobs','assets','action_proposals','action_semantic_checkpoints','todos'];
 const quoted=(name:string)=>'"'+name.replaceAll('"','""')+'"';
@@ -39,7 +37,7 @@ export async function inventory(db:DatabaseSync){
   check(all.captures.every(r=>!r.summary&&!r.embedding&&!r.embedding_model&&!r.blob_hash),'ask_unclassified_capture_derivative');
   check(all.memory_batches.every(r=>JSON.parse(r.json).status==='completed'),'ask_unfinished_memory_batch');
   check(all.memory_lifecycle_state.every(r=>!JSON.parse(r.json).active),'ask_active_lifecycle');
-  const lifecycle=JSON.parse(all.memory_lifecycle_effective[0].json);check(['extraction','consolidation','insights','working'].every(k=>lifecycle[k].enabled===false),'ask_background_enabled');
+  const lifecycle=JSON.parse(all.memory_lifecycle_effective[0].json);check(JSON.parse(all.background_model_authorization[0].json).state==='off'&&['consolidation','insights','working'].every(k=>lifecycle[k].enabled===false),'ask_background_enabled');
   check(all.execution_steps.every(r=>!['waiting','running'].includes(r.state)),'ask_active_execution');
   check(all.processing_jobs.every(r=>!['waiting','running','pending'].includes(r.state)),'ask_active_processing');
   check(all.model_usage.every(r=>JSON.parse(r.json).status!=='running'),'ask_running_inherited_usage');
@@ -48,8 +46,8 @@ export async function inventory(db:DatabaseSync){
   // No arbitrary custom material/organizer may silently become shared semantic context.
   const materialKinds=new Set(['mote.coding-session',...all.captures.map(r=>'mote.'+JSON.parse(r.json).source)]);
   check(all.material_heads.every(r=>materialKinds.has(r.kind)),'ask_unknown_material_kind');
-  check(all.material_organizer_groups.every(r=>r.organizer_id==='mote.source-item'&&r.version==='8'),'ask_unknown_organizer');
-  check(all.source_pipeline_work.every(r=>r.pipeline_id==='mote.coding'&&r.version==='6'&&r.state==='complete'),'ask_unknown_source_processor');
+  check(all.material_organizer_groups.every(r=>r.organizer_id==='mote.source-item'&&r.version==='16'),'ask_unknown_organizer');
+  check(all.source_pipeline_work.every(r=>r.pipeline_id==='mote.coding'&&r.version==='9'&&r.state==='complete'),'ask_unknown_source_processor');
   return {schemaHash,rowsHash:hashObject(all),exactHash:hashObject(exactIndex(db))};
 }
 function changed(before:Rows,after:Rows){return Object.keys(before).filter(name=>hashObject(before[name])!==hashObject(after[name]));}
@@ -57,7 +55,7 @@ function storageRows(value:Rows,except:Set<string>){return value.storage_ledger.
 /** A only: remove all Memory states, not raw-source preprocessing, permissions or source indexes. */
 export async function ablateAsk(vault:string,remove:boolean){const db=new DatabaseSync(join(vault,'mote.sqlite'));try{
   db.exec('PRAGMA foreign_keys=ON');await inventory(db);const before=rows(db);
-  if(remove){db.exec('BEGIN IMMEDIATE');try{for(const name of erase)db.exec('DELETE FROM '+quoted(name));db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}}
+  if(remove)eraseMemoryRows(db);
   const after=rows(db);check(changed(before,after).every(name=>remove&&(memoryTables.has(name)||name==='storage_ledger')),'ask_ablation_changed_protected');
   preserve(storageRows(before,memoryTables),storageRows(after,memoryTables),'ask_ablation_changed_source_accounting');
   if(remove)for(const name of logicalMemory)check(!after[name]?.length,'ask_memory_not_fully_removed');
@@ -77,9 +75,24 @@ export function assertQueryWrites(before:Rows,after:Rows,queryId:string|undefine
   const conversationIds=new Set(queries.flatMap(r=>{const id=JSON.parse(r.json).conversationId;return id?[id]:[];}));
   keep('query_runs',r=>r.id===queryId);keep('conversations',r=>conversationIds.has(r.id));keep('conversation_turns',r=>conversationIds.has(r.conversation_id)&&r.idx===0);
   keep('memory_events',r=>r.stream==='conversation'&&conversationIds.has(r.entity));
+  const turnReceipts=new Set(after.conversation_turns.filter(r=>conversationIds.has(r.conversation_id)&&r.idx===0).map(r=>'conversation-turn:'+r.id));
+  keep('background_model_receipts',r=>turnReceipts.has(r.identity)&&r.source_id==='mote.conversations'&&r.eligible===1);
   keep('model_usage',r=>receiptIds.has(r.id)&&JSON.parse(r.json).attribution?.operationId===operation);
-  const stepIds=new Set(after.execution_steps.filter(r=>r.operation_id===operation).map(r=>r.id));
-  keep('execution_steps',r=>r.operation_id===operation&&r.id===operation&&r.attempts<=1&&String(r.kind).startsWith('query.run.'));
+  const workId=queryId?'owner-query:'+queryId:undefined;
+  keep('background_model_work',r=>r.id===workId&&JSON.parse(r.json).kind==='manual'&&JSON.parse(r.json).roots.length===0);
+  const steps=after.execution_steps.filter(r=>r.operation_id===operation);
+  const stepIds=new Set(steps.map(r=>r.id));
+  check(steps.length<=1,'ask_extra_execution_step');
+  keep('execution_steps',r=>{
+    const input=JSON.parse(r.input);
+    return r.operation_id===operation&&r.kind==='delegation.coordinator.query'&&input.workId===operation&&r.id===`${operation}:coordinator:${input.revision}`&&r.attempts<=1;
+  });
+  keep('execution_cancellation_aliases',r=>r.alias_id===operation&&stepIds.has(r.step_id));
+  keep('execution_failures',r=>stepIds.has(r.step_id));
+  keep('delegation_works',r=>r.id===operation&&JSON.parse(r.json).profileId==='query');
+  for(const table of ['delegation_payloads','delegation_dependencies','delegation_results'])keep(table,r=>r.work_id===operation);
+  for(const table of ['delegation_events','delegation_source_context_dependencies'])keep(table,r=>r.work_id===operation&&!r.unit_id);
+  keep('background_model_step_authority',r=>r.work_id===workId&&stepIds.has(r.step_id));
   keep('execution_resources',r=>stepIds.has(r.step_id));keep('execution_dependencies',r=>stepIds.has(r.step_id)&&stepIds.has(r.dependency_id));
   keep('execution_operation_steps',r=>r.operation_id===operation&&stepIds.has(r.step_id));keep('execution_fairness',r=>r.operation_id===operation);
   keep('operation_progress',r=>r.id===operation);keep('operation_changes',r=>r.operation_id===operation);keep('operation_generations',r=>r.operation_id===operation);keep('operation_parents',()=>false);
@@ -90,7 +103,7 @@ export function assertQueryWrites(before:Rows,after:Rows,queryId:string|undefine
     const base=new Map(before[table].map(r=>[r[table==='sqlite_sequence'?'name':'pool'],r]));const column=table==='sqlite_sequence'?'seq':'next',key=table==='sqlite_sequence'?'name':'pool';
     check(before[table].every(old=>after[table].some(r=>r[key]===old[key])),'ask_sequence_deleted');
     for(const r of after[table]){const old=base.get(r[key]),delta=Number(r[column])-Number(old?.[column]??0);if(delta===0)continue;
-      const count=table==='sqlite_sequence'?(r.name==='memory_events'||r.name==='operation_changes'?after[r.name].length-before[r.name].length:-1):after.execution_fairness.filter(v=>v.pool===r.pool&&v.operation_id===operation).length;
+      const count=table==='sqlite_sequence'?(['memory_events','operation_changes','delegation_events','background_model_receipts'].includes(r.name)?after[r.name].length-before[r.name].length:-1):after.execution_fairness.filter(v=>v.pool===r.pool&&v.operation_id===operation).length;
       check(delta===count&&delta>0,'ask_unowned_sequence_change');}
     projected[table]=before[table];
   }
@@ -143,11 +156,29 @@ async function validateAskPlanAtParent(m:AskManifest,ledgerDirectory:string,root
   check(m.task.commitment.path===join(ledgerDirectory,'ask-plan-commitment.json'),'ask_commitment_path_changed');const committed=await readRef<{schema:string;experimentHash:string;plan:Ref}>(m.task.commitment);check(committed.schema==='mote-heldout-ask-plan-commitment@1'&&committed.experimentHash===m.experimentHash,'ask_commitment_invalid');equal(committed.plan,m.task.plan,'ask_commitment_plan_changed');
   const plan=await readRef<AskPlan>(m.task.plan);assertAskPlan(plan,m.experimentHash);check(plan.schema==='mote-heldout-ask-plan@1'&&plan.experimentHash===m.experimentHash,'ask_plan_changed');const raw=plan.pairs.map(({slots,...q})=>q);const validated=await questions(root,root.kind==='mechanical'?raw:undefined);equal(raw,validated,'ask_question_bundle_changed');check(hashObject(raw)===plan.questionsHash,'ask_questions_hash_changed');const pair=plan.pairs.filter(q=>q.checkpointWave===m.task.wave)[m.task.index];check(pair&&pair.contextTime===m.task.contextTime,'ask_question_clock_changed');check(pair.slots.length===2&&new Set(pair.slots.map(s=>s.removeMemory)).size===2&&new Set(pair.slots.map(s=>s.id)).size===2&&new Set(pair.slots.map(s=>s.label)).size===2,'ask_blind_slots_invalid');return pair;
 }
+const officialTools=new Set(createOfficialReadPacks().map(tool=>hashObject(tool)));
+function assertReadTools(registrations:ReturnType<NonNullable<ContextReader['contextTools']>>|undefined){
+  const names=new Set<string>();
+  for(const pack of registrations??[]){
+    check(Array.isArray(pack.descriptors),'ask_unknown_tool_contribution');
+    for(const tool of pack.descriptors){
+      check(officialTools.has(hashObject(tool))&&!names.has(tool.name),'ask_unknown_tool_contribution');
+      names.add(tool.name);
+    }
+  }
+}
 export function assertOrdinaryInput(input:QueryInput,question:string,contextTime:string){
-  const keys=new Set(['traceContext','executionLane','question','timeZone','contextTime','modelProfileId','modelOverride','signal','directImages','openingMemories','language','onProgress','onTrace','onUsage','validateOutput']);
+  const keys=new Set(['traceContext','executionLane','question','timeZone','contextTime','modelProfileId','modelOverride','signal','directImages','openingMemories','language','onProgress','onTrace','onUsage','validateOutput','modelBudget','contextEvidenceDependencies','contextSourceContextDependencies','contextCapabilitySnapshot','onContextCapabilities','hostControlChannel','onSourceContextDependencies','onEvidence','taskContext','assistantDraft','memoryRequestBudget','assertContextAuthority','onMemoryBodies','onHostRunEvent','nativeApplicationContext','onRuntimeControl']);
   check(Object.keys(input).every(key=>keys.has(key)),'ask_unknown_query_input');
   check(input.question===question&&input.contextTime===contextTime&&input.timeZone==='Asia/Shanghai'&&input.executionLane==='interactive','ask_input_changed');
   check(!input.directImages?.length,'ask_attachment_forbidden');
+  const task=input.taskContext;
+  check(!task||Object.entries(task).every(([key,value])=>value===undefined||key==='turns'&&Array.isArray(value)&&value.length===0||key==='delegation'&&emptyCoordinator(value,input.traceContext?.operationId)),'ask_oracle_or_special_input');
+}
+function emptyCoordinator(raw:unknown,operationId?:string){
+  if(!raw||typeof raw!=='object'||!operationId)return false;
+  const coordinator=raw as {workId?:string;revision?:number;units?:unknown[];instruction?:string};
+  return Object.keys(coordinator).sort().join(',')==='instruction,revision,units,workId'&&coordinator.workId===operationId&&Number.isSafeInteger(coordinator.revision)&&Array.isArray(coordinator.units)&&coordinator.units.length===0&&coordinator.instruction==='Resume the saved goal using these host execution receipts. Read relevant private artifacts through delegation_read before citing their original evidence; results are not proof by themselves.';
 }
 export async function runAsk(options:{manifest:AskManifest;manifestHash:string;output:string;ledgerDirectory:string;stub?:Stub;live?:true;perOuterMs?:number;mechanicalHook?:(node:Node,index:number)=>void}){
   const {manifest:m,output}=options;check(options.stub||options.live===true,'ask_live_not_enabled');check(options.stub?m.kind==='mechanical':m.kind==='heldout','ask_execution_mode_mismatch');check(m.kind==='mechanical'||!options.mechanicalHook&&options.perOuterMs===undefined,'ask_live_test_override');check(sha256(json(m))===options.manifestHash,'ask_manifest_changed');const {root,cursor,pair,ledgerHead}=await validateAsk(m,options.ledgerDirectory);
@@ -157,23 +188,34 @@ export async function runAsk(options:{manifest:AskManifest;manifestHash:string;o
   try{
     check(ledger.events.at(-1)?.sha256===ledgerHead,'ask_ledger_advanced');ledger.bindExecutor(options.manifestHash,m.previousManifest.sha256,m.validation.sha256);ledger.begin(stage,m.parent.treeHash,2);
     // Prepare and audit BOTH arms before the first paid boundary.
-    const prepared=[];for(const slot of pair.slots){const vault=join(output,'DO_NOT_OPEN',slot.id);await cloneClosed(m.parent.path,vault);prepared.push({slot,vault,before:await ablateAsk(vault,slot.removeMemory),files:await files(vault)});}
+    const prepared=[];for(const slot of pair.slots){const vault=join(output,'DO_NOT_OPEN',slot.id);await cloneClosed(m.parent.path,vault);await prepareCloneConfig(join(vault,'mote.yaml'),300000);prepared.push({slot,vault,before:await ablateAsk(vault,slot.removeMemory),files:await files(vault)});}
     const normalize=(value:Rows)=>Object.fromEntries(Object.entries(value).filter(([name])=>!memoryTables.has(name)&&name!=='storage_ledger'));
     preserve(normalize(prepared[0].before),normalize(prepared[1].before),'ask_arms_source_mismatch');preserve(storageRows(prepared[0].before,memoryTables),storageRows(prepared[1].before,memoryTables));preserve(prepared[0].files,prepared[1].files);
     for(const [index,item] of prepared.entries()){
-      check(!ledger.stopped,'ask_circuit_stopped');let node:Node|undefined,openedRows:Rows|undefined,queryId:string|undefined,callId:string|undefined,answer:unknown,armOK=false;const receiptIds=new Set<string>();const inherited=new Set(item.before.model_usage.map(r=>r.id));let requests=0,repairs=0;
+      check(!ledger.stopped,'ask_circuit_stopped');let node:Node|undefined,openedRows:Rows|undefined,queryId:string|undefined,callId:string|undefined,answer:unknown,armOK=false;const receiptIds=new Set<string>();const inherited=new Set(item.before.model_usage.map(r=>r.id));
       try{
-        const started=Date.now(),opened=await openNode(item.vault,root.model,m.task.contextTime,options.stub);node=opened.node;const afterOpen=rows(node.store.db);defaults(item.before,afterOpen,item.slot.removeMemory,started,Date.now());openedRows=afterOpen;equal(hashObject(settings(node)),root.settingsHash,'ask_settings_changed');equal(hashObject(bindings(node)),root.bindingsHash,'ask_bindings_changed');check(node.featureServices.archiveReader.contextTools?.().length===0,'ask_unknown_tool_contribution');options.mechanicalHook?.(node,index);
-        const query=node.agent.query.bind(node.agent);node.agent.query=async input=>{
-          const traces:unknown[]=[];let timer:ReturnType<typeof setTimeout>|undefined;
+        const started=Date.now(),opened=await openNode(item.vault,root.model,m.task.contextTime,options.stub);node=opened.node;const afterOpen=rows(node.store.db);defaults(item.before,afterOpen,item.slot.removeMemory,started,Date.now());openedRows=afterOpen;equal(hashObject(settings(node)),root.settingsHash,'ask_settings_changed');equal(hashObject(bindings(node)),root.bindingsHash,'ask_bindings_changed');assertReadTools(node.featureServices.archiveReader.contextTools?.());options.mechanicalHook?.(node,index);
+        const query=node.agent.query.bind(node.agent);node.agent.query=async(input,lease)=>{
+          let attempt:ReturnType<typeof observeReplayModel>|undefined;
           try{
             check(!ledger.stopped&&!callId,'ask_outer_retry_forbidden');assertOrdinaryInput(input,pair.question,m.task.contextTime);
-            for(const field of ['conversation','taskContext','skill','responseMode','evidenceIds','evidenceRanges','after','before','deviceId','processingEvidence','processingMaterialInputs','derivedContextEvidenceIds'])check((input as any)[field]===undefined,'ask_oracle_or_special_input');check(!input.directImages?.length,'ask_attachment_forbidden');
+            for(const field of ['conversation','skill','responseMode','evidenceIds','evidenceRanges','after','before','deviceId','processingEvidence','processingMaterialInputs','derivedContextEvidenceIds'])check((input as any)[field]===undefined,'ask_oracle_or_special_input');check(!input.directImages?.length,'ask_attachment_forbidden');
             const trace=input.traceContext;check(trace?.operation==='query'&&trace.moduleId==='conversations'&&trace.provider===root.model.provider&&trace.protocol===root.model.protocol&&trace.model===root.model.model&&input.modelOverride===root.model.model,'ask_model_or_operation_changed');check(/^query:[a-f0-9-]{36}$/.test(trace.operationId??''),'ask_operation_id_invalid');queryId=trace.operationId!.slice(6);
-            const running=node!.store.db.prepare("SELECT id FROM model_usage WHERE json_extract(json,'$.status')='running'").all().map(r=>String(r.id)).filter(id=>!inherited.has(id));check(running.length===1,'ask_running_receipt_ambiguous');receiptIds.add(running[0]);assertQueryWrites(openedRows!,rows(node!.store.db),queryId,receiptIds,false);check(node!.featureServices.archiveReader.contextTools?.().length===0,'ask_unknown_tool_contribution');const serial=JSON.parse(JSON.stringify(input,(_k,v)=>typeof v==='function'?undefined:v));callId=ledger.reserve(recovering?askRecoveryLogicalKeys(recovery!)[index]:item.slot.id,hashObject(serial),running[0]);await privateWrite(join(output,'DO_NOT_OPEN',callId+'-input.json'),serial);active=new AbortController();const control=active,abort=()=>control.abort(input.signal?.reason);input.signal?.addEventListener('abort',abort,{once:true});
-            try{const result=await Promise.race([query({...input,signal:control.signal,onTrace:event=>{traces.push(event);if(event.type==='model.started'){requests++;if((event.payload as any)?.repair)repairs++;}input.onTrace?.(event);}}),new Promise<never>((_r,reject)=>{timer=setTimeout(()=>{control.abort();reject(new StageSafetyError('ask_outer_deadline'));},options.perOuterMs??m.limits.perOuterMs);})]);const issue=await input.validateOutput?.(result as AgentAnswer);check(!issue,'ask_product_output_invalid');await privateWrite(join(output,'DO_NOT_OPEN',callId+'-result.json'),result);ledger.terminal(callId,'completed','ok',{modelRunStarts:requests||null,repairs:requests?repairs:null});return result;}finally{input.signal?.removeEventListener('abort',abort);}
-          }catch(error){active?.abort();ledger.stop(safeCode(error));if(callId&&ledger.pending().some(e=>e.data.callId===callId))ledger.terminal(callId,'failed',safeCode(error),{modelRunStarts:requests||null,repairs:requests?repairs:null});await sealedError(join(output,'DO_NOT_OPEN'),error);throw error;}
-          finally{if(timer)clearTimeout(timer);active=undefined;if(callId)await privateWrite(join(output,'DO_NOT_OPEN',callId+'-trace.json'),traces);}
+            const serial=JSON.parse(JSON.stringify(input,(_k,v)=>typeof v==='function'?undefined:v));
+            const control=new AbortController();active=control;
+            attempt=observeReplayModel(input,control,()=>{
+              const key=recovering?askRecoveryLogicalKeys(recovery!)[index]:item.slot.id;
+              callId=reserveReplayCall(node!.store.db,ledger,inherited,receiptIds,key,serial,'ask_running_receipt_ambiguous',id=>{
+                assertQueryWrites(openedRows!,rows(node!.store.db),queryId,new Set([...receiptIds,id]),false);
+                assertReadTools(node!.featureServices.archiveReader.contextTools?.());
+              });
+              writeFileSync(join(output,'DO_NOT_OPEN',callId+'-input.json'),json(serial),{mode:0o600});
+            },options.perOuterMs??m.limits.perOuterMs,()=>new StageSafetyError('ask_outer_deadline'));
+            input.signal?.throwIfAborted();const result=await Promise.race([query({...input,signal:control.signal,onTrace:attempt.onTrace},lease),attempt.deadline]);
+              attempt.assertAdmitted();check(callId,'ask_model_call_missing');
+              const issue=await input.validateOutput?.(result as AgentAnswer);check(!issue,'ask_product_output_invalid');await privateWrite(join(output,'DO_NOT_OPEN',callId+'-result.json'),result);ledger.terminal(callId,'completed','ok',attempt.counts());return result;
+          }catch(cause){const error=attempt?.failure(cause)??cause;active?.abort(error);ledger.stop(safeCode(error));if(callId&&attempt&&ledger.pending().some(e=>e.data.callId===callId))ledger.terminal(callId,'failed',safeCode(error),attempt.counts());await sealedError(join(output,'DO_NOT_OPEN'),error);throw error;}
+          finally{attempt?.dispose();active=undefined;if(callId&&attempt)await privateWrite(join(output,'DO_NOT_OPEN',callId+'-trace.json'),attempt.traces);}
         };
         answer=await opened.request('POST','/api/query',{question:pair.question,timeZone:'Asia/Shanghai'});check(callId&&!ledger.stopped,'ask_missing_successful_call');armOK=true;
       }catch(error){failure??=error;ledger.stop(safeCode(error));await sealedError(join(output,'DO_NOT_OPEN'),error);}
