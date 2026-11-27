@@ -6,6 +6,7 @@ import {writeFileSync} from 'node:fs';
 import {mkdir,readFile,readdir,realpath,writeFile} from 'node:fs/promises';
 import {join,resolve,relative} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import {z} from 'zod';
 import {AgentTimeoutError,codexContextCapacity,type AgentAnswer,type ContextReader,type QueryInput} from '@mote/agent';
 import {sourceItemSchema,type QueryResult,type UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
@@ -15,6 +16,7 @@ import type {QueryAgent} from '../apps/server/src/query-agent.js';
 import {sha256} from '../apps/server/src/evidence-store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {defaultMemoryIntegrationRecipe} from '../apps/server/src/memory-integration-policy.js';
+import {memorySchema} from '../apps/server/src/memory-schema.js';
 import {base,corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObject,externalNew,parse,verifyFreeze,lines,heldoutDeliveryItem,config,prepareCloneConfig,tables,closed,cloneClosed,sqliteCheck,memoryDerivedTables} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,StageSafetyError,inspectAdmissionLedger,type LedgerEvent,recoveryELimits} from './test-heldout-memory-replay-ledger.js';
 type Node=Awaited<ReturnType<typeof buildApp>>;
@@ -26,7 +28,7 @@ function replayStub(reader:ContextReader,stub:Stub):QueryAgent{
     lease?.onFinalizer?.('host');
     const runId=randomUUID(),attemptId=randomUUID();
     const identity={runId,runtime:{id:'generated-replay',revision:1,profileId:'generated',profileRevision:1,assemblyFingerprint:'generated-replay'},model:{modelId:input.modelOverride??'generated',modelRevision:1,profileId:'generated',profileRevision:1,transport:'generated'}};
-    const notify=(event:Parameters<NonNullable<QueryInput['onHostRunEvent']>>[0]['event'])=>input.onHostRunEvent?.({identity,attemptId,event});
+    const notify=(event:Extract<Parameters<NonNullable<QueryInput['onHostRunEvent']>>[0],{attemptId:string}>['event'])=>input.onHostRunEvent?.({identity,attemptId,event});
     try{
       input.onTrace?.({type:'model.started',runId});
       input.signal?.throwIfAborted();
@@ -37,19 +39,23 @@ function replayStub(reader:ContextReader,stub:Stub):QueryAgent{
       }};
       if(reader.memories)observedReader.memories=async scope=>{
         const page=await reader.memories!(scope);
-        if(scope.id)input.onMemoryBodies?.(page.items);
+        if(scope.id&&input.onMemoryBodies){
+          const keys=memorySchema.pick({id:true,version:true,fingerprint:true}).passthrough();
+          input.onMemoryBodies(page.items.map(item=>keys.parse(item)));
+        }
         return page;
       };
       const result=await stub(observedReader,{...input,onUsage:usage=>{input.onUsage?.(usage);notify({type:'usage',usage});}});
       input.signal?.throwIfAborted();
-      const validation=await input.validateOutput?.(result);
+      const validation=await input.validateOutput?.({...result,trace:result.trace.map(item=>({...item,
+        arguments:z.record(z.string(),z.unknown()).parse(item.arguments)}))});
       if(validation)throw validation;
       const terminal={kind:'completed'} as const;
       notify({type:'attempt.terminal',terminal});notify({type:'run.terminal',terminal});
       return result;
     }catch(error){
-      const terminal={kind:'failed',failure:{code:'internal'}} as const;
-      notify({type:'attempt.terminal',terminal});notify({type:'run.terminal',terminal});
+      notify({type:'attempt.terminal',terminal:{kind:'failed',reason:'provider_error'}});
+      notify({type:'run.terminal',terminal:{kind:'failed',failure:{code:'internal'}}});
       throw error;
     }
   }};

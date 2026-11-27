@@ -8,7 +8,6 @@ import {MemoryStore} from '../apps/server/src/memory.js';
 import {Conversations} from '../apps/server/src/conversations.js';
 import {MemoryPipeline} from '../apps/server/src/memory-pipeline.js';
 import {MaintenanceWorker} from '../apps/server/src/maintenance.js';
-import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 const root=process.argv[2],out=process.argv[3];
 if(!root||!out||!root.includes('local-copy'))throw Error('Usage: benchmark-local-archive.ts PRIVATE_LOCAL_COPY OUTPUT_JSON; use a copy, not the active archive');
 const directory=resolve(root),db=new DatabaseSync(join(directory,'mote.sqlite'),{readOnly:true});
@@ -19,7 +18,7 @@ const pipeline=new MemoryPipeline({store,memories,models:{configured:()=>false,m
 const migrationMs=Math.round(performance.now()-started),after=digest(store.db);
 if(JSON.stringify(before)!==JSON.stringify(after))throw Error('Migration changed original observations');
 let rawReads=0;memories.readEvidence=()=>{rawReads++;throw Error('Overview attempted to read original evidence');};
-const worker=new MaintenanceWorker({dataDir:directory,embeddingModel:''} as ConfigurationPlatformOptions);
+const worker=new MaintenanceWorker({dataDir:directory,embeddingEnabled:false});
 const cases:Record<string,()=>unknown>={status:()=>store.stats(),captures:()=>store.list({limit:20}),memoryOverview:()=>memories.page({limit:20}),conversations:()=>conversations.list({limit:20}),jobs:()=>pipeline.list(30),segments:()=>store.archive.page({limit:20})};
 const first=conversations.list({limit:1}).items[0];if(first)cases.conversationTurns=()=>conversations.page(first.id);
 const results:Record<string,unknown>={};

@@ -17,6 +17,7 @@ const fixture=await buildApp(config,{agent:{configured:false,query:async()=>{thr
 const {store,app,indexer}=fixture,rows=9000,reports:unknown[]=[];
 const record=(n:number)=>({id:randomUUID(),deviceId:'generated-persona',deviceName:'Generated Persona',platform:'import',source:'note',durationMs:0,capturedAt:new Date(Date.parse('2026-07-01')+Math.floor(n/200)*86400000+n%200*60000).toISOString(),ocrText:`Generated record ${n}; retrieval responsiveness fixture.`});
 try{
+ assert.ok(indexer,'Generated embedding configuration must enable the retrieval indexer');
  for(let start=0;start<rows;start+=100)await store.ingestBatch(Array.from({length:100},(_,i)=>record(start+i)));
  const base=await app.listen({host:'127.0.0.1',port:0}),headers={authorization:'Bearer '+token,'content-type':'application/json'};
  for(const size of [768,1536]){

@@ -74,7 +74,7 @@ async function fixture(t:TestContext){
  await f.node.app.listen({host:'127.0.0.1',port:0});
  const central=()=>`http://127.0.0.1:${(f.node.app.server.address() as {port:number}).port}`;
  const api=async(method:string,path:string,body?:unknown)=>{
-  const response=await fetch(central()+path,{method,headers:{authorization:'Bearer '+f.token,...(body===undefined?{}:{'content-type':Buffer.isBuffer(body)?'application/octet-stream':'application/json'})},body:body===undefined?undefined:Buffer.isBuffer(body)?body:JSON.stringify(body)});
+  const response=await fetch(central()+path,{method,headers:{authorization:'Bearer '+f.token,...(body===undefined?{}:{'content-type':Buffer.isBuffer(body)?'application/octet-stream':'application/json'})},body:body===undefined?undefined:Buffer.isBuffer(body)?new Uint8Array(body):JSON.stringify(body)});
   const value=await response.text();
   if(!response.ok)t.diagnostic(JSON.stringify({providerErrors:errors.map(error=>error instanceof Error?error.stack:String(error)),modelRequests:requests.map(body=>({model:body.model,structure:structure(body),pixels:pixels(body).map(bytes=>({size:bytes.length,sha256:sha256(bytes)})),tool:text(body.messages.filter(message=>message.role==='tool').at(-1)?.content).slice(0,500)}))}));
   assert.ok(response.ok,method+' '+path+': '+response.status+' '+value);return JSON.parse(value);

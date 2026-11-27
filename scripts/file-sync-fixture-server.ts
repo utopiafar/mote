@@ -33,6 +33,7 @@ const collector=await node.connections.redeem({code:invitation.code,deviceId,dev
 writeFileSync(join(directory,'connection.json'),JSON.stringify({server,token:collector.token,ownerToken:owner,deviceId}),{mode:0o600});
 await node.app.listen({host:'127.0.0.1',port:57569});
 writeFileSync(join(node.bootstrap.configurationBootstrap.dataDir,'server.pid'),String(process.pid),{mode:0o600});
-console.info(JSON.stringify({ready:true,url:server,model:config.model||null,modelConfigured:!!config.apiKey,connectionFile:join(directory,'connection.json')}));
+const {id:profileId,settings}=node.modelSettings.select('chat');
+console.info(JSON.stringify({ready:true,url:server,model:settings.model||null,modelConfigured:node.agent.configuredFor(profileId),connectionFile:join(directory,'connection.json')}));
 let closing=false;
 for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,()=>{if(closing)return;closing=true;void node.app.close().then(()=>process.exit(0));});

@@ -7,8 +7,9 @@ import {performance,monitorEventLoopDelay} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import {FILE_PART_BYTES} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
+import type {ConfigurationPlatformOptions} from '../apps/server/src/config.js';
 const directory=await mkdtemp(join(tmpdir(),'mote-commit-benchmark-')),token=randomBytes(32).toString('hex');
-const config={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:16*1024*1024},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent' as const}}};
+const config={path:(directory)+'/mote.yaml',privateCredential:{token:token,tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,dataKey:undefined,maxExportBytes:16*1024*1024},server:{profile:'test',host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{level:'silent'}}} satisfies ConfigurationPlatformOptions;
 const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('Fixture must not invoke model');},close:async()=>{}}});
 const results:unknown[]=[];
 try{
