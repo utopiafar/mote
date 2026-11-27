@@ -308,15 +308,23 @@ export class ExecutionEngine {
   const db=this.store.db,now=this.now(),fence=randomUUID(),policy=this.policy(handler,view(row)),timeout=policy.timeoutMs;
   const leaseMs=timeout===null?30000:Math.min(timeout+10000,30000);
   const extendLease=(until:number,validAfter:number)=>db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(until,row.id,fence,validAfter).changes;
-  let knownLeaseUntil:number;
+  let knownLeaseUntil:number,priorRecoveryDeadline=0;
   db.exec('BEGIN IMMEDIATE');
   try{
    const lane=this.lane(view(row)),limit=this.limit(row.pool,lane);
-   if(db.prepare("SELECT state FROM execution_steps WHERE id=?").get(row.id)?.state!=='waiting'){db.exec('COMMIT');return;}
+   const waiting=db.prepare("SELECT state,recovery_deadline FROM execution_steps WHERE id=?").get(row.id);
+   if(waiting?.state!=='waiting'){db.exec('COMMIT');return;}
+   priorRecoveryDeadline=Number(waiting.recovery_deadline)||0;
    if(this.running(row.pool,lane,now)>=limit){db.exec('COMMIT');return;}
    if(db.prepare("SELECT 1 FROM execution_resources requested JOIN execution_resources held ON held.resource_key=requested.resource_key JOIN execution_steps owner ON owner.id=held.step_id WHERE requested.step_id=? AND owner.id!=? AND owner.state='running' AND owner.lease_until>? LIMIT 1").get(row.id,row.id,now)){db.exec('COMMIT');return;}
    if(!handler.validate(view(row))){db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);this.project(row.id);db.exec('COMMIT');return;}
    const admission=handler.admit?.(view(row));
+   const claimedAt=this.now();
+   // A retry may requeue an expired step after the sweep. Check the persisted
+   // deadline before a capacity wait can clear it or a claim can start.
+   if(policy.maxRecoveryWindowMs!==null&&priorRecoveryDeadline>0&&priorRecoveryDeadline<=claimedAt){
+    this.fail(row.id,'recovery_window_exhausted');db.exec('COMMIT');return;
+   }
    if(admission){
     db.prepare("UPDATE execution_steps SET state=?,available_at=?,error=?,recovery_deadline=CASE WHEN ? THEN 0 ELSE recovery_deadline END,updated_at=? WHERE id=? AND state='waiting'").run(admission.category==='waiting'?'waiting':'blocked',admission.category==='waiting'?this.now()+Math.max(1,admission.retryAfterMs??1000):0,admission.code,Number(admission.category==='waiting'),now,row.id);this.project(row.id);db.exec('COMMIT');
     return;
@@ -331,7 +339,6 @@ export class ExecutionEngine {
     const failure=retainFailureContext(new ExecutionFailure('permanent','retry_budget_exhausted'),{causeCode});
     this.retainFailure(this.get(row.id)!,'failed',failure,failure);this.project(row.id);db.exec('COMMIT');return;
    }
-   const claimedAt=this.now();
    knownLeaseUntil=claimedAt+leaseMs;
    const claimed=db.prepare("UPDATE execution_steps SET state='running',attempts=attempts+1,fence=?,lease_until=?,error=NULL,updated_at=? WHERE id=? AND state='waiting'").run(fence,knownLeaseUntil,claimedAt,row.id).changes;
    if(!claimed){db.exec('COMMIT');return;}
@@ -423,7 +430,7 @@ export class ExecutionEngine {
    const capacityWait=failure.category==='waiting',attempts=Math.max(0,step.attempts-Number(capacityWait||unstartedBlock||stopping));
    let state:ExecutionState=stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':capacityWait?'waiting':failure.category==='permanent'||attempts>=policy.maxAttempts?'failed':'waiting';
    const at=this.now(),availableAt=stopping?0:at+Math.max(capacityWait?1:0,failure.retryAfterMs??(capacityWait?1000:Math.min(3600000,1000*2**(attempts-1))));
-   const recoveryDeadline=capacityWait||policy.maxRecoveryWindowMs===null?0:failure.category==='transient'&&!stopping?(Number(row.recovery_deadline)||at+Math.max(1,policy.maxRecoveryWindowMs)):Number(row.recovery_deadline)||0;
+   const recoveryDeadline=capacityWait||policy.maxRecoveryWindowMs===null?0:failure.category==='transient'&&!stopping?(priorRecoveryDeadline||at+Math.max(1,policy.maxRecoveryWindowMs)):priorRecoveryDeadline;
    let code=stopping?'interrupted':failure.code;
    if(!stopping&&state==='waiting'&&failure.category==='transient'&&recoveryDeadline&&availableAt>=recoveryDeadline){state='failed';code='recovery_window_exhausted';}
    const own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');let changed=false;
