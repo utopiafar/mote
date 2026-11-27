@@ -409,8 +409,8 @@ export const sharedReads=[
   "to": "execution_steps",
   "symbol": "89fc8681b552931e4612f37ff4c1049c74cf625114a7e87a0b61c1619176dc4d",
   "scope": "MemoryPhaseOutputs.retryFailed",
-  "scopeFingerprint": "7c30bd5a6554bc02f7f726e6952775c22e757a00ce0a8610735b6a6fb73b0d0d",
-  "reason": "Select only failed or blocked Memory phase step IDs for this exact batch and generation before retrying through ExecutionEngine."
+  "scopeFingerprint": "16409e993cc90a05f7f29e1bc7db139c39ae315006c08b47b9c85d55ae696021",
+  "reason": "Select only failed or blocked Memory phase step IDs for this exact batch and generation, then read the failure receipt and retry the same steps through ExecutionEngine."
  },
  {
   "from": "apps/server/src/assistant-task-steering.ts",

@@ -12,6 +12,7 @@ import {resolveHostOutput} from '../../../packages/agent/dist/host/run-session.j
 import {boundedModelFetch} from '../../../packages/agent/dist/models/http-transport.js';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
+import {retainFailureContext} from '../src/execution-failures.js';
 import {materialId} from '../src/materials.js';
 import type {MemoryWorkMember} from '../src/memory-work-contract.js';
 import {memoryWorkInstruction} from '../src/memory-work-contract.js';
@@ -230,7 +231,7 @@ for(const {phase,limit} of [
  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
 });
 
-test('retrying a failed split batch keeps the waiting sibling\'s exact read scope',async t=>{
+for(const cause of ['model context','native startup'] as const)test(`retrying a failed split batch after ${cause} failure keeps the waiting sibling's exact read scope`,async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-sibling-budget-'));
  const store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
  const capacity:MemoryRequestCapacity={contextWindow:98304,maxOutputTokens:16384,draftTokens:16384};
@@ -240,7 +241,11 @@ test('retrying a failed split batch keeps the waiting sibling\'s exact read scop
   const {phase,batchId}=input.traceContext!;
   calls.push({phase:phase!,batchId,ranges:input.evidenceRanges,read:input.evidenceReadRanges});
   if(phase==='extract'&&failure!=='none'){
-   if(failure==='first-child')pipeline.pause(jobId);
+   if(failure==='first-child'){
+    pipeline.pause(jobId);
+    if(cause==='native startup')throw retainFailureContext(new ProviderFailure({category:'permanent',code:'processing_limit',executionStarted:false}),
+     {phase:'extract',causeCode:'native_budget_unavailable'});
+   }
    throw new ProviderFailure({category:'permanent',code:'processing_limit'});
   }
   const {members}=input.taskContext!.memoryWork as {members:MemoryWorkMember[]};
@@ -273,6 +278,15 @@ test('retrying a failed split batch keeps the waiting sibling\'s exact read scop
  for(const call of siblingCalls){
   assert.deepEqual(call.ranges,waiting.evidenceRanges);
   assert.deepEqual(call.read,waiting.evidenceRanges,'another child\'s retry must not reopen optional context for the waiting sibling');
+ }
+ const recovered=done.batches.find(batch=>batch.id===failed.id)!;
+ if(cause==='native startup'){
+  assert.equal(recovered.supersededBy,undefined,'failure before a model call must keep the same batch');
+  const resumedCalls=calls.filter(call=>call.batchId===failed.id).slice(1);
+  assert.deepEqual(resumedCalls.map(call=>call.phase),['extract','review']);
+  for(const call of resumedCalls)assert.deepEqual(call.read,failed.evidenceRanges);
+ }else{
+  assert.equal(recovered.supersededBy?.length,2);
  }
  assert.ok(done.batches.filter(batch=>!batch.supersededBy?.length).every(batch=>batch.reviewReceipt?.decision==='independent'));
  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,16);
