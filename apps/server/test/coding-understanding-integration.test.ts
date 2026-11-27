@@ -8,9 +8,10 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as wait} from 'node:timers/promises';
 import {AgentTimeoutError,createAgent,type ContextReader,type QueryInput} from '@mote/agent';
-import type {CodingEvidence,QueryResult,SourceItem,TokenUsage,UsageReceipt} from '@mote/shared';
+import {ProviderFailure,type CodingEvidence,type QueryResult,type SourceItem,type TokenUsage,type UsageReceipt} from '@mote/shared';
 import {buildApp} from '../src/app.js';
 import type {ConfigurationPlatformOptions} from '../src/config.js';
+import {modelConfiguration} from '../src/model-configuration.js';
 import type {MemoryWorkPackage} from '../src/memory-work-contract.js';
 import {StoreError} from '../src/evidence-store.js';
 import {AssistantUnderstandingReader} from '../src/assistant-understanding.js';
@@ -29,13 +30,13 @@ const config=(dataDir:string):ConfigurationPlatformOptions=>({path:(dataDir)+'/m
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
 function event(id:string,role:CodingEvidence['role'],text:string):SourceItem{return {externalId:id,revision:'1',observedAt:recordedAt,kind:'message',layer:'original',text,
  document:{recordedAt,timeBasis:'recorded',contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated-project',projectName:'Generated project',projectIdentity:'workspace',sessionId:'generated-session',eventId:id,role,...(role==='assistant'?{channel:'final'}:{}),attribution:role==='user'?'human':role==='assistant'?'agent':'unknown',part:0,parts:1}}};}
-async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader)=>Promise<QueryResult>,automatic=false,options:Partial<ConfigurationPlatformOptions>={}){
+async function appFixture(t:TestContext,query:(input:QueryInput,reader:ContextReader,provider:string)=>Promise<QueryResult>,automatic=false,options:Partial<ConfigurationPlatformOptions>={}){
  const directory=mkdtempSync(join(tmpdir(),'mote-coding-understanding-e2e-'));
- const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
+ const dependencies:NonNullable<Parameters<typeof buildApp>[1]>={backgroundWorker:false,createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async(input,lease)=>{
   lease?.onFinalizer?.('host');
   let usage:TokenUsage|undefined;
   const observed={...input,onUsage:(sample:TokenUsage)=>{usage=sample;input.onUsage?.(sample);}};
-  try{const result=fixtureTopicResult(observed)??fixtureMemoryWorkResult(observed,await query(observed,reader));hostRun(observed,{usage});return result;}
+  try{const result=fixtureTopicResult(observed)??fixtureMemoryWorkResult(observed,await query(observed,reader,settings.provider));hostRun(observed,{usage});return result;}
   catch(error){hostRun(observed,{usage,terminal:'failed'});throw error;}
  }})};
  let node=await buildApp({...config(directory),...options},dependencies);
@@ -146,6 +147,67 @@ for(const [failure,code] of [[()=>Error('Generated unknown preparation failure')
  assert.equal(completed.status,'completed');assert.equal(understanding,2);assert.equal(review,1);
  assert.equal(node.executor.get(String(child.id))?.state,'succeeded');assert.equal(node.store.db.prepare('SELECT count(*) n FROM processing_jobs').get()!.n,1);
  await node.workflows.tick();assert.equal(understanding,2,'the successful preparation remains reusable');
+});
+
+for(const savedFallback of [false,true])test(`an explicit Memory retry releases a Coding preparation parked on an old provider${savedFallback?' after a saved model selection':''}`,{timeout:15000},async t=>{
+ const calls:{provider:string;phase:string}[]=[];
+ const node=await appFixture(t,async(input,reader,provider)=>{
+  const records=await supplied(input,reader),id=records[0].id;
+  if(isUnderstanding(input)){
+   calls.push({provider,phase:'understanding'});
+   if(provider==='deepseek')throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:3600000,executionStarted:false});
+   return response(id,owner,products(id,true));
+  }
+  calls.push({provider,phase:String(input.traceContext?.phase)});
+  return response(id,owner,input.taskContext!.untrustedMemoryDraft);
+ });
+ const headers={authorization:'Bearer '+token},fallbackId='generated-coding-fallback';
+ const initial=node.modelSettings.select('memory').settings;
+ assert.equal(initial.provider,'deepseek');
+ const saved=await node.app.inject({method:'PUT',url:'/api/model-settings/profiles/'+fallbackId,headers,payload:{revision:node.modelSettings.view().revision,name:fallbackId,settings:{
+  ...initial,provider:'custom',protocol:'openai-completions',model:'generated-coding-fallback-model',baseUrl:'https://generated-fallback.invalid/v1',apiKey:'generated-unused'
+ }}});
+ assert.equal(saved.statusCode,200,saved.body);
+ const fixture=await receive(node),created=manualJob(node,fixture.ids),path='/api/memory-jobs/'+created.id;
+ const running=withFixtureOwnerModelWork(node,()=>node.memoryPipeline.run(created.id));
+ const deadline=Date.now()+6500;
+ while(Date.now()<deadline&&node.memoryPipeline.get(created.id).batches[0]?.errorCode!=='rate_limited')await wait(20);
+ const [batch]=node.memoryPipeline.get(created.id).batches;
+ assert.equal(batch.errorCode,'rate_limited');
+ const child=node.store.db.prepare("SELECT id FROM processing_jobs WHERE json_extract(json,'$.parentGrant.stepId')=?").get(batch.id);
+ assert.ok(child);
+ const old=node.executor.get(String(child.id))!;
+ assert.equal(old.state,'waiting');
+ assert.equal(old.error,'rate_limited');
+ assert.equal(old.attempts,0);
+ assert.ok(old.availableAt>Date.now()+1000);
+ const paused=await node.app.inject({method:'POST',url:path+'/pause',headers});
+ assert.equal(paused.json().status,'paused',paused.body);
+ await running;
+
+ // Restore the durable projection created when the parent yields before its
+ // child receives the quota response. The child and its original pin remain.
+ node.store.db.prepare("UPDATE execution_steps SET error='semantic_processing_pending' WHERE id=?").run(batch.id);
+ node.store.db.prepare("UPDATE memory_batches SET json=json_remove(json_set(json,'$.errorCode','semantic_processing_pending'),'$.availableAt') WHERE id=?").run(batch.id);
+ if(savedFallback){
+  const selected=node.modelSettings.select('memory',fallbackId);
+  const configuration=modelConfiguration(selected.id,selected.settings,node.modelSettings.view().revision);
+  node.store.db.prepare("UPDATE memory_jobs SET json=json_set(json,'$.configuration',json(?),'$.modelProfileId',?) WHERE id=?").run(JSON.stringify(configuration),fallbackId,created.id);
+ }
+ const retry=await node.app.inject({method:'POST',url:path+'/retry',headers,payload:{modelProfileId:fallbackId}});
+ assert.equal(retry.statusCode,202,retry.body);
+ assert.ok(node.executor.get(batch.id)!.availableAt<old.availableAt,'the same batch must wake before the old provider resets');
+ const done=await node.memoryPipeline.run(created.id);
+ assert.equal(done.status,'completed');
+ assert.equal(done.configuration?.provider,'custom');
+ assert.equal(done.batches[0].id,batch.id);
+ assert.deepEqual(done.batches[0].evidenceRanges,batch.evidenceRanges);
+ assert.equal(done.batches[0].reviewReceipt?.decision,'independent');
+ assert.equal(done.memoryIds.length,1);
+ assert.deepEqual(node.memories.get(done.memoryIds[0]).evidenceIds,[fixture.ids[0]]);
+ assert.equal(node.executor.get(old.id)?.availableAt,old.availableAt);
+ assert.equal(node.executor.get(old.id)?.state,'waiting');
+ assert.deepEqual(calls,[{provider:'deepseek',phase:'understanding'},{provider:'custom',phase:'understanding'},{provider:'custom',phase:'review'}]);
 });
 
 test('a failed native startup in a saved Coding tail retains its cause and retries only that original range',async t=>{

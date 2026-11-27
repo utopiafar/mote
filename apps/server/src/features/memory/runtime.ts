@@ -7,7 +7,6 @@ import {MemoryIntegrationSelectionError,requestMemoryIntegration} from '../../me
 import {scopeFields,validRange} from '../../query-scope.js';
 import {modelProfileIdSchema,type ModelSettingsStore} from '../../model-settings.js';
 import {modelConfiguration} from '../../model-configuration.js';
-import {isProviderQuotaWait} from '../../execution-failures.js';
 import type {MemoryStore} from '../../memory.js';
 import {memoryStrategyRefSchema} from '../../memory-strategy-contract.js';
 import type {MemoryPipeline} from '../../memory-pipeline.js';
@@ -142,7 +141,6 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
         return reply.code(202).send(job);
       }
       const selectedProvider=modelProfileId===undefined?undefined:dependencies.modelSettings.select('memory',modelProfileId).settings.provider;
-      const changingProvider=Boolean(selectedProvider&&job.configuration&&selectedProvider!==job.configuration.provider);
       // The retry can select a different model. Renew the owner grant for the
       // exact batch being retried, and for a parked phase of its current generation.
       const batches=new Map(job.batches.map(batch=>[batch.id,batch]));
@@ -153,9 +151,7 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
           if(!control.stepAuthority(step.id)){control.bindCurrentStep(step);continue;}
           const parent=step.kind==='memory.batch';
           const batch=batches.get(parent?step.id:String(step.input.batchId??''));
-          const selectingModel=parent&&modelProfileId!==undefined&&(
-            batch?.status==='failed'&&batch.errorCode!=='memory_context_required'||
-            changingProvider&&batch?.status==='pending'&&isProviderQuotaWait(batch.errorCode));
+          const selectingModel=parent&&batch&&selectedProvider!==undefined&&pipeline.retrySelectsModel(job,batch,selectedProvider);
           const currentPhase=step.kind.startsWith('memory.phase.')&&batch?.generationContract!==undefined&&step.input.generation===batch.generationContract;
           const waitingForAuthority=(parent||currentPhase)&&batch?.status==='pending'&&batch.errorCode==='background_model_authorization_required'&&
             step.state==='waiting'&&step.error==='background_model_authorization_required';

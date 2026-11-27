@@ -171,6 +171,7 @@ export const consumerScopes={
  },
  'memory-pipeline.ts':{
   'MemoryPipeline.batches':'memory',
+  'MemoryPipeline.pendingPreparation':'memory',
  },
  'lifecycle-extensions.ts':{
   recoverableMemoryJobs:'memory',
@@ -363,6 +364,8 @@ export const consumerScopes={
 /** Narrow shared reads: exact consumer + SQL fingerprint + table. Never a write
  * grant or a whole-file/table exemption. Stale grants fail just like debt. */
 export const sharedReads=[
+ {"from":"apps/server/src/memory-pipeline.ts","to":"execution_steps","symbol":"854a3a00b763e1e23658e02e2a2f5d2340971f563b3e386a017ce061cd260b85","scope":"MemoryPipeline.pendingPreparation","scopeFingerprint":"1a99375b760beca3339b411cc4f73f945c403d6c418dbddb1908b0d07f18b381","reason":"Read only the current preparation child's execution status, retry time, attempt count and provider error to release an exact idle Memory batch."},
+ {"from":"apps/server/src/memory-pipeline.ts","to":"processing_jobs","symbol":"854a3a00b763e1e23658e02e2a2f5d2340971f563b3e386a017ce061cd260b85","scope":"MemoryPipeline.pendingPreparation","scopeFingerprint":"1a99375b760beca3339b411cc4f73f945c403d6c418dbddb1908b0d07f18b381","reason":"Match a Memory batch to the preparation for its exact parent, generation and model pin, and verify it has produced no output."},
  {"from":"apps/server/src/usage-statistics.ts","to":"captures","symbol":"668766ba1d78a856c4fa47395d2c358e068442b4f959ff82d031edf036b74994","scope":"UsageStatistics.failures","scopeFingerprint":"3bf6b83fc70657c0cadbc29f7129b2b93cf0a0049c257538dd540adb70535fb7","reason":"Project recorded capture counts or metadata in the selected range, and require an existing capture for image failures."},
  {"from":"apps/server/src/usage-statistics.ts","to":"captures","symbol":"8b5e4fea3d7205d360d50a004dcd4ecbe1e8da2746c20678b6074f682e5be00b","scope":"UsageStatistics.counts","scopeFingerprint":"5d8ac7948b6f70408409b2ddcb5f8594b39eb5e9b2e562ee1a5b2ceceb414ebd","reason":"Project recorded capture counts or metadata in the selected range, and require an existing capture for image failures."},
  {"from":"apps/server/src/usage-statistics.ts","to":"captures","symbol":"df9dfc215f59d78b233d5e347a60c1c7aaf92fbc7426a6bd92a7922b3b77de1d","scope":"UsageStatistics.day","scopeFingerprint":"ae4dcfbd0a12132d661e402b69eb1304e4530a2b19b13379cc4ea4f25fc36098","reason":"Project recorded capture counts or metadata in the selected range, and require an existing capture for image failures."},
