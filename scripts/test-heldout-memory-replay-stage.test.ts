@@ -1,9 +1,10 @@
 import {generatedMemoryAnswer} from './test-heldout-memory-fixtures.js';
 /** Independent generated plumbing only; never reads heldout semantic files. */
+import {rejects} from 'node:assert/strict';
 import {test,after} from 'node:test';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {AgentTimeoutError,type QueryInput,type ContextReader} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
@@ -11,7 +12,7 @@ import {readConfigDocument,serializeConfigDocument} from '@mote/shared/config-fi
 import {sha256} from '../apps/server/src/evidence-store.js';
 import {base,check,equal,cloneClosed,ablateClone,json} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,StageSafetyError,readAdmissionChain} from './test-heldout-memory-replay-ledger.js';
-import {freezeStage,newOutput,noProvider,openNode,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';
+import {freezeStage,newOutput,noProvider,observeReplayModel,openNode,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';
 const root=process.env.MOTE_HELDOUT_TEST_OUTPUT??join(base,'heldout-stage-offline-'+Date.now());await mkdir(root,{mode:0o700});const metadata:Record<string,unknown>={schema:'mote-heldout-stage-mechanical-tests@1',realModelCalls:0,heldoutSemanticInputsRead:false,tests:[]};
 const record=async(name:string,value:unknown)=>{(metadata.tests as unknown[]).push({name,...value as object});await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});};
 async function setup(name:string){const output=await newOutput(join(root,name+'-freeze'));const manifest=await freezeStage(output,true),manifestHash=sha256(await readFile(join(output,'ROOT_SAFE_manifest.json')));return {manifest,manifestHash,ledgerDirectory:join(root,name+'-ledger')};}
@@ -26,6 +27,19 @@ for(const phase of ['extract','review'] as const)test(phase+' failure stops subs
 test('empty draft is independently reviewed and the next batch stays paused',async()=>{const data=await setup('empty'),count={value:0};const result=await runBatch({...data,output:await newOutput(join(root,'empty-stage')),stub:stub({count,empty:true})});check(result.succeeded,'mechanical_empty_stage_failed');equal(count.value,2,'mechanical_empty_review_count');equal(result.report.terminalBatchCounts,{completed:1,total:2},'mechanical_empty_started_next_batch');await record('empty',{passed:true,stubCalls:count.value,cumulative:result.report.cumulative});});
 test('invalid output fails before the pipeline can start a second generation',async()=>{const data=await setup('invalid'),count={value:0};const result=await runBatch({...data,output:await newOutput(join(root,'invalid-stage')),stub:stub({count,invalid:true})});check(!result.succeeded,'mechanical_invalid_not_stopped');equal(count.value,1,'mechanical_invalid_retried');await record('host-validation',{passed:true,stubCalls:count.value,cumulative:result.report.cumulative});});
 test('own outer deadline reaches the pipeline as timeout and stops future admissions',async()=>{const data=await setup('timeout'),count={value:0};let reason:unknown;const result=await runBatch({...data,output:await newOutput(join(root,'timeout-stage')),stub:stub({count,timeout:true,observeAbort:value=>{reason=value;}}),perOuterMs:10});check(!result.succeeded,'mechanical_timeout_not_stopped');equal(count.value,1,'mechanical_timeout_retried');check(reason instanceof AgentTimeoutError,'mechanical_timeout_abort_reason');const classification=await failureState(data,result.snapshot);equal([classification.batchCode,classification.terminalCode,classification.terminalStatus,classification.receiptStatus],['provider_timeout','outer_deadline_exceeded','failed','failed'],'mechanical_own_deadline_classification');await record('deadline',{passed:true,stubCalls:count.value,cumulative:result.report.cumulative,classification,typedAbortReason:true});});
+test('outer deadline aborts stalled preparation before model admission',{timeout:1000},async()=>{
+  const controller=new AbortController(),error=new AgentTimeoutError();
+  let admissions=0;
+  const observation=observeReplayModel({question:'Generated preparation'},controller,()=>{admissions++;},10,()=>error);
+  try{
+    await rejects(observation.deadline,failure=>failure===error);
+    check(controller.signal.reason===error,'preparation_deadline_did_not_abort');
+    observation.onTrace({type:'model.started',runId:randomUUID()});
+    equal(admissions,0,'late_start_admitted_after_preparation_timeout');
+    equal(observation.counts(),{modelRunStarts:null,repairs:null},'preparation_timeout_counted_a_turn');
+  }finally{observation.dispose();}
+  await record('preparation-deadline',{passed:true,stubCalls:0});
+});
 test('a provider-owned timeout is not attributed to the runner timer',async()=>{const data=await setup('provider-timeout');let calls=0;const result=await runBatch({...data,output:await newOutput(join(root,'provider-timeout-stage')),stub:async()=>{calls++;throw new AgentTimeoutError();}});check(!result.succeeded,'mechanical_provider_timeout_not_stopped');equal(calls,1,'mechanical_provider_timeout_retried');const classification=await failureState(data,result.snapshot);equal([classification.batchCode,classification.terminalCode],['provider_timeout','outer_failed'],'mechanical_foreign_timeout_attributed_to_runner');await record('provider-timeout',{passed:true,stubCalls:calls,classification});});
 test('a legacy same-code error without this runner timer firing is not its deadline',async()=>{const data=await setup('foreign-deadline-code');let calls=0;const result=await runBatch({...data,output:await newOutput(join(root,'foreign-deadline-code-stage')),stub:async()=>{calls++;throw new StageSafetyError('outer_deadline_exceeded');}});check(!result.succeeded,'mechanical_foreign_code_not_stopped');equal(calls,1,'mechanical_foreign_code_retried');const classification=await failureState(data,result.snapshot);equal([classification.batchCode,classification.terminalCode],['model_failed','outer_failed'],'mechanical_foreign_code_attributed_to_timer');await record('foreign-deadline-code',{passed:true,stubCalls:calls,classification});});
 test('user interruption retains its abort reason and does not become an outer deadline',async()=>{const data=await setup('user-abort');let calls=0,reason:unknown;const result=await runBatch({...data,output:await newOutput(join(root,'user-abort-stage')),stub:async(_reader,input)=>{calls++;return new Promise<never>((_,reject)=>{input.signal!.addEventListener('abort',()=>{reason=input.signal!.reason;reject(reason);},{once:true});setImmediate(()=>process.emit('SIGINT'));});}});check(!result.succeeded,'mechanical_user_abort_not_stopped');equal(calls,1,'mechanical_user_abort_retried');check(reason instanceof Error&&reason.name==='AbortError'&&!(reason instanceof AgentTimeoutError),'mechanical_user_abort_reason_changed');const classification=await failureState(data,result.snapshot);check(classification.batchCode!=='provider_timeout','mechanical_user_abort_became_timeout');equal(classification.terminalCode,'outer_failed','mechanical_user_abort_deadline_code');equal(classification.stopCodes,['stage_interrupted'],'mechanical_user_abort_stop_changed');await record('user-abort',{passed:true,stubCalls:calls,classification});});
@@ -38,19 +52,25 @@ test('executor upgrade keeps experiment identity and all existing admissions',as
 for(const receiptStatus of ['running','failed'] as const)test('terminal receipt '+receiptStatus+' cannot commit a successful stage',async()=>{const path=join(root,'receipt-'+receiptStatus),ledger=new AdmissionLedger(path,'mechanical');ledger.begin('stage','parent',2);const id=ledger.reserve('logical','input','receipt');ledger.terminal(id,'completed','ok',{modelRunStarts:1,repairs:0});ledger.receipts([{id:'receipt',status:receiptStatus}]);let code='';try{ledger.finish('snapshot',true);}catch(error){code=error instanceof StageSafetyError?error.code:'other';}equal(code,receiptStatus==='running'?'admission_receipt_unknown':'terminal_receipt_conflict','mechanical_receipt_gate_wrong');check(receiptStatus==='running'?ledger.summary().unreconciledReceipts===1:ledger.summary().terminalReceiptConflicts===1,'mechanical_receipt_unknown_hidden');ledger.close();await record('receipt-'+receiptStatus,{passed:true,stubCalls:0});});
 test('duplicate logical phase is refused before a second provider admission',async()=>{const path=join(root,'duplicate-phase'),ledger=new AdmissionLedger(path,'mechanical');ledger.begin('stage','parent',2);const id=ledger.reserve('same-batch-extract','input','receipt1');ledger.terminal(id,'completed','ok',{modelRunStarts:1,repairs:0});let code='';try{ledger.reserve('same-batch-extract','input','receipt2');}catch(error){code=error instanceof StageSafetyError?error.code:'other';}equal(code,'outer_retry_forbidden','mechanical_phase_guard');ledger.rejectedReceipts([{id:'receipt2',status:'failed'}]);check(ledger.summary().admitted===1&&ledger.summary().hostRejectedReceipts===1&&ledger.summary().stopped,'mechanical_phase_ledger_wrong');ledger.close();await record('duplicate-phase',{passed:true,stubCalls:0,admissions:1,hostRejectedReceipt:1});});
 
-test('a legacy absolute data path opens only the disposable clone',async()=>{
+test('a legacy config opens only the disposable clone and preserves its secret reference',async()=>{
   const {manifest}=await setup('legacy-path'),path=join(manifest.seed,'mote.yaml');
   const {savedDocument}=readConfigDocument(path,{});
-  await writeFile(path,serializeConfigDocument({...savedDocument,storage:{...savedDocument.storage,dataDir:manifest.seed}}),{mode:0o600});
-  const original=await treeHash(manifest.seed),vault=join(root,'legacy-path-clone');
-  await cloneClosed(manifest.seed,vault);
-  const {node,request}=await openNode(vault,manifest.model,manifest.contextTime,noProvider);
+  const key='MOTE_HELDOUT_LEGACY_DATA_KEY',reference='${'+key+'}',previous=process.env[key];
+  process.env[key]=randomBytes(32).toString('hex');
   try{
-    equal(node.store.directory,vault,'legacy_clone_opened_original');
-    await request('POST','/api/sources',{id:'clone-only',name:'Generated clone only',kind:'custom',deviceId:'generated-clone',platform:'import',retention:'archive'});
-  }finally{await node.app.close();}
-  equal(await treeHash(manifest.seed),original,'legacy_original_vault_changed');
+    await writeFile(path,serializeConfigDocument({...savedDocument,storage:{...(savedDocument.storage as object),dataDir:manifest.seed,dataKey:reference}}),{mode:0o600});
+    const original=await treeHash(manifest.seed),vault=join(root,'legacy-path-clone');
+    await cloneClosed(manifest.seed,vault);
+    const {node,request}=await openNode(vault,manifest.model,manifest.contextTime,noProvider);
+    try{
+      equal(node.store.directory,vault,'legacy_clone_opened_original');
+      await request('POST','/api/sources',{id:'clone-only',name:'Generated clone only',kind:'custom',deviceId:'generated-clone',platform:'import',retention:'archive'});
+    }finally{await node.app.close();}
+    const stored=readConfigDocument(join(vault,'mote.yaml')).savedDocument.storage as {dataKey?:string};
+    equal(stored.dataKey,reference,'legacy_secret_reference_changed');
+    equal(await treeHash(manifest.seed),original,'legacy_original_vault_changed');
+  }finally{if(previous===undefined)delete process.env[key];else process.env[key]=previous;}
   await record('legacy-absolute-path',{passed:true,stubCalls:0});
 });
 
-after(async()=>{metadata.status=(metadata.tests as unknown[]).length===17?'passed':'incomplete';metadata.stubModelCalls=(metadata.tests as Array<{stubCalls:number}>).reduce((sum,row)=>sum+row.stubCalls,0);metadata.testCount=(metadata.tests as unknown[]).length;await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});});
+after(async()=>{metadata.status=(metadata.tests as unknown[]).length===18?'passed':'incomplete';metadata.stubModelCalls=(metadata.tests as Array<{stubCalls:number}>).reduce((sum,row)=>sum+row.stubCalls,0);metadata.testCount=(metadata.tests as unknown[]).length;await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});});

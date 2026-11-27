@@ -49,11 +49,18 @@ export function integrationSelection(db:DatabaseSync,contextTime:string):Integra
   const capacity=Math.min(50,lifecycle.consolidation.maxItems);check(inputs.length<=capacity,'integration_complete_set_over_capacity');
   return {schema:'mote-heldout-integration-selection@1',contextTime,capacity,allCardsHash:hashObject(rows),inputs,excluded,protectedHash:hashObject(protectedTables(db))};
 }
-async function selectionAt(parent:string,contextTime:string){await closed(parent);const db=new DatabaseSync(join(parent,'mote.sqlite'),{readOnly:true});try{return integrationSelection(db,contextTime);}finally{db.close();}}
+async function selectionAt(parent:string,contextTime:string,extraction:{jobId:string;protectedHash:string}){
+  await closed(parent);
+  const db=new DatabaseSync(join(parent,'mote.sqlite'),{readOnly:true});
+  try{
+    equal(hashObject(protectedTables(db,{memoryJobId:extraction.jobId})),extraction.protectedHash,'integration_protected_source_changed');
+    return integrationSelection(db,contextTime);
+  }finally{db.close();}
+}
 function selectionFields(plan:IntegrationPlan):IntegrationSelection{const {experimentHash:_experimentHash,wave:_wave,totalBatches:_totalBatches,settingsHash:_settingsHash,bindingsHash:_bindingsHash,wavePlan:_wavePlan,...selection}=plan;return selection;}
 async function boundary(root:Manifest,cursor:ReturnType<typeof phaseCursor>){
   check(cursor.nextBatch===cursor.totalBatches&&!cursor.integrationDone&&cursor.evaluatedPairs===0,'integration_phase_not_ready');
-  if(!cursor.wavePlan){check(cursor.wave===1,'integration_wave_plan_missing');return {settingsHash:root.settingsHash,bindingsHash:root.bindingsHash,protectedHash:root.protectedHash};}
+  if(!cursor.wavePlan){check(cursor.wave===1,'integration_wave_plan_missing');return {jobId:root.jobId,settingsHash:root.settingsHash,bindingsHash:root.bindingsHash,protectedHash:root.protectedHash};}
   const plan=await readRef<WavePlan>(cursor.wavePlan);check(plan.wave===cursor.wave&&plan.contextTime===cursor.contextTime&&plan.batchPlan.length===cursor.totalBatches,'integration_wave_plan_changed');return plan;
 }
 export async function validateIntegration(m:IntegrationManifest,ledgerDirectory:string){
@@ -66,13 +73,13 @@ export async function validateIntegration(m:IntegrationManifest,ledgerDirectory:
   const cursor=phaseCursor(events,root,m.recoveryLineage,m.normalContinuation,m.normalReviewRecovery,m.askRecovery),expected=await boundary(root,cursor);check(cursor.wave===m.task.wave&&cursor.contextTime===m.task.contextTime&&cursor.archiveHeadHash===m.parent.treeHash,'integration_parent_not_canonical');
   check(await treeHash(m.parent.path)===m.parent.treeHash,'integration_parent_changed');const plan=await readRef<IntegrationPlan>(m.task.selectionPlan);
   check(plan.wave===cursor.wave&&plan.contextTime===cursor.contextTime&&plan.experimentHash===m.experimentHash&&plan.totalBatches===cursor.totalBatches,'integration_selection_scope_changed');equal(plan.wavePlan,cursor.wavePlan,'integration_wave_plan_changed');
-  equal({settingsHash:plan.settingsHash,bindingsHash:plan.bindingsHash,protectedHash:plan.protectedHash},{settingsHash:expected.settingsHash,bindingsHash:expected.bindingsHash,protectedHash:expected.protectedHash},'integration_configuration_changed');
-  equal(await selectionAt(m.parent.path,m.task.contextTime),selectionFields(plan),'integration_selection_changed');return {root,cursor,plan,ledgerHead:events.at(-1)!.sha256};
+  equal([plan.settingsHash,plan.bindingsHash],[expected.settingsHash,expected.bindingsHash],'integration_configuration_changed');
+  equal(await selectionAt(m.parent.path,m.task.contextTime,expected),selectionFields(plan),'integration_selection_changed');return {root,cursor,plan,ledgerHead:events.at(-1)!.sha256};
 }
 /** No app/model is opened during freeze. Selection details are sealed, not ROOT_SAFE. */
 export async function freezeIntegration(options:{rootManifest:string;previousManifest:string;parent:string;ledgerDirectory:string;validation:string;supervisorPath:string;output:string;recoveryLineage?:PhaseManifest['recoveryLineage'];normalContinuation?:PhaseManifest['normalContinuation'];normalReviewRecovery?:PhaseManifest['normalReviewRecovery'];askRecovery?:PhaseManifest['askRecovery']}){
   const rootRef=await ref(options.rootManifest),root=await rootAndRuntime(rootRef),events=inspectAdmissionLedger(options.ledgerDirectory,root.experimentHash,options.recoveryLineage,options.normalContinuation,options.normalReviewRecovery,options.askRecovery),cursor=phaseCursor(events,root,options.recoveryLineage,options.normalContinuation,options.normalReviewRecovery,options.askRecovery),expected=await boundary(root,cursor);
-  const selection=await selectionAt(options.parent,cursor.contextTime);equal(selection.protectedHash,expected.protectedHash,'integration_protected_source_changed');
+  const selection=await selectionAt(options.parent,cursor.contextTime,expected);
   const plan:IntegrationPlan={...selection,experimentHash:root.experimentHash,wave:cursor.wave,totalBatches:cursor.totalBatches,settingsHash:expected.settingsHash,bindingsHash:expected.bindingsHash,...(cursor.wavePlan?{wavePlan:cursor.wavePlan}:{})};
   const planPath=join(options.output,'DO_NOT_OPEN','integration-selection.json');await privateWrite(planPath,plan);
   const m:IntegrationManifest={...(options.recoveryLineage?{recoveryLineage:options.recoveryLineage}:{}),...(options.normalContinuation?{normalContinuation:options.normalContinuation}:{}),...(options.normalReviewRecovery?{normalReviewRecovery:options.normalReviewRecovery}:{}),...(options.askRecovery?{askRecovery:options.askRecovery}:{}),schema:'mote-heldout-phase-manifest@1',kind:root.kind,experimentHash:root.experimentHash,rootManifest:rootRef,previousManifest:await ref(options.previousManifest),validation:await ref(options.validation),runtime:root.runtime,executor:{supervisorPath:options.supervisorPath,supervisorHash:sha256(await readFile(options.supervisorPath))},codeHashes:await codeHashes(),limits:options.normalContinuation?normalLimits.integration:integrationLimits,parent:{path:options.parent,treeHash:await treeHash(options.parent),ledgerHeadHash:events.at(-1)!.sha256},task:{kind:'integration',wave:cursor.wave,contextTime:cursor.contextTime,selectionPlan:await ref(planPath)}};
@@ -123,7 +130,7 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
         let callId:string|undefined,attempt:ReturnType<typeof observeReplayModel>|undefined;
         try{
           check(admissionOpen&&!ledger.stopped,'integration_admission_closed');check(!inFlight,'integration_concurrency');
-          equal(hashObject(protectedTables(node!.store.db,windowId)),plan.protectedHash,'integration_admission_source_changed');
+          equal(hashObject(protectedTables(node!.store.db,{integrationId:windowId})),plan.protectedHash,'integration_admission_source_changed');
           const trace=input.traceContext,phase=trace?.phase;check(windowId&&trace?.jobId===windowId&&trace.operationId==='workflow:lifecycle:'+windowId&&(phase==='extract'||phase==='review')&&input.skill==='memory-integration'&&input.responseMode==='memory-extraction','integration_outer_scope');check(input.contextTime===m.task.contextTime,'integration_outer_clock');
           check(input.modelOverride===root.model.model&&trace.model===root.model.model&&trace.provider===root.model.provider&&trace.protocol===root.model.protocol,'integration_outer_model_changed');
           const active=node!.lifecycle.view().extensions.find(e=>e.id==='consolidation')!.active;check(active?.id===windowId&&active.checkpoint&&active.checkpoint!=='completed','integration_window_changed');const checkpoint=JSON.parse(active.checkpoint),domain=order.next(checkpoint.completed,phase,input.question);
@@ -146,7 +153,7 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
       await privateWrite(join(output,'DO_NOT_OPEN','window.json'),requested);await node.lifecycle.tick();
       check(!ledger.stopped,'integration_circuit_stopped');const state=node.lifecycle.view().extensions.find(e=>e.id==='consolidation')!;
       check(!state.active&&!state.error&&state.lastRun?.id===windowId&&node.executor.get('lifecycle:'+windowId)?.state==='succeeded','integration_window_not_committed');report.completedDomainCount=order.activeDomains.length;
-      equal(hashObject(protectedTables(node.store.db,windowId)),plan.protectedHash,'integration_protected_source_mutated');
+      equal(hashObject(protectedTables(node.store.db,{integrationId:windowId})),plan.protectedHash,'integration_protected_source_mutated');
     }
     succeeded=true;
   }catch(error){failure=error;ledger.stop(safeCode(error));await sealedError(join(output,'DO_NOT_OPEN'),error);}
@@ -154,7 +161,7 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
     admissionOpen=false;if(node)try{await node.app.close();}catch(error){failure??=error;succeeded=false;ledger.stop('integration_close_failed');await sealedError(join(output,'DO_NOT_OPEN'),error);}
     try{
       await closed(vault);const db=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});let receipts:UsageReceipt[]=[];
-      try{sqliteCheck(db);receipts=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt).filter(row=>!inherited.has(row.id));report.sourceProtectedHash=hashObject(protectedTables(db,windowId));if(windowId){const state=JSON.parse(String(db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));report.completedDomainCount=state.active?.checkpoint&&state.active.checkpoint!=='completed'?JSON.parse(state.active.checkpoint).completed.length:state.lastRun?.id===windowId?order.activeDomains.length:0;}}finally{db.close();}
+      try{sqliteCheck(db);receipts=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt).filter(row=>!inherited.has(row.id));report.sourceProtectedHash=hashObject(protectedTables(db,{integrationId:windowId}));if(windowId){const state=JSON.parse(String(db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));report.completedDomainCount=state.active?.checkpoint&&state.active.checkpoint!=='completed'?JSON.parse(state.active.checkpoint).completed.length:state.lastRun?.id===windowId?order.activeDomains.length:0;}}finally{db.close();}
       const admitted=new Set(ledger.admitted.map(e=>e.data.receiptId)),rejected=receipts.filter(row=>!admitted.has(row.id));report.hostRejectedReceipts=rejected.length;if(rejected.length)succeeded=false;
       const safeReceipt=(row:UsageReceipt)=>({id:row.id,status:row.status,tokens:row.tokens,estimatedCost:row.estimatedCost,currency:row.currency,durationMs:row.durationMs});
       ledger.rejectedReceipts(rejected.map(safeReceipt));ledger.receipts(receipts.filter(row=>admitted.has(row.id)).map(safeReceipt));report.terminalUsage={readAfterClose:true,inherited:inherited.size,new:receipts.length,totals:usageTotals(receipts)};check(receipts.every(row=>row.status!=='running'),'integration_usage_unfinished');equal(report.sourceProtectedHash,plan.protectedHash,'integration_closed_source_mutated');

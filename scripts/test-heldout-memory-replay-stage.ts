@@ -56,8 +56,14 @@ function replayStub(reader:ContextReader,stub:Stub):QueryAgent{
 
 function observeReplayModel(input:QueryInput,control:AbortController,admit:()=>void,timeoutMs:number,timeoutError:()=>Error){
   let requests=0,repairs=0;let guardFailure:unknown;
-  let rejectDeadline!:(reason:unknown)=>void,timer:ReturnType<typeof setTimeout>|undefined;
-  const deadline=new Promise<never>((_resolve,reject)=>{rejectDeadline=reject;});
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  // Include Host preparation in the outer deadline, even when no model starts.
+  const deadline=new Promise<never>((_resolve,reject)=>{
+    timer=setTimeout(()=>{
+      const reason=control.signal.aborted?control.signal.reason:timeoutError();
+      reject(reason);control.abort(reason);
+    },timeoutMs);
+  });
   const abort=()=>control.abort(input.signal?.reason);
   input.signal?.addEventListener('abort',abort,{once:true});
   const traces:unknown[]=[];
@@ -70,13 +76,7 @@ function observeReplayModel(input:QueryInput,control:AbortController,admit:()=>v
       // Reserve on that same stack before the runtime can start its turn.
       try{
         input.onTrace?.(event);
-        if(requests===0){
-          admit();
-          timer=setTimeout(()=>{
-            const reason=control.signal.aborted?control.signal.reason:timeoutError();
-            rejectDeadline(reason);control.abort(reason);
-          },timeoutMs);
-        }
+        if(requests===0)admit();
         requests++;if((event.payload as {repair?:boolean}|undefined)?.repair===true)repairs++;
       }
       catch(error){guardFailure=error;control.abort(error);}
@@ -116,14 +116,30 @@ async function treeHash(directory:string){const names=(await treeFiles(directory
 export async function codeHashes(){const tracked=execFileSync('git',['ls-files','apps/server/src','packages/agent/src','packages/agent/skills','packages/shared/src','packages/diagnostics/src','package-lock.json','package.json','tsconfig.base.json','apps/server/package.json','apps/server/tsconfig.json','packages/agent/package.json','packages/shared/package.json','packages/diagnostics/package.json'],{cwd:repositoryRoot,encoding:'utf8'}).trim().split('\n').filter(Boolean);const paths=[...tracked,'scripts/test-heldout-memory-replay.ts','scripts/test-heldout-memory-replay-stage.ts','scripts/test-heldout-memory-replay-ledger.ts','scripts/test-heldout-memory-replay-sequence.ts','scripts/test-heldout-memory-replay-integration.ts','scripts/test-heldout-memory-replay-ask.ts','scripts/test-heldout-memory-replay-ask-schema.json','scripts/test-heldout-memory-replay-recovery.ts','scripts/test-heldout-memory-fixtures.ts'];for(const name of ['agent','shared','diagnostics'])for(const file of await treeFiles(join(repositoryRoot,'packages',name,'dist')))paths.push(join('packages',name,'dist',file));return Object.fromEntries(await Promise.all([...new Set(paths)].sort().map(async file=>[file,sha256(await readFile(join(repositoryRoot,file)))])));}
 const mutable=new Set([...memoryDerivedTables,'storage_ledger','model_usage','execution_operations','execution_steps','execution_failures','execution_fairness','execution_jobs','execution_operation_steps','execution_sequence','execution_resources','operation_changes','operation_progress','run_execution_owners']);
 const replayAuthorityPrefix='heldout-replay:';
-function protectedTables(db:DatabaseSync,integrationId?:string){
+function protectedTables(db:DatabaseSync,{memoryJobId,integrationId}:{memoryJobId?:string;integrationId?:string}={}){
   const protectedRows=Object.fromEntries(Object.entries(tables(db)).filter(([name])=>!mutable.has(name)));
-  // The replay has its own owner work receipts. Other work and every source
-  // admission, trigger claim and authorization setting remain protected.
-  for(const [table,column] of [['background_model_work','id'],['background_model_step_authority','work_id']]){
-    const rows=db.prepare(`SELECT * FROM ${table} WHERE ${column} NOT GLOB ? AND ${column} IS NOT ?`).all(replayAuthorityPrefix+'memory:*',integrationId?'owner-integration:'+integrationId:null).map(row=>JSON.stringify(row)).sort();
-    protectedRows[table]={rows:rows.length,sha256:hashObject(rows)};
-  }
+  if(!memoryJobId&&!integrationId)return protectedRows;
+  // Exclude only manual grants for this operation and their own execution steps.
+  const memoryOperation=memoryJobId?'memory:'+memoryJobId:undefined;
+  const workPrefix=memoryOperation?replayAuthorityPrefix+memoryOperation+':':undefined;
+  const integrationWork=integrationId?'owner-integration:'+integrationId:undefined;
+  const operation=memoryOperation??'workflow:lifecycle:'+integrationId;
+  const workRows=db.prepare('SELECT * FROM background_model_work').all();
+  const ownWork=new Set(workRows.filter(row=>{
+    const id=String(row.id);
+    if(id!==integrationWork&&!(workPrefix&&id.startsWith(workPrefix)))return false;
+    const work=JSON.parse(String(row.json));
+    if(work.kind!=='manual'||work.id!==id)return false;
+    return id===integrationWork
+      ? Array.isArray(work.roots)&&work.roots.length===0
+      : Array.isArray(work.roots)&&work.roots.length===1&&work.roots[0]===memoryOperation&&id===workPrefix+hashObject(work.connections);
+  }).map(row=>row.id));
+  const ownSteps=new Set(db.prepare('SELECT id FROM execution_steps WHERE operation_id=?').all(operation).map(row=>row.id));
+  const grants=workRows.filter(row=>!ownWork.has(row.id)).map(row=>JSON.stringify(row)).sort();
+  const stepGrants=db.prepare('SELECT * FROM background_model_step_authority').all()
+    .filter(row=>!ownWork.has(row.work_id)||!ownSteps.has(row.step_id)).map(row=>JSON.stringify(row)).sort();
+  protectedRows.background_model_work={rows:grants.length,sha256:hashObject(grants)};
+  protectedRows.background_model_step_authority={rows:stepGrants.length,sha256:hashObject(stepGrants)};
   if(integrationId){
     const rows=db.prepare('SELECT * FROM memory_integration_deliveries WHERE step_id IS NOT ?').all('lifecycle:'+integrationId).map(row=>JSON.stringify(row)).sort();
     protectedRows.memory_integration_deliveries={rows:rows.length,sha256:hashObject(rows)};
@@ -203,7 +219,7 @@ export async function freezeStage(output:string,mechanical=false,mechanicalRecor
     }
     const heads=node.store.db.prepare('SELECT id FROM material_heads WHERE retired=0 ORDER BY id').all();const ids=[...new Set(heads.flatMap(row=>node.materials.evidenceIds(node.materials.get(String(row.id))!.ref)))];check(ids.length>0,'stage_no_inputs');const job=node.memoryPipeline.create({evidenceIds:ids,recipes,contextTime:semantics,timeZone:'Asia/Shanghai',batchCharacters:mechanical&&mechanicalRecords===2?1024:12000});check(job.totalBatches===(mechanical?2*mechanicalRecords:6),'stage_batch_plan_changed');node.memoryPipeline.pause(job.id);check(node.memoryPipeline.get(job.id).status==='paused','freeze_pause_failed');
     const batchRows=node.store.db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(job.id).map(row=>JSON.parse(String(row.json)));check(batchRows.every(row=>row.status==='pending'&&row.attempts===0),'freeze_started_model_work');
-    manifest={schema:'mote-heldout-first-batch-manifest@1',executor:{supervisorPath:supervisor,supervisorHash:sha256(await readFile(supervisor))},runtime:await runtimePin(),experimentHash:'pending',experimentPlan,kind:mechanical?'mechanical':'heldout',revision:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim(),corpusFreeze:freezes.corpus,evaluationFreeze:freezes.evaluation,codeHashes:await codeHashes(),model,contextTime:semantics,limits:fixedLimits,seed:join(output,'DO_NOT_OPEN','frozen-seed'),seedTreeHash:'pending',jobId:job.id,batchPlan:batchRows.map(row=>({id:row.id,index:row.index,sha256:batchPin(row),recipe:row.strategy?.recipe})),settingsHash:hashObject(settings(node)),bindingsHash:hashObject(bindings(node)),protectedHash:hashObject(protectedTables(node.store.db)),scope:{wave:1,deliveries,materials:heads.length,selectedBatchIndex:0,futureWavesImported:false},remainingRunner:'Integration, later-wave ingestion, multi-question A/B and failure retry are not implemented or validated by this runner.'};
+    manifest={schema:'mote-heldout-first-batch-manifest@1',executor:{supervisorPath:supervisor,supervisorHash:sha256(await readFile(supervisor))},runtime:await runtimePin(),experimentHash:'pending',experimentPlan,kind:mechanical?'mechanical':'heldout',revision:execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim(),corpusFreeze:freezes.corpus,evaluationFreeze:freezes.evaluation,codeHashes:await codeHashes(),model,contextTime:semantics,limits:fixedLimits,seed:join(output,'DO_NOT_OPEN','frozen-seed'),seedTreeHash:'pending',jobId:job.id,batchPlan:batchRows.map(row=>({id:row.id,index:row.index,sha256:batchPin(row),recipe:row.strategy?.recipe})),settingsHash:hashObject(settings(node)),bindingsHash:hashObject(bindings(node)),protectedHash:hashObject(protectedTables(node.store.db,{memoryJobId:job.id})),scope:{wave:1,deliveries,materials:heads.length,selectedBatchIndex:0,futureWavesImported:false},remainingRunner:'Integration, later-wave ingestion, multi-question A/B and failure retry are not implemented or validated by this runner.'};
     await privateWrite(join(output,'DO_NOT_OPEN','batch-plan.json'),batchRows);
   }finally{await node.app.close();}
   await closed(vault);await cloneClosed(vault,manifest!.seed);manifest!.seedTreeHash=await treeHash(manifest!.seed);const db=new DatabaseSync(join(manifest!.seed,'mote.sqlite'),{readOnly:true});try{check(Number(db.prepare('SELECT count(*) n FROM model_usage').get()!.n)===0,'freeze_usage_not_empty');sqliteCheck(db);}finally{db.close();}
@@ -219,7 +235,7 @@ function assertNextStage(events:LedgerEvent[],m:Manifest,parentHash:string,index
 }
 async function assertPendingBoundary(parent:string,m:Manifest,index:number){
   await closed(parent);const db=new DatabaseSync(join(parent,'mote.sqlite'),{readOnly:true});try{sqliteCheck(db);
-    equal(hashObject(protectedTables(db)),m.protectedHash,'source_snapshot_changed');const row=db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(m.jobId);check(row,'resume_job_missing');const job=JSON.parse(String(row.json));check(job.status==='paused'&&job.contextTime===m.contextTime&&job.failedBatches===0,'resume_job_not_clean');
+    equal(hashObject(protectedTables(db,{memoryJobId:m.jobId})),m.protectedHash,'source_snapshot_changed');const row=db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(m.jobId);check(row,'resume_job_missing');const job=JSON.parse(String(row.json));check(job.status==='paused'&&job.contextTime===m.contextTime&&job.failedBatches===0,'resume_job_not_clean');
     const batches=db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(m.jobId).map(row=>JSON.parse(String(row.json)));check(batches.length===m.batchPlan.length&&batches.every((batch,i)=>batch.id===m.batchPlan[i].id&&(i<index?batch.status==='completed':batch.status==='pending'&&batch.attempts===0&&batchPin(batch)===m.batchPlan[i].sha256)),'resume_batch_boundary_invalid');
     check(batches.findIndex(batch=>batch.status!=='completed')===index,'resume_index_not_next');check(batches.slice(0,index).every(batch=>batch.chunks.every((chunk:any)=>db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(chunk.key))),'resume_completed_checkpoint_missing');
   }finally{db.close();}
@@ -260,8 +276,9 @@ export async function runBatch(options:{manifest:Manifest;manifestHash:string;ou
     // Continuation accepts only the preceding completed closed snapshot from this append ledger.
     const prior=ledger.events.filter(row=>row.kind==='stage-close').at(-1);if(!authority&&index>0)check(prior?.data.succeeded&&prior.data.snapshotHash===parentHash,'resume_parent_not_latest_checkpoint');else if(!authority)check(!ledger.admitted.length,'fresh_seed_cannot_rollback_ledger');
     if(checkedLedgerHead)check(ledger.events.at(-1)?.sha256===checkedLedgerHead,'resume_ledger_changed');ledger.bindExecutor(options.manifestHash,authority?.manifest.previousManifest.sha256??m.continuation?.previousManifestHash,authority?.manifest.validation.sha256??m.continuation?.offlineValidationHash);ledger.begin(stage,parentHash,reviewOnly?1:2);ledgerStarted=true;await cloneClosed(parent,vault);
-    const initial=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});try{inherited=new Set(initial.prepare('SELECT id FROM model_usage').all().map(row=>String(row.id)));equal(hashObject(protectedTables(initial)),m.protectedHash,'source_snapshot_changed');}finally{initial.close();}
+    const initial=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});try{inherited=new Set(initial.prepare('SELECT id FROM model_usage').all().map(row=>String(row.id)));equal(hashObject(protectedTables(initial,{memoryJobId:m.jobId})),m.protectedHash,'source_snapshot_changed');}finally{initial.close();}
     ({node}=await openNode(vault,m.model,m.contextTime,stub,recoveryE||normal?600000:300000));equal(hashObject(bindings(node)),m.bindingsHash,'recipe_bindings_changed');equal(hashObject(settings(node)),m.settingsHash,'runtime_settings_changed');if(recoveryE||normal){const {readRecoveryEPlan}=await import('./test-heldout-memory-replay-ledger.js');const {assertRecoveryESettings}=await import('./test-heldout-memory-replay-recovery.js');assertRecoveryESettings(node,recoveryE?readRecoveryEPlan(recoveryE.plan).oldSettingsHash:readNormalPlan(normal!.plan).oldSettingsHash,node.memoryPipeline.get(m.jobId).modelProfileId);report.effectiveAgentTimeoutMs=node.modelSettings.select('memory',node.memoryPipeline.get(m.jobId).modelProfileId).settings.agentTimeoutMs;}const job=node.memoryPipeline.get(m.jobId),target=m.batchPlan[index];check(target&&job.status==='paused','stage_job_not_paused');check(batchPin(JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(target.id)!.json)))===target.sha256,'selected_batch_pin_changed');check(job.batches[index].id===target.id&&job.batches[index].status==='pending'&&job.batches[index].attempts===(authority?.expectedAttempt??1)-1,'target_batch_not_fresh');check(job.batches.every((batch,i)=>i<index?batch.status==='completed':batch.status==='pending'),'stage_batch_boundary_invalid');
+    equal(hashObject(protectedTables(node.store.db,{memoryJobId:m.jobId})),m.protectedHash,'protected_source_mutated_at_open');
     // This synchronous public projection also runs for a cached empty batch with no query.
     // Pause after the ordinary running projection so the selected grant can finish and commit.
     const originalProject=node.memoryPipeline.engine.project.bind(node.memoryPipeline.engine);node.memoryPipeline.engine.project=(id:string)=>{originalProject(id);if(id===target.id&&node!.memoryPipeline.engine.get(id)?.state==='running')node!.memoryPipeline.pause(m.jobId);};
@@ -285,15 +302,15 @@ export async function runBatch(options:{manifest:Manifest;manifestHash:string;ou
           const issue=await input.validateOutput?.(answer as AgentAnswer);check(!issue,'outer_host_validation_failed');await privateWrite(join(output,'DO_NOT_OPEN',callId+'-result.json'),answer);ledger.terminal(callId,'completed','ok',attempt.counts());return answer;
         }catch(cause){const error=attempt.failure(cause);control.abort(error);await sealedError(join(output,'DO_NOT_OPEN'),error);if(callId)ledger.terminal(callId,'failed',error instanceof StageOuterDeadlineError?'outer_deadline_exceeded':error instanceof StageSafetyError&&error.code!=='outer_deadline_exceeded'?error.code:'outer_failed',attempt.counts());throw error;}
         finally{attempt.dispose();try{if(callId)await privateWrite(join(output,'DO_NOT_OPEN',callId+'-trace.json'),attempt.traces);}finally{inFlight=false;activeControl=undefined;}}
-      }catch(error){ledger.stop(safeCode(error)==='internal_error_details_sealed'?'outer_failed':safeCode(error));node!.memoryPipeline.pause(m.jobId);throw error;}
+      }catch(error){const code=safeCode(error);ledger.stop(error instanceof StageOuterDeadlineError?'outer_deadline_exceeded':code==='internal_error_details_sealed'?'outer_failed':code);node!.memoryPipeline.pause(m.jobId);throw error;}
     };
     finalJob=await runOwnedMemory(node,m.jobId,normal||(authority?.expectedAttempt??1)>1?target.id:undefined);check(!ledger.stopped,'stage_circuit_stopped');check(finalJob.batches[index].status==='completed'&&finalJob.failedBatches===0&&!finalJob.runningBatches,'selected_batch_not_completed');const storedBatch=JSON.parse(String(node.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(target.id)!.json));check(storedBatch.chunks.every((chunk:any)=>node!.store.db.prepare('SELECT key FROM memory_checkpoints WHERE key=?').get(chunk.key)),'committed_checkpoint_missing');check(finalJob.batches.every((batch:any,i:number)=>i<=index?batch.status==='completed':batch.status==='pending'&&batch.attempts===0),'later_batch_started');check(index===m.batchPlan.length-1?['completed','paused'].includes(finalJob.status):finalJob.status==='paused','stage_not_cleanly_paused');
-    equal(hashObject(protectedTables(node.store.db)),m.protectedHash,'protected_source_mutated');succeeded=true;
+    equal(hashObject(protectedTables(node.store.db,{memoryJobId:m.jobId})),m.protectedHash,'protected_source_mutated');succeeded=true;
   }catch(error){failure=error;if(ledgerStarted)ledger.stop(safeCode(error));await sealedError(join(output,'DO_NOT_OPEN'),error);}
   finally{
     if(node){node.memoryPipeline.pause(m.jobId);try{await node.app.close();}catch(error){failure??=error;succeeded=false;ledger.stop('close_failed');await sealedError(join(output,'DO_NOT_OPEN'),error);}}
     try{
-      await closed(vault);const db=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});try{sqliteCheck(db);newReceipts=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt).filter(row=>!inherited.has(row.id));report.terminalUsage={readAfterClose:true,inherited:inherited.size,new:newReceipts.length,totals:usageTotals(newReceipts)};report.closedProtectedHash=hashObject(protectedTables(db));}finally{db.close();}
+      await closed(vault);const db=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});try{sqliteCheck(db);newReceipts=db.prepare('SELECT json FROM model_usage').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt).filter(row=>!inherited.has(row.id));report.terminalUsage={readAfterClose:true,inherited:inherited.size,new:newReceipts.length,totals:usageTotals(newReceipts)};report.closedProtectedHash=hashObject(protectedTables(db,{memoryJobId:m.jobId}));}finally{db.close();}
       const admittedIds=new Set(ledger.admitted.map(row=>row.data.receiptId));report.hostRejectedReceipts=newReceipts.filter(row=>!admittedIds.has(row.id)).length;if(report.hostRejectedReceipts)succeeded=false;ledger.rejectedReceipts(newReceipts.filter(row=>!admittedIds.has(row.id)).map(row=>({id:row.id,status:row.status,tokens:row.tokens,estimatedCost:row.estimatedCost,currency:row.currency,durationMs:row.durationMs})));ledger.receipts(newReceipts.filter(row=>admittedIds.has(row.id)).map(row=>({id:row.id,status:row.status,tokens:row.tokens,estimatedCost:row.estimatedCost,currency:row.currency,durationMs:row.durationMs})));equal(report.closedProtectedHash,m.protectedHash,'closed_protected_source_mutated');snapshot=join(output,'DO_NOT_OPEN','closed-checkpoint');await cloneClosed(vault,snapshot);const snapshotHash=await treeHash(snapshot);report.checkpoint={path:snapshot,treeHash:snapshotHash,parentTreeHash:parentHash};check(await treeHash(parent)===parentHash,'parent_snapshot_mutated');if(review)await (await import('./test-heldout-memory-replay-recovery.js')).normalReviewControls(review);if(authority?.manifest.askRecovery)await (await import('./test-heldout-memory-replay-recovery.js')).askRecoveryControls(authority.manifest.askRecovery);if(ledgerStarted)ledger.finish(snapshotHash,succeeded,authority?{kind:'extraction',wave:authority.plan.wave,contextTime:m.contextTime,archiveHeadHash:snapshotHash,totalBatches:m.batchPlan.length,nextBatch:index+1,evaluatedPairs:0,wavePlan:authority.cursor.wavePlan}:undefined);
     }catch(error){failure??=error;succeeded=false;ledger.stop(safeCode(error));await sealedError(join(output,'DO_NOT_OPEN'),error);}
     const cumulative=ledger.summary();report.cumulative={...cumulative,usage:usageTotals(ledger.events.filter(row=>row.kind==='receipt').map(row=>row.data as UsageReceipt))};const stageAdmissions=ledger.admitted.filter(row=>row.data.stage===stage).length;report.realModelCalls=stub?0:stageAdmissions;report.stubModelCalls=stub?stageAdmissions:0;report.status=succeeded?(recoveryE?'completed-stopped':'paused-success'):'stopped';report.failure=failure?{code:safeCode(failure)}:undefined;report.finishedAt=new Date().toISOString();report.terminalBatchCounts=finalJob?{completed:finalJob.completedBatches,total:finalJob.totalBatches}:undefined;process.off('SIGTERM',interrupted);process.off('SIGINT',interrupted);ledger.close();await privateWrite(join(output,'ROOT_SAFE_stage.json'),report);

@@ -69,15 +69,17 @@ function config(vault:string){
 /** Bind the configuration in a disposable clone to that clone before boot. */
 async function prepareCloneConfig(path:string,deadline?:300000|600000){
   let persisted:ReturnType<typeof readConfigDocument>['savedDocument'];
-  try{({savedDocument:persisted}=readConfigDocument(path,{}));}
+  try{({savedDocument:persisted}=readConfigDocument(path));}
   catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
-  const deployment=persisted.models?.deployment;
-  const deadlineChanged=deadline!==undefined&&deadline!==(deployment as {agentTimeoutMs?:number}|undefined)?.agentTimeoutMs;
-  if(persisted.storage?.dataDir==='.'&&!deadlineChanged)return;
-  persisted.storage={...persisted.storage,dataDir:'.'};
+  const storage=persisted.storage as {dataDir?:string}|undefined;
+  const models=persisted.models as {deployment?:Record<string,unknown>}|undefined;
+  const deployment=models?.deployment;
+  const deadlineChanged=deadline!==undefined&&deadline!==deployment?.agentTimeoutMs;
+  if(storage?.dataDir==='.'&&!deadlineChanged)return;
+  persisted.storage={...storage,dataDir:'.'};
   if(deadlineChanged){
     check(deployment,'replay_model_configuration_missing');
-    persisted.models={...persisted.models,deployment:{...deployment,agentTimeoutMs:deadline}};
+    persisted.models={...models,deployment:{...deployment,agentTimeoutMs:deadline}};
   }
   await writeFile(path,serializeConfigDocument(persisted),{mode:0o600});
 }
