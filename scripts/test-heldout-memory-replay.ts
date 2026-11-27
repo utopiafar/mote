@@ -10,7 +10,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {cp,mkdir,readFile,realpath,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,relative,resolve} from 'node:path';
 import {backup,DatabaseSync} from 'node:sqlite';
-import {sourceItemSchema} from '@mote/shared';
+import {sourceItemSchema,type SourceItem} from '@mote/shared';
 import {readConfigDocument,serializeConfigDocument} from '@mote/shared/config-file';
 import type {QueryResult} from '@mote/shared';
 import type {ContextReader,QueryInput} from '@mote/agent';
@@ -56,6 +56,32 @@ async function verifyFreeze(directory:string,expected:string){
   return {freezeSha256:expected,fileHashes:hashes};
 }
 async function lines(path:string){const text=await readFile(path,'utf8');check(text.endsWith('\n'),'ndjson_missing_final_lf');return text.slice(0,-1).split('\n').map(line=>({bytes:line+'\n',value:JSON.parse(line)}));}
+
+/** The hash-verified synthetic v2 file predates collector attribution. Its
+ * raw, authored roles attest visible dialogue, while tool records stay raw. */
+function projectHeldoutDialogue(item:SourceItem,original:{author?:string;coding?:{role:string;project:string;callId?:string|null}}):SourceItem {
+  const document=item.document,coding=document?.coding;
+  check(Boolean(coding)===Boolean(original.coding),'frozen_coding_provenance_changed');
+  if(!coding)return item;
+  check(coding.provider==='codex'&&item.layer==='original'&&original.coding?.role===coding.role&&
+    original.coding.project===coding.projectKey&&(original.coding.callId??undefined)===coding.callId&&
+    !coding.attribution&&!coding.channel&&typeof original.author==='string'&&original.author.length>0,'frozen_coding_provenance_changed');
+  if(coding.role!=='user'&&coding.role!=='assistant')return item;
+  const byAgent=original.author.toLowerCase()==='codex';
+  check(byAgent===(coding.role==='assistant'),'frozen_coding_author_mismatch');
+  return {...item,document:{...document,coding:{...coding,...(byAgent?{attribution:'agent',channel:'commentary'}:{attribution:'human'})}}};
+}
+
+export function heldoutDeliveryItem(delivery:{sourceRecordId:string;sourceRecordLine:number;sourceItemLine:number;sourceRecordSha256:string;sourceItemSha256:string},
+  records:Awaited<ReturnType<typeof lines>>,items:Awaited<ReturnType<typeof lines>>):SourceItem {
+  const record=records[delivery.sourceRecordLine-1],line=items[delivery.sourceItemLine-1];
+  check(record&&line&&sha256(record.bytes)===delivery.sourceRecordSha256&&sha256(line.bytes)===delivery.sourceItemSha256,'frozen_delivery_bytes_changed');
+  const item=sourceItemSchema.parse(line.value),original=record.value;
+  check(original.sourceRecordId===delivery.sourceRecordId&&item.externalId==='heldout-v2:'+delivery.sourceRecordId&&
+    item.text===original.text&&item.observedAt===original.observedAt&&item.document?.recordedAt===original.recordedAt,'frozen_delivery_projection_changed');
+  return projectHeldoutDialogue(item,original);
+}
+
 function config(vault:string){
   return {path:join(vault,'mote.yaml'),privateCredential:{token,tokenPath:join(vault,'token')},initialDocument:{
     version:1,revision:0,storage:{dataDir:'.',maxExportBytes:40_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
@@ -234,13 +260,13 @@ async function main(){
   report.recipeBindingHashes=recipes.map(recipe=>({recipe,bindingSha256:hashObject(node!.memoryStrategies.resolve(recipe).binding)}));
   for(let wave=1;wave<=6;wave++){
     phase='wave-'+wave;const deliveries=transport.deliveries.filter((d:any)=>d.wave===wave),checkpoint=availability.checkpoints.find((c:any)=>c.checkpointWave===wave);check(checkpoint,'wave_checkpoint_missing');const waveStarted=Date.now();
-    for(const delivery of deliveries){const item=items[delivery.sourceItemLine-1].value,before=Date.now(),ack=await request('PUT','/api/sources/'+encodeURIComponent(delivery.sourceId)+'/items',item);
+    for(const delivery of deliveries){const item=heldoutDeliveryItem(delivery,records,items),before=Date.now(),ack=await request('PUT','/api/sources/'+encodeURIComponent(delivery.sourceId)+'/items',item);
       const source=node!.sources.getSource(delivery.sourceId),archived=node!.sourcePipelines.select(source)?.storage==='archive',capture=archived?undefined:node!.store.evidence([ack.id])[0];
       if(archived){const original=node!.sourcePipelines.archive.readVersion(delivery.sourceId,archiveHash([item.externalId,item.revision]));check(original,'archive_original_missing');equal(original,sourceItemSchema.parse(item),'archive_original_changed');check(ack.id===sourceReceiptId(delivery.sourceId,item),'archive_receipt_identity_mismatch');}
-      else{check(capture,'capture_missing');equal(capture.ocrText,item.text,'capture_text_changed');check(Date.parse(capture.capturedAt)===Date.parse(item.observedAt)&&capture.provenance?.document?.recordedAt===item.document.recordedAt,'capture_source_time_changed');}
+      else{check(capture,'capture_missing');equal(capture.ocrText,item.text,'capture_text_changed');check(Date.parse(capture.capturedAt)===Date.parse(item.observedAt)&&capture.provenance?.document?.recordedAt===item.document?.recordedAt,'capture_source_time_changed');}
       if(delivery.aliasOf){check(ack.duplicate===true&&ack.id===acks.get(delivery.aliasOf),'replay_identity_changed');}else{check(!ack.duplicate,'new_delivery_reported_duplicate');if(capture)check(Date.parse(capture.receivedAt)>=before&&Date.parse(capture.receivedAt)<=Date.now(),'received_time_not_real');}
       acks.set(delivery.deliveryId,ack.id);runtime.deliveries.push({deliveryId:delivery.deliveryId,receiptId:ack.id,storage:archived?'archive':'record',receivedAt:capture?.receivedAt,receiptWallInterval:[before,Date.now()],duplicate:ack.duplicate===true});
-      if(archived){const beforeHeads=new Map(node!.store.db.prepare("SELECT id,revision FROM material_heads WHERE kind='mote.coding-session' AND retired=0").all().map(row=>[String(row.id),String(row.revision)]));await drain();const afterHeads=node!.store.db.prepare("SELECT id,revision FROM material_heads WHERE kind='mote.coding-session' AND retired=0").all();const revised=afterHeads.filter(row=>beforeHeads.has(String(row.id))&&beforeHeads.get(String(row.id))!==row.revision);if(delivery.aliasOf)check(revised.length===0,'archive_retransmit_rebuilt_material');else withinWaveCodingRevisions+=revised.length;}
+      if(archived){const beforeHeads=new Map(node!.store.db.prepare("SELECT id,revision FROM material_heads WHERE kind='mote.coding-session' AND retired=0").all().map(row=>[String(row.id),String(row.revision)]));await drain();const afterHeads=node!.store.db.prepare("SELECT id,revision FROM material_heads WHERE kind='mote.coding-session' AND retired=0").all();const revised=afterHeads.filter(row=>beforeHeads.has(String(row.id))&&beforeHeads.get(String(row.id))!==row.revision);if(delivery.aliasOf)check(revised.length===0,'archive_retransmit_rebuilt_material');else if(!item.document?.coding?.attribution)check(revised.length===0&&afterHeads.length===beforeHeads.size,'archive_tool_changed_dialogue');else withinWaveCodingRevisions+=revised.length;}
     }
     await drain();const all=node!.store.db.prepare('SELECT id,revision,kind FROM material_heads WHERE retired=0 ORDER BY id').all(),changed=all.filter(row=>previousMaterials.get(String(row.id))!==row.revision),continued=changed.filter(row=>previousMaterials.has(String(row.id))),unchanged=all.length-changed.length;totalUnchanged+=unchanged;totalContinued+=continued.length;
     check(continued.every(row=>row.kind==='mote.coding-session'),'unexpected_material_rewrite');
@@ -256,7 +282,8 @@ async function main(){
     for(const row of all)previousMaterials.set(String(row.id),String(row.revision));check(admissions===0,'unexpected_agent_admission');await save();
   }
   report.budget={extractionJobs:6,extractionBatches:totalBatches,extractionOuterCallUpperBound:2*totalBatches,integrationOuterCallCap:24,askOuterCalls:16,totalOuterCallUpperBound:2*totalBatches+24+16,outerMeaning:'One agent query; provider repair/internal turns can exceed this count and must be measured separately.',emptyCandidates:'Empty extraction/integration skips independent review, so actual calls may be lower.',integrationBound:'At most one explicit integration window per wave, 2 domains × generation/review; more than 50 eligible inputs is a stop/plan-revision condition, never silent truncation.',deletionReview:'No owner-deletion workflow in this frozen corpus; any extra deletion review is forbidden by the stage budget.',wallUpperBoundMs:(2*totalBatches+24+16)*300000};
-  check(withinWaveCodingRevisions===30,'coding_continuation_revision_count');report.checks={...report.checks,realReceivedAt:'Record storage receivedAt checked against wall interval; archive-only coding preserves raw source values and records API receipt wall interval without inventing a receivedAt field.',duplicateIdentity:true,normalSourceApi:true,orchestrationMetadataExcluded:true,codingMaterialCrossWaveContinuation:totalContinued,codingMaterialWithinWaveRevisions:withinWaveCodingRevisions,unchangedMaterialSchedulingReuse:totalUnchanged,clockAlignment:'blocked; not falsely reported as passed'};
+  // The 24 distinct authored dialogue records create eight sessions and 16 revisions.
+  check(withinWaveCodingRevisions===16,'coding_continuation_revision_count');report.checks={...report.checks,realReceivedAt:'Record storage receivedAt checked against wall interval; archive-only coding verifies the projected envelope and records API receipt wall interval without inventing a receivedAt field.',duplicateIdentity:true,normalSourceApi:true,orchestrationMetadataExcluded:true,codingMaterialCrossWaveContinuation:totalContinued,codingMaterialWithinWaveRevisions:withinWaveCodingRevisions,unchangedMaterialSchedulingReuse:totalUnchanged,clockAlignment:'blocked; not falsely reported as passed'};
   await close();await closed(vault);const readOnly=new DatabaseSync(join(vault,'mote.sqlite'),{readOnly:true});try{check(Number(readOnly.prepare('SELECT count(*) n FROM model_usage').get()!.n)===0,'planning_usage_not_empty');report.terminalUsage={readAfterAppClose:true,newReceipts:0,inheritedReceipts:0,realCalls:0};sqliteCheck(readOnly);}finally{readOnly.close();}
   await writeFile(join(output,'DO_NOT_OPEN','runtime.json'),json(runtime),{mode:0o600});
   phase='snapshot-ablation';const left=join(output,'DO_NOT_OPEN','clone-1'),right=join(output,'DO_NOT_OPEN','clone-2');report.backups=[await cloneClosed(vault,left),await cloneClosed(vault,right)];const first=ablateClone(left,true),second=ablateClone(right,false);equal(first.protectedHash,second.protectedHash,'arms_protected_hash_mismatch');equal(first.index,second.index,'arms_original_index_mismatch');

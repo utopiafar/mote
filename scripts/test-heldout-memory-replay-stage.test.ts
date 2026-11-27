@@ -1,6 +1,6 @@
 import {generatedMemoryAnswer} from './test-heldout-memory-fixtures.js';
 /** Independent generated plumbing only; never reads heldout semantic files. */
-import {rejects} from 'node:assert/strict';
+import {rejects,throws} from 'node:assert/strict';
 import {test,after} from 'node:test';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -10,9 +10,10 @@ import {AgentTimeoutError,type QueryInput,type ContextReader} from '@mote/agent'
 import type {QueryResult} from '@mote/shared';
 import {readConfigDocument,serializeConfigDocument} from '@mote/shared/config-file';
 import {sha256} from '../apps/server/src/evidence-store.js';
-import {base,check,equal,cloneClosed,ablateClone,json} from './test-heldout-memory-replay.js';
+import {archiveHash} from '../apps/server/src/source-archive.js';
+import {base,recipes,check,equal,cloneClosed,ablateClone,json,heldoutDeliveryItem} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,StageSafetyError,readAdmissionChain} from './test-heldout-memory-replay-ledger.js';
-import {freezeStage,newOutput,noProvider,observeReplayModel,openNode,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';
+import {freezeStage,newOutput,noProvider,observeReplayModel,openNode,drain,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';
 const root=process.env.MOTE_HELDOUT_TEST_OUTPUT??join(base,'heldout-stage-offline-'+Date.now());await mkdir(root,{mode:0o700});const metadata:Record<string,unknown>={schema:'mote-heldout-stage-mechanical-tests@1',realModelCalls:0,heldoutSemanticInputsRead:false,tests:[]};
 const record=async(name:string,value:unknown)=>{(metadata.tests as unknown[]).push({name,...value as object});await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});};
 async function setup(name:string){const output=await newOutput(join(root,name+'-freeze'));const manifest=await freezeStage(output,true),manifestHash=sha256(await readFile(join(output,'ROOT_SAFE_manifest.json')));return {manifest,manifestHash,ledgerDirectory:join(root,name+'-ledger')};}
@@ -73,4 +74,39 @@ test('a legacy config opens only the disposable clone and preserves its secret r
   await record('legacy-absolute-path',{passed:true,stubCalls:0});
 });
 
-after(async()=>{metadata.status=(metadata.tests as unknown[]).length===18?'passed':'incomplete';metadata.stubModelCalls=(metadata.tests as Array<{stubCalls:number}>).reduce((sum,row)=>sum+row.stubCalls,0);metadata.testCount=(metadata.tests as unknown[]).length;await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});});
+test('legacy frozen dialogue reaches Memory without making archived tool messages readable',async()=>{
+  const {manifest}=await setup('frozen-dialogue');
+  const {node,request}=await openNode(join(root,'frozen-dialogue-vault'),manifest.model,manifest.contextTime,noProvider);
+  const time='2025-11-17T10:00:00+08:00',sourceId='generated-coding';
+  const fixture=[['user','Generated author','A generated coding request.'],
+    ['assistant','Codex','A generated visible reply.'],['tool_result','Generated tool','TOOL_RESULT_MUST_STAY_IN_ARCHIVE']] as const;
+  const line=<T>(value:T)=>({value,bytes:JSON.stringify(value)+'\n'});
+  const records=fixture.map(([role,author,text],index)=>line({sourceRecordId:'record-'+index,author,text,observedAt:time,recordedAt:time,coding:{project:'project',role}}));
+  const items=records.map(({value},index)=>line({externalId:'heldout-v2:'+value.sourceRecordId,revision:'1',kind:'message',layer:'original',text:value.text,observedAt:time,
+    document:{contentRole:'transcript',recordedAt:time,timeBasis:'recorded',coding:{version:1,provider:'codex',projectKey:'project',sessionId:'session',eventId:'event-'+index,part:0,parts:1,role:value.coding.role}}}));
+  const deliveries=records.map(({value,bytes},index)=>({sourceRecordId:value.sourceRecordId,sourceRecordLine:index+1,sourceItemLine:index+1,sourceRecordSha256:sha256(bytes),sourceItemSha256:sha256(items[index].bytes)}));
+  try{
+    throws(()=>heldoutDeliveryItem({...deliveries[0],sourceRecordSha256:'0'.repeat(64)},records,items),/frozen_delivery_bytes_changed/);
+    await request('POST','/api/sources',{id:sourceId,name:'Generated old Coding source',kind:'coding-agent',deviceId:'generated-device',platform:'import',retention:'archive'});
+    const importOne=async(index:number)=>{
+      const item=heldoutDeliveryItem(deliveries[index],records,items);
+      await request('PUT','/api/sources/'+sourceId+'/items',item);await drain(node);
+      const archived=node.sourcePipelines.archive.readVersion(sourceId,archiveHash([item.externalId,item.revision]));
+      equal(archived?.text,records[index].value.text,'legacy_coding_archive_text_changed');
+      equal(archived?.document?.coding?.attribution,index===0?'human':index===1?'agent':undefined,'legacy_coding_attribution_wrong');
+    };
+    await importOne(0);await importOne(1);
+    const material=node.materials.list({sourceId}).items[0];
+    check(material?.artifacts?.some(value=>value.key==='conversation'&&value.state==='ready'),'legacy_coding_conversation_not_ready');
+    await importOne(2);
+    equal(node.materials.get(material.id)?.revision,material.revision,'legacy_coding_tool_changed_dialogue');
+    const body=node.materials.read(material.ref,{length:12000}).text;
+    check(body.includes(fixture[0][2])&&body.includes(fixture[1][2])&&!body.includes(fixture[2][2]),'legacy_coding_dialogue_exposure_changed');
+    const job=node.memoryPipeline.create({evidenceIds:node.materials.evidenceIds(material.ref),recipes,contextTime:manifest.contextTime});
+    check(job.totalBatches===2&&job.batches.every(batch=>batch.status==='pending'&&batch.attempts===0),'legacy_coding_memory_plan_invalid');
+    equal(Number(node.store.db.prepare('SELECT count(*) AS count FROM model_usage').get()?.count),0,'legacy_coding_model_called');
+  }finally{await node.app.close();}
+  await record('frozen-coding-dialogue',{passed:true,stubCalls:0});
+});
+
+after(async()=>{metadata.status=(metadata.tests as unknown[]).length===19?'passed':'incomplete';metadata.stubModelCalls=(metadata.tests as Array<{stubCalls:number}>).reduce((sum,row)=>sum+row.stubCalls,0);metadata.testCount=(metadata.tests as unknown[]).length;await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});});
