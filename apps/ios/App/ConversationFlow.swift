@@ -73,20 +73,31 @@ struct ConversationFlowView: View {
     }
 
     private var mainLoading: some View {
-        VStack(spacing: 12) {
-            if mainLoadFailed {
-                Text("对话暂不可读取，请稍后重试。")
-                    .font(MoteFont.body)
-                    .foregroundStyle(MoteDesignTokens.muted.color)
-                Button("重试") { Task { await loadMainConversation() } }
-                    .font(MoteFont.smallAction)
-                    .frame(minHeight: MoteMetrics.touchTarget)
-            } else {
-                ProgressView()
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                MoteIconButton(icon: .back, label: "返回", action: onDismiss)
+                    .accessibilityIdentifier("conversation-loading-back")
+                Spacer()
             }
+            .padding(.horizontal, 6)
+            .frame(height: MoteMetrics.touchTarget)
+
+            VStack(spacing: 12) {
+                if mainLoadFailed {
+                    Text("对话暂不可读取，请稍后重试。")
+                        .font(MoteFont.body)
+                        .foregroundStyle(MoteDesignTokens.muted.color)
+                    Button("重试") { Task { await loadMainConversation() } }
+                        .font(MoteFont.smallAction)
+                        .frame(minHeight: MoteMetrics.touchTarget)
+                } else {
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MoteDesignTokens.background.color)
+        .statusBarHidden()
         .task { await loadMainConversation() }
     }
 

@@ -32,6 +32,7 @@ final class MoteUITests: XCTestCase {
         defer { resetDraft() }
         let app = XCUIApplication()
         app.launchArguments = ["-MoteRecordingTestInput"]
+        app.launchEnvironment["MOTE_TEST_CONNECTION_SERVICE"] = "dev.mote.ios.test.\(UUID().uuidString)"
         app.launch()
 
         XCTAssertTrue(app.buttons["连接"].waitForExistence(timeout: 10))
@@ -42,10 +43,13 @@ final class MoteUITests: XCTestCase {
         XCTAssertTrue(app.buttons["连接"].waitForExistence(timeout: 2), "连接 did not return to home")
         for label in ["问一问", "记录", "拍照", "录音", "搜索"] {
             app.buttons[label].tap()
-            let control = app.buttons.matching(
+            let control = label == "问一问" ? app.buttons["conversation-loading-back"] : app.buttons.matching(
                 NSPredicate(format: "label == %@ OR label == %@", "关闭", "返回")
             ).firstMatch
             XCTAssertTrue(control.waitForExistence(timeout: 5), "\(label) has no destination")
+            if label == "问一问" {
+                XCTAssertTrue(app.buttons["重试"].waitForExistence(timeout: 5), "未连接时应能退出问一问")
+            }
             if ["记录", "拍照", "录音"].contains(label) {
                 XCTAssertTrue(app.textFields["mote-editor-text"].waitForExistence(timeout: 5), "\(label) did not open the editor")
             }
@@ -76,14 +80,16 @@ final class MoteUITests: XCTestCase {
     func testEntryDeepLinksOpenAskAndRecordDestinations() {
         resetDraft()
         let app = XCUIApplication()
+        app.launchEnvironment["MOTE_TEST_CONNECTION_SERVICE"] = "dev.mote.ios.test.\(UUID().uuidString)"
         app.launch()
 
         XCTAssertTrue(app.buttons["问一问"].waitForExistence(timeout: 10))
 
         app.open(URL(string: "mote://entry/ask")!)
-        XCTAssertTrue(app.textFields["问一问"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["返回"].exists)
-        app.buttons["返回"].tap()
+        XCTAssertTrue(app.buttons["重试"].waitForExistence(timeout: 5))
+        let askBack = app.buttons["conversation-loading-back"]
+        XCTAssertTrue(askBack.exists)
+        askBack.tap()
 
         XCTAssertTrue(app.buttons["记录"].waitForExistence(timeout: 5))
         app.open(URL(string: "mote://entry/record")!)
