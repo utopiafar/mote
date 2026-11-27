@@ -14,7 +14,7 @@ const token='generated-native-central-owner-token-123456';
 const detailFixture=process.env.MOTE_ANDROID_UI_DETAIL_FIXTURE==='1';
 const firstDataFixture=process.env.MOTE_ANDROID_FIRST_DATA_FIXTURE==='1';
 const fixturePort=firstDataFixture?47889:detailFixture?47884:47883;
-const config:ConfigurationPlatformOptions={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:16*1024*1024},server:{host:'127.0.0.1',port:fixturePort,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-fixture-model',baseUrl:'https://fixture.invalid',apiKey:'generated-fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}};
+const config={path:(dataDir)+'/mote.yaml',privateCredential:{token:token,tokenPath:join(dataDir,'owner-token')},initialDocument:{version:1,revision:0,storage:{dataDir:dataDir,dataKey:undefined,maxExportBytes:16*1024*1024},server:{host:'127.0.0.1',port:fixturePort,profile:'test',allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'generated-fixture-model',baseUrl:'https://fixture.invalid',apiKey:'generated-fixture-key',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:true}}} satisfies ConfigurationPlatformOptions;
 const relatedId=randomUUID();
 // A file-analysis factory receives its own scoped reader. Never share that reader
 // with the normal query agent or another concurrent generated operation.

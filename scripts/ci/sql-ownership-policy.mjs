@@ -139,6 +139,7 @@ export const consumerScopes={
   addTaskEvidence:'task-evidence',
  },
  'execution-engine.ts':{
+  'ExecutionEngine.executeWithinTurn':'execution',
   'ExecutionEngine.preferOperationOnce':'execution',
  },
  'memory.ts':{

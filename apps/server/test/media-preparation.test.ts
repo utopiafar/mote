@@ -328,7 +328,27 @@ test('cancelling an actual loading Python worker frees its port before cancellat
 });
 
 for(const mode of ['load-failure','loading','crash'] as const)test(`actual Python ${mode} never publishes ready and leaves no owned listener`,async t=>{
- const f=await lifecycle(t),preparation=f.make({startupTimeoutMs:500});await f.mode('ocr',mode);await preparation.start('ocr');
+ const f=await lifecycle(t),start=Date.now(),deadline=500;
+ const loading=mode==='loading'?{seen:Promise.withResolvers<void>(),continued:Promise.withResolvers<void>()}:undefined;
+ let probesBeforeDeadline=0;
+ const preparation=f.make({startupTimeoutMs:deadline,fetch:loading?async(input,init)=>{
+  const probeTime=Date.now();
+  const response=await fetch(input,init);
+  if(response.ok&&probeTime===start)loading.seen.resolve();
+  if(response.ok&&probeTime===start+deadline-1&&++probesBeforeDeadline===2)loading.continued.resolve();
+  return response;
+ }:undefined});
+ // The Python process and HTTP stay real. Drive the host deadline explicitly
+ // so scheduling delays cannot decide which failure is observed.
+ t.mock.timers.enable({apis:['Date'],now:start});
+ await f.mode('ocr',mode);await preparation.start('ocr');
+ if(loading){
+  await loading.seen.promise;
+  t.mock.timers.tick(deadline-1);
+  // A second startup probe at 499 ms proves that the first did not time out.
+  await loading.continued.promise;
+  t.mock.timers.tick(1);
+ }
  const status=await settled(preparation,'ocr');assert.equal(status.state,'failed');assert.equal(status.runtimeReady,false);assert.equal(status.error,mode==='load-failure'?'model_load_failed':'worker_start_failed');
  assert.equal(gone(Number(await f.waitFile('ocr.pid'))),true);await assert.rejects(fetch(f.media.ocrEndpoint));
 });

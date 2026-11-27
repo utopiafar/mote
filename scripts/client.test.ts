@@ -82,7 +82,7 @@ test('import-files dry run scans a generated file without contacting a node',asy
   assert.match(stdout,/Would send 1 changed files/);
 });
 
-test('import-files archive preview counts all seven eligible audio files across the 16 MiB shard boundary',async t=>{
+test('import-files archive preview counts all eligible audio files across the 16 MiB shard boundary and beyond 512 MiB',async t=>{
   const directory=await realpath(await mkdtemp(join(tmpdir(),'mote-cli-audio-preview-')));
   t.after(()=>rm(directory,{recursive:true,force:true}));
   const selected=join(directory,'selected'),profile=join(directory,'profile'),temporary=join(directory,'temporary');
@@ -97,7 +97,7 @@ test('import-files archive preview counts all seven eligible audio files across 
   const env={...Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_'))),MOTE_CONFIG_FILE:configFile,TMPDIR:temporary,TSX_DISABLE_CACHE:'1'};
   const script=fileURLToPath(new URL('./import-files.ts',import.meta.url));
   const {stdout}=await promisify(execFile)(process.execPath,['--import','tsx',script,'--root',selected,'--retention','archive','--dry-run'],{env,cwd:fileURLToPath(new URL('../',import.meta.url))});
-  assert.match(stdout,/Would send 7 changed files; skipped 1; deletion scan not applied\./);
+  assert.match(stdout,/Would send 8 changed files; skipped 0; deletion scan not applied\./);
   assert.deepEqual(await readdir(profile),['mote.yaml'],'preview must not create a durable outbox or access markers in the selected profile');
   assert.deepEqual(await readdir(temporary),[],'preview must clean its temporary original spools');
   assert.equal((await readdir(selected)).length,8);

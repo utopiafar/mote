@@ -78,7 +78,7 @@ export async function generatedImageCentral(t:TestContext){
  await f.node.app.listen({host:'127.0.0.1',port:0});
  const central=()=>`http://127.0.0.1:${(f.node.app.server.address() as {port:number}).port}`;
  const raw=async(method:string,path:string,body?:unknown)=>{
-  const response=await fetch(central()+path,{method,headers:{authorization:'Bearer '+f.token,...(body===undefined?{}:{'content-type':Buffer.isBuffer(body)?'application/octet-stream':'application/json'})},body:body===undefined?undefined:Buffer.isBuffer(body)?body:JSON.stringify(body)});
+  const response=await fetch(central()+path,{method,headers:{authorization:'Bearer '+f.token,...(body===undefined?{}:{'content-type':Buffer.isBuffer(body)?'application/octet-stream':'application/json'})},body:body===undefined?undefined:Buffer.isBuffer(body)?new Uint8Array(body):JSON.stringify(body)});
   const value=Buffer.from(await response.arrayBuffer());
   return {status:response.status,body:!value.length?null:response.headers.get('content-type')?.includes('json')?JSON.parse(value.toString()):{bytes:value.length,sha256:sha256(value)}};
  };
