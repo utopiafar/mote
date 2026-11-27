@@ -14,7 +14,8 @@ import {base,check,equal,json,hashObject,cloneClosed,SafeFailure} from './test-h
 import {sha256} from '../apps/server/src/evidence-store.js';
 import {inspectAdmissionLedger,readAdmissionChain,AdmissionLedger} from './test-heldout-memory-replay-ledger.js';
 import {freezeStage,newOutput,runBatch,freezeContinuation,codeHashes,executorPins,treeHash,type Manifest} from './test-heldout-memory-replay-stage.js';
-import {freezeIntegration,runIntegration,IntegrationCallOrder,integrationSelection} from './test-heldout-memory-replay-integration.js';
+import {freezeIntegration,runIntegration,IntegrationCallOrder,integrationSelection,type IntegrationPlan} from './test-heldout-memory-replay-integration.js';
+import {readRef} from './test-heldout-memory-replay-sequence.js';
 
 const root=process.env.MOTE_HELDOUT_INTEGRATION_TEST_OUTPUT??join(base,'heldout-integration-offline-'+Date.now());await mkdir(root,{mode:0o700});
 const checks:unknown[]=[];let stubCalls=0;const originalFetch=globalThis.fetch;globalThis.fetch=async()=>{throw Error('Generated integration test forbids network');};
@@ -43,7 +44,11 @@ function answer(options:{empty?:boolean;failure?:'extract'|'review';timeout?:boo
 };}
 const code=(error:unknown)=>error instanceof SafeFailure?error.code:error instanceof Error?error.message:'unknown';
 test('complete two-domain window commits, closes receipts, preserves originals and refuses replay',async()=>{
-  const data=await frozen('normal'),counter={value:0},before=await treeHash(data.parent),result=await runIntegration({...data,output:await newOutput(join(root,'normal-run')),stub:answer({counter})});assert.ok(result.succeeded,JSON.stringify(result.report.failure));assert.equal(counter.value,4);assert.equal(result.report.completedDomainCount,2);assert.equal(result.report.terminalUsage.readAfterClose,true);assert.equal(result.report.hostRejectedReceipts,0);assert.equal(await treeHash(data.parent),before);assert.equal(result.report.sourceProtectedHash,data.m.protectedHash);
+  const data=await frozen('normal'),counter={value:0},before=await treeHash(data.parent);
+  const planned=await readRef<IntegrationPlan>(data.manifest.task.selectionPlan);
+  const result=await runIntegration({...data,output:await newOutput(join(root,'normal-run')),stub:answer({counter})});
+  assert.ok(result.succeeded,JSON.stringify(result.report.failure));assert.equal(counter.value,4);assert.equal(result.report.completedDomainCount,2);assert.equal(result.report.terminalUsage.readAfterClose,true);assert.equal(result.report.hostRejectedReceipts,0);assert.equal(await treeHash(data.parent),before);
+  assert.equal(result.report.sourceProtectedHash,planned.protectedHash);
   for(const event of inspectAdmissionLedger(data.ledgerDirectory,data.m.experimentHash).filter(row=>row.kind==='receipt'))assert.ok(Object.keys(event.data).every(key=>['id','status','tokens','estimatedCost','currency','durationMs'].includes(key)));
   const replay=await newOutput(join(root,'normal-replay'));await assert.rejects(()=>runIntegration({...data,output:replay,stub:answer({counter})}),e=>code(e)==='integration_ledger_advanced');assert.equal(counter.value,4);await log('completed-window',{outer:4,receiptReadAfterClose:true,receiptFieldsAllowlisted:true,originalsUnchanged:true,replayRejected:true});
 });
