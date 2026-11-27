@@ -162,9 +162,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers()
         try:self.wfile.write(raw)
         except (BrokenPipeError,ConnectionResetError):pass
-server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
-(root/(role+'.listening')).write_text('')
-server.serve_forever()
+ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
 `;
  for(const script of ['ocr-server.py','transcription-server.py','vlm-server.py'])await writeFile(join(scripts,script),worker);
  const allRoles=['ocr','dialogue','local-image'] as const,bootstrapBytes=Buffer.from('generated verified bootstrap');
@@ -330,15 +328,27 @@ test('cancelling an actual loading Python worker frees its port before cancellat
 });
 
 for(const mode of ['load-failure','loading','crash'] as const)test(`actual Python ${mode} never publishes ready and leaves no owned listener`,async t=>{
- const f=await lifecycle(t);
- // Observe the real health result once the child has reached the fixture
- // state. A busy test host can spend the entire deadline just spawning Python.
- const preparation=f.make({startupTimeoutMs:500,fetch:async(input,init)=>{
-  await f.waitFile(mode==='crash'?'ocr.pid':'ocr.listening');
-  init?.signal?.throwIfAborted();
-  return fetch(input,init);
- }});
+ const f=await lifecycle(t),start=Date.now(),deadline=500;
+ const loading=mode==='loading'?{seen:Promise.withResolvers<void>(),continued:Promise.withResolvers<void>()}:undefined;
+ let probesBeforeDeadline=0;
+ const preparation=f.make({startupTimeoutMs:deadline,fetch:loading?async(input,init)=>{
+  const probeTime=Date.now();
+  const response=await fetch(input,init);
+  if(response.ok&&probeTime===start)loading.seen.resolve();
+  if(response.ok&&probeTime===start+deadline-1&&++probesBeforeDeadline===2)loading.continued.resolve();
+  return response;
+ }:undefined});
+ // The Python process and HTTP stay real. Drive the host deadline explicitly
+ // so scheduling delays cannot decide which failure is observed.
+ t.mock.timers.enable({apis:['Date'],now:start});
  await f.mode('ocr',mode);await preparation.start('ocr');
+ if(loading){
+  await loading.seen.promise;
+  t.mock.timers.tick(deadline-1);
+  // A second startup probe at 499 ms proves that the first did not time out.
+  await loading.continued.promise;
+  t.mock.timers.tick(1);
+ }
  const status=await settled(preparation,'ocr');assert.equal(status.state,'failed');assert.equal(status.runtimeReady,false);assert.equal(status.error,mode==='load-failure'?'model_load_failed':'worker_start_failed');
  assert.equal(gone(Number(await f.waitFile('ocr.pid'))),true);await assert.rejects(fetch(f.media.ocrEndpoint));
 });

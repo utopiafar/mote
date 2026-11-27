@@ -2,7 +2,7 @@ import {generatedMemoryAnswer} from './test-heldout-memory-fixtures.js';
 /** Independent generated plumbing only; never reads heldout semantic files. */
 import {rejects,throws} from 'node:assert/strict';
 import {test,after} from 'node:test';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,symlink,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
@@ -13,7 +13,7 @@ import {sha256} from '../apps/server/src/evidence-store.js';
 import {archiveHash} from '../apps/server/src/source-archive.js';
 import {base,recipes,check,equal,cloneClosed,ablateClone,json,heldoutDeliveryItem} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,StageSafetyError,readAdmissionChain} from './test-heldout-memory-replay-ledger.js';
-import {freezeStage,newOutput,noProvider,observeReplayModel,openNode,drain,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';
+import {assertReplayNativeModel,replayExecutablePin,freezeStage,newOutput,noProvider,observeReplayModel,openNode,drain,runBatch,treeHash} from './test-heldout-memory-replay-stage.js';
 const root=process.env.MOTE_HELDOUT_TEST_OUTPUT??join(base,'heldout-stage-offline-'+Date.now());await mkdir(root,{mode:0o700});const metadata:Record<string,unknown>={schema:'mote-heldout-stage-mechanical-tests@1',realModelCalls:0,heldoutSemanticInputsRead:false,tests:[]};
 const record=async(name:string,value:unknown)=>{(metadata.tests as unknown[]).push({name,...value as object});await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});};
 async function setup(name:string){const output=await newOutput(join(root,name+'-freeze'));const manifest=await freezeStage(output,true),manifestHash=sha256(await readFile(join(output,'ROOT_SAFE_manifest.json')));return {manifest,manifestHash,ledgerDirectory:join(root,name+'-ledger')};}
@@ -109,4 +109,24 @@ test('legacy frozen dialogue reaches Memory without making archived tool message
   await record('frozen-coding-dialogue',{passed:true,stubCalls:0});
 });
 
-after(async()=>{metadata.status=(metadata.tests as unknown[]).length===19?'passed':'incomplete';metadata.stubModelCalls=(metadata.tests as Array<{stubCalls:number}>).reduce((sum,row)=>sum+row.stubCalls,0);metadata.testCount=(metadata.tests as unknown[]).length;await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});});
+test('native replay pin rejects retargeting the actual launcher child while its old target still exists',async()=>{
+  const {manifest}=await setup('native-entry-pin');
+  const directory=join(root,'native-entry'),launcher=join(directory,'codex.mjs'),binary=join(directory,'bin','codex-app-server');
+  const first=join(directory,'original-leaf'),second=join(directory,'replacement-leaf');
+  await mkdir(join(directory,'bin'),{recursive:true,mode:0o700});
+  await writeFile(launcher,await readFile(new URL('../packages/agent/native/codex.mjs',import.meta.url)));
+  await writeFile(first,'Generated binary pin fixture A');
+  await writeFile(second,'Generated binary pin fixture B');
+  await symlink(first,binary);
+  const candidate={kind:'heldout' as const,experimentPlan:{...manifest.experimentPlan as object,version:'heldout-v2.1-six-wave@2',sourceProjection:'authored-dialogue-attribution@1'},
+    model:{...manifest.model,model:'gpt-6.1-terra',codexBin:launcher,...await replayExecutablePin(launcher)}};
+  await assertReplayNativeModel(candidate);
+  await unlink(binary);await symlink(second,binary);
+  await rejects(assertReplayNativeModel(candidate),/heldout_native_binary_changed/);
+  const externalScript=join(directory,'unverified-launcher');
+  await writeFile(externalScript,'#!/bin/sh\n');
+  await rejects(replayExecutablePin(externalScript),/heldout_codex_entry_not_native/);
+  await record('native-binary-entry-pin',{passed:true,stubCalls:0});
+});
+
+after(async()=>{metadata.status=(metadata.tests as unknown[]).length===20?'passed':'incomplete';metadata.stubModelCalls=(metadata.tests as Array<{stubCalls:number}>).reduce((sum,row)=>sum+row.stubCalls,0);metadata.testCount=(metadata.tests as unknown[]).length;await writeFile(join(root,'ROOT_SAFE_tests.json'),json(metadata),{mode:0o600});});

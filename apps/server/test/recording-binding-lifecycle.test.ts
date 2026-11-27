@@ -31,9 +31,21 @@ for(const action of ['cancel','close'] as const)test('rollback failure after '+a
 });
 
 test('old cancel cannot cancel a new authorization and check drains before configuration',async t=>{
- const f=await fixture(t),entered=deferred(),released=deferred(),configureEntered=deferred();let configured=false,checks=0;const manager=new RecordingAuthorization(f.connector,{check:async signal=>{checks++;entered.resolve();await new Promise<void>(resolve=>signal.addEventListener('abort',()=>released.promise.then(resolve),{once:true}));return {installed:true,configured:true};},configure:async()=>{configured=true;configureEntered.resolve();},login:async()=>{}});
+ const f=await fixture(t),entered=deferred(),released=deferred(),configureEntered=deferred<boolean>();
+ let configured=false,checkReleased=false,checks=0;
+ const manager=new RecordingAuthorization(f.connector,{
+  check:async signal=>{
+   checks++;entered.resolve();
+   await new Promise<void>(resolve=>signal.addEventListener('abort',()=>released.promise.then(resolve),{once:true}));
+   checkReleased=true;
+   return {installed:true,configured:true};
+  },
+  configure:async()=>{configured=true;configureEntered.resolve(checkReleased);},
+  login:async()=>{},
+ });
  const checking=manager.check();await entered.promise;const initial=manager.status();manager.start('configure',{operationId:randomUUID(),expectedRevision:initial.revision,payload:{}});assert.equal(configured,false);released.resolve();await checking;
- await configureEntered.promise;assert.equal(configured,true);
+ assert.equal(await configureEntered.promise,true,'configure must wait for the check to exit');
+ assert.equal(configured,true);
  await manager.close();assert.ok(checks>=1);
  const other=new RecordingAuthorization(f.connector,{check:async()=>({installed:true,configured:true}),login:async signal=>new Promise<void>(resolve=>signal.addEventListener('abort',()=>resolve(),{once:true}))});
  const first=other.start('login',{operationId:randomUUID(),expectedRevision:other.status().revision});await other.cancel({expectedRevision:first.revision,taskId:first.task!.id});const second=other.start('login',{operationId:randomUUID(),expectedRevision:other.status().revision});await assert.rejects(other.cancel({expectedRevision:first.revision,taskId:first.task!.id}),{code:'recording_authorization_changed'});assert.equal(other.status().task!.id,second.task!.id);await other.close();

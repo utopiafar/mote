@@ -44,7 +44,7 @@ const controller = new AbortController();
 const stop = () => { stopped = true; controller.abort(); };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 try {
-  // Preview uses the same bounded spool and 512 MiB file limit as an import,
+  // Preview uses the same bounded spool and streaming scanner as an import,
   // with private, disposable state instead of the selected profile's outbox.
   if (!request) previewDirectory = await mkdtemp(join(tmpdir(), 'mote-file-import-preview-'));
   const accessMarkerPath = request ? statePath + '.atime.json' : join(previewDirectory!, 'access.json');

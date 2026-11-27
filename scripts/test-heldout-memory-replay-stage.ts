@@ -4,7 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {mkdir,readFile,readdir,realpath,writeFile} from 'node:fs/promises';
-import {join,resolve,relative} from 'node:path';
+import {dirname,join,resolve,relative} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import {AgentTimeoutError,codexContextCapacity,type AgentAnswer,type ContextReader,type QueryInput} from '@mote/agent';
@@ -113,11 +113,29 @@ const fixedLimits={stageOuter:2,perOuterMs:300000,stageProcessMs:720000,cumulati
 const experimentPlan={version:'heldout-v2.1-six-wave@1',batchesByWave:[6,6,10,6,8,6],stageOuterCaps:[2,14,18,26,18,22,16,2,2,2,2],totalOuterPlanningCap:124,extractionRecipes:recipes,integrationRecipe:defaultMemoryIntegrationRecipe,batchCharacters:12000,clock:'checkpoint-availability.json contextTime frozen per host task',outerAutomaticRetries:0};
 const dialogueExperimentPlan={...experimentPlan,version:'heldout-v2.1-six-wave@2',sourceProjection:'authored-dialogue-attribution@1'};
 export function usesHeldoutDialogue(manifest:Pick<Manifest,'kind'|'experimentPlan'>){return manifest.kind==='heldout'&&JSON.stringify(manifest.experimentPlan)===JSON.stringify(dialogueExperimentPlan);}
+export async function replayExecutablePin(codexBin:string){
+  check(await realpath(codexBin)===codexBin,'heldout_codex_launcher_path_changed');
+  const bytes=await readFile(codexBin);
+  const bundled=await readFile(join(repositoryRoot,'packages','agent','native','codex.mjs'));
+  // A byte-identical bundled launcher resolves a child relative to its own
+  // location. Other supported entries must be native executables themselves.
+  if(bytes.equals(bundled)){
+    const path=await realpath(join(dirname(codexBin),'bin','codex-app-server'));
+    return {codexBinHash:sha256(bytes),nativeBinary:{path,sha256:sha256(await readFile(path))}};
+  }
+  const header=bytes.subarray(0,4).toString('hex');
+  check(/^(?:7f454c46|feedfac[ef]|cefaedfe|cffaedfe|cafebab[ef]|bebafeca|bfbafeca|4d5a[0-9a-f]{4})$/.test(header),
+    'heldout_codex_entry_not_native');
+  const codexBinHash=sha256(bytes);
+  return {codexBinHash,nativeBinary:{path:codexBin,sha256:codexBinHash}};
+}
 export async function assertReplayNativeModel(manifest:Pick<Manifest,'kind'|'experimentPlan'|'model'>){
   if(!usesHeldoutDialogue(manifest))return;
-  const {model,nativeBinary}=manifest.model;
+  const {model,codexBin,codexBinHash,nativeBinary}=manifest.model;
   check(codexContextCapacity(model)&&nativeBinary,'heldout_native_model_budget_unverified');
-  check(sha256(await readFile(nativeBinary.path))===nativeBinary.sha256,'heldout_native_binary_changed');
+  const actual=await replayExecutablePin(codexBin);
+  check(actual.codexBinHash===codexBinHash,'heldout_codex_launcher_changed');
+  equal(actual.nativeBinary,nativeBinary,'heldout_native_binary_changed');
 }
 export function experimentHash(m:Manifest){return hashObject({corpus:m.corpusFreeze,evaluation:m.evaluationFreeze,production:Object.fromEntries(Object.entries(m.codeHashes).filter(([file])=>!file.startsWith('scripts/'))),model:m.model,runtime:m.runtime,bindings:m.bindingsHash,initialSeed:m.seedTreeHash,initialBatchPlan:m.batchPlan,plan:m.experimentPlan});}
 const supervisor=join(base,'run-heldout-stage-supervised.py');
@@ -221,13 +239,12 @@ async function modelPin(mechanical:boolean):Promise<Manifest['model']>{
   check(model&&codexContextCapacity(model),'heldout_native_model_budget_unverified');
   check(process.env.MOTE_CODEX_BIN&&process.env.MOTE_CODEX_HOME,'explicit_codex_paths_required');
   const codexBin=await realpath(process.env.MOTE_CODEX_BIN),codexHome=await realpath(process.env.MOTE_CODEX_HOME);
-  const nativeRoot=join(repositoryRoot,'packages','agent','native'),launcher=await realpath(join(nativeRoot,'codex.mjs'));
-  const nativePath=codexBin===launcher?await realpath(join(nativeRoot,'bin','codex-app-server')):codexBin;
+  const pin=await replayExecutablePin(codexBin);
   check(execFileSync(codexBin,['--mote-context-budget-version'],{encoding:'utf8',timeout:5000}).trim()==='mote-context-budget-v1','heldout_codex_budget_unavailable');
-  const nativeBinary={path:nativePath,sha256:sha256(await readFile(nativePath))};
   const {items}=await codexModels(undefined,{executable:codexBin,home:codexHome});
   check(items.some(item=>item.id===model&&item.reasoningEfforts?.includes('max')),'heldout_codex_model_not_listed');
-  return {provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'max',codexBin,codexBinHash:sha256(await readFile(codexBin)),codexHome,nativeBinary};
+  equal(await replayExecutablePin(codexBin),pin,'heldout_codex_changed_during_freeze');
+  return {provider:'codex',protocol:'codex-app-server',model,reasoningEffort:'max',codexBin,codexHome,...pin};
 }
 const noProvider:Stub=async()=>{throw new SafeFailure('freeze_provider_forbidden');};
 /** Freeze only wave 1 from ordinary ingress. No query or model result is loaded. */
