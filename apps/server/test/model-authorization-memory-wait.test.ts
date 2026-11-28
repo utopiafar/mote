@@ -72,6 +72,67 @@ test('an explicit provider switch clears only the previous provider quota wait f
  assert.deepEqual(calls,[{provider:'custom',phase:'extract'},{provider:'deepseek',phase:'extract'},{provider:'deepseek',phase:'review'}]);
 });
 
+for(const parkedPhase of ['extract','review'] as const)test(`a quota-only provider switch resumes ${parkedPhase} with the same originals and skips terminal siblings`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-scoped-fallback-'));
+ const token='generated-scoped-fallback',headers={authorization:'Bearer '+token};
+ const config:ConfigurationPlatformOptions={path:join(directory,'mote.yaml'),privateCredential:{token,tokenPath:'fixture'},initialDocument:{
+  version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},
+  execution:{insightIntervalHours:0,memoryConcurrency:1},models:{deployment:{model:'generated-old',provider:'custom',protocol:'openai-completions',
+   baseUrl:'https://generated-old.invalid/v1',apiKey:'generated-only',allowUnauthenticatedLocal:false}},
+  diagnostics:{enabled:false,traceEnabled:false,level:'silent'}
+ }};
+ const calls:{provider:string;phase?:string;runId:string;batchId?:string;reads:unknown}[]=[];
+ const node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(settings,reader)=>({configured:true,close:async()=>{},query:async input=>{
+  const topic=fixtureTopicResult(input);if(topic)return topic;
+  const call={provider:settings.provider,phase:input.traceContext?.phase,runId:randomUUID(),batchId:input.traceContext?.batchId,reads:input.evidenceReadRanges};
+  calls.push(call);
+  if(calls.length===1)throw new AgentResponseError('Generated terminal sibling','output_limit');
+  if(settings.provider==='custom'&&call.phase===parkedPhase)throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:3600000,executionStarted:false});
+  const bridge=await startBridge(reader,input);
+  try{return {runId:call.runId,answer:generatedMemoryOutput(input),citations:[],trace:bridge.trace,
+   evidenceReadRanges:bridge.deliveredRanges,evidenceDependencies:bridge.evidenceDependencies};}finally{await bridge.close();}
+ }})});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ await node.app.ready();
+ const profile='generated-fallback',settings=node.modelSettings.select('memory').settings;
+ const saved=await node.app.inject({method:'PUT',url:'/api/model-settings/profiles/'+profile,headers,payload:{revision:node.modelSettings.view().revision,
+  name:'Generated fallback',settings:{...settings,provider:'deepseek',protocol:'deepseek',baseUrl:'https://generated-new.invalid/v1',model:'generated-new'}}});
+ assert.equal(saved.statusCode,200,saved.body);
+ const evidenceIds=[randomUUID(),randomUUID()];
+ for(const id of evidenceIds){
+  const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-fallback',deviceName:'Generated',
+   platform:'import',capturedAt:'2026-05-01T00:00:00Z',text:'Generated recording fixture '+id+'. '+'A bounded synthetic original paragraph. '.repeat(175)}});
+  assert.equal(note.statusCode,201,note.body);
+ }
+ const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds}});
+ assert.equal(created.statusCode,202,created.body);
+ const id=created.json().id,read=()=>node.memoryPipeline.get(id);
+ for(const end=Date.now()+8000;Date.now()<end&&!read().batches.some(b=>b.errorCode==='rate_limited');)await setTimeout(20);
+ const before=read(),parked=before.batches.find(b=>b.errorCode==='rate_limited'),failed=before.batches.find(b=>b.errorCode==='model_output_capacity');
+ assert.ok(parked);assert.ok(failed);assert.equal(before.batches.length,2);assert.equal(parked.phase,parkedPhase);
+ const pins=()=>node.store.db.prepare("SELECT step_id,input_hash,output_hash FROM memory_phase_outputs WHERE batch_id=? AND phase='extract'").all(parked.id);
+ const prior=pins(),draft=calls.find(c=>c.batchId===parked.id&&c.phase==='extract');
+ assert.equal(prior.length,parkedPhase==='review'?1:0);
+ const url='/api/memory-jobs/'+id+'/retry?target=provider-quota';
+ const accepted=await node.app.inject({method:'POST',url,headers,payload:{modelProfileId:profile}});
+ assert.equal(accepted.statusCode,202,accepted.body);
+ const done=await node.memoryPipeline.run(id),resumed=done.batches.find(b=>b.id===parked.id)!;
+ assert.equal(done.configuration?.provider,'deepseek');
+ assert.equal(resumed.status,'completed');assert.deepEqual(resumed.evidenceRanges,parked.evidenceRanges);
+ assert.equal(resumed.reviewReceipt?.decision,'independent');
+ const untouched=done.batches.find(b=>b.id===failed.id)!;
+ assert.equal(untouched.status,'failed');assert.equal(untouched.errorCode,failed.errorCode);assert.equal(untouched.attempts,failed.attempts);
+ const fallbackCalls=calls.filter(c=>c.provider==='deepseek');
+ assert.deepEqual(fallbackCalls.map(c=>c.phase),parkedPhase==='review'?['review']:['extract','review']);
+ assert.ok(fallbackCalls.every(c=>c.batchId===parked.id));
+ if(parkedPhase==='review'){
+  assert.deepEqual(pins(),prior,'the original extraction receipt stays immutable');
+  assert.equal(resumed.reviewReceipt?.draftRunId,draft?.runId);
+  assert.deepEqual(fallbackCalls[0].reads,draft?.reads);
+ }
+ assert.equal((await node.app.inject({method:'POST',url,headers,payload:{modelProfileId:profile}})).statusCode,409);
+});
+
 test('A1-30: an excluded source Memory waits durably without invoking a model and completes once after re-inclusion',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-memory-authorization-wait-'));
  const config:ConfigurationPlatformOptions={path:(directory)+'/mote.yaml',privateCredential:{token:'generated-memory-wait-owner',tokenPath:'fixture'},initialDocument:{version:1,revision:0,storage:{dataDir:directory,maxExportBytes:1_000_000},server:{host:'127.0.0.1',port:0,allowedOrigins:[]},execution:{insightIntervalHours:0},models:{deployment:{model:'fixture',apiKey:'',allowUnauthenticatedLocal:false,protocol:'deepseek',reasoningEffort:'high'},embedding:{model:'',baseUrl:'',apiKey:''}},diagnostics:{enabled:false}}};
