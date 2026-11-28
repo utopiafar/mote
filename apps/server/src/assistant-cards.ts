@@ -294,8 +294,8 @@ export class AssistantCards {
    const items:Array<GoalRecordingItem&{matterId:string|null}>=[];
    const evidence:ReviewEvidence={current:new Map(),historical:new Map(),
     selection:scope.evidenceIds&&new Set(taskEvidenceIds(this.store,{version:1,complete:true,ids:scope.evidenceIds}))};
-   for(const row of this.feedRows(Number.MAX_SAFE_INTEGER,100,scope,evidence.selection,'topic')){
-    if(row.state!=='open')continue;
+   for(const row of this.feedRows(Number.MAX_SAFE_INTEGER,100,scope,evidence.selection)){
+    if(row.kind!=='topic'||row.state!=='open')continue;
     const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,scope,false,evidence);
     if(!visible)continue;
     const target=visible.body.evidence[0]?.ref,original=target&&parseEvidenceRef(target);
@@ -464,7 +464,7 @@ export class AssistantCards {
    for(const row of rows){if(this.visibleVersion(row,scope))return true;before=row.seq;}
   }
  }
- private *feedRows(before:number,batch:number,scope?:QueryScope,selection?:ReadonlySet<string>,kind?:CardRow['kind']){
+ private *feedRows(before:number,batch:number,scope?:QueryScope,selection?:ReadonlySet<string>){
   const filters:string[]=[],values:string[]=[];
   if(scope?.kind==='selection'&&scope.sourceIds){
    filters.push("coalesce(json_extract(c.json,'$.provenance.sourceId'),'') NOT IN (SELECT value FROM json_each(?))");
@@ -475,13 +475,12 @@ export class AssistantCards {
   // These predicates only reject known mismatches. Derived records, source pins
   // and request-time disclosure still go through the shared visibility check.
   const rowsBefore=this.store.db.prepare(`SELECT a.* FROM assistant_cards a WHERE a.seq<? AND a.state!='stale'
-   ${kind?'AND a.kind=?':''}
    AND EXISTS(SELECT 1 FROM assistant_card_versions v WHERE v.card_id=a.id AND v.version=a.current_version AND v.stale=0 AND v.private_json IS NOT NULL)
    ${filters.length?`AND NOT EXISTS(SELECT 1 FROM assistant_card_evidence e JOIN captures c ON c.id=e.evidence_id
     WHERE e.card_id=a.id AND e.version=a.current_version AND (${filters.join(' OR ')}))`:''}
    ORDER BY a.seq DESC LIMIT ?`);
   for(;;){
-   const rows=rowsBefore.all(before,...(kind?[kind]:[]),...values,batch) as CardRow[];
+   const rows=rowsBefore.all(before,...values,batch) as CardRow[];
    for(const row of rows)yield row;
    if(rows.length<batch)return;
    before=rows.at(-1)!.seq;

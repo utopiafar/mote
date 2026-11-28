@@ -121,7 +121,7 @@ const RECORDING_ACTIVITIES=`Also return "activities": [{"cardId":null,"title":".
 Write brief feed labels in the owner's language, following the field lengths above. Read the subject, action and gist together as one line without repeating words. Cite only exact transcript text. If a new recording corrects or substantively clarifies the same event already in the Feed, pass that existing activity cardId to update it. Skip simple retellings. Activity descriptions belong in this array and carry no reminder or question. Empty activities is valid.`;
 
 /** One bounded interpreter for understanding, Memory, cards and commitments.
- * Owner commands and A4 supply the existing batch admission. No schedule or
+ * Owner commands and the change feed supply the existing batch admission. No schedule or
  * original receipt is created here; tasks retain the private snapshot. */
 export class AssistantFollowup {
  private readonly tasks:TaskRecords;
