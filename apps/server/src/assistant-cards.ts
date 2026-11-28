@@ -1,7 +1,7 @@
 import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {Temporal} from '@js-temporal/polyfill';
 import {z} from 'zod';
-import {codingNextStepSchema,evidenceDependenciesSchema,ownerQuestionEvidenceSchema,parseEvidenceId,queryScopeSchema,sourceContextDeclarationSchema,type AssistantEvidenceOrigin,type CaptureRecord,type FeedCategoryCount,type FeedItem,type FeedPage,type FeedQuery,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {codingNextStepSchema,evidenceDependenciesSchema,goalRecordingDetailsSchema,ownerQuestionEvidenceSchema,parseEvidenceId,parseEvidenceRef,queryScopeSchema,sourceContentTime,sourceContextDeclarationSchema,type AssistantEvidenceOrigin,type CaptureRecord,type FeedCategoryCount,type FeedItem,type FeedPage,type FeedQuery,type GoalRecordingItem,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {StoreError,sha256,type EvidenceStore as Store} from './evidence-store.js';
 import {type EvidenceReader,withinEvidenceScope} from './evidence-reader.js';
 import {retireTaskRecordsSql,taskEvidenceIds,validateTaskDependencies} from './task-evidence.js';
@@ -11,7 +11,7 @@ import {canonicalRecipeJson} from './recipe-contract.js';
 import {assertSourceContextDependencies,sourceContextDependenciesCurrent} from './source-context-lineage.js';
 import {codingMessageProof} from './coding-session-context.js';
 
-const cardKind=z.enum(['activity','suggestion','briefing','artifact','question']);
+const cardKind=z.enum(['activity','suggestion','briefing','artifact','question','topic']);
 const cardState=z.enum(['open','resolved']);
 const uuid=z.string().uuid();
 const version=z.string().min(1).max(200);
@@ -65,6 +65,7 @@ const publishSchema=z.object({
  title:z.string().min(1).max(500),body:text,
  reminderReason:z.string().min(1).max(2000).refine(value=>value.trim().length>0).optional(),
  codingNextStep:codingNextStepSchema.optional(),
+ recording:goalRecordingDetailsSchema.optional(),
  category:z.string().max(32000).optional(),subject:z.string().max(32000).optional(),
  action:z.string().max(32000).optional(),gist:z.string().max(32000).optional(),
  evidence:z.array(ownerQuestionEvidenceSchema.extend({id:uuid})).max(100),
@@ -82,7 +83,7 @@ export const assistantCardFeedbackSchema=z.object({
 export type AssistantCardFeedback=z.infer<typeof assistantCardFeedbackSchema>;
 type CardRow={seq:number;id:string;cursor_key:string;kind:z.infer<typeof cardKind>;matter_id:string|null;revision:number;current_version:string;state:'open'|'resolved'|'stale';accepted_task_id:string|null;read_at:string|null;created_at:string;updated_at:string};
 type VersionRow={seq:number;card_id:string;version:string;request_hash:string;state:'open'|'resolved';stale:number;private_json:string|null;created_at:string};
-type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'|'codingNextStep'|'category'|'subject'|'action'|'gist'>&{historicalEvidenceIds?:string[]};
+type Body=Pick<AssistantCardPublication,'title'|'body'|'evidence'|'sourceContextDependencies'|'reminderReason'|'codingNextStep'|'recording'|'category'|'subject'|'action'|'gist'>&{historicalEvidenceIds?:string[]};
 type VisibleVersion={snapshot:VersionRow;body:Body;ids:string[]};
 type ReviewEvidence={current:Map<string,CaptureRecord[]>;historical:Map<string,CaptureRecord[]>;selection?:Set<string>};
 type FeedbackRow={seq:number;version:string;action:Exclude<AssistantCardFeedback['action'],'read'>;stale:number;private_json:string|null;created_at:string};
@@ -188,6 +189,7 @@ export class AssistantCards {
  /** Leave earlier Coding suggestions accessible as history. A previously
   * accepted card remains visible so a running task keeps its home. */
  private feedEligible(row:CardRow,body:Body){
+  if(row.kind==='topic')return false;
   if(row.kind!=='suggestion'||row.accepted_task_id||body.codingNextStep||!body.evidence.length)return true;
   return !this.reader.hasCodingOriginals(body.evidence.map(item=>item.id));
  }
@@ -253,6 +255,12 @@ export class AssistantCards {
   const input=publishSchema.parse(raw),scope=queryScopeSchema.parse(rawScope),publicDependencies=validateTaskDependencies(input.evidenceDependencies),pins=input.sourceContextDependencies??[];
   const extra=[...new Set(internalDependencies)].sort(),dependencies=validateTaskDependencies({...publicDependencies,ids:[...publicDependencies.ids,...extra]});
   if(input.evidence.some(entry=>!dependencies.ids.includes(entry.id)))throw new StoreError('Card evidence is outside its disclosure dependencies',409);
+  if(input.recording){
+   const roots=input.evidence.map(entry=>entry.ref?parseEvidenceRef(entry.ref):undefined);
+   const progress=input.recording.lastProgress;
+   if(input.kind!=='topic'||input.reminderReason||!roots.length||roots.some(ref=>ref?.kind!=='capture'||!dependencies.ids.includes(ref.id))||
+    progress&&!roots.some(ref=>ref?.id===progress.evidenceId))throw new StoreError('Recording item evidence is invalid',409);
+  }
   const historical=[...new Set(historicalDependencies)].sort();
   const hash=sha256(canonicalRecipeJson({...input,evidenceDependencies:publicDependencies,...(extra.length?{internalDependencies:extra}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})}));
   return this.transaction(()=>{
@@ -271,7 +279,7 @@ export class AssistantCards {
    assertPublicationCurrent(assertCurrent,ids);this.assertValid(ids,scope,sourceIds,historical);assertSourceContextDependencies(this.reader.sources.contexts,pins);
    if(existing)this.expect(this.row(input.id),expectedRevision!);
    const at=this.now(),body=encodeMemoryPrivate(this.store,{title:input.title,body:input.body,evidence:input.evidence,...(input.reminderReason?{reminderReason:input.reminderReason}:{}),
-     ...(input.codingNextStep?{codingNextStep:input.codingNextStep}:{}),...feedFields(input),...(pins.length?{sourceContextDependencies:pins}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})});
+     ...(input.codingNextStep?{codingNextStep:input.codingNextStep}:{}),...(input.recording?{recording:input.recording}:{}),...feedFields(input),...(pins.length?{sourceContextDependencies:pins}:{}),...(historical.length?{historicalEvidenceIds:historical}:{})});
    if(existing)this.store.db.prepare('UPDATE assistant_cards SET matter_id=?,current_version=?,state=?,revision=revision+1,updated_at=? WHERE id=?').run(input.matterId,input.version,input.state,at,input.id);
    else this.store.db.prepare('INSERT INTO assistant_cards(id,cursor_key,kind,matter_id,revision,current_version,state,accepted_task_id,read_at,created_at,updated_at) VALUES(?,?,?,?,1,?,?,NULL,NULL,?,?)').run(input.id,randomBytes(32).toString('hex'),input.kind,input.matterId,input.version,input.state,at,at);
    this.store.db.prepare('INSERT INTO assistant_card_versions(card_id,version,request_hash,state,private_json,created_at) VALUES(?,?,?,?,?,?)').run(input.id,input.version,hash,input.state,body,at);
@@ -281,6 +289,26 @@ export class AssistantCards {
   });
  }
  get(id:string,rawScope:QueryScope){return this.transaction(()=>this.view(this.row(id),queryScopeSchema.parse(rawScope)));}
+ openRecordingItems(scope:QueryScope,limit:number):Array<GoalRecordingItem&{matterId:string|null}>{
+  return this.transaction(()=>{
+   const items:Array<GoalRecordingItem&{matterId:string|null}>=[];
+   const evidence:ReviewEvidence={current:new Map(),historical:new Map(),
+    selection:scope.evidenceIds&&new Set(taskEvidenceIds(this.store,{version:1,complete:true,ids:scope.evidenceIds}))};
+   for(const row of this.feedRows(Number.MAX_SAFE_INTEGER,100,scope,evidence.selection)){
+    if(row.kind!=='topic'||row.state!=='open')continue;
+    const snapshot=this.versionRow(row.id,row.current_version),visible=snapshot&&this.visibleVersion(snapshot,scope,false,evidence);
+    if(!visible)continue;
+    const target=visible.body.evidence[0]?.ref,original=target&&parseEvidenceRef(target);
+    if(!original||original.kind!=='capture'||!visible.ids.includes(original.id))continue;
+    const legacy=!visible.body.recording&&this.store.evidenceMetadata([original.id])[0];
+    const recording=visible.body.recording??(legacy?{kind:'topic' as const,recordedAt:sourceContentTime(legacy)}:undefined);
+    if(!recording||recording.lastProgress&&!visible.ids.includes(recording.lastProgress.evidenceId))continue;
+    items.push({id:row.id,matterId:row.matter_id,title:visible.body.title,body:visible.body.body,evidenceId:original.id,revision:row.revision,...recording});
+    if(items.length===limit)break;
+   }
+   return items;
+  });
+ }
  /** Find when the current run of reminder proposals began. An inaccessible
   * previous version cannot be used to infer a new reminder. */
  private notificationTiming(id:string,scope:QueryScope,current:VersionRow){

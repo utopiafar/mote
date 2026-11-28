@@ -731,6 +731,7 @@ export const spanish: Readonly<Record<string, string>> = {
   "权限状态未知。查看系统设置。": "Desconocido; revisa Configuración del Sistema",
   "不可用日历：{0}（可取消选择）": "Calendario no disponible: {0} (deselecciona para quitar)",
   "待确认": "Necesita confirmación",
+  "待做议题": "Temas pendientes",
   "已忽略": "Ignorado",
   "等待客户端写入": "Esperando al dispositivo",
   "正在写入 / 等待回执": "Escribiendo / esperando recibo",

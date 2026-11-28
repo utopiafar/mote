@@ -5,6 +5,7 @@ import {
 } from '@mote/shared';
 import {z} from 'zod';
 import type {Actions} from './actions.js';
+import type {AssistantCards} from './assistant-cards.js';
 import type {AssistantCommitments} from './assistant-commitments.js';
 import type {AssistantMatters} from './assistant-matters.js';
 import type {AssistantRoutines} from './assistant-routines.js';
@@ -59,7 +60,7 @@ export class AssistantGoals {
  constructor(private readonly store:Store,private readonly commitments:AssistantCommitments,
   private readonly matters:AssistantMatters,private readonly routines:AssistantRoutines,
   private readonly reader:EvidenceReader,private readonly goalsActions:()=>GoalsActions|undefined,
-  private readonly now=()=>Date.now()){this.todos=new TodoStore(store);}
+  private readonly now=()=>Date.now(),private readonly cards?:Pick<AssistantCards,'openRecordingItems'>){this.todos=new TodoStore(store);}
 
  private actions(){try{return this.goalsActions();}catch{return undefined;}}
  private timeZone(explicit?:string){if(explicit)return zone(explicit);try{return this.actions()?.settings().timeZone??'UTC';}catch{return 'UTC';}}
@@ -186,7 +187,8 @@ export class AssistantGoals {
   return sha256(canonicalRecipeJson({grouping,scope,groups:groups.map(group=>[group.key,
    group.theirs.map(item=>[item.kind,item.id,item.revision]),
    group.mine.map(item=>[item.kind,item.id,item.revision]),
-   group.unconfirmed.map(item=>[item.kind,item.id,item.revision])])}));
+   group.unconfirmed.map(item=>[item.kind,item.id,item.revision]),
+   group.recordingItems?.map(item=>[item.id,item.revision])??[]])}));
  }
 
  /** Owner page read. `matter` groups by saved active matter; `person` uses only
@@ -205,6 +207,11 @@ export class AssistantGoals {
   const matters=input.group==='matter'?this.matterPage(scope):[];
   for(const matter of matters)ensure({kind:'matter',id:matter.id,title:trimmed(matter.goal,500)});
   const matterById=new Map(matters.map(matter=>[matter.id,matter]));
+  for(const {matterId,...item} of this.cards?.openRecordingItems(scope,CAP)??[]){
+   const matter=matterId?matterById.get(matterId):undefined;
+   const group=ensure(matter?{kind:'matter',id:matter.id,title:trimmed(matter.goal,500)}:{kind:'none'});
+   (group.recordingItems??=[]).push(item);
+  }
   const add=(key:GoalGroup['key'],section:Section,item:GoalItem)=>{ensure(key)[section].push(item);if(ensure(key)[section].length>CAP)ensure(key)[section].pop();};
   const commitments=this.commitmentPage(scope);
   for(const value of commitments){
@@ -224,7 +231,7 @@ export class AssistantGoals {
    const item=this.eventItem(value,timeZone);
    add({kind:'none'},item.inferred?'unconfirmed':'mine',item);
   }
-  const ordered=[...groups.values()].filter(group=>group.theirs.length||group.mine.length||group.unconfirmed.length||group.key.kind==='matter');
+  const ordered=[...groups.values()].filter(group=>group.recordingItems?.length||group.theirs.length||group.mine.length||group.unconfirmed.length||group.key.kind==='matter');
   ordered.sort((left,right)=>{
    const rank=(group:GoalGroup)=>(group.key.kind==='matter'?0:group.key.kind==='person'?1:2);
    const difference=rank(left)-rank(right);if(difference)return difference;

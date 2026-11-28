@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
-import {CHAT_ABOUT_PARAM,pageHash,parseAboutRef,type GoalGroup,type GoalItem,type GoalsView,type Matter,type QueryScope,type WorkspaceView} from '@mote/shared';
+import {CHAT_ABOUT_PARAM,pageHash,parseAboutRef,type GoalGroup,type GoalItem,type GoalRecordingItem,type GoalsView,type Matter,type QueryScope,type WorkspaceView} from '@mote/shared';
 import {configureLocale} from '@mote/shared/i18n';
 import {fixtureMemoryResult} from '../../server/test/fixtures/memory-result';
 import {ApiError,type Api} from '../src/api';
@@ -32,7 +32,7 @@ const ids={
 };
 type Row={item:GoalItem;matterId?:string;person?:string};
 type Call={path:string;method:string;body?:Record<string,unknown>};
-type State={matters:Matter[];rows:Row[];sequence:number};
+type State={matters:Matter[];rows:Row[];sequence:number;recordings?:{matterId:string;item:GoalRecordingItem}[]};
 const matter=(id:string,goal:string,evidenceIds:string[]=[],template:Matter['template']='project'):Matter=>({id,goal,template,scope:all,state:'active',revision:1,taskIds:[],evidenceIds,correction:null,createdAt:at,updatedAt:at,archivedAt:null});
 const base=():State=>({
   matters:[matter(ids.release,'Generated release',[ids.evidence,ids.alice,ids.bob]),matter(ids.review,'Generated review',[ids.evidence]),matter(ids.home,'Generated home')],
@@ -59,7 +59,11 @@ function view(state:State,grouping:'matter'|'person'):GoalsView{
     const group=ensure(key),section=row.item.inferred?'unconfirmed':row.item.direction==='theirs'?'theirs':'mine';
     group[section].push(structuredClone(row.item));
   }
-  const ordered=[...groups.values()].filter(group=>group.theirs.length||group.mine.length||group.unconfirmed.length||group.key.kind==='matter');
+  for(const {matterId,item} of state.recordings??[]){
+    const owner=grouping==='matter'&&state.matters.find(matter=>matter.id===matterId);
+    (ensure(owner?{kind:'matter',id:owner.id,title:owner.goal}:{kind:'none'}).recordingItems??=[]).push(structuredClone(item));
+  }
+  const ordered=[...groups.values()].filter(group=>group.theirs.length||group.mine.length||group.unconfirmed.length||group.recordingItems?.length||group.key.kind==='matter');
   const rank=(group:GoalGroup)=>group.key.kind==='matter'?0:group.key.kind==='person'?1:2;
   ordered.sort((left,right)=>rank(left)-rank(right)||JSON.stringify(left.key).localeCompare(JSON.stringify(right.key)));
   return {revision:'generated-goals-'+grouping+'-'+state.sequence,groups:ordered};
@@ -147,6 +151,26 @@ async function selectIn(parent:ParentNode,label:string,value:string){
   });
 }
 const group=(d:Document,id:string)=>d.querySelector<HTMLElement>('.goals-group[data-group="'+id+'"]');
+
+test('recording goals keep separate links for the original and recent progress',async t=>{
+  const state=base(),progressId=randomUUID();
+  state.recordings=[{matterId:ids.home,item:{id:randomUUID(),kind:'plan',title:'Generated reading plan',body:'The recording sets aside time to read.',
+    dueText:'周末',recordedAt:at,evidenceId:ids.evidence,revision:2,
+    lastProgress:{summary:'Generated first chapter read.',at:'2026-11-21T02:00:00Z',evidenceId:progressId}}}];
+  const ui=await fixture(t,state);await ui.render();
+  const row=group(ui.d,'matter:'+ids.home)?.querySelector<HTMLElement>('[data-kind="plan"]');
+  assert.ok(row);
+  assert.equal(row.querySelector('.goals-due')?.textContent,'周末');
+  assert.equal(row.querySelectorAll('a').length,0);
+  const progress=row.querySelector('[data-recording-source="progress"]');
+  const original=row.querySelector('[data-recording-source="original"]');
+  assert.ok(progress&&original);
+  assert.match(progress.textContent??'',/最近进展.*first chapter/);
+  await clickIn(progress,'查看原文');
+  await clickIn(original,'查看原文');
+  assert.deepEqual(ui.opened,['capture:'+progressId,'capture:'+ids.evidence]);
+});
+
 async function mountWorkbench(t:import('node:test').TestContext,hash:string){
   configureLocale(()=> 'zh-CN');
   const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'+hash,pretendToBeVisual:true}),prior=new Map<string,PropertyDescriptor|undefined>();

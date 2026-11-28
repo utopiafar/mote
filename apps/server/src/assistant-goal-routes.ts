@@ -13,8 +13,8 @@ const timeZone=z.string().max(100).refine(value=>{
 const id=(request:FastifyRequest)=>z.object({id:z.string().uuid()}).parse(request.params).id;
 const revision=z.number().int().positive().safe();
 
-/** Owner-only goal surface. Reads and commands only touch the existing
- * commitment, Todo, calendar Action and routine services. */
+/** Owner-only projection over commitments, follow-up topics, Todos and calendar
+ * Actions. Goal commands use the existing item and routine services. */
 export function registerAssistantGoalRoutes(app:FastifyInstance,deps:{goals:Pick<AssistantGoals,'view'|'follow'|'create'|'correct'|'todoReference'>;owner:(request:FastifyRequest)=>void}){
  const {goals,owner}=deps;
  app.get('/api/assistant/goals',async(request,reply)=>{

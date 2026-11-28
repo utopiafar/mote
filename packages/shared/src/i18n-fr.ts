@@ -731,6 +731,7 @@ export const french: Readonly<Record<string, string>> = {
   "权限状态未知。查看系统设置。": "Inconnu ; vérifiez Réglages Système",
   "不可用日历：{0}（可取消选择）": "Calendrier indisponible : {0} (désélectionnez pour retirer)",
   "待确认": "Nécessite une confirmation",
+  "待做议题": "Sujets à poursuivre",
   "已忽略": "Ignoré",
   "等待客户端写入": "En attente de l'appareil",
   "正在写入 / 等待回执": "Écriture en cours / en attente du reçu",
