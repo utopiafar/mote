@@ -132,11 +132,13 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
     child.post('/api/memory-jobs/:id/retry',async(req,reply)=>{
       const pipeline=dependencies.pipeline(),id=jobId(req.params),operationId='memory:'+id,control=dependencies.modelAuthorizationHost.control;
       const {target}=z.object({target:z.enum(['topics','provider-quota']).optional()}).parse(req.query);
-      const {modelProfileId}=z.object({modelProfileId:modelProfileIdSchema.optional()}).parse(req.body??{});
+      const {modelProfileId,batchId}=z.object({modelProfileId:modelProfileIdSchema.optional(),batchId:z.string().uuid().optional()}).parse(req.body??{});
       const quotaOnly=target==='provider-quota';
+      if(batchId&&(target!==undefined||modelProfileId!==undefined))throw new StoreError('A batch retry requires the current model profile',400);
       if(quotaOnly&&modelProfileId===undefined)throw new StoreError('Select a replacement model profile for quota-waiting Memory work',400);
       const job=pipeline.get(id);
       if(target==='topics'||job.status==='completed'){
+        if(batchId)throw new StoreError('Selected Memory batch is not available for retry',409);
         if(modelProfileId!==undefined)throw new StoreError('A model profile can only be selected for unfinished Memory extraction',409);
         if(['paused','pausing','cancelled'].includes(job.status))throw new StoreError('Memory job is paused or cancelled',409);
         dependencies.retryTopics(operationId);
@@ -152,15 +154,16 @@ export function registerMemoryRuntimeRoutes(app:FastifyInstance,dependencies:Mem
           if(!step)continue;
           const parent=step.kind==='memory.batch';
           const batch=batches.get(parent?step.id:String(step.input.batchId??''));
+          if(batchId&&batch?.id!==batchId)continue;
           const selectingModel=parent&&batch&&selectedProvider!==undefined&&pipeline.retrySelectsModel(job,batch,selectedProvider,quotaOnly);
           if(quotaOnly&&!selectingModel)continue;
           if(!control.stepAuthority(step.id)){control.bindCurrentStep(step);continue;}
           const currentPhase=step.kind.startsWith('memory.phase.')&&batch?.generationContract!==undefined&&step.input.generation===batch.generationContract;
           const waitingForAuthority=(parent||currentPhase)&&batch?.status==='pending'&&batch.errorCode==='background_model_authorization_required'&&
             step.state==='waiting'&&step.error==='background_model_authorization_required';
-          if(selectingModel||waitingForAuthority)control.renewMemoryRetryAuthority(step);
+          if(selectingModel||waitingForAuthority||batchId&&(parent||currentPhase))control.renewMemoryRetryAuthority(step);
         }
-        return pipeline.acceptRetry(id,true,modelProfileId,quotaOnly);
+        return pipeline.acceptRetry(id,true,modelProfileId,{quotaOnly,batchId});
       });
       void accepted.completion.catch(()=>{});return reply.code(202).send(accepted.job);
     });

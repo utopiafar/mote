@@ -888,11 +888,11 @@ export class MemoryPipeline {
     return child?.state==='waiting'&&child.attempts===0&&child.outputs===0&&
       typeof child.error==='string'&&isProviderQuotaWait(child.error);
   }
-  private assertRetryWindow(job:MemoryJob,changingProvider:boolean){
+  private assertRetryWindow(job:MemoryJob,changingProvider:boolean,selectedBatch?:MemoryBatch){
     // Input readiness checks have their own timer. Only a batch's provider
     // cooldown may delay an explicit recheck of another failed input plan.
     // An explicit switch to another provider leaves the old quota wait behind.
-    const delayed=this.store.db.prepare(`SELECT json_extract(json,'$.availableAt') at,json_extract(json,'$.errorCode') code
+    const delayed=selectedBatch?{at:selectedBatch.availableAt,code:selectedBatch.errorCode}:this.store.db.prepare(`SELECT json_extract(json,'$.availableAt') at,json_extract(json,'$.errorCode') code
       FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','pending')
       AND (?=0 OR coalesce(json_extract(json,'$.errorCode'),'') NOT IN ('rate_limited','provider_quota'))
       ORDER BY json_extract(json,'$.availableAt') DESC LIMIT 1`).get(job.id,Number(changingProvider));
@@ -903,37 +903,50 @@ export class MemoryPipeline {
   async retry(id:string,ownerAction=true):Promise<MemoryJobDetail> {return this.acceptRetry(id,ownerAction).completion;}
   /** Admission is synchronous so HTTP can reject a stale/cancelled/cooling-down
    * retry before returning 202. The accepted execution remains asynchronous. */
-  acceptRetry(id:string,ownerAction:boolean,modelProfileId?:string,quotaOnly=false):{job:MemoryJobDetail;completion:Promise<MemoryJobDetail>} {
+  acceptRetry(id:string,ownerAction:boolean,modelProfileId?:string,{quotaOnly=false,batchId}:{quotaOnly?:boolean;batchId?:string}={}):{job:MemoryJobDetail;completion:Promise<MemoryJobDetail>} {
     this.assertAdmission();
+    if(batchId&&(!ownerAction||quotaOnly||modelProfileId!==undefined))throw new StoreError('A batch retry requires the current model profile',400);
     let job=this.storedJob(id);
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
     const selection=modelProfileId===undefined?undefined:this.options.models.configuration?.(modelProfileId,quotaOnly?undefined:job.modelOverride);
     if(modelProfileId!==undefined&&(!selection||!this.options.models.configured(modelProfileId)))throw new StoreError('Memory model profile is unavailable',409);
     const changingProvider=Boolean(ownerAction&&selection&&job.configuration&&selection.provider!==job.configuration.provider);
     if(quotaOnly&&!changingProvider)throw new StoreError('Select a different provider to retry quota-waiting Memory work',409);
-    this.assertRetryWindow(job,changingProvider);
+    if(!batchId)this.assertRetryWindow(job,changingProvider);
     // The completion can cover queued batches long after a sibling failed.
     // Keep that handle while reopening failed work in an idle owner retry.
     if(this.active.has(id))this.settle([id]);
     const active=this.active.get(id);
     if(modelProfileId!==undefined&&(!ownerAction||active&&!quotaOnly))throw new StoreError('Pause the active Memory job before selecting another model profile',409);
-    const retryable=(current:MemoryJob,batch:MemoryBatch)=>ownerAction&&selection
-      ?this.retrySelectsModel(current,batch,selection.provider,quotaOnly)
-      :batch.status==='failed'&&batch.errorCode!=='memory_context_required';
+    const retryable=(current:MemoryJob,batch:MemoryBatch)=>{
+      if(batchId&&batch.id!==batchId)return false;
+      return ownerAction&&selection
+        ?this.retrySelectsModel(current,batch,selection.provider,quotaOnly)
+        :batch.status==='failed'&&batch.errorCode!=='memory_context_required';
+    };
     if(active){
       const current=this.get(id);
-      if(quotaOnly&&((current.runningBatches??0)>0||this.inputBusy(id)))throw new StoreError('Pause the active Memory job before selecting another model profile',409);
-      if(!ownerAction||(current.runningBatches??0)>0||this.inputBusy(id)||!current.batches.some(batch=>retryable(current,batch)))return {job:current,completion:active};
+      const busy=(current.runningBatches??0)>0||this.inputBusy(id);
+      if(quotaOnly&&busy)throw new StoreError('Pause the active Memory job before selecting another model profile',409);
+      if(batchId&&busy)throw new StoreError('Memory job is already running',409);
+      if(!ownerAction||busy||!current.batches.some(batch=>retryable(current,batch))){
+        if(batchId)throw new StoreError('Selected Memory batch is not available for retry',409);
+        return {job:current,completion:active};
+      }
     }
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
       try{
       job=this.storedJob(id);
         if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
-      this.assertRetryWindow(job,changingProvider);
+      if(!batchId)this.assertRetryWindow(job,changingProvider);
       const batches=this.batches(id);
       if(batches.some(batch=>batch.errorCode==='memory_provider_unknown_result'&&db.prepare("SELECT 1 FROM memory_provider_writes WHERE parent_id=? AND state='submitted'").get(batch.id)))throw new StoreError('Previous Memory publication outcome requires reconciliation before retry',409);
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
       const previousConfiguration=job.configuration?.fingerprint,retries=batches.filter(batch=>retryable(job,batch));
+      if(batchId){
+        if(!retries.length)throw new StoreError('Selected Memory batch is not available for retry',409);
+        this.assertRetryWindow(job,false,retries[0]);
+      }
       if(quotaOnly&&(!retries.length||batches.some(batch=>batch.status==='pending'&&!retries.includes(batch))||
         this.inputPlans.list(id).some(plan=>plan.batchIds===undefined&&this.engine.get(plan.id)?.state!=='succeeded')))throw new StoreError('Only idle quota-waiting Memory work can switch providers together',409);
       if(selection){
@@ -948,12 +961,12 @@ export class MemoryPipeline {
         job.modelProfileId=modelProfileId;
         if(quotaOnly)delete job.modelOverride;
         job.configuration=structuredClone(selection);
-      }else if(!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
+      }else if(!batchId&&!active&&this.options.models.configuration&&this.options.models.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.models.configuration(job.modelProfileId,job.modelOverride));}
       const configurationChanged=previousConfiguration!==job.configuration?.fingerprint;
       const capacity=this.options.models.capacity?.(job.modelProfileId,job.modelOverride);
       for(const batch of retries){
         try{this.admitBatch(job,batch);}catch(error){
-          if(quotaOnly)throw error;
+          if(quotaOnly||batchId)throw error;
           batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;
         }
         if(batch.errorCode==='memory_evaluation_incomplete')this.phaseOutputs.retryReview(batch.id,ownerAction);
@@ -986,8 +999,8 @@ export class MemoryPipeline {
         delete batch.readRanges;this.saveBatch(batch);
       }
       job.status='queued';delete job.errorCode;this.saveJob(job);
-      if(modelProfileId!==undefined&&previousConfiguration!==job.configuration?.fingerprint)this.engine.preferOperationOnce('memory.batch','memory:'+id);
-      if(!quotaOnly&&!active)for(const plan of this.inputPlans.list(id)){
+      if(batchId||modelProfileId!==undefined&&previousConfiguration!==job.configuration?.fingerprint)this.engine.preferOperationOnce('memory.batch','memory:'+id);
+      if(!quotaOnly&&!batchId&&!active)for(const plan of this.inputPlans.list(id)){
         const step=this.engine.get(plan.id);
         if(!step||!['waiting','blocked','failed'].includes(step.state)||plan.batchIds!==undefined)continue;
         this.engine.retry(plan.id,ownerAction);
