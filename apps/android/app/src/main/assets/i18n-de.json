@@ -730,6 +730,7 @@
   "权限状态未知。查看系统设置。": "Unbekannt; Systemeinstellungen prüfen",
   "不可用日历：{0}（可取消选择）": "Nicht verfügbarer Kalender: {0} (zum Entfernen abwählen)",
   "待确认": "Bestätigung ausstehend",
+  "待做议题": "Offene Themen",
   "已忽略": "Ignoriert",
   "等待客户端写入": "Warten auf Gerät",
   "正在写入 / 等待回执": "Wird geschrieben / Quittung ausstehend",

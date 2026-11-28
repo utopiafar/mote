@@ -27,7 +27,8 @@ import type {CodingEvidence,SourceItem} from '@mote/shared';
 const all:QueryScope={kind:'all'};
 const at='2026-10-01T10:00:00.000Z';
 const headers={authorization:'Bearer generated-followup-owner'};
-type Context={materials:{ref:string;attributionContext?:AttributionContext;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean}}[];originals:{id:string;offset:number;quote:string}[];
+type Context={materials:{ref:string;attributionContext?:AttributionContext;products:{summary:string;events:unknown[]}[];body?:{text:string;complete:boolean};recording?:'new'|'context'}[];originals:{id:string;offset:number;quote:string}[];
+ topicMatters?:{id:string;goal:string}[];
  cards:{id:string;revision:number;state:string;title:string;body?:string;suppressionOnly?:boolean;feedback:{action:string;note?:string}[]}[];memories:{id:string;statement:string}[];commitments:{id:string;status:string}[];mode:{kind:string}};
 type Program=(context:Context,input:QueryInput)=>unknown|Promise<unknown>;
 const evidence=(context:Context,needle:string)=>{
@@ -86,6 +87,125 @@ async function fixture(t:TestContext){
  const run=async(refs:string[],program:Program,mode?:Parameters<typeof start>[1],scope?:QueryScope)=>{programs.push(program);const task=await start(refs,mode,scope);await wait(task);return service.finish(task.id);};
  return {node,reader,batch,service,tasks,assertCurrent,programs,seen,grants,add,produce,start,wait,run,admission};
 }
+
+test('automatic recording review publishes quiet activities and updates the same goals and sources',async t=>{
+ const f=await fixture(t),sourceId='generated-recording-topics';
+ const {assistantCards:cards,assistantMatters:matters}=f.node.featureServices;
+ f.node.sources.register({id:sourceId,name:'Generated recordings',kind:'feishu.recordings',deviceId:sourceId,platform:'import',retention:'archive'});
+ f.node.sourcePipelines.configure(sourceId,{settleSeconds:0});
+ const matter=matters.command({type:'create',requestId:randomUUID(),goal:'Generated delivery review',scope:all},
+  {currentEvidence:()=>[],currentTask:()=>undefined});
+ let clock=Date.now();
+ (f.node.assistantChanges as unknown as {now:()=>number}).now=()=>clock;
+ f.node.modelAuthorization.command({action:'on',revision:f.node.modelAuthorization.view().revision,operationId:randomUUID()});
+ const runRecording=async (captureId:string,program:Program)=>{
+  f.programs.push(program);
+  f.node.assistantChanges.tick(100);
+  clock+=60001;
+  await f.service.tick(f.node.assistantChanges);
+  const analysis=f.node.store.db.prepare(`SELECT f.id FROM assistant_change_work w JOIN task_records b ON b.id=w.started_batch
+   JOIN task_records f ON f.operation_id=b.operation_id WHERE w.capture_id=? AND f.kind='assistant.followup'`).get(captureId);
+  assert.ok(analysis,'the recording enters automatic follow-up');
+  const task=f.tasks.get(String(analysis.id));
+  await f.wait(task);
+  await f.service.tick(f.node.assistantChanges);
+  assert.equal(f.tasks.get(task.id).state,'succeeded');
+  return f.service.finish(task.id);
+ };
+ const speaker='Generated speaker',opening='Generated recording context. '.repeat(50);
+ const addRecording=async (externalId:string,recordedAt:string,lines:string[])=>{
+  clock=Date.now();
+  const ack=await f.node.files.transcriptRevision(sourceId,{externalId,kind:'file',title:'Generated recording',observedAt:at,
+   document:{contentRole:'transcript',recordedAt,timeBasis:'recorded'}},lines.join('\n'),
+   {durationMs:lines.length*10000,coverage:'full',engine:'generated',segments:lines.map((text,index)=>({startMs:index*10000,endMs:(index+1)*10000,text,speaker}))},()=>{});
+  await f.node.materialOrganizer.tick(100);
+  await f.node.sourcePipelines.tick(100);
+  await f.node.executor.tick();
+  await until(()=>['blocked','succeeded','failed'].includes(String(f.node.store.db.prepare('SELECT summary_state FROM file_jobs WHERE capture_id=?').get(ack.id)?.summary_state)));
+  const material=f.node.materials.list({sourceId}).items.find(value=>value.origin.externalId===externalId);
+  assert.ok(material);
+  return {id:ack.id,ref:material.ref};
+ };
+ const quote='I want to return to whether we need a delivery rehearsal.';
+ const planQuote='I will inspect delivery samples on Friday.';
+ const prerequisite='The access request for delivery samples has been submitted.';
+ const original=await addRecording('generated-original',at,[opening,quote,planQuote,prerequisite]);
+ const title='Is a delivery rehearsal needed?',body='The recording left open whether to run a rehearsal before delivery.';
+ const planTitle='Inspect delivery samples';
+ const activityTitle='Delivery access request submitted';
+ const activity=(original:ReturnType<typeof evidence>,cardId:string|null=null)=>({
+  cardId,title:activityTitle,body:'The recording reports a submitted access request.',
+  feed:{category:'Work',subject:'Delivery',action:'Submitted',gist:'Requested access to delivery samples'},evidence:[original],
+ });
+ const result=await runRecording(original.id,context=>{
+  assert.deepEqual(context.topicMatters,[{id:matter.id,goal:matter.goal}]);
+  const origin=evidence(context,quote);
+  return {...answer(),recordingItems:[
+   {action:'new',kind:'topic',matterId:matter.id,title,body:`${body} [${origin.id}]`,evidence:{id:origin.id,quote:origin.quote}},
+   {action:'new',kind:'plan',matterId:matter.id,title:planTitle,body:'The recording set aside time to inspect the delivery samples.',dueText:'Friday',
+    evidence:evidence(context,planQuote),progress:{summary:'The access request was submitted.',evidence:evidence(context,prerequisite)}},
+  ],activities:[activity(evidence(context,prerequisite))]};
+ });
+ assert.equal(result.cardIds.length,3);
+ const [id,planId,activityId]=result.cardIds;
+ const goals=async()=>{
+  const response=await f.node.app.inject({url:'/api/assistant/goals?'+new URLSearchParams({group:'matter',scope:JSON.stringify(all)}),headers});
+  assert.equal(response.statusCode,200,response.body);
+  return response.json().groups.find((group:{key:{id?:string}})=>group.key.id===matter.id);
+ };
+ const items=async()=>(await goals())?.recordingItems as import('@mote/shared').GoalRecordingItem[];
+ const feed=async()=>{
+  const response=await f.node.app.inject({url:'/api/assistant-cards?'+new URLSearchParams({kinds:'activity,briefing,artifact,discovery',window:'today',scope:JSON.stringify(all)}),headers});
+  assert.equal(response.statusCode,200,response.body);
+  return response.json() as import('@mote/shared').FeedPage;
+ };
+ const initial=await items();
+ assert.deepEqual(initial.find(item=>item.id===id),{id,kind:'topic',title,body,evidenceId:original.id,recordedAt:at,revision:1});
+ assert.equal(initial.find(item=>item.id===planId)?.kind,'plan');
+ assert.equal(initial.find(item=>item.id===planId)?.dueText,'Friday');
+ assert.deepEqual(initial.find(item=>item.id===planId)?.lastProgress,{summary:'The access request was submitted.',at,evidenceId:original.id});
+ assert.equal(cards.get(id,all).evidence[0]?.quote,quote);
+ const initialFeed=await feed();
+ assert.deepEqual(initialFeed.items.map(item=>[item.id,item.kind,item.title,item.gist,item.evidence[0].ref,item.readAt]),
+  [[activityId,'activity',activityTitle,'Requested access to delivery samples','capture:'+original.id,null]]);
+ assert.deepEqual(initialFeed.categories,[{name:'Work',count:1}]);
+ const laterAt='2026-10-03T10:00:00.000Z',laterQuote='We set a rehearsal scope and are waiting on the schedule.';
+ const clarification='The access request we sent only included the first delivery sample.';
+ const later=await addRecording('generated-later',laterAt,[laterQuote,clarification]);
+ const updated=await runRecording(later.id,context=>{
+  assert.equal(context.cards.find(value=>value.id===id)?.title,title);
+  assert.equal(context.materials.find(value=>value.ref===original.ref)?.recording,'context');
+  assert.equal(context.materials.find(value=>value.ref===later.ref)?.recording,'new');
+  return {...answer(),recordingItems:[{action:'update',cardId:id,progress:{summary:'Rehearsal scope set.\nSchedule pending.',evidence:evidence(context,laterQuote)}}],
+   activities:[{...activity(evidence(context,clarification),activityId),body:'The submitted request only covered the first sample.'}]};
+ });
+ assert.deepEqual(updated.cardIds,[id,activityId]);
+ assert.equal((await items()).length,2);
+ assert.deepEqual((await items()).find(item=>item.id===id),{...initial.find(item=>item.id===id),revision:2,
+  lastProgress:{summary:'Rehearsal scope set. Schedule pending.',at:laterAt,evidenceId:later.id}});
+ assert.deepEqual(cards.get(id,all).evidence.map(value=>value.ref),['capture:'+original.id,'capture:'+later.id]);
+ const updatedFeed=await feed();
+ assert.deepEqual(updatedFeed.items.map(item=>[item.id,item.revision,item.body,item.evidence[0].ref]),
+  [[activityId,2,'The submitted request only covered the first sample.','capture:'+later.id]]);
+ const olderQuote='We have yet to discuss what to rehearse.';
+ const older=await addRecording('generated-backfill','2026-10-02T10:00:00.000Z',[olderQuote]);
+ assert.deepEqual((await runRecording(older.id,context=>({...answer(),recordingItems:[
+  {action:'update',cardId:id,progress:{summary:'Rehearsal scope pending.',evidence:evidence(context,olderQuote)}},
+ ]}))).cardIds,[]);
+ assert.equal((await items()).find(item=>item.id===id)?.revision,2);
+ const finalQuote='We decided to cancel the rehearsal.';
+ const final=await addRecording('generated-final','2026-10-04T10:00:00.000Z',[finalQuote]);
+ assert.deepEqual((await runRecording(final.id,context=>({...answer(),recordingItems:[
+  {action:'resolve',cardId:id,progress:{summary:'The rehearsal was cancelled.',evidence:evidence(context,finalQuote)}},
+ ]}))).cardIds,[id]);
+ assert.deepEqual((await items()).map(item=>item.id),[planId]);
+ await assert.rejects(f.run([later.ref],context=>{
+  const proof=evidence(context,clarification);
+  return {...answer(),activities:[activity(proof),activity({...proof,quote:'Generated fabricated activity evidence.'})]};
+ }),/outside the selected new recording/);
+ assert.deepEqual((await feed()).items,updatedFeed.items,'a failed proof cannot partially publish another activity');
+ assert.deepEqual(cards.notificationCandidates(all),[]);
+});
 
 test('Coding progress stays in history, while a current next step must cite the actual owner request',async t=>{
  const f=await fixture(t),source='generated-coding',parent=randomUUID(),child=randomUUID(),turn=randomUUID();

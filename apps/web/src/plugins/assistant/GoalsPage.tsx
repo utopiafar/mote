@@ -20,7 +20,7 @@ type MatterPage={items:Matter[];nextCursor:string|null};
 type Section='theirs'|'mine'|'unconfirmed';
 
 const emptyDraft=():Draft=>({title:'',due:''});
-const itemCount=(group:GoalGroup)=>group.theirs.length+group.mine.length+group.unconfirmed.length;
+const itemCount=(group:GoalGroup)=>group.theirs.length+group.mine.length+group.unconfirmed.length+(group.recordingItems?.length??0);
 const templateLabels:Record<MatterTemplate,string>={project:'项目',travel:'旅行',reading:'阅读'};
 const matterHref=(id:string,template?:MatterTemplate)=>'#/assistant/workbench?'+new URLSearchParams({matter:id,...(template?{template}:{})});
 const libraryHref=(id:string)=>pageHash('library',{matter:id});
@@ -44,7 +44,7 @@ export function GoalsPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
   const canReadMatters=can('http:GET:/api/assistant/matters');
   const canCreate=can('http:POST:/api/assistant/goals');
   const canEditMatters=can('http:POST:/api/assistant/matter-commands');
-  const revision=nav?nav.revisions.matters+':'+nav.revisions.commitments:undefined;
+  const revision=nav?nav.revisions.matters+':'+nav.revisions.commitments+':'+nav.revisions.cards:undefined;
   const goalsPath=scoped('/api/assistant/goals',all,{group:grouping,tz:Intl.DateTimeFormat().resolvedOptions().timeZone});
   const mattersPath=scoped('/api/assistant/matters',all,{limit:'100'});
   const read=useResource<unknown>(api,goalsPath,undefined,revision);
@@ -159,7 +159,32 @@ export function GoalsPage({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
       </div>}
     </header>;
   };
-  const body=(group:GoalGroup)=><>{(['theirs','mine','unconfirmed'] as const).map(section=>group[section].length>0&&<section className="goals-section" data-section={section} key={section}>
+  const body=(group:GoalGroup)=><>
+   {([['plan','待办'],['topic','待做议题']] as const).map(([kind,label])=>{
+     const items=group.recordingItems?.filter(item=>item.kind===kind)??[];
+     return items.length>0&&<section className="goals-section" data-section={kind==='plan'?'recording-plans':'topics'} key={kind}>
+       <h3>{moteText(label)}</h3>
+       {items.map(item=>{
+         const progress=item.lastProgress;
+         return <article className="goals-row" data-item-id={item.id} data-kind={kind} key={item.id}>
+           <div className="goals-row-line">
+             {item.dueText&&<q className="goals-due">{item.dueText}</q>}
+             <span className="goals-title">{item.title}</span>
+           </div>
+           {progress&&<p className="goals-progress" data-recording-source="progress">
+             <span className="goals-progress-label">{moteText('最近进展')}</span>
+             <time dateTime={progress.at}>{ago(progress.at)}</time><span> · {progress.summary}</span>
+             {progress.evidenceId!==item.evidenceId&&<button type="button" className="text-button" onClick={()=>onOpen('capture:'+progress.evidenceId)}>{moteText('查看原文')}</button>}
+           </p>}
+           <p className="goals-progress" data-recording-source="original">
+             <time dateTime={item.recordedAt}>{ago(item.recordedAt)}</time><span> · {item.body}</span>
+             <button type="button" className="text-button" onClick={()=>onOpen('capture:'+item.evidenceId)}>{moteText('查看原文')}</button>
+           </p>
+         </article>;
+       })}
+     </section>;
+   })}
+   {(['theirs','mine','unconfirmed'] as const).map(section=>group[section].length>0&&<section className="goals-section" data-section={section} key={section}>
     <h3>{moteText(sectionLabels[section])}</h3>
     {group[section].map(item=>row(group,item))}
   </section>)}</>;
@@ -251,6 +276,7 @@ a.goals-group-title:hover { text-decoration:underline; text-underline-offset:4px
 .goals-inferred:hover { color:var(--mote-danger); border-color:var(--mote-danger); }
 .goals-progress { grid-column:1; margin:0; color:var(--mote-muted); font-size:var(--mote-font-meta); overflow-wrap:anywhere; }
 .goals-progress .text-button { margin-left:6px; font-size:var(--mote-font-meta); }
+.goals-progress-label { color:var(--mote-ink); margin-inline-end:8px; }
 .goals-follow { grid-column:1; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:2px 0 0; color:var(--mote-muted); font-size:var(--mote-font-meta); }
 .goals-follow .button { min-height:28px; padding:2px 10px; font-size:var(--mote-font-meta); }
 .goals-row-actions { grid-column:2; grid-row:1 / span 3; display:flex; align-items:flex-start; gap:2px; }

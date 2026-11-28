@@ -256,8 +256,25 @@ export const goalItemSchema=z.object({
 }).strict();
 export type GoalItem=z.infer<typeof goalItemSchema>;
 
+export const goalRecordingDetailsSchema=z.object({
+  kind:z.enum(['plan','topic']),
+  recordedAt:timestamp,
+  dueText:pageText(80).optional(),
+  lastProgress:goalProgressSchema.required({evidenceId:true}).optional(),
+}).strict();
+
+export const goalRecordingItemSchema=goalRecordingDetailsSchema.extend({
+  id:z.string().uuid(),
+  title:pageText(500),
+  body:pageText(8000),
+  evidenceId:z.string().uuid(),
+  revision:recordRevision,
+}).strict();
+export type GoalRecordingItem=z.infer<typeof goalRecordingItemSchema>;
+
 export const goalGroupSchema=z.object({
   key:goalGroupKeySchema,
+  recordingItems:z.array(goalRecordingItemSchema).max(1000).optional(),
   theirs:z.array(goalItemSchema).max(1000),
   mine:z.array(goalItemSchema).max(1000),
   unconfirmed:z.array(goalItemSchema).max(1000),

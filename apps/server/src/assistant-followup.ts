@@ -3,10 +3,10 @@ import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
 import type {QueryInput} from '@mote/agent';
 import {assistantBatchContext,assistantQueryWithinCapacity,type AssistantRequestCapacity} from './assistant-request-budget.js';
-import {codingNextStepSchema,parseArtifactRef,parseEvidenceId,queryScopeSchema,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
+import {codingNextStepSchema,fileEvidenceSchema,formatEvidenceRef,parseArtifactRef,parseEvidenceId,parseEvidenceRef,queryScopeSchema,sourceContentTime,type CaptureRecord,type QueryScope,type SourceContextDeclaration} from '@mote/shared';
 import {AssistantCards,type AssistantCardPublication} from './assistant-cards.js';
 import {AssistantCommitments,commitmentProposalSchema} from './assistant-commitments.js';
-import {AssistantMatters} from './assistant-matters.js';
+import {AssistantMatters,matterScopeContains} from './assistant-matters.js';
 import {AssistantUnderstandingReader} from './assistant-understanding.js';
 import {BATCH_CONTEXT_MAX_BYTES,BATCH_TASK_INPUT_MAX_BYTES,BatchProcessing,type BatchAdmission,type BatchRequest} from './batch-processing.js';
 import {AssistantChangeFeed} from './assistant-change-feed.js';
@@ -45,7 +45,23 @@ const cardProposal=z.object({action:z.enum(['new','update','resolve','confirm'])
 // Only the interpretation is supplied by the model. Identity, revisions,
 // dependencies and source pins are taken from the host's saved snapshot.
 const commitmentInterpretation=commitmentProposalSchema.innerType().omit({commitmentId:true,eventId:true,evidenceDependencies:true,sourceContextDependencies:true});
-const outputSchema=z.object({reason:text,cards:z.array(cardProposal).max(20),commitments:z.array(commitmentInterpretation.extend({commitmentId:uuid.nullable()})).max(20)}).strict();
+const recordingProof=proof.partial({offset:true});
+const recordingActivityProposal=z.object({
+ cardId:uuid.nullable(),title:cardProposal.shape.title,body:text,feed:cardProposal.shape.feed,
+ evidence:z.array(recordingProof).min(1).max(3),
+}).strict();
+const recordingProgress=z.object({summary:z.string().trim().min(1).max(120),evidence:recordingProof}).strict();
+const recordingItemProposal=z.discriminatedUnion('action',[
+ z.object({action:z.literal('new'),kind:z.enum(['plan','topic']),matterId:uuid.nullable(),
+  title:z.string().trim().min(1).max(500),body:text,dueText:z.string().trim().min(1).max(80).nullable().optional(),
+  evidence:recordingProof,progress:recordingProgress.nullable().optional(),
+ }).strict(),
+ z.object({action:z.enum(['update','resolve']),cardId:uuid,progress:recordingProgress,
+  dueText:z.string().trim().min(1).max(80).nullable().optional(),
+ }).strict(),
+]);
+const outputSchema=z.object({reason:text,cards:z.array(cardProposal).max(20),commitments:z.array(commitmentInterpretation.extend({commitmentId:uuid.nullable()})).max(20),
+ recordingItems:z.array(recordingItemProposal).max(20).default([]),activities:z.array(recordingActivityProposal).max(6).default([])}).strict();
 function parseOutput(answer:string){
  try{return outputSchema.parse(JSON.parse(answer));}
  catch{throw new StoreError('Assistant analysis output is invalid',409);}
@@ -59,10 +75,12 @@ type Input=z.infer<typeof inputSchema>;
 type Card=ReturnType<AssistantCards['review']>['items'][number];
 type CardPin=Pick<Card,'id'|'revision'|'state'|'kind'>&{feedback:Pick<Card['feedback'][number],'action'>[]};
 type Commitment=ReturnType<AssistantCommitments['get']>;
+type RecordingInput={captureId:string;materialRef:string;evidenceIds:string[];at:string;changed:boolean};
 type Snapshot={input:Input;questionPins?:{id:string;revision:number}[];batchId:string;cards:CardPin[];commitments:Commitment[];matterRevisions:{id:string;revision:number}[];
  memoryRevisions:{id:string;version:number;fingerprint:string}[];materialRefs:string[];evidenceIds:string[];dependencies:string[];suppressionIds:string[];
  materialProducts:{ref:string;products:string[];nextCursor:string|null;coverage:ReturnType<AssistantUnderstandingReader['read']>['coverage']}[];
  codingRequests?:{materialId:string;requests:CodingRequest[]}[];
+ recordings?:RecordingInput[];topicMatters?:{id:string;revision:number}[];
  pins:SourceContextDeclaration[];originals:{id:string;offset:number;quote:string}[];observations:FileObservation[];historicalIds:string[];admission:BatchAdmission;
  queryContext?:NonNullable<QueryInput['taskContext']>};
 const deps=(ids:readonly string[])=>({version:1 as const,complete:true as const,ids:[...new Set(ids)].sort()});
@@ -85,9 +103,22 @@ function scopeContains(outer:QueryScope,inner:QueryScope){
  return true;
 }
 function empty(scope:QueryScope){return scope.kind==='selection'&&scope.sourceIds?.length===0||scope.evidenceIds?.length===0;}
+function recordingDisplayText(value:string,evidence:readonly {id:string}[]){
+ return evidence.reduce((text,proof)=>text.replaceAll(`[${proof.id}]`,''),value).replace(/[\u0000-\u001f\u007f]+/g,' ').trim();
+}
+function recordingWithinMatter(scope:QueryScope,record:CaptureRecord){
+ return matterScopeContains(scope,{id:record.id,title:record.windowTitle,sourceId:record.provenance?.sourceId,deviceId:record.deviceId,at:sourceContentTime(record)});
+}
 
 const CODING_FOLLOWUP=`For Coding transcripts, preserve native user and agent attribution for the exact cited message. A user's explicit request is a user statement; an Agent's report is an Agent report and never verifies completion. A matched parent conversation may offer several original user passages. Cite the one that establishes the actual requested work. Same repository, titles, timing and an Agent's assignment do not establish a shared owner goal.
 Leave progress, accepted scope corrections, historical PR and deployment reports, and missing later status in their conversation history. A new Coding card is only for a concrete useful next step now: a deliverable you can prepare or a decision the owner can take. Include optional codingNextStep with kind "prepare" or "decision", whyNow grounded in the specific current change or unresolved owner decision you cite, goal describing the deliverable or choice, and request as an exact {id,offset,quote} of the user's request. Use the offered parent request for a delegated conversation, and the conversation's own user request for standalone work. A missing parent request or current trigger means no card. Use confirm for a decision and new or update for preparation. Source arrival time is not work time. Do not open a new commitment or question merely to reconcile historical Agent reports. Return empty cards when appropriate.`;
+
+const RECORDING_ITEMS=`Also return "recordingItems" for quiet entries in Goals. New entry: {"action":"new","kind":"plan|topic","matterId":null,"title":"...","body":"...","dueText":null,"evidence":{"id":"original UUID","quote":"exact original substring"},"progress":null}. Update: {"action":"update|resolve","cardId":"existing UUID","progress":{"summary":"...","evidence":{"id":"original UUID","quote":"exact original substring"}}}. A new entry can also use that progress object. Use at most one result for each item.
+Review each Material marked recording="new", including the end. Use read tools when excerpts are incomplete. "context" recordings help identify the same issue but cannot be evidence for a new entry or progress. Capture an explicit personal next step as a plan. Preserve timing, including relative timing, in dueText only when quoted verbatim for a plan. Capture an explicitly deferred, still open question as a topic. Preserve the question itself in the owner's language. With an unverified speaker, report what the recording says without assigning it to the owner. Omit casual curiosity, general aspirations, offhand remarks and already finished work from recordingItems. Use the existing commitment path for promises to or from another identified person; do not duplicate a personal plan or topic across output arrays.
+Choose matterId from topicMatters only when the subject matches; use null if it is unclear. On the same work or question already in Goals (cards with kind "topic"), reuse its exact cardId. New wording, renewed intent or a repeated statement alone is not progress. Use update for a concrete new step already taken, an outcome, a supported change of plan or a decision that moves the item forward. Use resolve only when it was reported completed, settled or dropped. Pick the latest new evidence by recording date; earlier imported context cannot replace known progress. For a new item, add progress only when a distinct development is reported, such as a prerequisite already underway. For changed timing, supply the exact new dueText from the progress evidence, or null if timing was withdrawn. Keep title and body short, with each progress summary at most 120 characters. Put exact citations in evidence fields only. Quiet display never requires a reminder or a question to the owner. Empty recordingItems is valid.`;
+
+const RECORDING_ACTIVITIES=`Also return "activities": [{"cardId":null,"title":"...","body":"...","feed":{"category":"short label","subject":"who or what","action":"what happened","gist":"key result"},"evidence":[{"id":"original UUID","quote":"exact original substring"}]}]. Select up to six concrete, already reported changes worth seeing in the Feed, including work results and relevant life events. Use only recordings marked "new" as proof. Skip plans, pending questions, speculation, unverified gossip and unrelated private details. Preserve attribution and uncertainty, particularly an unidentified speaker. Timing of recording or upload does not establish when the event happened. A meaningful outcome can both update its existing Goals item and appear in the Feed.
+Write brief feed labels in the owner's language, following the field lengths above. Read the subject, action and gist together as one line without repeating words. Cite only exact transcript text. If a new recording corrects or substantively clarifies the same event already in the Feed, pass that existing activity cardId to update it. Skip simple retellings. Activity descriptions belong in this array and carry no reminder or question. Empty activities is valid.`;
 
 /** One bounded interpreter for understanding, Memory, cards and commitments.
  * Owner commands and A4 supply the existing batch admission. No schedule or
@@ -123,7 +154,7 @@ export class AssistantFollowup {
  async start(raw:Input,admission:{identities:readonly string[];connections:ModelConnection[]},assertActive:()=>void=()=>{},accepted:(task:TaskRecord)=>void=()=>{}){
   return this.analyze(raw,{kind:'manual',identities:[...admission.identities].sort(),connections:[...admission.connections].sort((a,b)=>a.id.localeCompare(b.id)||a.fingerprint.localeCompare(b.fingerprint))},assertActive,accepted);
  }
- private async analyze(raw:Input,selectedAdmission:BatchAdmission,assertActive:()=>void,accepted:(task:TaskRecord)=>void,submit?:(request:BatchRequest)=>TaskRecord,allowSavedContext=false){
+ private async analyze(raw:Input,selectedAdmission:BatchAdmission,assertActive:()=>void,accepted:(task:TaskRecord)=>void,submit?:(request:BatchRequest)=>TaskRecord,allowSavedContext=false,changedRefs?:ReadonlySet<string>){
   if(this.closed)throw new StoreError('Assistant consumer is closed',409);
   assertActive();
   const input=inputSchema.parse(raw),scope=input.scope;
@@ -141,9 +172,16 @@ export class AssistantFollowup {
    cursor=page.nextCursor??undefined;
   }while(cursor);}
   questionPins.sort((a,b)=>a.id.localeCompare(b.id));
-  const observations=unique(views.flatMap(view=>view.disclosureDependencies.ids)).flatMap(id=>{
-   const record=this.store.evidenceMetadata([id])[0];return record?.source==='file'&&record.provenance?[this.files.read({captureId:id,scope})]:[];
-  });
+  const fileRecords=this.store.evidenceMetadata(unique(views.flatMap(view=>view.disclosureDependencies.ids)))
+   .filter(record=>record.source==='file'&&record.provenance);
+  const observations=fileRecords.map(record=>this.files.read({captureId:record.id,scope}));
+  const recordings:RecordingInput[]=input.mode.kind==='change'?views.flatMap(view=>{
+   const {material}=view;
+   const record=fileRecords.find(value=>value.provenance?.sourceId===material.origin.sourceId&&value.provenance.externalId===material.origin.externalId&&
+    (value.provenance.document?.contentRole==='transcript'||value.provenance.mimeType?.startsWith('audio/')));
+   return record?[{captureId:record.id,materialRef:material.ref,evidenceIds:view.disclosureDependencies.ids,
+    at:sourceContentTime(record),changed:changedRefs?.has(material.ref)??true}]:[];
+  }):[];
   const materialProducts=views.map(view=>({ref:view.material.ref,products:view.products.map(product=>product.ref),nextCursor:view.nextCursor,coverage:view.coverage}));
   const memoryPage=await readCurrentMemoryPage(this.reader,scope,{level:'detail',limit:10,asOf});
   const review=this.cards.review(scope),commitmentPage=this.commitments.page({scope,limit:30});
@@ -161,14 +199,18 @@ export class AssistantFollowup {
   const readable=new Set([...views.flatMap(view=>view.disclosureDependencies.ids),...memoryPage.items.flatMap(memory=>memory.evidenceIds),
    ...contextCards.flatMap(card=>card.evidenceDependencies.ids),...commitments.flatMap(item=>item.evidenceDependencies.ids)]);
   const matters=matterPage.items.filter(matter=>scopeContains(scope,matter.scope)&&matter.evidenceIds.every(id=>readable.has(id)));
+  const recordingCaptures=fileRecords.filter(record=>recordings.some(recording=>recording.changed&&recording.captureId===record.id));
+  const topicMatters=matterPage.items.filter(matter=>recordingCaptures.some(recording=>recordingWithinMatter(matter.scope,recording))&&
+   matter.evidenceIds.every(id=>readable.has(id)));
   const originals:{id:string;offset:number;quote:string}[]=[];
   const codingRequests:NonNullable<Snapshot['codingRequests']>=[];
   const selectedIds=scope.evidenceIds===undefined?undefined:new Set(scope.evidenceIds);
   const materialContext=[];
   for(const view of views){
    const material=view.material;let body:{text:string;complete:boolean}|undefined;
+   const recording=recordings.find(candidate=>candidate.materialRef===material.ref);
    if(['ready','partial'].includes(view.coverage.extraction.status)&&material.textLength){
-    const page=this.reader.materialRead({ref:material.ref,...scope,offset:0,length:Math.min(material.textLength,1000)});
+    const page=this.reader.materialRead({ref:material.ref,...scope,offset:0,length:Math.min(material.textLength,recording?12000:1000)});
     const spans=page.spans.filter(span=>span.kind==='text'&&span.evidenceId&&span.evidenceOffset!==undefined);
     const records=new Map(this.reader.memories.readCurrentEvidence(unique(spans.map(span=>span.evidenceId!))).map(record=>[record.id,record]));
     const windows=spans.flatMap(span=>{
@@ -197,7 +239,7 @@ export class AssistantFollowup {
     codingRequests.push({materialId:material.id,requests});
    }
    materialContext.push({ref:material.ref,title:material.title,origin:material.origin,attributionContext:material.attributionContext,coverage:view.coverage,products:view.products.map(product=>({summary:product.summary,events:product.events,workRecords:product.workRecords,generatedAt:product.generatedAt})),
-    productsTruncated:Boolean(view.nextCursor),...(body?{body}:{}),
+    productsTruncated:Boolean(view.nextCursor),...(body?{body}:{}),...(recording?{recording:recording.changed?'new':'context'}:{}),
     ...(codingChild?{parentRequests:requests.map(({id,offset,quote,recordedAt})=>({id,offset,length:quote.length,recordedAt}))}:{})});
    await yieldTurn();assertActive();
   }
@@ -220,14 +262,18 @@ export class AssistantFollowup {
   const {evidenceIds:_,...contextScope}=scope;
   const fullContext={turns:[],asOf,scope:contextScope,mode:input.mode,materials:materialContext,originals,fileObservations:observations.map(({disclosureDependencies:_,...observation})=>observation),memories:memoryPage.items.map(memory=>({id:memory.id,version:memory.version,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,validFrom:memory.validFrom,validUntil:memory.validUntil,correction:memory.correction})),
    ...(pendingOwnerQuestions.length?{pendingOwnerQuestions}:{}),
+   ...(recordings.length?{topicMatters:topicMatters.map(({id,goal})=>({id,goal}))}:{}),
    memoryTruncated:Boolean(memoryPage.nextCursor),matters:matters.map(matter=>({id:matter.id,revision:matter.revision,goal:matter.goal,correction:matter.correction})),
    cards:cards.map(card=>({id:card.id,revision:card.revision,kind:card.kind,state:card.state,matterId:card.matterId,title:card.title,
-    ...(suppressionOnly(card)?{suppressionOnly:true,feedback:[{action:'never_remind'}]}:{body:card.body,feedback:card.feedback})})),
+    ...(suppressionOnly(card)?{suppressionOnly:true,feedback:[{action:'never_remind'}]}:{body:card.body,feedback:card.feedback,
+     ...(card.recording?{recording:card.recording}:{})})})),
    commitments:commitments.map(item=>({id:item.id,revision:item.revision,title:item.title,status:item.status,deadline:item.deadline,dueState:item.dueState,direction:item.direction,timeline:item.timeline}))};
   // Keep the owner's bounded question separate from the existing batch task
   // context. Coding products and their exact tail citations are not user text;
   // the batch context bound and complete provider budget still apply to them.
-  const question=views.some(view=>view.material.kind==='mote.coding-session')?PROMPT+'\n\n'+CODING_FOLLOWUP:PROMPT;
+  const recordingInstructions=recordingCaptures.length?[RECORDING_ITEMS,RECORDING_ACTIVITIES]:cards.some(card=>card.kind==='topic')?
+   ['Cards with kind "topic" are existing entries in Goals. Leave them unchanged in this review and avoid duplicating them as ordinary cards.']:[];
+  const question=[PROMPT,...(views.some(view=>view.material.kind==='mote.coding-session')?[CODING_FOLLOWUP]:[]),...recordingInstructions].join('\n\n');
   const limit=selectedAdmission.kind==='automatic'?automaticContextBytes:BATCH_CONTEXT_MAX_BYTES;
   const capacity=this.requestCapacity?.();
   const {context,bytes}=assistantBatchContext(fullContext,limit,()=>Boolean(capacity));
@@ -270,6 +316,7 @@ export class AssistantFollowup {
    }
    const snapshot:Snapshot={input,questionPins,batchId:batch.id,cards:cardPins,commitments,matterRevisions:matters.map(matter=>({id:matter.id,revision:matter.revision})),memoryRevisions,
     materialRefs:input.materialRefs,materialProducts,evidenceIds,dependencies,suppressionIds,pins,originals,observations,historicalIds,admission:selectedAdmission,
+    ...(recordings.length?{recordings,topicMatters:topicMatters.map(({id,revision})=>({id,revision}))}:{}),
     ...(codingRequests.length?{codingRequests}:{}),...(queryContext?{queryContext}:{})};
    this.assertSnapshot(snapshot);
    const task=this.tasks.create({operationId,requestId:'assistant-followup:'+input.requestId,kind:'assistant.followup',input:snapshot,evidenceDependencies:deps(dependencies)},
@@ -539,7 +586,8 @@ export class AssistantFollowup {
   const requestId='assistant-change:'+group.map(candidate=>candidate.task.id).sort().join(':');
   await this.analyze({operationId:requestId,requestId,scope,materialRefs:refs,mode:{kind:'change'}},
    {kind:'automatic',purpose:'assistant',roots:group.map(candidate=>candidate.input.root)},active,()=>{},
-   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}),!includeCatalog&&refs.length===1);
+   request=>changes.submit(group[0].task.id,request,this.batch,{evidenceIds:request.items.flatMap(item=>item.evidenceIds),taskIds:group.slice(1).map(candidate=>candidate.task.id)}),
+   !includeCatalog&&refs.length===1,new Set(group.map(candidate=>candidate.input.material!.ref)));
  }
  async close(){this.closed=true;await this.polling?.catch(()=>{});}
  private assertSnapshot(snapshot:Snapshot){
@@ -571,6 +619,61 @@ export class AssistantFollowup {
    if(!current||current.ocrText.slice(item.offset,item.offset+item.quote.length)!==item.quote)throw new StoreError('Assistant quotation is no longer current',409);
   }
   return records;
+ }
+ private recordingEvidence(item:z.infer<typeof recordingProof>,snapshot:Snapshot){
+  const record=this.reader.memories.readCurrentEvidence([item.id])[0];
+  const chunk=fileEvidenceSchema.safeParse((record as (CaptureRecord&{fileEvidence?:unknown})|undefined)?.fileEvidence).data;
+  const anchorChunk=record?.appId==='mote.material'&&record.provenance?.document?.contentRole==='transcript'?
+   parseEvidenceId(record.provenance.uri?.split('#chunk:')[1]??''):undefined;
+  const captureId=chunk?.startMs!==undefined?chunk.captureId:anchorChunk?this.reader.files?.readableFile(anchorChunk):undefined;
+  const recording=snapshot.recordings?.find(input=>input.captureId===captureId&&(chunk||input.evidenceIds.includes(item.id)));
+  const offset=item.offset??record?.ocrText.indexOf(item.quote)??-1;
+  if(!recording?.changed||!snapshot.evidenceIds.includes(item.id)||!snapshot.evidenceIds.includes(recording.captureId)||
+   offset<0||record?.ocrText.slice(offset,offset+item.quote.length)!==item.quote)
+   throw new StoreError('Progress or item quotation is outside the selected new recording',409);
+  return {id:item.id,offset,quote:item.quote,ref:formatEvidenceRef('capture',recording.captureId),recording};
+ }
+ private recordingPublication(item:z.infer<typeof recordingItemProposal>,id:string,version:string,snapshot:Snapshot,evidenceDependencies:AssistantCardPublication['evidenceDependencies']):AssistantCardPublication|undefined{
+  const isNew=item.action==='new';
+  const pin=isNew?undefined:snapshot.cards.find(card=>card.id===item.cardId);
+  if(!isNew&&pin?.kind!=='topic')throw new StoreError('Recording item is unavailable',409);
+  if(pin&&(pin.state!=='open'||pin.feedback.some(feedback=>feedback.action==='never_remind')))return;
+  const prior=pin?this.cards.get(pin.id,snapshot.input.scope):undefined;
+  const original=isNew?this.recordingEvidence(item.evidence,snapshot):prior?.evidence[0];
+  const originalRef=original?.ref?parseEvidenceRef(original.ref):undefined;
+  if(!original||originalRef?.kind!=='capture')throw new StoreError('Recording item original is unavailable',409);
+  const originalRecord=this.store.evidenceMetadata([originalRef.id])[0];
+  if(!originalRecord)throw new StoreError('Recording item original is unavailable',409);
+  const recordedAt=sourceContentTime(originalRecord);
+  const progress=item.progress?this.recordingEvidence(item.progress.evidence,snapshot):undefined;
+  if(prior&&progress){
+   const latestAt=Math.max(Date.parse(recordedAt),Date.parse(prior.recording?.lastProgress?.at??recordedAt));
+   if(Date.parse(progress.recording.at)<latestAt||prior.evidence.some(evidence=>evidence.ref===progress.ref&&
+    evidence.id===progress.id&&evidence.offset===progress.offset&&evidence.quote===progress.quote))return;
+  }
+  const matterId=isNew?item.matterId:prior!.matterId;
+  if(matterId){
+   const matterPin=snapshot.topicMatters?.find(matter=>matter.id===matterId);
+   // A later recording outside a saved matter's scope leaves that item alone.
+   if(!isNew&&!matterPin)return;
+   const matter=matterPin&&this.matters.get(matterPin.id);
+   const roots=unique([originalRef.id,...(progress?[progress.recording.captureId]:[])]),records=this.store.evidenceMetadata(roots);
+   if(!matter||matter.state!=='active'||matter.revision!==matterPin.revision||records.length!==roots.length||
+    records.some(record=>!recordingWithinMatter(matter.scope,record)))throw new StoreError('Recording item matter is unavailable',409);
+  }
+  const evidence=[original,...(progress?[progress]:[])].map(({id,offset,quote,ref})=>({id,offset,quote,ref}));
+  const displayText=(value:string)=>recordingDisplayText(value,evidence);
+  const kind=isNew?item.kind:prior!.recording?.kind??'topic';
+  let dueText=prior?.recording?.dueText;
+  if(kind==='plan'){
+   if(item.dueText===null)dueText=undefined;
+   else if(item.dueText&&(isNew?original:progress)?.quote.includes(item.dueText))dueText=displayText(item.dueText);
+  }
+  const lastProgress=item.progress&&progress?{summary:displayText(item.progress.summary),at:progress.recording.at,evidenceId:progress.recording.captureId}:undefined;
+  return {id,kind:'topic',matterId,version,state:item.action==='resolve'?'resolved':'open',
+   title:isNew?displayText(item.title):prior!.title,body:isNew?displayText(item.body):prior!.body,evidence,
+   recording:{kind,recordedAt,...(dueText?{dueText}:{}),...(lastProgress?{lastProgress}:{})},evidenceDependencies,
+   ...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})};
  }
  private codingCardStep(item:z.infer<typeof cardProposal>,records:Map<string,CaptureRecord>,snapshot:Snapshot){
   const materialIds=unique([...records.values()].flatMap(record=>{
@@ -625,6 +728,7 @@ export class AssistantFollowup {
     const related=item.relatedCardIds.map(id=>{const card=snapshot.cards.find(value=>value.id===id);if(!card)throw new StoreError('Assistant referenced an unavailable card',409);return card;});
     if(related.some(card=>card.feedback.some(feedback=>feedback.action==='never_remind')))continue;
     const existing=item.cardId?snapshot.cards.find(card=>card.id===item.cardId):undefined;
+    if(existing?.kind==='topic')throw new StoreError('Topics require a topic proposal',409);
     if(item.action==='new'&&(item.cardId||related.length)||
       (item.action==='update'||item.action==='resolve')&&(!existing||!item.relatedCardIds.includes(existing.id))||
       item.action==='confirm'&&(item.cardId?!existing||!item.relatedCardIds.includes(item.cardId):related.length>0))throw new StoreError('Assistant card identity is inconsistent',409);
@@ -637,6 +741,25 @@ export class AssistantFollowup {
      evidence:coding.evidence??item.evidence,
      ...(coding.step?{codingNextStep:coding.step}:{}),evidenceDependencies:publicDependencies,...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})};
     this.cards.publish(publication,existing?.revision,scope,check,internalDependencies,snapshot.historicalIds);cardIds.push(id);
+   }
+   for(const [index,item] of output.recordingItems.entries()){
+    const id=item.action==='new'?stableId(task.id,'topic',index):item.cardId;
+    const publication=this.recordingPublication(item,id,`followup:${task.id}:topic:${index}`,snapshot,publicDependencies);
+    if(!publication)continue;
+    const revision=snapshot.cards.find(card=>card.id===id)?.revision;
+    this.cards.publish(publication,revision,scope,check,internalDependencies,snapshot.historicalIds);cardIds.push(id);
+   }
+   for(const [index,item] of output.activities.entries()){
+    const existing=item.cardId?snapshot.cards.find(card=>card.id===item.cardId):undefined;
+    if(item.cardId&&existing?.kind!=='activity')throw new StoreError('Recording activity is unavailable',409);
+    if(existing&&(existing.state!=='open'||existing.feedback.some(feedback=>feedback.action==='never_remind')))continue;
+    const prior=existing?this.cards.get(existing.id,scope):undefined;
+    const evidence=item.evidence.map(quote=>{const {recording:_,...proof}=this.recordingEvidence(quote,snapshot);return proof;});
+    const id=existing?.id??stableId(task.id,'activity',index);
+    this.cards.publish({id,kind:'activity',matterId:prior?.matterId??null,version:`followup:${task.id}:activity:${index}`,state:'open',
+     title:recordingDisplayText(item.title,evidence),body:recordingDisplayText(item.body,evidence),...item.feed,evidence,
+     evidenceDependencies:publicDependencies,...(snapshot.pins.length?{sourceContextDependencies:snapshot.pins}:{})},existing?.revision,scope,check,internalDependencies,snapshot.historicalIds);
+    cardIds.push(id);
    }
    for(const [index,item] of output.commitments.entries()){
     this.proof(item.evidence,snapshot);const existing=item.commitmentId?snapshot.commitments.find(value=>value.id===item.commitmentId):undefined;
